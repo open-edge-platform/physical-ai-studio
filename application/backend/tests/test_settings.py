@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
 import settings as settings_module
 from settings import Settings, get_default_storage_dir
 
@@ -42,3 +45,37 @@ def test_data_dir_is_storage_backed_even_with_data_dir_env(monkeypatch, tmp_path
     settings = Settings(STORAGE_DIR="~/custom-storage")
 
     assert settings.data_dir == tmp_path / "custom-storage" / "data"
+
+
+def _clear_trainer_env(monkeypatch) -> None:
+    for var in ("TRAINING_MODE", "TRAINER_URL"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_training_mode_defaults_to_local(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _clear_trainer_env(monkeypatch)
+
+    assert Settings(STORAGE_DIR="~/s").training_mode == "local"
+
+
+def test_remote_training_requires_url(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _clear_trainer_env(monkeypatch)
+
+    with pytest.raises(ValidationError, match="TRAINER_URL"):
+        Settings(TRAINING_MODE="remote", STORAGE_DIR="~/s")
+
+
+def test_remote_training_accepts_url(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _clear_trainer_env(monkeypatch)
+
+    settings = Settings(
+        TRAINING_MODE="remote",
+        TRAINER_URL="https://trainer.test",
+        STORAGE_DIR="~/s",
+    )
+
+    assert settings.training_mode == "remote"
+    assert settings.trainer_url == "https://trainer.test"

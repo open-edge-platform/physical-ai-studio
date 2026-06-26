@@ -85,7 +85,6 @@ def _make_settings(tmp_path: Path) -> MagicMock:
     settings = MagicMock()
     settings.models_dir = tmp_path / "models"
     settings.cache_dir = tmp_path / "cache"
-    settings.supported_backends = []
     return settings
 
 
@@ -115,7 +114,10 @@ def worker(stop_event, interrupt_event, event_queue):
     from workers.training_worker import TrainingWorker
 
     w = object.__new__(TrainingWorker)
+    # Mirror BaseProcessWorker/TrainingWorker wiring: should_stop() reads the
+    # private events; _should_interrupt() also reads the public interrupt_event.
     w._stop_event = stop_event
+    w._interrupt_event = interrupt_event
     w.interrupt_event = interrupt_event
     w.queue = event_queue
     return w
@@ -127,190 +129,184 @@ def worker(stop_event, interrupt_event, event_queue):
 
 
 class TestTraining:
-    """Tests for _train_model behavior."""
+    """Tests for _train_model delegation to the selected training backend."""
 
     @pytest.mark.anyio
-    async def test_training_failure_propagates_as_failed_job(self, worker, event_queue, tmp_path):
-        """When trainer.fit raises, the job should end as FAILED."""
+    async def test_training_failure_propagates_as_failed_job(self, worker, tmp_path):
+        """When the backend raises, the job ends as FAILED."""
         payload = _make_payload(compile_model=False)
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
         job = _make_job(payload)
 
-        policy = MagicMock()
-        trainer = MagicMock()
-        trainer.fit = MagicMock(side_effect=RuntimeError("training failed"))
+        backend = MagicMock()
+        backend.train = AsyncMock(side_effect=RuntimeError("training failed"))
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
 
         failed_job = MagicMock()
         failed_job.id = job.id
         failed_job.status = JobStatus.FAILED
 
         with (
-            patch(f"{MODULE}.setup_policy", return_value=policy) as mock_setup,
-            patch(f"{MODULE}.Trainer", return_value=trainer),
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService"),
-            patch(f"{MODULE}.LeRobotDataModule"),
-            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.CSVLogger"),
-            patch(f"{MODULE}.ModelCheckpoint"),
-            patch(f"{MODULE}.TrainingTrackingDispatcher") as MockDispatcher,
-            patch(f"{MODULE}.TrainingTrackingCallback"),
-            patch(f"{MODULE}.TrainingLogCallback"),
-            patch(f"{MODULE}.get_torch_device", return_value="cpu"),
-            patch(f"{MODULE}.get_lightning_strategy", return_value="auto"),
         ):
-            MockDispatcher.return_value = MagicMock()
-            MockDispatcher.return_value.start = MagicMock()
-            MockDispatcher.return_value.is_alive = MagicMock(return_value=False)
-
             MockJobService.update_job_status = AsyncMock(return_value=failed_job)
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
-            mock_setup.assert_called_once()
-            trainer.fit.assert_called_once()
-
+            backend.train.assert_awaited_once()
             MockJobService.update_job.assert_called_once()
             failed_call = MockJobService.update_job_status.call_args_list[0]
             assert failed_call.kwargs["status"] == JobStatus.FAILED
 
     @pytest.mark.anyio
-    async def test_successful_training_with_compile(self, worker, event_queue, tmp_path):
-        """When compile_model=True and trainer.fit succeeds, job completes normally."""
+    async def test_cancellation_raised_by_backend_marks_canceled(self, worker, tmp_path):
+        """A TrainingCanceledError ends the job CANCELED, not FAILED, and creates no model."""
+        from services.training_backends import TrainingCanceledError
+
+        payload = _make_payload(compile_model=False)
+        model = _make_model(tmp_path)
+        snapshot = _make_snapshot(tmp_path)
+        job = _make_job(payload)
+
+        backend = MagicMock()
+        backend.train = AsyncMock(side_effect=TrainingCanceledError("Training canceled"))
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
+
+        canceled_job = MagicMock()
+        canceled_job.id = job.id
+        canceled_job.status = JobStatus.CANCELED
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
+            patch(f"{MODULE}.JobService") as MockJobService,
+            patch(f"{MODULE}.ModelService") as MockModelService,
+        ):
+            MockJobService.update_job_status = AsyncMock(return_value=canceled_job)
+            MockJobService.update_job = AsyncMock(return_value=MagicMock())
+            MockModelService.create_model = AsyncMock()
+
+            await worker._train_model(job, model, snapshot, payload, base_model=None)
+
+            MockModelService.create_model.assert_not_called()
+            canceled_call = MockJobService.update_job_status.call_args_list[0]
+            assert canceled_call.kwargs["status"] == JobStatus.CANCELED
+
+    @pytest.mark.anyio
+    async def test_interrupt_after_silent_stop_marks_canceled(self, worker, interrupt_event, tmp_path):
+        """A backend that stops cooperatively (no raise) while interrupted ends CANCELED."""
+        payload = _make_payload(compile_model=False)
+        model = _make_model(tmp_path)
+        snapshot = _make_snapshot(tmp_path)
+        job = _make_job(payload)
+
+        interrupt_event.set()
+
+        backend = MagicMock()
+        backend.train = AsyncMock()
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
+
+        canceled_job = MagicMock()
+        canceled_job.id = job.id
+        canceled_job.status = JobStatus.CANCELED
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
+            patch(f"{MODULE}.JobService") as MockJobService,
+            patch(f"{MODULE}.ModelService") as MockModelService,
+        ):
+            MockJobService.update_job_status = AsyncMock(return_value=canceled_job)
+            MockJobService.update_job = AsyncMock(return_value=MagicMock())
+            MockModelService.create_model = AsyncMock()
+
+            await worker._train_model(job, model, snapshot, payload, base_model=None)
+
+            MockModelService.create_model.assert_not_called()
+            assert MockJobService.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.CANCELED
+
+    @pytest.mark.anyio
+    async def test_successful_training_creates_model(self, worker, event_queue, tmp_path):
+        """A successful backend run completes the job and persists the model."""
         payload = _make_payload(compile_model=True)
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
         job = _make_job(payload)
 
-        policy = MagicMock()
-        export_policy = MagicMock()
-        trainer = MagicMock()
-        trainer.fit = MagicMock()  # succeeds
-        trainer.save_checkpoint = MagicMock()
+        backend = MagicMock()
+        backend.train = AsyncMock()
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
 
         completed_job = MagicMock()
         completed_job.id = job.id
         completed_job.status = JobStatus.COMPLETED
 
         with (
-            patch(f"{MODULE}.setup_policy", return_value=policy) as mock_setup,
-            patch(f"{MODULE}.load_policy", return_value=export_policy) as mock_load,
-            patch(f"{MODULE}.Trainer", return_value=trainer),
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
-            patch(f"{MODULE}.LeRobotDataModule"),
-            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.CSVLogger"),
-            patch(f"{MODULE}.ModelCheckpoint"),
-            patch(f"{MODULE}.TrainingTrackingDispatcher") as MockDispatcher,
-            patch(f"{MODULE}.TrainingTrackingCallback"),
-            patch(f"{MODULE}.TrainingLogCallback"),
-            patch(f"{MODULE}.get_torch_device", return_value="cpu"),
-            patch(f"{MODULE}.get_lightning_strategy", return_value="auto"),
-            patch(f"{MODULE}.shutil.move", return_value=model.path),
         ):
-            MockDispatcher.return_value = MagicMock()
-            MockDispatcher.return_value.start = MagicMock()
-            MockDispatcher.return_value.is_alive = MagicMock(return_value=False)
-
             MockJobService.update_job_status = AsyncMock(return_value=completed_job)
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
             MockModelService.create_model = AsyncMock(return_value=model)
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
-            assert mock_setup.call_count == 1
-            assert mock_setup.call_args_list[0].kwargs["compile_model"] is True
-            mock_load.assert_called_once_with(model, compile_model=False)
-
-            trainer.fit.assert_called_once()
-            trainer.save_checkpoint.assert_called_once_with(tmp_path / "cache" / str(job.id) / "model.ckpt")
-
-            MockJobService.update_job.assert_called_once()
+            backend.train.assert_awaited_once()
+            MockModelService.create_model.assert_awaited_once_with(model)
             assert MockJobService.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.COMPLETED
 
     @pytest.mark.anyio
-    async def test_precision_fp32_passes_32_true_to_trainer(self, worker, event_queue, tmp_path):
-        """When precision is FP32 ('32-true'), '32-true' should be passed to Trainer."""
-        payload = _make_payload(compile_model=False, precision=TrainingPrecision.FP32)
+    async def test_context_passes_output_and_cache_dirs(self, worker, tmp_path):
+        """The worker builds a context pointing at the model and cache directories."""
+        payload = _make_payload(compile_model=False)
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
         job = _make_job(payload)
 
-        policy = MagicMock()
+        captured = {}
+
+        async def _capture(context):
+            captured["context"] = context
+
+        backend = MagicMock()
+        backend.train = AsyncMock(side_effect=_capture)
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
 
         with (
-            patch(f"{MODULE}.setup_policy", return_value=policy),
-            patch(f"{MODULE}.Trainer") as MockTrainer,
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
-            patch(f"{MODULE}.LeRobotDataModule"),
-            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.CSVLogger"),
-            patch(f"{MODULE}.ModelCheckpoint"),
-            patch(f"{MODULE}.TrainingTrackingDispatcher") as MockDispatcher,
-            patch(f"{MODULE}.TrainingTrackingCallback"),
-            patch(f"{MODULE}.TrainingLogCallback"),
-            patch(f"{MODULE}.get_torch_device", return_value="cpu"),
-            patch(f"{MODULE}.get_lightning_strategy", return_value="auto"),
         ):
-            MockDispatcher.return_value = MagicMock()
-            MockDispatcher.return_value.start = MagicMock()
-            MockDispatcher.return_value.is_alive = MagicMock(return_value=False)
-
-            trainer_instance = MagicMock()
-            trainer_instance.fit = MagicMock()
-            MockTrainer.return_value = trainer_instance
-
-            completed_job = MagicMock()
+            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
-            MockJobService.update_job_status = AsyncMock(return_value=completed_job)
             MockModelService.create_model = AsyncMock(return_value=model)
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
-            assert MockTrainer.call_args.kwargs["precision"] == "32-true"
-
-    @pytest.mark.anyio
-    async def test_precision_bf16_passes_string_to_trainer(self, worker, event_queue, tmp_path):
-        """When precision is 'bf16-mixed', the string should be passed to Trainer."""
-        payload = _make_payload(compile_model=False, precision=TrainingPrecision.BF16_MIXED)
-        model = _make_model(tmp_path)
-        snapshot = _make_snapshot(tmp_path)
-        job = _make_job(payload)
-
-        policy = MagicMock()
-
-        with (
-            patch(f"{MODULE}.setup_policy", return_value=policy),
-            patch(f"{MODULE}.Trainer") as MockTrainer,
-            patch(f"{MODULE}.JobService") as MockJobService,
-            patch(f"{MODULE}.ModelService") as MockModelService,
-            patch(f"{MODULE}.LeRobotDataModule"),
-            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.CSVLogger"),
-            patch(f"{MODULE}.ModelCheckpoint"),
-            patch(f"{MODULE}.TrainingTrackingDispatcher") as MockDispatcher,
-            patch(f"{MODULE}.TrainingTrackingCallback"),
-            patch(f"{MODULE}.TrainingLogCallback"),
-            patch(f"{MODULE}.get_torch_device", return_value="cpu"),
-            patch(f"{MODULE}.get_lightning_strategy", return_value="auto"),
-        ):
-            MockDispatcher.return_value = MagicMock()
-            MockDispatcher.return_value.start = MagicMock()
-            MockDispatcher.return_value.is_alive = MagicMock(return_value=False)
-
-            trainer_instance = MagicMock()
-            trainer_instance.fit = MagicMock()
-            MockTrainer.return_value = trainer_instance
-
-            completed_job = MagicMock()
-            MockJobService.update_job = AsyncMock(return_value=MagicMock())
-            MockJobService.update_job_status = AsyncMock(return_value=completed_job)
-            MockModelService.create_model = AsyncMock(return_value=model)
-
-            await worker._train_model(job, model, snapshot, payload, base_model=None)
-
-            assert MockTrainer.call_args.kwargs["precision"] == "bf16-mixed"
+        context = captured["context"]
+        assert str(context.output_dir) == model.path
+        assert context.cache_dir == tmp_path / "cache" / str(job.id)
+        assert context.snapshot is snapshot
