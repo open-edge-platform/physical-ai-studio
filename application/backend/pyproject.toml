@@ -1,7 +1,7 @@
 [project]
 name = "physicalai-studio"
 version = "0.1.0"
-description = "Physical AI Studio server"
+description = "Physical AI Studio"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 
@@ -9,7 +9,7 @@ dependencies = [
   "opencv-python",
   "cv2-enumerate-cameras",
   'harvesters; sys_platform != "darwin"',
-  "fastapi[standard]",
+  "fastapi[standard]<1",
   "physicalai[robots, capture]",
   # Core training library (policies, export, data, transforms). Recording/remote
   # nodes need these to drive the Models/Policies screens and OpenVINO inference;
@@ -36,6 +36,24 @@ dependencies = [
   "huggingface-hub>=0.27",
 ]
 
+[project.scripts]
+physicalai-studio = "cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src"]
+sources = ["src"]
+exclude = [
+  "src/**/*.egg-info/**",
+  "src/**/__pycache__/**",
+]
+
+[tool.hatch.build.hooks.custom]
+path = "scripts/hatch_build.py"
+
 [project.optional-dependencies]
 train = [
   "physicalai-train[pi0,smolvla]",
@@ -60,18 +78,6 @@ tests = [
     "pytest",
 ]
 
-[project.scripts]
-physicalai-studio = "cli:cli"
-
-[build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
 
 # --- PyTorch index configuration ---
 # torch/torchvision are transitive dependencies of the base install via lerobot

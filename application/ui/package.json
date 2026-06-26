@@ -4,14 +4,14 @@
     "private": true,
     "type": "module",
     "engines": {
-        "node": "v24.2.0",
+        "node": ">=24.2.0",
         "npm": ">=11.14.0"
     },
     "scripts": {
         "build": "rsbuild build",
         "build:api": "npx openapi-typescript ./src/api/openapi-spec.json -o ./src/api/openapi-spec.d.ts  --root-types && prettier --write src/api/openapi-spec.d.ts",
         "build:api:download": "curl -o ./src/api/openapi-spec.json http://localhost:7860/api/openapi.json && prettier --write src/api/openapi-spec.json",
-        "clone-so101": "npx tiged git@github.com:TheRobotStudio/SO-ARM100.git/Simulation/SO101 public/SO101 --force",
+        "clone-so101": "npx tiged github:TheRobotStudio/SO-ARM100/Simulation/SO101 public/SO101 --force",
         "clone-widowx": "npx tiged github:TrossenRobotics/trossen_arm_description public/widowx --force",
         "cyclic-deps-check": "npx madge --circular src/**/*.ts*",
         "start": "rsbuild dev",

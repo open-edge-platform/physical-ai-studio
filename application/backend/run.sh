@@ -46,7 +46,6 @@ set -euo pipefail
 #   TRAINER_HF_NAMESPACE   HF namespace for ephemeral snapshot repos (remote).
 #   HF_TOKEN               HF token: write access on the backend (remote),
 #                          read access on the trainer.
-#   APP_MODULE             Backend entrypoint (default: src/main.py).
 #   UV_CMD                 Launch command (default: "uv run --no-sync").
 #
 # Requirements:
@@ -96,11 +95,10 @@ if [[ -n "${DEVICE:-}" ]]; then DEVICE_EXPLICIT=true; else DEVICE_EXPLICIT=false
 DEVICE=${DEVICE:-cpu}
 SYNC=${SYNC:-true}
 SEED_DB=${SEED_DB:-false}
-APP_MODULE=${APP_MODULE:-src/main.py}
 UV_CMD=${UV_CMD:-uv run --no-sync}
 
 usage() {
-	sed -n '5,53p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+	sed -n '5,52p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # Sync dependencies in the current directory with the given extras.
@@ -162,9 +160,9 @@ run_backend() {
 		$UV_CMD application/cli.py seed --with-model=True
 	fi
 
-	echo "Starting FastAPI server (TRAINING_MODE=${mode})..."
-	echo "$UV_CMD $APP_MODULE"
-	exec $UV_CMD "$APP_MODULE"
+        echo "Starting FastAPI server (TRAINING_MODE=${mode})..."
+        echo "$UV_CMD physicalai-studio serve"
+        exec $UV_CMD physicalai-studio serve
 }
 
 run_trainer() {
@@ -196,6 +194,6 @@ case "$COMMAND" in
 	*)
 		echo "Unknown command: ${COMMAND}" >&2
 		usage
-		exit 1
-		;;
+                exit 1
+                ;;
 esac

@@ -47,15 +47,21 @@ FROM scratch AS app-source
 # Root workspace manifests (needed by uv run for workspace resolution)
 COPY --link pyproject.toml uv.lock LICENSE README.md /app/
 
-# Backend source, entrypoint, and manifests
+# Application-level README (needed by the hatch build hook to transform
+# relative URLs to absolute GitHub URLs for the PyPI description)
+COPY --link application/README.md /app/application/README.md
+
+# Backend source, entrypoint, manifests, and build hook
 COPY --link application/backend/src /app/application/backend/src
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
 COPY --link application/backend/README.md /app/application/backend/README.md
 COPY --link application/backend/run.sh /app/application/backend/run.sh
+COPY --link application/backend/scripts/hatch_build.py \
+    /app/application/backend/scripts/hatch_build.py
 
-# Built UI assets
-COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
+# Built UI assets (subdirectory matches the hatch hook's expected path: ../ui/dist/)
+COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/dist
 
 # ===========================================================================
 # Stage 4: Python builder base
@@ -234,7 +240,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     CC=/usr/bin/gcc \
     CXX=/usr/bin/g++ \
     UV_NO_SYNC=1 \
-    STATIC_FILES_DIR="/app/application/ui/" \
+    STATIC_FILES_DIR="/app/application/ui/dist/" \
     STORAGE_DIR="/app/storage" \
     AUTO_MIGRATE_STORAGE_DIR="true" \
     PYTHONPATH="/app/application/backend/src:/app/application/backend"

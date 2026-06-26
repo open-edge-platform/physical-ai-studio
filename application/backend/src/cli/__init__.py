@@ -6,6 +6,7 @@ import click
 
 from cli.database import database
 from cli.models import models
+from cli.serve import serve
 
 
 @click.group()
@@ -31,3 +32,4 @@ def gen_api(target_path: str) -> None:
 
 cli.add_command(database)
 cli.add_command(models)
+cli.add_command(serve)

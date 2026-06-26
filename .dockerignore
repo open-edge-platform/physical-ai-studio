@@ -15,6 +15,11 @@
 !LICENSE
 !README.md
 
+# ---- Application-level files needed by the build ----
+# The hatch build hook reads application/README.md to transform it
+# into the backend's README for the PyPI description.
+!application/README.md
+
 # ---- Application: UI ----
 !application/ui/package.json
 !application/ui/package-lock.json
@@ -29,6 +34,7 @@
 !application/backend/README.md
 !application/backend/run.sh
 !application/backend/src/
+!application/backend/scripts/hatch_build.py
 
 # ---- Application: Trainer ----
 !application/trainer/**
