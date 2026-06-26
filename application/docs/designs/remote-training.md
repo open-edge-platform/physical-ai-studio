@@ -125,7 +125,6 @@ sequenceDiagram
 | `GET` | `/jobs/{id}/artifact` | Download the model zip.                                                                    |
 | `POST` | `/jobs/{id}/cancel`   | Cancel the job.                                                                            |
 | `GET` | `/health`             | Liveness probe.                                                                            |
-| `GET` | `/info`               | Trainer information for the UI.                                                            |
 
 ### Schemas
 

@@ -416,7 +416,7 @@ class RemoteTrainingBackend:
     async def _download_and_extract(self, context: TrainingContext, remote_job_id: str) -> None:
         """Stream the model archive and extract it into the model directory."""
         settings = get_settings()
-        tmp_archive = Path(tempfile.gettempdir()) / f"remote-model-{remote_job_id}.zip"
+        tmp_archive = Path(tempfile.gettempdir()) / f"remote-model-{uuid.uuid4().hex}.zip"
         stream_timeout = httpx.Timeout(self._timeout, read=settings.trainer_download_read_timeout_s)
         try:
             received = await self._stream_archive(remote_job_id, tmp_archive, stream_timeout)
