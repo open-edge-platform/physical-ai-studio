@@ -26,5 +26,8 @@ async def get_inference_devices(
 async def get_training_devices(
     system_service: Annotated[SystemService, Depends(get_system_service)],
 ) -> list[DeviceInfo]:
-    """Returns the list of available training devices (CPU, Intel XPU, NVIDIA CUDA, Apple MPS)."""
-    return system_service.get_training_devices()
+    """Returns the list of available training devices (CPU, Intel XPU, NVIDIA CUDA).
+
+    In remote training mode these reflect the remote trainer's hardware.
+    """
+    return await system_service.get_available_training_devices()

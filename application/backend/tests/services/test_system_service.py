@@ -105,3 +105,72 @@ def test_get_inference_devices_uses_openvino_fallback_values() -> None:
     assert devices[-1].name == "GPU.1"
     assert devices[-1].memory is None
     assert devices[-1].index == 1
+
+
+def test_get_available_training_devices_uses_local_in_local_mode() -> None:
+    import asyncio
+
+    settings = SimpleNamespace(training_mode="local")
+    local_devices = [object()]
+    with (
+        patch("settings.get_settings", return_value=settings),
+        patch(
+            "services.system_service.SystemService.get_training_devices",
+            return_value=local_devices,
+        ),
+    ):
+        result = asyncio.run(SystemService.get_available_training_devices())
+
+    assert result is local_devices
+
+
+def test_get_available_training_devices_queries_remote_in_remote_mode() -> None:
+    import asyncio
+
+    from schemas.hardware import DeviceInfo
+
+    settings = SimpleNamespace(training_mode="remote")
+    remote_devices = [DeviceInfo(type=DeviceType.CUDA, name="NVIDIA A100", memory=42949672960, index=0)]
+
+    backend = MagicMock()
+
+    async def _fake_get_training_devices():
+        return remote_devices
+
+    backend.get_training_devices.side_effect = _fake_get_training_devices
+
+    with (
+        patch("settings.get_settings", return_value=settings),
+        patch("services.training_backends.remote.RemoteTrainingBackend", return_value=backend),
+    ):
+        result = asyncio.run(SystemService.get_available_training_devices())
+
+    assert result == remote_devices
+
+
+def test_get_available_training_devices_falls_back_when_remote_unreachable() -> None:
+    import asyncio
+
+    from services.training_backends.remote import RemoteTrainingError
+
+    settings = SimpleNamespace(training_mode="remote")
+    local_devices = [object()]
+
+    backend = MagicMock()
+
+    async def _boom():
+        raise RemoteTrainingError("trainer unreachable")
+
+    backend.get_training_devices.side_effect = _boom
+
+    with (
+        patch("settings.get_settings", return_value=settings),
+        patch("services.training_backends.remote.RemoteTrainingBackend", return_value=backend),
+        patch(
+            "services.system_service.SystemService.get_training_devices",
+            return_value=local_devices,
+        ),
+    ):
+        result = asyncio.run(SystemService.get_available_training_devices())
+
+    assert result is local_devices
