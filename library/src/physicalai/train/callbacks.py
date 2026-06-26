@@ -5,6 +5,7 @@
 
 import time
 from collections.abc import Callable, Mapping
+from typing import cast
 
 import lightning as L  # noqa: N812
 from lightning.pytorch.callbacks import Callback
@@ -65,11 +66,40 @@ class ProgressReportingCallback(Callback):
             total_steps: Configured maximum number of steps.
 
         Returns:
-            Cadence: at least every 100 steps, targeting ~1000 entries overall.
+            Cadence in steps. Targets ~1000 entries for budgets up to 100k steps,
+            then caps at every 100 steps. Above 100k steps the cap dominates and
+            the total entry count grows past 1000.
         """
         if total_steps <= 0:
             return 1
         return min(100, max(1, total_steps // 1000))
+
+    @staticmethod
+    def _to_scalar(value: object) -> float | None:
+        """Coerce a metric to a float, handling tensors and plain scalars.
+
+        Args:
+            value: A 0-d tensor, a Python scalar, or None.
+
+        Returns:
+            The float value, or None when ``value`` is None.
+        """
+        if value is None:
+            return None
+        item = getattr(value, "item", None)
+        if callable(item):
+            return float(cast("float", item()))
+        return float(value)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _max_steps(trainer: L.Trainer) -> int | None:
+        """Return the configured step budget, or None when unset/disabled.
+
+        Lightning uses -1 (or any non-positive value) to signal an unbounded step
+        budget. Surface that as None so consumers do not misread it as a real
+        limit, keeping the value consistent with ``_progress`` returning 0.
+        """
+        return trainer.max_steps if trainer.max_steps > 0 else None
 
     @staticmethod
     def _extract_loss(outputs: object) -> float | None:
@@ -96,12 +126,16 @@ class ProgressReportingCallback(Callback):
 
         Returns:
             Completion percentage clamped to 0-100. Returns 0 when ``max_steps``
-            is unset (-1) or otherwise non-positive.
+            is unset (-1) or otherwise non-positive. Emits 100 only once
+            ``global_step >= max_steps`` so partial steps never round up to
+            completion.
         """
         max_steps = trainer.max_steps
         if max_steps <= 0:
             return 0
-        return min(100, round(trainer.global_step / max_steps * 100))
+        if trainer.global_step >= max_steps:
+            return 100
+        return min(99, int(trainer.global_step / max_steps * 100))
 
     def _check_stop(self, trainer: L.Trainer) -> None:
         """Stop the trainer cooperatively when cancellation was requested."""
@@ -127,7 +161,7 @@ class ProgressReportingCallback(Callback):
         # Attach the detailed cadence fields so consumers can throttle logs.
         if global_step <= 1 or global_step % self._every_n_steps == 0:
             extra["global_step"] = global_step
-            extra["max_steps"] = max(1, trainer.max_steps)
+            extra["max_steps"] = self._max_steps(trainer)
             extra["epoch"] = trainer.current_epoch
         self._report(self._progress(trainer), None, extra)
         self._check_stop(trainer)
@@ -138,7 +172,7 @@ class ProgressReportingCallback(Callback):
         self._report(
             self._progress(trainer),
             None,
-            {"val_event": "start", "global_step": trainer.global_step, "max_steps": max(1, trainer.max_steps)},
+            {"val_event": "start", "global_step": trainer.global_step, "max_steps": self._max_steps(trainer)},
         )
         self._check_stop(trainer)
 
@@ -164,7 +198,7 @@ class ProgressReportingCallback(Callback):
     def on_validation_epoch_end(self, trainer: L.Trainer, _pl_module: L.LightningModule) -> None:
         """Report the validation summary with aggregated loss and elapsed time."""
         val_loss = trainer.callback_metrics.get("val/loss")
-        val_loss_val = val_loss.item() if val_loss is not None else None
+        val_loss_val = self._to_scalar(val_loss)
         elapsed = time.monotonic() - self._val_start_t if self._val_start_t is not None else 0.0
         self._report(
             self._progress(trainer),
