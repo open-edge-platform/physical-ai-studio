@@ -1,10 +1,11 @@
 import { Grid, StatusLight } from '@adobe/react-spectrum';
-import { ActionButton, Button, Flex, Heading, Icon, Item, Menu, MenuTrigger, View } from '@geti-ui/ui';
+import { ActionButton, Button, Flex, Heading, Icon, Item, Menu, MenuTrigger, toast, View } from '@geti-ui/ui';
 import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
 import { $api } from '../../api/client';
+import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
 import RobotArm from './../../assets/robot-arm.png';
@@ -32,7 +33,20 @@ const MenuActions = ({ robot_id }: { robot_id: string }) => {
                 selectionMode='single'
                 onAction={(action) => {
                     if (action === 'delete') {
-                        deleteRobotMutation.mutate({ params: { path: { project_id, robot_id } } });
+                        deleteRobotMutation.mutate(
+                            { params: { path: { project_id, robot_id } } },
+                            {
+                                onError: (error) => {
+                                    if (isResourceInUseError(error)) {
+                                        toast.info(
+                                            getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.'
+                                        );
+                                        return;
+                                    }
+                                    toast.negative(getApiErrorMessage(error) ?? 'Failed to delete robot.');
+                                },
+                            }
+                        );
                     }
                 }}
             >

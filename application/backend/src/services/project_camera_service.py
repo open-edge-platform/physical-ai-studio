@@ -1,8 +1,11 @@
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from db import get_async_db_session_ctx
-from exceptions import ResourceNotFoundError, ResourceType
+from exceptions import ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories.project_camera_repo import ProjectCameraRepository
+from repositories.project_environment_repo import ProjectEnvironmentRepository
 from schemas.project_camera import Camera
 
 
@@ -50,4 +53,19 @@ class ProjectCameraService:
             if camera is None:
                 raise ResourceNotFoundError(ResourceType.CAMERA, str(camera_id))
 
-            await repo.delete_by_id(camera_id)
+            try:
+                await repo.delete_by_id(camera_id)
+            except IntegrityError as e:
+                await session.rollback()  # clear the failed transaction before reusing the session
+                env_repo = ProjectEnvironmentRepository(session, project_id)
+                environment_names = await env_repo.find_environment_names_using_camera(camera_id)
+                if environment_names:
+                    raise ResourceInUseError(
+                        ResourceType.CAMERA,
+                        str(camera_id),
+                        message=(
+                            f"Camera '{camera.name}' cannot be deleted because it is used in environment(s): "
+                            f"{', '.join(environment_names)}. Remove it from those environments first."
+                        ),
+                    ) from e
+                raise
