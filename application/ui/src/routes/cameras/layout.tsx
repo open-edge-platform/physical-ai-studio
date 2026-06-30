@@ -52,9 +52,7 @@ const MenuActions = ({ camera_id }: { camera_id: string }) => {
                             {
                                 onError: (error) => {
                                     if (isRecordingLockedError(error)) {
-                                        toast.negative(
-                                            'Cannot delete camera while a recording session is active.'
-                                        );
+                                        toast.negative('Cannot delete camera while a recording session is active.');
                                         return;
                                     }
                                     if (isResourceInUseError(error)) {

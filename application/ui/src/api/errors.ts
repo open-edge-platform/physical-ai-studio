@@ -22,7 +22,7 @@ export const isResourceInUseError = (error: unknown): boolean =>
     error !== null &&
     'error_code' in error &&
     typeof (error as Record<string, unknown>).error_code === 'string' &&
-    ((error as Record<string, string>).error_code).toLowerCase().endsWith('_in_use');
+    (error as Record<string, string>).error_code.toLowerCase().endsWith('_in_use');
 
 interface ApiErrorBody {
     error_code?: string;
