@@ -1,4 +1,5 @@
 from uuid import UUID
+
 from sqlalchemy.exc import IntegrityError
 
 from db import get_async_db_session_ctx
@@ -73,7 +74,7 @@ class RobotService:
             try:
                 await repo.delete_by_id(robot_id)
             except IntegrityError as e:
-                session.rollback() # just in case the session is in a bad state after the IntegrityError
+                await session.rollback()  # just in case the session is in a bad state after the IntegrityError
                 env_repo = ProjectEnvironmentRepository(session, project_id)
                 environment_names = await env_repo.find_environment_names_using_robot(robot_id)
                 if environment_names:
