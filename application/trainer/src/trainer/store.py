@@ -34,18 +34,16 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 """
 
-# Fixed allowlist of column assignments `update()` may build into its SET clause.
-# Validated against before use so the dynamic query below can never carry
-# anything beyond these hardcoded fragments, regardless of caller input.
-_ALLOWED_UPDATE_FIELDS = frozenset(
-    {
-        "status = ?",
-        "progress = ?",
-        "message = ?",
-        "extra_info = ?",
-        "artifact = ?",
-    }
-)
+# One fully static UPDATE statement per updatable column. `update()` picks
+# from this fixed mapping by column name, so no SQL text is ever assembled
+# from caller input -- only bound `?` parameter values change per call.
+_UPDATE_STATEMENTS: dict[str, str] = {
+    "status": "UPDATE jobs SET status = ? WHERE id = ?",
+    "progress": "UPDATE jobs SET progress = ? WHERE id = ?",
+    "message": "UPDATE jobs SET message = ? WHERE id = ?",
+    "extra_info": "UPDATE jobs SET extra_info = ? WHERE id = ?",
+    "artifact": "UPDATE jobs SET artifact = ? WHERE id = ?",
+}
 
 
 class JobStore:
@@ -119,36 +117,23 @@ class JobStore:
         artifact: str | None = None,
     ) -> None:
         """Apply a partial update to a job row."""
-        fields: list[str] = []
-        values: list[Any] = []
+        values: dict[str, Any] = {}
         if status is not None:
-            fields.append("status = ?")
-            values.append(status)
+            values["status"] = status
         if progress is not None:
-            fields.append("progress = ?")
-            values.append(max(0, min(100, progress)))
+            values["progress"] = max(0, min(100, progress))
         if message is not None:
-            fields.append("message = ?")
-            values.append(message)
+            values["message"] = message
         if extra_info is not None:
-            fields.append("extra_info = ?")
-            values.append(json.dumps(extra_info))
+            values["extra_info"] = json.dumps(extra_info)
         if artifact is not None:
-            fields.append("artifact = ?")
-            values.append(artifact)
-        if not fields:
+            values["artifact"] = artifact
+        if not values:
             return
-        if not all(field in _ALLOWED_UPDATE_FIELDS for field in fields):
-            raise ValueError(f"Unexpected field in job update: {fields!r}")
-        values.append(job_id)
         with self._lock:
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
-            # reason: `fields` entries are drawn from `_ALLOWED_UPDATE_FIELDS`, a
-            # frozenset of hardcoded "column = ?" fragments checked above; no
-            # caller-controlled text (column names or values) reaches the SQL
-            # string, only bound `?` placeholders populated via `values`.
-            query = f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?"  # noqa: S608
-            self._conn.execute(query, values)
+            for column, value in values.items():
+                statement = _UPDATE_STATEMENTS[column]
+                self._conn.execute(statement, (value, job_id))
             self._conn.commit()
 
     def reset_orphans(self) -> None:

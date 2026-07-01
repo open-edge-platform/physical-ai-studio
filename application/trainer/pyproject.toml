@@ -18,7 +18,7 @@ dependencies = [
   "fastapi[standard]",
   "sse-starlette>=2.0.0",
   "pydantic>=2.12,<2.13",
-  "pydantic-settings>=2.10.1",
+  "pydantic-settings>=2.14.2",
   "loguru>=0.7.3",
   "huggingface-hub>=0.27",
   # Training stack (torch resolved via the extras below).
