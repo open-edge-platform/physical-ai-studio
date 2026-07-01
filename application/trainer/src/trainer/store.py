@@ -142,6 +142,11 @@ class JobStore:
             raise ValueError(f"Unexpected field in job update: {fields!r}")
         values.append(job_id)
         with self._lock:
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+            # reason: `fields` entries are drawn from `_ALLOWED_UPDATE_FIELDS`, a
+            # frozenset of hardcoded "column = ?" fragments checked above; no
+            # caller-controlled text (column names or values) reaches the SQL
+            # string, only bound `?` placeholders populated via `values`.
             query = f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?"  # noqa: S608
             self._conn.execute(query, values)
             self._conn.commit()
