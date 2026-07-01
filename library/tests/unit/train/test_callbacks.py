@@ -94,6 +94,51 @@ class TestProgressReportingCallback:
         assert extra["val/loss"] == 0.15
         assert isinstance(extra["val_elapsed_s"], float)
 
+    def test_validation_end_handles_scalar_val_loss(self) -> None:
+        # callback_metrics may hold a plain Python scalar without ``.item()``.
+        cb, report = self._callback()
+        trainer = _trainer(global_step=500, max_steps=1000)
+        trainer.callback_metrics = {"val/loss": 0.25}
+        cb.on_validation_start(trainer, MagicMock())
+
+        cb.on_validation_epoch_end(trainer, MagicMock())
+
+        _, _, extra = report.call_args[0]
+        assert extra["val/loss"] == 0.25
+
+    def test_progress_floors_and_never_rounds_up_before_completion(self) -> None:
+        # 995/1000 must not report 100% just because it rounds up.
+        cb, report = self._callback()
+        trainer = _trainer(global_step=995, max_steps=1000)
+        cb.on_fit_start(trainer, MagicMock())
+
+        cb.on_train_batch_end(trainer, MagicMock(), {"loss": _loss(0.1)}, None, 0)
+
+        progress = report.call_args[0][0]
+        assert progress == 99
+
+    def test_progress_reports_100_only_when_complete(self) -> None:
+        cb, report = self._callback()
+        trainer = _trainer(global_step=1000, max_steps=1000)
+        cb.on_fit_start(trainer, MagicMock())
+
+        cb.on_train_batch_end(trainer, MagicMock(), {"loss": _loss(0.1)}, None, 0)
+
+        progress = report.call_args[0][0]
+        assert progress == 100
+
+    def test_unset_max_steps_emits_none_sentinel(self) -> None:
+        # Lightning uses -1 for an unbounded step budget; surface it as None.
+        cb, report = self._callback()
+        trainer = _trainer(global_step=1, max_steps=-1)
+        cb.on_fit_start(trainer, MagicMock())
+
+        cb.on_train_batch_end(trainer, MagicMock(), {"loss": _loss(0.5)}, None, 0)
+
+        progress, _, extra = report.call_args[0]
+        assert progress == 0
+        assert extra["max_steps"] is None
+
     def test_honors_should_stop(self) -> None:
         cb, _ = self._callback(should_stop=True)
         trainer = _trainer(global_step=1, max_steps=10)

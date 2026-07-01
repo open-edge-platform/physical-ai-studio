@@ -18,7 +18,7 @@ dependencies = [
   "fastapi[standard]",
   "sse-starlette>=2.0.0",
   "pydantic>=2.12,<2.13",
-  "pydantic-settings>=2.10.1",
+  "pydantic-settings>=2.14.2",
   "loguru>=0.7.3",
   "huggingface-hub>=0.27",
   # Training stack (torch resolved via the extras below).
@@ -35,7 +35,7 @@ xpu = [
   "torchvision<0.26.0",
   "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
-tests = ["pytest", "pytest-mock", "httpx"]
+tests = ["pytest>=9.0.3", "pytest-mock", "httpx"]
 
 [[tool.uv.index]]
 name = "pypi"
@@ -72,6 +72,16 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 
 [tool.uv]
 index-strategy = "unsafe-best-match"
+override-dependencies = [
+  # lerobot==0.5.1 caps diffusers at <0.36.0, 0.38.0 contains CVE-2026-44827 fix
+  # (GHSA-98h9-4798-4q5v, GHSA-7wx4-6vff-v64p trust_remote_code bypass).
+  "diffusers>=0.38.0",
+  # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint).
+  # Safe to override because executorch production code does not import
+  # pytest at runtime. pytest<9.0.3 has vulnerable tmpdir handling
+  # (GHSA-6w46-j5rx-g56g, CVE-2025-71176).
+  "pytest>=9.0.3",
+]
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }, { extra = "xpu" }]]
 
 [tool.ruff]

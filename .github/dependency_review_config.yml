@@ -34,3 +34,9 @@ allow-dependencies-licenses:
   - pkg:pypi/python-xlib
 license-check: true
 vulnerability-check: true
+allow-ghsas:
+  # GHSA-rrmf-rvhw-rf47 (CVE-2025-3000): torch.jit.script memory corruption.
+  # No patched torch release exists yet (low severity, requires local
+  # attacker-controlled TorchScript input). Re-evaluate when upstream ships
+  # a fix. See https://github.com/advisories/GHSA-rrmf-rvhw-rf47
+  - GHSA-rrmf-rvhw-rf47
