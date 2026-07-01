@@ -34,6 +34,19 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 """
 
+# Fixed allowlist of column assignments `update()` may build into its SET clause.
+# Validated against before use so the dynamic query below can never carry
+# anything beyond these hardcoded fragments, regardless of caller input.
+_ALLOWED_UPDATE_FIELDS = frozenset(
+    {
+        "status = ?",
+        "progress = ?",
+        "message = ?",
+        "extra_info = ?",
+        "artifact = ?",
+    }
+)
+
 
 class JobStore:
     """Thread-safe persistence for trainer jobs."""
@@ -125,11 +138,12 @@ class JobStore:
             values.append(artifact)
         if not fields:
             return
+        if not all(field in _ALLOWED_UPDATE_FIELDS for field in fields):
+            raise ValueError(f"Unexpected field in job update: {fields!r}")
         values.append(job_id)
         with self._lock:
-            # Column names in `fields` are hardcoded literals (never user input);
-            # all values are bound parameters, so this is not SQL injection.
-            self._conn.execute(f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?", values)  # noqa: S608
+            query = f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?"  # noqa: S608
+            self._conn.execute(query, values)
             self._conn.commit()
 
     def reset_orphans(self) -> None:
