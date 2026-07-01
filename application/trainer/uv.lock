@@ -42,7 +42,10 @@ conflicts = [[
 ]]
 
 [manifest]
-overrides = [{ name = "diffusers", specifier = ">=0.38.0" }]
+overrides = [
+    { name = "diffusers", specifier = ">=0.38.0" },
+    { name = "pytest", specifier = ">=9.0.3" },
+]
 
 [[package]]
 name = "accelerate"
@@ -603,7 +606,7 @@ dependencies = [
     { name = "packaging" },
     { name = "pandas" },
     { name = "parameterized" },
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "pytest" },
     { name = "pytest-json-report" },
     { name = "pytest-rerunfailures" },
     { name = "pytest-xdist" },
@@ -2177,8 +2180,7 @@ cuda = [
 ]
 tests = [
     { name = "httpx" },
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-19-physical-ai-trainer-cpu' or extra == 'extra-19-physical-ai-trainer-cuda'" },
-    { name = "pytest", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-19-physical-ai-trainer-xpu' or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda')" },
+    { name = "pytest" },
     { name = "pytest-mock" },
 ]
 xpu = [
@@ -2198,7 +2200,7 @@ requires-dist = [
     { name = "physicalai-train", extras = ["pi0", "smolvla"], editable = "../../library" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
-    { name = "pytest", marker = "extra == 'tests'" },
+    { name = "pytest", marker = "extra == 'tests'", specifier = ">=9.0.3" },
     { name = "pytest-mock", marker = "extra == 'tests'" },
     { name = "pytorch-triton-xpu", marker = "(sys_platform == 'linux' and extra == 'xpu') or (sys_platform == 'win32' and extra == 'xpu')", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physical-ai-trainer", extra = "xpu" } },
     { name = "sse-starlette", specifier = ">=2.0.0" },
@@ -2824,66 +2826,14 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "8.4.2"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu') or (python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu')",
-    "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu') or (python_full_version < '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu')",
-    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform == 'emscripten' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and extra == 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and extra == 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform == 'emscripten' and extra == 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten' and extra == 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform == 'linux' and extra == 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform == 'linux' and extra == 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform == 'darwin' and extra == 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra == 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-]
-dependencies = [
-    { name = "colorama", marker = "(sys_platform == 'win32' and extra == 'extra-19-physical-ai-trainer-cpu') or (sys_platform == 'win32' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-xpu') or (extra == 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu')" },
-    { name = "iniconfig", marker = "extra == 'extra-19-physical-ai-trainer-cpu' or extra == 'extra-19-physical-ai-trainer-cuda'" },
-    { name = "packaging", marker = "extra == 'extra-19-physical-ai-trainer-cpu' or extra == 'extra-19-physical-ai-trainer-cuda'" },
-    { name = "pluggy", marker = "extra == 'extra-19-physical-ai-trainer-cpu' or extra == 'extra-19-physical-ai-trainer-cuda'" },
-    { name = "pygments", marker = "extra == 'extra-19-physical-ai-trainer-cpu' or extra == 'extra-19-physical-ai-trainer-cuda'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01", size = 1519618, upload-time = "2025-09-04T14:34:22.711Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79", size = 365750, upload-time = "2025-09-04T14:34:20.226Z" },
-]
-
-[[package]]
-name = "pytest"
 version = "9.1.0"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version >= '3.13' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform != 'emscripten' and sys_platform != 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform == 'emscripten' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu'",
-    "(python_full_version >= '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu') or (python_full_version >= '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu')",
-    "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu') or (python_full_version < '3.13' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu')",
-    "python_full_version >= '3.13' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform == 'darwin' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform == 'darwin' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version >= '3.13' and sys_platform == 'emscripten' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-    "python_full_version < '3.13' and sys_platform == 'emscripten' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda' and extra != 'extra-19-physical-ai-trainer-xpu'",
-]
 dependencies = [
-    { name = "colorama", marker = "(sys_platform == 'win32' and extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda') or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-xpu') or (extra == 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu')" },
-    { name = "iniconfig", marker = "extra == 'extra-19-physical-ai-trainer-xpu' or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda')" },
-    { name = "packaging", marker = "extra == 'extra-19-physical-ai-trainer-xpu' or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda')" },
-    { name = "pluggy", marker = "extra == 'extra-19-physical-ai-trainer-xpu' or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda')" },
-    { name = "pygments", marker = "extra == 'extra-19-physical-ai-trainer-xpu' or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda')" },
+    { name = "colorama", marker = "sys_platform == 'win32' or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-xpu') or (extra == 'extra-19-physical-ai-trainer-cuda' and extra == 'extra-19-physical-ai-trainer-xpu')" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+    { name = "pygments" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/84/0e/b5858858d74958632c49b72cb25a3976ff9f632397626715be71c89d3971/pytest-9.1.0.tar.gz", hash = "sha256:41dd9148c08072446394cefd3d79701701335a9f4cae69ba92e39f6c7f5c061c", size = 1634181, upload-time = "2026-06-13T18:52:45.983Z" }
 wheels = [
@@ -2895,7 +2845,7 @@ name = "pytest-json-report"
 version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "pytest" },
     { name = "pytest-metadata" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/4f/d3/765dae9712fcd68d820338908c1337e077d5fdadccd5cacf95b9b0bea278/pytest-json-report-1.5.0.tar.gz", hash = "sha256:2dde3c647851a19b5f3700729e8310a6e66efb2077d674f27ddea3d34dc615de", size = 21241, upload-time = "2022-03-15T21:03:10.2Z" }
@@ -2908,7 +2858,7 @@ name = "pytest-metadata"
 version = "3.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "pytest" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a6/85/8c969f8bec4e559f8f2b958a15229a35495f5b4ce499f6b865eac54b878d/pytest_metadata-3.1.1.tar.gz", hash = "sha256:d2a29b0355fbc03f168aa96d41ff88b1a3b44a3b02acbe491801c98a048017c8", size = 9952, upload-time = "2024-02-12T19:38:44.887Z" }
 wheels = [
@@ -2920,8 +2870,7 @@ name = "pytest-mock"
 version = "3.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-19-physical-ai-trainer-cpu' or extra == 'extra-19-physical-ai-trainer-cuda'" },
-    { name = "pytest", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-19-physical-ai-trainer-xpu' or (extra == 'extra-19-physical-ai-trainer-cpu' and extra == 'extra-19-physical-ai-trainer-cuda') or (extra != 'extra-19-physical-ai-trainer-cpu' and extra != 'extra-19-physical-ai-trainer-cuda')" },
+    { name = "pytest" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/68/14/eb014d26be205d38ad5ad20d9a80f7d201472e08167f0bb4361e251084a9/pytest_mock-3.15.1.tar.gz", hash = "sha256:1849a238f6f396da19762269de72cb1814ab44416fa73a8686deac10b0d87a0f", size = 34036, upload-time = "2025-09-16T16:37:27.081Z" }
 wheels = [
@@ -2934,7 +2883,7 @@ version = "15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "pytest" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a0/78/e6e358545537a8e82c4dc91e72ec0d6f80546a3786dd27c76b06ca09db77/pytest_rerunfailures-15.1.tar.gz", hash = "sha256:c6040368abd7b8138c5b67288be17d6e5611b7368755ce0465dda0362c8ece80", size = 26981, upload-time = "2025-05-08T06:36:33.483Z" }
 wheels = [
@@ -2947,7 +2896,7 @@ version = "3.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "execnet" },
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" } },
+    { name = "pytest" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/78/b4/439b179d1ff526791eb921115fca8e44e596a13efeda518b9d845a619450/pytest_xdist-3.8.0.tar.gz", hash = "sha256:7e578125ec9bc6050861aa93f2d59f1d8d085595d6551c2c90b6f4fad8d3a9f1", size = 88069, upload-time = "2025-07-01T13:30:59.346Z" }
 wheels = [
