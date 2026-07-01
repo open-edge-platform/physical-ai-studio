@@ -81,7 +81,7 @@ class JobStore:
         """Return the oldest queued job id, if any."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT id FROM jobs WHERE status = ? ORDER BY created_at ASC LIMIT 1",
+                "SELECT id FROM jobs WHERE status = ? ORDER BY created_at ASC, rowid ASC LIMIT 1",
                 (TrainerJobStatus.QUEUED,),
             ).fetchone()
         return row["id"] if row else None
