@@ -76,7 +76,8 @@ def test_run_job_honors_cancellation(manager, sample_request: SubmitJobRequest, 
 
 
 def test_run_job_canceled_error_marks_canceled_without_failure(
-    manager, sample_request: SubmitJobRequest,
+    manager,
+    sample_request: SubmitJobRequest,
 ) -> None:
     """A JobCanceledError from the runner ends the job CANCELED, not FAILED."""
     from trainer.runner import JobCanceledError
