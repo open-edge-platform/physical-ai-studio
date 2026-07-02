@@ -32,6 +32,7 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
+            api.github.com:443
             azure.archive.ubuntu.com:80
             centralus.data.mcr.microsoft.com:443
             dl.google.com:443
