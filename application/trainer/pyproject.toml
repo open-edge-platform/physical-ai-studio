@@ -72,6 +72,8 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 
 [tool.uv]
 index-strategy = "unsafe-best-match"
+exclude-newer = "7 days"
+exclude-newer-package = { physicalai = false }
 override-dependencies = [
   # lerobot==0.5.1 caps diffusers at <0.36.0, 0.38.0 contains CVE-2026-44827 fix
   # (GHSA-98h9-4798-4q5v, GHSA-7wx4-6vff-v64p trust_remote_code bypass).

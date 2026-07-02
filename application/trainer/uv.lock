@@ -41,6 +41,10 @@ conflicts = [[
     { package = "physical-ai-trainer", extra = "xpu" },
 ]]
 
+[options]
+exclude-newer = "2026-06-25T12:17:53.908271Z"
+exclude-newer-span = "P7D"
+
 [manifest]
 overrides = [
     { name = "diffusers", specifier = ">=0.38.0" },
