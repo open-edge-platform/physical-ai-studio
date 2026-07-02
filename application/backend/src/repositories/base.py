@@ -141,7 +141,7 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
 
         to_update = item.model_copy(update=partial_update, deep=True)
         # Re-validate to convert dicts back to their proper model types
-        to_update = item.__class__.model_validate(to_update.model_dump())
+        to_update: ModelType = item.__class__.model_validate(to_update.model_dump())
         schema_item = self.to_schema(to_update)
 
         if hasattr(schema_item, "project_id"):
