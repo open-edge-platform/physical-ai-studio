@@ -23,11 +23,11 @@ const EmptyPreview = () => {
 };
 
 export const Preview = () => {
-    const form = useRobotForm();
+    const { activeType } = useRobotForm();
 
     return (
         <View backgroundColor={'gray-200'} height={'100%'}>
-            {form.type !== null ? <RobotViewer robot={form} /> : <EmptyPreview />}
+            {activeType != null ? <RobotViewer robot={{ type: activeType }} /> : <EmptyPreview />}
         </View>
     );
 };

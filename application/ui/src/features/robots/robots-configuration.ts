@@ -1,3 +1,4 @@
+import { fetchClient } from '../../api/client';
 import { SchemaRobot, SchemaRobotType } from './robot-types';
 
 export const isFollower = (robot: SchemaRobot) => {
@@ -18,14 +19,9 @@ export const isLeader = (robot: SchemaRobot) => {
 
 /** Resolve a `SchemaRobotType` to its URDF asset path. */
 export const urdfPathForType = (robotType: SchemaRobotType): string => {
-    if (robotType === 'Trossen_Bimanual_WidowXAI_Follower' || robotType === 'Trossen_Bimanual_WidowXAI_Leader') {
-        return '/widowx/urdf/generated/stationary_ai.urdf';
-    }
-
-    if (robotType !== undefined && robotType.toLowerCase().includes('trossen')) {
-        return '/widowx/urdf/generated/wxai/wxai_follower.urdf';
-    }
-    return '/SO101/so101_new_calib.urdf';
+    return fetchClient.PATH('/api/robots/catalog/{robot_type}/urdf', {
+        params: { path: { robot_type: robotType } },
+    });
 };
 
 const SO101_TO_URDF = {

@@ -22,6 +22,8 @@ from loguru import logger
 from trainer.settings import get_settings
 
 if TYPE_CHECKING:
+    from lightning.pytorch import LightningModule
+
     from trainer.schemas import SubmitJobRequest
 
 # Only safe dataset formats are pulled from the snapshot repo.
@@ -155,7 +157,7 @@ class TrainerRunner:
                 logger.exception(exc)
 
     @staticmethod
-    def _setup_policy(policy_name: str, *, compile_model: bool) -> object:
+    def _setup_policy(policy_name: str, *, compile_model: bool) -> LightningModule:
         from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
 
         if policy_name == "act":
@@ -184,7 +186,7 @@ class TrainerRunner:
         archives_dir = get_settings().archives_dir
         archives_dir.mkdir(parents=True, exist_ok=True)
         archive_path = archives_dir / f"{job_id}.zip"
-        with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
+        with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
             for path in model_dir.rglob("*"):
                 if path.is_file():
                     archive.write(path, arcname=path.relative_to(model_dir))

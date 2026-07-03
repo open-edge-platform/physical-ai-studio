@@ -163,10 +163,13 @@ class EnvironmentRobotDB(Base):
     environment_id: Mapped[str] = mapped_column(
         ForeignKey("project_environments.id", ondelete="CASCADE"), primary_key=True
     )
-    robot_id: Mapped[str] = mapped_column(ForeignKey("project_robots.id", ondelete="CASCADE"), primary_key=True)
+    # NO ACTION (not CASCADE): a robot in use by an environment cannot be deleted. The check is
+    # deferred to end-of-statement so project deletion (which cascades both environments and robots
+    # in one statement) still succeeds.
+    robot_id: Mapped[str] = mapped_column(ForeignKey("project_robots.id", ondelete="NO ACTION"), primary_key=True)
     tele_operator_type: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
     tele_operator_robot_id: Mapped[str | None] = mapped_column(
-        ForeignKey("project_robots.id", ondelete="CASCADE"), nullable=True
+        ForeignKey("project_robots.id", ondelete="NO ACTION"), nullable=True
     )
 
     environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="robot_links")
@@ -184,7 +187,8 @@ class EnvironmentCameraDB(Base):
     environment_id: Mapped[str] = mapped_column(
         ForeignKey("project_environments.id", ondelete="CASCADE"), primary_key=True
     )
-    camera_id: Mapped[str] = mapped_column(ForeignKey("project_cameras.id", ondelete="CASCADE"), primary_key=True)
+    # NO ACTION (not CASCADE): a camera in use by an environment cannot be deleted. See EnvironmentRobotDB.
+    camera_id: Mapped[str] = mapped_column(ForeignKey("project_cameras.id", ondelete="NO ACTION"), primary_key=True)
 
     environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="camera_links")
     camera: Mapped["ProjectCameraDB"] = relationship("ProjectCameraDB", lazy="selectin")

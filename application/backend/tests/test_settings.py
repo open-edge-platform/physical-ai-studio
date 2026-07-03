@@ -79,3 +79,24 @@ def test_remote_training_accepts_url(monkeypatch, tmp_path: Path) -> None:
 
     assert settings.training_mode == "remote"
     assert settings.trainer_url == "https://trainer.test"
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    ["ftp://trainer.test", "trainer.test", "https://", "not a url"],
+)
+def test_trainer_url_rejects_invalid_scheme_or_host_in_remote_mode(monkeypatch, tmp_path: Path, bad_url: str) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _clear_trainer_env(monkeypatch)
+
+    with pytest.raises(ValidationError, match="TRAINER_URL"):
+        Settings(TRAINING_MODE="remote", TRAINER_URL=bad_url, STORAGE_DIR="~/s")
+
+
+def test_trainer_url_not_validated_in_local_mode(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    _clear_trainer_env(monkeypatch)
+
+    settings = Settings(TRAINING_MODE="local", TRAINER_URL="not a url", STORAGE_DIR="~/s")
+
+    assert settings.trainer_url == "not a url"

@@ -8,8 +8,8 @@ from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAda
 from robots.robot_client import RobotClient
 from schemas.calibration import Calibration
 from schemas.robot import Robot, RobotType, SO101Robot, TrossenBimanualRobot
-from services.robot_calibration_service import RobotCalibrationService, find_robot_port
-from utils.serial_robot_tools import RobotConnectionManager
+from services.robot_calibration_service import RobotCalibrationService
+from utils.serial_robot_tools import RobotConnectionManager, find_so101_port, serial_port_from_so101
 
 
 class RobotClientFactory:
@@ -82,7 +82,7 @@ class RobotClientFactory:
         )
 
     async def _build_so101(self, robot: SO101Robot) -> PhysicalAIRobotAdapter:
-        port = await self._find_robot_port(robot)
+        port = await self.find_robot_port(robot)
         calibration = await self._get_robot_calibration(robot)
 
         if calibration is None:
@@ -116,11 +116,11 @@ class RobotClientFactory:
             ),
         )
 
-    async def _find_robot_port(self, robot: SO101Robot) -> str:
-        port = await find_robot_port(self.robot_manager, robot)
+    async def find_robot_port(self, robot: SO101Robot) -> str:
+        port = await find_so101_port(self.robot_manager, serial_port_from_so101(robot))
         if port is None:
-            raise ResourceNotFoundError(ResourceType.ROBOT, robot.payload.serial_number)
-
+            resource_key = robot.payload.serial_number or robot.payload.connection_string
+            raise ResourceNotFoundError(ResourceType.ROBOT, resource_key)
         return port
 
     async def _get_robot_calibration(self, robot: SO101Robot) -> Calibration | None:

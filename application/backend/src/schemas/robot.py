@@ -3,15 +3,14 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from schemas.base import BaseIDModel
 
 
 class SerialPortInfo(BaseModel):
-    connection_string: str
-    serial_number: str
-    robot_type: str
+    connection_string: str | None
+    serial_number: str | None
 
 
 class BaseRobotConfig(BaseModel):
@@ -54,7 +53,13 @@ class SO101RobotPayload(BaseModel):
         default="",
         description="Serial port path; leave empty to auto-discover via serial_number",
     )
-    serial_number: str = Field(..., description="Unique serial number for the robot")
+    serial_number: str = Field(default="", description="USB serial number of the robot (when available)")
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "SO101RobotPayload":
+        if self.connection_string == "" and self.serial_number == "":
+            raise ValueError("Either serial_number or connection_string is required for SO101 robots")
+        return self
 
 
 class TrossenSingleArmPayload(BaseModel):

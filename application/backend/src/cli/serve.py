@@ -1,11 +1,15 @@
 """Serve backend and frontend CLI commands."""
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import click
 
 from cli.database import _run_migrations
+from robots.catalog.assets import builtin_robot_assets_are_available
+from robots.catalog.sync_robot_assets import sync_robot_assets
 from settings import get_settings
 
 settings = get_settings()
@@ -32,6 +36,7 @@ def _configure_packaged_runtime() -> None:
 def serve(host: str, port: int) -> None:
     """Start the Physical AI Studio web application."""
     _configure_packaged_runtime()
+    _sync_missing_robot_assets()
     _run_migrations()
 
     import uvicorn
@@ -40,3 +45,15 @@ def serve(host: str, port: int) -> None:
 
     ensure_spawn_start_method()
     uvicorn.run("main:app", host=host, port=port)
+
+
+def _sync_missing_robot_assets() -> None:
+    if builtin_robot_assets_are_available():
+        return
+
+    click.echo("Robot assets are missing; syncing them now...")
+    try:
+        sync_robot_assets()
+    except (subprocess.CalledProcessError, OSError) as error:
+        click.echo(f"✗ Failed to sync robot assets: {error}")
+        sys.exit(1)
