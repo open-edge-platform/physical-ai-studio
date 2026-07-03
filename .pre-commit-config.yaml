@@ -6,6 +6,7 @@
 # Project-specific hooks are defined in:
 #   - library/.pre-commit-config.yaml
 #   - application/backend/.pre-commit-config.yaml
+#   - application/trainer/.pre-commit-config.yaml (kept in sync with backend)
 
 default_language_version:
   node: 22.10.0

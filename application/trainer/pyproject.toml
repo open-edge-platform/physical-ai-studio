@@ -71,6 +71,7 @@ torchvision = [
 pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 
 [tool.uv]
+default-groups = ["all"]
 index-strategy = "unsafe-best-match"
 exclude-newer = "7 days"
 exclude-newer-package = { physicalai = false }
@@ -86,6 +87,24 @@ override-dependencies = [
 ]
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }, { extra = "xpu" }]]
 
+[dependency-groups]
+dev = ["ruff~=0.11.2", "pyrefly>=0.18.0", "types-PyYAML>=6.0.12.20250915"]
+lint = [
+  "ruff~=0.11.2",
+  "mypy~=1.17",
+  "pyrefly>=0.18.0",
+  "types-PyYAML>=6.0.12.20250915",
+]
+all = [
+  "ruff~=0.11.2",
+  "mypy~=1.17",
+  "pyrefly>=0.18.0",
+  "types-PyYAML>=6.0.12.20250915",
+]
+
+# ============================================================================ #
+# RUFF CONFIGURATION                                                           #
+# ============================================================================ #
 [tool.ruff]
 extend = "../../pyproject.toml"
 preview = false
@@ -94,6 +113,20 @@ src = ["src"]
 [tool.ruff.lint.per-file-ignores]
 "*test*.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC"]
 "tests/conftest.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC"]
+
+# ============================================================================ #
+# MYPY CONFIGURATION                                                           #
+# ============================================================================ #
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+show_error_codes = true
+
+[tool.pyrefly]
+python-version = "3.13"
+search-path = ["src"]
+project-includes = ["src"]
+project-excludes = [".venv/**", "dist/**"]
 
 [tool.pytest.ini_options]
 addopts = ["--strict-markers", "--strict-config", "-ra"]

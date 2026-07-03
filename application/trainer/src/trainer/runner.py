@@ -22,6 +22,8 @@ from loguru import logger
 from trainer.settings import get_settings
 
 if TYPE_CHECKING:
+    from lightning.pytorch import LightningModule
+
     from trainer.schemas import SubmitJobRequest
 
 # Only safe dataset formats are pulled from the snapshot repo.
@@ -155,7 +157,7 @@ class TrainerRunner:
                 logger.exception(exc)
 
     @staticmethod
-    def _setup_policy(policy_name: str, *, compile_model: bool) -> object:
+    def _setup_policy(policy_name: str, *, compile_model: bool) -> LightningModule:
         from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
 
         if policy_name == "act":
