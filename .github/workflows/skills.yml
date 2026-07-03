@@ -97,7 +97,7 @@ jobs:
         with:
           severity-level: ${{ github.event_name == 'pull_request' && (inputs.severity || 'HIGH') || 'LOW' }}
           fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
-          skills-path: .github/skills
+          skills-path: skills
 
   required-check:
     name: Required Check skills
