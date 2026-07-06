@@ -4,20 +4,7 @@
 ARG PYTHON_VERSION=3.13
 
 # ===========================================================================
-# Stage 1: Clone Geti UI packages and URDF robot models
-# ===========================================================================
-FROM node:24-alpine3.22@sha256:191c9f0080fcbbc6547a85dc0ff7988072214a355aabdc1d2ec55a7dae5eea8a AS ui-packages
-
-WORKDIR /home/app/web_ui/
-RUN apk add --no-cache git
-COPY --link ./application/ui/package.json ./
-
-# Clone URDF files
-RUN npm run clone-so101
-RUN npm run clone-widowx
-
-# ===========================================================================
-# Stage 2: Build Web UI
+# Stage 1: Build Web UI
 # ===========================================================================
 FROM node:24-alpine3.22@sha256:191c9f0080fcbbc6547a85dc0ff7988072214a355aabdc1d2ec55a7dae5eea8a AS web-ui
 
@@ -25,7 +12,6 @@ WORKDIR /home/app/web_ui/
 
 COPY --link application/ui/package.json ./
 COPY --link application/ui/package-lock.json ./
-COPY --from=ui-packages /home/app/web_ui/public/ /home/app/web_ui/public/
 RUN npm ci --audit=false --ignore-scripts
 
 COPY --link application/ui/tsconfig.base.json ./
@@ -53,6 +39,7 @@ COPY --link application/README.md /app/application/README.md
 
 # Backend source, entrypoint, manifests, and build hook
 COPY --link application/backend/src /app/application/backend/src
+COPY --link application/backend/scripts /app/application/backend/scripts
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
 COPY --link application/backend/README.md /app/application/backend/README.md
@@ -71,7 +58,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/dist
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
@@ -160,7 +147,7 @@ RUN uv pip uninstall --python .venv/bin/python \
     pytest-rerunfailures \
     expecttest hypothesis sortedcontainers kgb parameterized
 
-# Remove redundant for XPU container image Triton GPU backends (NVIDIA and AMD) 
+# Remove redundant for XPU container image Triton GPU backends (NVIDIA and AMD)
 # that also contains non-redistributable files
 # Based on: https://docs.nvidia.com/cuda/eula/index.html
 RUN set -eu; \
@@ -189,13 +176,27 @@ RUN uv pip uninstall --python .venv/bin/python \
     expecttest hypothesis sortedcontainers kgb parameterized
 
 # ===========================================================================
+# Stage 4d: Robot assets builder
+#
+# Sync backend-owned robot assets once so all runtime targets can copy the
+# exact same files before the backend wheel install step.
+# ===========================================================================
+FROM builder-base AS robot-assets
+
+COPY --link --from=app-source /app/application/backend/src /app/application/backend/src
+
+RUN PYTHONPATH=/app/application/backend/src \
+    /app/application/backend/.venv/bin/python -c \
+    "from robots.catalog.sync_robot_assets import sync_robot_assets; sync_robot_assets()"
+
+# ===========================================================================
 # Stage 5: Runtime base — shared across all hardware targets
 #
 # Provides the non-root user, common runtime libraries, environment
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:c33f0bc4364a6881bed1ec0cc2665e6c53c87a43e774aaeab88e6f17af105e4f AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -213,6 +214,7 @@ RUN groupadd --gid "${APP_GID}" appuser \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ffmpeg \
+        git \
         libgl1 \
         libglib2.0-0 \
         libusb-1.0-0 \
@@ -239,6 +241,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     PYTHONFAULTHANDLER=1 \
     CC=/usr/bin/gcc \
     CXX=/usr/bin/g++ \
+    SYNC=false \
     UV_NO_SYNC=1 \
     STATIC_FILES_DIR="/app/application/ui/dist/" \
     STORAGE_DIR="/app/storage" \
@@ -264,6 +267,8 @@ ARG APP_GID=1000
 COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend
@@ -317,6 +322,8 @@ ARG APP_GID=1000
 COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend
@@ -389,6 +396,8 @@ ARG APP_GID=1000
 COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend

@@ -28,6 +28,13 @@ torch build, so ExecuTorch export is skipped on xpu installs.
 
 Set environment variables (or an `.env` file):
 
+> [!IMPORTANT]
+> The trainer service has no built-in authentication. Any machine that can reach its port can submit jobs, cancel jobs, and download trained model artifacts.
+> Deploy it on a private network reachable only by the Physical AI Studio backend IP address – never expose this port to the internet.
+
+> [!WARNING]
+> The Physical AI Studio backend inherits proxy settings (`HTTP_PROXY` / `HTTPS_PROXY`) from its host environment. When those variables are set, all trainer communication (including model artifact download) routes through the configured proxy, so whoever controls those variables controls where model artifacts flow. Only deploy the backend in a fully trusted environment where proxy variables cannot be set by other users. Do not run it on a shared or multi-tenant host.
+
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |
 | `HF_TOKEN`                   | yes      | **Read** access to the snapshot repos. The Studio backend that pushes them needs **write** access. See [token permissions](../backend/docs/huggingface_integration.md#required-token-permissions). |

@@ -1,15 +1,9 @@
 from abc import ABC
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-
-
-class CalibrationConfig(BaseModel):
-    id: str
-    path: str
-    robot_type: Literal["follower", "leader"]
 
 
 class CalibrationValue(ABC, BaseModel):

@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AnyHttpUrl, Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -128,9 +128,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_remote_training_config(self) -> "Settings":
-        """Require the trainer URL when training is offloaded."""
-        if self.training_mode == "remote" and not self.trainer_url:
+        """Require a valid http(s) trainer URL when training is offloaded."""
+        if self.training_mode != "remote":
+            return self
+        if not self.trainer_url:
             raise ValueError("TRAINING_MODE=remote requires TRAINER_URL to be set")
+        try:
+            AnyHttpUrl(self.trainer_url)
+        except ValidationError as exc:
+            raise ValueError(f"TRAINER_URL must be a valid http(s) URL with a host, got: {self.trainer_url!r}") from exc
         return self
 
     # Server

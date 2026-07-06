@@ -1,6 +1,6 @@
-import { createContext, ReactNode, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
-import { useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import * as THREE from 'three';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
@@ -49,7 +49,7 @@ type RobotModelsContextValue = null | {
      * to iterate (e.g. animations). Prefer `getModel` / `hasModel` instead.
      */
     models: ModelsMap;
-    /** @internal — used only by `useLoadModelMutation`. */
+    /** @internal — used only by `useLoadModelQuery`. */
     setModel: (path: string, model: URDFRobot) => void;
 };
 
@@ -89,57 +89,61 @@ export const useRobotModels = () => {
     return useContext(RobotModelsContext)!;
 };
 
-export const useLoadModelMutation = () => {
-    const { setModel } = useRobotModels();
+export const useLoadModelQuery = (path: string) => {
+    const { getModel, setModel } = useRobotModels();
 
-    // Track the path being loaded so onSuccess can key it correctly.
-    // We use a ref because the mutationFn arg isn't available in onSuccess
-    // when using useMutation (variables are on the mutation object, but
-    // onSuccess receives (data, variables, context)).
-    const pathRef = useRef<string>('');
+    const cachedModel = getModel(path);
+    const query = useQuery({
+        queryKey: ['robotModel', path],
+        queryFn: () => cachedModel ?? loadURDFModel(path),
+        initialData: cachedModel,
+        staleTime: Infinity,
+        gcTime: 1000 * 60 * 30,
+        enabled: path !== '' && !cachedModel,
+    });
 
-    return useMutation({
-        mutationFn: async (path: string) => {
-            pathRef.current = path;
+    useEffect(() => {
+        if (query.data && getModel(path) !== query.data) {
+            setModel(path, query.data);
+        }
+    }, [getModel, path, query.data, setModel]);
 
-            // Use a custom LoadingManager so the promise only resolves after
-            // all STL meshes have finished loading — not just after the URDF
-            // XML is parsed.  URDFLoader.load() calls onComplete as soon as
-            // parse() returns, but STL files are fetched asynchronously via
-            // the manager.  By resolving on manager.onLoad we guarantee the
-            // model's mesh children exist in the scene graph.
-            const manager = new THREE.LoadingManager();
-            const loader = new URDFLoader(manager);
+    return query;
+};
 
-            loader.packages = {
-                trossen_arm_description: '/widowx',
-            };
+const loadURDFModel = async (path: string): Promise<URDFRobot> => {
+    if (!path) {
+        throw new Error('Path is required');
+    }
 
-            return new Promise<URDFRobot>((resolve, reject) => {
-                let model: URDFRobot | null = null;
+    // Use a custom LoadingManager so the promise only resolves after all STL
+    // meshes have finished loading, not just after the URDF XML is parsed.
+    const manager = new THREE.LoadingManager();
+    const loader = new URDFLoader(manager);
 
-                manager.onLoad = () => {
-                    if (model) {
-                        resolve(model);
-                    }
-                };
-                manager.onError = (url) => {
-                    reject(new Error(`Failed to load: ${url}`));
-                };
+    loader.packages = {
+        trossen_arm_description: '/api/robots/catalog/Trossen_WidowXAI_Leader',
+    };
 
-                loader.load(
-                    path,
-                    (result) => {
-                        model = result;
-                    },
-                    undefined,
-                    reject
-                );
-            });
-        },
-        onSuccess: async (model) => {
-            setModel(pathRef.current, model);
-        },
-        meta: { skipInvalidation: true },
+    return new Promise<URDFRobot>((resolve, reject) => {
+        let model: URDFRobot | null = null;
+
+        manager.onLoad = () => {
+            if (model) {
+                resolve(model);
+            }
+        };
+        manager.onError = (url) => {
+            reject(new Error(`Failed to load: ${url}`));
+        };
+
+        loader.load(
+            path,
+            (result) => {
+                model = result;
+            },
+            undefined,
+            reject
+        );
     });
 };

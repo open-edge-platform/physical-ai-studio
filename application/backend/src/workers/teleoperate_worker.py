@@ -88,6 +88,26 @@ class TeleoperateWorker(BaseProcessWorker):
         with self._action_read_state.get_lock():
             self._action_read_state.value = value
 
+    def _align_feature_values(
+        self,
+        source_state: dict[str, float],
+        follower_state: dict[str, float] | None = None,
+    ) -> list[float]:
+        # Leader observations may not expose all follower features
+        # (e.g. follower has .vel keys while leader only publishes .pos).
+        # When a feature is missing from the source state, fall back to
+        # the follower's current state so we always have a value for
+        # every feature in the shared memory buffer.
+        values: list[float] = []
+        for key in self.features:
+            if key in source_state:
+                values.append(source_state[key])
+            elif follower_state is not None and key in follower_state:
+                values.append(follower_state[key])
+            else:
+                values.append(0.0)
+        return values
+
     async def wait_for_loading_to_complete(self) -> None:
         await asyncio.to_thread(self.loaded_event.wait)
 
@@ -99,8 +119,9 @@ class TeleoperateWorker(BaseProcessWorker):
         self.follower.connect()
 
         # Set current actions to current follower state.
+        # Features missing from follower state silently default to 0.0.
         state = (self.follower.read_state())["state"]
-        self._set_actions([state[key] for key in self.features])
+        self._set_actions(self._align_feature_values(state))
 
         self.loaded_event.set()
 
@@ -111,11 +132,12 @@ class TeleoperateWorker(BaseProcessWorker):
             while not self.should_stop():
                 async with run_at_frequency(self.frequency):
                     state = (self.follower.read_state())["state"]
-                    self._set_state([state[key] for key in self.features])
+                    self._set_state(self._align_feature_values(state))
                     if self.get_action_read_state() == ActionReadState.TELEOPERATION and self.leader is not None:
                         actions = (self.leader.read_state())["state"]
-                        self.follower.set_joints_state(actions, goal_time * 2)
-                        self._set_actions([actions[key] for key in self.features])
+                        filtered = self._align_feature_values(actions, follower_state=state)
+                        self.follower.set_joints_state(dict(zip(self.features, filtered)), goal_time * 2)
+                        self._set_actions(filtered)
                     elif self.get_action_read_state() == ActionReadState.FROM_ACTIONS:
                         raw_actions = self.get_actions()
                         actions = {i: raw_actions[k] for k, i in enumerate(self.features)}

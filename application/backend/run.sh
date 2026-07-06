@@ -28,7 +28,6 @@ set -euo pipefail
 #
 # Backend features (local/remote):
 # - Runs database migrations on every start (idempotent via Alembic).
-# - Optionally seeds the database first by setting SEED_DB=true.
 #
 # Examples:
 #   ./run.sh                                            # backend, local training (cpu)
@@ -40,7 +39,6 @@ set -euo pipefail
 # Environment variables:
 #   DEVICE                 Hardware extra to sync: cpu (default), cuda, or xpu.
 #   SYNC                   If "false", skip `uv sync` before launching. Default "true".
-#   SEED_DB                If "true", seed the database before starting (backend).
 #   TRAINING_MODE          Set automatically by the chosen command (local/remote).
 #   TRAINER_URL            Remote trainer base URL. Required for `remote`.
 #   TRAINER_HF_NAMESPACE   HF namespace for ephemeral snapshot repos (remote).
@@ -61,6 +59,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 load_env_file() {
 	local env_file="$1"
 	[[ -f "$env_file" ]] || return 0
+	# The .env may hold HF_TOKEN. Warn if group/other can read it so a shared
+	# host doesn't leak the token. stat differs across GNU (-c) and BSD/macOS (-f).
+	local perms
+	perms=$(stat -c "%a" "$env_file" 2>/dev/null || stat -f "%OLp" "$env_file" 2>/dev/null || true)
+	if [[ -n "$perms" && "${perms: -2}" != "00" ]]; then
+		echo "Warning: ${env_file} is readable by group/other (mode ${perms}); it may contain HF_TOKEN. Consider: chmod 600 ${env_file}" >&2
+	fi
 	echo "Loading environment from ${env_file}"
 	while IFS= read -r raw || [[ -n "$raw" ]]; do
 		local line="${raw#"${raw%%[![:space:]]*}"}" # left-trim
@@ -94,7 +99,6 @@ esac
 if [[ -n "${DEVICE:-}" ]]; then DEVICE_EXPLICIT=true; else DEVICE_EXPLICIT=false; fi
 DEVICE=${DEVICE:-cpu}
 SYNC=${SYNC:-true}
-SEED_DB=${SEED_DB:-false}
 UV_CMD=${UV_CMD:-uv run --no-sync}
 
 usage() {
@@ -152,13 +156,7 @@ run_backend() {
 	# Always run migrations — Alembic is idempotent and skips already-applied
 	# migrations, keeping the persistent volume's schema up to date.
 	echo "Running database migrations..."
-	$UV_CMD src/cli.py migrate
-
-	if [[ "$SEED_DB" == "true" ]]; then
-		echo "Seeding the database..."
-		$UV_CMD application/cli.py init-db
-		$UV_CMD application/cli.py seed --with-model=True
-	fi
+	$UV_CMD physicalai-studio db migrate
 
         echo "Starting FastAPI server (TRAINING_MODE=${mode})..."
         echo "$UV_CMD physicalai-studio serve"

@@ -9,9 +9,9 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
-import { SchemaRobot, SchemaRobotType } from '../robot-types';
+import { SchemaRobot } from '../robot-types';
 import { urdfPathForType } from '../robots-configuration';
-import { mapJointToURDFJoint, useLoadModelMutation, useRobotModels } from './../robot-models-context';
+import { mapJointToURDFJoint, useLoadModelQuery, useRobotModels } from './../robot-models-context';
 
 /** Material name used by the dark parts in the Trossen URDF. */
 const TROSSEN_DARK_MATERIAL = 'trossen_black';
@@ -24,7 +24,7 @@ const TROSSEN_REPLACEMENT_COLOR = new THREE.Color('#585858');
  * texture with a solid color.
  *
  * The model is guaranteed to have all its STL meshes loaded before it enters
- * React state (see `useLoadModelMutation` which resolves on
+ * React state (see `useLoadModelQuery` which resolves on
  * `LoadingManager.onLoad`), so a plain `useEffect` is sufficient here.
  *
  * Because urdf-loader uses a shared material instance for each named material,
@@ -95,21 +95,6 @@ const ActualURDFModel = ({ model, isTrossen }: { model: URDFRobot; isTrossen: bo
     );
 };
 
-const useLoadURDF = (robotType: SchemaRobotType) => {
-    const loadModelMutation = useLoadModelMutation();
-    const { hasModel } = useRobotModels();
-
-    const PATH = urdfPathForType(robotType);
-
-    useEffect(() => {
-        if (hasModel(PATH)) {
-            return;
-        }
-
-        loadModelMutation.mutate(PATH);
-    }, [PATH, hasModel, loadModelMutation]);
-};
-
 interface RobotViewerProps {
     robot: Pick<SchemaRobot, 'type'>;
     featureValues?: number[];
@@ -120,11 +105,11 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
     const isTrossen = robot.type.toLowerCase().includes('trossen');
 
     const PATH = urdfPathForType(robot.type);
-    useLoadURDF(robot.type);
+    const { data: loadedModel } = useLoadModelQuery(PATH);
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
     const { getModel } = useRobotModels();
-    const model = getModel(PATH);
+    const model = loadedModel ?? getModel(PATH);
 
     useEffect(() => {
         if (featureValues !== undefined && featureNames !== undefined && model !== undefined) {

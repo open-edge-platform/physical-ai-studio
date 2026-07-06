@@ -1,0 +1,41 @@
+name: Skills
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "skills/**"
+      - ".claude/skills/**"
+      - ".agents/skills/**"
+      - ".github/scripts/skills/**"
+      - ".github/workflows/skills.yml"
+  pull_request:
+    paths:
+      - "skills/**"
+      - ".claude/skills/**"
+      - ".agents/skills/**"
+      - ".github/scripts/skills/**"
+      - ".github/workflows/skills.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: skills-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate skills layout
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate skills and adapter symlinks
+        run: python3 .github/scripts/skills/agent_skills.py validate

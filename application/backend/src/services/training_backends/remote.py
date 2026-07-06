@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -43,6 +44,12 @@ _EVENT_WAIT_TIMEOUT_S = 3.0
 _RECONNECT_BACKOFF_S = 2.0
 _MAX_STREAM_RECONNECTS = 5
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
+
+_REMOTE_JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+# Cap the trainer-supplied telemetry blob.
+_MAX_EXTRA_INFO_BYTES = 16 * 1024
+
 
 # Job progress (0-100) is partitioned across three sub-steps. These boundaries
 # separate them and are the single place to retune how much of the bar each
@@ -262,7 +269,7 @@ class RemoteTrainingBackend:
             data = response.json()
 
         remote_job_id = data.get("remote_job_id")
-        if not isinstance(remote_job_id, str) or not remote_job_id:
+        if not isinstance(remote_job_id, str) or not _REMOTE_JOB_ID_PATTERN.fullmatch(remote_job_id):
             raise RemoteTrainingError("Trainer did not return a valid remote_job_id")
         logger.info("Remote training job submitted")
         return remote_job_id
@@ -381,7 +388,7 @@ class RemoteTrainingBackend:
         status = state.get("status")
         remote_progress = self._coerce_progress(state.get("progress"))
         raw_extra = state.get("extra_info")
-        extra_info: dict[str, Any] | None = raw_extra if isinstance(raw_extra, dict) else None
+        extra_info = self._sanitize_extra_info(raw_extra)
         context.progress(
             self._to_local_progress(remote_progress),
             message=state.get("message"),
@@ -399,6 +406,25 @@ class RemoteTrainingBackend:
                 raise TrainingCanceledError("Remote training canceled")
             raise RemoteTrainingError(f"Remote training {status}: {state.get('message')}")
         return False
+
+    @staticmethod
+    def _sanitize_extra_info(raw_extra: object) -> dict[str, Any] | None:
+        """Return the trainer's telemetry dict, or None if absent or too large.
+
+        extra_info is untrusted and persisted verbatim, so reject any blob whose
+        serialized size exceeds ``_MAX_EXTRA_INFO_BYTES`` rather than storing it.
+        """
+        if not isinstance(raw_extra, dict):
+            return None
+        try:
+            size = len(json.dumps(raw_extra).encode())
+        except (TypeError, ValueError):
+            logger.warning("Dropping non-serializable extra_info from trainer state")
+            return None
+        if size > _MAX_EXTRA_INFO_BYTES:
+            logger.warning("Dropping oversized extra_info from trainer state ({} bytes)", size)
+            return None
+        return raw_extra
 
     @staticmethod
     def _parse_state(payload: object) -> dict[str, Any]:

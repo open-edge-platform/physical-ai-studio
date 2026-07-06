@@ -34,6 +34,17 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 """
 
+# One fully static UPDATE statement per updatable column. `update()` picks
+# from this fixed mapping by column name, so no SQL text is ever assembled
+# from caller input -- only bound `?` parameter values change per call.
+_UPDATE_STATEMENTS: dict[str, str] = {
+    "status": "UPDATE jobs SET status = ? WHERE id = ?",
+    "progress": "UPDATE jobs SET progress = ? WHERE id = ?",
+    "message": "UPDATE jobs SET message = ? WHERE id = ?",
+    "extra_info": "UPDATE jobs SET extra_info = ? WHERE id = ?",
+    "artifact": "UPDATE jobs SET artifact = ? WHERE id = ?",
+}
+
 
 class JobStore:
     """Thread-safe persistence for trainer jobs."""
@@ -81,7 +92,7 @@ class JobStore:
         """Return the oldest queued job id, if any."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT id FROM jobs WHERE status = ? ORDER BY created_at ASC LIMIT 1",
+                "SELECT id FROM jobs WHERE status = ? ORDER BY created_at ASC, rowid ASC LIMIT 1",
                 (TrainerJobStatus.QUEUED,),
             ).fetchone()
         return row["id"] if row else None
@@ -106,30 +117,23 @@ class JobStore:
         artifact: str | None = None,
     ) -> None:
         """Apply a partial update to a job row."""
-        fields: list[str] = []
-        values: list[Any] = []
+        values: dict[str, Any] = {}
         if status is not None:
-            fields.append("status = ?")
-            values.append(status)
+            values["status"] = status
         if progress is not None:
-            fields.append("progress = ?")
-            values.append(max(0, min(100, progress)))
+            values["progress"] = max(0, min(100, progress))
         if message is not None:
-            fields.append("message = ?")
-            values.append(message)
+            values["message"] = message
         if extra_info is not None:
-            fields.append("extra_info = ?")
-            values.append(json.dumps(extra_info))
+            values["extra_info"] = json.dumps(extra_info)
         if artifact is not None:
-            fields.append("artifact = ?")
-            values.append(artifact)
-        if not fields:
+            values["artifact"] = artifact
+        if not values:
             return
-        values.append(job_id)
         with self._lock:
-            # Column names in `fields` are hardcoded literals (never user input);
-            # all values are bound parameters, so this is not SQL injection.
-            self._conn.execute(f"UPDATE jobs SET {', '.join(fields)} WHERE id = ?", values)  # noqa: S608
+            for column, value in values.items():
+                statement = _UPDATE_STATEMENTS[column]
+                self._conn.execute(statement, (value, job_id))
             self._conn.commit()
 
     def reset_orphans(self) -> None:

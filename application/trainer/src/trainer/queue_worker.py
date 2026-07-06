@@ -46,6 +46,7 @@ class QueueManager:
         self._stopped.set()
         if self._loop_task is not None:
             self._loop_task.cancel()
+            await asyncio.gather(self._loop_task, return_exceptions=True)
         for job_id in list(self._active):
             self._cancel_requested.add(job_id)
         await asyncio.gather(*self._active.values(), return_exceptions=True)

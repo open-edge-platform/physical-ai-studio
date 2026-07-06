@@ -156,6 +156,41 @@ class TestTeleoperateWorkerRunLoop:
         follower.set_joints_state.assert_called()
         assert worker.get_actions() == [10.0, 20.0, 30.0]
 
+    def test_falls_back_to_follower_state_when_leader_missing_features(self):
+        stop_event = mp.Event()
+        features = ["j1.pos", "j1.vel", "j2.pos"]
+        follower_state = {"j1.pos": 1.0, "j1.vel": 2.0, "j2.pos": 3.0}
+        leader_state = {"j1.pos": 10.0, "j2.pos": 30.0}  # no .vel
+
+        follower = MagicMock()
+        follower.features.return_value = features
+        call_count = 0
+
+        def read_state():
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                stop_event.set()
+            return {"state": follower_state}
+
+        follower.read_state.side_effect = read_state
+
+        leader = MagicMock()
+        leader.read_state.return_value = {"state": leader_state}
+
+        worker = _make_worker(follower=follower, leader=leader, stop_event=stop_event)
+        worker.set_action_read_state(ActionReadState.TELEOPERATION)
+        with patch("workers.teleoperate_worker.run_at_frequency", _noop_frequency):
+            asyncio.run(worker.run_loop())
+
+        # set_joints_state should receive all features, with .vel falling back to follower
+        expected_joints = {"j1.pos": 10.0, "j1.vel": 2.0, "j2.pos": 30.0}
+        follower.set_joints_state.assert_called()
+        assert follower.set_joints_state.call_args[0][0] == expected_joints
+
+        # actions should also include the fallback .vel value
+        assert worker.get_actions() == [10.0, 2.0, 30.0]
+
     def test_from_leader_ignored_when_no_leader(self):
         stop_event = mp.Event()
         follower = _make_client()

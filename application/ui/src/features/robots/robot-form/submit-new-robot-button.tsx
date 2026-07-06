@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { $api } from '../../../api/client';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
-import { useRobotFormBody } from './provider';
+import { useRobotForm, useRobotFormBody } from './provider';
 
 export const SubmitNewRobotButton = () => {
     const navigate = useNavigate();
@@ -22,6 +22,9 @@ export const SubmitNewRobotButton = () => {
 
     const body = useRobotFormBody(uuidv4());
 
+    const { activeType } = useRobotForm();
+    const isSO101 = activeType === 'SO101_Follower' || activeType === 'SO101_Leader';
+
     return (
         <Button
             variant='accent'
@@ -30,6 +33,10 @@ export const SubmitNewRobotButton = () => {
             onPress={async () => {
                 if (body === null) {
                     return;
+                }
+
+                if (isSO101) {
+                    return navigate(paths.project.robots.so101Setup({ project_id }));
                 }
 
                 await addRobotMutation.mutateAsync(
@@ -45,7 +52,7 @@ export const SubmitNewRobotButton = () => {
                 );
             }}
         >
-            Add robot
+            {isSO101 ? 'Begin setup' : 'Add robot'}
         </Button>
     );
 };

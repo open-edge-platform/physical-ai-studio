@@ -34,6 +34,7 @@
 !application/backend/README.md
 !application/backend/run.sh
 !application/backend/src/
+application/backend/src/static/robot-assets
 !application/backend/scripts/hatch_build.py
 
 # ---- Application: Trainer ----

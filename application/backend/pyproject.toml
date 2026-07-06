@@ -11,9 +11,6 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
   "physicalai[robots, capture]",
-  # Core training library (policies, export, data, transforms). Recording/remote
-  # nodes need these to drive the Models/Policies screens and OpenVINO inference;
-  # the heavy in-process VLA training weights stay behind the `train` extra below.
   "physicalai-train",
   "lerobot[feetech]==0.5.1",
   "numpy",

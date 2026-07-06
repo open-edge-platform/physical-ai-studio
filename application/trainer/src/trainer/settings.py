@@ -22,7 +22,9 @@ class TrainerSettings(BaseSettings):
     # Explicit accelerator override; auto-detected when unset.
     device: str | None = Field(default=None, alias="TRAINER_DEVICE")
 
-    host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104
+    # nosec B104 - trainer is intended to be reachable from other machines on a
+    # trusted local network.
+    host: str = Field(default="0.0.0.0", alias="HOST")  # nosec B104 # noqa: S104
     port: int = Field(default=8001, alias="PORT")
 
     @property

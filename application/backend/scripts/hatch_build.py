@@ -9,6 +9,11 @@ BRANCH = "main"
 
 _RELATIVE_URL_RE = re.compile(r"(!?)\[([^\]]*)\]\(([^)]+)\)")
 _IMG_SRC_RE = re.compile(r'(<img\s[^>]*src=")([^"]+)(")')
+_REQUIRED_ROBOT_ASSET_PATHS = (
+    Path("SO101/so101_new_calib.urdf"),
+    Path("widowx/urdf/generated/wxai/wxai_follower.urdf"),
+    Path("widowx/urdf/generated/stationary_ai.urdf"),
+)
 
 
 def _resolve_relative(url: str) -> str:
@@ -59,7 +64,33 @@ class CustomBuildHook(BuildHookInterface):
             )
             raise FileNotFoundError(msg)
 
-        build_data["force_include"] = {"../ui/dist": "webui"}
+        robot_assets_root = Path(self.root) / "src" / "static" / "robot-assets"
+        missing_assets = [
+            str(relative_path)
+            for relative_path in _REQUIRED_ROBOT_ASSET_PATHS
+            if not (robot_assets_root / relative_path).exists()
+        ]
+        if missing_assets:
+            msg = (
+                "Missing required robot assets in application/backend/src/static/robot-assets: "
+                + ", ".join(missing_assets)
+                + ". Run 'physicalai-studio sync-robot-assets' before building the package, "
+                "or run application/backend/scripts/build_package.sh."
+            )
+            raise FileNotFoundError(msg)
+
+        force_include = {
+            "../ui/dist": "webui",
+        }
+
+        # When building from a git checkout, Hatch respects .gitignore and would
+        # skip src/static/robot-assets by default. In Docker/CI contexts without
+        # .git metadata, these files are already discovered under src and forcing
+        # them again would create duplicate archive entries.
+        if (Path(self.root).parent.parent / ".git").exists():
+            force_include["src/static/robot-assets"] = "static/robot-assets"
+
+        build_data["force_include"] = force_include
 
         app_readme = Path(self.root).parent / "README.md"
         target = Path(self.root) / "README.md"
