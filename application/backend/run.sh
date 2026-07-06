@@ -61,6 +61,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 load_env_file() {
 	local env_file="$1"
 	[[ -f "$env_file" ]] || return 0
+	# The .env may hold HF_TOKEN. Warn if group/other can read it so a shared
+	# host doesn't leak the token. stat differs across GNU (-c) and BSD/macOS (-f).
+	local perms
+	perms=$(stat -c "%a" "$env_file" 2>/dev/null || stat -f "%OLp" "$env_file" 2>/dev/null || true)
+	if [[ -n "$perms" && "${perms: -2}" != "00" ]]; then
+		echo "Warning: ${env_file} is readable by group/other (mode ${perms}); it may contain HF_TOKEN. Consider: chmod 600 ${env_file}" >&2
+	fi
 	echo "Loading environment from ${env_file}"
 	while IFS= read -r raw || [[ -n "$raw" ]]; do
 		local line="${raw#"${raw%%[![:space:]]*}"}" # left-trim
