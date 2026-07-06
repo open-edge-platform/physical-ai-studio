@@ -1,0 +1,121 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Tests for the trainer's HTTP dataset-upload endpoint."""
+
+from __future__ import annotations
+
+import io
+import zipfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from trainer import api as api_module
+from trainer.schemas import DatasetTransfer, JobState, TrainerJobStatus
+
+
+def _zip_bytes(entries: dict[str, bytes]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        for name, data in entries.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+class _FakeStore:
+    def __init__(self, state: JobState | None, *, transfer: DatasetTransfer) -> None:
+        self._state = state
+        self._transfer = transfer
+        self.ready_called = False
+
+    def get(self, job_id: str) -> JobState | None:
+        return self._state
+
+    def get_request(self, job_id: str):
+        return SimpleNamespace(dataset_transfer=self._transfer)
+
+    def mark_dataset_ready(self, job_id: str) -> None:
+        self.ready_called = True
+        if self._state is not None:
+            self._state = self._state.model_copy(update={"status": TrainerJobStatus.QUEUED})
+
+
+@pytest.fixture
+def client(tmp_path: Path, monkeypatch) -> tuple[TestClient, _FakeStore]:
+    settings = MagicMock()
+    settings.datasets_dir = tmp_path / "datasets"
+    settings.max_uncompressed_bytes = 100 * 1024 * 1024
+    settings.min_free_bytes = 0
+    monkeypatch.setattr(api_module, "get_settings", lambda: settings)
+
+    state = JobState(remote_job_id="job-1", status=TrainerJobStatus.AWAITING_DATASET)
+    store = _FakeStore(state, transfer=DatasetTransfer.HTTP)
+
+    app = FastAPI()
+    app.include_router(api_module.router)
+    app.state.queue_manager = SimpleNamespace(store=store)
+    return TestClient(app), store
+
+
+_ZIP_HEADERS = {"Content-Type": "application/zip"}
+
+
+def test_upload_extracts_and_queues_job(client) -> None:
+    test_client, store = client
+    payload = _zip_bytes({"meta/info.json": b"{}"})
+
+    response = test_client.put("/jobs/job-1/dataset", content=payload, headers=_ZIP_HEADERS)
+
+    assert response.status_code == 202
+    assert store.ready_called is True
+    assert response.json()["status"] == TrainerJobStatus.QUEUED
+
+
+def test_upload_rejects_non_zip_content_type(client) -> None:
+    test_client, _ = client
+
+    response = test_client.put(
+        "/jobs/job-1/dataset",
+        content=b"not a zip",
+        headers={"Content-Type": "text/plain"},
+    )
+
+    assert response.status_code == 415
+
+
+def test_upload_rejects_unsafe_zip(client) -> None:
+    test_client, store = client
+    payload = _zip_bytes({"../escape.txt": b"x"})
+
+    response = test_client.put("/jobs/job-1/dataset", content=payload, headers=_ZIP_HEADERS)
+
+    assert response.status_code == 400
+    assert store.ready_called is False
+
+
+def test_upload_conflicts_when_not_awaiting_dataset(tmp_path: Path, monkeypatch) -> None:
+    settings = MagicMock()
+    settings.datasets_dir = tmp_path / "datasets"
+    settings.max_uncompressed_bytes = 100 * 1024 * 1024
+    settings.min_free_bytes = 0
+    monkeypatch.setattr(api_module, "get_settings", lambda: settings)
+
+    state = JobState(remote_job_id="job-1", status=TrainerJobStatus.RUNNING)
+    store = _FakeStore(state, transfer=DatasetTransfer.HTTP)
+
+    app = FastAPI()
+    app.include_router(api_module.router)
+    app.state.queue_manager = SimpleNamespace(store=store)
+
+    response = TestClient(app).put(
+        "/jobs/job-1/dataset",
+        content=_zip_bytes({"a": b"b"}),
+        headers=_ZIP_HEADERS,
+    )
+
+    assert response.status_code == 409

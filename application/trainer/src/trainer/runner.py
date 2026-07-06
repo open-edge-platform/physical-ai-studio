@@ -47,19 +47,46 @@ class TrainerRunner:
     def run(self, job_id: str, request: SubmitJobRequest, *, should_stop: StopFn, report: ProgressFn) -> Path:
         """Execute training and return the path to the model archive."""
         settings = get_settings()
-        snapshot_dir = self._pull_snapshot(request, report)
+        snapshot_dir = self._resolve_snapshot(job_id, request, report)
 
         model_dir = settings.models_dir / job_id
         cache_dir = settings.storage_dir / "cache" / job_id
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        self._train(request, snapshot_dir, model_dir, cache_dir, should_stop=should_stop, report=report)
+        try:
+            self._train(request, snapshot_dir, model_dir, cache_dir, should_stop=should_stop, report=report)
+        finally:
+            self._cleanup_uploaded_dataset(job_id, request)
 
         report(100, "Archiving model", None)
         return self._archive_model(job_id, model_dir)
 
+    def _resolve_snapshot(self, job_id: str, request: SubmitJobRequest, report: ProgressFn) -> Path:
+        """Return the local snapshot dir, either uploaded over HTTP or pulled from HF."""
+        from trainer.schemas import DatasetTransfer
+
+        if request.dataset_transfer == DatasetTransfer.HTTP:
+            report(0, "Dataset ready", None)
+            return get_settings().datasets_dir / job_id
+        return self._pull_snapshot(request, report)
+
+    @staticmethod
+    def _cleanup_uploaded_dataset(job_id: str, request: SubmitJobRequest) -> None:
+        """Remove an HTTP-uploaded dataset once the job no longer needs it."""
+        from trainer.schemas import DatasetTransfer
+
+        if request.dataset_transfer != DatasetTransfer.HTTP:
+            return
+        dataset_dir = get_settings().datasets_dir / job_id
+        if dataset_dir.exists():
+            shutil.rmtree(dataset_dir, ignore_errors=True)
+
     def _pull_snapshot(self, request: SubmitJobRequest, report: ProgressFn) -> Path:
         from huggingface_hub import snapshot_download
+
+        if not request.repo_id or not request.revision:
+            msg = "hf transfer requires repo_id and revision"
+            raise ValueError(msg)
 
         report(0, "Pulling dataset snapshot", None)
         # Pinned revision + allowlist: never resolve HEAD, never pull executable formats.

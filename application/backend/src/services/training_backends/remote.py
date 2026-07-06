@@ -3,8 +3,9 @@
 
 """Remote training backend.
 
-Offloads training to a trainer service. The dataset snapshot is transferred via
-an ephemeral private HuggingFace dataset repo (pushed here, pulled there). The
+Offloads training to a trainer service. The dataset snapshot is transferred
+either by streaming a ZIP straight to the trainer over HTTP (default) or via an
+ephemeral private HuggingFace dataset repo (pushed here, pulled there). The
 trained model is returned over HTTP and extracted into the model directory.
 
 This module avoids importing torch/`physicalai` so it stays usable in a
@@ -28,7 +29,8 @@ from loguru import logger
 from pydantic import ValidationError
 
 from schemas.hardware import DeviceInfo
-from services.archive_safety import SafeZipArchive
+from services.archive_safety import SafeZipArchive, cleanup_staged_archive
+from services.dataset_download_service import DatasetDownloadService
 from services.training_backends._log_format import render_progress_log
 from services.training_backends.base import TrainingCanceledError
 from settings import get_settings
@@ -44,6 +46,7 @@ _EVENT_WAIT_TIMEOUT_S = 3.0
 _RECONNECT_BACKOFF_S = 2.0
 _MAX_STREAM_RECONNECTS = 5
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
+_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 
 _REMOTE_JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
@@ -74,6 +77,7 @@ class RemoteTrainingBackend:
             raise RemoteTrainingError("Remote training requires TRAINER_URL")
         self._base_url = settings.trainer_url.rstrip("/")
         self._namespace = settings.trainer_hf_namespace
+        self._dataset_transfer = settings.trainer_dataset_transfer
         self._timeout = settings.trainer_request_timeout_s
         # Token from env only; never logged.
         self._hf_token = os.environ.get("HF_TOKEN")
@@ -145,7 +149,39 @@ class RemoteTrainingBackend:
             raise RemoteTrainingError(f"Trainer returned malformed device info: {exc}") from exc
 
     async def train(self, context: TrainingContext) -> None:
-        """Push snapshot, submit job, mirror progress, and ingest the model."""
+        """Deliver the snapshot, submit the job, mirror progress, ingest the model."""
+        if self._dataset_transfer == "hf":
+            await self._train_via_hf(context)
+        else:
+            await self._train_via_http(context)
+
+    async def _train_via_http(self, context: TrainingContext) -> None:
+        """Stream the snapshot ZIP to the trainer, then run and ingest the job."""
+        archive_path: Path | None = None
+        try:
+            # Sub-step 1: zip the snapshot and stream it to the trainer (0-10%).
+            context.progress(0, message="Preparing dataset snapshot")
+            archive = await asyncio.to_thread(
+                DatasetDownloadService().create_dataset_archive, Path(context.snapshot.path)
+            )
+            archive_path = archive
+            remote_job_id = await self._submit_job(context, dataset_transfer="http")
+            await self._upload_snapshot_http(context, remote_job_id, archive)
+            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Snapshot uploaded")
+
+            # Sub-step 2: wait for the remote job (10-95%).
+            await self._wait_for_completion(context, remote_job_id)
+
+            # Sub-step 3: download and extract the trained model (95-100%).
+            context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
+            await self._download_and_extract(context, remote_job_id)
+            context.progress(100, message="Model downloaded")
+        finally:
+            if archive_path is not None:
+                cleanup_staged_archive(archive_path)
+
+    async def _train_via_hf(self, context: TrainingContext) -> None:
+        """Push snapshot to an ephemeral HF repo, submit job, mirror progress, ingest the model."""
         repo_id: str | None = None
         try:
             # Sub-step 1: push the snapshot to an ephemeral private dataset repo (0-10%).
@@ -154,7 +190,7 @@ class RemoteTrainingBackend:
             context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Snapshot uploaded")
 
             # Sub-step 2: submit and wait for the remote job (10-95%).
-            remote_job_id = await self._submit_job(context, repo_id=repo_id, revision=revision)
+            remote_job_id = await self._submit_job(context, dataset_transfer="hf", repo_id=repo_id, revision=revision)
             await self._wait_for_completion(context, remote_job_id)
 
             # Sub-step 3: download and extract the trained model (95-100%).
@@ -164,6 +200,39 @@ class RemoteTrainingBackend:
         finally:
             if repo_id is not None:
                 await self._delete_repo(repo_id)
+
+    async def _upload_snapshot_http(self, context: TrainingContext, remote_job_id: str, archive_path: Path) -> None:
+        """Stream the snapshot ZIP to the trainer, mirroring bytes into the 0-10% window."""
+        total = archive_path.stat().st_size
+        report = context.progress
+        to_percent = self._upload_progress
+
+        def _read_chunks() -> Iterator[bytes]:
+            sent = 0
+            last_percent = -1
+            with archive_path.open("rb") as fobj:
+                while chunk := fobj.read(_UPLOAD_CHUNK_SIZE):
+                    sent += len(chunk)
+                    percent = to_percent(sent, total)
+                    if percent != last_percent:
+                        last_percent = percent
+                        report(percent, message="Uploading dataset snapshot")
+                    yield chunk
+
+        settings = get_settings()
+        # A large upload must not trip the short request timeout; guard stalls with a per-write gap.
+        stream_timeout = httpx.Timeout(self._timeout, write=settings.trainer_download_read_timeout_s)
+        # Streaming a generator body uses chunked transfer encoding; do not set Content-Length.
+        headers = {"Content-Type": "application/zip"}
+        client = await self._client(stream_timeout)
+        async with client:
+            response = await client.put(
+                f"{self._base_url}/jobs/{remote_job_id}/dataset",
+                content=_read_chunks(),
+                headers=headers,
+            )
+            response.raise_for_status()
+        logger.info("Snapshot uploaded to trainer ({} bytes)", total)
 
     async def _push_snapshot(self, context: TrainingContext) -> tuple[str, str]:
         """Create an ephemeral private dataset repo and upload the snapshot.
@@ -255,14 +324,24 @@ class RemoteTrainingBackend:
             round(uploaded_bytes / total_bytes * SNAPSHOT_UPLOAD_PROGRESS),
         )
 
-    async def _submit_job(self, context: TrainingContext, *, repo_id: str, revision: str) -> str:
+    async def _submit_job(
+        self,
+        context: TrainingContext,
+        *,
+        dataset_transfer: str,
+        repo_id: str | None = None,
+        revision: str | None = None,
+    ) -> str:
         """Submit the training job and return the remote job id."""
-        body = {
+        body: dict[str, Any] = {
             "payload": context.payload.model_dump(mode="json"),
-            "repo_id": repo_id,
-            "revision": revision,
             "policy": context.model.policy,
+            "dataset_transfer": dataset_transfer,
         }
+        if repo_id is not None:
+            body["repo_id"] = repo_id
+        if revision is not None:
+            body["revision"] = revision
         async with await self._client() as client:
             response = await client.post(f"{self._base_url}/jobs", json=body)
             response.raise_for_status()

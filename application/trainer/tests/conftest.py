@@ -19,11 +19,22 @@ _SHA = "a" * 40
 
 @pytest.fixture
 def sample_request() -> SubmitJobRequest:
-    """A valid job submission request."""
+    """A valid hf-transfer job submission request."""
     return SubmitJobRequest(
         payload={"max_steps": 100, "batch_size": 8, "precision": "bf16-mixed"},
+        dataset_transfer="hf",
         repo_id="acme/pais-snapshot-deadbeef",
         revision=_SHA,
+        policy="act",
+    )
+
+
+@pytest.fixture
+def http_request() -> SubmitJobRequest:
+    """A valid http-transfer job submission request (no HF repo)."""
+    return SubmitJobRequest(
+        payload={"max_steps": 100, "batch_size": 8, "precision": "bf16-mixed"},
+        dataset_transfer="http",
         policy="act",
     )
 

@@ -99,6 +99,7 @@ class _Controller:
         self.artifact_chunks = [b"zip-bytes"]
         self.artifact_headers: dict = {}
         self.posted_urls: list[str] = []
+        self.put_urls: list[str] = []
         self.cancelled = False
         self.event_stream_opens = 0
         # Payload served by GET /devices; tests override as needed.
@@ -131,6 +132,17 @@ class _FakeClient:
             return _FakeResponse(json_data={})
         return _FakeResponse(json_data={"remote_job_id": self._c.remote_job_id})
 
+    async def put(self, url: str, content: object = None, headers: dict | None = None) -> _FakeResponse:
+        self._c.put_urls.append(url)
+        # Drain the streamed upload body so the client-side progress generator runs.
+        if hasattr(content, "__aiter__"):
+            async for _ in content:  # type: ignore[union-attr]
+                pass
+        elif hasattr(content, "__iter__"):
+            for _ in content:  # type: ignore[union-attr]
+                pass
+        return _FakeResponse(json_data={})
+
     async def get(self, url: str) -> _FakeResponse:
         # /health is the proxy probe; /devices reports trainer hardware; job state arrives via SSE.
         if url.endswith("/devices"):
@@ -152,6 +164,8 @@ def _settings() -> MagicMock:
     settings = MagicMock()
     settings.trainer_url = "https://trainer.test"
     settings.trainer_hf_namespace = "acme"
+    # Existing tests exercise the HF push/pull path; http tests override this.
+    settings.trainer_dataset_transfer = "hf"
     settings.trainer_request_timeout_s = 5.0
     settings.trainer_download_read_timeout_s = 120.0
     settings.data_import_max_uncompressed_bytes = 10 * 1024 * 1024
@@ -427,6 +441,72 @@ class TestRemoteTrainingBackend:
             from services.training_backends.remote import RemoteTrainingBackend
 
             RemoteTrainingBackend()
+
+
+class TestHttpDatasetTransfer:
+    """HTTP transfer submits first, streams the ZIP, then runs the job (no HF repo)."""
+
+    @pytest.mark.anyio
+    async def test_uploads_zip_over_http_and_skips_hf(self, tmp_path):
+        settings = _settings()
+        settings.trainer_dataset_transfer = "http"
+        # A file in the snapshot dir gives the archive real bytes to stream.
+        context = _context(tmp_path)
+        (tmp_path / "snap" / "info.json").write_text("{}")
+        controller = _Controller(
+            states=[{"status": "completed", "progress": 100, "message": "Done"}],
+        )
+        api_cls = _hf_api_mock()
+        safe_zip = MagicMock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        # Dataset streamed to the trainer's upload endpoint; no HF repo created.
+        assert any(url.endswith(f"/jobs/{controller.remote_job_id}/dataset") for url in controller.put_urls)
+        assert any(url.endswith("/jobs") for url in controller.posted_urls)
+        api_cls.return_value.create_repo.assert_not_called()
+        api_cls.return_value.upload_folder.assert_not_called()
+        api_cls.return_value.delete_repo.assert_not_called()
+
+        # Model still ingested via the shared download/extract path.
+        safe_zip.validate.assert_called_once()
+        safe_zip.extract_to.assert_called_once()
+        reported = [call.args[0] for call in context.progress.call_args_list]
+        assert max(reported) == 100
+
+    @pytest.mark.anyio
+    async def test_submit_body_omits_repo_fields_for_http(self, tmp_path):
+        settings = _settings()
+        settings.trainer_dataset_transfer = "http"
+        context = _context(tmp_path)
+        (tmp_path / "snap" / "info.json").write_text("{}")
+
+        captured: dict = {}
+
+        async def _fake_submit(_ctx, *, dataset_transfer, repo_id=None, revision=None):
+            captured.update(dataset_transfer=dataset_transfer, repo_id=repo_id, revision=revision)
+            return "rj-123"
+
+        controller = _Controller(states=[{"status": "completed", "progress": 100}])
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            with patch.object(backend, "_submit_job", _fake_submit):
+                await backend.train(context)
+
+        assert captured == {"dataset_transfer": "http", "repo_id": None, "revision": None}
 
 
 class TestSnapshotUploadProgress:

@@ -27,6 +27,17 @@ class TrainerSettings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")  # nosec B104 # noqa: S104
     port: int = Field(default=8001, alias="PORT")
 
+    # Uploaded-dataset safety bounds (http transfer). Mirror the studio backend's
+    # data-import guards so a malicious or corrupt upload cannot exhaust disk.
+    max_uncompressed_bytes: int = Field(
+        default=200 * 1024 * 1024 * 1024,
+        alias="TRAINER_MAX_UNCOMPRESSED_BYTES",
+    )
+    min_free_bytes: int = Field(
+        default=1 * 1024 * 1024 * 1024,
+        alias="TRAINER_MIN_FREE_BYTES",
+    )
+
     @property
     def db_path(self) -> Path:
         """SQLite file backing the job queue."""
@@ -36,6 +47,11 @@ class TrainerSettings(BaseSettings):
     def snapshots_dir(self) -> Path:
         """Directory holding pulled dataset snapshots."""
         return self.storage_dir / "snapshots"
+
+    @property
+    def datasets_dir(self) -> Path:
+        """Directory holding datasets uploaded over HTTP."""
+        return self.storage_dir / "datasets"
 
     @property
     def models_dir(self) -> Path:
