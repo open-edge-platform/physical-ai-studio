@@ -10,6 +10,7 @@ cd "${BACKEND_DIR}"
 
 uv sync --frozen --extra xpu
 uv run physicalai-studio gen-api --target-path openapi-spec.json
+uv run physicalai-studio sync-robot-assets
 
 cd "${UI_DIR}"
 npm ci

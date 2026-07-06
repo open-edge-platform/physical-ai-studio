@@ -1,14 +1,10 @@
 import { Suspense } from 'react';
 
-import { Button, Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
-import { useNavigate } from 'react-router';
+import { Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
 
-import { useProjectId } from '../../features/projects/use-project';
 import { RobotForm } from '../../features/robots/robot-form/form';
 import { Preview } from '../../features/robots/robot-form/preview';
-import { useRobotForm } from '../../features/robots/robot-form/provider';
 import { SubmitNewRobotButton } from '../../features/robots/robot-form/submit-new-robot-button';
-import { paths } from '../../router';
 
 const CenteredLoading = () => {
     return (
@@ -18,43 +14,12 @@ const CenteredLoading = () => {
     );
 };
 
-/**
- * Submit button that adapts to the selected robot type:
- * - SO101 types: navigates to the setup wizard (sibling route under same layout)
- * - Other types (Trossen): directly creates the robot via POST (default behavior)
- */
-const NewRobotSubmitButton = () => {
-    const { activeType, robotForm } = useRobotForm();
-    const navigate = useNavigate();
-    const { project_id } = useProjectId();
-
-    const isSO101 = activeType?.toLowerCase().startsWith('so101') ?? false;
-
-    if (!isSO101) {
-        return <SubmitNewRobotButton />;
-    }
-
-    const isDisabled = !robotForm.name || !activeType || !robotForm.serial_number;
-
-    return (
-        <Button
-            variant='accent'
-            isDisabled={isDisabled}
-            onPress={() => {
-                navigate(paths.project.robots.so101Setup({ project_id }));
-            }}
-        >
-            Begin Setup
-        </Button>
-    );
-};
-
 export const New = () => {
     return (
         <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
             <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
                 <Suspense fallback={<CenteredLoading />}>
-                    <RobotForm submitButton={<NewRobotSubmitButton />} />
+                    <RobotForm submitButton={<SubmitNewRobotButton />} />
                 </Suspense>
             </View>
             <View gridArea='controls'>

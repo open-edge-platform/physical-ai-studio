@@ -12,8 +12,6 @@ from robots.catalog.assets import builtin_robot_assets_are_available
 from robots.catalog.sync_robot_assets import sync_robot_assets
 from settings import get_settings
 
-settings = get_settings()
-
 
 def _package_root() -> Path:
     return Path(__file__).resolve().parent.parent
@@ -29,10 +27,13 @@ def _configure_packaged_runtime() -> None:
     os.environ.setdefault("ALEMBIC_CONFIG_PATH", str(package_root / "alembic.ini"))
     os.environ.setdefault("ALEMBIC_SCRIPT_LOCATION", str(package_root / "alembic"))
 
+    # Refresh cached settings so downstream DB/migration modules observe packaged paths.
+    get_settings.cache_clear()
+
 
 @click.command()
-@click.option("--host", default=settings.host, show_default=True)
-@click.option("--port", default=settings.port, show_default=True, type=int)
+@click.option("--host", default=lambda: get_settings().host, show_default=True)
+@click.option("--port", default=lambda: get_settings().port, show_default=True, type=int)
 def serve(host: str, port: int) -> None:
     """Start the Physical AI Studio web application."""
     _configure_packaged_runtime()
