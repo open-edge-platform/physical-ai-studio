@@ -28,7 +28,6 @@ set -euo pipefail
 #
 # Backend features (local/remote):
 # - Runs database migrations on every start (idempotent via Alembic).
-# - Optionally seeds the database first by setting SEED_DB=true.
 #
 # Examples:
 #   ./run.sh                                            # backend, local training (cpu)
@@ -40,7 +39,6 @@ set -euo pipefail
 # Environment variables:
 #   DEVICE                 Hardware extra to sync: cpu (default), cuda, or xpu.
 #   SYNC                   If "false", skip `uv sync` before launching. Default "true".
-#   SEED_DB                If "true", seed the database before starting (backend).
 #   TRAINING_MODE          Set automatically by the chosen command (local/remote).
 #   TRAINER_URL            Remote trainer base URL. Required for `remote`.
 #   TRAINER_HF_NAMESPACE   HF namespace for ephemeral snapshot repos (remote).
@@ -101,7 +99,6 @@ esac
 if [[ -n "${DEVICE:-}" ]]; then DEVICE_EXPLICIT=true; else DEVICE_EXPLICIT=false; fi
 DEVICE=${DEVICE:-cpu}
 SYNC=${SYNC:-true}
-SEED_DB=${SEED_DB:-false}
 UV_CMD=${UV_CMD:-uv run --no-sync}
 
 usage() {
