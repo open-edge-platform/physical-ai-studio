@@ -4,10 +4,10 @@ Canonical, repo-specific agent skills for Physical AI Studio. Skills are grouped
 
 ## Buckets
 
-| Bucket | Path | Scope |
-| ------ | ---- | ----- |
-| **Library** | [`library/`](library/) | `physicalai-train`: policies, data, CLI (`fit`, `export`, `benchmark`), configs under `library/` |
-| **Studio (application)** | [`application/`](application/) | GUI stack: `application/backend/`, `application/ui/`, `application/docker/` |
+| Bucket                   | Path                           | Scope                                                                                            |
+| ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **Library**              | [`library/`](library/)         | `physicalai-train`: policies, data, CLI (`fit`, `export`, `benchmark`), configs under `library/` |
+| **Studio (application)** | [`application/`](application/) | GUI stack: `application/backend/`, `application/ui/`, `application/docker/`                      |
 
 Each bucket has its own skill list and [`EVALUATION.md`](library/EVALUATION.md) scenarios (library today; application when skills are added).
 
@@ -52,7 +52,7 @@ These skills follow the open [Agent Skills](https://agentskills.io) format (orig
 
 - Lowercase, hyphenated, matches the directory name, regex `^[a-z0-9]+(-[a-z0-9]+)*$`.
 - Prefix with the bucket id: `library-` or `studio-` (application skills use `studio-` for the GUI/orchestration stack).
-- Prefer gerund/verb phrasing (`library-training-a-policy`, `studio-regenerating-openapi-types`).
+- Prefer gerund/verb phrasing (`physicalai-train-training-a-policy`, `studio-regenerating-openapi-types`).
 - Must not contain the reserved words `anthropic` or `claude`.
 
 ### `description` (highest-leverage field)

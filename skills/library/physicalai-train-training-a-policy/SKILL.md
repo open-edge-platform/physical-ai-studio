@@ -1,5 +1,5 @@
 ---
-name: library-training-a-policy
+name: physicalai-train-training-a-policy
 description: Trains, validates, tests, and runs prediction for Physical AI Studio policies via the library Lightning stack. Use when running physicalai fit/validate/test/predict, calling physicalai.train.Trainer and Policy APIs from Python, writing or editing YAML configs under library/configs, wiring a model + datamodule + trainer, resuming from a checkpoint, or debugging a training run. Covers ACT, Pi0, Pi0.5, GR00T, and SmolVLA.
 license: Apache-2.0
 ---
@@ -74,8 +74,8 @@ Use this path when the user asks for terminal commands, docs under `library/docs
 - API: construct `Policy`, `DataModule`, and `Trainer` directly in a short script or test to isolate whether failure is in object construction, dataloading, or CLI parsing.
 - `--trainer.fast_dev_run=true` — one batch each stage; the first thing to try on any failure.
 - `--print_config` — see the exact resolved config jsonargparse built.
-- Shape/feature mismatches usually mean the datamodule's `Feature` names or action dim disagree with the policy — cross-check against the `library-adding-a-policy` skill.
-- Dataset download stalls: the run is pulling a LeRobot `repo_id`; see the `library-working-with-datasets` skill.
+- Shape/feature mismatches usually mean the datamodule's `Feature` names or action dim disagree with the policy — cross-check against the `physicalai-train-adding-a-policy` skill.
+- Dataset download stalls: the run is pulling a LeRobot `repo_id`; see the `physicalai-train-working-with-datasets` skill.
 
 ## Required checks
 
@@ -97,6 +97,6 @@ For API-facing changes, add or run an equivalent Python smoke test (not a shell 
 
 ## Related skills
 
-- `library-adding-a-policy` — when the model itself needs changes.
-- `library-working-with-datasets` — for the `data` half of the config.
-- `library-benchmarking-a-policy` — to evaluate a trained checkpoint in a gym.
+- `physicalai-train-adding-a-policy` — when the model itself needs changes.
+- `physicalai-train-working-with-datasets` — for the `data` half of the config.
+- `physicalai-train-benchmarking-a-policy` — to evaluate a trained checkpoint in a gym.
