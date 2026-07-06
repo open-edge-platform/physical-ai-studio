@@ -241,6 +241,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     PYTHONFAULTHANDLER=1 \
     CC=/usr/bin/gcc \
     CXX=/usr/bin/g++ \
+    SYNC=false \
     UV_NO_SYNC=1 \
     STATIC_FILES_DIR="/app/application/ui/dist/" \
     STORAGE_DIR="/app/storage" \

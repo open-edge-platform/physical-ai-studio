@@ -159,13 +159,7 @@ run_backend() {
 	# Always run migrations — Alembic is idempotent and skips already-applied
 	# migrations, keeping the persistent volume's schema up to date.
 	echo "Running database migrations..."
-	$UV_CMD src/cli.py migrate
-
-	if [[ "$SEED_DB" == "true" ]]; then
-		echo "Seeding the database..."
-		$UV_CMD application/cli.py init-db
-		$UV_CMD application/cli.py seed --with-model=True
-	fi
+	$UV_CMD physicalai-studio db migrate
 
         echo "Starting FastAPI server (TRAINING_MODE=${mode})..."
         echo "$UV_CMD physicalai-studio serve"
