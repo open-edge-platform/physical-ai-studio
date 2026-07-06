@@ -6,6 +6,8 @@
 
 model:
   class_path: physicalai.policies.ACT
+  init_args:
+    optimizer_lr: 1e-5
 
 data:
   class_path: physicalai.data.lerobot.LeRobotDataModule
@@ -29,7 +31,7 @@ data:
                 - 1.3
 
 trainer:
-  max_epochs: 100
+  max_steps: 70000
   accelerator: xpu
   strategy: xpu_single
   devices: 1
