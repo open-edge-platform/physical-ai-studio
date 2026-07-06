@@ -36,7 +36,7 @@ from services.training_backends.base import TrainingCanceledError
 from settings import get_settings
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
 
     from services.training_backends.base import TrainingContext
 
@@ -207,11 +207,11 @@ class RemoteTrainingBackend:
         report = context.progress
         to_percent = self._upload_progress
 
-        def _read_chunks() -> Iterator[bytes]:
+        async def _read_chunks() -> AsyncIterator[bytes]:
             sent = 0
             last_percent = -1
             with archive_path.open("rb") as fobj:
-                while chunk := fobj.read(_UPLOAD_CHUNK_SIZE):
+                while chunk := await asyncio.to_thread(fobj.read, _UPLOAD_CHUNK_SIZE):
                     sent += len(chunk)
                     percent = to_percent(sent, total)
                     if percent != last_percent:
