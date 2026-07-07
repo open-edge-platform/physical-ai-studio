@@ -19,8 +19,6 @@ class TrainerSettings(BaseSettings):
     storage_dir: Path = Field(default=Path("~/.local/share/physicalai-trainer").expanduser(), alias="STORAGE_DIR")
     # Concurrency cap for the queue worker. Defaults to a single GPU job.
     max_concurrent_jobs: int = Field(default=1, ge=1, le=8, alias="TRAINER_MAX_CONCURRENT_JOBS")
-    # Explicit accelerator override; auto-detected when unset.
-    device: str | None = Field(default=None, alias="TRAINER_DEVICE")
 
     # nosec B104 - trainer is intended to be reachable from other machines on a
     # trusted local network.

@@ -40,7 +40,6 @@ Set environment variables (or an `.env` file):
 | `HF_TOKEN`                   | yes      | **Read** access to the snapshot repos. The Studio backend that pushes them needs **write** access. See [token permissions](../backend/docs/huggingface_integration.md#required-token-permissions). |
 | `STORAGE_DIR`                | no       | Working directory for jobs and artifacts.    |
 | `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
-| `TRAINER_DEVICE`             | no       | Force `cuda`/`xpu`/`cpu` (auto if unset).    |
 | `PORT`                       | no       | Listen port (default 8001).                  |
 
 Never commit `HF_TOKEN`. Store it in a secret manager or local `.env`.
@@ -48,19 +47,20 @@ Never commit `HF_TOKEN`. Store it in a secret manager or local `.env`.
 ## Run
 
 ```bash
-uv run --no-sync physicalai-trainer   # loads .env, runs `uv sync`, starts the service
+uv run physicalai-trainer   # loads .env, starts the service
 ```
 
-`physicalai-trainer` loads the trainer `.env`, syncs dependencies for the
-selected hardware, and starts the service. Control the hardware extra and
-dependency sync via flags or environment variables:
+`physicalai-trainer` loads the trainer `.env` and starts the service. It does
+not install dependencies itself, so run `uv sync --extra <cpu|cuda|xpu>` first
+(see [Install](#install)) to pull in the matching torch build.
+
+Override the bind address with flags:
 
 ```bash
-DEVICE=cuda physicalai-trainer          # or: physicalai-trainer --device cuda
-SYNC=false physicalai-trainer           # or: physicalai-trainer --no-sync (skip `uv sync`)
+uv run physicalai-trainer --host 0.0.0.0 --port 8001
 ```
 
-To skip the launcher and start the ASGI app directly (assumes deps are synced):
+To run the ASGI app module directly:
 
 ```bash
 uv run python -m trainer.main
