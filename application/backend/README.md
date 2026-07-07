@@ -55,11 +55,20 @@ Please check out [this document](docs/video_hardware_acceleration_intel.md) for 
 # Activate virtual environment
 source .venv/bin/activate
 
-# Run server
+# Run server (backend with in-process training; TRAINING_MODE defaults to local)
+uv run physicalai-studio serve
+
+# Equivalent thin wrapper
 ./run.sh
 ```
 
 Server starts at `http://localhost:8000`
+
+The launch flows are exposed as `physicalai-studio` subcommands: `serve`
+(in-process/local training, the default), `remote` (training offloaded to a
+trainer service), and `trainer` (the remote trainer). `remote` and `trainer`
+load the matching `.env`, run `uv sync` for the requested `DEVICE`, run
+migrations, and start the component. `run.sh` simply forwards to them.
 
 ### Database Migrations
 
