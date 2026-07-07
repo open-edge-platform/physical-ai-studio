@@ -497,7 +497,7 @@ class RemoteTrainingBackend:
             return None
         try:
             size = len(json.dumps(raw_extra).encode())
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError, OverflowError):
             logger.warning("Dropping non-serializable extra_info from trainer state")
             return None
         if size > _MAX_EXTRA_INFO_BYTES:

@@ -58,6 +58,21 @@ Never commit `HF_TOKEN`. Store it in a secret manager or local `.env`.
 ## Run
 
 ```bash
+uv run --no-sync physicalai-trainer   # loads .env, runs `uv sync`, starts the service
+```
+
+`physicalai-trainer` loads the trainer `.env`, syncs dependencies for the
+selected hardware, and starts the service. Control the hardware extra and
+dependency sync via flags or environment variables:
+
+```bash
+DEVICE=cuda physicalai-trainer          # or: physicalai-trainer --device cuda
+SYNC=false physicalai-trainer           # or: physicalai-trainer --no-sync (skip `uv sync`)
+```
+
+To skip the launcher and start the ASGI app directly (assumes deps are synced):
+
+```bash
 uv run python -m trainer.main
 ```
 
