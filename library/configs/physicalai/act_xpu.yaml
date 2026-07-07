@@ -7,7 +7,7 @@
 model:
   class_path: physicalai.policies.ACT
   init_args:
-    optimizer_lr: 1e-5
+    optimizer_lr: 1e-4
 
 data:
   class_path: physicalai.data.lerobot.LeRobotDataModule
