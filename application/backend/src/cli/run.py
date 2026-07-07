@@ -21,6 +21,31 @@ import click
 
 _VALID_DEVICES = ("cpu", "cuda", "xpu")
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Launcher executables that UV_CMD is permitted to invoke.
+_ALLOWED_LAUNCHERS = ("uv",)
+# Allowed characters for individual UV_CMD tokens (launcher flags/values only).
+_UV_CMD_TOKEN_RE = re.compile(r"^[A-Za-z0-9._/=:-]+$")
+
+
+def _resolve_launcher() -> list[str]:
+    """Parse and validate ``UV_CMD`` into a safe argv prefix.
+
+    ``UV_CMD`` is operator-controlled, so restrict it to an allowlisted launcher
+    executable and reject tokens containing shell metacharacters to prevent
+    command injection.
+    """
+    raw = os.environ.get("UV_CMD", "uv run --no-sync")
+    tokens = shlex.split(raw)
+    if not tokens:
+        raise click.ClickException("UV_CMD must not be empty.")
+    if tokens[0] not in _ALLOWED_LAUNCHERS:
+        raise click.ClickException(
+            f"UV_CMD must start with one of {', '.join(_ALLOWED_LAUNCHERS)} (got '{tokens[0]}').",
+        )
+    for token in tokens:
+        if not _UV_CMD_TOKEN_RE.match(token):
+            raise click.ClickException(f"UV_CMD contains an unsupported token: {token!r}.")
+    return tokens
 
 
 def _backend_dir() -> Path:
@@ -175,9 +200,9 @@ def trainer(device: str | None, sync: bool | None) -> None:
     os.environ["PYTHONUNBUFFERED"] = "1"
     maybe_sync(trainer_dir, resolved_device, sync=sync)
 
-    uv_cmd = shlex.split(os.environ.get("UV_CMD", "uv run --no-sync"))
+    uv_cmd = _resolve_launcher()
     argv = [*uv_cmd, "python", "-m", "trainer.main"]
     click.echo("Starting remote trainer service...")
     # Launch in the trainer project so its own venv/deps are used.
-    completed = subprocess.run(argv, cwd=trainer_dir, check=False)  # noqa: S603 - argv from trusted UV_CMD.
+    completed = subprocess.run(argv, cwd=trainer_dir, check=False)  # noqa: S603 - validated argv, no shell.
     sys.exit(completed.returncode)
