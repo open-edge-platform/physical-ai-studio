@@ -239,7 +239,10 @@ class SystemService:
         from services.training_backends.remote import RemoteTrainingBackend, RemoteTrainingError
 
         try:
-            backend = RemoteTrainingBackend()
+            backend = getattr(cls, "_remote_backend", None)
+            if backend is None:
+                backend = RemoteTrainingBackend()
+                setattr(cls, "_remote_backend", backend)
             return await backend.get_training_devices()
         except RemoteTrainingError as exc:
             logger.warning("Falling back to local training devices; remote trainer query failed: {}", exc)
