@@ -1,9 +1,9 @@
 """Launch commands for Physical AI Studio components.
 
 These commands load the matching ``.env`` file, sync dependencies for the requested
-hardware (``uv sync``), and then start the backend (``remote``) or the remote trainer
-service (``trainer``). In-process (local) training is the default and is served by
-``physicalai-studio serve``.
+hardware (``uv sync``), and then start the backend (``remote``). In-process (local)
+training is the default and is served by ``physicalai-studio serve``. The remote
+trainer service has its own launcher (``physicalai-trainer``) in the trainer project.
 
 Because these commands run ``uv sync`` for themselves, they are meant to be
 invoked through ``uv run`` (e.g. ``uv run --no-sync physicalai-studio remote``)
@@ -14,49 +14,18 @@ import os
 import re
 import shlex
 import subprocess
-import sys
 from pathlib import Path
 
 import click
 
 _VALID_DEVICES = ("cpu", "cuda", "xpu")
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-# Launcher executables that UV_CMD is permitted to invoke.
-_ALLOWED_LAUNCHERS = ("uv",)
-# Allowed characters for individual UV_CMD tokens (launcher flags/values only).
-_UV_CMD_TOKEN_RE = re.compile(r"^[A-Za-z0-9._/=:-]+$")
-
-
-def _resolve_launcher() -> list[str]:
-    """Parse and validate ``UV_CMD`` into a safe argv prefix.
-
-    ``UV_CMD`` is operator-controlled, so restrict it to an allowlisted launcher
-    executable and reject tokens containing shell metacharacters to prevent
-    command injection.
-    """
-    raw = os.environ.get("UV_CMD", "uv run --no-sync")
-    tokens = shlex.split(raw)
-    if not tokens:
-        raise click.ClickException("UV_CMD must not be empty.")
-    if tokens[0] not in _ALLOWED_LAUNCHERS:
-        raise click.ClickException(
-            f"UV_CMD must start with one of {', '.join(_ALLOWED_LAUNCHERS)} (got '{tokens[0]}').",
-        )
-    for token in tokens:
-        if not _UV_CMD_TOKEN_RE.match(token):
-            raise click.ClickException(f"UV_CMD contains an unsupported token: {token!r}.")
-    return tokens
 
 
 def _backend_dir() -> Path:
     """Return the backend project directory (contains pyproject.toml and .venv)."""
     # src/cli/run.py -> src/cli -> src -> backend
     return Path(__file__).resolve().parents[2]
-
-
-def _trainer_dir() -> Path:
-    """Return the sibling trainer project directory."""
-    return _backend_dir().parent / "trainer"
 
 
 def load_env_file(env_file: Path) -> None:
@@ -180,29 +149,3 @@ def remote(host: str | None, port: int | None, device: str | None, sync: bool | 
     resolved_host = host if host is not None else settings.host
     resolved_port = port if port is not None else settings.port
     start_server(resolved_host, resolved_port)
-
-
-@click.command()
-@_device_option
-@_sync_option
-def trainer(device: str | None, sync: bool | None) -> None:
-    """Start the remote trainer service (run this on the GPU box)."""
-    trainer_dir = _trainer_dir()
-    if not trainer_dir.is_dir():
-        raise click.ClickException(f"trainer directory not found at {trainer_dir}.")
-
-    load_env_file(trainer_dir / ".env")
-    resolved_device, _ = _resolve_device(device)
-
-    if not os.environ.get("HF_TOKEN"):
-        click.echo("Warning: HF_TOKEN is not set; the trainer cannot pull dataset snapshots.", err=True)
-
-    os.environ["PYTHONUNBUFFERED"] = "1"
-    maybe_sync(trainer_dir, resolved_device, sync=sync)
-
-    uv_cmd = _resolve_launcher()
-    argv = [*uv_cmd, "python", "-m", "trainer.main"]
-    click.echo("Starting remote trainer service...")
-    # Launch in the trainer project so its own venv/deps are used.
-    completed = subprocess.run(argv, cwd=trainer_dir, check=False)  # noqa: S603 - validated argv, no shell.
-    sys.exit(completed.returncode)

@@ -10,10 +10,12 @@ set -euo pipefail
 #
 #   serve     Backend with in-process (local) training (default).
 #   remote    Backend with training offloaded to a remote trainer service.
-#   trainer   Remote trainer service (run this on the GPU box).
+#
+# The remote trainer service is launched from the trainer project with its own
+# `physicalai-trainer` command (see application/trainer/README.md).
 #
 # Usage:
-#   ./run.sh [serve|remote|trainer]
+#   ./run.sh [serve|remote]
 # -----------------------------------------------------------------------------
 export PYTHONUNBUFFERED=1
 exec uv run --no-sync physicalai-studio "${1:-serve}" "${@:2}"

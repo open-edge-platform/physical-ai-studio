@@ -1,8 +1,18 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from schemas.hardware import DeviceType, InferenceBackend
 from services.system_service import SystemService
+
+
+@pytest.fixture(autouse=True)
+def _reset_remote_backend_cache():
+    """Ensure no cached RemoteTrainingBackend leaks between tests."""
+    SystemService._clear_remote_backend_cache()
+    yield
+    SystemService._clear_remote_backend_cache()
 
 
 def _device_props(name: str, total_memory: int) -> SimpleNamespace:
