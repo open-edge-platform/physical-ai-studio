@@ -3,25 +3,20 @@
 
 """Launch command for the Physical AI trainer service.
 
-This command loads the trainer ``.env`` file, syncs dependencies for the
-requested hardware (``uv sync``), and then starts the trainer service in-process.
-
-Because it runs ``uv sync`` for itself, it is meant to be invoked through
-``uv run`` (e.g. ``uv run --no-sync physicalai-trainer``) so that the base
-dependencies are already available.
+This command loads the trainer ``.env`` file and starts the trainer service
+in-process. Dependencies (including the hardware-specific torch build) must be
+installed beforehand with ``uv sync --extra <cpu|cuda|xpu>``, so this command is
+meant to be invoked with ``uv run physicalai-trainer``.
 """
 
 from __future__ import annotations
 
 import os
 import re
-import shlex
-import subprocess
 from pathlib import Path
 
 import click
 
-_VALID_DEVICES = ("cpu", "cuda", "xpu")
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # Minimum length for a value to possibly be wrapped in a matching pair of quotes.
 _MIN_QUOTED_LEN = 2
@@ -74,62 +69,23 @@ def load_env_file(env_file: Path) -> None:
             os.environ[key] = val
 
 
-def _resolve_device(device: str | None) -> str:
-    """Resolve the hardware extra to sync from the flag or the DEVICE env var."""
-    resolved = (device or os.environ.get("DEVICE") or "cpu").lower()
-    if resolved not in _VALID_DEVICES:
-        msg = f"DEVICE must be one of {', '.join(_VALID_DEVICES)} (got '{resolved}')."
-        raise click.ClickException(msg)
-    return resolved
-
-
-def _should_sync(sync: bool | None) -> bool:
-    """Resolve whether to run ``uv sync`` from the flag or the SYNC env var."""
-    if sync is not None:
-        return sync
-    return os.environ.get("SYNC", "true").lower() != "false"
-
-
-def maybe_sync(cwd: Path, device: str, *, sync: bool | None) -> None:
-    """Run ``uv sync`` for ``device`` in ``cwd`` unless disabled."""
-    if not _should_sync(sync):
-        click.echo("Skipping dependency sync (SYNC=false).")
-        return
-
-    args = ["uv", "sync", "--extra", device]
-    click.echo(f"Syncing dependencies: {shlex.join(args)}")
-    subprocess.run(args, cwd=cwd, check=True)  # noqa: S603 - fixed argv, no shell.
-
-
 @click.command()
-@click.option(
-    "--device",
-    type=click.Choice(_VALID_DEVICES),
-    default=None,
-    help="Hardware extra to sync (defaults to $DEVICE or cpu).",
-)
-@click.option(
-    "--sync/--no-sync",
-    "sync",
-    default=None,
-    help="Run `uv sync` before launching (defaults to $SYNC or true).",
-)
 @click.option("--host", default=None, help="Host to bind (defaults to settings).")
 @click.option("--port", type=int, default=None, help="Port to bind (defaults to settings).")
-def trainer(device: str | None, sync: bool | None, host: str | None, port: int | None) -> None:
-    """Start the remote trainer service (run this on the GPU box)."""
+def trainer(host: str | None, port: int | None) -> None:
+    """Start the remote trainer service (run this on the GPU box).
+
+    Install dependencies first with ``uv sync --extra <cpu|cuda|xpu>``.
+    """
     project_dir = _project_dir()
     load_env_file(project_dir / ".env")
-    resolved_device = _resolve_device(device)
 
     if not os.environ.get("HF_TOKEN"):
         click.echo("Warning: HF_TOKEN is not set; the trainer cannot pull dataset snapshots.", err=True)
 
     os.environ["PYTHONUNBUFFERED"] = "1"
-    maybe_sync(project_dir, resolved_device, sync=sync)
 
     click.echo("Starting remote trainer service...")
-    # Import after syncing so freshly-installed hardware-specific deps are used.
     import uvicorn
 
     from trainer.main import app

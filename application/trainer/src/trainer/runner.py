@@ -202,12 +202,11 @@ class TrainerRunner:
     def _resolve_device() -> tuple[str, str, list[int] | int]:
         import torch
 
-        configured = get_settings().device
-        if configured == "xpu" or (configured is None and torch.xpu.is_available()):
+        if torch.xpu.is_available():
             return "xpu", "xpu_single", 1
-        if configured == "cuda" or (configured is None and torch.cuda.is_available()):
+        if torch.cuda.is_available():
             return "cuda", "auto", 1
-        return configured or "cpu", "auto", 1
+        return "cpu", "auto", 1
 
     def _archive_model(self, job_id: str, model_dir: Path) -> Path:
         archives_dir = get_settings().archives_dir
