@@ -13,7 +13,7 @@ data:
   class_path: physicalai.data.lerobot.LeRobotDataModule
   init_args:
     repo_id: "lerobot/pusht"
-    train_batch_size: 64
+    train_batch_size: 32
     data_format: "physicalai"
     val_gym:
       class_path: physicalai.gyms.pusht.PushTGym
