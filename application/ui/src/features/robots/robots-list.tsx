@@ -24,6 +24,8 @@ const MenuActions = ({ robot_id }: { robot_id: string }) => {
         },
     });
 
+    const editPath = paths.project.robots.edit({ project_id, robot_id });
+
     return (
         <MenuTrigger>
             <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}>
@@ -50,6 +52,9 @@ const MenuActions = ({ robot_id }: { robot_id: string }) => {
                     }
                 }}
             >
+                <Item key='edit' href={editPath}>
+                    Edit
+                </Item>
                 <Item key='delete'>Delete</Item>
             </Menu>
         </MenuTrigger>

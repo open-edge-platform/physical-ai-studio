@@ -1,5 +1,5 @@
 ---
-name: library-adding-a-policy
+name: physicalai-train-adding-a-policy
 description: Adds or modifies a Physical AI Studio policy under library/src/physicalai/policies. Use when creating a new policy family with the config/model/policy split, registering it in the get_policy factory and package exports, or keeping a policy compatible with Lightning training and export. Covers Pi0.5, Pi0, ACT, GR00T, SmolVLA, and LeRobot-wrapped policies.
 license: Apache-2.0
 ---
@@ -38,7 +38,7 @@ Policies live in `library/src/physicalai/policies/<name>/`. Each family is a Lig
 
 6. **Add a training config** in `library/configs/physicalai/<name>.yaml` when the policy is user-facing from the CLI. Wire `model.class_path`, a `data.class_path` (usually `physicalai.data.lerobot.LeRobotDataModule`), and `trainer.*`. Mirror `configs/physicalai/pi05.yaml`.
    - Done when: `physicalai fit --config configs/physicalai/<name>.yaml --trainer.fast_dev_run=true` completes one step.
-7. **Wire export only when ready.** Add `ExportablePolicyMixin` and a valid sample input, then follow the `library-exporting-and-validating` skill. If export is intentionally unsupported, say so explicitly in the policy docstring.
+7. **Wire export only when ready.** Add `ExportablePolicyMixin` and a valid sample input, then follow the `physicalai-train-exporting-and-validating` skill. If export is intentionally unsupported, say so explicitly in the policy docstring.
 8. **Add tests** under `library/tests/unit/policies/` next to existing policy tests: at least one construction/config path and one shape-validation test.
    - Done when: `uv run pytest tests/unit/policies -k <name>` passes.
 9. **Update docs** if the policy is user-visible: `library/docs/explanation/policy/` and any config/API examples.

@@ -15,9 +15,7 @@ export type SchemaRobot = SchemaSo101RobotOutput | SchemaTrossenSingleArmRobotOu
 
 /** Union of all concrete robot input schemas (for create/update requests). */
 export type SchemaRobotInput =
-    | SchemaSo101RobotInput
-    | SchemaTrossenSingleArmRobotInput
-    | SchemaTrossenBimanualRobotInput;
+    SchemaSo101RobotInput | SchemaTrossenSingleArmRobotInput | SchemaTrossenBimanualRobotInput;
 
 /** All possible robot type discriminators. */
 export type SchemaRobotType = SchemaRobot['type'];

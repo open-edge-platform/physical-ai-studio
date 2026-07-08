@@ -4,18 +4,11 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 
-from schemas.robot import RobotType
+from robots.catalog.types import RobotCatalogDefinition
+
+from . import so101, widowxai
 
 BUILTIN_ROBOT_ASSETS_ROOT = Path(__file__).resolve().parents[2] / "static" / "robot-assets"
-
-_ROBOT_URDF_PATHS = {
-    RobotType.SO101_FOLLOWER: Path("SO101/so101_new_calib.urdf"),
-    RobotType.SO101_LEADER: Path("SO101/so101_new_calib.urdf"),
-    RobotType.TROSSEN_WIDOWXAI_FOLLOWER: Path("widowx/urdf/generated/wxai/wxai_follower.urdf"),
-    RobotType.TROSSEN_WIDOWXAI_LEADER: Path("widowx/urdf/generated/wxai/wxai_follower.urdf"),
-    RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER: Path("widowx/urdf/generated/stationary_ai.urdf"),
-    RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER: Path("widowx/urdf/generated/stationary_ai.urdf"),
-}
 
 
 def get_builtin_robot_assets_root() -> Path:
@@ -26,41 +19,35 @@ def get_builtin_robot_assets_root() -> Path:
 def builtin_robot_assets_are_available() -> bool:
     """Return whether all built-in robot URDF assets are present locally."""
     root = get_builtin_robot_assets_root()
-    return all((root / relative_path).is_file() for relative_path in set(_ROBOT_URDF_PATHS.values()))
+    definitions = so101.get_definitions() + widowxai.get_definitions()
+
+    return all((root / Path(definition.urdf_relative_path)).is_file() for definition in definitions)
 
 
-def resolve_robot_urdf_path(robot_type: RobotType) -> Path:
+def resolve_robot_urdf_path(definition: RobotCatalogDefinition) -> Path:
     """Resolve the local URDF file for a supported catalog robot type."""
-    try:
-        urdf_relative_path = _ROBOT_URDF_PATHS[robot_type]
-    except KeyError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="URDF is unavailable for the requested robot type."
-        ) from None
-
-    return _resolve_robot_path(relative_path=urdf_relative_path)
+    return _resolve_robot_path(asset_path=Path(definition.urdf_relative_path))
 
 
-def resolve_robot_asset_path(robot_type: RobotType, asset_path: str) -> Path:
+def resolve_robot_asset_path(definition: RobotCatalogDefinition, asset_path: Path) -> Path:
     """Resolve a local asset file referenced by a robot URDF."""
-    relative_path = Path(asset_path)
-    if relative_path.is_absolute() or ".." in relative_path.parts:
+    if asset_path.is_absolute() or ".." in asset_path.parts:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
 
-    try:
-        package_root = Path(_ROBOT_URDF_PATHS[robot_type].parts[0])
-    except (IndexError, KeyError):
+    urdf_relative = Path(definition.urdf_relative_path)
+    if len(urdf_relative.parts) == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Assets are unavailable for the requested robot type."
-        ) from None
+        )
 
-    return _resolve_robot_path(relative_path=package_root / relative_path)
+    package_root = Path(urdf_relative.parts[0])
+    return _resolve_robot_path(asset_path=package_root / asset_path)
 
 
-def _resolve_robot_path(relative_path: Path) -> Path:
+def _resolve_robot_path(asset_path: Path) -> Path:
     root = get_builtin_robot_assets_root().resolve()
 
-    requested_path = (root / relative_path).resolve()
+    requested_path = (root / asset_path).resolve()
     if not requested_path.is_relative_to(root):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
     if not requested_path.is_file():

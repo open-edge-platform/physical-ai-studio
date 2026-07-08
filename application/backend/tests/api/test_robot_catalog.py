@@ -19,6 +19,20 @@ def test_get_robot_catalog_urdf_returns_file(tmp_path, monkeypatch) -> None:
     assert response.text == "<robot />"
 
 
+def test_list_robot_catalog_returns_definitions_without_internal_fields() -> None:
+    client = TestClient(app)
+
+    response = client.get("/api/robots/catalog")
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload
+    first = payload[0]
+    assert set(first.keys()) == {"type", "display_name", "role", "urdf_path", "package_map", "joint_map"}
+    assert "urdf_relative_path" not in first
+
+
 def test_get_robot_catalog_asset_returns_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(assets, "BUILTIN_ROBOT_ASSETS_ROOT", tmp_path)
 
