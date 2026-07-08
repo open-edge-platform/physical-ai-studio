@@ -58,7 +58,7 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-xpu"
 url = "https://download.pytorch.org/whl/xpu"
-explicit = true
+explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
