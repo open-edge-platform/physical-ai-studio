@@ -524,7 +524,7 @@ class RemoteTrainingBackend:
         tmp_archive = Path(tempfile.gettempdir()) / f"remote-model-{uuid.uuid4().hex}.zip"
         stream_timeout = httpx.Timeout(self._timeout, read=settings.trainer_download_read_timeout_s)
         try:
-            received = await self._stream_archive(remote_job_id, tmp_archive, stream_timeout)
+            received = await self._stream_archive(context, remote_job_id, tmp_archive, stream_timeout)
             logger.info("Downloaded model artifact ({} bytes)", received)
 
             await asyncio.to_thread(
@@ -537,12 +537,23 @@ class RemoteTrainingBackend:
         finally:
             tmp_archive.unlink(missing_ok=True)
 
-    async def _stream_archive(self, remote_job_id: str, tmp_archive: Path, stream_timeout: httpx.Timeout) -> int:
+    async def _stream_archive(
+        self,
+        context: TrainingContext,
+        remote_job_id: str,
+        tmp_archive: Path,
+        stream_timeout: httpx.Timeout,
+    ) -> int:
         """Stream the artifact to ``tmp_archive``; return the byte count.
 
-        Verifies the transfer against ``Content-Length`` so a connection dropped
-        mid-stream surfaces as an error instead of a silently truncated archive.
+        Mirrors bytes received into the reserved model-download window
+        (``TRAINING_PROGRESS_END``..100) via :meth:`_download_progress`, the
+        download-side counterpart of ``_upload_progress``. Verifies the
+        transfer against ``Content-Length`` so a connection dropped mid-stream
+        surfaces as an error instead of a silently truncated archive.
         """
+        report = context.progress
+        to_percent = self._download_progress
         client = await self._client(stream_timeout)
         async with (
             client,
@@ -553,14 +564,33 @@ class RemoteTrainingBackend:
             expected_bytes = int(expected) if expected is not None and expected.isdigit() else None
 
             received = 0
+            last_percent = -1
             with tmp_archive.open("wb") as fobj:
                 async for chunk in response.aiter_bytes():
                     fobj.write(chunk)
                     received += len(chunk)
+                    if expected_bytes is not None:
+                        percent = to_percent(received, expected_bytes)
+                        if percent != last_percent:
+                            last_percent = percent
+                            report(percent, message="Downloading trained model")
 
         if expected_bytes is not None and received != expected_bytes:
             raise RemoteTrainingError(f"Artifact download truncated: received {received} of {expected_bytes} bytes")
         return received
+
+    @staticmethod
+    def _download_progress(received_bytes: int, total_bytes: int) -> int:
+        """Map artifact bytes received into the reserved model-download window.
+
+        Capped one below 100 so the explicit "Model downloaded" step (set once
+        extraction finishes) owns the final mark, mirroring how
+        ``_upload_progress`` reserves the top of its own window.
+        """
+        if total_bytes <= 0:
+            return TRAINING_PROGRESS_END
+        span = 100 - TRAINING_PROGRESS_END
+        return min(99, TRAINING_PROGRESS_END + round(received_bytes / total_bytes * span))
 
     @staticmethod
     def _extract_archive(

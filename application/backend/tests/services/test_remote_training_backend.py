@@ -509,6 +509,64 @@ class TestHttpDatasetTransfer:
         assert captured == {"dataset_transfer": "http", "repo_id": None, "revision": None}
 
 
+class TestModelDownloadProgress:
+    """The artifact download mirrors bytes received into the model-download window."""
+
+    @pytest.mark.anyio
+    async def test_download_bytes_drive_progress_within_reserved_window(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+        # Two equal chunks against a known total lets us assert exact intermediate percentages.
+        controller.artifact_chunks = [b"a" * 500, b"b" * 500]
+        controller.artifact_headers = {"content-length": "1000"}
+        api_cls = _hf_api_mock()
+        safe_zip = MagicMock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        span = 100 - TRAINING_PROGRESS_END
+        reported = [call.args[0] for call in context.progress.call_args_list]
+        # Halfway through the artifact lands inside the window, capped below 100 (still streaming).
+        assert TRAINING_PROGRESS_END + round(0.5 * span) in reported
+        # The explicit "Model downloaded" step owns the final 100% mark, not the byte mirror.
+        assert max(reported) == 100
+
+    @pytest.mark.anyio
+    async def test_missing_content_length_holds_at_window_start(self, tmp_path):
+        """Without Content-Length there is no denominator, so progress just holds at the window start."""
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+        controller.artifact_chunks = [b"chunk-1", b"chunk-2"]
+        controller.artifact_headers = {}  # no content-length
+        api_cls = _hf_api_mock()
+        safe_zip = MagicMock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        reported = [call.args[0] for call in context.progress.call_args_list]
+        # No intermediate download-window percentage other than the explicit start/end marks.
+        assert TRAINING_PROGRESS_END in reported
+        assert max(reported) == 100
+
+
 class TestSnapshotUploadProgress:
     """The upload mirrors huggingface_hub's byte progress into the snapshot-upload window."""
 
