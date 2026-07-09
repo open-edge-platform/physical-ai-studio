@@ -472,8 +472,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                 <Flex direction='column' gap='size-200' width='100%'>
                     {remoteUnavailable && (
                         <InlineAlert variant='warning'>
-                            The remote training server is currently unavailable. Training cannot be started until the
-                            trainer is reachable. Please check that the remote trainer is running and try again.
+                            Can&apos;t reach the remote trainer, so training can&apos;t start. Make sure it&apos;s
+                            running, then try again.
                         </InlineAlert>
                     )}
 
