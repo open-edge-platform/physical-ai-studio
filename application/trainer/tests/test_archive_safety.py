@@ -85,3 +85,20 @@ def test_flatten_single_root_directory(tmp_path: Path) -> None:
 
     assert (root / "info.json").exists()
     assert not nested.exists()
+
+
+def test_flatten_single_root_directory_ignores_macos_junk(tmp_path: Path) -> None:
+    root = tmp_path / "out"
+    nested = root / "dataset"
+    nested.mkdir(parents=True)
+    (nested / "info.json").write_text("{}")
+    (root / "__MACOSX").mkdir()
+    (root / "__MACOSX" / "._info.json").write_text("junk")
+    (root / ".DS_Store").write_text("junk")
+
+    flatten_single_root_directory(root)
+
+    assert (root / "info.json").exists()
+    assert not nested.exists()
+    assert not (root / "__MACOSX").exists()
+    assert not (root / ".DS_Store").exists()

@@ -164,14 +164,35 @@ class SafeZipArchive:
         return members
 
 
+def _is_ignorable_extraction_entry(entry: Path) -> bool:
+    """Return True for OS-generated junk that should not count as dataset content."""
+    name = entry.name
+    return name in {"__MACOSX", ".DS_Store"} or name.startswith("._")
+
+
 def flatten_single_root_directory(destination_dir: str | Path) -> None:
-    """Flatten an extraction that nests everything under one top-level directory."""
+    """Flatten an extraction that nests everything under one top-level directory.
+
+    OS-generated junk entries (e.g. macOS ``__MACOSX`` and ``.DS_Store``) are
+    removed and ignored when determining whether a single root directory is
+    present.
+    """
     root = Path(destination_dir)
-    entries = list(root.iterdir())
-    if len(entries) != 1 or not entries[0].is_dir():
+
+    meaningful_entries: list[Path] = []
+    for entry in root.iterdir():
+        if _is_ignorable_extraction_entry(entry):
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+            continue
+        meaningful_entries.append(entry)
+
+    if len(meaningful_entries) != 1 or not meaningful_entries[0].is_dir():
         return
 
-    nested_root = entries[0]
+    nested_root = meaningful_entries[0]
     for child in list(nested_root.iterdir()):
         shutil.move(str(child), str(root / child.name))
     nested_root.rmdir()

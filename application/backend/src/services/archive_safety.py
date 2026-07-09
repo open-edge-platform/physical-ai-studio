@@ -268,18 +268,36 @@ def cleanup_staged_archive(uploaded_archive_path: str | Path | None) -> None:
         logger.warning("Failed to clean staged dataset archive '{}': {}", uploaded_archive_path, error)
 
 
+def _is_ignorable_extraction_entry(entry: Path) -> bool:
+    """Return True for OS-generated junk that should not count as dataset content."""
+    name = entry.name
+    return name in {"__MACOSX", ".DS_Store"} or name.startswith("._")
+
+
 def flatten_single_root_directory(destination_dir: str | Path) -> None:
     """Flatten extracted archive when it contains exactly one root directory.
 
     Supports archives where dataset files are nested under a single top-level
-    folder by moving that folder's contents to *destination_dir*.
+    folder by moving that folder's contents to *destination_dir*. OS-generated
+    junk entries (e.g. macOS ``__MACOSX`` and ``.DS_Store``) are removed and
+    ignored when determining whether a single root directory is present.
     """
     root = Path(destination_dir)
-    entries = list(root.iterdir())
-    if len(entries) != 1 or not entries[0].is_dir():
+
+    meaningful_entries: list[Path] = []
+    for entry in root.iterdir():
+        if _is_ignorable_extraction_entry(entry):
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+            continue
+        meaningful_entries.append(entry)
+
+    if len(meaningful_entries) != 1 or not meaningful_entries[0].is_dir():
         return
 
-    nested_root = entries[0]
+    nested_root = meaningful_entries[0]
     nested_entries = list(nested_root.iterdir())
     for child in nested_entries:
         shutil.move(str(child), str(root / child.name))
