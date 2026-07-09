@@ -851,3 +851,106 @@ class SnapFlowPhaseCallback(Callback):
             self._activate(trainer, pl_module)
         if self._activated:
             self._log_phase(pl_module)
+
+
+class DeviceMemoryUtilization(Callback):
+    """Log accelerator memory stats during training.
+
+    Logs ``{device_type}/memory_allocated_mb``, ``{device_type}/memory_reserved_mb``,
+    percentage counterparts, and peak values per process/rank. Supports both CUDA
+    and Intel XPU via ``torch.cuda``/``torch.xpu``; other device types are skipped.
+    """
+
+    def __init__(self, *, log_every_n_steps: int = 20, reset_peak_stats_each_log: bool = True) -> None:
+        """Initialize the device memory logger.
+
+        Args:
+            log_every_n_steps: Log cadence in training steps.
+            reset_peak_stats_each_log: Reset peak counters after each log event.
+        """
+        if log_every_n_steps < 1:
+            msg = "log_every_n_steps must be >= 1"
+            raise ValueError(msg)
+
+        self.log_every_n_steps = log_every_n_steps
+        self.reset_peak_stats_each_log = reset_peak_stats_each_log
+
+    @staticmethod
+    def _bytes_to_mb(value: int | float) -> float:
+        return float(value) / (1024.0 * 1024.0)
+
+    @staticmethod
+    def _fraction_to_percent(value: int | float, total: int | float) -> float:
+        if float(total) <= 0.0:
+            return 0.0
+        return (float(value) / float(total)) * 100.0
+
+    @staticmethod
+    def _get_memory_metrics(device: torch.device) -> dict[str, float] | None:
+        """Collect memory metrics for CUDA or XPU devices, if the runtime is available."""
+        device_type = device.type
+        if device_type not in ("cuda", "xpu"):
+            return None
+
+        backend = getattr(torch, device_type, None)
+        if backend is None or not backend.is_available():
+            return None
+
+        # Some torch/xpu builds do not expose all CUDA-parity memory APIs.
+        allocated: int | float = 0
+        reserved: int | float = 0
+        max_allocated: int | float = 0
+        max_reserved: int | float = 0
+        total_memory: int | float = 0
+
+        if hasattr(backend, "memory_allocated"):
+            allocated = cast(float, backend.memory_allocated(device))
+        if hasattr(backend, "memory_reserved"):
+            reserved = cast(float, backend.memory_reserved(device))
+        if hasattr(backend, "max_memory_allocated"):
+            max_allocated = cast(float, backend.max_memory_allocated(device))
+        if hasattr(backend, "max_memory_reserved"):
+            max_reserved = cast(float, backend.max_memory_reserved(device))
+        if hasattr(backend, "get_device_properties"):
+            props = backend.get_device_properties(device)
+            if hasattr(props, "total_memory"):
+                total_memory = cast(float, props.total_memory)
+
+        to_mb = DeviceMemoryUtilization._bytes_to_mb
+        to_pct = DeviceMemoryUtilization._fraction_to_percent
+        return {
+            f"{device_type}/memory_allocated_mb": to_mb(allocated),
+            f"{device_type}/memory_reserved_mb": to_mb(reserved),
+            f"{device_type}/max_memory_allocated_mb": to_mb(max_allocated),
+            f"{device_type}/max_memory_reserved_mb": to_mb(max_reserved),
+            f"{device_type}/memory_allocated_pct": to_pct(allocated, total_memory),
+            f"{device_type}/memory_reserved_pct": to_pct(reserved, total_memory),
+            f"{device_type}/max_memory_allocated_pct": to_pct(max_allocated, total_memory),
+            f"{device_type}/max_memory_reserved_pct": to_pct(max_reserved, total_memory),
+        }
+
+    def on_train_batch_end(
+        self,
+        trainer: L.Trainer,
+        pl_module: L.LightningModule,
+        _outputs: Any,
+        _batch: Any,
+        batch_idx: int,
+    ) -> None:
+        """Log accelerator memory usage every ``log_every_n_steps``."""
+        if not trainer.training:
+            return
+        if (batch_idx + 1) % self.log_every_n_steps != 0:
+            return
+
+        metrics = self._get_memory_metrics(pl_module.device)
+        if metrics is None:
+            return
+
+        for key, value in metrics.items():
+            pl_module.log(key, value, on_step=True, on_epoch=False, prog_bar=False, sync_dist=False)
+
+        if self.reset_peak_stats_each_log:
+            backend = getattr(torch, pl_module.device.type, None)
+            if backend is not None and hasattr(backend, "reset_peak_memory_stats"):
+                backend.reset_peak_memory_stats(pl_module.device)
