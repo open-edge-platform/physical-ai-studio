@@ -150,11 +150,11 @@ const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled, traini
 };
 
 const useBestTrainingDevice = (): SchemaDeviceInfo | null => {
-    const { data: trainingDevices = [] } = $api.useQuery('get', '/api/system/devices/training');
+    const { devices } = useTrainingDevices();
 
     // Pick the GPU with the most VRAM (if any)
     return useMemo(() => {
-        return trainingDevices
+        return devices
             .filter((d) => d.type !== 'cpu' && d.memory != null)
             .reduce((best, device): SchemaDeviceInfo | null => {
                 if (best === null || (device.memory ?? 0) > (best.memory ?? 0)) {
@@ -163,15 +163,33 @@ const useBestTrainingDevice = (): SchemaDeviceInfo | null => {
 
                 return best;
             }, null);
-    }, [trainingDevices]);
+    }, [devices]);
+};
+
+/**
+ * Reads the training devices endpoint and normalizes the response.
+ *
+ * `remoteUnavailable` is true only when the backend runs in remote mode and the
+ * remote trainer cannot be reached, in which case training must be blocked.
+ */
+const useTrainingDevices = () => {
+    const { data } = $api.useQuery('get', '/api/system/devices/training');
+
+    return {
+        devices: data?.devices ?? [],
+        remoteUnavailable: data?.mode === 'remote' && !data.remote_available,
+    };
 };
 
 const TrainingDeviceInfo = () => {
     const bestDevice = useBestTrainingDevice();
+    const { remoteUnavailable } = useTrainingDevices();
 
     return (
         <Flex UNSAFE_style={{ textAlign: 'right' }} direction='column' gap='size-75'>
-            {bestDevice ? (
+            {remoteUnavailable ? (
+                <StatusLight variant='negative'>Remote trainer unavailable</StatusLight>
+            ) : bestDevice ? (
                 <StatusLight variant='positive'>
                     {bestDevice.name}, {formatBytes(bestDevice.memory!)} VRAM
                 </StatusLight>
@@ -356,6 +374,7 @@ const TrainingParameters = ({
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
+    const { remoteUnavailable } = useTrainingDevices();
 
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
@@ -387,7 +406,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const save = () => {
         const dataset_id = selectedDataset?.toString();
 
-        if (!dataset_id || !selectedPolicy) {
+        if (!dataset_id || !selectedPolicy || remoteUnavailable) {
             return;
         }
 
@@ -424,6 +443,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             <Divider />
             <Content width={'700px'}>
                 <Flex direction='column' gap='size-200' width='100%'>
+                    {remoteUnavailable && (
+                        <InlineAlert variant='warning'>
+                            The remote training server is currently unavailable. Training cannot be started until the
+                            trainer is reachable. Please check that the remote trainer is running and try again.
+                        </InlineAlert>
+                    )}
+
                     <Picker
                         label='Dataset'
                         selectedKey={selectedDataset}
@@ -476,7 +502,11 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                 <Button variant='secondary' onPress={() => close(undefined)}>
                     Cancel
                 </Button>
-                <Button variant='accent' onPress={save} isDisabled={!selectedDataset || !selectedPolicy}>
+                <Button
+                    variant='accent'
+                    onPress={save}
+                    isDisabled={!selectedDataset || !selectedPolicy || remoteUnavailable}
+                >
                     Train
                 </Button>
             </ButtonGroup>

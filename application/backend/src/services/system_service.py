@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import torch
 from loguru import logger
 
-from schemas.hardware import DeviceInfo, DeviceType, InferenceBackend, InferenceDeviceInfo
+from schemas.hardware import DeviceInfo, DeviceType, InferenceBackend, InferenceDeviceInfo, TrainingDevices
 
 if TYPE_CHECKING:
     from services.training_backends.remote import RemoteTrainingBackend
@@ -235,13 +235,19 @@ class SystemService:
         return devices
 
     @classmethod
-    async def get_available_training_devices(cls) -> list[DeviceInfo]:
-        """Return training devices for the active training mode."""
+    async def get_available_training_devices(cls) -> TrainingDevices:
+        """Return training devices and remote availability for the active mode.
+
+        In local mode this reports the local hardware. In remote mode it queries
+        the trainer for its hardware; if the trainer cannot be reached it returns
+        ``remote_available=False`` with no devices instead of falling back to
+        local CPU, so callers can block training until the trainer is reachable.
+        """
         from settings import get_settings
 
         settings = get_settings()
         if settings.training_mode != "remote":
-            return cls.get_training_devices()
+            return TrainingDevices(mode="local", remote_available=True, devices=cls.get_training_devices())
 
         from services.training_backends.remote import RemoteTrainingBackend, RemoteTrainingError
 
@@ -250,10 +256,11 @@ class SystemService:
             if backend is None:
                 backend = RemoteTrainingBackend()
                 cls._remote_backend = backend
-            return await backend.get_training_devices()
+            devices = await backend.get_training_devices()
         except RemoteTrainingError as exc:
-            logger.warning("Falling back to local training devices; remote trainer query failed: {}", exc)
-            return cls.get_training_devices()
+            logger.warning("Remote trainer unavailable; training is disabled until the trainer is reachable: {}", exc)
+            return TrainingDevices(mode="remote", remote_available=False, devices=[])
+        return TrainingDevices(mode="remote", remote_available=True, devices=devices)
 
     @classmethod
     def _clear_remote_backend_cache(cls) -> None:

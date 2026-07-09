@@ -120,8 +120,10 @@ def test_get_inference_devices_uses_openvino_fallback_values() -> None:
 def test_get_available_training_devices_uses_local_in_local_mode() -> None:
     import asyncio
 
+    from schemas.hardware import DeviceInfo
+
     settings = SimpleNamespace(training_mode="local")
-    local_devices = [object()]
+    local_devices = [DeviceInfo(type=DeviceType.CPU, name="CPU", memory=None, index=None)]
     with (
         patch("settings.get_settings", return_value=settings),
         patch(
@@ -131,7 +133,9 @@ def test_get_available_training_devices_uses_local_in_local_mode() -> None:
     ):
         result = asyncio.run(SystemService.get_available_training_devices())
 
-    assert result is local_devices
+    assert result.mode == "local"
+    assert result.remote_available is True
+    assert result.devices == local_devices
 
 
 def test_get_available_training_devices_queries_remote_in_remote_mode() -> None:
@@ -155,16 +159,17 @@ def test_get_available_training_devices_queries_remote_in_remote_mode() -> None:
     ):
         result = asyncio.run(SystemService.get_available_training_devices())
 
-    assert result == remote_devices
+    assert result.mode == "remote"
+    assert result.remote_available is True
+    assert result.devices == remote_devices
 
 
-def test_get_available_training_devices_falls_back_when_remote_unreachable() -> None:
+def test_get_available_training_devices_reports_unavailable_when_remote_unreachable() -> None:
     import asyncio
 
     from services.training_backends.remote import RemoteTrainingError
 
     settings = SimpleNamespace(training_mode="remote")
-    local_devices = [object()]
 
     backend = MagicMock()
 
@@ -176,11 +181,10 @@ def test_get_available_training_devices_falls_back_when_remote_unreachable() -> 
     with (
         patch("settings.get_settings", return_value=settings),
         patch("services.training_backends.remote.RemoteTrainingBackend", return_value=backend),
-        patch(
-            "services.system_service.SystemService.get_training_devices",
-            return_value=local_devices,
-        ),
     ):
         result = asyncio.run(SystemService.get_available_training_devices())
 
-    assert result is local_devices
+    # Remote unreachable must NOT fall back to local CPU; training is disabled instead.
+    assert result.mode == "remote"
+    assert result.remote_available is False
+    assert result.devices == []
