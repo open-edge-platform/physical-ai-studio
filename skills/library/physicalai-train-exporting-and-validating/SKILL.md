@@ -1,6 +1,6 @@
 ---
 name: physicalai-train-exporting-and-validating
-description: Exports and validates Physical AI Studio policies for Runtime deployment. Use when working on policy.export(...), the physicalai export CLI, the ONNX/OpenVINO/Torch/ExecuTorch backends, export metadata, numerical parity checks, or the Studio side of the export/load contract that Runtime consumes with InferenceModel.load(...).
+description: Exports and validates Physical AI Studio policies for Runtime deployment. Use when working on policy.export(...), the physicalai export CLI, the ONNX/OpenVINO/Torch/ExecuTorch backends, export metadata, numerical parity checks, or the Studio side of the export/load contract that Runtime consumes with InferenceModel(...).
 license: Apache-2.0
 ---
 
@@ -20,7 +20,7 @@ Export lives in `library/src/physicalai/export/`: `backends.py` (the `ExportBack
    - Done when: max abs/rel diff on sample inputs is within the family's tolerance, or the divergence is understood and documented.
 5. **Validate artifact structure and metadata** against `references/export-contract.md`.
    - Done when: the expected model file and metadata files exist, and input/output/feature names match Runtime preprocessing.
-6. **Confirm the Runtime path.** For deployment-bound artifacts, verify Runtime can auto-detect (by extension) or explicitly load the backend via `InferenceModel.load(...)`.
+6. **Confirm the Runtime path.** For deployment-bound artifacts, verify Runtime can auto-detect (by extension) or explicitly load the backend via `InferenceModel(...)`.
 
 ## Validation loop
 

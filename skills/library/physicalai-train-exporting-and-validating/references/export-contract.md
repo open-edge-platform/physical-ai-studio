@@ -1,6 +1,6 @@
 # Export/Load Contract
 
-Studio produces deployment artifacts; Runtime loads them with `InferenceModel.load(...)`.
+Studio produces deployment artifacts; Runtime loads them with `InferenceModel(...)`.
 
 ## Required Artifact Properties
 

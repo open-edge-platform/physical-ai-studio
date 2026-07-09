@@ -30,7 +30,7 @@ For exported artifacts, load the Runtime-facing model first:
 from physicalai.benchmark.gyms import PushTBenchmark
 from physicalai.inference import InferenceModel
 
-model = InferenceModel.load("./exports/act_policy")
+model = InferenceModel("./exports/act_policy")
 results = PushTBenchmark(num_episodes=1).evaluate(model)
 ```
 

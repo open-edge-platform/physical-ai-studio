@@ -27,7 +27,7 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 
 - Runtime owns the `physicalai` executable and `pai` alias. Studio contributes subcommands through `physicalai.cli.subcommands`.
 - Studio-owned CLI subcommands include `fit`, `validate`, `test`, `predict`, `benchmark`, and `export`.
-- Studio owns the export side of the export/load contract. Runtime consumes exported artifacts with `InferenceModel.load(...)`.
+- Studio owns the export side of the export/load contract. Runtime consumes exported artifacts with `InferenceModel(...)`.
 - Keep customer-facing instructions stable and avoid exposing internal scaffolding unless the user is contributing to the repo.
 
 ## Contribution Notes
