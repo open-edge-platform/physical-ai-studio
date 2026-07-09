@@ -21,7 +21,7 @@ from api.dependencies import (
 )
 from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
-from internal_datasets.utils import get_internal_dataset
+from internal_datasets.utils import get_internal_read_dataset
 from schemas import ModelDetailResponse
 from schemas.job import TrainJob
 from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
@@ -66,7 +66,7 @@ async def get_tasks_of_model(
     if model.dataset_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model has no dataset associated.")
     dataset = await dataset_service.get_dataset_by_id(model.dataset_id)
-    return get_internal_dataset(dataset).get_tasks()
+    return get_internal_read_dataset(dataset).get_tasks()
 
 
 @router.get("/{model_id}/download")

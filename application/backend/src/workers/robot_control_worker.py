@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from control.environment_integration import EnvironmentIntegration
 from control.sync_mixed_model_integration import SyncMixedModelIntegration
+from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.recording_mutation import RecordingMutation
@@ -92,7 +93,7 @@ class RobotControlWorker(BaseThreadWorker):
         self._report_state()
 
     def load_dataset(self, dataset: Dataset) -> None:
-        self.dataset = InternalLeRobotDataset(Path(dataset.path))
+        self.dataset = InternalLeRobotDataset(Path(dataset.path), access_mode=DatasetAccessMode.RECORDING_MUTATION)
         self.events.start_recording_mutation.set()
 
     def start_recording(self, task: str) -> None:
