@@ -36,6 +36,9 @@ export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
 
 const GB = 1024 ** 3;
 
+/** How often to re-check training-device status while the remote trainer is unavailable (ms). */
+const REMOTE_UNAVAILABLE_POLL_MS = 5000;
+
 /** Format bytes as a human-readable GB string. */
 const formatBytes = (bytes: number): string => {
     const gb = bytes / GB;
@@ -171,13 +174,30 @@ const useBestTrainingDevice = (): SchemaDeviceInfo | null => {
  *
  * `remoteUnavailable` is true only when the backend runs in remote mode and the
  * remote trainer cannot be reached, in which case training must be blocked.
+ *
+ * The status is refetched every time the dialog is (re)opened so it never shows
+ * stale cached data, and it is polled only while the remote trainer is
+ * unavailable so the UI recovers automatically once the trainer comes back.
  */
 const useTrainingDevices = () => {
-    const { data } = $api.useQuery('get', '/api/system/devices/training');
+    const { data, refetch } = $api.useQuery(
+        'get',
+        '/api/system/devices/training',
+        {},
+        {
+            refetchOnMount: 'always',
+            refetchInterval: (query) =>
+                query.state.data?.mode === 'remote' && !query.state.data.remote_available
+                    ? REMOTE_UNAVAILABLE_POLL_MS
+                    : false,
+        }
+    );
 
     return {
         devices: data?.devices ?? [],
         remoteUnavailable: data?.mode === 'remote' && !data.remote_available,
+        // Re-run the status check on demand (e.g. right before submitting).
+        refetch,
     };
 };
 
@@ -374,7 +394,7 @@ const TrainingParameters = ({
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
-    const { remoteUnavailable } = useTrainingDevices();
+    const { remoteUnavailable, refetch: refetchTrainingDevices } = useTrainingDevices();
 
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
@@ -403,10 +423,17 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
         },
     });
 
-    const save = () => {
+    const save = async () => {
         const dataset_id = selectedDataset?.toString();
 
         if (!dataset_id || !selectedPolicy || remoteUnavailable) {
+            return;
+        }
+
+        // Final guard: the remote trainer may have gone offline since the last
+        // poll, so re-check availability right before submitting the job.
+        const { data: latest } = await refetchTrainingDevices();
+        if (latest?.mode === 'remote' && !latest.remote_available) {
             return;
         }
 
