@@ -47,22 +47,31 @@ class XPUAccelerator(Accelerator):
         torch.xpu.set_device(device)
 
     @staticmethod
-    def parse_devices(devices: str | list | torch.device) -> list:
+    def parse_devices(devices: int | str | list | torch.device) -> list:
         """Parse device specification into a list of devices.
 
         This function normalizes different device specification formats into a consistent
         list format for use with PyTorch device management.
 
         Args:
-            devices (str | list | torch.device): Device specification that can be:
+            devices (int | str | list | torch.device): Device specification that can be:
+                - An integer representing the number of devices (e.g., 4 to use indices [0, 1, 2, 3])
                 - A string representing a single device (e.g., 'cuda:0', 'cpu')
-                - A list of device specifications
+                - A list of device specifications or indices
                 - A torch.device object
 
         Returns:
             list: A list containing the device specification(s). If input is already a list,
                 it is returned as-is. Otherwise, the input is wrapped in a list.
+
+        Raises:
+            ValueError: If an integer device count is less than 1.
         """
+        if isinstance(devices, int):
+            if devices < 1:
+                msg = "XPU device count must be at least 1"
+                raise ValueError(msg)
+            return list(range(devices))
         if isinstance(devices, list):
             return devices
         return [devices]
