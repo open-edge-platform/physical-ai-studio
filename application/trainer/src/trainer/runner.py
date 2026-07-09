@@ -149,6 +149,7 @@ class TrainerRunner:
             check_val_every_n_epoch=1,
         )
 
+        report(0, "Training model", None)
         trainer.fit(model=policy, datamodule=data_module)
         if should_stop():
             msg = "Training canceled"

@@ -167,7 +167,7 @@ class RemoteTrainingBackend:
             archive_path = archive
             remote_job_id = await self._submit_job(context, dataset_transfer="http")
             await self._upload_snapshot_http(context, remote_job_id, archive)
-            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Snapshot uploaded")
+            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
 
             # Sub-step 2: wait for the remote job (10-95%).
             await self._wait_for_completion(context, remote_job_id)
@@ -187,7 +187,7 @@ class RemoteTrainingBackend:
             # Sub-step 1: push the snapshot to an ephemeral private dataset repo (0-10%).
             context.progress(0, message="Uploading dataset snapshot")
             repo_id, revision = await self._push_snapshot(context)
-            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Snapshot uploaded")
+            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
 
             # Sub-step 2: submit and wait for the remote job (10-95%).
             remote_job_id = await self._submit_job(context, dataset_transfer="hf", repo_id=repo_id, revision=revision)
