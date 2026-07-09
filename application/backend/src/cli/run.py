@@ -1,9 +1,10 @@
 """Launch commands for Physical AI Studio components.
 
-These commands load the matching ``.env`` file, sync dependencies for the requested
-hardware (``uv sync``), and then start the backend (``remote``). In-process (local)
-training is the default and is served by ``physicalai-studio serve``. The remote
-trainer service has its own launcher (``physicalai-trainer``) in the trainer project.
+The ``remote`` command loads the matching ``.env`` file, syncs dependencies for the
+requested hardware (``uv sync``), and then starts the backend with training offloaded
+to a remote trainer service. In-process training is the default and is served by
+``physicalai-studio serve``. The remote trainer service has its own launcher
+(``physicalai-trainer``) in the trainer project.
 
 Because these commands run ``uv sync`` for themselves, they are meant to be
 invoked through ``uv run`` (e.g. ``uv run --no-sync physicalai-studio remote``)
@@ -20,6 +21,7 @@ import click
 
 _VALID_DEVICES = ("cpu", "cuda", "xpu")
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_EXPORT_PREFIX_RE = re.compile(r"^export\s+")
 
 
 def _backend_dir() -> Path:
@@ -55,7 +57,7 @@ def load_env_file(env_file: Path) -> None:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        line = line.removeprefix("export ")
+        line = _EXPORT_PREFIX_RE.sub("", line)
         if "=" not in line:
             continue
         key, _, val = line.partition("=")
@@ -94,7 +96,10 @@ def maybe_sync(cwd: Path, device: str, *extras: str, sync: bool | None) -> None:
 
     args = ["uv", "sync", "--extra", device, *(arg for extra in extras for arg in ("--extra", extra))]
     click.echo(f"Syncing dependencies: {shlex.join(args)}")
-    subprocess.run(args, cwd=cwd, check=True)  # noqa: S603 - fixed argv, no shell.
+    try:
+        subprocess.run(args, cwd=cwd, check=True)  # noqa: S603 - fixed argv, no shell.
+    except (subprocess.CalledProcessError, OSError) as error:
+        raise click.ClickException(f"Failed to sync dependencies ({shlex.join(args)}): {error}") from error
 
 
 _device_option = click.option(

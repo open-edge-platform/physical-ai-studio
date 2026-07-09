@@ -1,5 +1,5 @@
 ---
-name: library-working-with-datasets
+name: physicalai-train-working-with-datasets
 description: Works with Physical AI Studio datasets and Lightning datamodules built on the LeRobot format. Use when wiring physicalai.data.lerobot.LeRobotDataModule into a training config, choosing a repo_id, converting between the physicalai and lerobot data layouts, defining observation Features/FeatureType, setting normalization, or debugging batch shapes and dataloading.
 license: Apache-2.0
 ---
@@ -44,7 +44,7 @@ data:
     train_batch_size: 64
 ```
 
-`repo_id` points at a LeRobot/HuggingFace dataset; the datamodule pulls it on first use. See the `library-training-a-policy` skill for the full config.
+`repo_id` points at a LeRobot/HuggingFace dataset; the datamodule pulls it on first use. See the `physicalai-train-training-a-policy` skill for the full config.
 
 ## Workflow
 
@@ -87,5 +87,5 @@ uv run pytest tests/unit/data tests/unit/datamodules
 
 ## Related skills
 
-- `library-training-a-policy` — the `data` block is one half of a training config.
-- `library-adding-a-policy` — align observation features with the policy `Config`.
+- `physicalai-train-training-a-policy` — the `data` block is one half of a training config.
+- `physicalai-train-adding-a-policy` — align observation features with the policy `Config`.

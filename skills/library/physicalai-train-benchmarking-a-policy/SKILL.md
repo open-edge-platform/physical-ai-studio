@@ -1,5 +1,5 @@
 ---
-name: library-benchmarking-a-policy
+name: physicalai-train-benchmarking-a-policy
 description: Benchmarks a trained Physical AI Studio policy in a simulation gym and reports success metrics. Use when running physicalai benchmark, editing configs under library/configs/benchmark, adding or changing a Benchmark class in physicalai.benchmark, tuning rollout/episode/env settings, recording rollout videos, or interpreting results.json / results.csv.
 license: Apache-2.0
 ---
@@ -88,5 +88,5 @@ Override benchmark settings on the CLI, e.g. `--benchmark.num_episodes 10 --benc
 
 ## Related skills
 
-- `library-training-a-policy` — to produce the checkpoint being benchmarked.
-- `library-exporting-and-validating` — when benchmarking an exported artifact for deployment parity.
+- `physicalai-train-training-a-policy` — to produce the checkpoint being benchmarked.
+- `physicalai-train-exporting-and-validating` — when benchmarking an exported artifact for deployment parity.

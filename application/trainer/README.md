@@ -57,23 +57,33 @@ Never commit `HF_TOKEN`. Store it in a secret manager or local `.env`.
 ## Run
 
 ```bash
-uv run physicalai-trainer   # loads .env, starts the service
+uv run --no-sync physicalai-trainer   # loads .env, starts the service
 ```
 
 `physicalai-trainer` loads the trainer `.env` and starts the service. It does
 not install dependencies itself, so run `uv sync --extra <cpu|cuda|xpu>` first
 (see [Install](#install)) to pull in the matching torch build.
 
+Use `--no-sync` so the run reuses that install. A plain `uv run` triggers an
+implicit sync that ignores the hardware extra and can re-resolve `torch` from
+the default index, clobbering your `cuda`/`xpu` build. If you prefer not to pass
+the flag every time, either export `UV_NO_SYNC=1`, or repeat the extra on the
+run command so the resolution matches:
+
+```bash
+uv run --extra cuda physicalai-trainer   # or --extra xpu / --extra cpu
+```
+
 Override the bind address with flags:
 
 ```bash
-uv run physicalai-trainer --host 0.0.0.0 --port 8001
+uv run --no-sync physicalai-trainer --host 0.0.0.0 --port 8001
 ```
 
 To run the ASGI app module directly:
 
 ```bash
-uv run python -m trainer.main
+uv run --no-sync python -m trainer.main
 ```
 
 ## API

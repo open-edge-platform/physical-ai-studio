@@ -9,7 +9,7 @@ Expected rubric per scenario:
 - **Follows the workflow checklist** — does not skip Required checks / Verify steps.
 - **Produces a checkable artifact** — a command run, a file written, or a test result.
 
-## `library-adding-a-policy`
+## `physicalai-train-adding-a-policy`
 
 ### Scenario 1: Add a new native policy family
 
@@ -30,7 +30,7 @@ Expected behavior:
 
 Expected behavior:
 
-- Loads `library-exporting-and-validating` in addition to `library-adding-a-policy`.
+- Loads `physicalai-train-exporting-and-validating` in addition to `physicalai-train-adding-a-policy`.
 - Adds `ExportablePolicyMixin` to `ACT` only after providing a valid sample input.
 - Does not claim the export works until a parity check is described or run.
 - Updates docs and tests; does not change action/feature contracts silently.
@@ -45,7 +45,7 @@ Expected behavior:
 - Keeps LeRobot adapter code behind a factory/helper; avoids mixing LeRobot internals with Lightning `Policy` semantics.
 - Validates direct Python construction and `physicalai fit --config configs/physicalai/<name>.yaml --trainer.fast_dev_run=true` both pass.
 
-## `library-training-a-policy`
+## `physicalai-train-training-a-policy`
 
 ### Scenario 4: Run an API smoke test
 
@@ -77,7 +77,7 @@ Expected behavior:
 - Uses `--print_config` to confirm CLI serialization matches the API intent.
 - Runs `fast_dev_run` before any full run.
 
-## `library-benchmarking-a-policy`
+## `physicalai-train-benchmarking-a-policy`
 
 ### Scenario 7: Benchmark a trained checkpoint
 
@@ -107,11 +107,11 @@ Expected behavior:
 
 Expected behavior:
 
-- Loads `library-exporting-and-validating` to produce the ONNX artifact.
+- Loads `physicalai-train-exporting-and-validating` to produce the ONNX artifact.
 - Runs benchmark twice through the Python API and/or CLI with paths pointing to `.ckpt` and export dir.
 - Reports metric parity, not just runtime.
 
-## `library-working-with-datasets`
+## `physicalai-train-working-with-datasets`
 
 ### Scenario 10: Wire a new dataset into a config
 
@@ -143,7 +143,7 @@ Expected behavior:
 - Adds a unit test under `tests/unit/data/`.
 - Runs `uv run pytest tests/unit/data -k <field>`.
 
-## `library-exporting-and-validating`
+## `physicalai-train-exporting-and-validating`
 
 ### Scenario 13: Export a checkpoint to ONNX
 

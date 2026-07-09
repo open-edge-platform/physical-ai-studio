@@ -1,5 +1,5 @@
 ---
-name: library-exporting-and-validating
+name: physicalai-train-exporting-and-validating
 description: Exports and validates Physical AI Studio policies for Runtime deployment. Use when working on policy.export(...), the physicalai export CLI, the ONNX/OpenVINO/Torch/ExecuTorch backends, export metadata, numerical parity checks, or the Studio side of the export/load contract that Runtime consumes with InferenceModel.load(...).
 license: Apache-2.0
 ---
