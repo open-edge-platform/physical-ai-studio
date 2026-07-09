@@ -21,7 +21,13 @@ from schemas.dataset import Snapshot
 from schemas.job import TrainJobPayload
 from schemas.model import Model
 from services.training_backends.base import TrainingContext
-from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END
+from services.training_backends.remote import (
+    SNAPSHOT_UPLOAD_PROGRESS,
+    TRAINING_PROGRESS_END,
+    _format_bytes,
+    _format_throughput,
+    _TransferProgressLogger,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -509,6 +515,36 @@ class TestHttpDatasetTransfer:
         assert captured == {"dataset_transfer": "http", "repo_id": None, "revision": None}
 
 
+class TestSnapshotUploadHeartbeat:
+    """The HTTP upload loop emits throttled byte heartbeats for large snapshots."""
+
+    @pytest.mark.anyio
+    async def test_http_upload_emits_transfer_heartbeat_logs(self, tmp_path):
+        settings = _settings()
+        settings.trainer_dataset_transfer = "http"
+        context = _context(tmp_path)
+        # Give the archive real bytes so the streaming read loop runs and updates the heartbeat.
+        (tmp_path / "snap" / "info.json").write_text("x" * 4096)
+        controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+        api_cls = _hf_api_mock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+            # A negative interval forces a heartbeat on the first streamed chunk.
+            patch(f"{REMOTE}._TRANSFER_LOG_INTERVAL_S", -1.0),
+            patch(f"{REMOTE}.logger") as mock_logger,
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        templates = [call for call in mock_logger.info.call_args_list if call.args and "progress:" in call.args[0]]
+        assert any(call.args[1] == "Dataset upload" for call in templates)
+
+
 class TestModelDownloadProgress:
     """The artifact download mirrors bytes received into the model-download window."""
 
@@ -565,6 +601,32 @@ class TestModelDownloadProgress:
         # No intermediate download-window percentage other than the explicit start/end marks.
         assert TRAINING_PROGRESS_END in reported
         assert max(reported) == 100
+
+    @pytest.mark.anyio
+    async def test_download_emits_transfer_heartbeat_logs(self, tmp_path):
+        """Long transfers log throttled heartbeats; a zero interval forces one per chunk."""
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+        controller.artifact_chunks = [b"a" * 500, b"b" * 500]
+        controller.artifact_headers = {"content-length": "1000"}
+        api_cls = _hf_api_mock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+            # A negative interval makes every update cross the throttle threshold.
+            patch(f"{REMOTE}._TRANSFER_LOG_INTERVAL_S", -1.0),
+            patch(f"{REMOTE}.logger") as mock_logger,
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        templates = [call for call in mock_logger.info.call_args_list if call.args and "progress:" in call.args[0]]
+        assert any(call.args[1] == "Model download" for call in templates)
 
 
 class TestSnapshotUploadProgress:
@@ -629,3 +691,115 @@ class TestSnapshotUploadProgress:
             pass
 
         context.progress.assert_not_called()
+
+
+class TestByteFormatting:
+    """Human-readable byte/throughput helpers used in transfer log lines."""
+
+    @pytest.mark.parametrize(
+        ("num_bytes", "expected"),
+        [
+            (0, "0 B"),
+            (512, "512 B"),
+            (1024, "1.0 KiB"),
+            (1536, "1.5 KiB"),
+            (1024**2, "1.0 MiB"),
+            (1024**3, "1.0 GiB"),
+            (50 * 1024**3, "50.0 GiB"),
+            (1024**4, "1.0 TiB"),
+            # Beyond TiB the largest unit is reused rather than overflowing the table.
+            (1024**5, "1024.0 TiB"),
+        ],
+    )
+    def test_format_bytes(self, num_bytes, expected):
+        assert _format_bytes(num_bytes) == expected
+
+    def test_format_throughput_reports_rate_per_second(self):
+        assert _format_throughput(1024, 1.0) == "1.0 KiB/s"
+        assert _format_throughput(50 * 1024**2, 2.0) == "25.0 MiB/s"
+
+    def test_format_throughput_guards_zero_elapsed(self):
+        # A zero/negative window has no meaningful rate and must not divide by zero.
+        assert _format_throughput(1000, 0) == "n/a"
+        assert _format_throughput(1000, -1.0) == "n/a"
+
+
+class TestTransferProgressLogger:
+    """Throttled heartbeats reassure operators during multi-GB transfers."""
+
+    def test_suppresses_heartbeats_within_the_interval(self):
+        # init at t=0; both updates fall inside the 15s window, so nothing is logged.
+        clock = iter([0.0, 5.0, 10.0])
+        with (
+            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{REMOTE}.logger") as mock_logger,
+        ):
+            heartbeat = _TransferProgressLogger("Model download", 1000)
+            heartbeat.update(200)
+            heartbeat.update(400)
+
+        mock_logger.info.assert_not_called()
+
+    def test_logs_percent_and_eta_when_total_known(self):
+        # init at t=0; first update inside the window is quiet, second crosses 15s and logs.
+        clock = iter([0.0, 5.0, 16.0])
+        with (
+            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{REMOTE}.logger") as mock_logger,
+        ):
+            heartbeat = _TransferProgressLogger("Model download", 1000)
+            heartbeat.update(200)
+            heartbeat.update(500)
+
+        mock_logger.info.assert_called_once()
+        args = mock_logger.info.call_args.args
+        # verb, transferred, total, percent, rate, eta are forwarded to the template.
+        assert args[1] == "Model download"
+        assert args[2] == "500 B"
+        assert args[3] == "1000 B"
+        assert args[4] == 50  # round(500 / 1000 * 100)
+        assert "ETA" in args[0]
+
+    def test_logs_transferred_bytes_when_total_unknown(self):
+        # A chunked transfer without Content-Length still emits a heartbeat, just no percent/ETA.
+        clock = iter([0.0, 20.0])
+        with (
+            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{REMOTE}.logger") as mock_logger,
+        ):
+            heartbeat = _TransferProgressLogger("Dataset upload", None)
+            heartbeat.update(2048)
+
+        mock_logger.info.assert_called_once()
+        args = mock_logger.info.call_args.args
+        assert "transferred" in args[0]
+        assert "ETA" not in args[0]
+        assert args[1] == "Dataset upload"
+        assert args[2] == "2.0 KiB"
+
+    def test_resets_window_after_each_heartbeat(self):
+        # init t=0; log at t=16 (>=15s), stay quiet at t=20 (<15s since last log), log again at t=32.
+        clock = iter([0.0, 16.0, 20.0, 32.0])
+        with (
+            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{REMOTE}.logger") as mock_logger,
+        ):
+            heartbeat = _TransferProgressLogger("Model download", 10_000)
+            heartbeat.update(1000)
+            heartbeat.update(2000)
+            heartbeat.update(3000)
+
+        assert mock_logger.info.call_count == 2
+
+    def test_treats_zero_total_as_unknown(self):
+        # A zero total must not divide by zero; it falls back to the bytes-transferred form.
+        clock = iter([0.0, 20.0])
+        with (
+            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{REMOTE}.logger") as mock_logger,
+        ):
+            heartbeat = _TransferProgressLogger("Model download", 0)
+            heartbeat.update(500)
+
+        mock_logger.info.assert_called_once()
+        assert "transferred" in mock_logger.info.call_args.args[0]

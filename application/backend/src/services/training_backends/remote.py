@@ -20,6 +20,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -63,6 +64,76 @@ _MAX_EXTRA_INFO_BYTES = 16 * 1024
 SNAPSHOT_UPLOAD_PROGRESS = 10
 TRAINING_PROGRESS_END = 95
 
+# Minimum wall-clock gap between intermediate transfer progress log lines.
+_TRANSFER_LOG_INTERVAL_S = 15.0
+
+
+def _format_bytes(num_bytes: float) -> str:
+    """Render a byte count as a human-readable string (e.g. ``1.5 GiB``)."""
+    value = float(num_bytes)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if abs(value) < 1024.0 or unit == "TiB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024.0
+    return f"{value:.1f} TiB"
+
+
+def _format_throughput(num_bytes: int, elapsed_s: float) -> str:
+    """Render an average transfer rate as ``<size>/s`` for the elapsed window."""
+    if elapsed_s <= 0:
+        return "n/a"
+    return f"{_format_bytes(num_bytes / elapsed_s)}/s"
+
+
+class _TransferProgressLogger:
+    """Emit throttled ``INFO`` heartbeats while bytes stream in or out.
+
+    Logs at most once per :data:`_TRANSFER_LOG_INTERVAL_S` and always logs the
+    first heartbeat once any bytes have moved, so even short transfers surface a
+    line. When the total size is known, the message includes percent, ETA, and
+    instantaneous throughput; otherwise it reports transferred bytes and rate.
+    """
+
+    def __init__(self, verb: str, total_bytes: int | None) -> None:
+        self._verb = verb
+        self._total = total_bytes if total_bytes and total_bytes > 0 else None
+        now = time.monotonic()
+        self._start = now
+        self._last_log = now
+        self._last_bytes = 0
+
+    def update(self, transferred: int) -> None:
+        """Consider logging a heartbeat given ``transferred`` total bytes so far."""
+        now = time.monotonic()
+        if now - self._last_log < _TRANSFER_LOG_INTERVAL_S:
+            return
+        window_s = now - self._last_log
+        window_bytes = transferred - self._last_bytes
+        rate = _format_throughput(window_bytes, window_s)
+        if self._total is not None:
+            percent = min(100, round(transferred / self._total * 100))
+            remaining = self._total - transferred
+            avg_rate = window_bytes / window_s if window_s > 0 else 0
+            eta = f"{remaining / avg_rate:.0f}s" if avg_rate > 0 else "n/a"
+            logger.info(
+                "{} progress: {}/{} ({}%) at {}, ETA {}",
+                self._verb,
+                _format_bytes(transferred),
+                _format_bytes(self._total),
+                percent,
+                rate,
+                eta,
+            )
+        else:
+            logger.info(
+                "{} progress: {} transferred at {}",
+                self._verb,
+                _format_bytes(transferred),
+                rate,
+            )
+        self._last_log = now
+        self._last_bytes = transferred
+
 
 class RemoteTrainingError(RuntimeError):
     """Raised when the trainer service reports a failure."""
@@ -70,6 +141,8 @@ class RemoteTrainingError(RuntimeError):
 
 class RemoteTrainingBackend:
     """Submit training to a trainer service and ingest the returned model."""
+
+    _last_progress_log: str | None = None
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -85,6 +158,9 @@ class RemoteTrainingBackend:
         # False bypasses them. None means "not yet probed".
         self._trust_env: bool | None = None
         self._trust_env_lock = asyncio.Lock()
+        # Suppress duplicate consecutive progress lines (e.g. the trainer
+        # re-emitting the final training state while it optimizes/exports).
+        self._last_progress_log: str | None = None
 
     async def _resolve_trust_env(self) -> bool:
         """Decide once whether proxy env vars should be honored for trainer calls.
@@ -206,10 +282,18 @@ class RemoteTrainingBackend:
         total = archive_path.stat().st_size
         report = context.progress
         to_percent = self._upload_progress
+        logger.info(
+            "Uploading dataset snapshot to trainer: {} ({}) -> job {}",
+            archive_path.name,
+            _format_bytes(total),
+            remote_job_id,
+        )
+        started = time.monotonic()
 
         async def _read_chunks() -> AsyncIterator[bytes]:
             sent = 0
             last_percent = -1
+            heartbeat = _TransferProgressLogger("Dataset upload", total)
             with archive_path.open("rb") as fobj:
                 while chunk := await asyncio.to_thread(fobj.read, _UPLOAD_CHUNK_SIZE):
                     sent += len(chunk)
@@ -217,6 +301,7 @@ class RemoteTrainingBackend:
                     if percent != last_percent:
                         last_percent = percent
                         report(percent, message="Uploading dataset snapshot")
+                    heartbeat.update(sent)
                     yield chunk
 
         settings = get_settings()
@@ -232,7 +317,13 @@ class RemoteTrainingBackend:
                 headers=headers,
             )
             response.raise_for_status()
-        logger.info("Snapshot uploaded to trainer ({} bytes)", total)
+        elapsed = time.monotonic() - started
+        logger.info(
+            "Snapshot uploaded to trainer: {} in {:.1f}s ({})",
+            _format_bytes(total),
+            elapsed,
+            _format_throughput(total, elapsed),
+        )
 
     async def _push_snapshot(self, context: TrainingContext) -> tuple[str, str]:
         """Create an ephemeral private dataset repo and upload the snapshot.
@@ -262,7 +353,11 @@ class RemoteTrainingBackend:
             return resolved_repo_id, str(commit.oid)
 
         repo_id, revision = await asyncio.to_thread(_upload)
-        logger.info("Snapshot pushed to ephemeral dataset repo (revision pinned)")
+        logger.info(
+            "Snapshot pushed to ephemeral dataset repo {} (revision {} pinned)",
+            repo_id,
+            revision[:12],
+        )
         return repo_id, revision
 
     @contextlib.contextmanager
@@ -289,19 +384,23 @@ class RemoteTrainingBackend:
         report = context.progress
         to_percent = self._upload_progress
         last_percent = -1
+        heartbeat: _TransferProgressLogger | None = None
 
         class _ProgressTqdm(base_tqdm):  # type: ignore[valid-type, misc]
             """tqdm that forwards the aggregate processing bar's bytes to the job."""
 
             def update(self, n: float = 1) -> bool | None:
                 result = super().update(n)
-                nonlocal last_percent
+                nonlocal last_percent, heartbeat
                 desc = self.desc or ""
                 if "Processing Files" in desc and self.total:
+                    if heartbeat is None:
+                        heartbeat = _TransferProgressLogger("Dataset upload", int(self.total))
                     percent = to_percent(int(self.n), int(self.total))
                     if percent != last_percent:
                         last_percent = percent
                         report(percent, message="Uploading dataset snapshot")
+                    heartbeat.update(int(self.n))
                 return result
 
         setattr(xet_mod, "tqdm", _ProgressTqdm)
@@ -475,8 +574,9 @@ class RemoteTrainingBackend:
         )
         if extra_info is not None:
             line = render_progress_log(extra_info)
-            if line is not None:
+            if line is not None and line != self._last_progress_log:
                 logger.info(line)
+                self._last_progress_log = line
 
         if status in _TERMINAL_STATES:
             if status == "completed":
@@ -523,10 +623,19 @@ class RemoteTrainingBackend:
         settings = get_settings()
         tmp_archive = Path(tempfile.gettempdir()) / f"remote-model-{uuid.uuid4().hex}.zip"
         stream_timeout = httpx.Timeout(self._timeout, read=settings.trainer_download_read_timeout_s)
+        logger.info("Downloading trained model artifact from trainer job {}", remote_job_id)
+        started = time.monotonic()
         try:
             received = await self._stream_archive(context, remote_job_id, tmp_archive, stream_timeout)
-            logger.info("Downloaded model artifact ({} bytes)", received)
+            elapsed = time.monotonic() - started
+            logger.info(
+                "Downloaded model artifact: {} in {:.1f}s ({})",
+                _format_bytes(received),
+                elapsed,
+                _format_throughput(received, elapsed),
+            )
 
+            logger.info("Extracting model artifact into {}", context.output_dir)
             await asyncio.to_thread(
                 self._extract_archive,
                 tmp_archive,
@@ -534,6 +643,7 @@ class RemoteTrainingBackend:
                 settings.data_import_max_uncompressed_bytes,
                 settings.data_import_min_free_bytes,
             )
+            logger.info("Model artifact extracted into {}", context.output_dir)
         finally:
             tmp_archive.unlink(missing_ok=True)
 
@@ -562,9 +672,14 @@ class RemoteTrainingBackend:
             response.raise_for_status()
             expected = response.headers.get("content-length")
             expected_bytes = int(expected) if expected is not None and expected.isdigit() else None
+            if expected_bytes is not None:
+                logger.info("Model artifact size reported by trainer: {}", _format_bytes(expected_bytes))
+            else:
+                logger.info("Model artifact size not reported by trainer (chunked transfer)")
 
             received = 0
             last_percent = -1
+            heartbeat = _TransferProgressLogger("Model download", expected_bytes)
             with tmp_archive.open("wb") as fobj:
                 async for chunk in response.aiter_bytes():
                     fobj.write(chunk)
@@ -574,6 +689,7 @@ class RemoteTrainingBackend:
                         if percent != last_percent:
                             last_percent = percent
                             report(percent, message="Downloading trained model")
+                    heartbeat.update(received)
 
         if expected_bytes is not None and received != expected_bytes:
             raise RemoteTrainingError(f"Artifact download truncated: received {received} of {expected_bytes} bytes")
