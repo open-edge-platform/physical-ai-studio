@@ -30,15 +30,16 @@ from loguru import logger
 from pydantic import ValidationError
 
 from schemas.hardware import DeviceInfo
-from services.archive_safety import SafeZipArchive, cleanup_staged_archive
-from services.dataset_download_service import DatasetDownloadService
+from services.archive_safety import SafeZipArchive
 from services.training_backends._log_format import render_progress_log
+from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingCanceledError
 from settings import get_settings
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
+    from services.training_backends._training_methods import TrainingMethod
     from services.training_backends.base import TrainingContext
 
 # Only these patterns are pulled by the trainer; mirrors snapshot_download allowlists.
@@ -63,76 +64,6 @@ _MAX_EXTRA_INFO_BYTES = 16 * 1024
 #   - model download:  TRAINING_PROGRESS_END .. 100
 SNAPSHOT_UPLOAD_PROGRESS = 10
 TRAINING_PROGRESS_END = 95
-
-# Minimum wall-clock gap between intermediate transfer progress log lines.
-_TRANSFER_LOG_INTERVAL_S = 15.0
-
-
-def _format_bytes(num_bytes: float) -> str:
-    """Render a byte count as a human-readable string (e.g. ``1.5 GiB``)."""
-    value = float(num_bytes)
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if abs(value) < 1024.0 or unit == "TiB":
-            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
-        value /= 1024.0
-    return f"{value:.1f} TiB"
-
-
-def _format_throughput(num_bytes: int, elapsed_s: float) -> str:
-    """Render an average transfer rate as ``<size>/s`` for the elapsed window."""
-    if elapsed_s <= 0:
-        return "n/a"
-    return f"{_format_bytes(num_bytes / elapsed_s)}/s"
-
-
-class _TransferProgressLogger:
-    """Emit throttled ``INFO`` heartbeats while bytes stream in or out.
-
-    Logs at most once per :data:`_TRANSFER_LOG_INTERVAL_S` and always logs the
-    first heartbeat once any bytes have moved, so even short transfers surface a
-    line. When the total size is known, the message includes percent, ETA, and
-    instantaneous throughput; otherwise it reports transferred bytes and rate.
-    """
-
-    def __init__(self, verb: str, total_bytes: int | None) -> None:
-        self._verb = verb
-        self._total = total_bytes if total_bytes and total_bytes > 0 else None
-        now = time.monotonic()
-        self._start = now
-        self._last_log = now
-        self._last_bytes = 0
-
-    def update(self, transferred: int) -> None:
-        """Consider logging a heartbeat given ``transferred`` total bytes so far."""
-        now = time.monotonic()
-        if now - self._last_log < _TRANSFER_LOG_INTERVAL_S:
-            return
-        window_s = now - self._last_log
-        window_bytes = transferred - self._last_bytes
-        rate = _format_throughput(window_bytes, window_s)
-        if self._total is not None:
-            percent = min(100, round(transferred / self._total * 100))
-            remaining = self._total - transferred
-            avg_rate = window_bytes / window_s if window_s > 0 else 0
-            eta = f"{remaining / avg_rate:.0f}s" if avg_rate > 0 else "n/a"
-            logger.info(
-                "{} progress: {}/{} ({}%) at {}, ETA {}",
-                self._verb,
-                _format_bytes(transferred),
-                _format_bytes(self._total),
-                percent,
-                rate,
-                eta,
-            )
-        else:
-            logger.info(
-                "{} progress: {} transferred at {}",
-                self._verb,
-                _format_bytes(transferred),
-                rate,
-            )
-        self._last_log = now
-        self._last_bytes = transferred
 
 
 class RemoteTrainingError(RuntimeError):
@@ -226,58 +157,29 @@ class RemoteTrainingBackend:
 
     async def train(self, context: TrainingContext) -> None:
         """Deliver the snapshot, submit the job, mirror progress, ingest the model."""
+        await self._training_method().train(context)
+
+    def _training_method(self) -> TrainingMethod:
+        """Pick the dataset-transfer strategy configured for this backend."""
+        from services.training_backends._training_methods import HfTrainingMethod, HttpTrainingMethod
+
         if self._dataset_transfer == "hf":
-            await self._train_via_hf(context)
-        else:
-            await self._train_via_http(context)
+            return HfTrainingMethod(self)
+        return HttpTrainingMethod(self)
 
-    async def _train_via_http(self, context: TrainingContext) -> None:
-        """Stream the snapshot ZIP to the trainer, then run and ingest the job."""
-        archive_path: Path | None = None
-        try:
-            # Sub-step 1: zip the snapshot and stream it to the trainer (0-10%).
-            context.progress(0, message="Preparing dataset snapshot")
-            archive = await asyncio.to_thread(
-                DatasetDownloadService().create_dataset_archive, Path(context.snapshot.path)
-            )
-            archive_path = archive
-            remote_job_id = await self._submit_job(context, dataset_transfer="http")
-            await self._upload_snapshot_http(context, remote_job_id, archive)
-            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
+    async def await_and_ingest(self, context: TrainingContext, remote_job_id: str) -> None:
+        """Shared tail: wait for the remote job, then download and extract the model.
 
-            # Sub-step 2: wait for the remote job (10-95%).
-            await self._wait_for_completion(context, remote_job_id)
+        Both dataset-transfer strategies converge here once the snapshot has been
+        delivered and the job submitted: mirror remote progress into the training
+        window (10-95%), then download and extract the artifact (95-100%).
+        """
+        await self._wait_for_completion(context, remote_job_id)
+        context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
+        await self._download_and_extract(context, remote_job_id)
+        context.progress(100, message="Model downloaded")
 
-            # Sub-step 3: download and extract the trained model (95-100%).
-            context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
-            await self._download_and_extract(context, remote_job_id)
-            context.progress(100, message="Model downloaded")
-        finally:
-            if archive_path is not None:
-                cleanup_staged_archive(archive_path)
-
-    async def _train_via_hf(self, context: TrainingContext) -> None:
-        """Push snapshot to an ephemeral HF repo, submit job, mirror progress, ingest the model."""
-        repo_id: str | None = None
-        try:
-            # Sub-step 1: push the snapshot to an ephemeral private dataset repo (0-10%).
-            context.progress(0, message="Uploading dataset snapshot")
-            repo_id, revision = await self._push_snapshot(context)
-            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
-
-            # Sub-step 2: submit and wait for the remote job (10-95%).
-            remote_job_id = await self._submit_job(context, dataset_transfer="hf", repo_id=repo_id, revision=revision)
-            await self._wait_for_completion(context, remote_job_id)
-
-            # Sub-step 3: download and extract the trained model (95-100%).
-            context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
-            await self._download_and_extract(context, remote_job_id)
-            context.progress(100, message="Model downloaded")
-        finally:
-            if repo_id is not None:
-                await self._delete_repo(repo_id)
-
-    async def _upload_snapshot_http(self, context: TrainingContext, remote_job_id: str, archive_path: Path) -> None:
+    async def upload_snapshot_http(self, context: TrainingContext, remote_job_id: str, archive_path: Path) -> None:
         """Stream the snapshot ZIP to the trainer, mirroring bytes into the 0-10% window."""
         total = archive_path.stat().st_size
         report = context.progress
@@ -285,7 +187,7 @@ class RemoteTrainingBackend:
         logger.info(
             "Uploading dataset snapshot to trainer: {} ({}) -> job {}",
             archive_path.name,
-            _format_bytes(total),
+            format_bytes(total),
             remote_job_id,
         )
         started = time.monotonic()
@@ -293,7 +195,7 @@ class RemoteTrainingBackend:
         async def _read_chunks() -> AsyncIterator[bytes]:
             sent = 0
             last_percent = -1
-            heartbeat = _TransferProgressLogger("Dataset upload", total)
+            heartbeat = TransferProgressLogger("Dataset upload", total)
             with archive_path.open("rb") as fobj:
                 while chunk := await asyncio.to_thread(fobj.read, _UPLOAD_CHUNK_SIZE):
                     sent += len(chunk)
@@ -320,12 +222,12 @@ class RemoteTrainingBackend:
         elapsed = time.monotonic() - started
         logger.info(
             "Snapshot uploaded to trainer: {} in {:.1f}s ({})",
-            _format_bytes(total),
+            format_bytes(total),
             elapsed,
-            _format_throughput(total, elapsed),
+            format_throughput(total, elapsed),
         )
 
-    async def _push_snapshot(self, context: TrainingContext) -> tuple[str, str]:
+    async def push_snapshot(self, context: TrainingContext) -> tuple[str, str]:
         """Create an ephemeral private dataset repo and upload the snapshot.
 
         Real byte progress is mirrored into the job's reserved progress window by
@@ -384,7 +286,7 @@ class RemoteTrainingBackend:
         report = context.progress
         to_percent = self._upload_progress
         last_percent = -1
-        heartbeat: _TransferProgressLogger | None = None
+        heartbeat: TransferProgressLogger | None = None
 
         class _ProgressTqdm(base_tqdm):  # type: ignore[valid-type, misc]
             """tqdm that forwards the aggregate processing bar's bytes to the job."""
@@ -395,7 +297,7 @@ class RemoteTrainingBackend:
                 desc = self.desc or ""
                 if "Processing Files" in desc and self.total:
                     if heartbeat is None:
-                        heartbeat = _TransferProgressLogger("Dataset upload", int(self.total))
+                        heartbeat = TransferProgressLogger("Dataset upload", int(self.total))
                     percent = to_percent(int(self.n), int(self.total))
                     if percent != last_percent:
                         last_percent = percent
@@ -423,7 +325,7 @@ class RemoteTrainingBackend:
             round(uploaded_bytes / total_bytes * SNAPSHOT_UPLOAD_PROGRESS),
         )
 
-    async def _submit_job(
+    async def submit_job(
         self,
         context: TrainingContext,
         *,
@@ -630,9 +532,9 @@ class RemoteTrainingBackend:
             elapsed = time.monotonic() - started
             logger.info(
                 "Downloaded model artifact: {} in {:.1f}s ({})",
-                _format_bytes(received),
+                format_bytes(received),
                 elapsed,
-                _format_throughput(received, elapsed),
+                format_throughput(received, elapsed),
             )
 
             logger.info("Extracting model artifact into {}", context.output_dir)
@@ -673,13 +575,13 @@ class RemoteTrainingBackend:
             expected = response.headers.get("content-length")
             expected_bytes = int(expected) if expected is not None and expected.isdigit() else None
             if expected_bytes is not None:
-                logger.info("Model artifact size reported by trainer: {}", _format_bytes(expected_bytes))
+                logger.info("Model artifact size reported by trainer: {}", format_bytes(expected_bytes))
             else:
                 logger.info("Model artifact size not reported by trainer (chunked transfer)")
 
             received = 0
             last_percent = -1
-            heartbeat = _TransferProgressLogger("Model download", expected_bytes)
+            heartbeat = TransferProgressLogger("Model download", expected_bytes)
             with tmp_archive.open("wb") as fobj:
                 async for chunk in response.aiter_bytes():
                     fobj.write(chunk)
@@ -729,7 +631,7 @@ class RemoteTrainingBackend:
         except httpx.HTTPError as exc:
             logger.warning("Failed to cancel remote job: {}", exc)
 
-    async def _delete_repo(self, repo_id: str) -> None:
+    async def delete_repo(self, repo_id: str) -> None:
         """Delete the ephemeral snapshot repo; best effort."""
         from huggingface_hub import HfApi
 

@@ -20,19 +20,15 @@ import pytest
 from schemas.dataset import Snapshot
 from schemas.job import TrainJobPayload
 from schemas.model import Model
+from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingContext
-from services.training_backends.remote import (
-    SNAPSHOT_UPLOAD_PROGRESS,
-    TRAINING_PROGRESS_END,
-    _format_bytes,
-    _format_throughput,
-    _TransferProgressLogger,
-)
+from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 REMOTE = "services.training_backends.remote"
+TRANSFER = "services.training_backends._transfer_progress"
 _SHA = "a" * 40
 # create_repo resolves the bare name to a namespaced id; the backend must use this
 # resolved id for the upload and cleanup, not the requested (possibly bare) id.
@@ -509,7 +505,7 @@ class TestHttpDatasetTransfer:
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
-            with patch.object(backend, "_submit_job", _fake_submit):
+            with patch.object(backend, "submit_job", _fake_submit):
                 await backend.train(context)
 
         assert captured == {"dataset_transfer": "http", "repo_id": None, "revision": None}
@@ -535,8 +531,8 @@ class TestSnapshotUploadHeartbeat:
             patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
             # A negative interval forces a heartbeat on the first streamed chunk.
-            patch(f"{REMOTE}._TRANSFER_LOG_INTERVAL_S", -1.0),
-            patch(f"{REMOTE}.logger") as mock_logger,
+            patch(f"{TRANSFER}._TRANSFER_LOG_INTERVAL_S", -1.0),
+            patch(f"{TRANSFER}.logger") as mock_logger,
         ):
             backend = _backend(settings)
             await backend.train(context)
@@ -619,8 +615,8 @@ class TestModelDownloadProgress:
             patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
             # A negative interval makes every update cross the throttle threshold.
-            patch(f"{REMOTE}._TRANSFER_LOG_INTERVAL_S", -1.0),
-            patch(f"{REMOTE}.logger") as mock_logger,
+            patch(f"{TRANSFER}._TRANSFER_LOG_INTERVAL_S", -1.0),
+            patch(f"{TRANSFER}.logger") as mock_logger,
         ):
             backend = _backend(settings)
             await backend.train(context)
@@ -711,17 +707,17 @@ class TestByteFormatting:
             (1024**5, "1024.0 TiB"),
         ],
     )
-    def test_format_bytes(self, num_bytes, expected):
-        assert _format_bytes(num_bytes) == expected
+    def testformat_bytes(self, num_bytes, expected):
+        assert format_bytes(num_bytes) == expected
 
-    def test_format_throughput_reports_rate_per_second(self):
-        assert _format_throughput(1024, 1.0) == "1.0 KiB/s"
-        assert _format_throughput(50 * 1024**2, 2.0) == "25.0 MiB/s"
+    def testformat_throughput_reports_rate_per_second(self):
+        assert format_throughput(1024, 1.0) == "1.0 KiB/s"
+        assert format_throughput(50 * 1024**2, 2.0) == "25.0 MiB/s"
 
-    def test_format_throughput_guards_zero_elapsed(self):
+    def testformat_throughput_guards_zero_elapsed(self):
         # A zero/negative window has no meaningful rate and must not divide by zero.
-        assert _format_throughput(1000, 0) == "n/a"
-        assert _format_throughput(1000, -1.0) == "n/a"
+        assert format_throughput(1000, 0) == "n/a"
+        assert format_throughput(1000, -1.0) == "n/a"
 
 
 class TestTransferProgressLogger:
@@ -731,10 +727,10 @@ class TestTransferProgressLogger:
         # init at t=0; both updates fall inside the 15s window, so nothing is logged.
         clock = iter([0.0, 5.0, 10.0])
         with (
-            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
-            patch(f"{REMOTE}.logger") as mock_logger,
+            patch(f"{TRANSFER}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{TRANSFER}.logger") as mock_logger,
         ):
-            heartbeat = _TransferProgressLogger("Model download", 1000)
+            heartbeat = TransferProgressLogger("Model download", 1000)
             heartbeat.update(200)
             heartbeat.update(400)
 
@@ -744,10 +740,10 @@ class TestTransferProgressLogger:
         # init at t=0; first update inside the window is quiet, second crosses 15s and logs.
         clock = iter([0.0, 5.0, 16.0])
         with (
-            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
-            patch(f"{REMOTE}.logger") as mock_logger,
+            patch(f"{TRANSFER}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{TRANSFER}.logger") as mock_logger,
         ):
-            heartbeat = _TransferProgressLogger("Model download", 1000)
+            heartbeat = TransferProgressLogger("Model download", 1000)
             heartbeat.update(200)
             heartbeat.update(500)
 
@@ -764,10 +760,10 @@ class TestTransferProgressLogger:
         # A chunked transfer without Content-Length still emits a heartbeat, just no percent/ETA.
         clock = iter([0.0, 20.0])
         with (
-            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
-            patch(f"{REMOTE}.logger") as mock_logger,
+            patch(f"{TRANSFER}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{TRANSFER}.logger") as mock_logger,
         ):
-            heartbeat = _TransferProgressLogger("Dataset upload", None)
+            heartbeat = TransferProgressLogger("Dataset upload", None)
             heartbeat.update(2048)
 
         mock_logger.info.assert_called_once()
@@ -781,10 +777,10 @@ class TestTransferProgressLogger:
         # init t=0; log at t=16 (>=15s), stay quiet at t=20 (<15s since last log), log again at t=32.
         clock = iter([0.0, 16.0, 20.0, 32.0])
         with (
-            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
-            patch(f"{REMOTE}.logger") as mock_logger,
+            patch(f"{TRANSFER}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{TRANSFER}.logger") as mock_logger,
         ):
-            heartbeat = _TransferProgressLogger("Model download", 10_000)
+            heartbeat = TransferProgressLogger("Model download", 10_000)
             heartbeat.update(1000)
             heartbeat.update(2000)
             heartbeat.update(3000)
@@ -795,10 +791,10 @@ class TestTransferProgressLogger:
         # A zero total must not divide by zero; it falls back to the bytes-transferred form.
         clock = iter([0.0, 20.0])
         with (
-            patch(f"{REMOTE}.time.monotonic", side_effect=lambda: next(clock)),
-            patch(f"{REMOTE}.logger") as mock_logger,
+            patch(f"{TRANSFER}.time.monotonic", side_effect=lambda: next(clock)),
+            patch(f"{TRANSFER}.logger") as mock_logger,
         ):
-            heartbeat = _TransferProgressLogger("Model download", 0)
+            heartbeat = TransferProgressLogger("Model download", 0)
             heartbeat.update(500)
 
         mock_logger.info.assert_called_once()
