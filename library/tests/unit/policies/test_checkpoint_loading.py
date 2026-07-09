@@ -169,6 +169,6 @@ def test_policy_export_import_roundtrip(
 
         with patch.object(policy_cls, "load_from_checkpoint", _load_with_stats):  # type: ignore[misc]
             # Re-import and verify
-            loaded = InferenceModel.load(export_dir)
+            loaded = InferenceModel(export_dir)
             assert loaded.backend == backend
             assert loaded.policy_name == policy_cls.__name__.lower()
