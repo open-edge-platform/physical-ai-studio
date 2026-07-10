@@ -56,6 +56,11 @@ class HttpTrainingMethod(TrainingMethod):
             await backend.upload_snapshot_http(context, remote_job_id, archive)
             context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
 
+            # Persist the remote job id now that the dataset is fully on the trainer,
+            # so a studio restart reattaches to the running job.
+            if context.on_remote_job_id is not None:
+                await context.on_remote_job_id(remote_job_id)
+
             # Sub-steps 2 & 3: wait for the remote job, then ingest the model.
             await backend.await_and_ingest(context, remote_job_id)
         finally:

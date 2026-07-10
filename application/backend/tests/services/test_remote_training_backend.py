@@ -649,6 +649,39 @@ class TestHttpDatasetTransfer:
 
         assert captured == {"dataset_transfer": "http", "repo_id": None, "revision": None}
 
+    @pytest.mark.anyio
+    async def test_http_persists_remote_job_id_after_upload(self, tmp_path):
+        """The HTTP path records the remote job id so a restart can reattach.
+
+        Regression guard: without this the default (http) transfer never persists
+        the id and a restart re-submits and re-uploads the whole dataset.
+        """
+        settings = _settings()
+        settings.trainer_dataset_transfer = "http"
+        context = _context(tmp_path)
+        (tmp_path / "snap" / "info.json").write_text("{}")
+
+        persisted: list[str] = []
+
+        async def _on_remote_job_id(remote_job_id: str) -> None:
+            persisted.append(remote_job_id)
+
+        context.on_remote_job_id = _on_remote_job_id
+        controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        # The id was persisted, and it matches the id the dataset was uploaded to.
+        assert persisted == [controller.remote_job_id]
+        assert any(url.endswith(f"/jobs/{controller.remote_job_id}/dataset") for url in controller.put_urls)
+
 
 class TestSnapshotUploadHeartbeat:
     """The HTTP upload loop emits throttled byte heartbeats for large snapshots."""
