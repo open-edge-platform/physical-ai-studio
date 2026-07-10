@@ -101,6 +101,10 @@ class _Controller:
         self._event_batches: list[list[dict]] = [list(states)]
         self.artifact_chunks = [b"zip-bytes"]
         self.artifact_headers: dict = {}
+        self.artifact_batches: list[tuple[list[bytes], dict]] | None = None
+        self.artifact_range_headers: list[str | None] = []
+        self.upload_offset = 0
+        self.upload_ranges: list[str] = []
         self.posted_urls: list[str] = []
         self.put_urls: list[str] = []
         self.cancelled = False
@@ -143,6 +147,8 @@ class _FakeClient:
 
     async def put(self, url: str, content: object = None, headers: dict | None = None) -> _FakeResponse:
         self._c.put_urls.append(url)
+        if headers and "Content-Range" in headers:
+            self._c.upload_ranges.append(headers["Content-Range"])
         # Drain the streamed upload body so the client-side progress generator runs.
         if hasattr(content, "__aiter__"):
             async for _ in content:  # type: ignore[union-attr]
@@ -150,7 +156,12 @@ class _FakeClient:
         elif hasattr(content, "__iter__"):
             for _ in content:  # type: ignore[union-attr]
                 pass
-        return _FakeResponse(json_data={})
+        if headers and "Content-Range" in headers:
+            self._c.upload_offset = int(headers["Content-Range"].split(" ")[1].split("-")[1].split("/")[0]) + 1
+        return _FakeResponse(json_data={}, headers={"upload-offset": str(self._c.upload_offset)})
+
+    async def head(self, url: str) -> _FakeResponse:
+        return _FakeResponse(headers={"upload-offset": str(self._c.upload_offset)})
 
     async def get(self, url: str) -> _FakeResponse:
         # /health is the proxy probe; /devices reports trainer hardware; job state
@@ -170,6 +181,10 @@ class _FakeClient:
             if self._c.raise_connection_error:
                 raise httpx.ConnectError("All connection attempts failed")
             return _FakeStreamCtx(_FakeResponse(lines=self._c.event_lines()))
+        self._c.artifact_range_headers.append(headers.get("Range") if headers else None)
+        if self._c.artifact_batches:
+            chunks, artifact_headers = self._c.artifact_batches.pop(0)
+            return _FakeStreamCtx(_FakeResponse(chunks=chunks, headers=artifact_headers))
         return _FakeStreamCtx(_FakeResponse(chunks=self._c.artifact_chunks, headers=self._c.artifact_headers))
 
 
@@ -682,6 +697,25 @@ class TestHttpDatasetTransfer:
         assert persisted == [controller.remote_job_id]
         assert any(url.endswith(f"/jobs/{controller.remote_job_id}/dataset") for url in controller.put_urls)
 
+    @pytest.mark.anyio
+    async def test_http_upload_starts_at_trainer_staged_offset(self, tmp_path):
+        """Reattachment only streams the portion of a snapshot absent from the trainer."""
+        settings = _settings()
+        context = _context(tmp_path)
+        archive = tmp_path / "snapshot.zip"
+        archive.write_bytes(b"abcdefghij")
+        controller = _Controller(states=[])
+        controller.upload_offset = 4
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            await backend.upload_snapshot_http(context, controller.remote_job_id, archive)
+
+        assert controller.upload_ranges == ["bytes 4-9/10"]
+
 
 class TestSnapshotUploadHeartbeat:
     """The HTTP upload loop emits throttled byte heartbeats for large snapshots."""
@@ -795,6 +829,30 @@ class TestModelDownloadProgress:
 
         templates = [call for call in mock_logger.info.call_args_list if call.args and "progress:" in call.args[0]]
         assert any(call.args[1] == "Model download" for call in templates)
+
+    @pytest.mark.anyio
+    async def test_download_resumes_with_range_after_short_response(self, tmp_path):
+        """The second artifact request starts exactly after the persisted partial file."""
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+        controller.artifact_batches = [
+            ([b"part"], {"content-length": "10"}),
+            ([b"ial-data"], {"content-range": "bytes 4-11/12", "content-length": "8"}),
+        ]
+        api_cls = _hf_api_mock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        assert controller.artifact_range_headers == [None, "bytes=4-"]
 
 
 class TestSnapshotUploadProgress:

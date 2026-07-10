@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
 router = APIRouter(prefix="/jobs")
 
 _TERMINAL = {TrainerJobStatus.COMPLETED, TrainerJobStatus.FAILED, TrainerJobStatus.CANCELED}
+_CONTENT_RANGE_RE = re.compile(r"^bytes (\d+)-(\d+)/(\d+)$")
 
 
 def _manager(request: Request) -> QueueManager:
@@ -50,11 +52,54 @@ def _dataset_dir(job_id: str) -> Path:
     return get_settings().datasets_dir / job_id
 
 
-async def _stream_body_to_disk(request: Request, destination: Path) -> None:
-    """Stream the raw request body to ``destination`` in chunks."""
-    with destination.open("wb") as out:
+def _upload_path(job_id: str) -> Path:
+    """Return the staged partial ZIP path for an HTTP dataset upload."""
+    return get_settings().datasets_dir / f"{job_id}.zip.part"
+
+
+async def _stream_body_to_disk(request: Request, destination: Path, *, append: bool) -> int:
+    """Stream the raw request body to ``destination`` and return bytes written."""
+    written = 0
+    with destination.open("ab" if append else "wb") as out:
         async for chunk in request.stream():
             out.write(chunk)
+            written += len(chunk)
+    return written
+
+
+def _upload_offset(job_id: str) -> int:
+    """Return the number of staged upload bytes for a job."""
+    try:
+        return _upload_path(job_id).stat().st_size
+    except FileNotFoundError:
+        return 0
+
+
+def _parse_upload_range(request: Request, job_id: str) -> tuple[int, int | None, int | None, bool]:
+    """Validate a resumable upload range and return its write parameters."""
+    content_range = request.headers.get("content-range")
+    if not content_range:
+        return 0, None, None, False
+    match = _CONTENT_RANGE_RE.fullmatch(content_range)
+    if match is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Content-Range header")
+    start, end, total = (int(value) for value in match.groups())
+    if total <= 0 or start > end or end >= total:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Content-Range bounds")
+    offset = _upload_offset(job_id)
+    if start != offset:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Upload offset does not match staged dataset",
+            headers={"Upload-Offset": str(offset)},
+        )
+    return start, end, total, start > 0
+
+
+def _validate_range_body_size(written: int, start: int, end: int | None, total: int | None) -> None:
+    """Ensure the body exactly fills the declared byte range."""
+    if end is None or total is None or written != end - start + 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Content-Range length does not match body")
 
 
 def _validate_and_extract(archive_path: Path, target_dir: Path) -> None:
@@ -79,7 +124,7 @@ async def submit_job(body: SubmitJobRequest, request: Request) -> SubmitJobRespo
 
 
 @router.put("/{job_id}/dataset", response_model=JobState, status_code=status.HTTP_202_ACCEPTED)
-async def upload_dataset(job_id: str, request: Request) -> JobState:
+async def upload_dataset(job_id: str, request: Request, response: Response) -> JobState:
     """Validate an awaiting HTTP job's ZIP upload and queue it."""
     manager = _manager(request)
     state = manager.store.get(job_id)
@@ -101,13 +146,25 @@ async def upload_dataset(job_id: str, request: Request) -> JobState:
 
     settings = get_settings()
     target_dir = _dataset_dir(job_id)
-    archive_path = settings.datasets_dir / f"{job_id}.zip"
+    archive_path = _upload_path(job_id)
     settings.datasets_dir.mkdir(parents=True, exist_ok=True)
 
+    start, end, total, append = _parse_upload_range(request, job_id)
+
+    completed_upload = False
     try:
         check_disk_headroom(settings.datasets_dir, settings.max_uncompressed_bytes, settings.min_free_bytes)
-        await _stream_body_to_disk(request, archive_path)
+        written = await _stream_body_to_disk(request, archive_path, append=append)
+        if total is not None:
+            if end is None:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Content-Range header")
+            _validate_range_body_size(written, start, end, total)
+            next_offset = end + 1
+            response.headers["Upload-Offset"] = str(next_offset)
+            if next_offset < total:
+                return state
         await asyncio.to_thread(_validate_and_extract, archive_path, target_dir)
+        completed_upload = True
     except (ZipBombDetectedError, InvalidArchiveError) as exc:
         _cleanup_upload(archive_path, target_dir)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -115,7 +172,8 @@ async def upload_dataset(job_id: str, request: Request) -> JobState:
         _cleanup_upload(archive_path, target_dir)
         raise HTTPException(status_code=status.HTTP_507_INSUFFICIENT_STORAGE, detail=str(exc)) from exc
     finally:
-        archive_path.unlink(missing_ok=True)
+        if completed_upload:
+            archive_path.unlink(missing_ok=True)
 
     manager.store.mark_dataset_ready(job_id)
     updated = manager.store.get(job_id)
@@ -132,6 +190,21 @@ def _cleanup_upload(archive_path: Path, target_dir: Path) -> None:
             shutil.rmtree(target_dir)
         except OSError as exc:
             logger.warning("Failed to clean up dataset dir {}: {}", target_dir, exc)
+
+
+@router.head("/{job_id}/dataset", status_code=status.HTTP_204_NO_CONTENT)
+async def get_dataset_upload_offset(job_id: str, request: Request) -> Response:
+    """Return the staged byte offset for an interrupted HTTP dataset upload."""
+    manager = _manager(request)
+    state = manager.store.get(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if state.status != TrainerJobStatus.AWAITING_DATASET:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job is not awaiting a dataset upload")
+    submitted = manager.store.get_request(job_id)
+    if submitted is None or submitted.dataset_transfer != DatasetTransfer.HTTP:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job does not use http dataset transfer")
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Upload-Offset": str(_upload_offset(job_id))})
 
 
 @router.get("/{job_id}", response_model=JobState)

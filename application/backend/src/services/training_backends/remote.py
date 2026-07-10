@@ -23,14 +23,15 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from loguru import logger
 from pydantic import ValidationError
 
 from schemas.hardware import DeviceInfo
-from services.archive_safety import SafeZipArchive
+from services.archive_safety import SafeZipArchive, cleanup_staged_archive
+from services.dataset_download_service import DatasetDownloadService
 from services.training_backends._log_format import render_progress_log
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingCanceledError, TrainingSuspendedError
@@ -48,6 +49,7 @@ _EVENT_WAIT_TIMEOUT_S = 3.0
 _RECONNECT_BACKOFF_S = 2.0
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
 _UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
+_TRANSFER_RETRY_LIMIT = 3
 
 _REMOTE_JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
@@ -164,9 +166,32 @@ class RemoteTrainingBackend:
         """
         if context.remote_job_id:
             logger.info("Reattaching to in-flight remote training job")
+            await self._resume_pending_http_upload(context, context.remote_job_id)
             await self.await_and_ingest(context, context.remote_job_id)
             return
         await self._training_method().train(context)
+
+    async def _resume_pending_http_upload(self, context: TrainingContext, remote_job_id: str) -> None:
+        """Resume an HTTP dataset upload when the trainer still awaits its ZIP."""
+        if self._dataset_transfer != "http" or context.snapshot is None:
+            return
+        try:
+            async with await self._client() as client:
+                response = await client.get(f"{self._base_url}/jobs/{remote_job_id}")
+                response.raise_for_status()
+                state = response.json()
+        except httpx.HTTPError as exc:
+            raise RemoteTrainingError("Unable to inspect remote training job for upload resume") from exc
+        if not isinstance(state, dict) or state.get("status") != "awaiting_dataset":
+            return
+        archive_path = await asyncio.to_thread(
+            DatasetDownloadService().create_dataset_archive, Path(context.snapshot.path)
+        )
+        try:
+            await self.upload_snapshot_http(context, remote_job_id, archive_path)
+            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
+        finally:
+            cleanup_staged_archive(archive_path)
 
     def _training_method(self) -> TrainingMethod:
         """Pick the dataset-transfer strategy configured for this backend."""
@@ -196,11 +221,12 @@ class RemoteTrainingBackend:
         )
         started = time.monotonic()
 
-        async def _read_chunks() -> AsyncIterator[bytes]:
-            sent = 0
+        async def _read_chunks(offset: int) -> AsyncIterator[bytes]:
+            sent = offset
             last_percent = -1
             heartbeat = TransferProgressLogger("Dataset upload", total)
             with archive_path.open("rb") as fobj:
+                fobj.seek(offset)
                 while chunk := await asyncio.to_thread(fobj.read, _UPLOAD_CHUNK_SIZE):
                     sent += len(chunk)
                     percent = to_percent(sent, total)
@@ -213,16 +239,32 @@ class RemoteTrainingBackend:
         settings = get_settings()
         # A large upload must not trip the short request timeout; guard stalls with a per-write gap.
         stream_timeout = httpx.Timeout(self._timeout, write=settings.trainer_download_read_timeout_s)
-        # Streaming a generator body uses chunked transfer encoding; do not set Content-Length.
-        headers = {"Content-Type": "application/zip"}
-        client = await self._client(stream_timeout)
-        async with client:
-            response = await client.put(
-                f"{self._base_url}/jobs/{remote_job_id}/dataset",
-                content=_read_chunks(),
-                headers=headers,
-            )
-            response.raise_for_status()
+        offset = await self._get_upload_offset(remote_job_id, total, stream_timeout)
+        for attempt in range(_TRANSFER_RETRY_LIMIT + 1):
+            if offset == total:
+                break
+            headers = {
+                "Content-Type": "application/zip",
+                "Content-Range": f"bytes {offset}-{total - 1}/{total}",
+            }
+            try:
+                client = await self._client(stream_timeout)
+                async with client:
+                    response = await client.put(
+                        f"{self._base_url}/jobs/{remote_job_id}/dataset",
+                        content=_read_chunks(offset),
+                        headers=headers,
+                    )
+                    response.raise_for_status()
+                    reported_offset = response.headers.get("upload-offset")
+                    offset = int(reported_offset) if reported_offset is not None else total
+            except (httpx.HTTPError, ValueError) as exc:
+                if attempt == _TRANSFER_RETRY_LIMIT:
+                    raise RemoteTrainingError("Dataset upload could not be resumed") from exc
+                logger.warning("Dataset upload interrupted; resuming from trainer offset")
+                offset = await self._get_upload_offset(remote_job_id, total, stream_timeout)
+        if offset != total:
+            raise RemoteTrainingError(f"Trainer accepted an incomplete dataset upload ({offset} of {total} bytes)")
         elapsed = time.monotonic() - started
         logger.info(
             "Snapshot uploaded to trainer: {} in {:.1f}s ({})",
@@ -230,6 +272,19 @@ class RemoteTrainingBackend:
             elapsed,
             format_throughput(total, elapsed),
         )
+
+    async def _get_upload_offset(self, remote_job_id: str, total: int, client_timeout: httpx.Timeout) -> int:
+        """Read and validate the trainer's staged dataset-upload offset."""
+        try:
+            async with await self._client(client_timeout) as client:
+                response = await client.head(f"{self._base_url}/jobs/{remote_job_id}/dataset")
+                response.raise_for_status()
+                offset = int(response.headers.get("upload-offset", "0"))
+        except (httpx.HTTPError, ValueError) as exc:
+            raise RemoteTrainingError("Unable to determine dataset upload resume offset") from exc
+        if not 0 <= offset <= total:
+            raise RemoteTrainingError(f"Trainer returned invalid dataset upload offset {offset}")
+        return offset
 
     async def push_snapshot(self, context: TrainingContext) -> tuple[str, str]:
         """Create an ephemeral private dataset repo and upload the snapshot.
@@ -437,6 +492,7 @@ class RemoteTrainingBackend:
         """
         queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
         received_event = False
+        result: tuple[bool, bool] | None = None
         url = f"{self._base_url}/jobs/{remote_job_id}/events"
         client = await self._client()
         async with (
@@ -446,7 +502,7 @@ class RemoteTrainingBackend:
             response.raise_for_status()
             reader = asyncio.create_task(self._read_sse_events(response, queue))
             try:
-                while True:
+                while result is None:
                     if context.should_stop():
                         await self._handle_stop_request(context, remote_job_id)
 
@@ -457,19 +513,24 @@ class RemoteTrainingBackend:
                         continue
 
                     if kind == "end":
-                        return False, received_event
+                        result = False, received_event
+                        continue
                     if kind == "error":
                         # Transient read error: surface to the reconnect loop.
                         logger.warning("Trainer event stream read error: {}", payload)
-                        return False, received_event
+                        result = False, received_event
+                        continue
 
                     received_event = True
                     if self._apply_state(context, self._parse_state(payload)):
-                        return True, received_event
+                        result = True, received_event
             finally:
                 reader.cancel()
                 with contextlib.suppress(BaseException):
                     await reader
+        if result is None:
+            raise RemoteTrainingError("Trainer event stream ended unexpectedly")
+        return cast("tuple[bool, bool]", result)
 
     @staticmethod
     async def _read_sse_events(response: httpx.Response, queue: asyncio.Queue[tuple[str, object]]) -> None:
@@ -600,36 +661,55 @@ class RemoteTrainingBackend:
         """Stream the artifact to ``tmp_archive`` and reject truncated downloads."""
         report = context.progress
         to_percent = self._download_progress
-        client = await self._client(stream_timeout)
-        async with (
-            client,
-            client.stream("GET", f"{self._base_url}/jobs/{remote_job_id}/artifact") as response,
-        ):
-            response.raise_for_status()
-            expected = response.headers.get("content-length")
-            expected_bytes = int(expected) if expected is not None and expected.isdigit() else None
-            if expected_bytes is not None:
-                logger.info("Model artifact size reported by trainer: {}", format_bytes(expected_bytes))
-            else:
-                logger.info("Model artifact size not reported by trainer (chunked transfer)")
+        received = tmp_archive.stat().st_size if tmp_archive.exists() else 0
+        expected_bytes: int | None = None
+        last_percent = -1
+        heartbeat: TransferProgressLogger | None = None
+        for attempt in range(_TRANSFER_RETRY_LIMIT + 1):
+            headers = {"Range": f"bytes={received}-"} if received else None
+            try:
+                client = await self._client(stream_timeout)
+                async with (
+                    client,
+                    client.stream(
+                        "GET", f"{self._base_url}/jobs/{remote_job_id}/artifact", headers=headers
+                    ) as response,
+                ):
+                    response.raise_for_status()
+                    expected_bytes = self._artifact_total_bytes(response.headers, received)
+                    if heartbeat is None:
+                        heartbeat = TransferProgressLogger("Model download", expected_bytes)
+                    with tmp_archive.open("ab") as fobj:
+                        async for chunk in response.aiter_bytes():
+                            fobj.write(chunk)
+                            received += len(chunk)
+                            if expected_bytes is not None:
+                                percent = to_percent(received, expected_bytes)
+                                if percent != last_percent:
+                                    last_percent = percent
+                                    report(percent, message="Downloading trained model")
+                            heartbeat.update(received)
+                if expected_bytes is None or received == expected_bytes:
+                    return received
+                raise RemoteTrainingError(f"Artifact download truncated: received {received} of {expected_bytes} bytes")
+            except (httpx.HTTPError, RemoteTrainingError) as exc:
+                if attempt == _TRANSFER_RETRY_LIMIT:
+                    raise RemoteTrainingError(str(exc) or "Model download could not be resumed") from exc
+                logger.warning("Model download interrupted; resuming from {} bytes", received)
+        raise RemoteTrainingError("Model download could not be resumed")
 
-            received = 0
-            last_percent = -1
-            heartbeat = TransferProgressLogger("Model download", expected_bytes)
-            with tmp_archive.open("wb") as fobj:
-                async for chunk in response.aiter_bytes():
-                    fobj.write(chunk)
-                    received += len(chunk)
-                    if expected_bytes is not None:
-                        percent = to_percent(received, expected_bytes)
-                        if percent != last_percent:
-                            last_percent = percent
-                            report(percent, message="Downloading trained model")
-                    heartbeat.update(received)
-
-        if expected_bytes is not None and received != expected_bytes:
-            raise RemoteTrainingError(f"Artifact download truncated: received {received} of {expected_bytes} bytes")
-        return received
+    @staticmethod
+    def _artifact_total_bytes(headers: Any, offset: int) -> int | None:
+        """Return complete artifact length from a range or regular response."""
+        content_range = headers.get("content-range")
+        if isinstance(content_range, str) and "/" in content_range:
+            total = content_range.rsplit("/", maxsplit=1)[1]
+            if total.isdigit():
+                return int(total)
+        content_length = headers.get("content-length")
+        if isinstance(content_length, str) and content_length.isdigit():
+            return offset + int(content_length)
+        return None
 
     @staticmethod
     def _download_progress(received_bytes: int, total_bytes: int) -> int:

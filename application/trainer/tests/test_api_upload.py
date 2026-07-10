@@ -76,6 +76,36 @@ def test_upload_extracts_and_queues_job(client) -> None:
     assert response.json()["status"] == TrainerJobStatus.QUEUED
 
 
+def test_upload_resumes_from_staged_offset(client) -> None:
+    """A partial request remains staged until the final byte range arrives."""
+    test_client, store = client
+    payload = _zip_bytes({"meta/info.json": b"{}"})
+    split = len(payload) // 2
+
+    first = test_client.put(
+        "/jobs/job-1/dataset",
+        content=payload[:split],
+        headers={**_ZIP_HEADERS, "Content-Range": f"bytes 0-{split - 1}/{len(payload)}"},
+    )
+
+    assert first.status_code == 202
+    assert first.headers["upload-offset"] == str(split)
+    assert store.ready_called is False
+    offset = test_client.head("/jobs/job-1/dataset")
+    assert offset.status_code == 204
+    assert offset.headers["upload-offset"] == str(split)
+
+    final = test_client.put(
+        "/jobs/job-1/dataset",
+        content=payload[split:],
+        headers={**_ZIP_HEADERS, "Content-Range": f"bytes {split}-{len(payload) - 1}/{len(payload)}"},
+    )
+
+    assert final.status_code == 202
+    assert final.headers["upload-offset"] == str(len(payload))
+    assert store.ready_called is True
+
+
 def test_upload_rejects_non_zip_content_type(client) -> None:
     test_client, _ = client
 

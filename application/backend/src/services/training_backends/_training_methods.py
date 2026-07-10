@@ -46,12 +46,13 @@ class HttpTrainingMethod(TrainingMethod):
             )
             archive_path = archive
             remote_job_id = await backend.submit_job(context, dataset_transfer="http")
-            await backend.upload_snapshot_http(context, remote_job_id, archive)
-            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
 
-            # Persist the id so a restart can reattach to the remote job.
+            # Persist before the upload begins so a restart can resume it.
             if context.on_remote_job_id is not None:
                 await context.on_remote_job_id(remote_job_id)
+
+            await backend.upload_snapshot_http(context, remote_job_id, archive)
+            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
 
             await backend.await_and_ingest(context, remote_job_id)
         finally:
