@@ -33,7 +33,7 @@ from schemas.hardware import DeviceInfo
 from services.archive_safety import SafeZipArchive
 from services.training_backends._log_format import render_progress_log
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
-from services.training_backends.base import TrainingCanceledError
+from services.training_backends.base import TrainingCanceledError, TrainingSuspendedError
 from settings import get_settings
 
 if TYPE_CHECKING:
@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 _SNAPSHOT_ALLOW_PATTERNS = ["*.safetensors", "*.json", "*.txt", "*.md", "*.parquet", "*.mp4", "*.png", "*.jpg"]
 _EVENT_WAIT_TIMEOUT_S = 3.0
 _RECONNECT_BACKOFF_S = 2.0
-_MAX_STREAM_RECONNECTS = 5
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
 _UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 
@@ -156,7 +155,17 @@ class RemoteTrainingBackend:
             raise RemoteTrainingError(f"Trainer returned malformed device info: {exc}") from exc
 
     async def train(self, context: TrainingContext) -> None:
-        """Deliver the snapshot, submit the job, mirror progress, ingest the model."""
+        """Deliver the snapshot, submit the job, mirror progress, ingest the model.
+
+        When ``context.remote_job_id`` is set the studio is resuming after a
+        restart: the snapshot is already on the trainer and the job is running
+        (or finished), so we skip straight to reattaching and ingesting the
+        model rather than submitting a new job.
+        """
+        if context.remote_job_id:
+            logger.info("Reattaching to in-flight remote training job")
+            await self.await_and_ingest(context, context.remote_job_id)
+            return
         await self._training_method().train(context)
 
     def _training_method(self) -> TrainingMethod:
@@ -234,6 +243,9 @@ class RemoteTrainingBackend:
         :meth:`_mirror_upload_progress`. Returns the repo id and the commit SHA.
         """
         from huggingface_hub import HfApi
+
+        if context.snapshot is None:
+            raise RemoteTrainingError("HuggingFace dataset transfer requires a dataset snapshot")
 
         api = HfApi(token=self._hf_token)
         repo_name = f"pais-snapshot-{uuid.uuid4().hex[:12]}"
@@ -358,13 +370,24 @@ class RemoteTrainingBackend:
         """Consume the trainer's SSE event stream, mirroring progress into the local job.
 
         The trainer streams a ``state`` event on every change at
-        ``/jobs/{id}/events`` and closes the stream on a terminal state. A dropped
-        stream before a terminal state (idle timeout, network blip) is transient:
-        reconnect, and the trainer re-emits the current state on the fresh
-        connection. A run of reconnects that never delivers an event aborts the
-        job rather than looping forever.
+        ``/jobs/{id}/events`` and closes the stream on a terminal state. Crucially,
+        the job keeps running on the trainer regardless of this connection: the
+        stream is a re-attachable view of server-side state, and the trainer
+        re-emits the current state on every fresh connection. A dropped stream
+        (idle timeout, proxy recycle, network blip) is therefore recoverable, so
+        we reconnect with exponential backoff. As a fallback for environments
+        where a middlebox breaks long-lived SSE streaming but still serves short
+        requests, we also poll the plain job endpoint (see :meth:`_poll_state`).
+        We only abandon the job once the trainer has been continuously
+        unreachable for ``trainer_stream_reconnect_max_s`` seconds.
         """
-        stalled_reconnects = 0
+        settings = get_settings()
+        unreachable_budget_s = settings.trainer_stream_reconnect_max_s
+        max_backoff_s = settings.trainer_stream_reconnect_backoff_max_s
+        backoff_s = _RECONNECT_BACKOFF_S
+        # Monotonic timestamp of the last successful contact with the trainer
+        # (an event received, or a successful poll). Resets the outage budget.
+        last_contact = time.monotonic()
         while True:
             try:
                 completed, received_event = await self._consume_event_stream(context, remote_job_id)
@@ -377,13 +400,55 @@ class RemoteTrainingBackend:
                 return
 
             if context.should_stop():
-                await self._cancel(remote_job_id)
-                raise TrainingCanceledError("Training canceled")
+                await self._handle_stop_request(context, remote_job_id)
 
-            stalled_reconnects = 0 if received_event else stalled_reconnects + 1
-            if stalled_reconnects > _MAX_STREAM_RECONNECTS:
-                raise RemoteTrainingError("Trainer event stream closed repeatedly without a terminal state")
-            await asyncio.sleep(_RECONNECT_BACKOFF_S)
+            # The stream dropped before a terminal state. Fall back to a plain
+            # GET on the job. This is NOT just a retry of the stream: a total
+            # outage fails both endpoints identically (reachable=False). Its value
+            # is the opposite case -- middleboxes (proxies, load balancers) that
+            # break long-lived SSE streaming (buffering, idle/duration caps; the
+            # "incomplete chunked read" symptom) while still serving short
+            # requests. There the stream may never deliver even its first event,
+            # but this GET returns the current (possibly terminal) state, letting
+            # progress mirroring degrade gracefully to polling.
+            reachable, completed = await self._poll_state(context, remote_job_id)
+            if completed:
+                return
+
+            if received_event or reachable:
+                last_contact = time.monotonic()
+                backoff_s = _RECONNECT_BACKOFF_S
+            elif time.monotonic() - last_contact > unreachable_budget_s:
+                raise RemoteTrainingError(
+                    f"Trainer unreachable for over {unreachable_budget_s:.0f}s; abandoning progress tracking"
+                )
+
+            await asyncio.sleep(backoff_s)
+            backoff_s = min(backoff_s * 2, max_backoff_s)
+
+    async def _poll_state(self, context: TrainingContext, remote_job_id: str) -> tuple[bool, bool]:
+        """Read job state via a plain GET, as a transport fallback for broken SSE.
+
+        Useful when a middlebox breaks long-lived streaming yet still serves short
+        requests; for a genuine outage this fails like the stream and simply
+        reports ``reachable=False``.
+
+        Returns ``(reachable, completed)``. ``reachable`` is True when the trainer
+        answered, regardless of job status, so the caller can reset its outage
+        budget. ``completed`` is True only when the job reached the ``completed``
+        terminal state. Propagates ``TrainingCanceledError`` / ``RemoteTrainingError``
+        for remote cancellation / failure via :meth:`_apply_state`.
+        """
+        try:
+            async with await self._client() as client:
+                response = await client.get(f"{self._base_url}/jobs/{remote_job_id}")
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPError:
+            return False, False
+        if not isinstance(data, dict):
+            return True, False
+        return True, self._apply_state(context, data)
 
     async def _consume_event_stream(self, context: TrainingContext, remote_job_id: str) -> tuple[bool, bool]:
         """Open one SSE connection and mirror state until it closes.
@@ -406,8 +471,7 @@ class RemoteTrainingBackend:
             try:
                 while True:
                     if context.should_stop():
-                        await self._cancel(remote_job_id)
-                        raise TrainingCanceledError("Training canceled")
+                        await self._handle_stop_request(context, remote_job_id)
 
                     try:
                         kind, payload = await asyncio.wait_for(queue.get(), timeout=_EVENT_WAIT_TIMEOUT_S)
@@ -622,6 +686,19 @@ class RemoteTrainingBackend:
         archive.validate()
         output_dir.mkdir(parents=True, exist_ok=True)
         archive.extract_to(output_dir, min_free_bytes=min_free_bytes)
+
+    async def _handle_stop_request(self, context: TrainingContext, remote_job_id: str) -> None:
+        """Resolve a stop signal into either a suspension or a cancellation.
+
+        An application shutdown (``should_suspend``) must leave the remote job
+        running so the studio can reattach after restarting, so we raise
+        ``TrainingSuspendedError`` without touching the trainer. A genuine user
+        cancellation cancels the remote job and raises ``TrainingCanceledError``.
+        """
+        if context.should_suspend():
+            raise TrainingSuspendedError("Studio shutting down; leaving remote training job running for reattach")
+        await self._cancel(remote_job_id)
+        raise TrainingCanceledError("Training canceled")
 
     async def _cancel(self, remote_job_id: str) -> None:
         """Request remote cancellation; best effort."""

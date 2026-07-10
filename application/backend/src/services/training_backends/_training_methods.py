@@ -43,6 +43,8 @@ class HttpTrainingMethod(TrainingMethod):
     async def train(self, context: TrainingContext) -> None:
         backend = self._backend
         archive_path: Path | None = None
+        if context.snapshot is None:
+            raise ValueError("HTTP dataset transfer requires a dataset snapshot")
         try:
             # Sub-step 1: zip the snapshot and stream it to the trainer (0-10%).
             context.progress(0, message="Preparing dataset snapshot")
@@ -75,6 +77,11 @@ class HfTrainingMethod(TrainingMethod):
 
             # Sub-step 1b: submit the job now that the snapshot repo exists.
             remote_job_id = await backend.submit_job(context, dataset_transfer="hf", repo_id=repo_id, revision=revision)
+
+            # Persist the remote job id now that the snapshot is on the trainer, so
+            # a studio restart can reattach to the running job instead of failing it.
+            if context.on_remote_job_id is not None:
+                await context.on_remote_job_id(remote_job_id)
 
             # Sub-steps 2 & 3: wait for the remote job, then ingest the model.
             await backend.await_and_ingest(context, remote_job_id)

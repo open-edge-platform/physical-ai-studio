@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from schemas.dataset import Snapshot
@@ -106,13 +107,19 @@ class _Controller:
         self.event_stream_opens = 0
         # Payload served by GET /devices; tests override as needed.
         self.devices_response: dict | list = [{"type": "cpu", "name": "CPU", "memory": None, "index": None}]
+        # Payload served by GET /jobs/{id} (the stream-independent poll fallback).
+        self.poll_state: dict = {}
+        # When True, opening the event stream and polling the job endpoint raise a
+        # connection error, simulating the trainer being transiently unreachable.
+        self.raise_connection_error = False
+        # Number of job-state polls served (GET /jobs/{id}).
+        self.poll_count = 0
 
     def set_event_batches(self, batches: list[list[dict]]) -> None:
         """Serve a distinct set of frames per connection to exercise reconnection."""
         self._event_batches = batches
 
     def event_lines(self) -> list[str]:
-        self.event_stream_opens += 1
         batch = self._event_batches.pop(0) if len(self._event_batches) > 1 else self._event_batches[0]
         return _sse_lines(batch)
 
@@ -146,13 +153,22 @@ class _FakeClient:
         return _FakeResponse(json_data={})
 
     async def get(self, url: str) -> _FakeResponse:
-        # /health is the proxy probe; /devices reports trainer hardware; job state arrives via SSE.
+        # /health is the proxy probe; /devices reports trainer hardware; job state
+        # arrives via SSE, with GET /jobs/{id} as the reconnect poll fallback.
         if url.endswith("/devices"):
             return _FakeResponse(json_data=self._c.devices_response)
+        if url.endswith(f"/jobs/{self._c.remote_job_id}"):
+            self._c.poll_count += 1
+            if self._c.raise_connection_error:
+                raise httpx.ConnectError("All connection attempts failed")
+            return _FakeResponse(json_data=self._c.poll_state)
         return _FakeResponse(json_data={})
 
     def stream(self, method: str, url: str, headers: dict | None = None) -> _FakeStreamCtx:
         if url.endswith("/events"):
+            self._c.event_stream_opens += 1
+            if self._c.raise_connection_error:
+                raise httpx.ConnectError("All connection attempts failed")
             return _FakeStreamCtx(_FakeResponse(lines=self._c.event_lines()))
         return _FakeStreamCtx(_FakeResponse(chunks=self._c.artifact_chunks, headers=self._c.artifact_headers))
 
@@ -170,12 +186,14 @@ def _settings() -> MagicMock:
     settings.trainer_dataset_transfer = "hf"
     settings.trainer_request_timeout_s = 5.0
     settings.trainer_download_read_timeout_s = 120.0
+    settings.trainer_stream_reconnect_max_s = 900.0
+    settings.trainer_stream_reconnect_backoff_max_s = 30.0
     settings.data_import_max_uncompressed_bytes = 10 * 1024 * 1024
     settings.data_import_min_free_bytes = 0
     return settings
 
 
-def _context(tmp_path: Path, *, should_stop: bool = False) -> TrainingContext:
+def _context(tmp_path: Path, *, should_stop: bool = False, remote_job_id: str | None = None) -> TrainingContext:
     snap = tmp_path / "snap"
     snap.mkdir()
     model = Model(
@@ -202,6 +220,7 @@ def _context(tmp_path: Path, *, should_stop: bool = False) -> TrainingContext:
         cache_dir=tmp_path / "cache",
         progress=MagicMock(),
         should_stop=lambda: should_stop,
+        remote_job_id=remote_job_id,
     )
 
 
@@ -392,6 +411,126 @@ class TestRemoteTrainingBackend:
         assert controller.event_stream_opens == 2
         safe_zip.extract_to.assert_called_once()
         api_cls.return_value.delete_repo.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_completion_detected_via_poll_when_stream_unreachable(self, tmp_path):
+        """If the stream drops before a terminal state, the poll fallback ingests a finished job.
+
+        The trainer keeps training while the event stream is down, so a terminal
+        state reached during the outage must be picked up by the poll fallback
+        rather than requiring a fresh terminal event on the stream.
+        """
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        # The stream emits a non-terminal state and then drops.
+        controller.set_event_batches([[{"status": "running", "progress": 20, "message": "Training"}]])
+        # The stream-independent poll reports the job finished during the outage.
+        controller.poll_state = {"status": "completed", "progress": 100, "message": "Done"}
+        api_cls = _hf_api_mock()
+        safe_zip = MagicMock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        # Completion came from the poll, and the artifact was still ingested.
+        assert controller.poll_count >= 1
+        safe_zip.extract_to.assert_called_once()
+        api_cls.return_value.delete_repo.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_abandons_job_when_trainer_unreachable_past_budget(self, tmp_path):
+        """Persistent unreachability past the reconnect budget aborts the job."""
+        settings = _settings()
+        # Zero budget: the first failed reconnect+poll cycle exhausts it.
+        settings.trainer_stream_reconnect_max_s = 0.0
+        settings.trainer_stream_reconnect_backoff_max_s = 0.0
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        controller.raise_connection_error = True
+        api_cls = _hf_api_mock()
+
+        from services.training_backends.remote import RemoteTrainingError
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(RemoteTrainingError, match="unreachable"):
+                await backend.train(context)
+
+        # Both the stream and the poll fallback were attempted before giving up.
+        assert controller.event_stream_opens >= 1
+        assert controller.poll_count >= 1
+        api_cls.return_value.delete_repo.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_reattaches_to_running_job_without_resubmitting(self, tmp_path):
+        """Resuming after a restart streams progress and downloads the model, but never resubmits."""
+        settings = _settings()
+        # Reattach: the remote job id is already known from a prior (pre-restart) run.
+        context = _context(tmp_path, remote_job_id="trainer-job-resumed")
+        controller = _Controller(
+            states=[{"status": "completed", "progress": 100, "message": "Done"}],
+            remote_job_id="trainer-job-resumed",
+        )
+        api_cls = _hf_api_mock()
+        safe_zip = MagicMock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        # No job submitted, no snapshot pushed: we reattached to the existing job.
+        assert not any(url.endswith("/jobs") for url in controller.posted_urls)
+        api_cls.return_value.create_repo.assert_not_called()
+        api_cls.return_value.upload_folder.assert_not_called()
+        # The finished model was still streamed and extracted.
+        safe_zip.extract_to.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_shutdown_suspends_without_canceling_remote_job(self, tmp_path):
+        """On studio shutdown the remote job is left running and TrainingSuspendedError is raised."""
+        settings = _settings()
+        # should_stop True (a stop is requested) and should_suspend True (it is a
+        # shutdown, not a user cancel).
+        context = _context(tmp_path, should_stop=True)
+        context.should_suspend = lambda: True
+        controller = _Controller(states=[{"status": "running", "progress": 30}])
+        api_cls = _hf_api_mock()
+
+        from services.training_backends import TrainingSuspendedError
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch("huggingface_hub.HfApi", api_cls),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingSuspendedError):
+                await backend.train(context)
+
+        # The remote job must NOT be canceled on shutdown so it can be reattached.
+        assert controller.cancelled is False
 
     @pytest.mark.anyio
     async def test_get_training_devices_returns_remote_hardware(self):

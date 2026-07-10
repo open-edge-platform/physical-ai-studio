@@ -8,7 +8,13 @@ in-process with torch/Lightning; `RemoteTrainingBackend` offloads to a trainer
 service. The active backend is selected from settings by the training worker.
 """
 
-from services.training_backends.base import ProgressReporter, TrainingBackend, TrainingCanceledError, TrainingContext
+from services.training_backends.base import (
+    ProgressReporter,
+    TrainingBackend,
+    TrainingCanceledError,
+    TrainingContext,
+    TrainingSuspendedError,
+)
 
 
 def get_training_backend() -> TrainingBackend:
@@ -35,5 +41,6 @@ __all__ = [
     "TrainingBackend",
     "TrainingCanceledError",
     "TrainingContext",
+    "TrainingSuspendedError",
     "get_training_backend",
 ]

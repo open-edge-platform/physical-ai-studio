@@ -19,7 +19,12 @@ from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
 from services.snapshot_service import SnapshotService
-from services.training_backends import TrainingCanceledError, TrainingContext, get_training_backend
+from services.training_backends import (
+    TrainingCanceledError,
+    TrainingContext,
+    TrainingSuspendedError,
+    get_training_backend,
+)
 from services.training_service import TrainingService, TrainingTrackingDispatcher
 from settings import get_settings
 from workers.base import BaseProcessWorker
@@ -50,15 +55,28 @@ class TrainingWorker(BaseProcessWorker):
                 with job_logging_ctx(job_id=str(job.id)):
                     payload = TrainJobPayload.model_validate(job.payload)
                     id = uuid4()
+                    # A remote job whose id is already recorded is being resumed
+                    # after a studio restart: its dataset is on the trainer, so we
+                    # reattach instead of re-preparing and re-uploading the snapshot.
+                    reattaching = settings.training_mode == "remote" and bool(payload.remote_job_id)
 
                     base_model = None
                     if payload.base_model_id is not None:
                         base_model = await ModelService.get_model_by_id(payload.base_model_id)
 
-                    dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
                     model_dir = Path(str(settings.models_dir / str(id)))
-                    snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
-                    snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
+
+                    if reattaching:
+                        # Skip snapshot creation entirely; the model row carries no
+                        # snapshot reference (nullable FK) since none is materialized.
+                        logger.info("Resuming in-flight remote training job (remote job {})", payload.remote_job_id)
+                        snapshot: Snapshot | None = None
+                        snapshot_id = None
+                    else:
+                        dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
+                        snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
+                        snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
+                        snapshot_id = snapshot.id
 
                     model = Model(
                         id=id,
@@ -66,7 +84,7 @@ class TrainingWorker(BaseProcessWorker):
                         dataset_id=payload.dataset_id,
                         path=str(model_dir),
                         name=payload.model_name,
-                        snapshot_id=snapshot.id,
+                        snapshot_id=snapshot_id,
                         policy=payload.policy,
                         properties={},
                         train_job_id=job.id,
@@ -90,7 +108,12 @@ class TrainingWorker(BaseProcessWorker):
             await TrainingService.abort_orphan_jobs()
 
     async def _train_model(
-        self, job: Job, model: Model, snapshot: Snapshot, payload: TrainJobPayload, base_model: Model | None = None
+        self,
+        job: Job,
+        model: Model,
+        snapshot: Snapshot | None,
+        payload: TrainJobPayload,
+        base_model: Model | None = None,
     ) -> None:
         settings = get_settings()
         await JobService.update_job(
@@ -107,6 +130,7 @@ class TrainingWorker(BaseProcessWorker):
             interrupt_event=self.interrupt_event,
         )
         interrupted = False
+        suspended = False
         error: Exception | None = None
         dispatcher.start()
         try:
@@ -120,6 +144,9 @@ class TrainingWorker(BaseProcessWorker):
                 cache_dir=settings.cache_dir / str(job.id),
                 progress=dispatcher.report,
                 should_stop=self._should_interrupt,
+                remote_job_id=payload.remote_job_id,
+                on_remote_job_id=lambda remote_job_id: self._persist_remote_job_id(job, payload, remote_job_id),
+                should_suspend=self.should_stop,
             )
 
             backend = get_training_backend()
@@ -127,6 +154,11 @@ class TrainingWorker(BaseProcessWorker):
             # The local backend stops cooperatively without raising; treat a
             # completed-but-interrupted run as a cancellation, not a success.
             interrupted = self._should_interrupt()
+        except TrainingSuspendedError:
+            # Application shutdown while a remote job is in flight. The trainer
+            # keeps running it, so leave the job reattachable instead of failing.
+            suspended = True
+            logger.info("Training suspended for restart; remote job left running")
         except TrainingCanceledError:
             interrupted = True
         except Exception as e:  # surface any training failure as a FAILED job
@@ -139,6 +171,16 @@ class TrainingWorker(BaseProcessWorker):
             self.interrupt_event.set()
             if dispatcher.is_alive():
                 dispatcher.join(timeout=10)
+
+        if suspended:
+            # Requeue so the next worker start reattaches to the remote job.
+            job = await JobService.update_job_status(
+                job_id=job.id,
+                status=JobStatus.PENDING,
+                message="Reconnecting to remote training job after restart",
+            )
+            self.queue.put((EventType.JOB_UPDATE, job))
+            return
 
         if error is not None:
             job = await JobService.update_job_status(
@@ -157,6 +199,16 @@ class TrainingWorker(BaseProcessWorker):
             self.queue.put((EventType.MODEL_UPDATE, model))
 
         self.queue.put((EventType.JOB_UPDATE, job))
+
+    async def _persist_remote_job_id(self, job: Job, payload: TrainJobPayload, remote_job_id: str) -> None:
+        """Persist the remote job id on the job payload for restart recovery.
+
+        Once stored, a studio restart can reattach to the still-running remote
+        job (via the reattach path in ``run_loop``) instead of failing it.
+        """
+        payload.remote_job_id = remote_job_id
+        await JobService.update_job_payload(job.id, payload)
+        logger.info("Persisted remote job id {} for restart recovery", remote_job_id)
 
     def _should_interrupt(self) -> bool:
         """Stop training on global shutdown or an explicit interrupt request."""

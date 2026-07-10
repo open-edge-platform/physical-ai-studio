@@ -129,6 +129,11 @@ class Settings(BaseSettings):
     # transfer (e.g. a proxy holding the connection open) must fail instead of
     # hanging the job forever; this is a per-read gap, not a total transfer cap.
     trainer_download_read_timeout_s: float = Field(default=120.0, alias="TRAINER_DOWNLOAD_READ_TIMEOUT_S")
+    # The trainer keeps running a job server-side even if this backend loses the
+    # progress event stream, so a dropped connection is recoverable by reattaching.
+    trainer_stream_reconnect_max_s: float = Field(default=900.0, alias="TRAINER_STREAM_RECONNECT_MAX_S")
+    # Upper bound on the exponential backoff between event-stream reconnect attempts.
+    trainer_stream_reconnect_backoff_max_s: float = Field(default=30.0, alias="TRAINER_STREAM_RECONNECT_BACKOFF_MAX_S")
 
     @model_validator(mode="after")
     def validate_remote_training_config(self) -> "Settings":
