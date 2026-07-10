@@ -25,8 +25,7 @@ class TrainerSettings(BaseSettings):
     host: str = Field(default="0.0.0.0", alias="HOST")  # nosec B104 # noqa: S104
     port: int = Field(default=8001, alias="PORT")
 
-    # Uploaded-dataset safety bounds (http transfer). Mirror the studio backend's
-    # data-import guards so a malicious or corrupt upload cannot exhaust disk.
+    # HTTP-upload safety limits to prevent disk exhaustion.
     max_uncompressed_bytes: int = Field(
         default=200 * 1024 * 1024 * 1024,
         alias="TRAINER_MAX_UNCOMPRESSED_BYTES",

@@ -1,14 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Dataset-transfer strategies for the remote training backend.
-
-Each strategy owns how the dataset snapshot reaches the trainer (streamed over
-HTTP or pushed via an ephemeral HuggingFace repo) and how that transfer is
-cleaned up. The shared "wait for completion and ingest the model" tail lives on
-:class:`~services.training_backends.remote.RemoteTrainingBackend` so both
-strategies stay focused on transport.
-"""
+"""Dataset-transfer strategies for the remote training backend."""
 
 from __future__ import annotations
 
@@ -46,7 +39,7 @@ class HttpTrainingMethod(TrainingMethod):
         if context.snapshot is None:
             raise ValueError("HTTP dataset transfer requires a dataset snapshot")
         try:
-            # Sub-step 1: zip the snapshot and stream it to the trainer (0-10%).
+            # Archive and upload the snapshot (0-10%).
             context.progress(0, message="Preparing dataset snapshot")
             archive = await asyncio.to_thread(
                 DatasetDownloadService().create_dataset_archive, Path(context.snapshot.path)
@@ -56,12 +49,10 @@ class HttpTrainingMethod(TrainingMethod):
             await backend.upload_snapshot_http(context, remote_job_id, archive)
             context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
 
-            # Persist the remote job id now that the dataset is fully on the trainer,
-            # so a studio restart reattaches to the running job.
+            # Persist the id so a restart can reattach to the remote job.
             if context.on_remote_job_id is not None:
                 await context.on_remote_job_id(remote_job_id)
 
-            # Sub-steps 2 & 3: wait for the remote job, then ingest the model.
             await backend.await_and_ingest(context, remote_job_id)
         finally:
             if archive_path is not None:
@@ -75,20 +66,17 @@ class HfTrainingMethod(TrainingMethod):
         backend = self._backend
         repo_id: str | None = None
         try:
-            # Sub-step 1: push the snapshot to an ephemeral private dataset repo (0-10%).
+            # Upload the snapshot (0-10%).
             context.progress(0, message="Uploading dataset snapshot")
             repo_id, revision = await backend.push_snapshot(context)
             context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
 
-            # Sub-step 1b: submit the job now that the snapshot repo exists.
             remote_job_id = await backend.submit_job(context, dataset_transfer="hf", repo_id=repo_id, revision=revision)
 
-            # Persist the remote job id now that the snapshot is on the trainer, so
-            # a studio restart can reattach to the running job instead of failing it.
+            # Persist the id so a restart can reattach to the remote job.
             if context.on_remote_job_id is not None:
                 await context.on_remote_job_id(remote_job_id)
 
-            # Sub-steps 2 & 3: wait for the remote job, then ingest the model.
             await backend.await_and_ingest(context, remote_job_id)
         finally:
             if repo_id is not None:

@@ -55,9 +55,7 @@ class TrainingWorker(BaseProcessWorker):
                 with job_logging_ctx(job_id=str(job.id)):
                     payload = TrainJobPayload.model_validate(job.payload)
                     id = uuid4()
-                    # A remote job whose id is already recorded is being resumed
-                    # after a studio restart: its dataset is on the trainer, so we
-                    # reattach instead of re-preparing and re-uploading the snapshot.
+                    # Reattach to persisted remote jobs after a studio restart.
                     reattaching = settings.training_mode == "remote" and bool(payload.remote_job_id)
 
                     base_model = None
@@ -67,8 +65,7 @@ class TrainingWorker(BaseProcessWorker):
                     model_dir = Path(str(settings.models_dir / str(id)))
 
                     if reattaching:
-                        # Skip snapshot creation entirely; the model row carries no
-                        # snapshot reference (nullable FK) since none is materialized.
+                        # Reattached jobs already have their snapshot on the trainer.
                         logger.info("Resuming in-flight remote training job (remote job {})", payload.remote_job_id)
                         snapshot: Snapshot | None = None
                         snapshot_id = None
@@ -155,8 +152,7 @@ class TrainingWorker(BaseProcessWorker):
             # completed-but-interrupted run as a cancellation, not a success.
             interrupted = self._should_interrupt()
         except TrainingSuspendedError:
-            # Application shutdown while a remote job is in flight. The trainer
-            # keeps running it, so leave the job reattachable instead of failing.
+            # Leave the remote job running so a restart can reattach.
             suspended = True
             logger.info("Training suspended for restart; remote job left running")
         except TrainingCanceledError:
@@ -173,7 +169,7 @@ class TrainingWorker(BaseProcessWorker):
                 dispatcher.join(timeout=10)
 
         if suspended:
-            # Requeue so the next worker start reattaches to the remote job.
+            # Requeue for reattachment after restart.
             job = await JobService.update_job_status(
                 job_id=job.id,
                 status=JobStatus.PENDING,
@@ -201,11 +197,7 @@ class TrainingWorker(BaseProcessWorker):
         self.queue.put((EventType.JOB_UPDATE, job))
 
     async def _persist_remote_job_id(self, job: Job, payload: TrainJobPayload, remote_job_id: str) -> None:
-        """Persist the remote job id on the job payload for restart recovery.
-
-        Once stored, a studio restart can reattach to the still-running remote
-        job (via the reattach path in ``run_loop``) instead of failing it.
-        """
+        """Persist the remote job id for restart recovery."""
         payload.remote_job_id = remote_job_id
         await JobService.update_job_payload(job.id, payload)
         logger.info("Persisted remote job id {} for restart recovery", remote_job_id)

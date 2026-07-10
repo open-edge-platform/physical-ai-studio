@@ -64,17 +64,13 @@ def _validate_and_extract(archive_path: Path, target_dir: Path) -> None:
     safe.validate()
     target_dir.mkdir(parents=True, exist_ok=True)
     safe.extract_to(target_dir, min_free_bytes=settings.min_free_bytes)
-    # Studio zips the snapshot at its root, but tolerate a single wrapping folder.
+    # Tolerate a single wrapping directory in uploaded snapshots.
     flatten_single_root_directory(target_dir)
 
 
 @router.post("", response_model=SubmitJobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def submit_job(body: SubmitJobRequest, request: Request) -> SubmitJobResponse:
-    """Enqueue a training job.
-
-    An hf-transfer job is queued immediately; an http-transfer job waits in
-    ``awaiting_dataset`` until its dataset is uploaded via ``PUT /jobs/{id}/dataset``.
-    """
+    """Enqueue a job, awaiting upload for HTTP transfers."""
     manager = _manager(request)
     job_id = manager.store.create(body)
     state = manager.store.get(job_id)
@@ -84,13 +80,7 @@ async def submit_job(body: SubmitJobRequest, request: Request) -> SubmitJobRespo
 
 @router.put("/{job_id}/dataset", response_model=JobState, status_code=status.HTTP_202_ACCEPTED)
 async def upload_dataset(job_id: str, request: Request) -> JobState:
-    """Accept the dataset ZIP for an awaiting-dataset job and queue it.
-
-    The body is the raw ZIP (``Content-Type: application/zip``). The job must
-    have been submitted with http transfer and still be in the
-    ``awaiting_dataset`` state. After validation and extraction the job
-    transitions to ``queued`` for the worker to pick up.
-    """
+    """Validate an awaiting HTTP job's ZIP upload and queue it."""
     manager = _manager(request)
     state = manager.store.get(job_id)
     if state is None:

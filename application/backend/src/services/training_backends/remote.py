@@ -177,12 +177,7 @@ class RemoteTrainingBackend:
         return HttpTrainingMethod(self)
 
     async def await_and_ingest(self, context: TrainingContext, remote_job_id: str) -> None:
-        """Shared tail: wait for the remote job, then download and extract the model.
-
-        Both dataset-transfer strategies converge here once the snapshot has been
-        delivered and the job submitted: mirror remote progress into the training
-        window (10-95%), then download and extract the artifact (95-100%).
-        """
+        """Wait for the remote job, then download and extract its model."""
         await self._wait_for_completion(context, remote_job_id)
         context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
         await self._download_and_extract(context, remote_job_id)
@@ -369,17 +364,12 @@ class RemoteTrainingBackend:
     async def _wait_for_completion(self, context: TrainingContext, remote_job_id: str) -> None:
         """Consume the trainer's SSE event stream, mirroring progress into the local job.
 
-        The trainer streams a ``state`` event on every change at
-        ``/jobs/{id}/events`` and closes the stream on a terminal state. Crucially,
-        the job keeps running on the trainer regardless of this connection: the
-        stream is a re-attachable view of server-side state, and the trainer
-        re-emits the current state on every fresh connection. A dropped stream
-        (idle timeout, proxy recycle, network blip) is therefore recoverable, so
-        we reconnect with exponential backoff. As a fallback for environments
-        where a middlebox breaks long-lived SSE streaming but still serves short
-        requests, we also poll the plain job endpoint (see :meth:`_poll_state`).
-        We only abandon the job once the trainer has been continuously
-        unreachable for ``trainer_stream_reconnect_max_s`` seconds.
+        The job keeps running on the trainer regardless of this connection, so a
+        dropped stream is recoverable: we reconnect with exponential backoff, and
+        also poll the plain job endpoint as a fallback for middleboxes that break
+        long-lived SSE (see :meth:`_poll_state`). We only abandon the job once the
+        trainer has been continuously unreachable for ``trainer_stream_reconnect_max_s``
+        seconds.
         """
         settings = get_settings()
         unreachable_budget_s = settings.trainer_stream_reconnect_max_s
@@ -402,15 +392,8 @@ class RemoteTrainingBackend:
             if context.should_stop():
                 await self._handle_stop_request(context, remote_job_id)
 
-            # The stream dropped before a terminal state. Fall back to a plain
-            # GET on the job. This is NOT just a retry of the stream: a total
-            # outage fails both endpoints identically (reachable=False). Its value
-            # is the opposite case -- middleboxes (proxies, load balancers) that
-            # break long-lived SSE streaming (buffering, idle/duration caps; the
-            # "incomplete chunked read" symptom) while still serving short
-            # requests. There the stream may never deliver even its first event,
-            # but this GET returns the current (possibly terminal) state, letting
-            # progress mirroring degrade gracefully to polling.
+            # Stream dropped before a terminal state; fall back to a plain GET,
+            # which also catches middleboxes that break long-lived SSE.
             reachable, completed = await self._poll_state(context, remote_job_id)
             if completed:
                 return
@@ -429,15 +412,9 @@ class RemoteTrainingBackend:
     async def _poll_state(self, context: TrainingContext, remote_job_id: str) -> tuple[bool, bool]:
         """Read job state via a plain GET, as a transport fallback for broken SSE.
 
-        Useful when a middlebox breaks long-lived streaming yet still serves short
-        requests; for a genuine outage this fails like the stream and simply
-        reports ``reachable=False``.
-
-        Returns ``(reachable, completed)``. ``reachable`` is True when the trainer
-        answered, regardless of job status, so the caller can reset its outage
-        budget. ``completed`` is True only when the job reached the ``completed``
-        terminal state. Propagates ``TrainingCanceledError`` / ``RemoteTrainingError``
-        for remote cancellation / failure via :meth:`_apply_state`.
+        Returns ``(reachable, completed)``; ``reachable`` resets the outage budget
+        even if the job isn't done yet. Propagates ``TrainingCanceledError`` /
+        ``RemoteTrainingError`` via :meth:`_apply_state`.
         """
         try:
             async with await self._client() as client:
@@ -620,14 +597,7 @@ class RemoteTrainingBackend:
         tmp_archive: Path,
         stream_timeout: httpx.Timeout,
     ) -> int:
-        """Stream the artifact to ``tmp_archive``; return the byte count.
-
-        Mirrors bytes received into the reserved model-download window
-        (``TRAINING_PROGRESS_END``..100) via :meth:`_download_progress`, the
-        download-side counterpart of ``_upload_progress``. Verifies the
-        transfer against ``Content-Length`` so a connection dropped mid-stream
-        surfaces as an error instead of a silently truncated archive.
-        """
+        """Stream the artifact to ``tmp_archive`` and reject truncated downloads."""
         report = context.progress
         to_percent = self._download_progress
         client = await self._client(stream_timeout)
@@ -663,12 +633,7 @@ class RemoteTrainingBackend:
 
     @staticmethod
     def _download_progress(received_bytes: int, total_bytes: int) -> int:
-        """Map artifact bytes received into the reserved model-download window.
-
-        Capped one below 100 so the explicit "Model downloaded" step (set once
-        extraction finishes) owns the final mark, mirroring how
-        ``_upload_progress`` reserves the top of its own window.
-        """
+        """Map artifact bytes into the download window, reserving 100 for extraction."""
         if total_bytes <= 0:
             return TRAINING_PROGRESS_END
         span = 100 - TRAINING_PROGRESS_END
@@ -688,13 +653,7 @@ class RemoteTrainingBackend:
         archive.extract_to(output_dir, min_free_bytes=min_free_bytes)
 
     async def _handle_stop_request(self, context: TrainingContext, remote_job_id: str) -> None:
-        """Resolve a stop signal into either a suspension or a cancellation.
-
-        An application shutdown (``should_suspend``) must leave the remote job
-        running so the studio can reattach after restarting, so we raise
-        ``TrainingSuspendedError`` without touching the trainer. A genuine user
-        cancellation cancels the remote job and raises ``TrainingCanceledError``.
-        """
+        """Suspend on shutdown; cancel the remote job for a user stop request."""
         if context.should_suspend():
             raise TrainingSuspendedError("Studio shutting down; leaving remote training job running for reattach")
         await self._cancel(remote_job_id)
@@ -729,11 +688,6 @@ class RemoteTrainingBackend:
 
     @staticmethod
     def _to_local_progress(remote_progress: int) -> int:
-        """Map the trainer's raw 0-100 progress into the local training window.
-
-        Snapshot upload reserves 0..SNAPSHOT_UPLOAD_PROGRESS and model download
-        reserves TRAINING_PROGRESS_END..100, so training occupies the span
-        between them. Applied once here; the trainer reports raw.
-        """
+        """Map raw trainer progress into the reserved local training window."""
         span = TRAINING_PROGRESS_END - SNAPSHOT_UPLOAD_PROGRESS
         return min(TRAINING_PROGRESS_END, SNAPSHOT_UPLOAD_PROGRESS + round(remote_progress * span / 100))

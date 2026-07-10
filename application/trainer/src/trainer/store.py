@@ -59,12 +59,7 @@ class JobStore:
         self._conn.commit()
 
     def create(self, request: SubmitJobRequest) -> str:
-        """Persist a new job and return its id.
-
-        An http-transfer job starts in ``awaiting_dataset`` and only becomes
-        ``queued`` once its dataset upload lands; an hf-transfer job is queued
-        immediately because the trainer pulls the snapshot itself.
-        """
+        """Persist a job and return its id; HTTP transfers await their upload."""
         job_id = uuid.uuid4().hex
         if request.dataset_transfer == DatasetTransfer.HTTP:
             status, message = TrainerJobStatus.AWAITING_DATASET, "Awaiting dataset upload"
@@ -155,11 +150,7 @@ class JobStore:
             self._conn.commit()
 
     def reset_orphans(self) -> None:
-        """Fail jobs left mid-flight by a previous process.
-
-        A ``running`` job's worker is gone; an ``awaiting_dataset`` job's upload
-        connection is gone. Neither can make progress after a restart.
-        """
+        """Fail running jobs and incomplete HTTP uploads after a restart."""
         with self._lock:
             self._conn.execute(
                 "UPDATE jobs SET status = ?, message = ? WHERE status = ?",
