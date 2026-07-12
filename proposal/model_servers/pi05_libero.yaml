@@ -1,0 +1,8 @@
+script: "model_servers/pi05_libero.py"
+args:
+  pretrained_name_or_path: "lerobot/pi05_libero_finetuned_v044"
+  chunk_size: 10
+  device: "cuda"
+  # policy_dtype: "bfloat16"
+  enable_channels_first_callback: true
+  port: 8000
