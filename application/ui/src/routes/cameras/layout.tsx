@@ -13,6 +13,7 @@ import {
     Menu,
     MenuTrigger,
     minmax,
+    toast,
     View,
 } from '@geti-ui/ui';
 import { Add, MoreMenu } from '@geti-ui/ui/icons';
@@ -20,7 +21,7 @@ import { clsx } from 'clsx';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
 
 import { $api } from '../../api/client';
-import { isRecordingLockedError } from '../../api/errors';
+import { getApiErrorMessage, isRecordingLockedError, isResourceInUseError } from '../../api/errors';
 import { SchemaProjectCamera } from '../../api/types';
 import { useProjectId } from '../../features/projects/use-project';
 import { ConnectionStatus } from '../../features/robots/robots-list';
@@ -51,8 +52,16 @@ const MenuActions = ({ camera_id }: { camera_id: string }) => {
                             {
                                 onError: (error) => {
                                     if (isRecordingLockedError(error)) {
-                                        alert('Cannot delete camera while a recording session is active.');
+                                        toast.negative('Cannot delete camera while a recording session is active.');
+                                        return;
                                     }
+                                    if (isResourceInUseError(error)) {
+                                        toast.info(
+                                            getApiErrorMessage(error) ?? 'This camera is in use and cannot be deleted.'
+                                        );
+                                        return;
+                                    }
+                                    toast.negative(getApiErrorMessage(error) ?? 'Failed to delete camera.');
                                 },
                             }
                         );

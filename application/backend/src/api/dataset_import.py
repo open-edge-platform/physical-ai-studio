@@ -1,9 +1,10 @@
 import asyncio
+import os
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 
 from api.dependencies import get_dataset_import_service, get_job_service, get_project_id
 from exceptions import InvalidArchiveError, ZipBombDetectedError
@@ -38,6 +39,37 @@ async def _persist_uploaded_archive(file: UploadFile, payload: DatasetImportJobP
     destination.parent.mkdir(parents=True, exist_ok=True)
     await asyncio.to_thread(_write_archive_to_disk, file, destination)
     return destination
+
+
+def _resolve_upload_size_estimate(archive: UploadFile, content_length_header: str | None, fallback: int) -> int:
+    """Best-effort upload-size estimate used for disk-headroom checks.
+
+    Prefer the actual staged file size from the uploaded file object. If that
+    cannot be determined, fall back to the request Content-Length header.
+    """
+    actual_size: int | None = None
+    try:
+        current_pos = archive.file.tell()
+        archive.file.seek(0, os.SEEK_END)
+        actual_size = archive.file.tell()
+        archive.file.seek(current_pos)
+    except (AttributeError, OSError, ValueError):
+        actual_size = None
+
+    if actual_size is not None and actual_size >= 0:
+        return actual_size
+
+    if content_length_header is not None:
+        content_length: int | None = None
+        try:
+            content_length = int(content_length_header)
+        except ValueError:
+            content_length = None
+
+        if content_length is not None and content_length >= 0:
+            return content_length
+
+    return fallback
 
 
 async def get_awaiting_upload_job(
@@ -95,6 +127,7 @@ async def prepare_dataset_import_job(
 
 @router.put("/datasets/{job_id}:upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_dataset_import_archive(
+    request: Request,
     project_id: ProjectID,
     job_id: UUID,
     archive: Annotated[UploadFile, File(description="Dataset archive ZIP")],
@@ -118,7 +151,10 @@ async def upload_dataset_import_archive(
     # Check if there is enough space for dataset import
     settings = get_settings()
     cache_dir = settings.cache_dir / "imports" / "datasets"
-    upload_size_estimate = settings.data_import_max_upload_bytes
+    upload_size_estimate = _resolve_upload_size_estimate(
+        archive, request.headers.get("content-length"), settings.data_import_max_upload_bytes
+    )
+
     check_disk_headroom(cache_dir, upload_size_estimate, settings.data_import_min_free_bytes)
 
     # Make sure we are safe against zip bomb attacks

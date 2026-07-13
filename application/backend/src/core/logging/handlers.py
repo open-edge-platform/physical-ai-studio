@@ -3,9 +3,13 @@
 
 import inspect
 import logging
+import re
 from typing import Literal
 
 from loguru import logger
+
+# Matches ANSI escape sequences (which tqdm emits when redrawing multi-line progress bars).
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 class InterceptHandler(logging.Handler):
@@ -39,7 +43,9 @@ class LoggerStdoutWriter:
         self.level = level
 
     def write(self, msg: str) -> None:
-        msg = msg.rstrip("\n")
+        msg = msg.rsplit("\r", 1)[-1]
+        msg = _ANSI_ESCAPE.sub("", msg)
+        msg = msg.strip()
         if msg:
             if self.level == "INFO":
                 logger.info(msg)

@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 
 from api.dependencies import get_model_service, get_project_id, get_project_service
-from internal_datasets.utils import get_internal_dataset
+from internal_datasets.utils import get_internal_read_dataset
 from schemas import Model, Project
 from services import ModelService, ProjectService
 
@@ -65,6 +65,6 @@ async def get_tasks_for_dataset(
     res = {}
 
     for dataset in project.datasets:
-        res[dataset.name] = get_internal_dataset(dataset).get_tasks()
+        res[dataset.name] = get_internal_read_dataset(dataset).get_tasks()
 
     return res

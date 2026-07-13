@@ -122,7 +122,7 @@ class ExportE2ETests:
         export_dir = tmp_path / f"{initialized_policy.__class__.__name__.lower()}_{backend}"
         initialized_policy.export(export_dir, backend)
 
-        inference_model = InferenceModel.load(export_dir)
+        inference_model = InferenceModel(export_dir)
         assert inference_model.backend == backend
 
         sample_batch = next(iter(datamodule.train_dataloader()))
@@ -170,7 +170,7 @@ class ExportE2ETests:
 
         # Export and get inference output
         initialized_policy.export(export_dir, backend)
-        inference_model = InferenceModel.load(export_dir)
+        inference_model = InferenceModel(export_dir)
 
         torch.manual_seed(42)
         inference_input = single_observation.to_numpy().to_dict(flatten=False)
@@ -243,7 +243,7 @@ class TestE2ECore(CoreE2ETests):
         export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
         trained_policy.export(export_dir, backend)
 
-        inference_model = InferenceModel.load(export_dir)
+        inference_model = InferenceModel(export_dir)
         assert inference_model.backend == backend
 
         sample_batch = next(iter(datamodule.train_dataloader()))

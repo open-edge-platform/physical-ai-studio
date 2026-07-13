@@ -1,6 +1,6 @@
 /* eslint-disable react/no-unknown-property */
 
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useMemo, useRef } from 'react';
 
 import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
@@ -10,9 +10,8 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../../components/zoom/use-container-size';
-import { useLoadModelMutation, useRobotModels } from '../../robot-models-context';
+import { useLoadModelQuery } from '../../robot-models-context';
 import { SchemaRobotType } from '../../robot-types';
-import { urdfPathForType } from '../../robots-configuration';
 import { JointHighlight, useJointHighlight } from './use-joint-highlight';
 
 // ---------------------------------------------------------------------------
@@ -122,25 +121,6 @@ const CameraController = ({ controlsRef, model, highlights }: CameraControllerPr
 };
 
 // ---------------------------------------------------------------------------
-// URDF loading hook (same as robot-viewer.tsx)
-// ---------------------------------------------------------------------------
-
-const useLoadURDF = (robotType: SchemaRobotType) => {
-    const loadModelMutation = useLoadModelMutation();
-    const { hasModel } = useRobotModels();
-
-    const PATH = urdfPathForType(robotType);
-
-    useEffect(() => {
-        if (hasModel(PATH)) {
-            return;
-        }
-
-        loadModelMutation.mutate(PATH);
-    }, [PATH, hasModel, loadModelMutation]);
-};
-
-// ---------------------------------------------------------------------------
 // Public component
 // ---------------------------------------------------------------------------
 
@@ -160,14 +140,11 @@ interface SetupRobotViewerProps {
  */
 export const SetupRobotViewer = ({ robotType, highlights = [] }: SetupRobotViewerProps) => {
     const angle = degToRad(-45);
+    const { data: model } = useLoadModelQuery(robotType);
 
-    const PATH = urdfPathForType(robotType);
-    useLoadURDF(robotType);
     const ref = useRef<HTMLDivElement>(null);
     const controlsRef = useRef<OrbitControlsImpl>(null);
     const size = useContainerSize(ref);
-    const { getModel } = useRobotModels();
-    const model = getModel(PATH);
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>

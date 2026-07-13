@@ -57,7 +57,7 @@ class TaskResult:
         Returns:
             Dictionary with task results.
         """
-        result = {
+        result: dict[str, Any] = {
             "task_id": self.task_id,
             "task_name": self.task_name,
             "n_episodes": self.n_episodes,

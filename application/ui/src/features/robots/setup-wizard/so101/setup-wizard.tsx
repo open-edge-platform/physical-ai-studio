@@ -84,11 +84,11 @@ function useHighlights(): JointHighlight[] {
  * - VERIFICATION: live-synced viewer (sync is driven by VerificationStep)
  */
 const ViewerPanel = () => {
-    const robotForm = useRobotForm();
+    const { activeType } = useRobotForm();
     const { currentStep, calibrationPhase } = useSetupState();
     const highlights = useHighlights();
 
-    const robotType = robotForm.type || null;
+    const robotType = activeType as SchemaRobotType | null;
 
     const isCentering =
         currentStep === WizardStep.CALIBRATION &&

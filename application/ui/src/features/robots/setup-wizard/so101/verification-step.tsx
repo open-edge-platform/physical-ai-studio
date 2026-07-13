@@ -9,7 +9,8 @@ import { $api } from '../../../../api/client';
 import { SchemaCalibration } from '../../../../api/openapi-spec';
 import { paths } from '../../../../router';
 import { useProjectId } from '../../../projects/use-project';
-import { buildRobotBodyFromForm, useRobotForm } from '../../robot-form/provider';
+import { buildRobotBody } from '../../robot-form/form-data';
+import { useRobotForm } from '../../robot-form/provider';
 import { useRobotModels } from '../../robot-models-context';
 import { SchemaRobotInput } from '../../robot-types';
 import { InlineAlert } from '../shared/inline-alert';
@@ -101,10 +102,11 @@ export const VerificationStep = () => {
     const { project_id } = useProjectId();
     const { goBack } = useSetupActions();
     const { wsState } = useSetupState();
-    const robotForm = useRobotForm();
+    const { activeType, robotForm } = useRobotForm();
 
     const serialNumber = robotForm.serial_number ?? '';
-    const robotType = robotForm.type ?? '';
+    const connectionString = 'connection_string' in robotForm ? (robotForm.connection_string ?? '') : '';
+    const robotType = activeType;
 
     const [robotId] = useState(() => uuidv4());
     const [calibrationId] = useState(() => uuidv4());
@@ -137,7 +139,9 @@ export const VerificationStep = () => {
         },
     });
 
-    const robotBody: SchemaRobotInput | null = buildRobotBodyFromForm(robotForm, robotId);
+    const robotBody: SchemaRobotInput | null = activeType.startsWith('SO101')
+        ? buildRobotBody(robotForm, activeType, robotId)
+        : null;
 
     const hasCalibration = wsState.calibrationResult !== null;
 
@@ -206,7 +210,10 @@ export const VerificationStep = () => {
                             <strong>Type:</strong> {robotType}
                         </Text>
                         <Text>
-                            <strong>Serial:</strong> {serialNumber}
+                            <strong>Serial:</strong> {serialNumber || 'Unavailable'}
+                        </Text>
+                        <Text>
+                            <strong>USB Port:</strong> {connectionString || 'Unavailable'}
                         </Text>
                         <Text>
                             <strong>Calibration:</strong>{' '}

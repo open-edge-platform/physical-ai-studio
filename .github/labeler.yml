@@ -8,6 +8,11 @@ Backend:
       - any-glob-to-any-file:
           - "application/backend/**/*"
 
+Trainer:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "application/trainer/**/*"
+
 Application:
   - changed-files:
       - any-glob-to-any-file:

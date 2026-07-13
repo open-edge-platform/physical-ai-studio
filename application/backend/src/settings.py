@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AnyHttpUrl, Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -110,6 +110,34 @@ class Settings(BaseSettings):
     def log_dir(self) -> Path:
         """Storage directory for logs."""
         return self.storage_dir / "logs"
+
+    # Training mode
+    # "local" runs training in-process (requires the [train] extra with torch).
+    # "remote" offloads training to a trainer service, keeping this install lightweight.
+    training_mode: Literal["local", "remote"] = Field(default="local", alias="TRAINING_MODE")
+    # Base URL of the remote trainer service, e.g. "https://trainer.internal:8001".
+    trainer_url: str | None = Field(default=None, alias="TRAINER_URL")
+    # HuggingFace org/user namespace used for ephemeral snapshot dataset repos.
+    trainer_hf_namespace: str | None = Field(default=None, alias="TRAINER_HF_NAMESPACE")
+    # Seconds to wait for trainer HTTP requests (excludes long-poll/SSE streams).
+    trainer_request_timeout_s: float = Field(default=30.0, alias="TRAINER_REQUEST_TIMEOUT_S")
+    # Seconds to wait between chunks while streaming the model artifact. A stalled
+    # transfer (e.g. a proxy holding the connection open) must fail instead of
+    # hanging the job forever; this is a per-read gap, not a total transfer cap.
+    trainer_download_read_timeout_s: float = Field(default=120.0, alias="TRAINER_DOWNLOAD_READ_TIMEOUT_S")
+
+    @model_validator(mode="after")
+    def validate_remote_training_config(self) -> "Settings":
+        """Require a valid http(s) trainer URL when training is offloaded."""
+        if self.training_mode != "remote":
+            return self
+        if not self.trainer_url:
+            raise ValueError("TRAINING_MODE=remote requires TRAINER_URL to be set")
+        try:
+            AnyHttpUrl(self.trainer_url)
+        except ValidationError as exc:
+            raise ValueError(f"TRAINER_URL must be a valid http(s) URL with a host, got: {self.trainer_url!r}") from exc
+        return self
 
     # Server
     host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104

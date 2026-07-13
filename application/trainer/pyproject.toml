@@ -1,0 +1,134 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trainer"]
+
+[project]
+name = "physical-ai-trainer"
+version = "0.1.0"
+description = "Remote training service for Physical AI Studio"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "fastapi[standard]",
+  "sse-starlette>=2.0.0",
+  "pydantic>=2.12,<2.13",
+  "pydantic-settings>=2.14.2",
+  "loguru>=0.7.3",
+  "huggingface-hub>=0.27",
+  # Training stack (torch resolved via the extras below).
+  "physicalai-train[pi0,smolvla]",
+]
+
+[project.optional-dependencies]
+# executorch enables the ExecuTorch export backend. It conflicts with the xpu
+# torch build (see library conflicts), so it ships only with cpu/cuda.
+cpu = ["torch<2.13", "torchvision<0.26.0", "physicalai-train[executorch]"]
+cuda = ["torch<2.13", "torchvision<0.26.0", "physicalai-train[executorch]"]
+xpu = [
+  "torch<2.13",
+  "torchvision<0.26.0",
+  "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
+]
+tests = ["pytest>=9.0.3", "pytest-mock", "httpx"]
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = false
+
+[tool.uv.sources]
+physicalai-train = { path = "../../library", editable = true }
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu128", extra = "cuda" },
+  { index = "pytorch-xpu", extra = "xpu" },
+]
+torchvision = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu128", extra = "cuda" },
+  { index = "pytorch-xpu", extra = "xpu" },
+]
+pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
+
+[tool.uv]
+default-groups = ["all"]
+index-strategy = "unsafe-best-match"
+exclude-newer = "7 days"
+exclude-newer-package = { physicalai = false }
+override-dependencies = [
+  # lerobot==0.5.1 caps diffusers at <0.36.0, 0.38.0 contains CVE-2026-44827 fix
+  # (GHSA-98h9-4798-4q5v, GHSA-7wx4-6vff-v64p trust_remote_code bypass).
+  "diffusers>=0.38.0",
+  # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint).
+  # Safe to override because executorch production code does not import
+  # pytest at runtime. pytest<9.0.3 has vulnerable tmpdir handling
+  # (GHSA-6w46-j5rx-g56g, CVE-2025-71176).
+  "pytest>=9.0.3",
+]
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }, { extra = "xpu" }]]
+
+[dependency-groups]
+dev = ["ruff~=0.11.2", "pyrefly>=0.18.0", "types-PyYAML>=6.0.12.20250915"]
+lint = [
+  "ruff~=0.11.2",
+  "mypy~=1.17",
+  "pyrefly>=0.18.0",
+  "types-PyYAML>=6.0.12.20250915",
+]
+all = [
+  "ruff~=0.11.2",
+  "mypy~=1.17",
+  "pyrefly>=0.18.0",
+  "types-PyYAML>=6.0.12.20250915",
+]
+
+# ============================================================================ #
+# RUFF CONFIGURATION                                                           #
+# ============================================================================ #
+[tool.ruff]
+extend = "../../pyproject.toml"
+preview = false
+src = ["src"]
+
+[tool.ruff.lint.per-file-ignores]
+"*test*.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC"]
+"tests/conftest.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC"]
+
+# ============================================================================ #
+# MYPY CONFIGURATION                                                           #
+# ============================================================================ #
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+show_error_codes = true
+
+[tool.pyrefly]
+python-version = "3.13"
+search-path = ["src"]
+project-includes = ["src"]
+project-excludes = [".venv/**", "dist/**"]
+
+[tool.pytest.ini_options]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+testpaths = "tests"
+pythonpath = "src"

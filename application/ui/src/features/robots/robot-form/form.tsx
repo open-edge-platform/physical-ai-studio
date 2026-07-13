@@ -1,335 +1,90 @@
-import { useRef, type FormEvent } from 'react';
+import { Button, Flex, Heading, Icon, Item, Picker, TextField } from '@geti-ui/ui';
+import { ChevronLeft } from '@geti-ui/ui/icons';
 
-import {
-    ActionButton,
-    Button,
-    Divider,
-    Flex,
-    Form,
-    Heading,
-    Icon,
-    Item,
-    Picker,
-    Text,
-    TextField,
-    View,
-} from '@geti-ui/ui';
-import { ChevronLeft, Refresh } from '@geti-ui/ui/icons';
-import { v4 as uuidv4 } from 'uuid';
-
-import { $api } from '../../../api/client';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
+import { useRobotCatalogQuery } from '../robot-catalog.hooks';
 import { SchemaRobotType } from '../robot-types';
-import { PermissionDeniedError } from '../setup-wizard/so101/diagnostics-step-error';
-import { buildRobotBodyFromForm, useRobotForm, useSetRobotForm, type RobotForm as RobotFormType } from './provider';
-import { SubmitNewRobotButton } from './submit-new-robot-button';
+import { SO101FormFields } from './catalog/so101';
+import { WidowxAIFormFields } from './catalog/widowxai';
+import { BiManualWidowxAIFormFields } from './catalog/widowxai-bimanual';
+import { useRobotForm, useRobotFormFields, useSetRobotForm } from './provider';
 
-import classes from './form.module.css';
-
-export const SO101FormFields = () => {
-    const serialDevicesQuery = $api.useSuspenseQuery('get', '/api/hardware/serial_devices');
-
-    const robotForm = useRobotForm();
-    const setRobotForm = useSetRobotForm();
-
-    const identifyMutation = useIdentifyMutation();
-
-    return (
-        <>
-            <Flex gap='size-100' justifyContent={'space-between'} alignItems={'end'}>
-                <Picker
-                    label='Select robot'
-                    isRequired
-                    width='100%'
-                    selectedKey={robotForm.serial_number}
-                    onSelectionChange={(serial_number) => {
-                        const device = serialDevicesQuery.data.find((d) => d.serial_number === serial_number);
-
-                        setRobotForm((oldForm) => ({
-                            ...oldForm,
-                            serial_number: String(serial_number),
-                            connection_string: device?.connection_string ?? '',
-                        }));
-                    }}
-                >
-                    {serialDevicesQuery.data.map((serial_device) => {
-                        return (
-                            <Item key={serial_device.serial_number} textValue={serial_device.serial_number}>
-                                <Text>{serial_device.serial_number}</Text>
-                                <Text slot='description'>{serial_device.connection_string}</Text>
-                            </Item>
-                        );
-                    })}
-                </Picker>
-
-                <Flex gap='size-100'>
-                    <RefreshRobotsButton />
-                    <IdentifyRobot identifyMutation={identifyMutation} robotForm={robotForm} />
-                </Flex>
-            </Flex>
-
-            {identifyMutation.isError && <PermissionDeniedError port={robotForm.connection_string} />}
-        </>
-    );
-};
-
-export const WidowxAIFormFields = () => {
-    const robotForm = useRobotForm();
-    const setRobotForm = useSetRobotForm();
-
-    const identifyMutation = useIdentifyMutation();
-
-    return (
-        <Flex gap='size-100' justifyContent={'space-between'} alignItems={'end'}>
-            <TextField
-                isRequired
-                label='Robot IP address'
-                width='100%'
-                value={robotForm.connection_string ?? ''}
-                onChange={(connection_string) => {
-                    setRobotForm((oldForm) => ({
-                        ...oldForm,
-                        connection_string,
-                        serial_number: '',
-                    }));
-                }}
-                placeholder='192.168.1.2'
-            />
-            <Flex gap='size-100'>
-                <IdentifyRobot identifyMutation={identifyMutation} robotForm={robotForm} />
-            </Flex>
-        </Flex>
-    );
-};
-
-export const BiManualWidowxAIFormFields = () => {
-    const robotForm = useRobotForm();
-    const setRobotForm = useSetRobotForm();
-
-    const identifyMutation = useIdentifyMutation();
-
-    return (
-        <>
-            <Flex direction='column' gap='size-100' width='100%'>
-                <Flex gap='size-100' justifyContent={'space-between'} alignItems={'end'}>
-                    <TextField
-                        isRequired
-                        label='Left arm IP address'
-                        width='100%'
-                        value={robotForm.connection_string_left ?? ''}
-                        onChange={(connection_string_left) => {
-                            setRobotForm((oldForm) => ({
-                                ...oldForm,
-                                connection_string_left,
-                                serial_number: '',
-                            }));
-                        }}
-                        placeholder='192.168.1.2'
-                    />
-                    <View>
-                        <IdentifyRobot
-                            identifyMutation={identifyMutation}
-                            robotForm={{
-                                ...robotForm,
-                                type: 'Trossen_WidowXAI_Follower',
-                                connection_string: robotForm.connection_string_left,
-                            }}
-                        />
-                    </View>
-                </Flex>
-            </Flex>
-
-            <Flex gap='size-100' justifyContent={'space-between'} alignItems={'end'}>
-                <TextField
-                    isRequired
-                    label='Right arm IP address'
-                    width='100%'
-                    value={robotForm.connection_string_right ?? ''}
-                    onChange={(connection_string_right) => {
-                        setRobotForm((oldForm) => ({
-                            ...oldForm,
-                            connection_string_right,
-                            serial_number: '',
-                        }));
-                    }}
-                    placeholder='192.168.1.3'
-                />
-                <View>
-                    <IdentifyRobot
-                        identifyMutation={identifyMutation}
-                        robotForm={{
-                            ...robotForm,
-                            type: 'Trossen_WidowXAI_Follower',
-                            connection_string: robotForm.connection_string_right,
-                        }}
-                    />
-                </View>
-            </Flex>
-        </>
-    );
-};
-
-const RobotType = () => {
-    const setRobotForm = useSetRobotForm();
-    const robotForm = useRobotForm();
+export const RobotType = () => {
+    const { activeType } = useRobotForm();
+    const { setActiveType } = useSetRobotForm();
+    const catalogQuery = useRobotCatalogQuery();
 
     return (
         <Picker
             isRequired
             label='Robot type'
             width='100%'
-            selectedKey={robotForm.type}
+            selectedKey={activeType}
             onSelectionChange={(selected) => {
-                const newType = selected as typeof robotForm.type;
-
-                const wasSerial = robotForm.type?.toLowerCase().startsWith('so101') ?? false;
-                const isSerial = newType?.toLowerCase().startsWith('so101') ?? false;
-
-                setRobotForm((oldForm) => ({
-                    ...oldForm,
-                    type: newType,
-                    ...(wasSerial !== isSerial
-                        ? {
-                              // Only reset when switching families (SO -> Trossen, etc)
-                              serial_number: '',
-                              connection_string: '',
-                              connection_string_left: '',
-                              connection_string_right: '',
-                          }
-                        : {}),
-                }));
+                if (selected !== null) {
+                    setActiveType(selected as SchemaRobotType);
+                }
             }}
         >
-            <Item key={'SO101_Follower'}>SO101 Follower</Item>
-            <Item key={'SO101_Leader'}>SO101 Leader</Item>
-            <Item key={'Trossen_WidowXAI_Follower'}>Trossen WidowX AI Follower</Item>
-            <Item key={'Trossen_WidowXAI_Leader'}>Trossen WidowX AI Leader</Item>
-            <Item key={'Trossen_Bimanual_WidowXAI_Follower'}>Trossen Bimanual WidowX AI Follower</Item>
-            <Item key={'Trossen_Bimanual_WidowXAI_Leader'}>Trossen Bimanual WidowX AI Leader</Item>
+            {catalogQuery.data.map((entry) => (
+                <Item key={entry.type}>{entry.display_name}</Item>
+            ))}
         </Picker>
     );
 };
 
-const RefreshRobotsButton = () => {
-    const { refetch, isFetching } = $api.useSuspenseQuery('get', '/api/hardware/serial_devices');
+export const FormFields = () => {
+    const { formData, updateField, activeType } = useRobotFormFields();
 
-    return (
-        <ActionButton
-            isDisabled={isFetching}
-            UNSAFE_className={classes.actionButton}
-            onPress={() => {
-                refetch();
-            }}
-        >
-            <Icon>
-                <Refresh />
-            </Icon>
-        </ActionButton>
-    );
-};
-
-const useIdentifyMutation = () => {
-    return $api.useMutation('post', '/api/hardware/identify', {
-        meta: { skipInvalidation: true },
-    });
-};
-
-const IdentifyRobot = ({
-    identifyMutation,
-    robotForm,
-}: {
-    identifyMutation: ReturnType<typeof useIdentifyMutation>;
-    robotForm: RobotFormType;
-}) => {
-    const robot = buildRobotBodyFromForm(robotForm, uuidv4());
-    const isDisabled = robot === null || identifyMutation.isPending;
-
-    const onIdentify = () => {
-        if (isDisabled || robot === null) {
-            return;
-        }
-
-        identifyMutation.mutate({ body: robot });
-    };
-
-    return (
-        <ActionButton isDisabled={isDisabled} UNSAFE_className={classes.actionButton} onPress={onIdentify}>
-            Identify
-        </ActionButton>
-    );
-};
-
-const FormFields = ({ robotType }: { robotType: SchemaRobotType }) => {
-    switch (robotType) {
+    let formFields = null;
+    switch (activeType) {
         case 'SO101_Follower':
         case 'SO101_Leader':
-            return <SO101FormFields />;
+            formFields = <SO101FormFields />;
+            break;
         case 'Trossen_WidowXAI_Follower':
         case 'Trossen_WidowXAI_Leader':
-            return <WidowxAIFormFields />;
+            formFields = <WidowxAIFormFields />;
+            break;
         case 'Trossen_Bimanual_WidowXAI_Leader':
         case 'Trossen_Bimanual_WidowXAI_Follower':
-            return <BiManualWidowxAIFormFields />;
+            formFields = <BiManualWidowxAIFormFields />;
+            break;
     }
-};
-
-export const RobotForm = ({ heading = 'Add new robot', submitButton = <SubmitNewRobotButton /> }) => {
-    const { project_id } = useProjectId();
-
-    const robotForm = useRobotForm();
-    const setRobotForm = useSetRobotForm();
-
-    const submitContainerRef = useRef<HTMLDivElement>(null);
-
-    // Make Enter behave like clicking the submit button. A disabled button ignores
-    // the click, so validation still applies.
-    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        submitContainerRef.current?.querySelector('button')?.click();
-    };
 
     return (
-        <Flex direction='column' gap='size-200'>
-            <Flex alignItems={'center'} gap='size-200'>
-                <Button
-                    href={paths.project.robots.index({ project_id })}
-                    variant='secondary'
-                    UNSAFE_style={{ border: 'none' }}
-                >
-                    <Icon>
-                        <ChevronLeft color='white' fill='white' />
-                    </Icon>
-                </Button>
+        <>
+            <TextField
+                isRequired
+                label='Robot name'
+                width='100%'
+                onChange={(name) => {
+                    updateField('name', name);
+                }}
+                value={formData.name}
+            />
+            {formFields}
+        </>
+    );
+};
 
-                <Heading>{heading}</Heading>
-            </Flex>
-            <Divider orientation='horizontal' size='S' />
-            {/* Prevent native form submission, which reloads the page and discards form state.
-                Advancing to the next step is handled by the submit button's onPress. */}
-            <Form onSubmit={handleSubmit}>
-                <Flex direction='column' gap='size-200'>
-                    <Flex direction='column' gap='size-200' width='100%'>
-                        <TextField
-                            isRequired
-                            label='Robot name'
-                            width='100%'
-                            onChange={(name) => {
-                                setRobotForm((oldForm) => ({ ...oldForm, name }));
-                            }}
-                            value={robotForm.name}
-                        />
+export const RobotFormHeading = ({ heading }: { heading: string }) => {
+    const { project_id } = useProjectId();
 
-                        {/* Put robot type first as we can use it to visualize the robot
-                          and determine how to connect with it */}
-                        <RobotType />
+    return (
+        <Flex alignItems={'center'} gap='size-200'>
+            <Button
+                href={paths.project.robots.index({ project_id })}
+                variant='secondary'
+                UNSAFE_style={{ border: 'none' }}
+            >
+                <Icon>
+                    <ChevronLeft color='white' fill='white' />
+                </Icon>
+            </Button>
 
-                        <FormFields robotType={robotForm.type} />
-                    </Flex>
-                    <Divider orientation='horizontal' size='S' />
-                    <div ref={submitContainerRef}>{submitButton}</div>
-                </Flex>
-            </Form>
+            <Heading>{heading}</Heading>
         </Flex>
     );
 };

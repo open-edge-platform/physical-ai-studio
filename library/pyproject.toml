@@ -44,7 +44,7 @@ dependencies = [
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
-    "physicalai>=0.1.1",
+    "physicalai>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -149,7 +149,6 @@ dev = [
 # ============================================================================ #
 [tool.uv]
 exclude-newer = "7 days"
-exclude-newer-package = { physicalai = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
@@ -189,6 +188,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9881601325f724a0f00b1bf43f134d7f34fdef55" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -220,6 +220,14 @@ baseline = "pyrefly-baseline.json"
 project-excludes = [
     ".venv/**",
     "notebooks/**",
+    # robocasa is an optional dependency installed via `library/scripts/benchmark/install_robocasa.sh`
+    # into a dedicated `.venv-robocasa` — it is intentionally absent from the main `.venv`
+    # because its dep graph is unsolvable in a single uv resolve (lerobot==0.3.3 /
+    # robosuite / tianshou pin conflicts). Pyrefly runs against the main `.venv`, so it
+    # cannot resolve the robocasa modules. The imports are guarded by `_ROBOCASA_AVAILABLE`
+    # at runtime; `TYPE_CHECKING` provides type info to mypy/pyrefly when robocasa IS
+    # installed. Exclude the file here to avoid spurious missing-import errors in CI.
+    "src/physicalai/gyms/robocasa.py",
     "src/physicalai/policies/pi05/pi_gemma.py",
     "src/physicalai/policies/groot/components/backbone.py",
 ]

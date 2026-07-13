@@ -32,6 +32,7 @@ jobs:
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
+            api.github.com:443
             azure.archive.ubuntu.com:80
             centralus.data.mcr.microsoft.com:443
             dl.google.com:443
@@ -54,7 +55,7 @@ jobs:
 
       - &checkout
         name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -79,13 +80,13 @@ jobs:
       - *harden-runner
 
       - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           lfs: true
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version-file: "./application/backend/.python-version"
 
@@ -244,7 +245,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-jammy@sha256:e1529a04087193966ea15d4a1617345bdaa0791690a24ab2c42b65f9ce5b2cdc
+      image: mcr.microsoft.com/playwright:v1.61.1-jammy@sha256:7b86926fff94374389e8e1f4fdc5c76d050d4a06a7886bb537bf412b20e2b71e
     steps:
       - *harden-runner
 

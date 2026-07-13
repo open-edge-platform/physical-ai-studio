@@ -2,10 +2,9 @@ import { Suspense } from 'react';
 
 import { Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
 
-import { RobotForm } from '../../features/robots/robot-form/form';
 import { Preview } from '../../features/robots/robot-form/preview';
 import { RobotFormProvider } from '../../features/robots/robot-form/provider';
-import { UpdateRobotButton } from '../../features/robots/robot-form/update-robot-button';
+import { UpdateRobotForm } from '../../features/robots/robot-form/update-form';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { useRobot } from '../../features/robots/use-robot';
 
@@ -26,7 +25,7 @@ export const Edit = () => {
                 <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
                     <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
                         <Suspense fallback={<CenteredLoading />}>
-                            <RobotForm heading='Update robot' submitButton={<UpdateRobotButton />} />
+                            <UpdateRobotForm />
                         </Suspense>
                     </View>
                     <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400'>

@@ -15,7 +15,7 @@ policy = ACT.load_from_checkpoint("checkpoints/best.ckpt")
 policy.export("./exports", backend="openvino")
 
 # Deploy
-model = InferenceModel.load("./exports")
+model = InferenceModel("./exports")
 action = model.select_action(observation)
 ```
 
@@ -61,7 +61,7 @@ exports/
 from physicalai.inference import InferenceModel
 
 # Load (auto-detects backend)
-policy = InferenceModel.load("./exports")
+policy = InferenceModel("./exports")
 
 # Run episode
 obs = env.reset()
@@ -83,7 +83,7 @@ while not done:
 ```python test="skip" reason="requires exported model"
 import time
 
-policy = InferenceModel.load("./exports")
+policy = InferenceModel("./exports")
 policy.reset()
 
 start = time.time()

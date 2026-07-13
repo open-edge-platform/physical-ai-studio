@@ -190,7 +190,8 @@ class TestObservationFromDict:
         assert "top" in obs.images
         assert "wrist" in obs.images
 
-    def test_roundtrip_to_dict_from_dict(self):
+    @pytest.mark.parametrize("flatten", [True, False])
+    def test_roundtrip_to_dict_from_dict(self, flatten):
         """Test to_dict → from_dict roundtrip."""
         original = Observation(
             action=torch.tensor([1.0, 2.0]),
@@ -199,12 +200,29 @@ class TestObservationFromDict:
             episode_index=torch.tensor(5),
         )
 
-        obs_dict = original.to_dict()
+        obs_dict = original.to_dict(flatten=flatten)
         restored = Observation.from_dict(obs_dict)
 
         assert torch.equal(restored.action, original.action)
         assert torch.equal(restored.state, original.state)
         assert torch.equal(restored.episode_index, original.episode_index)
+        assert restored.images is not None
+        assert torch.equal(restored.images["top"], original.images["top"])
+
+    def test_from_dict_restores_flattened_image_keys(self):
+        """Test from_dict rebuilds nested image mappings from flattened keys."""
+        top = torch.rand(3, 64, 64)
+        wrist = torch.rand(3, 64, 64)
+
+        obs = Observation.from_dict({
+            "images.top": top,
+            "images.wrist": wrist,
+            "_images_keys": ["images.top", "images.wrist"],
+        })
+
+        assert obs.images is not None
+        assert torch.equal(obs.images["top"], top)
+        assert torch.equal(obs.images["wrist"], wrist)
 
 
 class TestObservationBatching:

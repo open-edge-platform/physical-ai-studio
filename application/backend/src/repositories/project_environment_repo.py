@@ -1,10 +1,10 @@
 from collections.abc import Callable
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
-from db.schema import EnvironmentRobotDB, ProjectEnvironmentDB
+from db.schema import EnvironmentCameraDB, EnvironmentRobotDB, ProjectEnvironmentDB
 from repositories.base import ProjectBaseRepository
 from repositories.mappers import ProjectCameraMapper, ProjectEnvironmentMapper, ProjectRobotMapper
 from schemas.environment import (
@@ -99,3 +99,33 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
             robots_with_teleoperators.append(RobotWithTeleoperator(robot=robot, tele_operator=tele_operator))
 
         return robots_with_teleoperators
+
+    async def find_environment_names_using_robot(self, robot_id: UUID) -> list[str]:
+        """Return names of environments in this project that reference the robot (as robot or leader)."""
+        rid = str(robot_id)
+        stmt = (
+            select(ProjectEnvironmentDB.name)
+            .join(EnvironmentRobotDB, EnvironmentRobotDB.environment_id == ProjectEnvironmentDB.id)
+            .where(
+                ProjectEnvironmentDB.project_id == self.project_id,
+                or_(EnvironmentRobotDB.robot_id == rid, EnvironmentRobotDB.tele_operator_robot_id == rid),
+            )
+            .distinct()
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def find_environment_names_using_camera(self, camera_id: UUID) -> list[str]:
+        """Return names of environments in this project that reference the camera."""
+        cid = str(camera_id)
+        stmt = (
+            select(ProjectEnvironmentDB.name)
+            .join(EnvironmentCameraDB, EnvironmentCameraDB.environment_id == ProjectEnvironmentDB.id)
+            .where(
+                ProjectEnvironmentDB.project_id == self.project_id,
+                EnvironmentCameraDB.camera_id == cid,
+            )
+            .distinct()
+        )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())

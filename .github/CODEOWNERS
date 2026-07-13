@@ -4,6 +4,7 @@
 library/uv.lock                   @open-edge-platform/physical-ai-studio-maintain @sys-geti
 physicalai/uv.lock                @open-edge-platform/physical-ai-studio-maintain @sys-geti
 application/backend/uv.lock       @open-edge-platform/physical-ai-studio-maintain @sys-geti
+application/trainer/uv.lock       @open-edge-platform/physical-ai-studio-maintain @sys-geti
 application/ui/package-lock.json  @open-edge-platform/physical-ai-studio-maintain @sys-geti
 
 # Dockerfile

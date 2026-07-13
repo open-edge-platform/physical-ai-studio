@@ -142,7 +142,7 @@ class LeRobotDataModule(DataModule):
         # Eval-loss validation
         val_split: float = 0.0,
         val_split_seed: int | None = None,
-        val_batch_size: int = 1,
+        val_batch_size: int | None = None,
         # Base DataModule parameters (val/test gyms)
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
@@ -195,8 +195,9 @@ class LeRobotDataModule(DataModule):
                 ``None`` (default) uses the global ``random`` module, which respects
                 ``seed_everything()``. Set an explicit int to use an isolated RNG
                 independent of the global seed. Defaults to ``None``.
-            val_batch_size (int, optional): Batch size for the eval-loss validation DataLoader.
-                Defaults to ``1``.
+            val_batch_size (int | None, optional): Batch size for the eval-loss validation
+                DataLoader. ``None`` (default) tracks ``train_batch_size``, including any value
+                chosen by ``auto_scale_batch_size``.
             val_gym (Gym | None, optional): Validation gym environment.
                 Defaults to `None`.
             num_rollouts_val (int, optional): Number of rollouts for validation.

@@ -11,6 +11,7 @@ Documentation for the PhysicalAI Python library.
 | [Getting Started](getting-started/) | Installation, quickstart, and first steps |
 | [How-To Guides](how-to/)            | Goal-oriented guides for specific tasks   |
 | [Explanation](explanation/)         | Architecture and design documentation     |
+| [Development](development/)         | Contributor rules for library development |
 
 ## Quick Start
 
@@ -39,6 +40,7 @@ entry points, so the user-facing commands stay the same.
 
 - **[Library README](../README.md)** - Installation and overview
 - **[Main Repository](../../README.md)** - Project overview
+- **[Library Security Rules](development/security.md)** - Required rules for `library/` changes
 
 ## Pyrefly baseline
 

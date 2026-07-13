@@ -1,0 +1,141 @@
+name: Trainer
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+
+permissions: {} # No permissions by default on workflow level
+
+env:
+  UV_EXCLUDE_NEWER: "7 days"
+
+concurrency:
+  group: trainer-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-paths:
+    name: Check if workflow should run
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    outputs:
+      run_workflow: ${{ steps.check_paths.outputs.run }}
+    permissions:
+      contents: read
+    steps:
+      - &harden-runner
+        name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            crates.io:443
+            download.pytorch.org:443
+            download-r2.pytorch.org:443
+            files.pythonhosted.org:443
+            github.com:443
+            index.crates.io:443
+            pypi.org:443
+            raw.githubusercontent.com:443
+            releases.astral.sh:443
+            release-assets.githubusercontent.com:443
+            static.crates.io:443
+            proxy.golang.org:443
+            storage.googleapis.com:443
+
+      - &checkout
+        name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Check paths
+        id: check_paths
+        uses: open-edge-platform/geti-ci/actions/check-paths@7e686c1248b3939f8ee8e04e2612da727e379d91
+        with:
+          files_yaml: |
+            test:
+              - library/**
+              - physicalai/**
+              - application/trainer/**
+              - .github/**
+
+  code-quality:
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - *harden-runner
+
+      - *checkout
+
+      - &set-up-python
+        name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - &set-up-uv
+        name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.10.4"
+
+      - name: Run prek
+        uses: j178/prek-action@e98a699c41eb69ab013a45817a0406469a748f8d # v2
+        with:
+          extra-args: --all-files
+          working-directory: application/trainer
+
+  unit-tests:
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read # to checkout code
+    steps:
+      - *harden-runner
+
+      - *checkout
+
+      - *set-up-python
+
+      - *set-up-uv
+
+      - name: Prepare venv and install Python dependencies
+        working-directory: application/trainer
+        run: |
+          uv lock --check
+          uv sync --frozen --extra cpu --extra tests
+
+      - name: Run python tests
+        working-directory: application/trainer
+        run: |
+          uv run pytest tests
+
+  required-check:
+    name: Required Check trainer
+    needs:
+      - check-paths
+      - code-quality
+      - unit-tests
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    env:
+      CHECKS: ${{ join(needs.*.result, ' ') }}
+    if: always() && !cancelled()
+    steps:
+      - *harden-runner
+
+      - name: Check jobs results
+        run: |
+          for check in ${CHECKS}; do
+            echo "::notice::check=${check}"
+            if [[ "$check" != "success" && "$check" != "skipped" ]]; then
+              echo "::error ::Required status checks failed. They must succeed before this pull request can be merged."
+              exit 1
+            fi
+          done
