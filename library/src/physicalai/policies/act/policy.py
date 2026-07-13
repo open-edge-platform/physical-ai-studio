@@ -112,9 +112,9 @@ class ACT(ExportablePolicyMixin, Policy):
         temporal_ensemble_coeff: float | None = None,
         dropout: float = 0.1,
         kl_weight: float = 10.0,
-        optimizer_lr: float = 1e-5,
+        optimizer_lr: float = 1e-4,
         optimizer_weight_decay: float = 1e-4,
-        optimizer_grad_clip_norm: float = 10.0,
+        optimizer_grad_clip_norm: float = 10000.0,
         compile_model: bool = False,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, Any] | None = None,
@@ -588,6 +588,7 @@ class ACT(ExportablePolicyMixin, Policy):
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(
+            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
             postprocessors_specs=postproc_specs,
         )
 

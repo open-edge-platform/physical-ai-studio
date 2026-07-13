@@ -36,6 +36,7 @@ The application provides a graphical interface to:
 | [Update Existing Installation](./docs/02-update-existing-installation.md) | Refresh Docker images, dependencies, and services after pulling changes.          |
 | [Getting Started](./docs/03-getting-started.md)                           | Create a project, set up hardware, record data, train a model, and run inference. |
 | [Environment Setup](./docs/04-environment-setup.md)                       | Configure robots, cameras, and environments.                                      |
+| [Virtual USB Ports](./docs/08-virtual-usb-ports.md) (optional)            | Connect to robot serial devices over TCP using `socat` virtual ports.             |
 | [Recording Datasets](./docs/05-recording-datasets.md)                     | Record, review, import, and export demonstration datasets.                        |
 | [Training Policies](./docs/06-training-policies.md)                       | Train model policies from recorded datasets.                                      |
 | [Deploying Model Policies](./docs/07-deploying-model-policies.md)         | Run trained policies in Studio or deploy them externally.                         |

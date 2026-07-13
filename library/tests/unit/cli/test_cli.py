@@ -80,7 +80,7 @@ class TestConfigParsing:
         cfg = parser.parse_args([f"--config={_act_config_path()}"])
         assert cfg.model.class_path == "physicalai.policies.ACT"
         assert cfg.data.class_path == "physicalai.data.lerobot.LeRobotDataModule"
-        assert cfg.trainer.max_epochs == 100
+        assert cfg.trainer.max_steps == 70000
 
     def test_benchmark_parser_accepts_existing_libero_config(self) -> None:
         parser = benchmark_module.register().parser

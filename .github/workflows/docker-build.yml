@@ -123,7 +123,7 @@ jobs:
         working-directory: application/docker
         run: |
           SERVICE_NAME="physical-ai-studio-${DEVICE}"
-          
+
           # CUDA requires GPU hardware, test with docker run instead of compose
           # CPU and XPU test via compose to validate the full deployment config
           if [ "${DEVICE}" = "cuda" ]; then

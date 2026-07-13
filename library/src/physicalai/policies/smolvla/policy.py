@@ -776,6 +776,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(
+            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
             postprocessors_specs=torch_postproc_specs,
         )
 

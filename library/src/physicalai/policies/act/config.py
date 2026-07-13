@@ -112,8 +112,8 @@ class ACTConfig(Config):
     dropout: float = 0.1
     kl_weight: float = 10.0
 
-    optimizer_lr: float = 1e-5
+    optimizer_lr: float = 1e-4
     optimizer_weight_decay: float = 1e-4
-    optimizer_grad_clip_norm: float = 10
+    optimizer_grad_clip_norm: float = 10000
 
     compile_model: bool = False

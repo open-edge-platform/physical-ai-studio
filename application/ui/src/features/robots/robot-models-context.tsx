@@ -5,28 +5,28 @@ import * as THREE from 'three';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
 
+import { useRobotCatalogDefinitionQuery } from './robot-catalog.hooks';
 import { SchemaRobotType } from './robot-types';
-import { ROBOT_TYPE_TO_URDF_MAP } from './robots-configuration';
-
-// ---------------------------------------------------------------------------
-// Path resolution
-// ---------------------------------------------------------------------------
 
 export const mapJointToURDFJoint = (
     joint: { name: string; value: number },
     model: URDFRobot,
-    robotType: SchemaRobotType
+    jointMap: Record<string, string[]>
 ) => {
     if (!joint.name.endsWith('.pos')) {
         return;
     }
-    const modelJointMap = ROBOT_TYPE_TO_URDF_MAP[robotType];
-    const modelJoints = modelJointMap[joint.name] ?? [];
+    const modelJoints = jointMap[joint.name] ?? [];
 
     modelJoints.forEach((modelJointName) => {
-        const isRevolute = model.joints[modelJointName].jointType === 'revolute';
+        const modelJoint = model.joints[modelJointName];
+        if (!modelJoint) {
+            return;
+        }
 
-        model.setJointValue(modelJointName, isRevolute ? degToRad(joint.value) : joint.value); // meters
+        const isRevolute = modelJoint.jointType === 'revolute';
+
+        model.setJointValue(modelJointName, isRevolute ? degToRad(joint.value) : joint.value);
     });
 };
 
@@ -89,17 +89,24 @@ export const useRobotModels = () => {
     return useContext(RobotModelsContext)!;
 };
 
-export const useLoadModelQuery = (path: string) => {
+export const useLoadModelQuery = (robotType: SchemaRobotType) => {
     const { getModel, setModel } = useRobotModels();
 
+    const { data: definition } = useRobotCatalogDefinitionQuery(robotType);
+    const path = definition.urdf_path;
+    const packageMap = definition.package_map ?? {};
+
     const cachedModel = getModel(path);
+
     const query = useQuery({
-        queryKey: ['robotModel', path],
-        queryFn: () => cachedModel ?? loadURDFModel(path),
+        queryKey: ['robotModel', robotType, path],
+        queryFn: () => {
+            return cachedModel ?? loadURDFModel(packageMap, path);
+        },
         initialData: cachedModel,
         staleTime: Infinity,
         gcTime: 1000 * 60 * 30,
-        enabled: path !== '' && !cachedModel,
+        enabled: !cachedModel,
     });
 
     useEffect(() => {
@@ -111,19 +118,12 @@ export const useLoadModelQuery = (path: string) => {
     return query;
 };
 
-const loadURDFModel = async (path: string): Promise<URDFRobot> => {
-    if (!path) {
-        throw new Error('Path is required');
-    }
-
+const loadURDFModel = async (packages: Record<string, string>, path: string): Promise<URDFRobot> => {
     // Use a custom LoadingManager so the promise only resolves after all STL
     // meshes have finished loading, not just after the URDF XML is parsed.
     const manager = new THREE.LoadingManager();
     const loader = new URDFLoader(manager);
-
-    loader.packages = {
-        trossen_arm_description: '/api/robots/catalog/Trossen_WidowXAI_Leader',
-    };
+    loader.packages = packages;
 
     return new Promise<URDFRobot>((resolve, reject) => {
         let model: URDFRobot | null = null;

@@ -9,9 +9,9 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
+import { useRobotCatalogDefinitionQuery } from '../robot-catalog.hooks';
 import { SchemaRobot } from '../robot-types';
-import { urdfPathForType } from '../robots-configuration';
-import { mapJointToURDFJoint, useLoadModelQuery, useRobotModels } from './../robot-models-context';
+import { mapJointToURDFJoint, useLoadModelQuery } from './../robot-models-context';
 
 /** Material name used by the dark parts in the Trossen URDF. */
 const TROSSEN_DARK_MATERIAL = 'trossen_black';
@@ -104,12 +104,12 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
     const angle = degToRad(-45);
     const isTrossen = robot.type.toLowerCase().includes('trossen');
 
-    const PATH = urdfPathForType(robot.type);
-    const { data: loadedModel } = useLoadModelQuery(PATH);
+    const { data: definition } = useRobotCatalogDefinitionQuery(robot.type);
+    const jointMap = definition.joint_map;
+
+    const { data: model } = useLoadModelQuery(robot.type);
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
-    const { getModel } = useRobotModels();
-    const model = loadedModel ?? getModel(PATH);
 
     useEffect(() => {
         if (featureValues !== undefined && featureNames !== undefined && model !== undefined) {
@@ -120,11 +120,11 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
                         value: featureValues[index],
                     },
                     model,
-                    robot.type
+                    jointMap
                 );
             });
         }
-    }, [featureValues, featureNames, model, robot.type]);
+    }, [featureValues, featureNames, model, jointMap]);
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>

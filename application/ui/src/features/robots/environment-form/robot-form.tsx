@@ -5,7 +5,7 @@ import { Add, Close } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { useProjectId } from '../../../features/projects/use-project';
-import { isFollower, isLeader } from '../robots-configuration';
+import { useIsRobotRole } from '../robot-catalog.hooks';
 import { RobotConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
 import classes from './form.module.css';
@@ -70,6 +70,7 @@ export const AddRobotForm = ({
     const robotsQuery = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots', {
         params: { path: { project_id } },
     });
+    const { isFollower, isLeader } = useIsRobotRole();
     const environment = useEnvironmentForm();
 
     const availableRobots = robotsQuery.data.filter((robot) => {

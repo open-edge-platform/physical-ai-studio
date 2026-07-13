@@ -3,7 +3,7 @@ name: Publish PyPI
 on:
   push:
     tags:
-      - 'lib/v[0-9]+.[0-9]+.[0-9]+'
+      - "lib/v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
 
 permissions: {}

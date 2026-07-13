@@ -10,9 +10,8 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../../components/zoom/use-container-size';
-import { useLoadModelQuery, useRobotModels } from '../../robot-models-context';
+import { useLoadModelQuery } from '../../robot-models-context';
 import { SchemaRobotType } from '../../robot-types';
-import { urdfPathForType } from '../../robots-configuration';
 import { JointHighlight, useJointHighlight } from './use-joint-highlight';
 
 // ---------------------------------------------------------------------------
@@ -141,14 +140,11 @@ interface SetupRobotViewerProps {
  */
 export const SetupRobotViewer = ({ robotType, highlights = [] }: SetupRobotViewerProps) => {
     const angle = degToRad(-45);
+    const { data: model } = useLoadModelQuery(robotType);
 
-    const PATH = urdfPathForType(robotType);
-    const { data: loadedModel } = useLoadModelQuery(PATH);
     const ref = useRef<HTMLDivElement>(null);
     const controlsRef = useRef<OrbitControlsImpl>(null);
     const size = useContainerSize(ref);
-    const { getModel } = useRobotModels();
-    const model = loadedModel ?? getModel(PATH);
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>
