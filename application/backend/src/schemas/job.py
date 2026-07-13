@@ -89,6 +89,9 @@ class TrainJobPayload(BaseModel):
     remote_job_id: str | None = Field(
         default=None, description="Remote trainer job id, set when a remote run is in flight (for restart reattach)"
     )
+    snapshot_id: UUID | None = Field(
+        default=None, description="Dataset snapshot id retained while a remote run is in flight (for model provenance)"
+    )
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:
@@ -101,6 +104,10 @@ class TrainJobPayload(BaseModel):
     @field_serializer("base_model_id")
     def serialize_base_model_id(self, base_model_id: UUID | None, _info: Any) -> str | None:
         return str(base_model_id) if base_model_id else None
+
+    @field_serializer("snapshot_id")
+    def serialize_snapshot_id(self, snapshot_id: UUID | None, _info: Any) -> str | None:
+        return str(snapshot_id) if snapshot_id else None
 
 
 class TrainJob(BaseJob):

@@ -23,7 +23,7 @@ from schemas.job import TrainJobPayload
 from schemas.model import Model
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingContext
-from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END
+from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END, RemoteTrainingError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -520,6 +520,17 @@ class TestRemoteTrainingBackend:
         api_cls.return_value.upload_folder.assert_not_called()
         # The finished model was still streamed and extracted.
         safe_zip.extract_to.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_reattach_rejects_malformed_remote_job_id(self, tmp_path):
+        """A persisted job ID cannot inject path components into trainer URLs."""
+        settings = _settings()
+        context = _context(tmp_path, remote_job_id="valid-job/../unexpected")
+
+        with patch(f"{REMOTE}.get_settings", return_value=settings):
+            backend = _backend(settings)
+            with pytest.raises(RemoteTrainingError, match="Invalid remote training job id"):
+                await backend.train(context)
 
     @pytest.mark.anyio
     async def test_shutdown_suspends_without_canceling_remote_job(self, tmp_path):

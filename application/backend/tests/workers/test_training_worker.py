@@ -396,8 +396,10 @@ class TestTraining:
 
     @pytest.mark.anyio
     async def test_persist_remote_job_id_updates_payload(self, worker, tmp_path):
-        """The persist callback writes the remote job id onto the job payload."""
+        """The persist callback retains the snapshot identity with the remote job id."""
         payload = _make_payload(compile_model=False)
+        snapshot_id = uuid4()
+        payload.snapshot_id = snapshot_id
         job = _make_job(payload)
 
         with patch(f"{MODULE}.JobService") as MockJobService:
@@ -410,3 +412,4 @@ class TestTraining:
             args, _ = MockJobService.update_job_payload.call_args
             assert args[0] == job.id
             assert args[1].remote_job_id == "trainer-job-xyz"
+            assert args[1].snapshot_id == snapshot_id

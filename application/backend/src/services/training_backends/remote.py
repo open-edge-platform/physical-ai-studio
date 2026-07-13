@@ -170,6 +170,8 @@ class RemoteTrainingBackend:
         model rather than submitting a new job.
         """
         if context.remote_job_id:
+            if not _REMOTE_JOB_ID_PATTERN.fullmatch(context.remote_job_id):
+                raise RemoteTrainingError("Invalid remote training job id")
             logger.info("Reattaching to in-flight remote training job")
             await self._resume_pending_http_upload(context, context.remote_job_id)
             await self.await_and_ingest(context, context.remote_job_id)

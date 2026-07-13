@@ -76,6 +76,23 @@ def test_upload_extracts_and_queues_job(client) -> None:
     assert response.json()["status"] == TrainerJobStatus.QUEUED
 
 
+def test_upload_reserves_space_for_staged_zip_not_extraction_limit(client, monkeypatch) -> None:
+    """The upload preflight uses the ZIP request size; extraction checks its own expanded size."""
+    test_client, _ = client
+    payload = _zip_bytes({"meta/info.json": b"{}"})
+    required_bytes: list[int] = []
+    monkeypatch.setattr(
+        api_module,
+        "check_disk_headroom",
+        lambda _directory, required, _min_free: required_bytes.append(required),
+    )
+
+    response = test_client.put("/jobs/job-1/dataset", content=payload, headers=_ZIP_HEADERS)
+
+    assert response.status_code == 202
+    assert required_bytes == [len(payload)]
+
+
 def test_upload_resumes_from_staged_offset(client) -> None:
     """A partial request remains staged until the final byte range arrives."""
     test_client, store = client

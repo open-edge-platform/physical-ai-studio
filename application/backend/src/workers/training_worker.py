@@ -68,12 +68,13 @@ class TrainingWorker(BaseProcessWorker):
                         # Reattached jobs already have their snapshot on the trainer.
                         logger.info("Resuming in-flight remote training job (remote job {})", payload.remote_job_id)
                         snapshot: Snapshot | None = None
-                        snapshot_id = None
+                        snapshot_id = payload.snapshot_id
                     else:
                         dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
                         snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
                         snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
                         snapshot_id = snapshot.id
+                        payload.snapshot_id = snapshot_id
 
                     model = Model(
                         id=id,

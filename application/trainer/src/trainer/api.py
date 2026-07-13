@@ -110,6 +110,24 @@ def _validate_range_body_size(written: int, start: int, end: int | None, total: 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Content-Range length does not match body")
 
 
+def _remaining_upload_bytes(request: Request, start: int, total: int | None) -> int | None:
+    """Return the declared bytes still needed to stage an upload, when known."""
+    if total is not None:
+        return total - start
+    content_length = request.headers.get("content-length")
+    if content_length is not None and content_length.isdecimal():
+        return int(content_length)
+    return None
+
+
+def _check_upload_disk_headroom(request: Request, start: int, total: int | None) -> None:
+    """Reserve space for a declared incoming ZIP chunk, when its size is known."""
+    remaining_bytes = _remaining_upload_bytes(request, start, total)
+    if remaining_bytes is not None:
+        settings = get_settings()
+        check_disk_headroom(settings.datasets_dir, remaining_bytes, settings.min_free_bytes)
+
+
 def _validate_and_extract(archive_path: Path, target_dir: Path) -> None:
     """Validate the ZIP and extract it into ``target_dir`` (blocking)."""
     settings = get_settings()
@@ -161,7 +179,7 @@ async def upload_dataset(job_id: str, request: Request, response: Response) -> J
 
     completed_upload = False
     try:
-        check_disk_headroom(settings.datasets_dir, settings.max_uncompressed_bytes, settings.min_free_bytes)
+        _check_upload_disk_headroom(request, start, total)
         written = await _stream_body_to_disk(request, archive_path, append=append)
         if total is not None:
             if end is None:
