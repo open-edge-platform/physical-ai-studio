@@ -65,6 +65,18 @@ repos:
       - id: gitleaks
 
   # ========================================================================== #
+  # DEPENDENCY LOCKFILE CHECKS                                                 #
+  # ========================================================================== #
+  - repo: local
+    hooks:
+      - id: check-uv-lock
+        name: Check uv.lock is up to date
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+
+  # ========================================================================== #
   # ALEMBIC MIGRATION CHECKS                                                   #
   # ========================================================================== #
   - repo: local
