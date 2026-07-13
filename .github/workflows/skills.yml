@@ -92,7 +92,7 @@ jobs:
       - name: Validate skills and adapter symlinks
         run: python3 .github/scripts/skills/agent_skills.py validate
 
-  SkillSpector-scan:
+  skillspector-scan:
     name: SkillSpector scan
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     needs: check-paths
@@ -167,7 +167,7 @@ jobs:
     needs:
       - check-paths
       - layout-check
-      - SkillSpector-scan
+      - skillspector-scan
       - skill-validator-scan
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     env:
