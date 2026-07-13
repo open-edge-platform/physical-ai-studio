@@ -42,6 +42,14 @@ router = APIRouter(prefix="/jobs")
 _TERMINAL = {TrainerJobStatus.COMPLETED, TrainerJobStatus.FAILED, TrainerJobStatus.CANCELED}
 _CONTENT_RANGE_RE = re.compile(r"^bytes (\d+)-(\d+)/(\d+)$")
 
+_ARTIFACT_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MiB
+
+
+class _ChunkedFileResponse(FileResponse):
+    """FileResponse with a larger streaming chunk size for large artifacts."""
+
+    chunk_size = _ARTIFACT_CHUNK_SIZE
+
 
 def _manager(request: Request) -> QueueManager:
     return request.app.state.queue_manager
@@ -255,7 +263,7 @@ async def get_artifact(job_id: str, request: Request) -> FileResponse:
     artifact = manager.store.get_artifact(job_id)
     if artifact is None or not Path(artifact).is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact missing")
-    return FileResponse(artifact, media_type="application/zip", filename=f"{job_id}.zip")
+    return _ChunkedFileResponse(artifact, media_type="application/zip", filename=f"{job_id}.zip")
 
 
 @router.post("/{job_id}/cancel", response_model=CancelResponse)

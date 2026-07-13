@@ -49,6 +49,7 @@ _EVENT_WAIT_TIMEOUT_S = 3.0
 _RECONNECT_BACKOFF_S = 2.0
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
 _UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
+_DOWNLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 _TRANSFER_RETRY_LIMIT = 3
 
 _REMOTE_JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -680,7 +681,7 @@ class RemoteTrainingBackend:
                     if heartbeat is None:
                         heartbeat = TransferProgressLogger("Model download", expected_bytes)
                     with tmp_archive.open("ab") as fobj:
-                        async for chunk in response.aiter_bytes():
+                        async for chunk in response.aiter_bytes(chunk_size=_DOWNLOAD_CHUNK_SIZE):
                             fobj.write(chunk)
                             received += len(chunk)
                             if expected_bytes is not None:
