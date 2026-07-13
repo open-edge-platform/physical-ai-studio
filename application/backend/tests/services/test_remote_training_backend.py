@@ -71,7 +71,7 @@ class _FakeResponse:
     def json(self) -> dict | list:
         return self._json if self._json is not None else {}
 
-    async def aiter_bytes(self):
+    async def aiter_bytes(self, chunk_size: int | None = None):
         for chunk in self._chunks:
             yield chunk
 
@@ -715,6 +715,178 @@ class TestHttpDatasetTransfer:
             await backend.upload_snapshot_http(context, controller.remote_job_id, archive)
 
         assert controller.upload_ranges == ["bytes 4-9/10"]
+
+
+class TestSnapshotUploadCancellation:
+    """Cancelling / suspending during the HTTP dataset upload reacts promptly.
+
+    Regression guard: the upload loop must observe ``should_stop`` instead of
+    streaming the whole (potentially multi-GB) snapshot before the wait loop
+    finally notices the cancel.
+    """
+
+    @pytest.mark.anyio
+    async def test_cancel_before_upload_cancels_remote_job(self, tmp_path):
+        from services.training_backends.base import TrainingCanceledError
+
+        settings = _settings()
+        context = _context(tmp_path, should_stop=True)
+        archive = tmp_path / "snapshot.zip"
+        archive.write_bytes(b"abcdefghij")
+        controller = _Controller(states=[])
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingCanceledError):
+                await backend.upload_snapshot_http(context, controller.remote_job_id, archive)
+
+        # The remote job was canceled rather than left running or fully uploaded.
+        assert controller.cancelled is True
+        assert not controller.put_urls
+
+    @pytest.mark.anyio
+    async def test_cancel_mid_stream_aborts_and_cancels_remote_job(self, tmp_path):
+        from services.training_backends.base import TrainingCanceledError
+
+        settings = _settings()
+        context = _context(tmp_path)
+        archive = tmp_path / "snapshot.zip"
+        archive.write_bytes(b"abcdefghij")
+        controller = _Controller(states=[])
+
+        # False for the pre-attempt guard, then True once streaming has started so
+        # the abort happens from inside the upload body generator.
+        calls = {"n": 0}
+
+        def _stop() -> bool:
+            calls["n"] += 1
+            return calls["n"] > 1
+
+        context.should_stop = _stop
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}._UPLOAD_CHUNK_SIZE", 4),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingCanceledError):
+                await backend.upload_snapshot_http(context, controller.remote_job_id, archive)
+
+        assert controller.cancelled is True
+
+    @pytest.mark.anyio
+    async def test_shutdown_suspend_leaves_remote_job_reattachable(self, tmp_path):
+        from services.training_backends.base import TrainingSuspendedError
+
+        settings = _settings()
+        context = _context(tmp_path, should_stop=True)
+        # A shutdown-driven stop must not cancel the remote job; it stays awaiting
+        # its dataset so a restart can resume the upload.
+        context.should_suspend = lambda: True
+        archive = tmp_path / "snapshot.zip"
+        archive.write_bytes(b"abcdefghij")
+        controller = _Controller(states=[])
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingSuspendedError):
+                await backend.upload_snapshot_http(context, controller.remote_job_id, archive)
+
+        assert controller.cancelled is False
+
+
+class TestModelDownloadCancellation:
+    """Cancelling / suspending during the model artifact download reacts promptly.
+
+    Regression guard: the download loop must observe ``should_stop`` instead of
+    streaming the whole (potentially multi-GB) artifact before the caller finally
+    notices the cancel.
+    """
+
+    @pytest.mark.anyio
+    async def test_cancel_before_download_cancels_remote_job(self, tmp_path):
+        from services.training_backends.base import TrainingCanceledError
+
+        settings = _settings()
+        context = _context(tmp_path, should_stop=True)
+        controller = _Controller(states=[])
+        controller.artifact_chunks = [b"a" * 500, b"b" * 500]
+        controller.artifact_headers = {"content-length": "1000"}
+        stream_timeout = httpx.Timeout(5.0)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingCanceledError):
+                await backend._stream_archive(context, controller.remote_job_id, tmp_path / "model.zip", stream_timeout)
+
+        # The remote job was canceled rather than the artifact fully downloaded.
+        assert controller.cancelled is True
+        assert controller.artifact_range_headers == []
+
+    @pytest.mark.anyio
+    async def test_cancel_mid_stream_aborts_and_cancels_remote_job(self, tmp_path):
+        from services.training_backends.base import TrainingCanceledError
+
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        controller.artifact_chunks = [b"a" * 500, b"b" * 500]
+        controller.artifact_headers = {"content-length": "1000"}
+        stream_timeout = httpx.Timeout(5.0)
+
+        # False for the pre-attempt guard, then True once streaming has started so
+        # the abort happens from inside the artifact chunk loop.
+        calls = {"n": 0}
+
+        def _stop() -> bool:
+            calls["n"] += 1
+            return calls["n"] > 1
+
+        context.should_stop = _stop
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingCanceledError):
+                await backend._stream_archive(context, controller.remote_job_id, tmp_path / "model.zip", stream_timeout)
+
+        assert controller.cancelled is True
+
+    @pytest.mark.anyio
+    async def test_shutdown_suspend_leaves_remote_job_reattachable(self, tmp_path):
+        from services.training_backends.base import TrainingSuspendedError
+
+        settings = _settings()
+        context = _context(tmp_path, should_stop=True)
+        # A shutdown-driven stop must not cancel the remote job; the artifact stays
+        # available so a restart can resume the download.
+        context.should_suspend = lambda: True
+        controller = _Controller(states=[])
+        controller.artifact_chunks = [b"a" * 500, b"b" * 500]
+        controller.artifact_headers = {"content-length": "1000"}
+        stream_timeout = httpx.Timeout(5.0)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingSuspendedError):
+                await backend._stream_archive(context, controller.remote_job_id, tmp_path / "model.zip", stream_timeout)
+
+        assert controller.cancelled is False
 
 
 class TestSnapshotUploadHeartbeat:

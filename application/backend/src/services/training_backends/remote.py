@@ -72,6 +72,10 @@ class RemoteTrainingError(RuntimeError):
     """Raised when the trainer service reports a failure."""
 
 
+class _UploadStopRequested(Exception):
+    """Internal signal that a stop was requested while streaming the dataset."""
+
+
 class RemoteTrainingBackend:
     """Submit training to a trainer service and ingest the returned model."""
 
@@ -229,6 +233,8 @@ class RemoteTrainingBackend:
             with archive_path.open("rb") as fobj:
                 fobj.seek(offset)
                 while chunk := await asyncio.to_thread(fobj.read, _UPLOAD_CHUNK_SIZE):
+                    if context.should_stop():
+                        raise _UploadStopRequested
                     sent += len(chunk)
                     percent = to_percent(sent, total)
                     if percent != last_percent:
@@ -244,6 +250,8 @@ class RemoteTrainingBackend:
         for attempt in range(_TRANSFER_RETRY_LIMIT + 1):
             if offset == total:
                 break
+            if context.should_stop():
+                await self._handle_stop_request(context, remote_job_id)
             headers = {
                 "Content-Type": "application/zip",
                 "Content-Range": f"bytes {offset}-{total - 1}/{total}",
@@ -259,6 +267,8 @@ class RemoteTrainingBackend:
                     response.raise_for_status()
                     reported_offset = response.headers.get("upload-offset")
                     offset = int(reported_offset) if reported_offset is not None else total
+            except _UploadStopRequested:
+                await self._handle_stop_request(context, remote_job_id)
             except (httpx.HTTPError, ValueError) as exc:
                 if attempt == _TRANSFER_RETRY_LIMIT:
                     raise RemoteTrainingError("Dataset upload could not be resumed") from exc
@@ -667,6 +677,8 @@ class RemoteTrainingBackend:
         last_percent = -1
         heartbeat: TransferProgressLogger | None = None
         for attempt in range(_TRANSFER_RETRY_LIMIT + 1):
+            if context.should_stop():
+                await self._handle_stop_request(context, remote_job_id)
             headers = {"Range": f"bytes={received}-"} if received else None
             try:
                 client = await self._client(stream_timeout)
@@ -682,6 +694,8 @@ class RemoteTrainingBackend:
                         heartbeat = TransferProgressLogger("Model download", expected_bytes)
                     with tmp_archive.open("ab") as fobj:
                         async for chunk in response.aiter_bytes(chunk_size=_DOWNLOAD_CHUNK_SIZE):
+                            if context.should_stop():
+                                await self._handle_stop_request(context, remote_job_id)
                             fobj.write(chunk)
                             received += len(chunk)
                             if expected_bytes is not None:
