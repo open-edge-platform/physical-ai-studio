@@ -55,7 +55,7 @@ def load_env_file(env_file: Path) -> None:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        line = line.removeprefix("export ")
+        line = re.sub(r"^export\s+", "", line)
         if "=" not in line:
             continue
         key, _, val = line.partition("=")
