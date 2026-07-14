@@ -12,7 +12,7 @@ dependencies = [
   "fastapi[standard]<1",
   "physicalai-train[pi0,smolvla]",
   "physicalai[robots, capture]",
-  "lerobot[feetech]==0.5.1",
+  "lerobot[dataset,feetech]==0.6.0",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
