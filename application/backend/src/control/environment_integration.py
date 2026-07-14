@@ -3,9 +3,9 @@ import base64
 from typing import Any
 
 import numpy as np
-from lerobot.datasets.feature_utils import combine_feature_dicts
 from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
 from lerobot.processor import make_default_processors
+from lerobot.utils.feature_utils import combine_feature_dicts
 from loguru import logger
 from physicalai.capture import SharedCamera
 from physicalai.capture.errors import CaptureError

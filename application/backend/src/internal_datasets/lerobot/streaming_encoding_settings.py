@@ -1,7 +1,9 @@
 import logging
 from fractions import Fraction
 from functools import cache
+from typing import Any
 
+from lerobot.configs import RGBEncoderConfig
 from pydantic import BaseModel
 
 
@@ -17,6 +19,16 @@ class StreamingEncodingSettings(BaseModel):
         # - If vcodec is "auto", resolve_vcodec probes candidates once and
         #   picks the first usable encoder.
         return self.model_copy(update={"vcodec": _resolve_vcodec(self.vcodec, self.streaming_encoding)})
+
+    def to_lerobot_write_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "streaming_encoding": self.streaming_encoding,
+            "encoder_threads": self.encoder_threads,
+            "encoder_queue_maxsize": self.encoder_queue_maxsize,
+        }
+        if self.vcodec != "auto":
+            kwargs["rgb_encoder"] = RGBEncoderConfig(vcodec=self.vcodec, g=None)
+        return kwargs
 
     @staticmethod
     def _vcodec_candidates() -> list[str]:
