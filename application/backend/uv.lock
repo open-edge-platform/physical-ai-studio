@@ -64,7 +64,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-07-07T11:32:44.940568Z"
+exclude-newer = "2026-07-07T12:10:45.877351Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -2474,6 +2474,7 @@ dependencies = [
     { name = "opencv-python" },
     { name = "physicalai", extra = ["capture", "robots"] },
     { name = "physicalai-train" },
+    { name = "psutil" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
@@ -2549,6 +2550,7 @@ requires-dist = [
     { name = "physicalai", extras = ["robots", "capture"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=9881601325f724a0f00b1bf43f134d7f34fdef55" },
     { name = "physicalai-train", editable = "../../library" },
     { name = "physicalai-train", extras = ["pi0", "smolvla"], marker = "extra == 'train'", editable = "../../library" },
+    { name = "psutil", specifier = "~=7.2" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
     { name = "pyrealsense2", marker = "sys_platform != 'darwin'" },

@@ -31,6 +31,7 @@ dependencies = [
   "types-aiofiles>=25.1.0.20251011",
   "sse-starlette>=2.0.0",
   "huggingface-hub>=0.27",
+  "psutil~=7.2",
 ]
 
 [project.scripts]
