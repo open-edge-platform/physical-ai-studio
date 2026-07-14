@@ -205,6 +205,9 @@ async def upload_dataset(job_id: str, request: Request, response: Response) -> J
     updated = manager.store.get(job_id)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if updated.status != TrainerJobStatus.QUEUED:
+        # Job was canceled/failed while the upload was in-flight; don't leak disk.
+        _cleanup_upload(archive_path, target_dir)
     return updated
 
 
