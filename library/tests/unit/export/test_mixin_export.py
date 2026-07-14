@@ -581,7 +581,12 @@ class TorchExportWrapper(ExportablePolicyMixin):
                     n_action_steps=self.n_action_steps,
                 ),
             )
-        return {ExportBackend.TORCH: TorchExportParameters(postprocessors_specs=postproc_specs)}
+        return {
+            ExportBackend.TORCH: TorchExportParameters(
+                preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+                postprocessors_specs=postproc_specs,
+            )
+        }
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:
@@ -615,6 +620,17 @@ class TestToTorch:
         manifest = Manifest.load(tmp_path / "manifest.json")
         postproc_types = [spec.type for spec in manifest.model.postprocessors]
         assert "action_chunk_trimmer" not in postproc_types
+
+    def test_to_torch_records_to_float_tensor_preprocessor(self, tmp_path):
+        """The ``to_float_tensor`` preprocessor spec is recorded in the manifest."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = TorchExportWrapper(model, chunk_size=5, n_action_steps=5)
+
+        wrapper.to_torch(tmp_path)
+
+        manifest = Manifest.load(tmp_path / "manifest.json")
+        preproc_types = [spec.type for spec in manifest.model.preprocessors]
+        assert "to_float_tensor" in preproc_types
 
 
 class TestSampleInputFromSchema:

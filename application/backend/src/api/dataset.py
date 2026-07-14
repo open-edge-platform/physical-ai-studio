@@ -18,7 +18,7 @@ from api.dependencies import (
 from api.utils import safe_archive_name
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
-from internal_datasets.utils import get_internal_dataset
+from internal_datasets.utils import get_internal_read_dataset
 from schemas import Dataset, Episode, EpisodeInfo
 from services import DatasetDownloadService, DatasetService, EpisodeThumbnailService
 
@@ -41,7 +41,7 @@ async def get_episodes_of_dataset(
 ) -> list[EpisodeInfo]:
     """Get dataset episodes of dataset by id."""
     dataset = await dataset_service.get_dataset_by_id(dataset_id)
-    internal_dataset = get_internal_dataset(dataset)
+    internal_dataset = get_internal_read_dataset(dataset)
     return internal_dataset.get_episode_infos()
 
 
@@ -53,7 +53,7 @@ async def get_single_episode_of_dataset(
 ) -> Episode | None:
     """Get one dataset episode by index."""
     dataset = await dataset_service.get_dataset_by_id(dataset_id)
-    internal_dataset = get_internal_dataset(dataset)
+    internal_dataset = get_internal_read_dataset(dataset)
     return internal_dataset.find_episode(episode_index)
 
 
@@ -70,7 +70,7 @@ async def get_episode_thumbnail(  # noqa: PLR0913
 ) -> Response:
     """Get a thumbnail image for one episode."""
     dataset = await dataset_service.get_dataset_by_id(dataset_id)
-    internal_dataset = get_internal_dataset(dataset)
+    internal_dataset = get_internal_read_dataset(dataset)
 
     if not isinstance(internal_dataset, InternalLeRobotDataset):
         raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Thumbnail is unsupported")
@@ -110,7 +110,7 @@ async def delete_episodes_of_dataset(
 ) -> list[Episode]:
     """Get dataset episodes of dataset by id."""
     dataset = await dataset_service.get_dataset_by_id(dataset_id)
-    dataset_client = get_internal_dataset(dataset)
+    dataset_client = get_internal_read_dataset(dataset)
     mutation = DeleteEpisodesMutation(dataset_client)
     result = mutation.delete_episodes(episode_indices)
     return result.get_episodes()

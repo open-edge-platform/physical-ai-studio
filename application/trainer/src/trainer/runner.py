@@ -47,19 +47,46 @@ class TrainerRunner:
     def run(self, job_id: str, request: SubmitJobRequest, *, should_stop: StopFn, report: ProgressFn) -> Path:
         """Execute training and return the path to the model archive."""
         settings = get_settings()
-        snapshot_dir = self._pull_snapshot(request, report)
+        snapshot_dir = self._resolve_snapshot(job_id, request, report)
 
         model_dir = settings.models_dir / job_id
         cache_dir = settings.storage_dir / "cache" / job_id
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        self._train(request, snapshot_dir, model_dir, cache_dir, should_stop=should_stop, report=report)
+        try:
+            self._train(request, snapshot_dir, model_dir, cache_dir, should_stop=should_stop, report=report)
+        finally:
+            self._cleanup_uploaded_dataset(job_id, request)
 
         report(100, "Archiving model", None)
         return self._archive_model(job_id, model_dir)
 
+    def _resolve_snapshot(self, job_id: str, request: SubmitJobRequest, report: ProgressFn) -> Path:
+        """Return the local snapshot dir, either uploaded over HTTP or pulled from HF."""
+        from trainer.schemas import DatasetTransfer
+
+        if request.dataset_transfer == DatasetTransfer.HTTP:
+            report(0, "Dataset ready", None)
+            return get_settings().datasets_dir / job_id
+        return self._pull_snapshot(request, report)
+
+    @staticmethod
+    def _cleanup_uploaded_dataset(job_id: str, request: SubmitJobRequest) -> None:
+        """Remove an HTTP-uploaded dataset once the job no longer needs it."""
+        from trainer.schemas import DatasetTransfer
+
+        if request.dataset_transfer != DatasetTransfer.HTTP:
+            return
+        dataset_dir = get_settings().datasets_dir / job_id
+        if dataset_dir.exists():
+            shutil.rmtree(dataset_dir, ignore_errors=True)
+
     def _pull_snapshot(self, request: SubmitJobRequest, report: ProgressFn) -> Path:
         from huggingface_hub import snapshot_download
+
+        if not request.repo_id or not request.revision:
+            msg = "hf transfer requires repo_id and revision"
+            raise ValueError(msg)
 
         report(0, "Pulling dataset snapshot", None)
         # Pinned revision + allowlist: never resolve HEAD, never pull executable formats.
@@ -122,6 +149,7 @@ class TrainerRunner:
             check_val_every_n_epoch=1,
         )
 
+        report(0, "Training model", None)
         trainer.fit(model=policy, datamodule=data_module)
         if should_stop():
             msg = "Training canceled"
@@ -175,12 +203,11 @@ class TrainerRunner:
     def _resolve_device() -> tuple[str, str, list[int] | int]:
         import torch
 
-        configured = get_settings().device
-        if configured == "xpu" or (configured is None and torch.xpu.is_available()):
+        if torch.xpu.is_available():
             return "xpu", "xpu_single", 1
-        if configured == "cuda" or (configured is None and torch.cuda.is_available()):
+        if torch.cuda.is_available():
             return "cuda", "auto", 1
-        return configured or "cpu", "auto", 1
+        return "cpu", "auto", 1
 
     def _archive_model(self, job_id: str, model_dir: Path) -> Path:
         archives_dir = get_settings().archives_dir

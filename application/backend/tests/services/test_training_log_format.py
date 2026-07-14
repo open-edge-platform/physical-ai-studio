@@ -132,3 +132,20 @@ def test_apply_state_mirrors_validation_fields_to_job_log() -> None:
         completed = backend._apply_state(context, state)
     assert completed is False
     logger.info.assert_called_once_with("Validation progress: batch=1, val/loss_step=0.3")
+
+
+def test_apply_state_suppresses_duplicate_progress_lines() -> None:
+    """Re-emitted identical progress (e.g. during export) is logged only once."""
+    context = MagicMock()
+    state = {
+        "status": "running",
+        "progress": 100,
+        "message": "Training",
+        "extra_info": {"train/loss_step": 4.48, "global_step": 100, "max_steps": 100, "epoch": 1},
+    }
+    backend = RemoteTrainingBackend.__new__(RemoteTrainingBackend)
+    with patch(f"{REMOTE}.logger") as logger:
+        backend._apply_state(context, state)
+        backend._apply_state(context, dict(state))
+        backend._apply_state(context, dict(state))
+    logger.info.assert_called_once_with("Training progress: step=100/100 (100%), train/loss_step=4.48")

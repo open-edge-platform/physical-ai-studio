@@ -204,7 +204,7 @@ Deploy exported models with a unified inference API.
 from physicalai.inference import InferenceModel
 
 # Load exported model (auto-detects backend)
-policy = InferenceModel.load("./exports")
+policy = InferenceModel("./exports")
 
 # Run inference loop
 obs, info = env.reset()

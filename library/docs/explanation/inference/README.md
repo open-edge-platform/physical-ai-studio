@@ -38,7 +38,7 @@ class RuntimeAdapter(ABC):
 High-level interface:
 
 ```python test="skip" reason="requires exported model"
-policy = InferenceModel.load("./exports")  # Auto-detects backend
+policy = InferenceModel("./exports")  # Auto-detects backend
 policy.reset()
 action = policy.select_action(observation)
 ```
@@ -151,7 +151,7 @@ sequenceDiagram
 For chunked policies (`chunk_size > 1`), automatically manages action queue:
 
 ```python test="skip" reason="requires exported model"
-policy = InferenceModel.load("./exports")  # chunk_size=100
+policy = InferenceModel("./exports")  # chunk_size=100
 policy.reset()
 
 action_0 = policy.select_action(obs_0)    # Runs model, queues 99 actions

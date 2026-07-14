@@ -20,12 +20,14 @@ def from_port(port: ListPortInfo) -> SerialPortInfo | None:
     """Detect if the device is a SO-100 robot."""
     serial_number = getattr(port, "serial_number", None)
 
-    # Ignore internal hardware
-    if port.device.startswith("/dev/ttyS"):
+    # Ignore internal hardware (e.g. /dev/ttyS0..ttyS31)
+    ttys_suffix = port.device.removeprefix("/dev/ttyS")
+    if ttys_suffix[:1].isdigit():
         return None
 
     # The Feetech UART board CH340 has PID 29987
-    if port.pid not in {21971, 29987}:
+    # Also accept virtual/PTY ports (pid is None) like socat-created devices
+    if port.pid is not None and port.pid not in {21971, 29987}:
         logger.debug("Found usb port with unexpected PID, {device}: {pid}", device=port.device, pid=port.pid)
         return None
 

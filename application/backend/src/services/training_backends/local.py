@@ -40,6 +40,9 @@ class LocalTrainingBackend:
         output_dir = context.output_dir
         cache_path = context.cache_dir
 
+        if context.snapshot is None:
+            raise ValueError("Local training requires a dataset snapshot")
+
         device_type = payload.device.type if payload.device else None
         device_index = payload.device.index if payload.device else None
         accelerator = get_torch_device(device_type)

@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
     from pathlib import Path
 
     from schemas import Job, Model, Snapshot
@@ -21,6 +21,15 @@ class TrainingCanceledError(Exception):
 
     Distinct from a genuine failure: the worker marks the job CANCELED and logs
     at info level instead of dumping an error traceback.
+    """
+
+
+class TrainingSuspendedError(Exception):
+    """Raised when a backend stops because the studio is shutting down, not failing.
+
+    The remote trainer keeps running the job, so the worker must leave it
+    reattachable (requeue for pickup on the next start) instead of marking it
+    FAILED or canceling the remote job. Only meaningful for the remote backend.
     """
 
 
@@ -45,17 +54,28 @@ class TrainingContext:
     A backend must leave a fully populated model directory at ``output_dir``
     (checkpoint, logger output, and ``exports/``), report progress through
     ``progress``, and stop promptly when ``should_stop`` returns True.
+
+    Reattach fields (remote backend only): when ``remote_job_id`` is set the
+    backend reattaches to an in-flight remote job instead of submitting a new
+    one (``snapshot`` may then be ``None`` since it was already delivered).
+    ``on_remote_job_id`` is awaited once a fresh remote job id is known so the
+    caller can persist it for restart recovery. ``should_suspend`` distinguishes
+    an application shutdown (leave the remote job running) from a user
+    cancellation (cancel the remote job).
     """
 
     job: Job
     model: Model
-    snapshot: Snapshot
+    snapshot: Snapshot | None
     payload: TrainJobPayload
     base_model: Model | None
     output_dir: Path
     cache_dir: Path
     progress: ProgressReporter
     should_stop: Callable[[], bool]
+    remote_job_id: str | None = None
+    on_remote_job_id: Callable[[str], Awaitable[None]] | None = None
+    should_suspend: Callable[[], bool] = field(default=lambda: False)
 
 
 @runtime_checkable

@@ -65,10 +65,14 @@ uv run physicalai-studio serve
 Server starts at `http://localhost:8000`
 
 The launch flows are exposed as `physicalai-studio` subcommands: `serve`
-(in-process/local training, the default), `remote` (training offloaded to a
-trainer service), and `trainer` (the remote trainer). `remote` and `trainer`
-load the matching `.env`, run `uv sync` for the requested `DEVICE`, run
-migrations, and start the component. `run.sh` simply forwards to them.
+(in-process/local training, the default) and `remote` (training offloaded to a
+remote trainer service). `remote` loads the matching `.env`, runs `uv sync`
+for the requested `DEVICE`, runs migrations, and starts the backend.
+`run.sh` simply forwards to these subcommands.
+
+The remote trainer service itself is a separate component, launched from
+`application/trainer` via its own `physicalai-trainer` command (see
+[`application/trainer/README.md`](../trainer/README.md)).
 
 ### Database Migrations
 

@@ -117,7 +117,9 @@ class Settings(BaseSettings):
     training_mode: Literal["local", "remote"] = Field(default="local", alias="TRAINING_MODE")
     # Base URL of the remote trainer service, e.g. "https://trainer.internal:8001".
     trainer_url: str | None = Field(default=None, alias="TRAINER_URL")
-    # HuggingFace org/user namespace used for ephemeral snapshot dataset repos.
+    # Dataset transfer: direct ZIP upload (default) or an ephemeral HF repo.
+    trainer_dataset_transfer: Literal["http", "hf"] = Field(default="http", alias="TRAINER_DATASET_TRANSFER")
+    # HuggingFace org/user namespace used for ephemeral snapshot dataset repos (hf transfer only).
     trainer_hf_namespace: str | None = Field(default=None, alias="TRAINER_HF_NAMESPACE")
     # Seconds to wait for trainer HTTP requests (excludes long-poll/SSE streams).
     trainer_request_timeout_s: float = Field(default=30.0, alias="TRAINER_REQUEST_TIMEOUT_S")
@@ -125,6 +127,10 @@ class Settings(BaseSettings):
     # transfer (e.g. a proxy holding the connection open) must fail instead of
     # hanging the job forever; this is a per-read gap, not a total transfer cap.
     trainer_download_read_timeout_s: float = Field(default=120.0, alias="TRAINER_DOWNLOAD_READ_TIMEOUT_S")
+    # Stop reconnecting after this continuous trainer outage.
+    trainer_stream_reconnect_max_s: float = Field(default=900.0, alias="TRAINER_STREAM_RECONNECT_MAX_S")
+    # Upper bound on the exponential backoff between event-stream reconnect attempts.
+    trainer_stream_reconnect_backoff_max_s: float = Field(default=30.0, alias="TRAINER_STREAM_RECONNECT_BACKOFF_MAX_S")
 
     @model_validator(mode="after")
     def validate_remote_training_config(self) -> "Settings":

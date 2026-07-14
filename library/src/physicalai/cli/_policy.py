@@ -45,7 +45,7 @@ def load_policy(policy_path: str, ckpt_path: str | None) -> tuple[Any, str]:
         if not ckpt_path:
             msg = "InferenceModel requires --ckpt_path pointing to export directory"
             raise ValueError(msg)
-        policy = InferenceModel.load(ckpt_path)
+        policy = InferenceModel(ckpt_path)
         return policy, policy.device
 
     device = get_available_device()

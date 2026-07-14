@@ -13,25 +13,6 @@ class SerialPortInfo(BaseModel):
     serial_number: str | None
 
 
-class BaseRobotConfig(BaseModel):
-    type: Literal["follower", "leader"]
-    robot_type: str = Field(description="Robot Type")
-
-
-class LeRobotConfig(BaseRobotConfig):
-    type: Literal["follower", "leader"]
-    robot_type: str = Field(description="Robot Type (e.g. so101)")
-    id: str = Field(description="Robot calibration id")
-    port: str = Field(description="Serial port of robot")
-    serial_number: str = Field(description="Serial ID of device")
-
-
-class NetworkIpRobotConfig(BaseRobotConfig):
-    type: Literal["follower", "leader"]
-    robot_type: str = Field(description="Robot Type (e.g. Trossen WidowX AI)")
-    connection_string: str = Field(description="IP address of robot")
-
-
 class RobotType(StrEnum):
     SO101_FOLLOWER = "SO101_Follower"
     SO101_LEADER = "SO101_Leader"

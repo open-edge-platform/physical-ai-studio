@@ -105,7 +105,7 @@ jobs:
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     needs: smoke-test
     permissions:
-      id-token: write  # OIDC trusted publishing
+      id-token: write # OIDC trusted publishing
     environment:
       name: testpypi
       url: https://test.pypi.org/p/physicalai-studio

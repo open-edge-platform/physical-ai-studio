@@ -16,7 +16,7 @@ import threading
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from trainer.schemas import JobState, SubmitJobRequest, TrainerJobStatus
+from trainer.schemas import DatasetTransfer, JobState, SubmitJobRequest, TrainerJobStatus
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,16 +59,29 @@ class JobStore:
         self._conn.commit()
 
     def create(self, request: SubmitJobRequest) -> str:
-        """Persist a new queued job and return its id."""
+        """Persist a job and return its id; HTTP transfers await their upload."""
         job_id = uuid.uuid4().hex
+        if request.dataset_transfer == DatasetTransfer.HTTP:
+            status, message = TrainerJobStatus.AWAITING_DATASET, "Awaiting dataset upload"
+        else:
+            status, message = TrainerJobStatus.QUEUED, "Queued"
         with self._lock:
             self._conn.execute(
                 "INSERT INTO jobs (id, status, progress, message, request, created_at) "
                 "VALUES (?, ?, 0, ?, ?, julianday('now'))",
-                (job_id, TrainerJobStatus.QUEUED, "Queued", request.model_dump_json()),
+                (job_id, status, message, request.model_dump_json()),
             )
             self._conn.commit()
         return job_id
+
+    def mark_dataset_ready(self, job_id: str) -> None:
+        """Transition an awaiting-dataset job to queued after its upload lands."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE jobs SET status = ?, message = ? WHERE id = ? AND status = ?",
+                (TrainerJobStatus.QUEUED, "Queued", job_id, TrainerJobStatus.AWAITING_DATASET),
+            )
+            self._conn.commit()
 
     def get(self, job_id: str) -> JobState | None:
         """Return the job's state, or None if it does not exist."""
@@ -137,11 +150,15 @@ class JobStore:
             self._conn.commit()
 
     def reset_orphans(self) -> None:
-        """Mark jobs left RUNNING by a previous process as failed."""
+        """Fail running jobs and incomplete HTTP uploads after a restart."""
         with self._lock:
             self._conn.execute(
                 "UPDATE jobs SET status = ?, message = ? WHERE status = ?",
                 (TrainerJobStatus.FAILED, "Aborted on trainer restart", TrainerJobStatus.RUNNING),
+            )
+            self._conn.execute(
+                "UPDATE jobs SET status = ?, message = ? WHERE status = ?",
+                (TrainerJobStatus.FAILED, "Dataset upload never completed", TrainerJobStatus.AWAITING_DATASET),
             )
             self._conn.commit()
 
