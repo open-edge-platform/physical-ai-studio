@@ -2,7 +2,7 @@
 
 ## Summary
 
-Remote training moves GPU-heavy policy training from a recording station to a dedicated GPU server (the **trainer service**). That keeps recording machines lightweight. The Studio backend uploads a dataset snapshot to an ephemeral private Hugging Face dataset repo, submits a job over HTTP, mirrors remote progress into its own job record, downloads the trained model archive, and imports it. In the UI, the Models screen behaves the same as local training.
+Remote training moves GPU-heavy policy training from a recording station to a dedicated GPU server (the **trainer service**). That keeps recording machines lightweight. The Studio backend submits a job and streams a dataset snapshot to the trainer over HTTP by default, mirrors remote progress into its own job record, downloads the trained model archive, and imports it. `TRAINER_DATASET_TRANSFER=hf` optionally transfers snapshots through an ephemeral private Hugging Face dataset repo. In the UI, the Models screen behaves the same as local training.
 
 ## Goals
 
@@ -15,7 +15,7 @@ Remote training moves GPU-heavy policy training from a recording station to a de
 
 - **Authenticated or multi-tenant trainer access.** The trainer trusts callers on its network. It has no per-station auth, authorization, or request signing. Deploy it on a private network; do not expose it publicly.
 - **Resumable transfers or jobs.** If snapshot upload, job submission, or artifact download fails, the job fails and the user retrains. There is no checkpoint-level resume across the HTTP boundary.
-- **Dataset transfer without Hugging Face Hub.** The snapshot always moves through an ephemeral HF dataset repo. Direct backend-to-trainer upload is not supported.
+- **Additional dataset-transfer protocols.** The supported modes are direct resumable HTTP upload (the default) and an ephemeral HF dataset repo (`TRAINER_DATASET_TRANSFER=hf`).
 
 ## Architecture
 
@@ -24,15 +24,12 @@ Two services deploy independently:
 - **Studio backend** (`application/backend/`) - orchestrates the job and owns the user-facing job record.
 - **Trainer service** (`application/trainer/`) - standalone FastAPI app that queues and runs training with `physicalai` + Lightning. Only deployed in remote training mode.
 
-The dataset moves through Hugging Face Hub. Everything else moves over HTTP.
+The default HTTP mode moves the dataset and model archive directly between the Studio backend and trainer. The optional HF mode moves only the dataset snapshot through Hugging Face Hub; everything else moves over HTTP.
 
 ```mermaid
 flowchart LR
     subgraph Studio["Studio backend (recording station)"]
         W[Training worker] --> RB[RemoteTrainingBackend]
-    end
-    subgraph HF["Hugging Face Hub"]
-        DS[(Ephemeral private<br/>dataset repo)]
     end
     subgraph Trainer["Trainer service (GPU server)"]
         API[FastAPI /jobs] --> QM[QueueManager]
@@ -41,19 +38,17 @@ flowchart LR
         QM <--> ST
     end
 
-    RB -- "1. push snapshot (pinned SHA)" --> DS
-    RB -- "2. POST /jobs" --> API
+    RB -- "1. POST /jobs" --> API
+    RB -- "2. PUT /jobs/{id}/dataset (ZIP)" --> API
     RB -- "3. stream GET /jobs/{id}/events (SSE)" --> API
-    RN -- "pull snapshot (pinned SHA)" --> DS
     RB -- "4. GET /jobs/{id}/artifact" --> API
-    RB -- "5. delete repo" --> DS
 ```
 
 ## Backend integration
 
 The training worker is backend-agnostic. `get_training_backend()` returns `LocalTrainingBackend` or `RemoteTrainingBackend` based on `settings.training_mode`. Both implement the `TrainingBackend` protocol:
 
-```python
+```text
 async def train(self, context: TrainingContext) -> None: ...
 ```
 
@@ -72,45 +67,41 @@ flowchart LR
     W[Training worker] --> GB{TRAINING_MODE}
     GB -- local --> LB[LocalTrainingBackend<br/>torch/Lightning in-process]
     GB -- remote --> RB[RemoteTrainingBackend<br/>offload over HTTP]
-    LB --> OUT[output_dir:<br/>checkpoint + logs + exports/]
+    LB --> OUT[output_dir:<br/>checkpoint + logs + exports]
     RB --> OUT
 ```
 
 ## End-to-end flow (remote)
 
-`RemoteTrainingBackend.train()` runs three steps in one local progress bar (0-100%):
+With the default HTTP transfer, `RemoteTrainingBackend.train()` runs three steps in one local progress bar (0-100%):
 
-1. **Push snapshot (0-10%)** - `_push_snapshot()` creates a private dataset repo named `pais-snapshot-<uuid>` under `TRAINER_HF_NAMESPACE`, uploads the snapshot folder with an allowlist (`*.safetensors`, `*.json`, `*.txt`, `*.md`, `*.parquet`, `*.mp4`, `*.png`, `*.jpg`), and captures the concrete commit SHA. Missing SHA fails the job.
-2. **Submit and wait (10-95%)** - `_submit_job()` POSTs `{payload, repo_id, revision, policy}` to `/jobs` and receives `remote_job_id`. `_wait_for_completion()` consumes trainer SSE from `GET /jobs/{id}/events`, maps trainer raw 0-100 into local 10-95, and mirrors `message` and `extra_info` (for example, step loss) into the local job. The trainer emits a `state` event on each change and closes the stream on terminal state. If the stream drops before terminal state (idle timeout or network blip), the backend reconnects with backoff, and the trainer re-emits current state on the new connection. If reconnects continue without receiving any event, the backend aborts the job instead of looping forever.
+1. **Submit and upload snapshot (0-10%)** - `_submit_job()` POSTs `{payload, policy, dataset_transfer: "http"}` to `/jobs`, receives `remote_job_id`, and streams a ZIP snapshot to `PUT /jobs/{id}/dataset`. The upload resumes after an interruption by checking `HEAD /jobs/{id}/dataset` for its offset.
+2. **Wait (10-95%)** - `_wait_for_completion()` consumes trainer SSE from `GET /jobs/{id}/events`, maps trainer raw 0-100 into local 10-95, and mirrors `message` and `extra_info` (for example, step loss) into the local job. The trainer emits a `state` event on each change and closes the stream on terminal state. If the stream drops before terminal state (idle timeout or network blip), the backend reconnects with backoff, and the trainer re-emits current state on the new connection. If reconnects continue without receiving any event, the backend aborts the job instead of looping forever.
 3. **Download and import (95-100%)** - `_download_and_extract()` streams `GET /jobs/{id}/artifact` to a temp zip, verifies byte count against `Content-Length`, validates the archive with `SafeZipArchive` (zip-bomb and path-traversal guards), and extracts into `output_dir`.
 
-A `finally` block deletes the ephemeral repo regardless of outcome (best effort).
+For `TRAINER_DATASET_TRANSFER=hf`, the backend instead creates a private dataset repo named `pais-snapshot-<uuid>`, uploads the snapshot with an allowlist (`*.safetensors`, `*.json`, `*.txt`, `*.md`, `*.parquet`, `*.mp4`, `*.png`, `*.jpg`), and submits its pinned commit SHA. A `finally` block deletes that ephemeral repo regardless of outcome (best effort).
 
 ```mermaid
 sequenceDiagram
     participant W as Training worker
     participant RB as RemoteTrainingBackend
-    participant HF as HF Hub
     participant T as Trainer /jobs
     participant R as TrainerRunner
 
     W->>RB: train(context)
-    RB->>HF: create_repo + upload_folder (allowlist)
-    HF-->>RB: repo_id, commit SHA
-    RB->>T: POST /jobs {payload, repo_id, revision, policy}
-    T-->>RB: 202 {remote_job_id, queued}
+    RB->>T: POST /jobs {payload, policy, dataset_transfer: http}
+    T-->>RB: 202 {remote_job_id, awaiting_dataset}
+    RB->>T: PUT /jobs/{id}/dataset (ZIP)
     RB->>T: GET /jobs/{id}/events (SSE)
     loop state event per change until terminal
         T-->>RB: state {status, progress, message, extra_info}
         RB->>W: progress(10..95)
     end
     Note over T,R: queue dispatch -> runner.run()
-    R->>HF: snapshot_download (pinned SHA, allowlist)
     R->>R: train -> export -> zip
     RB->>T: GET /jobs/{id}/artifact
     T-->>RB: model.zip (streamed)
     RB->>RB: verify + SafeZipArchive extract -> output_dir
-    RB->>HF: delete_repo (finally)
 ```
 
 ## Trainer service
@@ -119,7 +110,9 @@ sequenceDiagram
 
 | Method | Path                  | Purpose                                                                                    |
 |--------|-----------------------|--------------------------------------------------------------------------------------------|
-| `POST` | `/jobs`               | Enqueue a job; returns `remote_job_id` + `queued`.                              |
+| `POST` | `/jobs`               | Create a job; returns `awaiting_dataset` for HTTP transfer or `queued` for HF transfer. |
+| `PUT` | `/jobs/{id}/dataset` | Upload a ZIP snapshot for HTTP transfer; returns the job once the upload is complete. |
+| `HEAD` | `/jobs/{id}/dataset` | Return the resumable HTTP-upload offset. |
 | `GET` | `/jobs/{id}`          | Current `JobState` (one-off query).                                                        |
 | `GET` | `/jobs/{id}/events`   | SSE stream of state changes until terminal. Primary progress channel the backend consumes. |
 | `GET` | `/jobs/{id}/artifact` | Download the model zip.                                                                    |
@@ -128,7 +121,7 @@ sequenceDiagram
 
 ### Schemas
 
-`SubmitJobRequest` validates untrusted input at the edge: `repo_id` against a conservative regex, `revision` as a 40-char hex SHA, and `policy` against an allowlist (`act`, `pi0`, `pi05`, `smolvla`). `TrainerJobStatus` is `queued | running | completed | failed | canceled`.
+`SubmitJobRequest` validates untrusted input at the edge: `dataset_transfer` is `http | hf`; for `hf`, `repo_id` must match a conservative regex and `revision` must be a 40-char hex SHA; `http` rejects both fields. `policy` is allowlisted (`act`, `pi0`, `pi05`, `smolvla`). `TrainerJobStatus` is `awaiting_dataset | queued | running | completed | failed | canceled`.
 
 ### Queue and dispatch
 
@@ -142,7 +135,7 @@ One SQLite `jobs` table (`id`, `status`, `progress`, `message`, `extra_info`, `r
 
 `TrainerRunner.run()`:
 
-1. `_pull_snapshot()` - `snapshot_download()` with pinned revision and the same format allowlist.
+1. `_resolve_snapshot()` - uses the validated ZIP extracted by `PUT /jobs/{id}/dataset` for HTTP transfer, or `_pull_snapshot()` with pinned revision and the format allowlist for HF transfer.
 2. `_train()` - builds `LeRobotDataModule` from the snapshot and a `physicalai` Lightning `Trainer`, instantiates policy via `_setup_policy()`, and trains. A `ModelCheckpoint` keeps best `val/loss`; a progress callback reports `global_step / max_steps` and step loss, and sets `trainer.should_stop` on cancellation. `_resolve_device()` selects `xpu`, `cuda`, or `cpu`.
 3. `_export_policy()` - exports to each backend the policy supports; missing optional dependencies or one failing backend are logged and are not fatal.
 4. `_archive_model()` - zips the model directory (checkpoint, logs, `exports/`) for download.
@@ -171,8 +164,9 @@ Cancellation is cooperative across both services:
 |---------------------------------------------|----------------------------------------------|
 | `TRAINING_MODE=remote` | - |
 | `TRAINER_URL` -> trainer address | `HOST` / `PORT` (default `0.0.0.0:8001`) |
-| `TRAINER_HF_NAMESPACE` (snapshot target) | `HF_TOKEN` with **read** access |
-| `HF_TOKEN` with **write** access | `STORAGE_DIR`, `TRAINER_MAX_CONCURRENT_JOBS`, `TRAINER_DEVICE` |
+| `TRAINER_DATASET_TRANSFER=http` (default) | `STORAGE_DIR`, `TRAINER_MAX_CONCURRENT_JOBS` |
+| `TRAINER_DATASET_TRANSFER=hf`, `TRAINER_HF_NAMESPACE` (snapshot target) | `HF_TOKEN` with **read** access |
+| `HF_TOKEN` with **write** access for HF transfer | `TRAINER_MAX_UNCOMPRESSED_BYTES`, `TRAINER_MIN_FREE_BYTES` |
 
 `Settings.validate_remote_training_config` fails fast at startup: `TRAINING_MODE=remote` without `TRAINER_URL` raises.
 

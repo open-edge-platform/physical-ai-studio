@@ -89,7 +89,8 @@ Set these variables on the Studio backend. `TRAINING_MODE=remote` requires `TRAI
 |----------|----------|-------------|
 | `TRAINING_MODE` | yes | Set to `remote` to offload training. |
 | `TRAINER_URL` | yes (remote) | Base URL of the trainer service, e.g. `https://trainer.internal:8001`. |
-| `TRAINER_HF_NAMESPACE` | no | Hugging Face org or user namespace for the temporary dataset repositories. |
+| `TRAINER_DATASET_TRANSFER` | no | Dataset transfer mode: `http` (default) streams a ZIP directly to the trainer; `hf` uses a temporary private Hugging Face dataset repository. |
+| `TRAINER_HF_NAMESPACE` | no | Hugging Face org or user namespace for temporary dataset repositories; used only with `TRAINER_DATASET_TRANSFER=hf`. |
 | `TRAINER_REQUEST_TIMEOUT_S` | no | HTTP timeout for non-streaming trainer calls (default `30`). |
 
 For native backend deployments, add the variables to `application/backend/.env`:
@@ -116,14 +117,17 @@ The trainer service must be running and reachable at `TRAINER_URL` before you st
 
 ### Hugging Face token requirements for remote mode
 
-Remote mode transfers each dataset over Hugging Face Hub. For every training job, the backend pushes the dataset snapshot to a new temporary private dataset repository, pins its exact commit, and the trainer pulls the snapshot from that pinned commit. Studio deletes the temporary repository after it imports the trained model, including on failure.
+Remote mode streams each dataset snapshot directly from the backend to the trainer over HTTP by default. The upload is resumable and the trainer removes its working copy after the job finishes. This default transfer does not require Hugging Face credentials for the dataset transfer itself.
+
+Set `TRAINER_DATASET_TRANSFER=hf` only when you need to transfer snapshots through Hugging Face Hub. For every such job, the backend pushes the snapshot to a new temporary private dataset repository, pins its exact commit, and the trainer pulls the snapshot from that pinned commit. Studio deletes the temporary repository after it imports the trained model, including on failure.
 
 This reuses the same `HF_TOKEN` described above, but the access level differs:
 
-- **Local mode** needs **read** access (download Hub-backed policy weights).
-- **Remote mode** needs **write** access. The backend creates, uploads to, and deletes private dataset repositories under your namespace, so the token must allow creating and deleting repos, not just writing content.
+- **Local mode** needs **read** access when it downloads Hub-backed policy weights.
+- **Remote mode with the default `http` transfer** does not need a token for dataset transfer. The backend and trainer still need the appropriate access for any Hub-backed policy assets they download.
+- **Remote mode with `TRAINER_DATASET_TRANSFER=hf`** needs **write** access on the backend. The backend creates, uploads to, and deletes private dataset repositories under your namespace, so the token must allow creating and deleting repos, not just writing content.
 
-The trainer service needs an `HF_TOKEN` with **read** access to pull those snapshots. Set tokens through the environment only and never commit them.
+With `TRAINER_DATASET_TRANSFER=hf`, the trainer service needs an `HF_TOKEN` with **read** access to pull those snapshots. Set tokens through the environment only and never commit them.
 
 For exact classic and fine-grained token permissions, see [Hugging Face Integration](../backend/docs/huggingface_integration.md#required-token-permissions).
 
@@ -146,7 +150,7 @@ If a training job takes too long, you can interrupt it. This stores a checkpoint
 |----------------------------------------------------|
 | ![Download optimized model formats][model-formats] |
 
-When training finishes we export the model to all its supported backends: [PyTorch](https://github.com/pytorch/pytorch), [OpenVINO](https://github.com/openvinotoolkit/openvino), [ONNX](https://github.com/onnx/onnx) and [ExecuTorch](https://github.com/pytorch/executorch).
+When training finishes, Studio exports the model to the supported backends whose dependencies are installed: [PyTorch](https://github.com/pytorch/pytorch), [OpenVINO](https://github.com/openvinotoolkit/openvino), [ONNX](https://github.com/onnx/onnx), and [ExecuTorch](https://github.com/pytorch/executorch).
 Download the model and then use [OpenVINO PhysicalAI](https://github.com/openvinotoolkit/physicalai) to deploy it on your hardware.
 
 ## Troubleshooting training network errors

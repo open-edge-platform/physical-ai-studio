@@ -1,8 +1,9 @@
 # Hugging Face Integration
 
 Several policies download assets from Hugging Face Hub (for example, SmolVLA, Pi0,
-and other Hub-backed models). Remote training also uses the Hub to transfer
-dataset snapshots between the Studio backend and the trainer service.
+and other Hub-backed models). Remote training uses direct HTTP dataset transfer by
+default; it uses the Hub only when you explicitly set
+`TRAINER_DATASET_TRANSFER=hf`.
 
 If `HF_TOKEN` is not set, the backend logs a warning and Hub access is
 unauthenticated.
@@ -19,14 +20,15 @@ environment only.
 | Component / workflow | `HF_TOKEN` access | Why |
 |----------------------|-------------------|-----|
 | Studio backend — local training, recording, deployment | **Read** | Download Hub-backed policy weights (SmolVLA, Pi0, …). |
-| Studio backend — **remote** training (`TRAINING_MODE=remote`) | **Write** | Create, upload to, and delete a temporary private dataset repo per job under your namespace. |
-| Trainer service | **Read** | Pull the dataset snapshot from the temporary repo at its pinned commit. |
+| Studio backend — remote training with `TRAINER_DATASET_TRANSFER=http` (default) | Not required for transfer | The backend streams the dataset directly to the trainer. A token is still needed for Hub-backed policy assets. |
+| Studio backend — remote training with `TRAINER_DATASET_TRANSFER=hf` | **Write** | Create, upload to, and delete a temporary private dataset repo per job under your namespace. |
+| Trainer service with `TRAINER_DATASET_TRANSFER=hf` | **Read** | Pull the dataset snapshot from the temporary repo at its pinned commit. |
 
 Notes:
 
 - A token with **write** access also covers read, so a single write token on the
-  backend works for both local and remote mode. Prefer the least privilege the
-  workflow needs.
+  backend works for Hub-backed policy downloads and optional HF transfer. Prefer
+  the least privilege the workflow needs.
 - **Gated/private models:** the token's account must have been granted access to
   those repositories.
 - **Delete:** remote mode deletes each temporary repo after import (including on
@@ -91,10 +93,12 @@ cd application/docker
 docker compose up
 ```
 
-### Trainer service (remote training)
+### Trainer service (optional HF dataset transfer)
 
-The trainer service needs its own `HF_TOKEN` with **read** access. Add it to
-`application/trainer/.env` on the GPU machine:
+For `TRAINER_DATASET_TRANSFER=hf`, the trainer service needs its own `HF_TOKEN`
+with **read** access. The default `http` transfer does not require a trainer
+token unless the selected policy downloads Hub-hosted assets. Add it to
+`application/trainer/.env` on the GPU machine when needed:
 
 ```env
 HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
