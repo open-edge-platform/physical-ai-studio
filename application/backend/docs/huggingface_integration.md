@@ -31,8 +31,9 @@ Notes:
   the least privilege the workflow needs.
 - **Gated/private models:** the token's account must have been granted access to
   those repositories.
-- **Delete:** remote mode deletes each temporary repo after import (including on
-  failure), so the backend token must be able to delete repos it created.
+- **Delete:** remote mode with `TRAINER_DATASET_TRANSFER=hf` deletes each
+  temporary repo after import (including on failure), so the backend token must
+  be able to delete repos it created.
 
 ### Classic (read/write) tokens
 

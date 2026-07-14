@@ -6,7 +6,7 @@ Read [Training Policies](./06-training-policies.md) first to enable remote mode 
 
 ## When to use it
 
-Run the trainer service when you record datasets on a machine without a capable GPU, or when you want one GPU server to handle training for several recording stations. The service trains a model policy, exports it to every supported backend, and returns the finished model to Studio over HTTP.
+Run the trainer service when you record datasets on a machine without a capable GPU, or when you want one GPU server to handle training for several recording stations. The service trains a model policy, exports to available supported backends, and returns the finished model to Studio over HTTP.
 
 The service queues jobs and runs them one at a time by default, so several recording stations can submit jobs to a single GPU server without conflict.
 
@@ -44,25 +44,26 @@ Set these environment variables on the trainer service, for example in `applicat
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `HF_TOKEN` | only for `hf` transfer or Hub-backed policy assets | — | Hugging Face token with **read** access to dataset snapshots for `hf` transfer. See [token permissions](../backend/docs/huggingface_integration.md#required-token-permissions). |
-| `STORAGE_DIR` | no | platform default | Working directory for snapshots, checkpoints, and model archives. |
+| `HF_TOKEN` | only for `hf` transfer or Hub-backed policy assets | — | Read token for `hf` dataset snapshots and Hub-backed policy assets. The Studio backend needs write access for `hf` transfer. See [token permissions](../backend/docs/huggingface_integration.md#required-token-permissions). |
+| `STORAGE_DIR` | no | `~/.local/share/physicalai-trainer` | Working directory for snapshots, checkpoints, and model archives. |
 | `TRAINER_MAX_CONCURRENT_JOBS` | no | `1` | Number of jobs to run at once. `1` keeps a single GPU job at a time. |
 | `HOST` | no | `0.0.0.0` | Bind address. |
 | `PORT` | no | `8001` | Listen port. |
 
-Example `.env`:
+For the default HTTP transfer, this minimal `.env` limits the service to one concurrent job:
 
 ```env
-HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TRAINER_MAX_CONCURRENT_JOBS=1
 ```
+
+For `TRAINER_DATASET_TRANSFER=hf`, also set `HF_TOKEN` with read access in the trainer `.env`. Configure the Studio backend with a write token and `TRAINER_HF_NAMESPACE` as described in [Training Policies](./06-training-policies.md#hugging-face-token-requirements-for-remote-mode).
 
 ## Run
 
 Start the service from `application/trainer/`:
 
 ```bash
-uv run --extra <xpu|cuda> physicalai-trainer
+uv run --no-sync physicalai-trainer
 ```
 
 The service listens on `PORT` (default `8001`). Confirm it is up:
@@ -76,7 +77,7 @@ Set the Studio backend's `TRAINER_URL` to this service's reachable address, for 
 
 ## Configuration contract
 
-Point the Studio backend at the trainer service, and give both sides a Hugging Face token.
+Point the Studio backend at the trainer service. The default HTTP transfer needs no Hugging Face token for dataset transfer; configure tokens only for Hub-backed policy assets or optional HF transfer.
 
 | Studio backend (`application/backend/.env`) | Trainer service (`application/trainer/.env`) |
 |---------------------------------------------|----------------------------------------------|
@@ -90,19 +91,19 @@ Point the Studio backend at the trainer service, and give both sides a Hugging F
 
 The trainer service keeps a persistent job queue backed by SQLite, so jobs survive a restart. Jobs run in submission order. `TRAINER_MAX_CONCURRENT_JOBS` caps how many run at once (default `1`). Increase it only if the GPU has enough memory for parallel jobs.
 
-You can cancel a queued or running job. Cancellation is cooperative: a running job stops at the next safe point.
+You can cancel a job waiting for its HTTP dataset upload, a queued job, or a running job. Cancellation is cooperative for running jobs, which stop at the next safe point.
 
 ## API
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/jobs` | Enqueue a training job. |
+| `POST` | `/jobs` | Create a training job. HTTP transfer returns `awaiting_dataset`; HF transfer returns `queued`. |
 | `PUT` | `/jobs/{id}/dataset` | Upload a dataset ZIP for the default HTTP transfer. |
 | `HEAD` | `/jobs/{id}/dataset` | Read the resumable HTTP-upload offset. |
 | `GET` | `/jobs/{id}` | Read a job's current state. |
 | `GET` | `/jobs/{id}/events` | Stream job progress as server-sent events. |
 | `GET` | `/jobs/{id}/artifact` | Download the trained model archive. |
-| `POST` | `/jobs/{id}/cancel` | Cancel a queued or running job. |
+| `POST` | `/jobs/{id}/cancel` | Cancel a job waiting for upload, queued, or running. |
 | `GET` | `/devices` | Report the trainer's training devices (CPU, Intel XPU, NVIDIA CUDA). |
 | `GET` | `/health` | Liveness probe. |
 
@@ -114,6 +115,7 @@ The Studio backend drives these routes for you. Call them directly only for diag
 - With `hf` transfer, it pulls each dataset snapshot from a pinned commit, accepts only an allowlist of safe file formats, and validates the dataset repository id and commit before any Hub call.
 - It reads `HF_TOKEN` from the environment and never logs it.
 - The trainer has no built-in authentication. Restrict its port to the Studio backend on a private network; do not expose it publicly.
+- The Studio backend probes the trainer through `HTTP_PROXY` and `HTTPS_PROXY` when those variables are set. If the probe succeeds, subsequent trainer requests, including model artifact downloads, use that proxy; otherwise the backend bypasses it. Deploy the backend only where trusted administrators control proxy settings, and do not run it on a shared or multi-tenant host.
 
 Never commit `HF_TOKEN`. Store it in local `.env` files or your secret manager, and rotate it immediately if exposed.
 

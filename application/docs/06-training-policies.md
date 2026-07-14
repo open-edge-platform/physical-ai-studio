@@ -88,17 +88,16 @@ Set these variables on the Studio backend. `TRAINING_MODE=remote` requires `TRAI
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `TRAINING_MODE` | yes | Set to `remote` to offload training. |
-| `TRAINER_URL` | yes (remote) | Base URL of the trainer service, e.g. `https://trainer.internal:8001`. |
+| `TRAINER_URL` | yes (remote) | Base URL of the trainer service, e.g. `http://trainer.internal:8001`. Use HTTPS only when a reverse proxy or TLS terminator serves the trainer. |
 | `TRAINER_DATASET_TRANSFER` | no | Dataset transfer mode: `http` (default) streams a ZIP directly to the trainer; `hf` uses a temporary private Hugging Face dataset repository. |
 | `TRAINER_HF_NAMESPACE` | no | Hugging Face org or user namespace for temporary dataset repositories; used only with `TRAINER_DATASET_TRANSFER=hf`. |
 | `TRAINER_REQUEST_TIMEOUT_S` | no | HTTP timeout for non-streaming trainer calls (default `30`). |
 
-For native backend deployments, add the variables to `application/backend/.env`:
+For the default HTTP transfer, add these variables to `application/backend/.env`:
 
 ```env
 TRAINING_MODE=remote
-TRAINER_URL=https://trainer.internal:8001
-TRAINER_HF_NAMESPACE=your-hf-namespace
+TRAINER_URL=http://trainer.internal:8001
 ```
 
 Then start the backend from `application/backend/`:
@@ -114,6 +113,8 @@ docker compose up -d --force-recreate
 ```
 
 The trainer service must be running and reachable at `TRAINER_URL` before you start a remote job. See [Remote Training Server](./08-remote-training-server.md) to set it up.
+
+For optional HF transfer, also set `TRAINER_DATASET_TRANSFER=hf` and `TRAINER_HF_NAMESPACE`; see [Hugging Face token requirements for remote mode](#hugging-face-token-requirements-for-remote-mode).
 
 ### Hugging Face token requirements for remote mode
 

@@ -14,7 +14,7 @@ Remote training moves GPU-heavy policy training from a recording station to a de
 ## Non-goals
 
 - **Authenticated or multi-tenant trainer access.** The trainer trusts callers on its network. It has no per-station auth, authorization, or request signing. Deploy it on a private network; do not expose it publicly.
-- **Resumable transfers or jobs.** If snapshot upload, job submission, or artifact download fails, the job fails and the user retrains. There is no checkpoint-level resume across the HTTP boundary.
+- **Checkpoint-level training resume across the HTTP boundary.** HTTP dataset uploads are resumable, but a failed remote training run cannot resume from a checkpoint through the remote-training protocol; submit a new job instead.
 - **Additional dataset-transfer protocols.** The supported modes are direct resumable HTTP upload (the default) and an ephemeral HF dataset repo (`TRAINER_DATASET_TRANSFER=hf`).
 
 ## Architecture
@@ -117,6 +117,7 @@ sequenceDiagram
 | `GET` | `/jobs/{id}/events`   | SSE stream of state changes until terminal. Primary progress channel the backend consumes. |
 | `GET` | `/jobs/{id}/artifact` | Download the model zip.                                                                    |
 | `POST` | `/jobs/{id}/cancel`   | Cancel the job.                                                                            |
+| `GET` | `/devices`            | Report available CPU, CUDA, and XPU training devices.                                      |
 | `GET` | `/health`             | Liveness probe.                                                                            |
 
 ### Schemas
@@ -155,7 +156,7 @@ local 95–100 model download + import
 Cancellation is cooperative across both services:
 
 - The backend event loop checks `context.should_stop()` between SSE events (on each idle timeout and reconnect). On stop, it POSTs `/jobs/{id}/cancel` and raises `TrainingCanceledError`.
-- The trainer adds the id to `_cancel_requested`. A queued job flips directly to `canceled`; a running job stops at the next safe point (Lightning callback sets `trainer.should_stop`, and the runner checks again after `fit`).
+- The trainer adds the id to `_cancel_requested`. A job awaiting its HTTP dataset upload or queued job flips directly to `canceled`; a running job stops at the next safe point (Lightning callback sets `trainer.should_stop`, and the runner checks again after `fit`).
 - Canceled jobs are logged at info level and do not dump error tracebacks, which keeps cancellation distinct from true failures.
 
 ## Configuration
