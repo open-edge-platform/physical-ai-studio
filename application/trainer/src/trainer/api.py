@@ -55,6 +55,20 @@ def _manager(request: Request) -> QueueManager:
     return request.app.state.queue_manager
 
 
+def _require_http_dataset_job(manager: QueueManager, job_id: str) -> JobState:
+    """Return an awaiting HTTP-transfer job or raise the appropriate HTTP error."""
+    state = manager.store.get(job_id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if state.status != TrainerJobStatus.AWAITING_DATASET:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job is not awaiting a dataset upload")
+
+    submitted = manager.store.get_request(job_id)
+    if submitted is None or submitted.dataset_transfer != DatasetTransfer.HTTP:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job does not use http dataset transfer")
+    return state
+
+
 def _dataset_dir(job_id: str) -> Path:
     """Return the extraction directory for a job's uploaded dataset."""
     return get_settings().datasets_dir / job_id
@@ -153,15 +167,7 @@ async def submit_job(body: SubmitJobRequest, request: Request) -> SubmitJobRespo
 async def upload_dataset(job_id: str, request: Request, response: Response) -> JobState:
     """Validate an awaiting HTTP job's ZIP upload and queue it."""
     manager = _manager(request)
-    state = manager.store.get(job_id)
-    if state is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    if state.status != TrainerJobStatus.AWAITING_DATASET:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job is not awaiting a dataset upload")
-
-    submitted = manager.store.get_request(job_id)
-    if submitted is None or submitted.dataset_transfer != DatasetTransfer.HTTP:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job does not use http dataset transfer")
+    state = _require_http_dataset_job(manager, job_id)
 
     content_type = request.headers.get("content-type", "")
     if "zip" not in content_type.lower():
@@ -222,14 +228,7 @@ def _cleanup_upload(archive_path: Path, target_dir: Path) -> None:
 async def get_dataset_upload_offset(job_id: str, request: Request) -> Response:
     """Return the staged byte offset for an interrupted HTTP dataset upload."""
     manager = _manager(request)
-    state = manager.store.get(job_id)
-    if state is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    if state.status != TrainerJobStatus.AWAITING_DATASET:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job is not awaiting a dataset upload")
-    submitted = manager.store.get_request(job_id)
-    if submitted is None or submitted.dataset_transfer != DatasetTransfer.HTTP:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job does not use http dataset transfer")
+    _require_http_dataset_job(manager, job_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Upload-Offset": str(_upload_offset(job_id))})
 
 
