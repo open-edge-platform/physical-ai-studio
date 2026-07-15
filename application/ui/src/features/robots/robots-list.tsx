@@ -4,7 +4,7 @@ import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
-import { $api } from '../../api/client';
+import { $api, fetchClient } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
@@ -13,7 +13,44 @@ import { SchemaRobot } from './robot-types';
 
 import classes from './robots-list.module.css';
 
-const MenuActions = ({ robot_id }: { robot_id: string }) => {
+const exportCalibration = async (project_id: string, robot: SchemaRobot) => {
+    if (robot.active_calibration_id === null || robot.active_calibration_id === undefined) {
+        return;
+    }
+
+    const { data, error } = await fetchClient.GET(
+        '/api/projects/{project_id}/robots/{robot_id}/calibrations/{calibration_id}',
+        { params: { path: { project_id, robot_id: robot.id, calibration_id: robot.active_calibration_id } } }
+    );
+
+    if (error || !data) {
+        toast.negative(getApiErrorMessage(error) ?? 'Failed to export calibration.');
+        return;
+    }
+
+    const calibration = Object.fromEntries(
+        Object.entries(data.values).map(([jointName, value]) => [
+            jointName,
+            {
+                id: value.id,
+                drive_mode: value.drive_mode,
+                homing_offset: value.homing_offset,
+                range_min: value.range_min,
+                range_max: value.range_max,
+            },
+        ])
+    );
+    const downloadUrl = URL.createObjectURL(
+        new Blob([JSON.stringify(calibration, null, 4)], { type: 'application/json' })
+    );
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `${robot.name}-calibration.json`;
+    link.click();
+    URL.revokeObjectURL(downloadUrl);
+};
+
+const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
     const { project_id } = useProjectId();
     const deleteRobotMutation = $api.useMutation('delete', '/api/projects/{project_id}/robots/{robot_id}', {
         meta: {
@@ -24,19 +61,29 @@ const MenuActions = ({ robot_id }: { robot_id: string }) => {
         },
     });
 
-    const editPath = paths.project.robots.edit({ project_id, robot_id });
+    const editPath = paths.project.robots.edit({ project_id, robot_id: robot.id });
+    const isSO101 = robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader';
 
     return (
         <MenuTrigger>
-            <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}>
+            <ActionButton
+                aria-label={`Actions for ${robot.name}`}
+                isQuiet
+                UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
+            >
                 <MoreMenu />
             </ActionButton>
             <Menu
                 selectionMode='single'
-                onAction={(action) => {
+                disabledKeys={
+                    robot.active_calibration_id === null || robot.active_calibration_id === undefined
+                        ? ['export-calibration']
+                        : []
+                }
+                onAction={async (action) => {
                     if (action === 'delete') {
-                        deleteRobotMutation.mutate(
-                            { params: { path: { project_id, robot_id } } },
+                        await deleteRobotMutation.mutateAsync(
+                            { params: { path: { project_id, robot_id: robot.id } } },
                             {
                                 onError: (error) => {
                                     if (isResourceInUseError(error)) {
@@ -50,11 +97,19 @@ const MenuActions = ({ robot_id }: { robot_id: string }) => {
                             }
                         );
                     }
+                    if (action === 'export-calibration') {
+                        try {
+                            await exportCalibration(project_id, robot);
+                        } catch {
+                            toast.negative('Failed to export calibration.');
+                        }
+                    }
                 }}
             >
                 <Item key='edit' href={editPath}>
                     Edit
                 </Item>
+                {isSO101 ? <Item key='export-calibration'>Export calibration</Item> : null}
                 <Item key='delete'>Delete</Item>
             </Menu>
         </MenuTrigger>
@@ -145,7 +200,7 @@ const RobotListItem = ({
                         </ul>
                     </View>
                     <View alignSelf={'end'}>
-                        <MenuActions robot_id={robot.id} />
+                        <MenuActions robot={robot} />
                     </View>
                 </Flex>
             </Flex>
