@@ -7,7 +7,7 @@ import asyncio
 import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from loguru import logger
 
@@ -197,7 +197,7 @@ class TrainingWorker(BaseProcessWorker):
 
         self.queue.put((EventType.JOB_UPDATE, job))
 
-    async def _persist_remote_job_id(self, job: Job, payload: TrainJobPayload, remote_job_id: str) -> None:
+    async def _persist_remote_job_id(self, job: Job, payload: TrainJobPayload, remote_job_id: UUID) -> None:
         """Persist the remote job id for restart recovery."""
         payload.remote_job_id = remote_job_id
         await JobService.update_job_payload(job.id, payload)

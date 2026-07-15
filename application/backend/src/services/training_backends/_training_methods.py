@@ -35,29 +35,27 @@ class HttpTrainingMethod(TrainingMethod):
 
     async def train(self, context: TrainingContext) -> None:
         backend = self._backend
-        archive_path: Path | None = None
         if context.snapshot is None:
             raise ValueError("HTTP dataset transfer requires a dataset snapshot")
+
+        # Archive and upload the snapshot (0-10%).
+        context.progress(0, message="Preparing dataset snapshot")
+        archive_path = await asyncio.to_thread(
+            DatasetDownloadService().create_dataset_archive, Path(context.snapshot.path)
+        )
         try:
-            # Archive and upload the snapshot (0-10%).
-            context.progress(0, message="Preparing dataset snapshot")
-            archive = await asyncio.to_thread(
-                DatasetDownloadService().create_dataset_archive, Path(context.snapshot.path)
-            )
-            archive_path = archive
             remote_job_id = await backend.submit_job(context, dataset_transfer="http")
 
             # Persist before the upload begins so a restart can resume it.
             if context.on_remote_job_id is not None:
                 await context.on_remote_job_id(remote_job_id)
 
-            await backend.upload_snapshot_http(context, remote_job_id, archive)
+            await backend.upload_snapshot_http(context, remote_job_id, archive_path)
             context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
 
             await backend.await_and_ingest(context, remote_job_id)
         finally:
-            if archive_path is not None:
-                cleanup_staged_archive(archive_path)
+            cleanup_staged_archive(archive_path)
 
 
 class HfTrainingMethod(TrainingMethod):

@@ -354,7 +354,8 @@ class TestTraining:
     async def test_context_wires_reattach_fields_from_payload(self, worker, tmp_path):
         """The context carries the persisted remote_job_id and a suspend predicate."""
         payload = _make_payload(compile_model=False)
-        payload.remote_job_id = "trainer-job-abc"
+        remote_job_id = uuid4()
+        payload.remote_job_id = remote_job_id
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
         job = _make_job(payload)
@@ -387,7 +388,7 @@ class TestTraining:
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
         context = captured["context"]
-        assert context.remote_job_id == "trainer-job-abc"
+        assert context.remote_job_id == remote_job_id
         # should_suspend mirrors the worker's global stop signal (shutdown), which
         # is distinct from a per-job cancel (interrupt_event). No stop was requested
         # during training, so it is False.
@@ -405,11 +406,12 @@ class TestTraining:
         with patch(f"{MODULE}.JobService") as MockJobService:
             MockJobService.update_job_payload = AsyncMock(return_value=MagicMock())
 
-            await worker._persist_remote_job_id(job, payload, "trainer-job-xyz")
+            remote_job_id = uuid4()
+            await worker._persist_remote_job_id(job, payload, remote_job_id)
 
-            assert payload.remote_job_id == "trainer-job-xyz"
+            assert payload.remote_job_id == remote_job_id
             MockJobService.update_job_payload.assert_awaited_once()
             args, _ = MockJobService.update_job_payload.call_args
             assert args[0] == job.id
-            assert args[1].remote_job_id == "trainer-job-xyz"
+            assert args[1].remote_job_id == remote_job_id
             assert args[1].snapshot_id == snapshot_id

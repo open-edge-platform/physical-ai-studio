@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +26,23 @@ def _zip_bytes(entries: dict[str, bytes]) -> bytes:
         for name, data in entries.items():
             archive.writestr(name, data)
     return buffer.getvalue()
+
+
+_JOB_UUID = uuid4()
+_JOB_ID = str(_JOB_UUID)
+
+
+def test_job_id_dependency_returns_canonical_storage_id() -> None:
+    assert api_module._get_job_id(UUID(_JOB_UUID.hex)) == _JOB_ID
+
+
+def test_get_job_resolves_job_dependency(client) -> None:
+    test_client, _ = client
+
+    response = test_client.get(f"/jobs/{_JOB_ID}")
+
+    assert response.status_code == 200
+    assert response.json()["remote_job_id"] == _JOB_ID
 
 
 class _FakeStore:
@@ -53,7 +71,7 @@ def client(tmp_path: Path, monkeypatch) -> tuple[TestClient, _FakeStore]:
     settings.min_free_bytes = 0
     monkeypatch.setattr(api_module, "get_settings", lambda: settings)
 
-    state = JobState(remote_job_id="job-1", status=TrainerJobStatus.AWAITING_DATASET)
+    state = JobState(remote_job_id=_JOB_UUID, status=TrainerJobStatus.AWAITING_DATASET)
     store = _FakeStore(state, transfer=DatasetTransfer.HTTP)
 
     app = FastAPI()
@@ -69,7 +87,7 @@ def test_upload_extracts_and_queues_job(client) -> None:
     test_client, store = client
     payload = _zip_bytes({"meta/info.json": b"{}"})
 
-    response = test_client.put("/jobs/job-1/dataset", content=payload, headers=_ZIP_HEADERS)
+    response = test_client.put(f"/jobs/{_JOB_ID}/dataset", content=payload, headers=_ZIP_HEADERS)
 
     assert response.status_code == 202
     assert store.ready_called is True
@@ -87,7 +105,7 @@ def test_upload_reserves_space_for_staged_zip_not_extraction_limit(client, monke
         lambda _directory, required, _min_free: required_bytes.append(required),
     )
 
-    response = test_client.put("/jobs/job-1/dataset", content=payload, headers=_ZIP_HEADERS)
+    response = test_client.put(f"/jobs/{_JOB_ID}/dataset", content=payload, headers=_ZIP_HEADERS)
 
     assert response.status_code == 202
     assert required_bytes == [len(payload)]
@@ -100,7 +118,7 @@ def test_upload_resumes_from_staged_offset(client) -> None:
     split = len(payload) // 2
 
     first = test_client.put(
-        "/jobs/job-1/dataset",
+        f"/jobs/{_JOB_ID}/dataset",
         content=payload[:split],
         headers={**_ZIP_HEADERS, "Content-Range": f"bytes 0-{split - 1}/{len(payload)}"},
     )
@@ -108,12 +126,12 @@ def test_upload_resumes_from_staged_offset(client) -> None:
     assert first.status_code == 202
     assert first.headers["upload-offset"] == str(split)
     assert store.ready_called is False
-    offset = test_client.head("/jobs/job-1/dataset")
+    offset = test_client.head(f"/jobs/{_JOB_ID}/dataset")
     assert offset.status_code == 204
     assert offset.headers["upload-offset"] == str(split)
 
     final = test_client.put(
-        "/jobs/job-1/dataset",
+        f"/jobs/{_JOB_ID}/dataset",
         content=payload[split:],
         headers={**_ZIP_HEADERS, "Content-Range": f"bytes {split}-{len(payload) - 1}/{len(payload)}"},
     )
@@ -127,7 +145,7 @@ def test_upload_rejects_non_zip_content_type(client) -> None:
     test_client, _ = client
 
     response = test_client.put(
-        "/jobs/job-1/dataset",
+        f"/jobs/{_JOB_ID}/dataset",
         content=b"not a zip",
         headers={"Content-Type": "text/plain"},
     )
@@ -139,7 +157,7 @@ def test_upload_rejects_unsafe_zip(client) -> None:
     test_client, store = client
     payload = _zip_bytes({"../escape.txt": b"x"})
 
-    response = test_client.put("/jobs/job-1/dataset", content=payload, headers=_ZIP_HEADERS)
+    response = test_client.put(f"/jobs/{_JOB_ID}/dataset", content=payload, headers=_ZIP_HEADERS)
 
     assert response.status_code == 400
     assert store.ready_called is False
@@ -152,7 +170,7 @@ def test_upload_conflicts_when_not_awaiting_dataset(tmp_path: Path, monkeypatch)
     settings.min_free_bytes = 0
     monkeypatch.setattr(api_module, "get_settings", lambda: settings)
 
-    state = JobState(remote_job_id="job-1", status=TrainerJobStatus.RUNNING)
+    state = JobState(remote_job_id=_JOB_UUID, status=TrainerJobStatus.RUNNING)
     store = _FakeStore(state, transfer=DatasetTransfer.HTTP)
 
     app = FastAPI()
@@ -160,9 +178,17 @@ def test_upload_conflicts_when_not_awaiting_dataset(tmp_path: Path, monkeypatch)
     app.state.queue_manager = SimpleNamespace(store=store)
 
     response = TestClient(app).put(
-        "/jobs/job-1/dataset",
+        f"/jobs/{_JOB_ID}/dataset",
         content=_zip_bytes({"a": b"b"}),
         headers=_ZIP_HEADERS,
     )
 
     assert response.status_code == 409
+
+
+def test_upload_rejects_malformed_job_id(client) -> None:
+    test_client, _ = client
+
+    response = test_client.put("/jobs/not-a-uuid/dataset", content=b"", headers=_ZIP_HEADERS)
+
+    assert response.status_code == 422

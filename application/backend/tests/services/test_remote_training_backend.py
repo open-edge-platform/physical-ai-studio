@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -94,7 +94,8 @@ class _FakeStreamCtx:
 class _Controller:
     """Drives fake HTTP responses for a single training run."""
 
-    def __init__(self, states: list[dict], *, remote_job_id: str = "rj-123") -> None:
+    def __init__(self, states: list[dict], *, remote_job_id: UUID | None = None) -> None:
+        remote_job_id = remote_job_id or uuid4()
         self.remote_job_id = remote_job_id
         # Each entry is one connection's worth of frames. A reconnect pops the next
         # entry; the last entry repeats. Defaults to a single batch of all states.
@@ -143,7 +144,7 @@ class _FakeClient:
         if url.endswith("/cancel"):
             self._c.cancelled = True
             return _FakeResponse(json_data={})
-        return _FakeResponse(json_data={"remote_job_id": self._c.remote_job_id})
+        return _FakeResponse(json_data={"remote_job_id": str(self._c.remote_job_id)})
 
     async def put(self, url: str, content: object = None, headers: dict | None = None) -> _FakeResponse:
         self._c.put_urls.append(url)
@@ -208,7 +209,7 @@ def _settings() -> MagicMock:
     return settings
 
 
-def _context(tmp_path: Path, *, should_stop: bool = False, remote_job_id: str | None = None) -> TrainingContext:
+def _context(tmp_path: Path, *, should_stop: bool = False, remote_job_id: UUID | None = None) -> TrainingContext:
     snap = tmp_path / "snap"
     snap.mkdir()
     model = Model(
@@ -496,10 +497,11 @@ class TestRemoteTrainingBackend:
         """Resuming after a restart streams progress and downloads the model, but never resubmits."""
         settings = _settings()
         # Reattach: the remote job id is already known from a prior (pre-restart) run.
-        context = _context(tmp_path, remote_job_id="trainer-job-resumed")
+        remote_job_id = uuid4()
+        context = _context(tmp_path, remote_job_id=remote_job_id)
         controller = _Controller(
             states=[{"status": "completed", "progress": 100, "message": "Done"}],
-            remote_job_id="trainer-job-resumed",
+            remote_job_id=remote_job_id,
         )
         api_cls = _hf_api_mock()
         safe_zip = MagicMock()
@@ -522,15 +524,20 @@ class TestRemoteTrainingBackend:
         safe_zip.extract_to.assert_called_once()
 
     @pytest.mark.anyio
-    async def test_reattach_rejects_malformed_remote_job_id(self, tmp_path):
-        """A persisted job ID cannot inject path components into trainer URLs."""
+    async def test_submit_rejects_malformed_remote_job_id(self, tmp_path):
+        """The trainer response is validated before an ID reaches URL construction."""
         settings = _settings()
-        context = _context(tmp_path, remote_job_id="valid-job/../unexpected")
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        controller.remote_job_id = "valid-job/../unexpected"  # type: ignore[assignment]
 
-        with patch(f"{REMOTE}.get_settings", return_value=settings):
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
             backend = _backend(settings)
-            with pytest.raises(RemoteTrainingError, match="Invalid remote training job id"):
-                await backend.train(context)
+            with pytest.raises(RemoteTrainingError, match="Trainer did not return a valid remote_job_id"):
+                await backend.submit_job(context, dataset_transfer="http")
 
     @pytest.mark.anyio
     async def test_shutdown_suspends_without_canceling_remote_job(self, tmp_path):
@@ -660,7 +667,7 @@ class TestHttpDatasetTransfer:
 
         async def _fake_submit(_ctx, *, dataset_transfer, repo_id=None, revision=None):
             captured.update(dataset_transfer=dataset_transfer, repo_id=repo_id, revision=revision)
-            return "rj-123"
+            return uuid4()
 
         controller = _Controller(states=[{"status": "completed", "progress": 100}])
         with (
@@ -687,9 +694,9 @@ class TestHttpDatasetTransfer:
         context = _context(tmp_path)
         (tmp_path / "snap" / "info.json").write_text("{}")
 
-        persisted: list[str] = []
+        persisted: list[UUID] = []
 
-        async def _on_remote_job_id(remote_job_id: str) -> None:
+        async def _on_remote_job_id(remote_job_id: UUID) -> None:
             persisted.append(remote_job_id)
 
         context.on_remote_job_id = _on_remote_job_id

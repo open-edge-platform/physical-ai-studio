@@ -60,7 +60,7 @@ class JobStore:
 
     def create(self, request: SubmitJobRequest) -> str:
         """Persist a job and return its id; HTTP transfers await their upload."""
-        job_id = uuid.uuid4().hex
+        job_id = str(uuid.uuid4())
         if request.dataset_transfer == DatasetTransfer.HTTP:
             status, message = TrainerJobStatus.AWAITING_DATASET, "Awaiting dataset upload"
         else:

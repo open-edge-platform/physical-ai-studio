@@ -86,7 +86,7 @@ class TrainJobPayload(BaseModel):
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
 
-    remote_job_id: str | None = Field(
+    remote_job_id: UUID | None = Field(
         default=None, description="Remote trainer job id, set when a remote run is in flight (for restart reattach)"
     )
     snapshot_id: UUID | None = Field(
@@ -108,6 +108,10 @@ class TrainJobPayload(BaseModel):
     @field_serializer("snapshot_id")
     def serialize_snapshot_id(self, snapshot_id: UUID | None, _info: Any) -> str | None:
         return str(snapshot_id) if snapshot_id else None
+
+    @field_serializer("remote_job_id")
+    def serialize_remote_job_id(self, remote_job_id: UUID | None, _info: Any) -> str | None:
+        return str(remote_job_id) if remote_job_id else None
 
 
 class TrainJob(BaseJob):

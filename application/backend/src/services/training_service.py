@@ -106,12 +106,15 @@ class TrainingService:
             )
 
     @staticmethod
-    def _reattachable_remote_job_id(job: object) -> str | None:
+    def _reattachable_remote_job_id(job: object) -> UUID | None:
         """Return the persisted remote job id for a training job, if any."""
         payload = getattr(job, "payload", None)
         if isinstance(payload, TrainJobPayload):
             return payload.remote_job_id
         if isinstance(payload, dict):
             remote_job_id = payload.get("remote_job_id")
-            return remote_job_id if isinstance(remote_job_id, str) and remote_job_id else None
+            try:
+                return UUID(str(remote_job_id))
+            except (TypeError, ValueError, AttributeError):
+                return None
         return None

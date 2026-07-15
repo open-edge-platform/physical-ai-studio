@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from enum import StrEnum
 from typing import Any
+from uuid import UUID  # noqa: TC003
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -109,14 +110,14 @@ class SubmitJobRequest(BaseModel):
 class SubmitJobResponse(BaseModel):
     """Response returned after enqueueing a job."""
 
-    remote_job_id: str
+    remote_job_id: UUID
     status: TrainerJobStatus
 
 
 class JobState(BaseModel):
     """Current state of a trainer job."""
 
-    remote_job_id: str
+    remote_job_id: UUID
     status: TrainerJobStatus
     progress: int = Field(default=0, ge=0, le=100)
     message: str | None = None
@@ -126,5 +127,5 @@ class JobState(BaseModel):
 class CancelResponse(BaseModel):
     """Status reported after a cancellation request."""
 
-    remote_job_id: str
+    remote_job_id: UUID
     status: TrainerJobStatus

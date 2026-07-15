@@ -18,7 +18,6 @@ import asyncio
 import contextlib
 import json
 import os
-import re
 import tempfile
 import time
 import uuid
@@ -51,8 +50,6 @@ _TERMINAL_STATES = {"completed", "failed", "canceled"}
 _UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 _DOWNLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 _TRANSFER_RETRY_LIMIT = 3
-
-_REMOTE_JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 # Cap the trainer-supplied telemetry blob.
 _MAX_EXTRA_INFO_BYTES = 16 * 1024
@@ -170,15 +167,13 @@ class RemoteTrainingBackend:
         model rather than submitting a new job.
         """
         if context.remote_job_id:
-            if not _REMOTE_JOB_ID_PATTERN.fullmatch(context.remote_job_id):
-                raise RemoteTrainingError("Invalid remote training job id")
             logger.info("Reattaching to in-flight remote training job")
             await self._resume_pending_http_upload(context, context.remote_job_id)
             await self.await_and_ingest(context, context.remote_job_id)
             return
         await self._training_method().train(context)
 
-    async def _resume_pending_http_upload(self, context: TrainingContext, remote_job_id: str) -> None:
+    async def _resume_pending_http_upload(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
         """Resume an HTTP dataset upload when the trainer still awaits its ZIP."""
         if self._dataset_transfer != "http" or context.snapshot is None:
             return
@@ -208,14 +203,16 @@ class RemoteTrainingBackend:
             return HfTrainingMethod(self)
         return HttpTrainingMethod(self)
 
-    async def await_and_ingest(self, context: TrainingContext, remote_job_id: str) -> None:
+    async def await_and_ingest(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
         """Wait for the remote job, then download and extract its model."""
         await self._wait_for_completion(context, remote_job_id)
         context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
         await self._download_and_extract(context, remote_job_id)
         context.progress(100, message="Model downloaded")
 
-    async def upload_snapshot_http(self, context: TrainingContext, remote_job_id: str, archive_path: Path) -> None:
+    async def upload_snapshot_http(
+        self, context: TrainingContext, remote_job_id: uuid.UUID, archive_path: Path
+    ) -> None:
         """Stream the snapshot ZIP to the trainer, mirroring bytes into the 0-10% window."""
         total = archive_path.stat().st_size
         report = context.progress
@@ -286,7 +283,7 @@ class RemoteTrainingBackend:
             format_throughput(total, elapsed),
         )
 
-    async def _get_upload_offset(self, remote_job_id: str, total: int, client_timeout: httpx.Timeout) -> int:
+    async def _get_upload_offset(self, remote_job_id: uuid.UUID, total: int, client_timeout: httpx.Timeout) -> int:
         """Read and validate the trainer's staged dataset-upload offset."""
         try:
             async with await self._client(client_timeout) as client:
@@ -407,7 +404,7 @@ class RemoteTrainingBackend:
         dataset_transfer: str,
         repo_id: str | None = None,
         revision: str | None = None,
-    ) -> str:
+    ) -> uuid.UUID:
         """Submit the training job and return the remote job id."""
         body: dict[str, Any] = {
             "payload": context.payload.model_dump(mode="json"),
@@ -424,12 +421,16 @@ class RemoteTrainingBackend:
             data = response.json()
 
         remote_job_id = data.get("remote_job_id")
-        if not isinstance(remote_job_id, str) or not _REMOTE_JOB_ID_PATTERN.fullmatch(remote_job_id):
+        if not isinstance(remote_job_id, str):
             raise RemoteTrainingError("Trainer did not return a valid remote_job_id")
+        try:
+            remote_job_uuid = uuid.UUID(remote_job_id)
+        except ValueError as exc:
+            raise RemoteTrainingError("Trainer did not return a valid remote_job_id") from exc
         logger.info("Remote training job submitted")
-        return remote_job_id
+        return remote_job_uuid
 
-    async def _wait_for_completion(self, context: TrainingContext, remote_job_id: str) -> None:
+    async def _wait_for_completion(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
         """Consume the trainer's SSE event stream, mirroring progress into the local job.
 
         The job keeps running on the trainer regardless of this connection, so a
@@ -477,7 +478,7 @@ class RemoteTrainingBackend:
             await asyncio.sleep(backoff_s)
             backoff_s = min(backoff_s * 2, max_backoff_s)
 
-    async def _poll_state(self, context: TrainingContext, remote_job_id: str) -> tuple[bool, bool]:
+    async def _poll_state(self, context: TrainingContext, remote_job_id: uuid.UUID) -> tuple[bool, bool]:
         """Read job state via a plain GET, as a transport fallback for broken SSE.
 
         Returns ``(reachable, completed)``; ``reachable`` resets the outage budget
@@ -495,7 +496,7 @@ class RemoteTrainingBackend:
             return True, False
         return True, self._apply_state(context, data)
 
-    async def _consume_event_stream(self, context: TrainingContext, remote_job_id: str) -> tuple[bool, bool]:
+    async def _consume_event_stream(self, context: TrainingContext, remote_job_id: uuid.UUID) -> tuple[bool, bool]:
         """Open one SSE connection and mirror state until it closes.
 
         Returns ``(completed, received_event)``. ``completed`` is True only when
@@ -635,7 +636,7 @@ class RemoteTrainingBackend:
             raise RemoteTrainingError("Trainer returned a malformed job state")
         return parsed
 
-    async def _download_and_extract(self, context: TrainingContext, remote_job_id: str) -> None:
+    async def _download_and_extract(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
         """Stream the model archive and extract it into the model directory."""
         settings = get_settings()
         tmp_archive = Path(tempfile.gettempdir()) / f"remote-model-{uuid.uuid4().hex}.zip"
@@ -667,7 +668,7 @@ class RemoteTrainingBackend:
     async def _stream_archive(
         self,
         context: TrainingContext,
-        remote_job_id: str,
+        remote_job_id: uuid.UUID,
         tmp_archive: Path,
         stream_timeout: httpx.Timeout,
     ) -> int:
@@ -749,14 +750,14 @@ class RemoteTrainingBackend:
         output_dir.mkdir(parents=True, exist_ok=True)
         archive.extract_to(output_dir, min_free_bytes=min_free_bytes)
 
-    async def _handle_stop_request(self, context: TrainingContext, remote_job_id: str) -> None:
+    async def _handle_stop_request(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
         """Suspend on shutdown; cancel the remote job for a user stop request."""
         if context.should_suspend():
             raise TrainingSuspendedError("Studio shutting down; leaving remote training job running for reattach")
         await self._cancel(remote_job_id)
         raise TrainingCanceledError("Training canceled")
 
-    async def _cancel(self, remote_job_id: str) -> None:
+    async def _cancel(self, remote_job_id: uuid.UUID) -> None:
         """Request remote cancellation; best effort."""
         try:
             async with await self._client() as client:

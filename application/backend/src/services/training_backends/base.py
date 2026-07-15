@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
     from pathlib import Path
+    from uuid import UUID
 
     from schemas import Job, Model, Snapshot
     from schemas.job import TrainJobPayload
@@ -73,8 +74,8 @@ class TrainingContext:
     cache_dir: Path
     progress: ProgressReporter
     should_stop: Callable[[], bool]
-    remote_job_id: str | None = None
-    on_remote_job_id: Callable[[str], Awaitable[None]] | None = None
+    remote_job_id: UUID | None = None
+    on_remote_job_id: Callable[[UUID], Awaitable[None]] | None = None
     should_suspend: Callable[[], bool] = field(default=lambda: False)
 
 
