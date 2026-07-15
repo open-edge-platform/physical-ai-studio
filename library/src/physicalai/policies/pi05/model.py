@@ -339,7 +339,9 @@ class PaliGemmaWithExpertModel(nn.Module):
             hidden_activation="gelu_pytorch_tanh",  # pyrefly: ignore[unexpected-keyword]
             dtype="float32",
             use_adarms=use_adarms[1],  # pyrefly: ignore[unexpected-keyword]
-            adarms_cond_dim=action_expert_config.width if use_adarms[1] else None,  # pyrefly: ignore[unexpected-keyword]
+            adarms_cond_dim=action_expert_config.width  # pyrefly: ignore[unexpected-keyword]
+            if use_adarms[1]
+            else None,
         )
 
         self.paligemma = PaliGemmaForConditionalGenerationWithPiGemma(
