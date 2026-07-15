@@ -218,7 +218,7 @@ def test_upload_rejects_archive_with_too_many_entries() -> None:
 
     with (
         patch("api.dataset_import.get_settings") as mock_get_settings,
-        patch("services.archive_safety.DEFAULT_MAX_FILE_COUNT", 100),
+        patch("physicalai.data.archive_safety.DEFAULT_MAX_FILE_COUNT", 100),
     ):
         settings = mock_get_settings.return_value
         settings.cache_dir = Settings().cache_dir
@@ -306,7 +306,7 @@ def test_upload_rejects_when_cache_dir_has_insufficient_free_space() -> None:
 
     with (
         patch("api.dataset_import.get_settings") as mock_get_settings,
-        patch("services.archive_safety.shutil.disk_usage", return_value=_fake_usage),
+        patch("physicalai.data.archive_safety.shutil.disk_usage", return_value=_fake_usage),
     ):
         settings = mock_get_settings.return_value
         settings.cache_dir = Settings().cache_dir
@@ -353,7 +353,7 @@ def test_upload_disk_headroom_uses_actual_archive_size_not_configured_max() -> N
 
     with (
         patch("api.dataset_import.get_settings") as mock_get_settings,
-        patch("services.archive_safety.shutil.disk_usage", return_value=_fake_usage),
+        patch("physicalai.data.archive_safety.shutil.disk_usage", return_value=_fake_usage),
     ):
         settings = mock_get_settings.return_value
         settings.cache_dir = Settings().cache_dir

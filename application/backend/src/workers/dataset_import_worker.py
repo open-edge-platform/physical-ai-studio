@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from physicalai.data.archive_safety import SafeZipArchive
 
 from core.logging.utils import job_logging_ctx
 from schemas.base_job import JobStatus
@@ -13,7 +14,6 @@ from schemas.dataset_import_job import (
     ImportValidationSeverity,
 )
 from schemas.job import DatasetImportJob
-from services.archive_safety import SafeZipArchive, cleanup_staged_archive
 from services.dataset_import.adapters import (
     DatasetImportAdapter,
     get_registered_dataset_import_adapters,
@@ -23,6 +23,7 @@ from services.dataset_import.service import DatasetImportService
 from services.dataset_import.staging import resolve_payload_archive_path
 from services.event_processor import EventType
 from services.job_service import JobService
+from services.staged_archive import cleanup_staged_archive
 from settings import get_settings
 from workers.base import BaseProcessWorker
 

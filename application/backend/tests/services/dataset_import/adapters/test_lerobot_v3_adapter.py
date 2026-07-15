@@ -5,9 +5,9 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pandas as pd
+from physicalai.data.archive_safety import SafeZipArchive
 
 from schemas.dataset_import_job import ImportValidationSeverity
-from services.archive_safety import SafeZipArchive
 from services.dataset_import.adapters.lerobot_v3 import LeRobotV3Adapter
 
 

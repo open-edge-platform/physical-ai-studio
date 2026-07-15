@@ -10,8 +10,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from services.archive_safety import cleanup_staged_archive
 from services.dataset_download_service import DatasetDownloadService
+from services.staged_archive import cleanup_staged_archive
 from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS
 
 if TYPE_CHECKING:

@@ -16,9 +16,7 @@ from uuid import UUID  # noqa: TC003
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from loguru import logger
-from sse_starlette.sse import EventSourceResponse
-
-from trainer.archive_safety import (
+from physicalai.data.archive_safety import (
     InsufficientDiskSpaceError,
     InvalidArchiveError,
     SafeZipArchive,
@@ -26,6 +24,8 @@ from trainer.archive_safety import (
     check_disk_headroom,
     flatten_single_root_directory,
 )
+from sse_starlette.sse import EventSourceResponse
+
 from trainer.schemas import (
     CancelResponse,
     DatasetTransfer,

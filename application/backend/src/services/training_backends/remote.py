@@ -26,11 +26,12 @@ from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 from loguru import logger
+from physicalai.data.archive_safety import SafeZipArchive
 from pydantic import ValidationError
 
 from schemas.hardware import DeviceInfo
-from services.archive_safety import SafeZipArchive, cleanup_staged_archive
 from services.dataset_download_service import DatasetDownloadService
+from services.staged_archive import cleanup_staged_archive
 from services.training_backends._log_format import render_progress_log
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingCanceledError, TrainingSuspendedError
