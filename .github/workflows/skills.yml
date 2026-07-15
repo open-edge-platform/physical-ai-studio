@@ -33,6 +33,18 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -58,24 +70,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Validate skills and adapter symlinks
-        run: python3 .github/scripts/skills/agent_skills.py validate
-
-  skill-scan:
-    name: SkillSpector scan
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
-    needs: check-paths
-    if: needs.check-paths.outputs.run_workflow == 'true'
-    permissions:
-      contents: read
-    steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -84,6 +80,37 @@ jobs:
             api.github.com:443
             github.com:443
             raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            files.pythonhosted.org:443
+            pypi.org:443
+
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Validate skills and adapter symlinks
+        run: python3 .github/scripts/skills/agent_skills.py validate
+
+  skillspector-scan:
+    name: SkillSpector scan
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
             files.pythonhosted.org:443
             pypi.org:443
 
@@ -94,23 +121,71 @@ jobs:
           fetch-depth: 0
 
       - name: Run SkillSpector scan
-        uses: open-edge-platform/geti-ci/actions/skill-scan@c7cad42967ad0fb34b575e40de298ecb1e615d5d
+        uses: open-edge-platform/geti-ci/actions/skill-scan@0745e2b1612e4c25c3e83eb37bddeba8743a2439 # skill-scan/v0.1.1
         with:
           severity-level: ${{ github.event_name == 'pull_request' && 'HIGH' || github.event.inputs.severity || 'LOW' }}
           fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
           skills-path: skills
+
+  skill-validator-scan:
+    name: skill-validator scan
+    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            files.pythonhosted.org:443
+            pypi.org:443
+
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Run skill-validator
+        uses: open-edge-platform/geti-ci/actions/skill-validator@dd2b6e59ed10c4937d18c0596502b0a9408ab52a # skill-validator/v0.1.1
+        with:
+          skills-path: skills
+          strict: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
+          fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
 
   required-check:
     name: Required Check skills
     needs:
       - check-paths
       - layout-check
-      - skill-scan
+      - skillspector-scan
+      - skill-validator-scan
     runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}
     if: always() && !cancelled()
     steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+
       - name: Check jobs results
         run: |
           for check in ${CHECKS}; do

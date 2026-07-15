@@ -58,6 +58,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9881601325f724a0f00b1bf43f134d7f34fdef55" }
 torch = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu128", extra = "cuda" },
@@ -74,9 +75,8 @@ pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 default-groups = ["all"]
 index-strategy = "unsafe-best-match"
 exclude-newer = "7 days"
-exclude-newer-package = { physicalai = false }
 override-dependencies = [
-  # lerobot==0.5.1 caps diffusers at <0.36.0, 0.38.0 contains CVE-2026-44827 fix
+  # lerobot==0.6.0 keeps diffusers in optional extras; keep a floor for CVE-2026-44827 fix
   # (GHSA-98h9-4798-4q5v, GHSA-7wx4-6vff-v64p trust_remote_code bypass).
   "diffusers>=0.38.0",
   # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint).

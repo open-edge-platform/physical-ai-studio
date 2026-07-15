@@ -12,11 +12,3 @@ export const formatDuration = (ms: number): string => {
 export const durationBetween = (start: string, end: string): string => {
     return formatDuration(new Date(end).getTime() - new Date(start).getTime());
 };
-
-export const elapsedSince = (dateString: string): string => {
-    const normalized = /Z|[+-]\d\d:\d\d$/.test(dateString) ? dateString : `${dateString}Z`;
-
-    const startDate = new Date(normalized).getTime();
-
-    return formatDuration(new Date().getTime() - startDate);
-};
