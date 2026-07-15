@@ -156,7 +156,7 @@ class PaliGemmaWithExpert(nn.Module):
         from transformers import GemmaConfig as HFGemmaConfig  # noqa: PLC0415
 
         action_config = self._action_expert_config
-        hf_config = HFGemmaConfig(
+        hf_config = HFGemmaConfig(  # pyrefly: ignore[unexpected-keyword]
             vocab_size=action_config.vocab_size,
             hidden_size=action_config.width,
             intermediate_size=action_config.mlp_dim,

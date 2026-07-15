@@ -46,11 +46,11 @@ def _clone_kv_cache(cache: DynamicCache) -> DynamicCache:
     Returns:
         A new ``DynamicCache`` instance with cloned keys and values.
     """
-    from transformers.cache_utils import DynamicCache  # noqa: PLC0415
+    from transformers.cache_utils import DynamicCache, DynamicLayer  # noqa: PLC0415
 
     cloned = DynamicCache()
     for layer_idx, layer in enumerate(cache.layers):
-        if layer.keys is None or layer.values is None:
+        if not isinstance(layer, DynamicLayer) or not layer.is_initialized:
             continue
         cloned.update(layer.keys.clone(), layer.values.clone(), layer_idx)
     return cloned

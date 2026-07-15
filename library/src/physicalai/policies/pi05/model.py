@@ -328,7 +328,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         vlm_config_hf.vision_config.projector_hidden_act = "gelu_fast"
         vlm_config_hf.vision_config.dtype = "float32"
 
-        action_expert_config_hf = CONFIG_MAPPING["gemma"](
+        action_expert_config_hf = CONFIG_MAPPING["gemma"](  # pyrefly: ignore[unexpected-keyword]
             head_dim=action_expert_config.head_dim,
             hidden_size=action_expert_config.width,
             intermediate_size=action_expert_config.mlp_dim,
