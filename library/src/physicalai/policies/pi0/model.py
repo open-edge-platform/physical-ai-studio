@@ -52,7 +52,7 @@ def _clone_kv_cache(cache: DynamicCache) -> DynamicCache:
     for layer_idx, layer in enumerate(cache.layers):
         if not isinstance(layer, DynamicLayer) or not layer.is_initialized:
             continue
-        cloned.update(layer.keys.clone(), layer.values.clone(), layer_idx)
+        cloned.update(cast(torch.Tensor, layer.keys).clone(), cast(torch.Tensor, layer.values).clone(), layer_idx)
     return cloned
 
 
