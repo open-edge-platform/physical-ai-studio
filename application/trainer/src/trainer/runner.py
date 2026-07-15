@@ -3,18 +3,16 @@
 
 """Training execution for the trainer service.
 
-Pulls the dataset snapshot from a pinned HF revision, trains with the
-`physicalai` Lightning trainer, exports the policy, and zips the result for
-download. torch/`physicalai` imports are deferred to call time.
+Trains with the `physicalai` Lightning trainer using a dataset snapshot
+uploaded over HTTP, exports the policy, and zips the result for download.
+torch/`physicalai` imports are deferred to call time.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
 import zipfile
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -22,12 +20,12 @@ from loguru import logger
 from trainer.settings import get_settings
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from lightning.pytorch import LightningModule
 
     from trainer.schemas import SubmitJobRequest
 
-# Only safe dataset formats are pulled from the snapshot repo.
-_SNAPSHOT_ALLOW_PATTERNS = ["*.safetensors", "*.json", "*.txt", "*.md", "*.parquet", "*.mp4", "*.png", "*.jpg"]
 
 ProgressFn = Callable[[int, str | None, dict[str, Any] | None], None]
 StopFn = Callable[[], bool]
@@ -47,7 +45,8 @@ class TrainerRunner:
     def run(self, job_id: str, request: SubmitJobRequest, *, should_stop: StopFn, report: ProgressFn) -> Path:
         """Execute training and return the path to the model archive."""
         settings = get_settings()
-        snapshot_dir = self._resolve_snapshot(job_id, request, report)
+        snapshot_dir = settings.datasets_dir / job_id
+        report(0, "Dataset ready", None)
 
         model_dir = settings.models_dir / job_id
         cache_dir = settings.storage_dir / "cache" / job_id
@@ -56,49 +55,17 @@ class TrainerRunner:
         try:
             self._train(request, snapshot_dir, model_dir, cache_dir, should_stop=should_stop, report=report)
         finally:
-            self._cleanup_uploaded_dataset(job_id, request)
+            self._cleanup_uploaded_dataset(job_id)
 
         report(100, "Archiving model", None)
         return self._archive_model(job_id, model_dir)
 
-    def _resolve_snapshot(self, job_id: str, request: SubmitJobRequest, report: ProgressFn) -> Path:
-        """Return the local snapshot dir, either uploaded over HTTP or pulled from HF."""
-        from trainer.schemas import DatasetTransfer
-
-        if request.dataset_transfer == DatasetTransfer.HTTP:
-            report(0, "Dataset ready", None)
-            return get_settings().datasets_dir / job_id
-        return self._pull_snapshot(request, report)
-
     @staticmethod
-    def _cleanup_uploaded_dataset(job_id: str, request: SubmitJobRequest) -> None:
-        """Remove an HTTP-uploaded dataset once the job no longer needs it."""
-        from trainer.schemas import DatasetTransfer
-
-        if request.dataset_transfer != DatasetTransfer.HTTP:
-            return
+    def _cleanup_uploaded_dataset(job_id: str) -> None:
+        """Remove the uploaded dataset once the job no longer needs it."""
         dataset_dir = get_settings().datasets_dir / job_id
         if dataset_dir.exists():
             shutil.rmtree(dataset_dir, ignore_errors=True)
-
-    def _pull_snapshot(self, request: SubmitJobRequest, report: ProgressFn) -> Path:
-        from huggingface_hub import snapshot_download
-
-        if not request.repo_id or not request.revision:
-            msg = "hf transfer requires repo_id and revision"
-            raise ValueError(msg)
-
-        report(0, "Pulling dataset snapshot", None)
-        # Pinned revision + allowlist: never resolve HEAD, never pull executable formats.
-        local_dir = snapshot_download(
-            repo_id=request.repo_id,
-            repo_type="dataset",
-            revision=request.revision,
-            allow_patterns=_SNAPSHOT_ALLOW_PATTERNS,
-            token=os.environ.get("HF_TOKEN"),
-        )
-        report(0, "Snapshot ready", None)
-        return Path(local_dir)
 
     def _train(
         self,

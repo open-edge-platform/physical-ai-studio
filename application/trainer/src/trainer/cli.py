@@ -33,8 +33,8 @@ def load_env_file(env_file: Path) -> None:
 
     Variables already present in the environment win (matching Pydantic settings
     precedence), blank lines and ``#`` comments are ignored, a single layer of
-    surrounding quotes is stripped, and a warning is emitted if the file (which
-    may hold ``HF_TOKEN``) is readable by group/other.
+    surrounding quotes is stripped, and a warning is emitted if the file is
+    readable by group/other.
     """
     if not env_file.is_file():
         return
@@ -45,8 +45,7 @@ def load_env_file(env_file: Path) -> None:
         mode = 0
     if mode & 0o077:
         click.echo(
-            f"Warning: {env_file} is readable by group/other (mode {mode:03o}); "
-            f"it may contain HF_TOKEN. Consider: chmod 600 {env_file}",
+            f"Warning: {env_file} is readable by group/other (mode {mode:03o}); Consider: chmod 600 {env_file}",
             err=True,
         )
 
@@ -79,9 +78,6 @@ def trainer(host: str | None, port: int | None) -> None:
     """
     project_dir = _project_dir()
     load_env_file(project_dir / ".env")
-
-    if not os.environ.get("HF_TOKEN"):
-        click.echo("Warning: HF_TOKEN is not set; the trainer cannot pull dataset snapshots.", err=True)
 
     os.environ["PYTHONUNBUFFERED"] = "1"
 

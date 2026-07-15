@@ -117,10 +117,6 @@ class Settings(BaseSettings):
     training_mode: Literal["local", "remote"] = Field(default="local", alias="TRAINING_MODE")
     # Base URL of the remote trainer service, e.g. "https://trainer.internal:8001".
     trainer_url: str | None = Field(default=None, alias="TRAINER_URL")
-    # Dataset transfer: direct ZIP upload (default) or an ephemeral HF repo.
-    trainer_dataset_transfer: Literal["http", "hf"] = Field(default="http", alias="TRAINER_DATASET_TRANSFER")
-    # HuggingFace org/user namespace used for ephemeral snapshot dataset repos (hf transfer only).
-    trainer_hf_namespace: str | None = Field(default=None, alias="TRAINER_HF_NAMESPACE")
     # Seconds to wait for trainer HTTP requests (excludes long-poll/SSE streams).
     trainer_request_timeout_s: float = Field(default=30.0, alias="TRAINER_REQUEST_TIMEOUT_S")
     # Seconds to wait between chunks while streaming the model artifact. A stalled

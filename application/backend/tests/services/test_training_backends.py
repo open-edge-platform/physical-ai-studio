@@ -19,7 +19,6 @@ def _settings(mode: str) -> MagicMock:
     settings = MagicMock()
     settings.training_mode = mode
     settings.trainer_url = "https://trainer.test"
-    settings.trainer_hf_namespace = "acme"
     settings.trainer_request_timeout_s = 5.0
     return settings
 

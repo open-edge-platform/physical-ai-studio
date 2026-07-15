@@ -16,7 +16,7 @@ import threading
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from trainer.schemas import DatasetTransfer, JobState, SubmitJobRequest, TrainerJobStatus
+from trainer.schemas import JobState, SubmitJobRequest, TrainerJobStatus
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,12 +59,9 @@ class JobStore:
         self._conn.commit()
 
     def create(self, request: SubmitJobRequest) -> str:
-        """Persist a job and return its id; HTTP transfers await their upload."""
+        """Persist a job and return its id; jobs await their dataset upload."""
         job_id = str(uuid.uuid4())
-        if request.dataset_transfer == DatasetTransfer.HTTP:
-            status, message = TrainerJobStatus.AWAITING_DATASET, "Awaiting dataset upload"
-        else:
-            status, message = TrainerJobStatus.QUEUED, "Queued"
+        status, message = TrainerJobStatus.AWAITING_DATASET, "Awaiting dataset upload"
         with self._lock:
             self._conn.execute(
                 "INSERT INTO jobs (id, status, progress, message, request, created_at) "

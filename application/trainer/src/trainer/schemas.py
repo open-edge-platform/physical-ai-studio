@@ -5,18 +5,11 @@
 
 from __future__ import annotations
 
-import re
 from enum import StrEnum
 from typing import Any
 from uuid import UUID  # noqa: TC003
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-
-# Concrete 40-char hex commit SHA. Branch names / "main" are rejected so the
-# server always pulls a pinned, immutable revision.
-_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-# Conservative HuggingFace repo id: optional single namespace + repo name.
-_REPO_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}(/[A-Za-z0-9][A-Za-z0-9._-]{0,95})?$")
+from pydantic import BaseModel, Field, field_validator
 
 _SUPPORTED_POLICIES = frozenset({"act", "pi0", "pi05", "smolvla"})
 
@@ -24,16 +17,15 @@ _SUPPORTED_POLICIES = frozenset({"act", "pi0", "pi05", "smolvla"})
 class DatasetTransfer(StrEnum):
     """How the dataset snapshot reaches the trainer."""
 
-    # ZIP streamed directly to the trainer over HTTP.
+    # ZIP streamed directly to the trainer over HTTP. This is the only
+    # supported transfer mode; datasets are never pulled from HuggingFace.
     HTTP = "http"
-    # Pulled from an ephemeral private HuggingFace dataset repo.
-    HF = "hf"
 
 
 class TrainerJobStatus(StrEnum):
     """Lifecycle states for a trainer job."""
 
-    # Job accepted, waiting for the dataset ZIP upload (http transfer only).
+    # Job accepted, waiting for the dataset ZIP upload.
     AWAITING_DATASET = "awaiting_dataset"
     QUEUED = "queued"
     RUNNING = "running"
@@ -64,27 +56,8 @@ class SubmitJobRequest(BaseModel):
     policy: str = Field(..., description="Policy name to train")
     dataset_transfer: DatasetTransfer = Field(
         default=DatasetTransfer.HTTP,
-        description="How the dataset reaches the trainer (http upload or hf pull)",
+        description="How the dataset reaches the trainer (http upload)",
     )
-    # Required only for hf transfer; unused (and rejected) for http transfer.
-    repo_id: str | None = Field(default=None, description="Ephemeral private HF dataset repo holding the snapshot")
-    revision: str | None = Field(default=None, description="Pinned commit SHA of the snapshot repo")
-
-    @field_validator("repo_id")
-    @classmethod
-    def _validate_repo_id(cls, value: str | None) -> str | None:
-        if value is not None and not _REPO_ID_RE.fullmatch(value):
-            msg = f"Invalid repo_id: {value!r}"
-            raise ValueError(msg)
-        return value
-
-    @field_validator("revision")
-    @classmethod
-    def _validate_revision(cls, value: str | None) -> str | None:
-        if value is not None and not _SHA_RE.fullmatch(value):
-            msg = "revision must be a 40-character commit SHA"
-            raise ValueError(msg)
-        return value
 
     @field_validator("policy")
     @classmethod
@@ -93,18 +66,6 @@ class SubmitJobRequest(BaseModel):
             msg = f"Unsupported policy {value!r}"
             raise ValueError(msg)
         return value
-
-    @model_validator(mode="after")
-    def _validate_transfer(self) -> SubmitJobRequest:
-        """Enforce that repo fields match the chosen transfer mode."""
-        if self.dataset_transfer == DatasetTransfer.HF:
-            if not self.repo_id or not self.revision:
-                msg = "hf transfer requires both repo_id and revision"
-                raise ValueError(msg)
-        elif self.repo_id is not None or self.revision is not None:
-            msg = "http transfer must not set repo_id or revision"
-            raise ValueError(msg)
-        return self
 
 
 class SubmitJobResponse(BaseModel):

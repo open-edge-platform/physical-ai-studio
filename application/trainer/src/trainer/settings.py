@@ -41,11 +41,6 @@ class TrainerSettings(BaseSettings):
         return self.storage_dir / "trainer.db"
 
     @property
-    def snapshots_dir(self) -> Path:
-        """Directory holding pulled dataset snapshots."""
-        return self.storage_dir / "snapshots"
-
-    @property
     def datasets_dir(self) -> Path:
         """Directory holding datasets uploaded over HTTP."""
         return self.storage_dir / "datasets"

@@ -3,9 +3,9 @@
 
 """Integration tests for RemoteTrainingBackend.
 
-Network and HuggingFace boundaries are mocked; the orchestration in
-``RemoteTrainingBackend.train`` (push -> submit -> stream -> download -> cleanup)
-runs for real.
+The network boundary is mocked; the orchestration in
+``RemoteTrainingBackend.train`` (archive -> submit -> upload -> stream ->
+download) runs for real.
 """
 
 from __future__ import annotations
@@ -30,10 +30,6 @@ if TYPE_CHECKING:
 
 REMOTE = "services.training_backends.remote"
 TRANSFER = "services.training_backends._transfer_progress"
-_SHA = "a" * 40
-# create_repo resolves the bare name to a namespaced id; the backend must use this
-# resolved id for the upload and cleanup, not the requested (possibly bare) id.
-_RESOLVED_REPO_ID = "acme/pais-snapshot-resolved"
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +103,7 @@ class _Controller:
         self.upload_offset = 0
         self.upload_ranges: list[str] = []
         self.posted_urls: list[str] = []
+        self.posted_bodies: list[dict | None] = []
         self.put_urls: list[str] = []
         self.cancelled = False
         self.event_stream_opens = 0
@@ -141,6 +138,7 @@ class _FakeClient:
 
     async def post(self, url: str, json: dict | None = None) -> _FakeResponse:
         self._c.posted_urls.append(url)
+        self._c.posted_bodies.append(json)
         if url.endswith("/cancel"):
             self._c.cancelled = True
             return _FakeResponse(json_data={})
@@ -197,9 +195,6 @@ class _FakeClient:
 def _settings() -> MagicMock:
     settings = MagicMock()
     settings.trainer_url = "https://trainer.test"
-    settings.trainer_hf_namespace = "acme"
-    # Existing tests exercise the HF push/pull path; http tests override this.
-    settings.trainer_dataset_transfer = "hf"
     settings.trainer_request_timeout_s = 5.0
     settings.trainer_download_read_timeout_s = 120.0
     settings.trainer_stream_reconnect_max_s = 900.0
@@ -212,6 +207,8 @@ def _settings() -> MagicMock:
 def _context(tmp_path: Path, *, should_stop: bool = False, remote_job_id: UUID | None = None) -> TrainingContext:
     snap = tmp_path / "snap"
     snap.mkdir()
+    # A file in the snapshot dir gives the ZIP archive real bytes to stream.
+    (snap / "info.json").write_text("{}")
     model = Model(
         id=uuid4(),
         project_id=uuid4(),
@@ -240,14 +237,6 @@ def _context(tmp_path: Path, *, should_stop: bool = False, remote_job_id: UUID |
     )
 
 
-def _hf_api_mock() -> MagicMock:
-    api_instance = MagicMock()
-    api_instance.create_repo = MagicMock(return_value=MagicMock(repo_id=_RESOLVED_REPO_ID))
-    api_instance.upload_folder = MagicMock(return_value=MagicMock(oid=_SHA))
-    api_instance.delete_repo = MagicMock()
-    return MagicMock(return_value=api_instance)
-
-
 def _backend(settings: MagicMock):
     from services.training_backends.remote import RemoteTrainingBackend
 
@@ -262,7 +251,7 @@ def _backend(settings: MagicMock):
 
 class TestRemoteTrainingBackend:
     @pytest.mark.anyio
-    async def test_happy_path_pushes_streams_downloads_and_cleans_up(self, tmp_path):
+    async def test_happy_path_uploads_streams_and_downloads(self, tmp_path):
         settings = _settings()
         context = _context(tmp_path)
         controller = _Controller(
@@ -271,12 +260,10 @@ class TestRemoteTrainingBackend:
                 {"status": "completed", "progress": 100, "message": "Done"},
             ]
         )
-        api_cls = _hf_api_mock()
         safe_zip = MagicMock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -284,18 +271,10 @@ class TestRemoteTrainingBackend:
             backend = _backend(settings)
             await backend.train(context)
 
-        # Snapshot pushed to an ephemeral repo and submitted with the pinned SHA.
-        api_cls.return_value.create_repo.assert_called_once()
-        api_cls.return_value.upload_folder.assert_called_once()
-        # Upload and cleanup use the resolved repo id, not the requested bare name.
-        assert api_cls.return_value.upload_folder.call_args.kwargs["repo_id"] == _RESOLVED_REPO_ID
-        assert api_cls.return_value.delete_repo.call_args.kwargs["repo_id"] == _RESOLVED_REPO_ID
         assert any(url.endswith("/jobs") for url in controller.posted_urls)
 
-        # Artifact extracted safely and ephemeral repo deleted.
         safe_zip.validate.assert_called_once()
         safe_zip.extract_to.assert_called_once()
-        api_cls.return_value.delete_repo.assert_called_once()
 
         # Streamed states drove progress: the mid-run 50% maps into the training window.
         span = TRAINING_PROGRESS_END - SNAPSHOT_UPLOAD_PROGRESS
@@ -305,17 +284,15 @@ class TestRemoteTrainingBackend:
         assert max(reported) == 100
 
     @pytest.mark.anyio
-    async def test_cancellation_requests_remote_cancel_and_cleans_up(self, tmp_path):
+    async def test_cancellation_requests_remote_cancel(self, tmp_path):
         settings = _settings()
         context = _context(tmp_path, should_stop=True)
         controller = _Controller(states=[{"status": "running", "progress": 10}])
-        api_cls = _hf_api_mock()
 
         from services.training_backends.base import TrainingCanceledError
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
@@ -324,20 +301,17 @@ class TestRemoteTrainingBackend:
                 await backend.train(context)
 
         assert controller.cancelled is True
-        api_cls.return_value.delete_repo.assert_called_once()
 
     @pytest.mark.anyio
-    async def test_remote_failure_raises_and_cleans_up(self, tmp_path):
+    async def test_remote_failure_raises(self, tmp_path):
         settings = _settings()
         context = _context(tmp_path)
         controller = _Controller(states=[{"status": "failed", "progress": 30, "message": "OOM"}])
-        api_cls = _hf_api_mock()
 
         from services.training_backends.remote import RemoteTrainingError
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
@@ -345,29 +319,23 @@ class TestRemoteTrainingBackend:
             with pytest.raises(RemoteTrainingError, match="OOM"):
                 await backend.train(context)
 
-        api_cls.return_value.delete_repo.assert_called_once()
-
     @pytest.mark.anyio
     async def test_remote_canceled_status_raises_cancellation(self, tmp_path):
         """A remote terminal 'canceled' state surfaces as cancellation, not a failure."""
         settings = _settings()
         context = _context(tmp_path)
         controller = _Controller(states=[{"status": "canceled", "progress": 40, "message": "stopped"}])
-        api_cls = _hf_api_mock()
 
         from services.training_backends.base import TrainingCanceledError
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
             with pytest.raises(TrainingCanceledError):
                 await backend.train(context)
-
-        api_cls.return_value.delete_repo.assert_called_once()
 
     @pytest.mark.anyio
     async def test_truncated_artifact_download_raises(self, tmp_path):
@@ -378,13 +346,11 @@ class TestRemoteTrainingBackend:
         # Server advertises more bytes than it streams (connection dropped mid-transfer).
         controller.artifact_chunks = [b"partial"]
         controller.artifact_headers = {"content-length": "999"}
-        api_cls = _hf_api_mock()
 
         from services.training_backends.remote import RemoteTrainingError
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -392,9 +358,6 @@ class TestRemoteTrainingBackend:
             backend = _backend(settings)
             with pytest.raises(RemoteTrainingError, match="truncated"):
                 await backend.train(context)
-
-        # Ephemeral repo is still cleaned up on the failure path.
-        api_cls.return_value.delete_repo.assert_called_once()
 
     @pytest.mark.anyio
     async def test_event_stream_reconnects_when_closed_before_terminal(self, tmp_path):
@@ -409,12 +372,10 @@ class TestRemoteTrainingBackend:
                 [{"status": "completed", "progress": 100, "message": "Done"}],
             ]
         )
-        api_cls = _hf_api_mock()
         safe_zip = MagicMock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -426,7 +387,6 @@ class TestRemoteTrainingBackend:
         # The backend opened the stream twice: initial connection plus one reconnect.
         assert controller.event_stream_opens == 2
         safe_zip.extract_to.assert_called_once()
-        api_cls.return_value.delete_repo.assert_called_once()
 
     @pytest.mark.anyio
     async def test_completion_detected_via_poll_when_stream_unreachable(self, tmp_path):
@@ -443,12 +403,10 @@ class TestRemoteTrainingBackend:
         controller.set_event_batches([[{"status": "running", "progress": 20, "message": "Training"}]])
         # The stream-independent poll reports the job finished during the outage.
         controller.poll_state = {"status": "completed", "progress": 100, "message": "Done"}
-        api_cls = _hf_api_mock()
         safe_zip = MagicMock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -460,7 +418,6 @@ class TestRemoteTrainingBackend:
         # Completion came from the poll, and the artifact was still ingested.
         assert controller.poll_count >= 1
         safe_zip.extract_to.assert_called_once()
-        api_cls.return_value.delete_repo.assert_called_once()
 
     @pytest.mark.anyio
     async def test_abandons_job_when_trainer_unreachable_past_budget(self, tmp_path):
@@ -472,13 +429,11 @@ class TestRemoteTrainingBackend:
         context = _context(tmp_path)
         controller = _Controller(states=[])
         controller.raise_connection_error = True
-        api_cls = _hf_api_mock()
 
         from services.training_backends.remote import RemoteTrainingError
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
             patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
@@ -490,7 +445,6 @@ class TestRemoteTrainingBackend:
         # Both the stream and the poll fallback were attempted before giving up.
         assert controller.event_stream_opens >= 1
         assert controller.poll_count >= 1
-        api_cls.return_value.delete_repo.assert_called_once()
 
     @pytest.mark.anyio
     async def test_reattaches_to_running_job_without_resubmitting(self, tmp_path):
@@ -503,12 +457,10 @@ class TestRemoteTrainingBackend:
             states=[{"status": "completed", "progress": 100, "message": "Done"}],
             remote_job_id=remote_job_id,
         )
-        api_cls = _hf_api_mock()
         safe_zip = MagicMock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -516,10 +468,7 @@ class TestRemoteTrainingBackend:
             backend = _backend(settings)
             await backend.train(context)
 
-        # No job submitted, no snapshot pushed: we reattached to the existing job.
         assert not any(url.endswith("/jobs") for url in controller.posted_urls)
-        api_cls.return_value.create_repo.assert_not_called()
-        api_cls.return_value.upload_folder.assert_not_called()
         # The finished model was still streamed and extracted.
         safe_zip.extract_to.assert_called_once()
 
@@ -537,7 +486,7 @@ class TestRemoteTrainingBackend:
         ):
             backend = _backend(settings)
             with pytest.raises(RemoteTrainingError, match="Trainer did not return a valid remote_job_id"):
-                await backend.submit_job(context, dataset_transfer="http")
+                await backend.submit_job(context)
 
     @pytest.mark.anyio
     async def test_shutdown_suspends_without_canceling_remote_job(self, tmp_path):
@@ -548,13 +497,11 @@ class TestRemoteTrainingBackend:
         context = _context(tmp_path, should_stop=True)
         context.should_suspend = lambda: True
         controller = _Controller(states=[{"status": "running", "progress": 30}])
-        api_cls = _hf_api_mock()
 
         from services.training_backends import TrainingSuspendedError
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
@@ -618,24 +565,21 @@ class TestRemoteTrainingBackend:
 
 
 class TestHttpDatasetTransfer:
-    """HTTP transfer submits first, streams the ZIP, then runs the job (no HF repo)."""
+    """HTTP transfer submits first, streams the ZIP, then runs the job."""
 
     @pytest.mark.anyio
-    async def test_uploads_zip_over_http_and_skips_hf(self, tmp_path):
+    async def test_uploads_zip_over_http(self, tmp_path):
         settings = _settings()
-        settings.trainer_dataset_transfer = "http"
         # A file in the snapshot dir gives the archive real bytes to stream.
         context = _context(tmp_path)
         (tmp_path / "snap" / "info.json").write_text("{}")
         controller = _Controller(
             states=[{"status": "completed", "progress": 100, "message": "Done"}],
         )
-        api_cls = _hf_api_mock()
         safe_zip = MagicMock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -643,12 +587,8 @@ class TestHttpDatasetTransfer:
             backend = _backend(settings)
             await backend.train(context)
 
-        # Dataset streamed to the trainer's upload endpoint; no HF repo created.
         assert any(url.endswith(f"/jobs/{controller.remote_job_id}/dataset") for url in controller.put_urls)
         assert any(url.endswith("/jobs") for url in controller.posted_urls)
-        api_cls.return_value.create_repo.assert_not_called()
-        api_cls.return_value.upload_folder.assert_not_called()
-        api_cls.return_value.delete_repo.assert_not_called()
 
         # Model still ingested via the shared download/extract path.
         safe_zip.validate.assert_called_once()
@@ -657,17 +597,9 @@ class TestHttpDatasetTransfer:
         assert max(reported) == 100
 
     @pytest.mark.anyio
-    async def test_submit_body_omits_repo_fields_for_http(self, tmp_path):
+    async def test_submit_body_uses_http_transfer_without_repo_fields(self, tmp_path):
         settings = _settings()
-        settings.trainer_dataset_transfer = "http"
         context = _context(tmp_path)
-        (tmp_path / "snap" / "info.json").write_text("{}")
-
-        captured: dict = {}
-
-        async def _fake_submit(_ctx, *, dataset_transfer, repo_id=None, revision=None):
-            captured.update(dataset_transfer=dataset_transfer, repo_id=repo_id, revision=revision)
-            return uuid4()
 
         controller = _Controller(states=[{"status": "completed", "progress": 100}])
         with (
@@ -677,10 +609,16 @@ class TestHttpDatasetTransfer:
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
         ):
             backend = _backend(settings)
-            with patch.object(backend, "submit_job", _fake_submit):
-                await backend.train(context)
+            await backend.train(context)
 
-        assert captured == {"dataset_transfer": "http", "repo_id": None, "revision": None}
+        body = next(
+            body
+            for url, body in zip(controller.posted_urls, controller.posted_bodies, strict=False)
+            if url.endswith("/jobs") and body is not None
+        )
+        assert body["dataset_transfer"] == "http"
+        assert "repo_id" not in body
+        assert "revision" not in body
 
     @pytest.mark.anyio
     async def test_http_persists_remote_job_id_after_upload(self, tmp_path):
@@ -690,7 +628,6 @@ class TestHttpDatasetTransfer:
         the id and a restart re-submits and re-uploads the whole dataset.
         """
         settings = _settings()
-        settings.trainer_dataset_transfer = "http"
         context = _context(tmp_path)
         (tmp_path / "snap" / "info.json").write_text("{}")
 
@@ -761,7 +698,6 @@ class TestSnapshotUploadCancellation:
             with pytest.raises(TrainingCanceledError):
                 await backend.upload_snapshot_http(context, controller.remote_job_id, archive)
 
-        # The remote job was canceled rather than left running or fully uploaded.
         assert controller.cancelled is True
         assert not controller.put_urls
 
@@ -913,16 +849,13 @@ class TestSnapshotUploadHeartbeat:
     @pytest.mark.anyio
     async def test_http_upload_emits_transfer_heartbeat_logs(self, tmp_path):
         settings = _settings()
-        settings.trainer_dataset_transfer = "http"
         context = _context(tmp_path)
         # Give the archive real bytes so the streaming read loop runs and updates the heartbeat.
         (tmp_path / "snap" / "info.json").write_text("x" * 4096)
         controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
-        api_cls = _hf_api_mock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -948,12 +881,10 @@ class TestModelDownloadProgress:
         # Two equal chunks against a known total lets us assert exact intermediate percentages.
         controller.artifact_chunks = [b"a" * 500, b"b" * 500]
         controller.artifact_headers = {"content-length": "1000"}
-        api_cls = _hf_api_mock()
         safe_zip = MagicMock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -976,12 +907,10 @@ class TestModelDownloadProgress:
         controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
         controller.artifact_chunks = [b"chunk-1", b"chunk-2"]
         controller.artifact_headers = {}  # no content-length
-        api_cls = _hf_api_mock()
         safe_zip = MagicMock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -1002,11 +931,9 @@ class TestModelDownloadProgress:
         controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
         controller.artifact_chunks = [b"a" * 500, b"b" * 500]
         controller.artifact_headers = {"content-length": "1000"}
-        api_cls = _hf_api_mock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -1030,11 +957,9 @@ class TestModelDownloadProgress:
             ([b"part"], {"content-length": "10"}),
             ([b"ial-data"], {"content-range": "bytes 4-11/12", "content-length": "8"}),
         ]
-        api_cls = _hf_api_mock()
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch("huggingface_hub.HfApi", api_cls),
             patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
             patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
@@ -1043,70 +968,6 @@ class TestModelDownloadProgress:
             await backend.train(context)
 
         assert controller.artifact_range_headers == [None, "bytes=4-"]
-
-
-class TestSnapshotUploadProgress:
-    """The upload mirrors huggingface_hub's byte progress into the snapshot-upload window."""
-
-    class _BaseTqdm:
-        """Minimal stand-in for the aggregate "Processing Files" tqdm bar."""
-
-        def __init__(self, *_args, desc: str = "", total: float = 0, initial: float = 0, **_kwargs):
-            self.desc = desc
-            self.total = total
-            self.n = initial
-
-        def update(self, n: float = 1) -> None:
-            self.n += n
-
-    def test_processing_bar_drives_progress_and_caps_below_window(self, tmp_path):
-        import huggingface_hub.utils._xet_progress_reporting as xet_mod
-
-        backend = _backend(_settings())
-        context = _context(tmp_path)
-        context.progress = MagicMock()
-
-        cap = SNAPSHOT_UPLOAD_PROGRESS - 1  # the explicit "Snapshot uploaded" step owns the mark
-        with patch.object(xet_mod, "tqdm", self._BaseTqdm):
-            with backend._mirror_upload_progress(context):
-                patched_tqdm = xet_mod.tqdm  # replaced with the forwarding subclass
-                bar = patched_tqdm(desc="Processing Files (0 / 4)", total=1000, initial=0)
-                bar.update(500)  # 50% -> round(0.5 * window)
-                bar.update(450)  # 95% -> rounds up to the window, capped just below it
-                bar.update(50)  # 100% -> still capped (the reserved mark is the explicit step)
-            # The base class is restored on exit so later uploads are unaffected.
-            assert xet_mod.tqdm is self._BaseTqdm
-
-        reported = [call.args[0] for call in context.progress.call_args_list]
-        # Duplicates suppressed; never reaches the reserved upload mark.
-        assert reported == [round(0.5 * SNAPSHOT_UPLOAD_PROGRESS), cap]
-
-    def test_per_file_bars_do_not_drive_progress(self, tmp_path):
-        import huggingface_hub.utils._xet_progress_reporting as xet_mod
-
-        backend = _backend(_settings())
-        context = _context(tmp_path)
-        context.progress = MagicMock()
-
-        with patch.object(xet_mod, "tqdm", self._BaseTqdm), backend._mirror_upload_progress(context):
-            # A per-file bar is keyed by filename, not the aggregate label.
-            bar = xet_mod.tqdm(desc="data/chunk-000/file-000.mp4", total=1000, initial=0)
-            bar.update(1000)
-
-        context.progress.assert_not_called()
-
-    def test_degrades_gracefully_when_internals_change(self, tmp_path):
-        import huggingface_hub.utils._xet_progress_reporting as xet_mod
-
-        backend = _backend(_settings())
-        context = _context(tmp_path)
-        context.progress = MagicMock()
-
-        # huggingface_hub no longer exposes a tqdm bar to wrap: upload still runs.
-        with patch.object(xet_mod, "tqdm", None), backend._mirror_upload_progress(context):
-            pass
-
-        context.progress.assert_not_called()
 
 
 class TestByteFormatting:

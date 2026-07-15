@@ -3,10 +3,9 @@
 
 """Remote training backend.
 
-Offloads training to a trainer service. The dataset snapshot is transferred
-either by streaming a ZIP straight to the trainer over HTTP (default) or via an
-ephemeral private HuggingFace dataset repo (pushed here, pulled there). The
-trained model is returned over HTTP and extracted into the model directory.
+Offloads training to a trainer service. The dataset snapshot is streamed as a
+ZIP straight to the trainer over HTTP; the trained model is returned over HTTP
+and extracted into the model directory.
 
 This module avoids importing torch/`physicalai` so it stays usable in a
 recording-only install.
@@ -17,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import os
 import tempfile
 import time
 import uuid
@@ -38,13 +36,11 @@ from services.training_backends.base import TrainingCanceledError, TrainingSuspe
 from settings import get_settings
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncIterator
 
     from services.training_backends._training_methods import TrainingMethod
     from services.training_backends.base import TrainingContext
 
-# Only these patterns are pulled by the trainer; mirrors snapshot_download allowlists.
-_SNAPSHOT_ALLOW_PATTERNS = ["*.safetensors", "*.json", "*.txt", "*.md", "*.parquet", "*.mp4", "*.png", "*.jpg"]
 _EVENT_WAIT_TIMEOUT_S = 3.0
 _RECONNECT_BACKOFF_S = 2.0
 _TERMINAL_STATES = {"completed", "failed", "canceled"}
@@ -84,11 +80,7 @@ class RemoteTrainingBackend:
         if not settings.trainer_url:
             raise RemoteTrainingError("Remote training requires TRAINER_URL")
         self._base_url = settings.trainer_url.rstrip("/")
-        self._namespace = settings.trainer_hf_namespace
-        self._dataset_transfer = settings.trainer_dataset_transfer
         self._timeout = settings.trainer_request_timeout_s
-        # Token from env only; never logged.
-        self._hf_token = os.environ.get("HF_TOKEN")
         # Resolved once by _resolve_trust_env(): True honors proxy env vars,
         # False bypasses them. None means "not yet probed".
         self._trust_env: bool | None = None
@@ -174,9 +166,15 @@ class RemoteTrainingBackend:
             return
         await self._training_method().train(context)
 
+    def _training_method(self) -> TrainingMethod:
+        """Pick the dataset-transfer strategy for this backend."""
+        from services.training_backends._training_methods import HttpTrainingMethod
+
+        return HttpTrainingMethod(self)
+
     async def _resume_pending_http_upload(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
         """Resume an HTTP dataset upload when the trainer still awaits its ZIP."""
-        if self._dataset_transfer != "http" or context.snapshot is None:
+        if context.snapshot is None:
             return
         try:
             async with await self._client() as client:
@@ -195,14 +193,6 @@ class RemoteTrainingBackend:
             context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
         finally:
             cleanup_staged_archive(archive_path)
-
-    def _training_method(self) -> TrainingMethod:
-        """Pick the dataset-transfer strategy configured for this backend."""
-        from services.training_backends._training_methods import HfTrainingMethod, HttpTrainingMethod
-
-        if self._dataset_transfer == "hf":
-            return HfTrainingMethod(self)
-        return HttpTrainingMethod(self)
 
     async def await_and_ingest(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
         """Wait for the remote job, then download and extract its model."""
@@ -297,93 +287,6 @@ class RemoteTrainingBackend:
             raise RemoteTrainingError(f"Trainer returned invalid dataset upload offset {offset}")
         return offset
 
-    async def push_snapshot(self, context: TrainingContext) -> tuple[str, str]:
-        """Create an ephemeral private dataset repo and upload the snapshot.
-
-        Real byte progress is mirrored into the job's reserved progress window by
-        :meth:`_mirror_upload_progress`. Returns the repo id and the commit SHA.
-        """
-        from huggingface_hub import HfApi
-
-        if context.snapshot is None:
-            raise RemoteTrainingError("HuggingFace dataset transfer requires a dataset snapshot")
-
-        api = HfApi(token=self._hf_token)
-        repo_name = f"pais-snapshot-{uuid.uuid4().hex[:12]}"
-        requested_repo_id = f"{self._namespace}/{repo_name}" if self._namespace else repo_name
-
-        def _upload() -> tuple[str, str]:
-            repo_url = api.create_repo(repo_id=requested_repo_id, repo_type="dataset", private=True)
-            resolved_repo_id = repo_url.repo_id
-            with self._mirror_upload_progress(context):
-                commit = api.upload_folder(
-                    repo_id=resolved_repo_id,
-                    repo_type="dataset",
-                    folder_path=str(Path(context.snapshot.path)),
-                    allow_patterns=_SNAPSHOT_ALLOW_PATTERNS,
-                )
-            # upload_folder returns a CommitInfo; oid is the concrete commit SHA.
-            if not commit.oid:
-                raise RemoteTrainingError("Snapshot upload did not return a commit SHA")
-            return resolved_repo_id, str(commit.oid)
-
-        repo_id, revision = await asyncio.to_thread(_upload)
-        logger.info(
-            "Snapshot pushed to ephemeral dataset repo {} (revision {} pinned)",
-            repo_id,
-            revision[:12],
-        )
-        return repo_id, revision
-
-    @contextlib.contextmanager
-    def _mirror_upload_progress(self, context: TrainingContext) -> Iterator[None]:
-        """Mirror huggingface_hub's internal upload bytes into the 0-10% window.
-
-        huggingface_hub renders upload progress with its own tqdm bars. The
-        aggregate "Processing Files" bar tracks total bytes processed, so we
-        subclass it to forward byte progress to the job without slowing the
-        upload. Best-effort: if huggingface_hub reshapes its progress internals,
-        the upload still runs and progress simply stays coarse (0 then 10).
-        """
-        try:
-            from huggingface_hub.utils import _xet_progress_reporting as xet_mod
-        except ImportError:
-            yield
-            return
-
-        base_tqdm = getattr(xet_mod, "tqdm", None)
-        if base_tqdm is None:
-            yield
-            return
-
-        report = context.progress
-        to_percent = self._upload_progress
-        last_percent = -1
-        heartbeat: TransferProgressLogger | None = None
-
-        class _ProgressTqdm(base_tqdm):  # type: ignore[valid-type, misc]
-            """tqdm that forwards the aggregate processing bar's bytes to the job."""
-
-            def update(self, n: float = 1) -> bool | None:
-                result = super().update(n)
-                nonlocal last_percent, heartbeat
-                desc = self.desc or ""
-                if "Processing Files" in desc and self.total:
-                    if heartbeat is None:
-                        heartbeat = TransferProgressLogger("Dataset upload", int(self.total))
-                    percent = to_percent(int(self.n), int(self.total))
-                    if percent != last_percent:
-                        last_percent = percent
-                        report(percent, message="Uploading dataset snapshot")
-                    heartbeat.update(int(self.n))
-                return result
-
-        setattr(xet_mod, "tqdm", _ProgressTqdm)
-        try:
-            yield
-        finally:
-            setattr(xet_mod, "tqdm", base_tqdm)
-
     @staticmethod
     def _upload_progress(uploaded_bytes: int, total_bytes: int) -> int:
         """Map uploaded bytes into the reserved snapshot-upload window.
@@ -398,24 +301,13 @@ class RemoteTrainingBackend:
             round(uploaded_bytes / total_bytes * SNAPSHOT_UPLOAD_PROGRESS),
         )
 
-    async def submit_job(
-        self,
-        context: TrainingContext,
-        *,
-        dataset_transfer: str,
-        repo_id: str | None = None,
-        revision: str | None = None,
-    ) -> uuid.UUID:
+    async def submit_job(self, context: TrainingContext) -> uuid.UUID:
         """Submit the training job and return the remote job id."""
         body: dict[str, Any] = {
             "payload": context.payload.model_dump(mode="json"),
             "policy": context.model.policy,
-            "dataset_transfer": dataset_transfer,
+            "dataset_transfer": "http",
         }
-        if repo_id is not None:
-            body["repo_id"] = repo_id
-        if revision is not None:
-            body["revision"] = revision
         async with await self._client() as client:
             response = await client.post(f"{self._base_url}/jobs", json=body)
             response.raise_for_status()
@@ -765,19 +657,6 @@ class RemoteTrainingBackend:
                 await client.post(f"{self._base_url}/jobs/{remote_job_id}/cancel")
         except httpx.HTTPError as exc:
             logger.warning("Failed to cancel remote job: {}", exc)
-
-    async def delete_repo(self, repo_id: str) -> None:
-        """Delete the ephemeral snapshot repo; best effort."""
-        from huggingface_hub import HfApi
-
-        def _delete() -> None:
-            HfApi(token=self._hf_token).delete_repo(repo_id=repo_id, repo_type="dataset", missing_ok=True)
-
-        try:
-            await asyncio.to_thread(_delete)
-            logger.info("Deleted ephemeral snapshot repo")
-        except Exception as exc:
-            logger.warning("Failed to delete ephemeral snapshot repo: {}", exc)
 
     @staticmethod
     def _coerce_progress(value: object) -> int:

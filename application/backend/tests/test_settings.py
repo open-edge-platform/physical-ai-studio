@@ -48,7 +48,7 @@ def test_data_dir_is_storage_backed_even_with_data_dir_env(monkeypatch, tmp_path
 
 
 def _clear_trainer_env(monkeypatch) -> None:
-    for var in ("TRAINING_MODE", "TRAINER_URL", "TRAINER_DATASET_TRANSFER"):
+    for var in ("TRAINING_MODE", "TRAINER_URL"):
         monkeypatch.delenv(var, raising=False)
 
 
@@ -57,20 +57,6 @@ def test_training_mode_defaults_to_local(monkeypatch, tmp_path: Path) -> None:
     _clear_trainer_env(monkeypatch)
 
     assert Settings(STORAGE_DIR="~/s").training_mode == "local"
-
-
-def test_dataset_transfer_defaults_to_http(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    _clear_trainer_env(monkeypatch)
-
-    assert Settings(STORAGE_DIR="~/s").trainer_dataset_transfer == "http"
-
-
-def test_dataset_transfer_reads_env(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    _clear_trainer_env(monkeypatch)
-
-    assert Settings(TRAINER_DATASET_TRANSFER="hf", STORAGE_DIR="~/s").trainer_dataset_transfer == "hf"
 
 
 def test_remote_training_requires_url(monkeypatch, tmp_path: Path) -> None:

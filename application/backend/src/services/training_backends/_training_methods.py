@@ -44,7 +44,7 @@ class HttpTrainingMethod(TrainingMethod):
             DatasetDownloadService().create_dataset_archive, Path(context.snapshot.path)
         )
         try:
-            remote_job_id = await backend.submit_job(context, dataset_transfer="http")
+            remote_job_id = await backend.submit_job(context)
 
             # Persist before the upload begins so a restart can resume it.
             if context.on_remote_job_id is not None:
@@ -56,27 +56,3 @@ class HttpTrainingMethod(TrainingMethod):
             await backend.await_and_ingest(context, remote_job_id)
         finally:
             cleanup_staged_archive(archive_path)
-
-
-class HfTrainingMethod(TrainingMethod):
-    """Push the snapshot to an ephemeral private HuggingFace dataset repo."""
-
-    async def train(self, context: TrainingContext) -> None:
-        backend = self._backend
-        repo_id: str | None = None
-        try:
-            # Upload the snapshot (0-10%).
-            context.progress(0, message="Uploading dataset snapshot")
-            repo_id, revision = await backend.push_snapshot(context)
-            context.progress(SNAPSHOT_UPLOAD_PROGRESS, message="Dataset uploaded, starting training")
-
-            remote_job_id = await backend.submit_job(context, dataset_transfer="hf", repo_id=repo_id, revision=revision)
-
-            # Persist the id so a restart can reattach to the remote job.
-            if context.on_remote_job_id is not None:
-                await context.on_remote_job_id(remote_job_id)
-
-            await backend.await_and_ingest(context, remote_job_id)
-        finally:
-            if repo_id is not None:
-                await backend.delete_repo(repo_id)
