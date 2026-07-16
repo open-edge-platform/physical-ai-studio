@@ -14,16 +14,12 @@ from trainer.schemas import SubmitJobRequest
 if TYPE_CHECKING:
     from pathlib import Path
 
-_SHA = "a" * 40
-
 
 @pytest.fixture
 def sample_request() -> SubmitJobRequest:
-    """A valid job submission request."""
+    """A valid http-transfer job submission request."""
     return SubmitJobRequest(
         payload={"max_steps": 100, "batch_size": 8, "precision": "bf16-mixed"},
-        repo_id="acme/pais-snapshot-deadbeef",
-        revision=_SHA,
         policy="act",
     )
 

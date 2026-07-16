@@ -56,7 +56,9 @@ class QueueManager:
         """Flag a job for cooperative cancellation."""
         self._cancel_requested.add(job_id)
         state = self.store.get(job_id)
-        if state is not None and state.status == TrainerJobStatus.QUEUED:
+        # A job not yet dispatched (queued, or still awaiting its dataset) is
+        # canceled directly since no worker will observe the flag.
+        if state is not None and state.status in {TrainerJobStatus.QUEUED, TrainerJobStatus.AWAITING_DATASET}:
             self.store.update(job_id, status=TrainerJobStatus.CANCELED, message="Canceled before start")
 
     async def _dispatch_loop(self) -> None:

@@ -9,7 +9,7 @@ from .base import DatasetImportAdapter
 from .lerobot_v3 import LeRobotV3Adapter
 
 if TYPE_CHECKING:
-    from services.archive_safety import SafeZipArchive
+    from physicalai.data.archive_safety import SafeZipArchive
 
 REGISTERED_DATASET_IMPORT_ADAPTERS: tuple[DatasetImportAdapter, ...] = (LeRobotV3Adapter(),)
 

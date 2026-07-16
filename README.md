@@ -86,7 +86,7 @@ cd physical-ai-studio
 cd application/backend && uv sync --extra xpu # or --extra cpu, --extra cuda
 
 # Start the backend
-./run.sh
+uv run physicalai-studio serve  # or: ./run.sh
 ```
 
 ```bash

@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 packages = ["src/trainer"]
 
 [project]
-name = "physical-ai-trainer"
+name = "physicalai-trainer"
 version = "0.1.0"
 description = "Remote training service for Physical AI Studio"
 readme = "README.md"
@@ -23,7 +23,11 @@ dependencies = [
   "huggingface-hub>=0.27",
   # Training stack (torch resolved via the extras below).
   "physicalai-train[pi0,smolvla]",
+  "click>=8.3.0",
 ]
+
+[project.scripts]
+physicalai-trainer = "trainer.cli:trainer"
 
 [project.optional-dependencies]
 # executorch enables the ExecuTorch export backend. It conflicts with the xpu
@@ -111,8 +115,8 @@ preview = false
 src = ["src"]
 
 [tool.ruff.lint.per-file-ignores]
-"*test*.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC"]
-"tests/conftest.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC"]
+"*test*.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC", "FBT"]
+"tests/conftest.py" = ["S", "ANN", "D", "ARG", "PLR", "INP001", "SLF001", "TC", "FBT"]
 
 # ============================================================================ #
 # MYPY CONFIGURATION                                                           #

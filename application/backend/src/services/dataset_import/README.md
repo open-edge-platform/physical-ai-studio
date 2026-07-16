@@ -243,7 +243,7 @@ Disk is touched **twice** per import: once when the raw archive lands in the cac
 
 `upload_size_guard_middleware` intercepts data-import upload requests. If the `Content-Length` header is present and exceeds `DATA_IMPORT_MAX_UPLOAD_BYTES`, the middleware returns a `413` response **before FastAPI reads a single byte of the body**. Requests without a `Content-Length` header pass through (disk headroom guards still apply).
 
-### ZIP safety checks (`services/archive_safety.py`)
+### ZIP safety checks (`physicalai.data.archive_safety`)
 
 Validation runs in the upload endpoint immediately after the archive is persisted to disk via `SafeZipArchive.validate()`:
 
@@ -253,7 +253,7 @@ Validation runs in the upload endpoint immediately after the archive is persiste
 | **File count** – number of ZIP entries exceeds the limit | `ZipBombDetectedError` | Internal policy (`200000`) |
 | **Uncompressed bytes** – sum of all `file_size` fields in the central directory exceeds the limit | `ZipBombDetectedError` | `DATA_IMPORT_MAX_UNCOMPRESSED_BYTES` |
 
-### Path traversal and symlink protection (`archive_safety.validate_zip_entries`)
+### Path traversal and symlink protection (`physicalai.data.archive_safety.validate_zip_entries`)
 
 For every entry in the archive (checked at both upload time and during extraction in `SafeZipArchive.extract_to`):
 
@@ -264,7 +264,7 @@ For every entry in the archive (checked at both upload time and during extractio
 
 All violations raise `ZipBombDetectedError`, which causes the endpoint to delete the staged archive and return an error response.
 
-### Disk headroom checks (`archive_safety.check_disk_headroom`)
+### Disk headroom checks (`physicalai.data.archive_safety.check_disk_headroom`)
 
 `check_disk_headroom` is called at two points:
 

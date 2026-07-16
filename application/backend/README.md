@@ -55,11 +55,22 @@ Please check out [this document](docs/video_hardware_acceleration_intel.md) for 
 # Activate virtual environment
 source .venv/bin/activate
 
-# Run server
+# Run server (backend with in-process training; TRAINING_MODE defaults to local)
+uv run physicalai-studio serve
+
+# Equivalent thin wrapper
 ./run.sh
 ```
 
 Server starts at `http://localhost:8000`
+
+### Remote Training
+
+To run training on a separate, GPU-enabled machine, set `TRAINING_MODE=remote`
+and configure `TRAINER_URL` to point to a Physical AI Trainer service. The
+backend sends dataset snapshots to the service, monitors the training job, and
+imports the resulting model. Deploy and configure the service from
+[`application/trainer/README.md`](../trainer/README.md).
 
 ### Database Migrations
 

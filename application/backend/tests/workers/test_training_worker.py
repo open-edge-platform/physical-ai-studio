@@ -310,3 +310,108 @@ class TestTraining:
         assert str(context.output_dir) == model.path
         assert context.cache_dir == tmp_path / "cache" / str(job.id)
         assert context.snapshot is snapshot
+
+    @pytest.mark.anyio
+    async def test_suspension_requeues_job_for_reattach(self, worker, tmp_path):
+        """A TrainingSuspendedError leaves the job PENDING (reattachable), not terminal."""
+        from services.training_backends import TrainingSuspendedError
+
+        payload = _make_payload(compile_model=False)
+        model = _make_model(tmp_path)
+        snapshot = _make_snapshot(tmp_path)
+        job = _make_job(payload)
+
+        backend = MagicMock()
+        backend.train = AsyncMock(side_effect=TrainingSuspendedError("shutting down"))
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
+
+        pending_job = MagicMock()
+        pending_job.id = job.id
+        pending_job.status = JobStatus.PENDING
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
+            patch(f"{MODULE}.JobService") as MockJobService,
+            patch(f"{MODULE}.ModelService") as MockModelService,
+        ):
+            MockJobService.update_job_status = AsyncMock(return_value=pending_job)
+            MockJobService.update_job = AsyncMock(return_value=MagicMock())
+            MockModelService.create_model = AsyncMock()
+
+            await worker._train_model(job, model, snapshot, payload, base_model=None)
+
+            # The job is requeued (PENDING) so the next start reattaches; no model,
+            # and it is never marked FAILED or CANCELED.
+            MockModelService.create_model.assert_not_called()
+            statuses = [c.kwargs["status"] for c in MockJobService.update_job_status.call_args_list]
+            assert statuses == [JobStatus.PENDING]
+
+    @pytest.mark.anyio
+    async def test_context_wires_reattach_fields_from_payload(self, worker, tmp_path):
+        """The context carries the persisted remote_job_id and a suspend predicate."""
+        payload = _make_payload(compile_model=False)
+        remote_job_id = uuid4()
+        payload.remote_job_id = remote_job_id
+        model = _make_model(tmp_path)
+        snapshot = _make_snapshot(tmp_path)
+        job = _make_job(payload)
+
+        captured = {}
+
+        async def _capture(context):
+            captured["context"] = context
+            # Evaluate the shutdown predicate while training is active, before the
+            # finally-block sets the interrupt event to stop the dispatcher.
+            captured["suspend_during_train"] = context.should_suspend()
+
+        backend = MagicMock()
+        backend.train = AsyncMock(side_effect=_capture)
+
+        dispatcher = MagicMock()
+        dispatcher.is_alive = MagicMock(return_value=False)
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
+            patch(f"{MODULE}.JobService") as MockJobService,
+            patch(f"{MODULE}.ModelService") as MockModelService,
+        ):
+            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
+            MockJobService.update_job = AsyncMock(return_value=MagicMock())
+            MockModelService.create_model = AsyncMock(return_value=model)
+
+            await worker._train_model(job, model, snapshot, payload, base_model=None)
+
+        context = captured["context"]
+        assert context.remote_job_id == remote_job_id
+        # should_suspend mirrors the worker's global stop signal (shutdown), which
+        # is distinct from a per-job cancel (interrupt_event). No stop was requested
+        # during training, so it is False.
+        assert captured["suspend_during_train"] is False
+        assert context.on_remote_job_id is not None
+
+    @pytest.mark.anyio
+    async def test_persist_remote_job_id_updates_payload(self, worker, tmp_path):
+        """The persist callback retains the snapshot identity with the remote job id."""
+        payload = _make_payload(compile_model=False)
+        snapshot_id = uuid4()
+        payload.snapshot_id = snapshot_id
+        job = _make_job(payload)
+
+        with patch(f"{MODULE}.JobService") as MockJobService:
+            MockJobService.update_job_payload = AsyncMock(return_value=MagicMock())
+
+            remote_job_id = uuid4()
+            await worker._persist_remote_job_id(job, payload, remote_job_id)
+
+            assert payload.remote_job_id == remote_job_id
+            MockJobService.update_job_payload.assert_awaited_once()
+            args, _ = MockJobService.update_job_payload.call_args
+            assert args[0] == job.id
+            assert args[1].remote_job_id == remote_job_id
+            assert args[1].snapshot_id == snapshot_id

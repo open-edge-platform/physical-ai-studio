@@ -36,6 +36,9 @@ export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
 
 const GB = 1024 ** 3;
 
+/** How often to re-check training-device status while the remote trainer is unavailable (ms). */
+const REMOTE_UNAVAILABLE_POLL_MS = 5000;
+
 /** Format bytes as a human-readable GB string. */
 const formatBytes = (bytes: number): string => {
     const gb = bytes / GB;
@@ -150,11 +153,11 @@ const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled, traini
 };
 
 const useBestTrainingDevice = (): SchemaDeviceInfo | null => {
-    const { data: trainingDevices = [] } = $api.useQuery('get', '/api/system/devices/training');
+    const { devices } = useTrainingDevices();
 
     // Pick the GPU with the most VRAM (if any)
     return useMemo(() => {
-        return trainingDevices
+        return devices
             .filter((d) => d.type !== 'cpu' && d.memory != null)
             .reduce((best, device): SchemaDeviceInfo | null => {
                 if (best === null || (device.memory ?? 0) > (best.memory ?? 0)) {
@@ -163,15 +166,50 @@ const useBestTrainingDevice = (): SchemaDeviceInfo | null => {
 
                 return best;
             }, null);
-    }, [trainingDevices]);
+    }, [devices]);
+};
+
+/**
+ * Reads the training devices endpoint and normalizes the response.
+ *
+ * `remoteUnavailable` is true only when the backend runs in remote mode and the
+ * remote trainer cannot be reached, in which case training must be blocked.
+ *
+ * The status is refetched every time the dialog is (re)opened so it never shows
+ * stale cached data, and it is polled only while the remote trainer is
+ * unavailable so the UI recovers automatically once the trainer comes back.
+ */
+const useTrainingDevices = () => {
+    const { data, refetch } = $api.useQuery(
+        'get',
+        '/api/system/devices/training',
+        {},
+        {
+            refetchOnMount: 'always',
+            refetchInterval: (query) =>
+                query.state.data?.mode === 'remote' && !query.state.data.remote_available
+                    ? REMOTE_UNAVAILABLE_POLL_MS
+                    : false,
+        }
+    );
+
+    return {
+        devices: data?.devices ?? [],
+        remoteUnavailable: data?.mode === 'remote' && !data.remote_available,
+        // Re-run the status check on demand (e.g. right before submitting).
+        refetch,
+    };
 };
 
 const TrainingDeviceInfo = () => {
     const bestDevice = useBestTrainingDevice();
+    const { remoteUnavailable } = useTrainingDevices();
 
     return (
         <Flex UNSAFE_style={{ textAlign: 'right' }} direction='column' gap='size-75'>
-            {bestDevice ? (
+            {remoteUnavailable ? (
+                <StatusLight variant='negative'>Remote trainer unavailable</StatusLight>
+            ) : bestDevice ? (
                 <StatusLight variant='positive'>
                     {bestDevice.name}, {formatBytes(bestDevice.memory!)} VRAM
                 </StatusLight>
@@ -356,6 +394,7 @@ const TrainingParameters = ({
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
+    const { remoteUnavailable, refetch: refetchTrainingDevices } = useTrainingDevices();
 
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
@@ -384,10 +423,17 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
         },
     });
 
-    const save = () => {
+    const save = async () => {
         const dataset_id = selectedDataset?.toString();
 
-        if (!dataset_id || !selectedPolicy) {
+        if (!dataset_id || !selectedPolicy || remoteUnavailable) {
+            return;
+        }
+
+        // Final guard: the remote trainer may have gone offline since the last
+        // poll, so re-check availability right before submitting the job.
+        const { data: latest } = await refetchTrainingDevices();
+        if (latest?.mode === 'remote' && !latest.remote_available) {
             return;
         }
 
@@ -424,6 +470,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             <Divider />
             <Content width={'700px'}>
                 <Flex direction='column' gap='size-200' width='100%'>
+                    {remoteUnavailable && (
+                        <InlineAlert variant='warning'>
+                            Can&apos;t reach the remote trainer, so training can&apos;t start. Make sure it&apos;s
+                            running, then try again.
+                        </InlineAlert>
+                    )}
+
                     <Picker
                         label='Dataset'
                         selectedKey={selectedDataset}
@@ -476,7 +529,11 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                 <Button variant='secondary' onPress={() => close(undefined)}>
                     Cancel
                 </Button>
-                <Button variant='accent' onPress={save} isDisabled={!selectedDataset || !selectedPolicy}>
+                <Button
+                    variant='accent'
+                    onPress={save}
+                    isDisabled={!selectedDataset || !selectedPolicy || remoteUnavailable}
+                >
                     Train
                 </Button>
             </ButtonGroup>

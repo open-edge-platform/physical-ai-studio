@@ -5,24 +5,28 @@
 
 from __future__ import annotations
 
-import re
 from enum import StrEnum
 from typing import Any
+from uuid import UUID  # noqa: TC003
 
 from pydantic import BaseModel, Field, field_validator
 
-# Concrete 40-char hex commit SHA. Branch names / "main" are rejected so the
-# server always pulls a pinned, immutable revision.
-_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-# Conservative HuggingFace repo id: optional single namespace + repo name.
-_REPO_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}(/[A-Za-z0-9][A-Za-z0-9._-]{0,95})?$")
-
 _SUPPORTED_POLICIES = frozenset({"act", "pi0", "pi05", "smolvla"})
+
+
+class DatasetTransfer(StrEnum):
+    """How the dataset snapshot reaches the trainer."""
+
+    # ZIP streamed directly to the trainer over HTTP. This is the only
+    # supported transfer mode; datasets are never pulled from HuggingFace.
+    HTTP = "http"
 
 
 class TrainerJobStatus(StrEnum):
     """Lifecycle states for a trainer job."""
 
+    # Job accepted, waiting for the dataset ZIP upload.
+    AWAITING_DATASET = "awaiting_dataset"
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -49,25 +53,11 @@ class SubmitJobRequest(BaseModel):
     # Full TrainJobPayload as serialized by the client. Only training-relevant
     # fields are read server-side; the client device selection is ignored.
     payload: dict[str, Any]
-    repo_id: str = Field(..., description="Ephemeral private HF dataset repo holding the snapshot")
-    revision: str = Field(..., description="Pinned commit SHA of the snapshot repo")
     policy: str = Field(..., description="Policy name to train")
-
-    @field_validator("repo_id")
-    @classmethod
-    def _validate_repo_id(cls, value: str) -> str:
-        if not _REPO_ID_RE.fullmatch(value):
-            msg = f"Invalid repo_id: {value!r}"
-            raise ValueError(msg)
-        return value
-
-    @field_validator("revision")
-    @classmethod
-    def _validate_revision(cls, value: str) -> str:
-        if not _SHA_RE.fullmatch(value):
-            msg = "revision must be a 40-character commit SHA"
-            raise ValueError(msg)
-        return value
+    dataset_transfer: DatasetTransfer = Field(
+        default=DatasetTransfer.HTTP,
+        description="How the dataset reaches the trainer (http upload)",
+    )
 
     @field_validator("policy")
     @classmethod
@@ -81,14 +71,14 @@ class SubmitJobRequest(BaseModel):
 class SubmitJobResponse(BaseModel):
     """Response returned after enqueueing a job."""
 
-    remote_job_id: str
+    remote_job_id: UUID
     status: TrainerJobStatus
 
 
 class JobState(BaseModel):
     """Current state of a trainer job."""
 
-    remote_job_id: str
+    remote_job_id: UUID
     status: TrainerJobStatus
     progress: int = Field(default=0, ge=0, le=100)
     message: str | None = None
@@ -98,5 +88,5 @@ class JobState(BaseModel):
 class CancelResponse(BaseModel):
     """Status reported after a cancellation request."""
 
-    remote_job_id: str
+    remote_job_id: UUID
     status: TrainerJobStatus

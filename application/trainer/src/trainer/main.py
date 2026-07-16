@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Create storage dirs and start the queue manager."""
     settings = get_settings()
-    for directory in (settings.snapshots_dir, settings.models_dir, settings.archives_dir):
+    for directory in (settings.datasets_dir, settings.models_dir, settings.archives_dir):
         directory.mkdir(parents=True, exist_ok=True)
 
     manager = QueueManager()

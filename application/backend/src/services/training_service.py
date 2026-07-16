@@ -7,8 +7,10 @@ from uuid import UUID
 from loguru import logger
 
 from schemas.base_job import JobStatus, JobType
+from schemas.job import TrainJobPayload
 from services.event_processor import EventType
 from services.job_service import JobService
+from settings import get_settings
 from workers.base import BaseThreadWorker
 
 
@@ -70,17 +72,49 @@ class TrainingService:
     @staticmethod
     async def abort_orphan_jobs() -> None:
         """
-        Abort all running orphan training jobs (that do not belong to any worker).
+        Reconcile RUNNING training jobs left behind by a previous process.
 
-        This method can be called during application shutdown/setup to ensure that
-        any orphan in-progress training jobs are marked as failed.
+        Called on training-worker setup and teardown. A remote job keeps running
+        on the trainer independently of the studio, so a RUNNING job that already
+        recorded its ``remote_job_id`` is requeued (back to PENDING) to reattach
+        and mirror progress on the next pickup -- this is what lets a run survive
+        the studio restarting (e.g. the laptop was closed overnight). Any other
+        orphaned RUNNING training job cannot resume and is marked FAILED.
         """
+        remote_mode = get_settings().training_mode == "remote"
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}
         running_jobs = await JobService.get_job_list(extra_filters=query)
         for job in running_jobs:
+            remote_job_id = TrainingService._reattachable_remote_job_id(job) if remote_mode else None
+            if remote_job_id is not None:
+                logger.info(
+                    "Requeuing remote training job {} to reattach to trainer job {}",
+                    job.id,
+                    remote_job_id,
+                )
+                await JobService.update_job_status(
+                    job_id=job.id,
+                    status=JobStatus.PENDING,
+                    message="Reconnecting to remote training job after restart",
+                )
+                continue
             logger.warning(f"Aborting orphan training job with id: {job.id}")
             await JobService.update_job_status(
                 job_id=job.id,
                 status=JobStatus.FAILED,
                 message="Job aborted due to application shutdown",
             )
+
+    @staticmethod
+    def _reattachable_remote_job_id(job: object) -> UUID | None:
+        """Return the persisted remote job id for a training job, if any."""
+        payload = getattr(job, "payload", None)
+        if isinstance(payload, TrainJobPayload):
+            return payload.remote_job_id
+        if isinstance(payload, dict):
+            remote_job_id = payload.get("remote_job_id")
+            try:
+                return UUID(str(remote_job_id))
+            except (TypeError, ValueError, AttributeError):
+                return None
+        return None

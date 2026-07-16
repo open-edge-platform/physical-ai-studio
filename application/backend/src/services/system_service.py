@@ -5,16 +5,23 @@
 
 import os
 from importlib import import_module
-from typing import Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 from loguru import logger
 
-from schemas.hardware import DeviceInfo, DeviceType, InferenceBackend, InferenceDeviceInfo
+from schemas.hardware import DeviceInfo, DeviceType, InferenceBackend, InferenceDeviceInfo, TrainingDevices
+
+if TYPE_CHECKING:
+    from services.training_backends.remote import RemoteTrainingBackend
 
 
 class SystemService:
     """Service to discover and report available compute hardware."""
+
+    # Cached remote backend, reused across calls so one-time setup (e.g. the
+    # trainer proxy probe in RemoteTrainingBackend) isn't repeated per request.
+    _remote_backend: ClassVar["RemoteTrainingBackend | None"] = None
 
     @classmethod
     def get_inference_devices(cls) -> list[InferenceDeviceInfo]:
@@ -226,6 +233,39 @@ class SystemService:
                 )
 
         return devices
+
+    @classmethod
+    async def get_available_training_devices(cls) -> TrainingDevices:
+        """Return training devices and remote availability for the active mode.
+
+        In local mode this reports the local hardware. In remote mode it queries
+        the trainer for its hardware; if the trainer cannot be reached it returns
+        ``remote_available=False`` with no devices instead of falling back to
+        local CPU, so callers can block training until the trainer is reachable.
+        """
+        from settings import get_settings
+
+        settings = get_settings()
+        if settings.training_mode != "remote":
+            return TrainingDevices(mode="local", remote_available=True, devices=cls.get_training_devices())
+
+        from services.training_backends.remote import RemoteTrainingBackend, RemoteTrainingError
+
+        try:
+            backend = cls._remote_backend
+            if backend is None:
+                backend = RemoteTrainingBackend()
+                cls._remote_backend = backend
+            devices = await backend.get_training_devices()
+        except RemoteTrainingError as exc:
+            logger.warning("Remote trainer unavailable; training is disabled until the trainer is reachable: {}", exc)
+            return TrainingDevices(mode="remote", remote_available=False, devices=[])
+        return TrainingDevices(mode="remote", remote_available=True, devices=devices)
+
+    @classmethod
+    def _clear_remote_backend_cache(cls) -> None:
+        """Reset the cached remote training backend."""
+        cls._remote_backend = None
 
     @classmethod
     def is_device_supported_for_training(cls, device_type: str) -> bool:

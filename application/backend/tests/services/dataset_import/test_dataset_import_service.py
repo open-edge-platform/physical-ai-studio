@@ -9,7 +9,7 @@ surface area needed:
   ``JobRepository`` is also patched).
 * ``services.dataset_import.service.JobRepository`` - replaced by a
   ``_StubJobRepository`` that returns pre-built ``DatasetImportJob`` fixtures.
-* ``services.archive_safety.cleanup_staged_archive`` - no-op to avoid
+* ``services.staged_archive.cleanup_staged_archive`` - no-op to avoid
   touching the filesystem.
 """
 
