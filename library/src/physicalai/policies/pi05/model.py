@@ -329,17 +329,15 @@ class PaliGemmaWithExpertModel(nn.Module):
         vlm_config_hf.vision_config.dtype = "float32"
 
         action_expert_config_hf = CONFIG_MAPPING["gemma"](
-            head_dim=action_expert_config.head_dim,
-            hidden_size=action_expert_config.width,
-            intermediate_size=action_expert_config.mlp_dim,
-            num_attention_heads=action_expert_config.num_heads,
-            num_hidden_layers=action_expert_config.depth,
-            num_key_value_heads=action_expert_config.num_kv_heads,
-            vocab_size=257152,
-            hidden_activation="gelu_pytorch_tanh",
+            head_dim=action_expert_config.head_dim,  # pyrefly: ignore[unexpected-keyword]
+            hidden_size=action_expert_config.width,  # pyrefly: ignore[unexpected-keyword]
+            intermediate_size=action_expert_config.mlp_dim,  # pyrefly: ignore[unexpected-keyword]
+            num_attention_heads=action_expert_config.num_heads,  # pyrefly: ignore[unexpected-keyword]
+            num_hidden_layers=action_expert_config.depth,  # pyrefly: ignore[unexpected-keyword]
+            num_key_value_heads=action_expert_config.num_kv_heads,  # pyrefly: ignore[unexpected-keyword]
+            vocab_size=257152,  # pyrefly: ignore[unexpected-keyword]
+            hidden_act="gelu_pytorch_tanh",  # pyrefly: ignore[unexpected-keyword]
             dtype="float32",
-            use_adarms=use_adarms[1],
-            adarms_cond_dim=action_expert_config.width if use_adarms[1] else None,
         )
 
         self.paligemma = PaliGemmaForConditionalGenerationWithPiGemma(
