@@ -31,12 +31,10 @@ torch build, so ExecuTorch export is skipped on xpu installs.
 
 Set environment variables (or an `.env` file):
 
-> [!IMPORTANT]
-> The trainer service has no built-in authentication. Any machine that can reach its port can submit jobs, cancel jobs, and download trained model artifacts.
-> Deploy it on a private network reachable only by the Physical AI Studio backend IP address – never expose this port to the internet.
-
 > [!WARNING]
-> The Physical AI Studio backend inherits proxy settings (`HTTP_PROXY` / `HTTPS_PROXY`) from its host environment. When those variables are set, all trainer communication (including model artifact download) routes through the configured proxy, so whoever controls those variables controls where model artifacts flow. Only deploy the backend in a fully trusted environment where proxy variables cannot be set by other users. Do not run it on a shared or multi-tenant host.
+> The trainer has no built-in authentication. Anyone who can reach its port can submit or cancel jobs and download model artifacts. Keep it on a private network that only the Physical AI Studio backend IP address can reach—never expose it to the internet.
+
+> The backend honors `HTTP_PROXY` and `HTTPS_PROXY`. A configured proxy receives all trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
 
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |
