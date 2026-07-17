@@ -2266,9 +2266,9 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
-    { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.4.0,<5.6.0" },
-    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.4.0,<5.6.0" },
-    { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.4.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
 ]
 provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "executorch", "executorch-openvino", "all"]
 

@@ -75,7 +75,7 @@ diffusion = ["diffusers>=0.38.0"]
 # Requires PaliGemma backbone + Gemma action expert
 # Supports LoRA fine-tuning for efficient adaptation
 pi0 = [
-    "transformers>=5.4.0,<5.6.0",
+    "transformers>=5.5.0,<5.6.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
@@ -87,7 +87,7 @@ pi05 = ["physicalai-train[pi0]"]
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
 # Note: transformers>=4.54.0 required for _prepare_image_like_inputs fix
 groot = [
-    "transformers>=5.4.0,<5.6.0",
+    "transformers>=5.5.0,<5.6.0",
     "peft>=0.13.0,<1.0.0",
     "diffusers>=0.38.0",
     "dm-tree>=0.1.8,<1.0.0",
@@ -100,7 +100,7 @@ groot = [
 
 # SmolVLA foundation model
 smolvla = [
-    "transformers>=5.4.0,<5.6.0",
+    "transformers>=5.5.0,<5.6.0",
     "num2words>=0.5.14,<0.6.0",
     "safetensors>=0.4.3,<1.0.0",
 ]
