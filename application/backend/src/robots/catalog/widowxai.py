@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
+from physicalai.robot import SharedRobot
 from physicalai.robot.trossen import BimanualWidowXAI, WidowXAI
 from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
 from pydantic import BaseModel, ConfigDict, Field
@@ -110,18 +111,36 @@ _TROSSEN_BIMANUAL_ASSET = RobotAsset(
 
 async def _build_trossen_single_arm_driver(
     robot: CatalogRobot[TrossenSingleArmPayload], _factory: CatalogRobotFactory
-) -> WidowXAI:
+) -> SharedRobot:
+    if not isinstance(robot, TrossenSingleArmRobot):
+        raise TypeError("Expected TrossenSingleArmRobot")
     role = "follower" if robot.type == "Trossen_WidowXAI_Follower" else "leader"
-    return WidowXAI(ip=robot.payload.connection_string, role=role)
+    return SharedRobot(
+        name=robot.name,
+        robot_class=WidowXAI,
+        robot_kwargs={"ip": robot.payload.connection_string, "role": role},
+    )
 
 
 async def _build_trossen_bimanual_driver(
     robot: CatalogRobot[TrossenBimanualPayload], _factory: CatalogRobotFactory
 ) -> BimanualWidowXAI:
+    if not isinstance(robot, TrossenBimanualRobot):
+        raise TypeError("Expected TrossenBimanualRobot")
     mode = "follower" if robot.type == "Trossen_Bimanual_WidowXAI_Follower" else "leader"
-    left_driver = WidowXAI(ip=robot.payload.connection_string_left, role=mode)
-    right_driver = WidowXAI(ip=robot.payload.connection_string_right, role=mode)
-    return BimanualWidowXAI(left=left_driver, right=right_driver)
+    # BimanualWidowXAI shows up as 2 shared robots (left_arm + right_arm) because
+    # SharedRobot requires JSON-serializable kwargs. Underlying drivers remain shared.
+    left_driver = SharedRobot(
+        name=robot.name + "_left_arm",
+        robot_class=WidowXAI,
+        robot_kwargs={"ip": robot.payload.connection_string_left, "role": mode},
+    )
+    right_driver = SharedRobot(
+        name=robot.name + "_right_arm",
+        robot_class=WidowXAI,
+        robot_kwargs={"ip": robot.payload.connection_string_right, "role": mode},
+    )
+    return BimanualWidowXAI(left=left_driver, right=right_driver)  # pyrefly: ignore[bad-argument-type]
 
 
 async def _ping(ip: str, ping_timeout: float = 1.0) -> bool:

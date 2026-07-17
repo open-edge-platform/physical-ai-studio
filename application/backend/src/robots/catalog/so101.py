@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
+from physicalai.robot import SharedRobot
 from physicalai.robot.so101 import SO101, SO101Calibration, SO101JointCalibration
 from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -81,8 +82,8 @@ _SO101_ASSET = RobotAsset(
 )
 
 
-async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: CatalogRobotFactory) -> SO101:
-    if not isinstance(robot.payload, SO101RobotPayload):
+async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: CatalogRobotFactory) -> SharedRobot:
+    if not isinstance(robot, SO101Robot):
         raise TypeError("Expected SO101Robot")
     port_info = SerialPortInfo(
         connection_string=robot.payload.connection_string or None,
@@ -93,12 +94,17 @@ async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: C
         resource_key = robot.payload.serial_number or robot.payload.connection_string
         raise ValueError(f"Could not resolve a serial port for {resource_key}")
 
-    calibration: SO101Calibration | None = None
+    # SharedRobot requires JSON-serializable kwargs; pass calibration as a dict.
+    calibration: dict[str, dict[str, int]] | None = None
     if robot.payload.calibration is not None:
-        calibration = SO101Calibration(joints=robot.payload.calibration)
+        calibration = SO101Calibration(joints=robot.payload.calibration).to_dict()
 
     role = "follower" if robot.type == "SO101_Follower" else "leader"
-    return SO101(port=port, calibration=calibration, role=role, unit="normalized")
+    return SharedRobot(
+        name=robot.name,
+        robot_class=SO101,
+        robot_kwargs={"port": port, "calibration": calibration, "role": role, "unit": "normalized"},
+    )
 
 
 def serial_port_from_so101(robot: SO101Robot) -> SerialPortInfo:

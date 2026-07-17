@@ -39,7 +39,6 @@ export const useSynchronizeModelJoints = (joints: JointsState, robotType: Schema
 export enum RobotActionReadState {
     None = 0,
     Teleoperation = 1,
-    FromActions = 2,
 }
 
 interface RobotControlState {

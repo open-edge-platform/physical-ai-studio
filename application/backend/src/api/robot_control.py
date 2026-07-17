@@ -89,22 +89,23 @@ async def robot_websocket(
         follower_id = get_robot_id(settings["follower_id"])
         robot_client_factory = RobotClientFactory(robot_manager)
         follower = await robot_service.get_robot_by_id(project_id, follower_id)
-        follower_client = await robot_client_factory.build(follower)
-        features = follower_client.features()
-
-        leader_client = None
+        leader = None
         if "leader_id" in settings:
             leader_id = get_robot_id(settings["leader_id"])
             leader = await robot_service.get_robot_by_id(project_id, leader_id)
-            leader_client = await robot_client_factory.build(leader)
 
         # Create worker
         worker = TeleoperateWorker(
-            follower=follower_client, leader=leader_client, frequency=fps, mp_stop_event=scheduler.mp_stop_event
+            robot_client_factory=robot_client_factory,
+            follower=follower,
+            leader=leader,
+            frequency=fps,
+            stop_event=scheduler.mp_stop_event,
         )
         worker.start()
 
-        await asyncio.to_thread(worker.loaded_event.wait)
+        await worker.wait_until_loaded()
+        features = worker.features
         await websocket.send_json({"event": "state", "data": _build_robot_control_state(worker)})
 
         incoming_task = asyncio.create_task(handle_incoming(websocket, worker))
