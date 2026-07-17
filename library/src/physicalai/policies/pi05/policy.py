@@ -18,8 +18,9 @@ from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, I
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
+from physicalai.data.constants import RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
+from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
     ExportParameters,
@@ -28,6 +29,7 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 from physicalai.policies.base import Policy
+from physicalai.policies.utils.rtc_mixin import RTCPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -46,7 +48,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Pi05(ExportablePolicyMixin, Policy):
+class Pi05(RTCPolicyMixin, ExportablePolicyMixin, Policy):
     """Pi05 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi05 model.
@@ -312,6 +314,9 @@ class Pi05(ExportablePolicyMixin, Policy):
         )
 
         self._dataset_stats = dataset_stats
+
+        # Apply any RTC state requested before the model was built.
+        self._sync_rtc_to_model()
 
     def _from_hf(  # noqa: PLR6301, PLR0913, PLR0915
         self,
@@ -680,7 +685,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         Returns:
             A list of feature descriptors matching the model's expected input format,
             covering the robot state, image observations, language task, and any
-            real-time chunking control tensors when ``enable_rtc`` is set on the model.
+            real-time chunking control tensors when :attr:`rtc_enabled` is ``True``.
             Returns ``None`` if the underlying model or dataset stats have not been
             initialized yet.
         """
@@ -729,31 +734,31 @@ class Pi05(ExportablePolicyMixin, Policy):
             ),
         )
 
-        if self.model.enable_rtc:
+        if self.rtc_enabled:
             schema.extend(
                 [
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
                         shape=(self.config.chunk_size, self.config.max_action_dim),
-                        name="prev_chunk_left_over",
+                        name=PREV_CHUNK_LEFT_OVER,
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
                         shape=(),
-                        name="inference_delay",
+                        name=RTC_INFERENCE_DELAY,
                         dtype=InferenceFeatureDtype.INT64,
                     ),
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
                         shape=(),
-                        name="max_guidance_weight",
+                        name=RTC_MAX_GUIDANCE_WEIGHT,
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
                         shape=(),
-                        name="execution_horizon",
+                        name=RTC_EXECUTION_HORIZON,
                         dtype=InferenceFeatureDtype.INT64,
                     ),
                 ],

@@ -347,6 +347,7 @@ class TestSampleInputRtc:
                 self._dataset_stats = dataset_stats
                 self.model = _ModelStub()
                 self.config = _ConfigStub()
+                self.rtc_enabled = True
 
         stub = _Stub()
         stub.inputs_schema = Pi05.inputs_schema.fget(stub)  # type: ignore[attr-defined]

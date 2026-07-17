@@ -17,8 +17,15 @@ import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
-from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.data.observation import ACTION, IMAGES
+from physicalai.data.constants import (
+    IMAGE_MASKS,
+    RTC_EXECUTION_HORIZON,
+    RTC_INFERENCE_DELAY,
+    RTC_MAX_GUIDANCE_WEIGHT,
+    TOKENIZED_PROMPT,
+    TOKENIZED_PROMPT_MASK,
+)
+from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER
 from physicalai.policies.base import Model
 
 from .pi_gemma import (
@@ -1057,10 +1064,10 @@ class Pi05Model(Model):
         rtc_kwargs: dict[str, Any] = {}
         if self.enable_rtc:
             rtc_kwargs = {
-                "rtc_max_guidance": batch.get("max_guidance_weight", 0.0),
-                "rtc_execution_horizon": batch.get("execution_horizon", 0),
-                "rtc_latency": batch.get("inference_delay", 0.0),
-                "rtc_prev_action_chunk": batch.get("prev_chunk_left_over"),
+                "rtc_max_guidance": batch.get(RTC_MAX_GUIDANCE_WEIGHT, 0.0),
+                "rtc_execution_horizon": batch.get(RTC_EXECUTION_HORIZON, 0),
+                "rtc_latency": batch.get(RTC_INFERENCE_DELAY, 0.0),
+                "rtc_prev_action_chunk": batch.get(PREV_CHUNK_LEFT_OVER),
             }
 
         actions = self.sample_actions(
