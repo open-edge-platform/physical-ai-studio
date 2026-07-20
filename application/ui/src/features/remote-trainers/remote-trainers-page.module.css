@@ -1,0 +1,299 @@
+.pageHeader {
+    margin-bottom: var(--spectrum-global-dimension-size-250);
+}
+
+.pageHeader h1 {
+    margin-bottom: var(--spectrum-global-dimension-size-50);
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: minmax(22.5rem, 26.25rem) minmax(0, 1fr);
+    min-height: 35rem;
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+    overflow: hidden;
+}
+
+.listPane {
+    padding: var(--spectrum-global-dimension-size-200);
+    background: var(--spectrum-global-color-gray-100);
+    border-right: 1px solid var(--spectrum-global-color-gray-300);
+}
+
+.addButton {
+    margin-bottom: var(--spectrum-global-dimension-size-100);
+}
+
+.trainerCard {
+    width: 100%;
+    height: auto;
+    margin-bottom: var(--spectrum-global-dimension-size-100);
+    padding: var(--spectrum-global-dimension-size-150);
+    text-align: left;
+    background: var(--spectrum-global-color-gray-200);
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+}
+
+.trainerCardSelected {
+    border-color: var(--energy-blue);
+    box-shadow: inset 3px 0 var(--energy-blue);
+}
+
+.trainerCardSelected .trainerName {
+    color: var(--energy-blue);
+}
+
+.trainerName {
+    font-weight: 700;
+    font-size: var(--spectrum-global-dimension-font-size-200);
+}
+
+.url {
+    overflow-wrap: anywhere;
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.connectionTag {
+    padding: 0.125rem 0.375rem;
+    color: var(--energy-blue);
+    border: 1px solid var(--energy-blue);
+    border-radius: var(--spectrum-global-dimension-size-50);
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.deviceTag {
+    padding: 0.125rem 0.4375rem;
+    color: var(--spectrum-global-color-gray-800);
+    background: var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-50);
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.cudaTag {
+    color: var(--spectrum-global-color-static-green-500);
+    background: color-mix(in srgb, var(--spectrum-global-color-static-green-500) 16%, transparent);
+}
+
+.xpuTag {
+    color: var(--energy-blue);
+    background: color-mix(in srgb, var(--energy-blue) 16%, transparent);
+}
+
+.cardMeta {
+    margin-top: var(--spectrum-global-dimension-size-75);
+}
+
+.cardMetaText {
+    color: var(--spectrum-global-color-gray-600);
+    font-size: var(--spectrum-global-dimension-font-size-50);
+}
+
+.detailPane,
+.emptyDetail {
+    padding: var(--spectrum-global-dimension-size-300);
+    background: var(--spectrum-global-color-gray-75);
+}
+
+.detailHeader h2 {
+    margin: 0;
+}
+
+.detailActions {
+    align-self: center;
+    padding: var(--spectrum-global-dimension-size-50);
+    background: var(--spectrum-global-color-gray-100);
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--spectrum-global-color-static-black) 12%, transparent);
+}
+
+.destructiveAction {
+    display: flex;
+    margin-left: var(--spectrum-global-dimension-size-50);
+    padding-left: var(--spectrum-global-dimension-size-50);
+    border-left: 1px solid var(--spectrum-global-color-gray-300);
+}
+
+.deleteAction {
+    color: var(--spectrum-global-color-static-red-600);
+    fill: var(--spectrum-global-color-static-red-600);
+}
+
+.deleteAction:hover {
+    color: var(--spectrum-global-color-red-700);
+    fill: var(--spectrum-global-color-red-700);
+}
+
+.detailSection {
+    margin-top: var(--spectrum-global-dimension-size-300);
+    padding: var(--spectrum-global-dimension-size-200);
+    background: var(--spectrum-global-color-gray-100);
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+}
+
+.sectionHeading {
+    margin-top: 0;
+    color: var(--spectrum-global-color-gray-700);
+    font-size: var(--spectrum-global-dimension-font-size-100);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.checkList {
+    margin-top: var(--spectrum-global-dimension-size-100);
+}
+
+.checkRow {
+    display: grid;
+    grid-template-columns: 1.375rem minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-100);
+    min-height: 2.75rem;
+    border-bottom: 1px solid var(--spectrum-global-color-gray-200);
+}
+
+.checkRow:last-child {
+    border-bottom: 0;
+}
+
+.checkIcon {
+    display: grid;
+    place-items: center;
+    line-height: 1;
+    font-weight: 700;
+}
+
+.positive {
+    color: var(--spectrum-global-color-static-green-500);
+}
+
+.yellow {
+    color: var(--spectrum-global-color-static-orange-500);
+}
+
+.negative {
+    color: var(--spectrum-global-color-static-red-500);
+}
+
+.neutral {
+    color: var(--spectrum-global-color-gray-600);
+}
+
+.checkLabel {
+    font-weight: 500;
+}
+
+.checkContent {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spectrum-global-dimension-size-75);
+    min-width: 0;
+}
+
+.checkDetail {
+    color: var(--spectrum-global-color-gray-700);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+}
+
+.checkRow > :last-child {
+    justify-self: end;
+    white-space: nowrap;
+}
+
+.definitionList {
+    display: grid;
+    grid-template-columns: minmax(9rem, max-content) minmax(0, 1fr);
+    gap: var(--spectrum-global-dimension-size-100) var(--spectrum-global-dimension-size-200);
+    margin: var(--spectrum-global-dimension-size-150) 0 0;
+}
+
+.definitionList dt {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.definitionList dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.callout {
+    margin-top: var(--spectrum-global-dimension-size-200);
+    padding: var(--spectrum-global-dimension-size-50) 0 var(--spectrum-global-dimension-size-50)
+        var(--spectrum-global-dimension-size-150);
+    color: var(--spectrum-global-color-gray-700);
+    border-left: 3px solid var(--energy-blue);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+}
+
+.formIntro {
+    padding: var(--spectrum-global-dimension-size-150);
+    background: var(--spectrum-global-color-gray-100);
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+}
+
+.formIntroLabel,
+.formIntroDescription {
+    display: block;
+    color: var(--spectrum-global-color-gray-700);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+}
+
+.connectionTypeOption {
+    display: inline-block;
+    margin: var(--spectrum-global-dimension-size-75) 0;
+    padding: var(--spectrum-global-dimension-size-75) var(--spectrum-global-dimension-size-150);
+    color: var(--spectrum-global-color-static-white);
+    background: var(--spectrum-global-color-blue-500);
+    border-radius: var(--spectrum-global-dimension-size-50);
+    font-weight: 600;
+}
+
+.emptyList {
+    display: block;
+    padding: var(--spectrum-global-dimension-size-150);
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.errorMessage {
+    color: var(--spectrum-global-color-static-red-600);
+}
+
+@media (max-width: 48rem) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+
+    .listPane {
+        border-right: 0;
+        border-bottom: 1px solid var(--spectrum-global-color-gray-300);
+    }
+
+    .detailActions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .checkRow {
+        grid-template-columns: 1.375rem minmax(0, 1fr);
+    }
+
+    .checkRow > :last-child {
+        grid-column: 2;
+    }
+
+    .definitionList {
+        grid-template-columns: 1fr;
+    }
+
+    .definitionList dd + dt {
+        margin-top: var(--spectrum-global-dimension-size-75);
+    }
+}

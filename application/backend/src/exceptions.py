@@ -13,6 +13,7 @@ class ResourceType(StrEnum):
     ENVIRONMENT = "Environment"
     DATASET = "Dataset"
     MODEL = "Model"
+    REMOTE_TRAINER = "Remote trainer"
     JOB = "JOB"
     JOB_FILE = "JOB_FILE"
 

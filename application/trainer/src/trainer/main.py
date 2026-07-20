@@ -16,8 +16,9 @@ from loguru import logger
 from trainer.api import router as jobs_router
 from trainer.devices import get_training_devices
 from trainer.queue_worker import QueueManager
-from trainer.schemas import DeviceInfo
+from trainer.schemas import DeviceInfo, StorageInfo
 from trainer.settings import get_settings
+from trainer.storage import get_storage_info
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -54,6 +55,12 @@ async def health() -> dict:
 async def devices() -> list[DeviceInfo]:
     """Report the compute devices this trainer can use for training."""
     return get_training_devices()
+
+
+@app.get("/storage")
+async def storage() -> StorageInfo:
+    """Report the available storage capacity on this trainer's storage volume."""
+    return get_storage_info()
 
 
 if __name__ == "__main__":

@@ -241,7 +241,7 @@ def _backend(settings: MagicMock):
     from services.training_backends.remote import RemoteTrainingBackend
 
     with patch(f"{REMOTE}.get_settings", return_value=settings):
-        return RemoteTrainingBackend()
+        return RemoteTrainingBackend("https://trainer.test")
 
 
 # ---------------------------------------------------------------------------
@@ -551,17 +551,6 @@ class TestRemoteTrainingBackend:
             backend = _backend(settings)
             with pytest.raises(RemoteTrainingError):
                 await backend.get_training_devices()
-
-    @pytest.mark.anyio
-    async def test_missing_config_raises_on_construction(self):
-        settings = _settings()
-        settings.trainer_url = None
-        from services.training_backends.remote import RemoteTrainingError
-
-        with patch(f"{REMOTE}.get_settings", return_value=settings), pytest.raises(RemoteTrainingError):
-            from services.training_backends.remote import RemoteTrainingBackend
-
-            RemoteTrainingBackend()
 
 
 class TestHttpDatasetTransfer:

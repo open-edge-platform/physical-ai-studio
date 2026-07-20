@@ -72,8 +72,16 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
             return self.from_schema(first_result)
         return None
 
-    async def get_all(self, extra_filters: dict | None = None, expressions: list[Any] | None = None) -> list[ModelType]:
+    async def get_all(
+        self,
+        extra_filters: dict | None = None,
+        expressions: list[Any] | None = None,
+        order_by: Any | None = None,
+        ascending: bool = False,
+    ) -> list[ModelType]:
         query = self._get_filter_query(extra_filters=extra_filters, expressions=expressions)
+        if order_by is not None:
+            query = query.order_by(order_by.asc() if ascending else order_by.desc())
         results = await self.db.execute(query)
         scalars = results.scalars().all()
         return [self.from_schema(result) for result in scalars]
@@ -87,15 +95,15 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
     async def update(self, item: ModelType, partial_update: dict) -> ModelType:
         # note: model_copy does not validate the model, so we need to validate explicitly
         to_update = item.model_copy(update=partial_update, deep=True)
-        item.__class__.model_validate(to_update.model_dump())
+        to_update = cast("ModelType", item.__class__.model_validate(to_update.__dict__))
         schema_item: SchemaType = self.to_schema(to_update)
         await self.db.merge(schema_item)
         await self.db.commit()
 
         item_id = getattr(item, "id", None)
-        if item_id is None:
+        if not isinstance(item_id, str | UUID):
             raise TypeError(f"{item.__class__.__name__} does not provide a usable `id` for update refresh")
-        updated = await self.get_by_id(item_id)
+        updated = await self.get_by_id(str(item_id))
         if updated is None:
             raise ValueError(f"{item.__class__} with ID `{item_id}` doesn't exist")
         return updated
@@ -140,8 +148,8 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
         }
 
         to_update = item.model_copy(update=partial_update, deep=True)
-        # Re-validate to convert dicts back to their proper model types
-        to_update = cast("ModelType", item.__class__.model_validate(to_update.model_dump()))
+        # Re-validate to convert dicts back to their proper model types.
+        to_update = cast("ModelType", item.__class__.model_validate(to_update.__dict__))
         schema_item = self.to_schema(to_update)
 
         if hasattr(schema_item, "project_id"):
@@ -151,9 +159,9 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
         await self.db.commit()
 
         item_id = getattr(item, "id", None)
-        if item_id is None:
+        if not isinstance(item_id, str | UUID):
             raise TypeError(f"{item.__class__.__name__} does not provide a usable `id` for update refresh")
-        updated = await self.get_by_id(item_id)
+        updated = await self.get_by_id(str(item_id))
         if updated is None:
             raise ValueError(f"{item.__class__} with ID `{item_id}` doesn't exist")
         return updated

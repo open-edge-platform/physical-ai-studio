@@ -15,7 +15,8 @@ from exceptions import (
 from repositories import JobRepository
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import JobPayload, TrainJob, TrainJobPayload
+from schemas.job import JobPayload, TrainingTarget, TrainJob, TrainJobPayload
+from services.remote_trainer_service import RemoteTrainerService
 from services.system_service import SystemService
 
 
@@ -53,8 +54,21 @@ class JobService:
 
     @staticmethod
     async def submit_train_job(payload: TrainJobPayload) -> Job:
-        # Validate the requested training device before persisting the job
-        if payload.device is not None and not SystemService.is_device_supported_for_training(payload.device.type):
+        """Validate and persist a training job with its execution target pinned."""
+        if payload.training_target is TrainingTarget.REMOTE:
+            if payload.remote_trainer_id is None:
+                raise ValueError("Remote training requires a selected remote trainer")
+            remote_trainer = await RemoteTrainerService.get_remote_trainer(payload.remote_trainer_id)
+            payload = TrainJobPayload.model_validate(
+                payload.model_dump() | {"remote_trainer_url": str(remote_trainer.url)}
+            )
+
+        # A remote trainer validates its own devices. Validate only local device choices here.
+        if (
+            payload.training_target is TrainingTarget.LOCAL
+            and payload.device is not None
+            and not SystemService.is_device_supported_for_training(payload.device.type)
+        ):
             raise UnsupportedDeviceError(
                 device_type=payload.device.type,
                 supported=SystemService.supported_training_device_types(),
@@ -80,6 +94,13 @@ class JobService:
         async with get_async_db_session_ctx() as session:
             repo = JobRepository(session)
             return await repo.get_pending_job_by_type(JobType.TRAINING)
+
+    @staticmethod
+    async def get_pending_train_jobs() -> list[Job]:
+        """Return pending training jobs in submission order."""
+        async with get_async_db_session_ctx() as session:
+            repo = JobRepository(session)
+            return await repo.get_pending_jobs_by_type(JobType.TRAINING)
 
     @staticmethod
     async def update_job_payload(

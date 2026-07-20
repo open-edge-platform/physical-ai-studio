@@ -25,6 +25,7 @@ import { paths } from '../../router';
 import { ReactComponent as DatasetIcon } from './../../assets/icons/dataset-icon.svg';
 import { ReactComponent as ModelsIcon } from './../../assets/icons/models-icon.svg';
 import { ReactComponent as RobotIcon } from './../../assets/icons/robot-icon.svg';
+import { getMainPageInProjectUrl } from './project-navigation';
 
 const Header = ({ project_id }: { project_id: string }) => {
     return (
@@ -66,6 +67,13 @@ const Header = ({ project_id }: { project_id: string }) => {
                             Models
                         </Flex>
                     </Item>
+                    <Item
+                        textValue='Remote Trainers'
+                        key={'remote-servers'}
+                        href={paths.project.remoteServers.index({ project_id })}
+                    >
+                        Remote Trainers
+                    </Item>
                 </TabList>
                 <Flex alignItems={'center'} height={'100%'} marginStart='auto' gap='size-100'>
                     <ProjectsListPanel />
@@ -73,20 +81,6 @@ const Header = ({ project_id }: { project_id: string }) => {
             </Flex>
         </View>
     );
-};
-
-const getMainPageInProjectUrl = (pathname: string) => {
-    const regexp = /\/projects\/[\w-]*\/([\w-]*)/g;
-    const found = [...pathname.matchAll(regexp)];
-    if (found.length) {
-        const [, main] = found[0];
-        if (main === 'cameras' || main === 'environments') {
-            return 'robots';
-        }
-        return main;
-    } else {
-        return 'datasets';
-    }
 };
 
 const Footer = () => {

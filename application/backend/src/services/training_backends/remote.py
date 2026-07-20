@@ -75,11 +75,9 @@ class RemoteTrainingBackend:
 
     _last_progress_log: str | None = None
 
-    def __init__(self) -> None:
+    def __init__(self, base_url: str) -> None:
         settings = get_settings()
-        if not settings.trainer_url:
-            raise RemoteTrainingError("Remote training requires TRAINER_URL")
-        self._base_url = settings.trainer_url.rstrip("/")
+        self._base_url = base_url.rstrip("/")
         self._timeout = settings.trainer_request_timeout_s
         # Resolved once by _resolve_trust_env(): True honors proxy env vars,
         # False bypasses them. None means "not yet probed".

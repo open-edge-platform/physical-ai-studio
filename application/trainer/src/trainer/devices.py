@@ -16,13 +16,13 @@ from trainer.schemas import DeviceInfo
 
 
 def get_training_devices() -> list[DeviceInfo]:
-    """Enumerate CPU, Intel XPU and NVIDIA CUDA devices available for training."""
-    devices: list[DeviceInfo] = [DeviceInfo(type="cpu", name="CPU", memory=None, index=None)]
+    """Enumerate Intel XPU and NVIDIA CUDA devices available for training."""
+    devices: list[DeviceInfo] = []
 
     try:
         import torch
     except Exception as exc:  # noqa: BLE001 - torch may be absent in lightweight installs
-        logger.warning("torch unavailable; reporting CPU only: {}", exc)
+        logger.warning("torch unavailable; no accelerator devices reported: {}", exc)
         return devices
 
     try:

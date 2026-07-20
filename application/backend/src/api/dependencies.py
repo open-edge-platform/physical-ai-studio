@@ -16,6 +16,7 @@ from services import (
     ModelService,
     ProjectCameraService,
     ProjectService,
+    RemoteTrainerService,
     RobotService,
 )
 from services.dataset_import.service import DatasetImportService
@@ -54,6 +55,12 @@ def get_system_service() -> SystemService:
 def get_project_service() -> ProjectService:
     """Provide a ProjectService instance for managing projects."""
     return ProjectService()
+
+
+@lru_cache
+def get_remote_trainer_service() -> RemoteTrainerService:
+    """Provide a service for managing configured remote trainer URLs."""
+    return RemoteTrainerService()
 
 
 @lru_cache

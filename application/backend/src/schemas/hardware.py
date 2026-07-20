@@ -63,3 +63,10 @@ class InferenceDeviceInfo(DeviceInfo):
 
     backend: InferenceBackend = Field(..., description="Inference backend (openvino, torch)")
     device: str = Field(..., description="Backend-specific device identifier")
+
+
+class StorageInfo(BaseModel):
+    """Disk usage for a trainer's storage volume."""
+
+    total_bytes: int = Field(..., ge=0, description="Total capacity of the storage volume in bytes")
+    free_bytes: int = Field(..., ge=0, description="Free space available on the storage volume in bytes")

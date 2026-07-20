@@ -22,6 +22,13 @@ class TrainingPrecision(StrEnum):
     BF16_TRUE = "bf16-true"
 
 
+class TrainingTarget(StrEnum):
+    """Where a training job executes."""
+
+    LOCAL = "local"
+    REMOTE = "remote"
+
+
 class JobList(BaseModel):
     jobs: list["Job"]
 
@@ -85,6 +92,18 @@ class TrainJobPayload(BaseModel):
         description="Training precision ('32-true', 'bf16-mixed')",
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
+    training_target: TrainingTarget = Field(
+        default=TrainingTarget.LOCAL,
+        description="Whether training runs in the Studio process or on a configured remote trainer",
+    )
+    remote_trainer_id: UUID | None = Field(
+        default=None,
+        description="Configured remote trainer selected for a remote run",
+    )
+    remote_trainer_url: str | None = Field(
+        default=None,
+        description="Resolved remote trainer URL pinned when the job is submitted for restart recovery",
+    )
 
     remote_job_id: UUID | None = Field(
         default=None, description="Remote trainer job id, set when a remote run is in flight (for restart reattach)"
@@ -92,6 +111,17 @@ class TrainJobPayload(BaseModel):
     snapshot_id: UUID | None = Field(
         default=None, description="Dataset snapshot id retained while a remote run is in flight (for model provenance)"
     )
+
+    @model_validator(mode="after")
+    def validate_training_target(self) -> "TrainJobPayload":
+        """Keep local jobs and pinned remote endpoints mutually consistent."""
+        if self.training_target is TrainingTarget.LOCAL:
+            if self.remote_trainer_id is not None or self.remote_trainer_url is not None:
+                raise ValueError("Local training cannot specify a remote trainer")
+            return self
+        if self.remote_trainer_id is None:
+            raise ValueError("Remote training requires remote_trainer_id")
+        return self
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import multiprocessing as mp
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
@@ -14,7 +15,7 @@ from loguru import logger
 from core.logging.utils import job_logging_ctx
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
-from schemas.job import TrainJobPayload
+from schemas.job import TrainingTarget, TrainJobPayload
 from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
@@ -30,7 +31,7 @@ from settings import get_settings
 from workers.base import BaseProcessWorker
 
 if TYPE_CHECKING:
-    import multiprocessing as mp
+    from collections.abc import Callable
     from multiprocessing.synchronize import Event as EventClass
 
 SCHEDULE_INTERVAL_SEC = 5
@@ -43,57 +44,85 @@ class TrainingWorker(BaseProcessWorker):
         super().__init__(stop_event=stop_event)
         self.queue = event_queue
         self.interrupt_event = interrupt_event
+        self._active_training_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def run_loop(self) -> None:
-        job_service = JobService()
         logger.info("Training Worker is running")
-        while not self.should_stop():
-            settings = get_settings()
-
-            job = await job_service.get_pending_train_job()
-            if job is not None:
-                with job_logging_ctx(job_id=str(job.id)):
+        try:
+            while not self.should_stop():
+                pending_jobs = await JobService.get_pending_train_jobs()
+                for job in pending_jobs:
                     payload = TrainJobPayload.model_validate(job.payload)
-                    id = uuid4()
-                    # Reattach to persisted remote jobs after a studio restart.
-                    reattaching = settings.training_mode == "remote" and bool(payload.remote_job_id)
-
-                    base_model = None
-                    if payload.base_model_id is not None:
-                        base_model = await ModelService.get_model_by_id(payload.base_model_id)
-
-                    model_dir = Path(str(settings.models_dir / str(id)))
-
-                    if reattaching:
-                        # Reattached jobs already have their snapshot on the trainer.
-                        logger.info("Resuming in-flight remote training job (remote job {})", payload.remote_job_id)
-                        snapshot: Snapshot | None = None
-                        snapshot_id = payload.snapshot_id
-                    else:
-                        dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
-                        snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
-                        snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
-                        snapshot_id = snapshot.id
-                        payload.snapshot_id = snapshot_id
-
-                    model = Model(
-                        id=id,
-                        project_id=payload.project_id,
-                        dataset_id=payload.dataset_id,
-                        path=str(model_dir),
-                        name=payload.model_name,
-                        snapshot_id=snapshot_id,
-                        policy=payload.policy,
-                        properties={},
-                        train_job_id=job.id,
-                        parent_model_id=payload.base_model_id,
-                        version=base_model.version + 1 if base_model else 1,
-                        created_at=None,
-                    )
-
+                    target = self._target_key(payload)
+                    if target in self._active_training_tasks:
+                        continue
                     self.interrupt_event.clear()
-                    await asyncio.create_task(self._train_model(job, model, snapshot, payload, base_model))
-            self.stop_aware_sleep(0.5)
+                    task = asyncio.create_task(self._run_training_job(job, payload), name=f"training-{job.id}")
+                    self._active_training_tasks[target] = task
+                    task.add_done_callback(self._make_release_callback(target))
+                self.stop_aware_sleep(0.5)
+        finally:
+            if self._active_training_tasks:
+                await asyncio.gather(*self._active_training_tasks.values(), return_exceptions=True)
+
+    def _release_target(self, target: str, completed_task: asyncio.Task[None]) -> None:
+        """Release a target only when its currently registered task completes."""
+        if self._active_training_tasks.get(target) is completed_task:
+            self._active_training_tasks.pop(target)
+
+    def _make_release_callback(self, target: str) -> Callable[[asyncio.Task[None]], None]:
+        """Build a done-callback bound to `target` for `add_done_callback`."""
+
+        def _on_done(completed_task: asyncio.Task[None]) -> None:
+            self._release_target(target, completed_task)
+
+        return _on_done
+
+    @staticmethod
+    def _target_key(payload: TrainJobPayload) -> str:
+        """Return the exclusive execution target for a training job."""
+        if payload.training_target is TrainingTarget.LOCAL:
+            return TrainingTarget.LOCAL.value
+        return f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
+
+    async def _run_training_job(self, job: Job, payload: TrainJobPayload) -> None:
+        """Prepare and execute one job after its execution target has been reserved."""
+        with job_logging_ctx(job_id=str(job.id)):
+            settings = get_settings()
+            model_id = uuid4()
+            reattaching = payload.training_target is TrainingTarget.REMOTE and bool(payload.remote_job_id)
+
+            base_model = None
+            if payload.base_model_id is not None:
+                base_model = await ModelService.get_model_by_id(payload.base_model_id)
+
+            model_dir = Path(str(settings.models_dir / str(model_id)))
+            if reattaching:
+                logger.info("Resuming in-flight remote training job (remote job {})", payload.remote_job_id)
+                snapshot: Snapshot | None = None
+                snapshot_id = payload.snapshot_id
+            else:
+                dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
+                snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
+                snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
+                snapshot_id = snapshot.id
+                payload.snapshot_id = snapshot_id
+
+            model = Model(
+                id=model_id,
+                project_id=payload.project_id,
+                dataset_id=payload.dataset_id,
+                path=str(model_dir),
+                name=payload.model_name,
+                snapshot_id=snapshot_id,
+                policy=payload.policy,
+                properties={},
+                train_job_id=job.id,
+                parent_model_id=payload.base_model_id,
+                version=base_model.version + 1 if base_model else 1,
+                created_at=None,
+            )
+            await self._train_model(job, model, snapshot, payload, base_model)
 
     async def setup(self) -> None:
         await super().setup()
@@ -122,10 +151,11 @@ class TrainingWorker(BaseProcessWorker):
                 "start_time": datetime.datetime.now(tz=datetime.UTC),
             },
         )
+        dispatcher_stop_event = mp.Event()
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
             event_queue=self.queue,
-            interrupt_event=self.interrupt_event,
+            interrupt_event=dispatcher_stop_event,
         )
         interrupted = False
         suspended = False
@@ -147,7 +177,7 @@ class TrainingWorker(BaseProcessWorker):
                 should_suspend=self.should_stop,
             )
 
-            backend = get_training_backend()
+            backend = get_training_backend(payload)
             await backend.train(context)
             # The local backend stops cooperatively without raising; treat a
             # completed-but-interrupted run as a cancellation, not a success.
@@ -165,7 +195,7 @@ class TrainingWorker(BaseProcessWorker):
             # Stop the dispatcher and let it flush queued progress BEFORE writing
             # the terminal status. Otherwise a late RUNNING progress update can
             # land after the terminal write and revert the job (stuck at 95%).
-            self.interrupt_event.set()
+            dispatcher_stop_event.set()
             if dispatcher.is_alive():
                 dispatcher.join(timeout=10)
 

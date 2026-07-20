@@ -10,7 +10,9 @@ JOB_ADAPTER = TypeAdapter(Job)
 class JobMapper(IBaseMapper):
     @staticmethod
     def to_schema(db_schema: Job) -> JobDB:
-        return JobDB(**db_schema.model_dump())
+        job_data = db_schema.model_dump()
+        job_data["payload"] = db_schema.payload.model_dump(mode="json")
+        return JobDB(**job_data)
 
     @staticmethod
     def from_schema(model: JobDB) -> Job:
