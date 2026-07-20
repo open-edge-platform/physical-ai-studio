@@ -60,15 +60,15 @@ train = [
 ]
 cpu = [
     "torch<2.13",
-    "torchvision<0.26.0",
+    "torchvision<0.28.0",
 ]
 cuda = [
     "torch<2.13",
-    "torchvision<0.26.0",
+    "torchvision<0.28.0",
 ]
 xpu = [
     "torch<2.13",
-    "torchvision<0.26.0",
+    "torchvision<0.28.0",
     "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 
