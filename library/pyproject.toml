@@ -70,15 +70,12 @@ diffusion = ["diffusers>=0.38.0"]
 
 # VLA Policy dependencies - these are heavy models with specific requirements
 # Install with: pip install physicalai-train[groot]
-# Note: transformers 5.4.0 breaks pi0/pi0fast policies (all-BOS-token generation).
-# Upstream lerobot pinned to ==5.3.0 in huggingface/lerobot#3249.
-# Track https://github.com/huggingface/lerobot/pull/3249 for when 5.4+ is safe.
 
 # Physical Intelligence Pi0/Pi0.5 foundation model
 # Requires PaliGemma backbone + Gemma action expert
 # Supports LoRA fine-tuning for efficient adaptation
 pi0 = [
-    "transformers>=5.3.0,<5.4.0",
+    "transformers>=5.5.0,<5.6.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
@@ -90,7 +87,7 @@ pi05 = ["physicalai-train[pi0]"]
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
 # Note: transformers>=4.54.0 required for _prepare_image_like_inputs fix
 groot = [
-    "transformers>=5.3.0,<5.4.0",
+    "transformers>=5.5.0,<5.6.0",
     "peft>=0.13.0,<1.0.0",
     "diffusers>=0.38.0",
     "dm-tree>=0.1.8,<1.0.0",
@@ -103,7 +100,7 @@ groot = [
 
 # SmolVLA foundation model
 smolvla = [
-    "transformers>=5.3.0,<5.4.0",
+    "transformers>=5.5.0,<5.6.0",
     "num2words>=0.5.14,<0.6.0",
     "safetensors>=0.4.3,<1.0.0",
 ]
@@ -198,7 +195,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9881601325f724a0f00b1bf43f134d7f34fdef55" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "08fcd96389fa9e326946df6affc5c19c4c731633" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

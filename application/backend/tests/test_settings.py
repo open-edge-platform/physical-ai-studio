@@ -42,17 +42,3 @@ def test_data_dir_is_storage_backed_even_with_data_dir_env(monkeypatch, tmp_path
     settings = Settings(STORAGE_DIR="~/custom-storage")
 
     assert settings.data_dir == tmp_path / "custom-storage" / "data"
-
-
-def test_dataset_transfer_defaults_to_http(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("TRAINER_DATASET_TRANSFER", raising=False)
-
-    assert Settings(STORAGE_DIR="~/s").trainer_dataset_transfer == "http"
-
-
-def test_dataset_transfer_reads_env(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.delenv("TRAINER_DATASET_TRANSFER", raising=False)
-
-    assert Settings(TRAINER_DATASET_TRANSFER="hf", STORAGE_DIR="~/s").trainer_dataset_transfer == "hf"

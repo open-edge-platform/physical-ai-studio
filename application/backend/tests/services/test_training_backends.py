@@ -18,8 +18,6 @@ from services.training_service import TrainingTrackingDispatcher
 
 def _settings() -> MagicMock:
     settings = MagicMock()
-    settings.trainer_hf_namespace = "acme"
-    settings.trainer_dataset_transfer = "http"
     settings.trainer_request_timeout_s = 5.0
     return settings
 

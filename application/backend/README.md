@@ -55,7 +55,7 @@ Please check out [this document](docs/video_hardware_acceleration_intel.md) for 
 # Activate virtual environment
 source .venv/bin/activate
 
-# Run the Studio backend
+# Run server (backend with in-process training; TRAINING_MODE defaults to local)
 uv run physicalai-studio serve
 
 # Equivalent thin wrapper

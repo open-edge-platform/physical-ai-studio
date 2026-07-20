@@ -54,7 +54,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-07-07T11:32:52.911512Z"
+exclude-newer = "2026-07-13T12:53:18.822738Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -417,7 +417,7 @@ name = "cuda-bindings"
 version = "12.9.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder", marker = "(sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu')" },
+    { name = "cuda-pathfinder", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/c2/65bfd79292b8ff18be4dd7f7442cea37bcbc1a228c1886f1dea515c45b67/cuda_bindings-12.9.4-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:694ba35023846625ef471257e6b5a4bc8af690f961d197d77d34b1d1db393f56", size = 11760260, upload-time = "2025-10-21T14:51:40.79Z" },
@@ -1673,7 +1673,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.10.2.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "(sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu')" },
+    { name = "nvidia-cublas-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/41/e79269ce215c857c935fd86bcfe91a451a584dfc27f1e068f568b9ad1ab7/nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:c9132cc3f8958447b4910a1720036d9eff5928cc3179b0a51fb6d167c6cc87d8", size = 705026878, upload-time = "2025-06-06T21:52:51.348Z" },
@@ -1686,7 +1686,7 @@ name = "nvidia-cufft-cu12"
 version = "11.3.3.83"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/bc/7771846d3a0272026c416fbb7e5f4c1f146d6d80704534d0b187dd6f4800/nvidia_cufft_cu12-11.3.3.83-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:848ef7224d6305cdb2a4df928759dca7b1201874787083b6e7550dd6765ce69a", size = 193109211, upload-time = "2025-03-07T01:44:56.873Z" },
@@ -1718,9 +1718,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.3.90"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "(sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu')" },
-    { name = "nvidia-cusparse-cu12", marker = "(sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu')" },
-    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu')" },
+    { name = "nvidia-cublas-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu')" },
+    { name = "nvidia-cusparse-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/32/f7cd6ce8a7690544d084ea21c26e910a97e077c9b7f07bf5de623ee19981/nvidia_cusolver_cu12-11.7.3.90-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:db9ed69dbef9715071232caa9b69c52ac7de3a95773c2db65bdba85916e4e5c0", size = 267229841, upload-time = "2025-03-07T01:46:54.356Z" },
@@ -1733,7 +1733,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.8.93"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(sys_platform != 'emscripten' and sys_platform != 'win32' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/f7/cd777c4109681367721b00a106f491e0d0d15cfa1fd59672ce580ce42a97/nvidia_cusparse_cu12-12.5.8.93-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:9b6c161cb130be1a07a27ea6923df8141f3c295852f4b260c65f18f3e0a091dc", size = 288117129, upload-time = "2025-03-07T01:47:40.407Z" },
@@ -2152,8 +2152,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.1.2.dev19+g988160132"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=9881601325f724a0f00b1bf43f134d7f34fdef55#9881601325f724a0f00b1bf43f134d7f34fdef55" }
+version = "0.1.2.dev25+g08fcd9638"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=08fcd96389fa9e326946df6affc5c19c4c731633#08fcd96389fa9e326946df6affc5c19c4c731633" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2238,7 +2238,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=9881601325f724a0f00b1bf43f134d7f34fdef55" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=08fcd96389fa9e326946df6affc5c19c4c731633" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
@@ -2266,9 +2266,9 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
-    { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.3.0,<5.4.0" },
-    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.3.0,<5.4.0" },
-    { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.3.0,<5.4.0" },
+    { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
 ]
 provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "executorch", "executorch-openvino", "all"]
 
@@ -2918,7 +2918,7 @@ name = "pytorch-triton-xpu"
 version = "3.5.0"
 source = { registry = "https://download.pytorch.org/whl/xpu" }
 dependencies = [
-    { name = "setuptools" },
+    { name = "setuptools", marker = "sys_platform != 'emscripten'" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/pytorch_triton_xpu-3.5.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:afc8cabfbf7ed51fd278d1e0f88d6afc157b0201bad4b99d681e4d542f9e66d4", upload-time = "2025-10-14T17:16:46Z" },
@@ -2934,7 +2934,7 @@ name = "pyturbojpeg"
 version = "1.8.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy" },
+    { name = "numpy", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'win32') or (sys_platform == 'darwin' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'darwin' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'emscripten' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-cuda') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cpu' and extra == 'extra-18-physicalai-trainer-xpu') or (sys_platform == 'win32' and extra == 'extra-18-physicalai-trainer-cuda' and extra == 'extra-18-physicalai-trainer-xpu')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f2/2b/5fc7a7f51af947708a5d75d7637e923d2d4e60f43f6a4cfe55ae1ea241a2/pyturbojpeg-1.8.3.tar.gz", hash = "sha256:c131591a3990cc57f45a8b2705d6261c25df913a19b1fe88de5e911dbe04a1d4", size = 12757, upload-time = "2026-02-17T02:32:53.192Z" }
 
@@ -4051,7 +4051,7 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "5.3.0"
+version = "5.5.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -4064,9 +4064,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/1a/70e830d53ecc96ce69cfa8de38f163712d2b43ac52fbd743f39f56025c31/transformers-5.3.0.tar.gz", hash = "sha256:009555b364029da9e2946d41f1c5de9f15e6b1df46b189b7293f33a161b9c557", size = 8830831, upload-time = "2026-03-04T17:41:46.119Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a5/1e/1e244ab2ab50a863e6b52cc55761910567fa532b69a6740f6e99c5fdbd98/transformers-5.5.4.tar.gz", hash = "sha256:2e67cadba81fc7608cc07c4dd54f524820bc3d95b1cabd0ef3db7733c4f8b82e", size = 8227649, upload-time = "2026-04-13T16:55:55.181Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b8/88/ae8320064e32679a5429a2c9ebbc05c2bf32cefb6e076f9b07f6d685a9b4/transformers-5.3.0-py3-none-any.whl", hash = "sha256:50ac8c89c3c7033444fb3f9f53138096b997ebb70d4b5e50a2e810bf12d3d29a", size = 10661827, upload-time = "2026-03-04T17:41:42.722Z" },
+    { url = "https://files.pythonhosted.org/packages/29/fb/162a66789c65e5afa3b051309240c26bf37fbc8fea285b4546ae747995a2/transformers-5.5.4-py3-none-any.whl", hash = "sha256:0bd6281b82966fe5a7a16f553ea517a9db1dee6284d7cb224dfd88fc0dd1c167", size = 10236696, upload-time = "2026-04-13T16:55:51.497Z" },
 ]
 
 [[package]]
