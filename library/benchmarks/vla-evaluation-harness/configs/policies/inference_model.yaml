@@ -1,0 +1,15 @@
+# Example policy config for an exported InferenceModel.
+#
+# Export your trained policy first:
+#   physicalai export --policy physicalai.policies.Pi05 \
+#     --ckpt_path checkpoints/pi05_libero.ckpt \
+#     --output_dir exports/pi05_libero
+#
+# Then point ``export_dir`` at the resulting directory.  ``device`` is set
+# here so InferenceModel loads the weights straight onto the target GPU —
+# the harness's top-level ``device`` arg is a no-op for InferenceModel.
+
+class_path: physicalai.inference.InferenceModel
+init_args:
+  export_dir: /path/to/exported/model
+  device: cuda

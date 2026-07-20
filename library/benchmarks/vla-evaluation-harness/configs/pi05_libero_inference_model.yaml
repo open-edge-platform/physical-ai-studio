@@ -1,0 +1,19 @@
+# Physical AI Studio model server: LIBERO reproduction target.
+#
+# Requires an exported policy (run `physicalai export` first — see
+# configs/policies/inference_model.yaml for the policy config format).
+#
+# The pi05_libero_finetuned checkpoint declares two image features:
+#   image  (base / agentview), image2 (wrist).
+# Match LeRobot / OpenPI LIBERO protocol with chunk_size=10.
+
+script: "model_servers/physicalai_harness.py"
+args:
+  policy_config: "configs/policies/inference_model.yaml"
+  # Map LIBERO cameras to the policy's image feature slots.
+  image_keys:
+    agentview: "image"
+    wrist: "image2"
+  state_key: "observation.state"
+  chunk_size: 10
+  port: 8000

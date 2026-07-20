@@ -1,0 +1,15 @@
+# configs/policies/pi05_policy.yaml
+#
+# Example policy config for a physicalai.policies.Policy subclass, loaded
+# directly via __init__ — no `physicalai export` step required.
+#
+# NOTE: jsonargparse's add_subclass_arguments instantiates via __init__,
+# not load_from_checkpoint. This only loads real trained weights if Pi05's
+# __init__ itself resolves `pretrained_name_or_path` (HF Hub id or local
+# directory) into weights. If your checkpoint is a raw Lightning `.ckpt`
+# file instead, this config will construct Pi05 with default/untrained
+# weights with no error — verify which form your checkpoint is in before
+# trusting eval results from this path.
+class_path: physicalai.policies.pi05.Pi05
+init_args:
+  pretrained_name_or_path: lerobot/pi05_libero_finetuned_v044
