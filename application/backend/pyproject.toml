@@ -10,8 +10,8 @@ dependencies = [
   "cv2-enumerate-cameras",
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
-  "physicalai-train[pi0,smolvla]",
   "physicalai[robots, capture]",
+  "physicalai-train",
   "lerobot[dataset,feetech]==0.6.0",
   "numpy",
   "websockets",
@@ -30,10 +30,8 @@ dependencies = [
   "aiofiles>=25.1.0",
   "types-aiofiles>=25.1.0.20251011",
   "sse-starlette>=2.0.0",
-  "executorch>=1.1.0",
-  # Executorch pulls in torchao transitively; use an exact public version so
-  # uv doesn't select XPU local-version wheels (e.g. 0.15.0+xpu) for CUDA runs.
-  "torchao===0.15.0",
+  "huggingface-hub>=0.27",
+  "psutil~=7.2",
 ]
 
 [project.scripts]
@@ -54,8 +52,12 @@ exclude = [
 [tool.hatch.build.hooks.custom]
 path = "scripts/hatch_build.py"
 
-
 [project.optional-dependencies]
+train = [
+  "physicalai-train[pi0,smolvla]",
+  "executorch>=1.1.0",
+  "torchao===0.15.0",
+]
 cpu = [
     "torch<2.13",
     "torchvision<0.26.0",
@@ -74,11 +76,17 @@ tests = [
     "pytest",
 ]
 
+
 # --- PyTorch index configuration ---
-# torch is a transitive dependency (via lightning, lerobot) that defaults to
-# PyPI's fat CUDA wheel on Linux. Source routing here directs uv to fetch
-# torch/torchvision from the correct hardware-specific PyTorch index.
-# This must be declared in the consumer project because uv does not
+# torch/torchvision are transitive dependencies of the base install via lerobot
+# (and additionally via lightning when the `train` extra is installed). They are
+# present even on recording-only nodes, so the cpu/cuda/xpu extras below are
+# always required: they are the only mechanism that pins torch/torchvision to the
+# correct hardware-specific PyTorch index. Without selecting one, torch defaults
+# to the wrong wheel (e.g. the fat CUDA wheel on Linux, or a `+xpu` build from the
+# non-explicit XPU index). These extras are independent of the `train` extra:
+# combine them, e.g. `--extra cuda` (recording) or `--extra cuda --extra train`.
+# Source routing must be declared in the consumer project because uv does not
 # propagate [tool.uv.sources] from path dependencies (uv #14675).
 #
 # PyPI is listed first as a named default index so that it takes priority
@@ -106,7 +114,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9881601325f724a0f00b1bf43f134d7f34fdef55" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "08fcd96389fa9e326946df6affc5c19c4c731633" }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
 # be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),

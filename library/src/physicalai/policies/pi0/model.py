@@ -50,9 +50,9 @@ def _clone_kv_cache(cache: DynamicCache) -> DynamicCache:
 
     cloned = DynamicCache()
     for layer_idx, layer in enumerate(cache.layers):
-        if layer.keys is None or layer.values is None:
+        if layer.keys is None or layer.values is None:  # pyrefly: ignore[missing-attribute]
             continue
-        cloned.update(layer.keys.clone(), layer.values.clone(), layer_idx)
+        cloned.update(layer.keys.clone(), layer.values.clone(), layer_idx)  # pyrefly: ignore[missing-attribute]
     return cloned
 
 

@@ -38,7 +38,7 @@ class EventProcessor:
             while True:
                 try:
                     event, payload = self.queue.get_nowait()
-                    logger.info(event)
+                    logger.debug(event)
                     for handler in self._event_handlers[event]:
                         if asyncio.iscoroutinefunction(handler):
                             try:

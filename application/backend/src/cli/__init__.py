@@ -8,6 +8,7 @@ import click
 
 from cli.database import database
 from cli.models import models
+from cli.run import remote
 from cli.serve import serve
 from robots.catalog.assets import get_builtin_robot_assets_root
 from robots.catalog.sync_robot_assets import sync_robot_assets as sync_builtin_robot_assets
@@ -53,3 +54,4 @@ def sync_robot_assets(target_dir: str) -> None:
 cli.add_command(database)
 cli.add_command(models)
 cli.add_command(serve)
+cli.add_command(remote)

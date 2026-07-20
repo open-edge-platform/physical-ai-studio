@@ -16,15 +16,42 @@ if TYPE_CHECKING:
     from trainer.schemas import SubmitJobRequest
 
 
-def test_create_persists_queued_job(db_path: Path, sample_request: SubmitJobRequest) -> None:
+def test_create_starts_awaiting_dataset(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    """A job is not queued until its dataset upload lands."""
     store = JobStore(db_path)
 
     job_id = store.create(sample_request)
     state = store.get(job_id)
 
     assert state is not None
-    assert state.status == TrainerJobStatus.QUEUED
+    assert state.status == TrainerJobStatus.AWAITING_DATASET
     assert state.progress == 0
+    # Not dispatchable while awaiting its dataset.
+    assert store.next_queued() is None
+
+
+def test_mark_dataset_ready_queues_job(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+
+    store.mark_dataset_ready(job_id)
+    state = store.get(job_id)
+
+    assert state is not None
+    assert state.status == TrainerJobStatus.QUEUED
+    assert store.next_queued() == job_id
+
+
+def test_reset_orphans_fails_awaiting_dataset_jobs(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    """A restart abandons uploads in flight; those jobs cannot recover."""
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+
+    store.reset_orphans()
+    state = store.get(job_id)
+
+    assert state is not None
+    assert state.status == TrainerJobStatus.FAILED
 
 
 def test_get_request_round_trips(db_path: Path, sample_request: SubmitJobRequest) -> None:
@@ -34,14 +61,14 @@ def test_get_request_round_trips(db_path: Path, sample_request: SubmitJobRequest
     restored = store.get_request(job_id)
 
     assert restored is not None
-    assert restored.repo_id == sample_request.repo_id
-    assert restored.revision == sample_request.revision
+    assert restored.policy == sample_request.policy
 
 
 def test_next_queued_is_fifo(db_path: Path, sample_request: SubmitJobRequest) -> None:
     store = JobStore(db_path)
     first = store.create(sample_request)
     store.create(sample_request)
+    store.mark_dataset_ready(first)
 
     assert store.next_queued() == first
 

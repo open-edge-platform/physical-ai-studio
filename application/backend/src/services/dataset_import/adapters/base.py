@@ -14,7 +14,7 @@ from schemas.dataset_import_job import (
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from services.archive_safety import SafeZipArchive
+    from physicalai.data.archive_safety import SafeZipArchive
 
 
 class DatasetImportAdapter(ABC):
