@@ -2357,9 +2357,9 @@ requires-dist = [
     { name = "torch", marker = "extra == 'cpu'", specifier = "<2.13", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-trainer", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cuda'", specifier = "<2.13", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-trainer", extra = "cuda" } },
     { name = "torch", marker = "extra == 'xpu'", specifier = "<2.13", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-trainer", extra = "xpu" } },
-    { name = "torchvision", marker = "extra == 'cpu'", specifier = "<0.26.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-trainer", extra = "cpu" } },
-    { name = "torchvision", marker = "extra == 'cuda'", specifier = "<0.26.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-trainer", extra = "cuda" } },
-    { name = "torchvision", marker = "extra == 'xpu'", specifier = "<0.26.0", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-trainer", extra = "xpu" } },
+    { name = "torchvision", marker = "extra == 'cpu'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-trainer", extra = "cpu" } },
+    { name = "torchvision", marker = "extra == 'cuda'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-trainer", extra = "cuda" } },
+    { name = "torchvision", marker = "extra == 'xpu'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-trainer", extra = "xpu" } },
 ]
 provides-extras = ["cpu", "cuda", "xpu", "tests"]
 
