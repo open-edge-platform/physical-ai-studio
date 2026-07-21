@@ -171,7 +171,7 @@ ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_APPLICATION_VERSION="${APPLICATION_VERSION}" \
     TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
     TRAINER_DEVICE_TYPE=cuda
-COPY --link --from=builder-cuda --chown=trainer:trainer /app/application/trainer/.venv /opt/venv
+COPY --from=builder-cuda --chown=trainer:trainer /app/application/trainer/.venv /opt/venv
 
 FROM runtime-xpu AS physicalai-trainer-xpu
 ARG GIT_SHA=unknown
@@ -192,4 +192,4 @@ ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_APPLICATION_VERSION="${APPLICATION_VERSION}" \
     TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
     TRAINER_DEVICE_TYPE=xpu
-COPY --link --from=builder-xpu --chown=trainer:trainer /app/application/trainer/.venv /opt/venv
+COPY --from=builder-xpu --chown=trainer:trainer /app/application/trainer/.venv /opt/venv
