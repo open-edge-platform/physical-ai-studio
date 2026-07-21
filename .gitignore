@@ -210,8 +210,3 @@ __marimo__/
 tmp*
 lightning_logs
 .DS_Store
-
-# Local-only remote trainer planning artifacts
-/remote-ssh-trainer-plan.md
-/remote-ssh-trainer-pr-plan.md
-/application/ui/mockups/remote-server-ui.html
