@@ -87,11 +87,7 @@ class RemoteTrainerService:
 
     @staticmethod
     async def _fetch_storage(client: httpx.AsyncClient, base_url: str) -> StorageInfo | None:
-        """Best-effort fetch of the trainer's available storage.
-
-        Older trainers may not expose ``/storage``; its absence or any
-        transport/validation failure is not treated as a health-check failure.
-        """
+        """Best-effort fetch of the trainer's available storage."""
         try:
             storage_response = await client.get(f"{base_url}/storage")
             storage_response.raise_for_status()

@@ -626,16 +626,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                         {(trainingTarget) => <Item key={trainingTarget.id}>{trainingTarget.label}</Item>}
                     </Picker>
 
-                    {remoteTrainers.length === 0 && (
-                        <InlineAlert variant='info'>
-                            No remote trainer URLs are configured. You can still train on this machine or{' '}
-                            <Link href={paths.project.remoteServers.index({ project_id: projectId })}>
-                                add a remote trainer
-                            </Link>
-                            .
-                        </InlineAlert>
-                    )}
-
                     <PolicySelection
                         selectedPolicy={selectedPolicy}
                         onSelectionChange={setSelectedPolicy}

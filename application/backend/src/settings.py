@@ -112,9 +112,6 @@ class Settings(BaseSettings):
         return self.storage_dir / "logs"
 
     # Remote training
-    # Remote trainers are registered through the API/UI (see `RemoteTrainerService`)
-    # and selected per job via `TrainJobPayload.training_target` /
-    # `remote_trainer_id`; there is no global training-mode switch here.
     # Seconds to wait for trainer HTTP requests (excludes long-poll/SSE streams).
     trainer_request_timeout_s: float = Field(default=30.0, alias="TRAINER_REQUEST_TIMEOUT_S")
     # Seconds to wait between chunks while streaming the model artifact. A stalled
