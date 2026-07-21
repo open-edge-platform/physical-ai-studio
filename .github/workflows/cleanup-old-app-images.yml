@@ -56,5 +56,5 @@ jobs:
             physical-ai-studio-cpu
             physical-ai-studio-xpu
             physical-ai-studio-cuda
-          min-versions-to-keep: ${{ inputs.min_versions_to_keep || 10 }}
-          dry-run: ${{ inputs.dry_run == false && 'false' || 'true' }}
+          min-versions-to-keep: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.min_versions_to_keep || 10 }}
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' && 'false' || 'true' }}
