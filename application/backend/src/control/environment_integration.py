@@ -187,11 +187,11 @@ class EnvironmentIntegration:
 
     async def teardown(self) -> None:
         if self.follower:
-            self.follower.disconnect()
+            await asyncio.to_thread(self.follower.disconnect)
             self.follower = None
 
         if self.leader:
-            self.leader.disconnect()
+            await asyncio.to_thread(self.leader.disconnect)
             self.leader = None
 
         loop = asyncio.get_running_loop()
