@@ -2876,15 +2876,10 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
     { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=d88ac1a2c371e547398a557a654f8f9e12628cc1" },
-<<<<<<< HEAD
     { name = "physicalai-studio-plugin", editable = "../plugin" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
     { name = "physicalai-train", extras = ["pi0", "smolvla"], editable = "../../library" },
-=======
-    { name = "physicalai-train", editable = "../../library" },
-    { name = "physicalai-train", extras = ["pi0", "smolvla"], marker = "extra == 'train'", editable = "../../library" },
->>>>>>> 7a1f8636 (feat(robots): map SharedRobot errors to user-facing app exceptions)
     { name = "psutil", specifier = "~=7.2" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
