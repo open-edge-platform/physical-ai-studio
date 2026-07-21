@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 from loguru import logger
@@ -27,20 +28,18 @@ class PhysicalAIRobotAdapter(RobotClient):
         *,
         robot: Robot,
         robot_type: RobotType,
+        robot_role: Literal["follower", "leader"],
         config: PhysicalAIRobotAdapterConfig | None = None,
     ) -> None:
         resolved_config = config or PhysicalAIRobotAdapterConfig()
         self._robot = robot
         self._robot_type = robot_type
+        self._robot_role = robot_role
         self._config = resolved_config
         self.is_controlled = False
 
     def _is_follower(self) -> bool:
-        return self._robot_type in {
-            RobotType.SO101_FOLLOWER,
-            RobotType.TROSSEN_WIDOWXAI_FOLLOWER,
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER,
-        }
+        return self._robot_role == "follower"
 
     def _observation_to_state(self, observation: RobotObservation) -> dict[str, float]:
         state: dict[str, float] = {}

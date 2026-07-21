@@ -23,9 +23,11 @@ def _make_adapter(
 ) -> tuple[PhysicalAIRobotAdapter, MagicMock]:
     robot = _make_mock_robot()
     robot_type = RobotType.SO101_FOLLOWER if mode == "follower" else RobotType.SO101_LEADER
+    robot_role = "follower" if mode == "follower" else "leader"
     adapter = PhysicalAIRobotAdapter(
         robot=robot,
         robot_type=robot_type,
+        robot_role=robot_role,
         config=PhysicalAIRobotAdapterConfig(
             include_velocities=False,
             goal_time_scale=1.0,

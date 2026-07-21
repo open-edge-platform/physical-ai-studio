@@ -1,6 +1,8 @@
-from schemas.robot import RobotType
+from physicalai.robot.trossen import BimanualWidowXAI, WidowXAI
 
-from .types import RobotCatalogDefinition
+from schemas.robot import RobotType, TrossenBimanualPayload, TrossenSingleArmPayload
+
+from .types import CatalogRobot, CatalogRobotFactory, RobotAdapterOptions, RobotCatalogDefinition
 
 _TROSSEN_TO_URDF = {
     "shoulder_pan.pos": ["joint_0"],
@@ -30,6 +32,22 @@ _BIMANUAL_TROSSEN_TO_URDF = {
 }
 
 
+async def _build_trossen_single_arm_driver(
+    robot: CatalogRobot[TrossenSingleArmPayload], _factory: CatalogRobotFactory
+) -> WidowXAI:
+    role = "follower" if robot.type == RobotType.TROSSEN_WIDOWXAI_FOLLOWER else "leader"
+    return WidowXAI(ip=robot.payload.connection_string, role=role)
+
+
+async def _build_trossen_bimanual_driver(
+    robot: CatalogRobot[TrossenBimanualPayload], _factory: CatalogRobotFactory
+) -> BimanualWidowXAI:
+    mode = "follower" if robot.type == RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER else "leader"
+    left_driver = WidowXAI(ip=robot.payload.connection_string_left, role=mode)
+    right_driver = WidowXAI(ip=robot.payload.connection_string_right, role=mode)
+    return BimanualWidowXAI(left=left_driver, right=right_driver)
+
+
 def get_definitions() -> list[RobotCatalogDefinition]:
     """Return built-in WidowX AI robot catalog definitions."""
     return [
@@ -43,6 +61,8 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             },
             joint_map=_TROSSEN_TO_URDF,
             urdf_relative_path="widowx/urdf/generated/wxai/wxai_follower.urdf",
+            robot_builder=_build_trossen_single_arm_driver,
+            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
         ),
         RobotCatalogDefinition(
             type=RobotType.TROSSEN_WIDOWXAI_LEADER,
@@ -54,6 +74,8 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             },
             joint_map=_TROSSEN_TO_URDF,
             urdf_relative_path="widowx/urdf/generated/wxai/wxai_follower.urdf",
+            robot_builder=_build_trossen_single_arm_driver,
+            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
         ),
         RobotCatalogDefinition(
             type=RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER,
@@ -65,6 +87,8 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             },
             joint_map=_BIMANUAL_TROSSEN_TO_URDF,
             urdf_relative_path="widowx/urdf/generated/stationary_ai.urdf",
+            robot_builder=_build_trossen_bimanual_driver,
+            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
         ),
         RobotCatalogDefinition(
             type=RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER,
@@ -76,5 +100,7 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             },
             joint_map=_BIMANUAL_TROSSEN_TO_URDF,
             urdf_relative_path="widowx/urdf/generated/stationary_ai.urdf",
+            robot_builder=_build_trossen_bimanual_driver,
+            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
         ),
     ]
