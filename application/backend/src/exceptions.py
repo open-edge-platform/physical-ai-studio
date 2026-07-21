@@ -191,3 +191,76 @@ class RecordingLockError(BaseException):
             error_code="recording_locked",
             http_status=423,
         )
+
+
+class RobotDeviceAlreadyOwnedError(BaseException):
+    """Raised when a SharedRobot device is already locked under another session name."""
+
+    def __init__(self, *, device_ids: tuple[str, ...] | None = None) -> None:
+        if device_ids:
+            devices = ", ".join(device_ids)
+            message = (
+                f"Device {devices} is already in use by another session. "
+                "Stop the other session or wait for it to disconnect, then try again."
+            )
+        else:
+            message = (
+                "This robot device is already in use by another session. "
+                "Stop the other session or wait for it to disconnect, then try again."
+            )
+        super().__init__(
+            message=message,
+            error_code="robot_device_already_owned",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotNameConflictError(BaseException):
+    """Raised when a SharedRobot name is claimed for different devices."""
+
+    def __init__(self, *, robot_name: str | None = None) -> None:
+        if robot_name:
+            message = (
+                f"A robot session named {robot_name!r} is already running for a different device. "
+                "Rename the robot or stop the conflicting session, then try again."
+            )
+        else:
+            message = (
+                "A robot session with this name is already running for a different device. "
+                "Rename the robot or stop the conflicting session, then try again."
+            )
+        super().__init__(
+            message=message,
+            error_code="robot_name_conflict",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotProtocolMismatchError(BaseException):
+    """Raised when an existing SharedRobot owner speaks an unsupported protocol version."""
+
+    def __init__(
+        self,
+        message: str = (
+            "An existing robot session uses an incompatible software version. Restart all robot sessions and try again."
+        ),
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_protocol_mismatch",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class SharedRobotTransportError(BaseException):
+    """Raised when SharedRobot transport fails (spawn, handshake, or wire)."""
+
+    def __init__(
+        self,
+        message: str = "Could not connect to the robot. Check the connection and try again.",
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_transport_error",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )

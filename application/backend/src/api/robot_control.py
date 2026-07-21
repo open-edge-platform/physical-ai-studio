@@ -8,6 +8,7 @@ from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
 
 from api.dependencies import RobotConnectionManagerDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
+from exceptions import BaseException as AppBaseException
 from robots.robot_client_factory import RobotClientFactory
 from services import RobotService
 from workers.base import run_at_frequency
@@ -16,6 +17,16 @@ from workers.teleoperate_worker import TeleoperateWorker
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
 
 ProjectID = Annotated[UUID, Depends(get_project_id)]
+
+
+def _websocket_error_payload(exc: Exception) -> dict[str, str]:
+    if isinstance(exc, AppBaseException):
+        return {"event": "error", "message": exc.message, "error_code": exc.error_code}
+    return {
+        "event": "error",
+        "message": str(exc) or "Failed to connect to the robot.",
+        "error_code": "robot_connection_failed",
+    }
 
 
 @router.get("/ws", tags=["WebSocket"], summary="Robot control (WebSocket)", status_code=426)
@@ -121,8 +132,12 @@ async def robot_websocket(
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        logger.exception(f"Unexpected error in robot websocket: {e}")
+        if isinstance(e, AppBaseException):
+            logger.warning("Robot websocket error: {} ({})", e.message, e.error_code)
+        else:
+            logger.exception(f"Unexpected error in robot websocket: {e}")
         try:
+            await websocket.send_json(_websocket_error_payload(e))
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         except Exception as close_err:
             logger.error(f"Could not close websocket after Exception: {close_err}")

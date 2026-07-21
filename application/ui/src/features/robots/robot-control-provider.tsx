@@ -42,6 +42,8 @@ const createRobotControlState = (): RobotControlState => {
 interface RobotControlApiJsonResponse<T> {
     event: string;
     data: T;
+    message?: string;
+    error_code?: string;
 }
 export interface Observation {
     timestamp: number;
@@ -158,7 +160,13 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         }
 
         if (message['event'] === 'error') {
-            props.onError(message['data'] as string);
+            const errorMessage =
+                typeof message['message'] === 'string'
+                    ? message['message']
+                    : typeof message['data'] === 'string'
+                      ? message['data']
+                      : 'An unexpected error occurred.';
+            props.onError(errorMessage);
         }
     };
 

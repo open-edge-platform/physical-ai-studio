@@ -5,6 +5,7 @@ from multiprocessing.synchronize import Event as EventClass
 
 from loguru import logger
 
+from exceptions import BaseException as AppBaseException
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
 from schemas.robot import Robot
@@ -131,7 +132,14 @@ class TeleoperateWorker(BaseThreadWorker):
                 self.loaded_event.set()
             except Exception as exc:
                 self.setup_error = exc
-                logger.exception("Failed to set up teleoperation worker")
+                if isinstance(exc, AppBaseException):
+                    logger.warning(
+                        "Failed to set up teleoperation worker: {} ({})",
+                        exc.message,
+                        exc.error_code,
+                    )
+                else:
+                    logger.exception("Failed to set up teleoperation worker")
                 return
 
             # Teleoperate loop until unload is requested

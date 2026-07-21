@@ -1,7 +1,10 @@
 from unittest.mock import MagicMock
 
+import pytest
+from physicalai.robot import RobotDeviceAlreadyOwned
 from physicalai.robot.so101.constants import SO101_JOINT_ORDER
 
+from exceptions import RobotDeviceAlreadyOwnedError
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
 
 
@@ -80,6 +83,13 @@ class TestConnect:
         robot.connect = MagicMock()
         adapter.connect()
         assert adapter.is_controlled is False
+
+    def test_connect_translates_device_already_owned(self):
+        adapter, robot = _make_adapter()
+        robot.connect = MagicMock(side_effect=RobotDeviceAlreadyOwned("device locked"))
+        with pytest.raises(RobotDeviceAlreadyOwnedError) as exc_info:
+            adapter.connect()
+        assert exc_info.value.error_code == "robot_device_already_owned"
 
 
 class TestDisconnect:

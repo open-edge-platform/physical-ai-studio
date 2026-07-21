@@ -41,3 +41,24 @@ export const getApiErrorMessage = (error: unknown): string | undefined => {
     }
     return undefined;
 };
+
+/**
+ * Short title for robot connection errors surfaced over WebSocket or API responses.
+ */
+export const getRobotConnectionErrorTitle = (errorCode: string | null): string => {
+    switch (errorCode) {
+        case 'robot_device_already_owned':
+            return 'Robot already in use';
+        case 'robot_name_conflict':
+            return 'Robot name conflict';
+        case 'robot_protocol_mismatch':
+            return 'Incompatible robot session';
+        case 'robot_transport_error':
+        case 'robot_connection_failed':
+            return 'Connection failed';
+        case 'connection_closed':
+            return 'Connection lost';
+        default:
+            return 'Connection error';
+    }
+};

@@ -3,9 +3,11 @@ from typing import Literal
 
 import numpy as np
 from loguru import logger
+from physicalai.robot import RobotError
 from physicalai.robot.interface import Robot, RobotObservation
 
 from robots.robot_client import RobotClient
+from robots.shared_robot_errors import translate_robot_error
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,10 @@ class PhysicalAIRobotAdapter(RobotClient):
         except TimeoutError:
             logger.error("Timeout connecting to robot")
             raise
+        except RobotError as e:
+            logger.error(f"Failed to connect to robot: {e}")
+            robot_name = getattr(self._robot, "name", None)
+            raise translate_robot_error(e, robot_name=robot_name if isinstance(robot_name, str) else None) from e
         except Exception as e:
             logger.error(f"Failed to connect to robot: {e}")
             raise

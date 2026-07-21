@@ -183,6 +183,51 @@ class TestRobotControlWorker:
         assert report["event"] == "state"
         assert report["data"]["environment_loaded"]
 
+    def test_environment_setup_failure_reports_error_and_keeps_worker_alive(
+        self, robot_control_worker: RobotControlWorker, test_environment
+    ):
+        failing_integration = MagicMock(spec=EnvironmentIntegration)
+        failing_integration.setup = AsyncMock(side_effect=RuntimeError("robot connect failed"))
+        failing_integration.teardown = AsyncMock()
+
+        environment = EnvironmentWithRelations.model_validate(test_environment)
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=failing_integration):
+            robot_control_worker.load_environment(environment)
+
+        error_report = wait_until_message_from_queue(robot_control_worker.queue, "error")
+        assert error_report["message"] == "robot connect failed"
+        assert error_report["error_code"] == "robot_control_error"
+        assert robot_control_worker.is_alive()
+
+        succeeding_integration = MagicMock(spec=EnvironmentIntegration)
+        succeeding_integration.setup = AsyncMock()
+        succeeding_integration.get_observation = AsyncMock(return_value=None)
+
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=succeeding_integration):
+            robot_control_worker.load_environment(environment)
+
+        state_report = _wait_until_state(robot_control_worker.queue, environment_loaded=True)
+        assert state_report["environment_loaded"]
+        assert robot_control_worker.is_alive()
+
+    def test_environment_setup_reports_app_exception_fields(
+        self, robot_control_worker: RobotControlWorker, test_environment
+    ):
+        from exceptions import RobotDeviceAlreadyOwnedError
+
+        failing_integration = MagicMock(spec=EnvironmentIntegration)
+        failing_integration.setup = AsyncMock(side_effect=RobotDeviceAlreadyOwnedError(device_ids=("serial:ttyACM0",)))
+        failing_integration.teardown = AsyncMock()
+
+        environment = EnvironmentWithRelations.model_validate(test_environment)
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=failing_integration):
+            robot_control_worker.load_environment(environment)
+
+        error_report = wait_until_message_from_queue(robot_control_worker.queue, "error")
+        assert error_report["error_code"] == "robot_device_already_owned"
+        assert "serial:ttyACM0" in error_report["message"]
+        assert robot_control_worker.is_alive()
+
     def test_get_observations_once_environment_loaded(
         self, robot_control_worker: RobotControlWorker, environment_integration, test_environment
     ):
