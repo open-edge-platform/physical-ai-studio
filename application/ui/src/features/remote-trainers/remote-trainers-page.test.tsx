@@ -69,18 +69,18 @@ describe('RemoteTrainersPage', () => {
         const trainerHealthRow = (await screen.findByText('Trainer health endpoint')).closest('div');
         const computeRow = screen.getByText('Compute capability').closest('div');
 
-        expect(trainerHealthRow).not.toBeNull();
-        expect(computeRow).not.toBeNull();
-        expect(within(trainerHealthRow!).getByText('Healthy')).toBeInTheDocument();
-        expect(within(computeRow!).getByText('Unknown')).toBeInTheDocument();
+        if (trainerHealthRow === null || computeRow === null) {
+            throw new Error('Expected trainer health and compute capability rows to be rendered.');
+        }
+
+        expect(within(trainerHealthRow).getByText('Healthy')).toBeInTheDocument();
+        expect(within(computeRow).getByText('Unknown')).toBeInTheDocument();
     });
 
     it('distinguishes a failed health request from an unreachable trainer', async () => {
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
-            http.post(REMOTE_TRAINER_HEALTH_PATH, () =>
-                HttpResponse.json({ detail: 'Internal error' }, { status: 500 })
-            )
+            http.post(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json({ detail: [] }, { status: 422 }))
         );
 
         render(<RemoteTrainersPage />);
