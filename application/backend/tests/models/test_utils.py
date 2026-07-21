@@ -8,7 +8,7 @@ from schemas import InferenceBackend, InferenceDevice
 def test_load_inference_model_uses_selected_torch_device(test_model) -> None:
     inference_device = InferenceDevice(backend=InferenceBackend.TORCH, device="cuda:0")
 
-    with patch("models.utils.InferenceModel") as mock_inference_model:
+    with patch("physicalai.inference.InferenceModel") as mock_inference_model:
         load_inference_model(test_model, inference_device=inference_device)
 
     mock_inference_model.assert_called_once_with(
@@ -22,7 +22,7 @@ def test_load_inference_model_uses_selected_torch_device(test_model) -> None:
 def test_load_inference_model_uses_selected_openvino_device(test_model) -> None:
     inference_device = InferenceDevice(backend=InferenceBackend.OPENVINO, device="GPU")
 
-    with patch("models.utils.InferenceModel") as mock_inference_model:
+    with patch("physicalai.inference.InferenceModel") as mock_inference_model:
         load_inference_model(test_model, inference_device=inference_device)
 
     mock_inference_model.assert_called_once_with(

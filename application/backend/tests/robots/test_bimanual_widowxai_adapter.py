@@ -44,6 +44,7 @@ def _make_adapter(mode: str = "follower") -> tuple[PhysicalAIRobotAdapter, Magic
     adapter = PhysicalAIRobotAdapter(
         robot=robot,
         robot_type=robot_type,
+        robot_role=mode,
         config=PhysicalAIRobotAdapterConfig(
             include_velocities=True,
             goal_time_scale=1.0,

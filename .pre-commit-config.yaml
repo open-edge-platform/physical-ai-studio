@@ -7,6 +7,7 @@
 #   - library/.pre-commit-config.yaml
 #   - application/backend/.pre-commit-config.yaml
 #   - application/trainer/.pre-commit-config.yaml (kept in sync with backend)
+#   - application/ui/.pre-commit-config.yaml
 
 default_language_version:
   node: 22.10.0

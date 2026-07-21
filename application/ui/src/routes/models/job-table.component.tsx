@@ -45,7 +45,7 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
             <View>
                 <Flex gap={'size-100'}>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
-                    <SplitBadge first={job.status} second={'Fine-tuning the model'} />
+                    <SplitBadge first={job.status} second={job.message} />
                 </Flex>
                 {job.start_time ? (
                     <Text UNSAFE_className={classes.modelInfo}>

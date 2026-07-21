@@ -4,6 +4,7 @@
 """Schemas for hardware and device information."""
 
 from enum import StrEnum, auto
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +32,23 @@ class DeviceInfo(BaseModel):
     name: str = Field(..., description="Human-readable device name")
     memory: int | None = Field(None, description="Total device memory in bytes (null for CPU)")
     index: int | None = Field(None, description="Device index among those of the same type (null for CPU)")
+
+
+class TrainingDevices(BaseModel):
+    """Available training devices together with the active training mode.
+
+    In remote mode the devices reflect the remote trainer's hardware. When the
+    remote trainer cannot be reached, ``remote_available`` is False and
+    ``devices`` is empty so callers can block training instead of silently
+    falling back to local CPU-only training.
+    """
+
+    mode: Literal["local", "remote"] = Field(..., description="Active training mode (local or remote)")
+    remote_available: bool = Field(
+        ...,
+        description="Whether the remote trainer is reachable. Always True in local mode.",
+    )
+    devices: list[DeviceInfo] = Field(default_factory=list, description="Available training devices")
 
 
 class InferenceDevice(BaseModel):

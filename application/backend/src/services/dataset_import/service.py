@@ -10,8 +10,8 @@ from schemas import Job
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import DatasetImportFinalizeInput, DatasetImportJobPayload, ImportStep
 from schemas.job import DatasetImportJob
-from services.archive_safety import cleanup_staged_archive
 from services.dataset_import.staging import generate_staging_id, resolve_payload_archive_path
+from services.staged_archive import cleanup_staged_archive
 
 
 class DatasetImportService:

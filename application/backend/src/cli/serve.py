@@ -31,11 +31,12 @@ def _configure_packaged_runtime() -> None:
     get_settings.cache_clear()
 
 
-@click.command()
-@click.option("--host", default=lambda: get_settings().host, show_default=True)
-@click.option("--port", default=lambda: get_settings().port, show_default=True, type=int)
-def serve(host: str, port: int) -> None:
-    """Start the Physical AI Studio web application."""
+def start_server(host: str, port: int) -> None:
+    """Configure the packaged runtime, run migrations, and launch the API server.
+
+    Shared by the ``serve`` and ``remote`` run commands so they both go through the
+    same startup sequence.
+    """
     _configure_packaged_runtime()
     _sync_missing_robot_assets()
     _run_migrations()
@@ -46,6 +47,14 @@ def serve(host: str, port: int) -> None:
 
     ensure_spawn_start_method()
     uvicorn.run("main:app", host=host, port=port)
+
+
+@click.command()
+@click.option("--host", default=lambda: get_settings().host, show_default=True)
+@click.option("--port", default=lambda: get_settings().port, show_default=True, type=int)
+def serve(host: str, port: int) -> None:
+    """Start the Physical AI Studio web application."""
+    start_server(host, port)
 
 
 def _sync_missing_robot_assets() -> None:

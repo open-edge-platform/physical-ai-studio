@@ -157,13 +157,13 @@ class PaliGemmaWithExpert(nn.Module):
 
         action_config = self._action_expert_config
         hf_config = HFGemmaConfig(
-            vocab_size=action_config.vocab_size,
-            hidden_size=action_config.width,
-            intermediate_size=action_config.mlp_dim,
-            num_hidden_layers=action_config.depth,
-            num_attention_heads=action_config.num_heads,
-            num_key_value_heads=action_config.num_kv_heads,
-            head_dim=action_config.head_dim,
+            vocab_size=action_config.vocab_size,  # pyrefly: ignore[unexpected-keyword]
+            hidden_size=action_config.width,  # pyrefly: ignore[unexpected-keyword]
+            intermediate_size=action_config.mlp_dim,  # pyrefly: ignore[unexpected-keyword]
+            num_hidden_layers=action_config.depth,  # pyrefly: ignore[unexpected-keyword]
+            num_attention_heads=action_config.num_heads,  # pyrefly: ignore[unexpected-keyword]
+            num_key_value_heads=action_config.num_kv_heads,  # pyrefly: ignore[unexpected-keyword]
+            head_dim=action_config.head_dim,  # pyrefly: ignore[unexpected-keyword]
         )
 
         self._action_expert = GemmaForCausalLM(hf_config)

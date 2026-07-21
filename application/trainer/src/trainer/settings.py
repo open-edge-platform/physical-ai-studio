@@ -19,13 +19,21 @@ class TrainerSettings(BaseSettings):
     storage_dir: Path = Field(default=Path("~/.local/share/physicalai-trainer").expanduser(), alias="STORAGE_DIR")
     # Concurrency cap for the queue worker. Defaults to a single GPU job.
     max_concurrent_jobs: int = Field(default=1, ge=1, le=8, alias="TRAINER_MAX_CONCURRENT_JOBS")
-    # Explicit accelerator override; auto-detected when unset.
-    device: str | None = Field(default=None, alias="TRAINER_DEVICE")
 
     # nosec B104 - trainer is intended to be reachable from other machines on a
     # trusted local network.
     host: str = Field(default="0.0.0.0", alias="HOST")  # nosec B104 # noqa: S104
     port: int = Field(default=8001, alias="PORT")
+
+    # HTTP-upload safety limits to prevent disk exhaustion.
+    max_uncompressed_bytes: int = Field(
+        default=200 * 1024 * 1024 * 1024,
+        alias="TRAINER_MAX_UNCOMPRESSED_BYTES",
+    )
+    min_free_bytes: int = Field(
+        default=1 * 1024 * 1024 * 1024,
+        alias="TRAINER_MIN_FREE_BYTES",
+    )
 
     @property
     def db_path(self) -> Path:
@@ -33,9 +41,9 @@ class TrainerSettings(BaseSettings):
         return self.storage_dir / "trainer.db"
 
     @property
-    def snapshots_dir(self) -> Path:
-        """Directory holding pulled dataset snapshots."""
-        return self.storage_dir / "snapshots"
+    def datasets_dir(self) -> Path:
+        """Directory holding datasets uploaded over HTTP."""
+        return self.storage_dir / "datasets"
 
     @property
     def models_dir(self) -> Path:

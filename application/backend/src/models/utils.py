@@ -2,16 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
-
-from physicalai.inference import InferenceModel
-from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
-from physicalai.policies.base import Policy
+from typing import TYPE_CHECKING
 
 from schemas import InferenceDevice, Model
 
+if TYPE_CHECKING:
+    from physicalai.inference import InferenceModel
+    from physicalai.policies.base import Policy
 
-def load_policy(model: Model, *, compile_model: bool = False) -> Policy:
+
+def load_policy(model: Model, *, compile_model: bool = False) -> "Policy":
     """Load existing model."""
+    from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
+
     model_path = str(Path(model.path) / "model.ckpt")
     if model.policy == "act":
         policy = ACT.load_from_checkpoint(model_path)
@@ -32,8 +35,10 @@ def load_policy(model: Model, *, compile_model: bool = False) -> Policy:
     return policy
 
 
-def load_inference_model(model: Model, inference_device: InferenceDevice) -> InferenceModel:
+def load_inference_model(model: Model, inference_device: InferenceDevice) -> "InferenceModel":
     """Loads inference model."""
+    from physicalai.inference import InferenceModel
+
     backend = inference_device.backend.value
     export_dir = Path(model.path) / "exports" / backend
     return InferenceModel(
@@ -44,8 +49,10 @@ def load_inference_model(model: Model, inference_device: InferenceDevice) -> Inf
     )
 
 
-def setup_policy(model: Model, *, compile_model: bool = False) -> Policy:
+def setup_policy(model: Model, *, compile_model: bool = False) -> "Policy":
     """Setup policy for Model training."""
+    from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
+
     if model.policy == "act":
         return ACT(compile_model=compile_model)
     if model.policy == "pi0":
