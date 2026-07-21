@@ -1,0 +1,20 @@
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+# UI-specific pre-commit configuration for prek workspace mode
+# This config applies only to files in application/ui/
+#
+# Mirrors the `npm run format:check` step from .github/workflows/ui.yml so
+# formatting issues in JS/TS/CSS source files are caught locally instead of
+# only surfacing in CI. Requires `npm ci` to have been run at least once so
+# node_modules/.bin/prettier is available.
+
+repos:
+  - repo: local
+    hooks:
+      - id: ui-prettier-check
+        name: UI Prettier format check
+        entry: node_modules/.bin/prettier --check
+        language: system
+        files: ^src/.*\.(js|jsx|ts|tsx|css)$
+        pass_filenames: true
