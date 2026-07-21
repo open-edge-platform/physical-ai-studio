@@ -17,11 +17,11 @@ import {
 import { Manifest } from '@geti-ui/ui/icons';
 import { Outlet, useLocation } from 'react-router';
 
+import { featureFlags } from '../../config/feature-flags';
 import { JobStatus } from '../../features/jobs/footer/job-status';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
 import { useProjectId } from '../../features/projects/use-project';
-import { featureFlags } from '../../config/feature-flags';
 import { paths } from '../../router';
 import { ReactComponent as DatasetIcon } from './../../assets/icons/dataset-icon.svg';
 import { ReactComponent as ModelsIcon } from './../../assets/icons/models-icon.svg';
@@ -57,11 +57,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                                 Robots
                             </Flex>
                         </Item>,
-                        <Item
-                            textValue='Datasets'
-                            key={'datasets'}
-                            href={paths.project.datasets.index({ project_id })}
-                        >
+                        <Item textValue='Datasets' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
                             <Flex alignItems='center' gap='size-100'>
                                 <DatasetIcon />
                                 Datasets
