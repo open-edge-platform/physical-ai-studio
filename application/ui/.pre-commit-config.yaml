@@ -4,12 +4,12 @@
 # UI-specific pre-commit configuration for prek workspace mode
 # This config applies only to files in application/ui/
 #
-# Mirrors the "Eslint checks" job in .github/workflows/ui.yml so formatting,
+# Mirrors the "ESLint checks" job in .github/workflows/ui.yml so formatting,
 # lint, and import-cycle issues are caught locally instead of only surfacing
 # in CI. Requires `npm install` (or `npm ci`) to have been run at least once
 # in application/ui/ so node_modules/.bin is populated.
 #
-# The "Typescript" step (`npm run type-check`) is intentionally NOT wired up
+# The "TypeScript" step (`npm run type-check`) is intentionally NOT wired up
 # here: it type-checks against the generated, gitignored
 # `src/api/openapi-spec.d.ts`, which is regenerated fresh from a live backend
 # on every CI run but can silently go stale locally (e.g. after switching
@@ -22,21 +22,21 @@ repos:
     hooks:
       - id: ui-prettier-check
         name: UI Prettier format check
-        entry: node_modules/.bin/prettier --check --cache
+        entry: npm run format:check --silent
         language: system
         files: ^src/.*\.(js|jsx|ts|tsx|css)$
         pass_filenames: true
 
       - id: ui-eslint
-        name: UI Eslint
+        name: UI ESLint
         entry: npm run lint --silent
         language: system
-        files: ^src/.*\.(ts|tsx)$
-        pass_filenames: false
+        files: ^(src/.*\.(ts|tsx)|package(-lock)?\.json|tsconfig.*\.json|eslint(\.shared)?\.config\.js)$
+        pass_filenames: true
 
       - id: ui-cyclic-deps-check
-        name: UI Eslint cyclic imports
+        name: UI ESLint cyclic imports
         entry: npm run cyclic-deps-check --silent
         language: system
-        files: ^src/.*\.(ts|tsx)$
+        files: ^(src/.*\.(ts|tsx)|package(-lock)?\.json|tsconfig.*\.json|eslint(\.shared)?\.config\.js)$
         pass_filenames: false
