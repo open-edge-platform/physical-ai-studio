@@ -22,13 +22,15 @@ const InnerCell = ({ follower_id, leader_id }: { follower_id: string; leader_id?
 
     if (error) {
         return (
-            <Flex width='100%' height='100%' justifyContent='center' alignItems='center' padding='size-200'>
-                <InlineAlert variant='error'>
-                    <strong>{getRobotConnectionErrorTitle(errorCode)}</strong>
-                    <br />
-                    {error}
-                </InlineAlert>
-            </Flex>
+            <View width='100%' height='100%' padding='size-200'>
+                <Flex width='100%' height='100%' justifyContent='center' alignItems='center'>
+                    <InlineAlert variant='error'>
+                        <strong>{getRobotConnectionErrorTitle(errorCode)}</strong>
+                        <br />
+                        {error}
+                    </InlineAlert>
+                </Flex>
+            </View>
         );
     }
 
