@@ -47,6 +47,17 @@ class DeviceInfo(BaseModel):
     index: int | None = Field(default=None, description="Device index among those of the same type (null for CPU)")
 
 
+class HealthInfo(BaseModel):
+    """Non-sensitive metadata used to verify trainer image compatibility."""
+
+    status: str = Field(description="Service liveness status")
+    protocol_version: int = Field(description="Trainer API protocol version")
+    device_type: str = Field(description="Hardware target baked into this image")
+    build_revision: str = Field(description="Source revision used to build the image")
+    build_date: str = Field(description="Image build timestamp")
+    application_version: str = Field(description="Physical AI Studio application version")
+
+
 class SubmitJobRequest(BaseModel):
     """Job submission payload sent by the studio backend."""
 

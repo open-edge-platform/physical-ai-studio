@@ -38,6 +38,7 @@ Set environment variables (or an `.env` file):
 
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |
+| `HF_TOKEN`                   | conditional | **Read** access to any gated/private model weights selected for training.|
 | `STORAGE_DIR`                | no       | Working directory for jobs and artifacts.    |
 | `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
 | `TRAINER_MAX_UNCOMPRESSED_BYTES` | no   | Cap on an uploaded dataset's uncompressed size. |
@@ -77,6 +78,145 @@ To run the ASGI app module directly:
 uv run --no-sync python -m trainer.main
 ```
 
+## Container images
+
+Remote SSH provisioning uses the dedicated, non-root trainer images instead of
+the Studio application images:
+
+- `ghcr.io/open-edge-platform/physicalai-trainer-cuda:<git-sha>`
+- `ghcr.io/open-edge-platform/physicalai-trainer-xpu:<git-sha>`
+
+Each image contains only the trainer service, `physicalai-train`, and the
+device-specific runtime dependencies. It does not include Studio backend or UI
+code, datasets, model artifacts, SSH credentials, or a Docker socket. The
+entrypoint is `physicalai-trainer`; run it with a loopback-only port publishing
+rule when it is provisioned remotely.
+
+CI publishes a full Git-SHA tag, then attaches an SBOM and provenance
+attestations, scans the immutable digest, signs it with keyless Sigstore, and
+only then advances the moving `latest` tag. Use a SHA tag or resolved digest for
+reproducible deployments; `latest` is a compatibility fallback only.
+
+`GET /health` returns the image attributes that the Studio backend verifies
+before work is accepted:
+
+```json
+{
+  "status": "healthy",
+  "protocol_version": 1,
+  "device_type": "cuda",
+  "build_revision": "<git-sha>",
+  "build_date": "<RFC 3339 timestamp>",
+  "application_version": "<version>"
+}
+```
+
+### Run a container manually
+
+Use manual startup only for administrator validation or the existing static
+remote-trainer workflow. SSH-provisioned jobs will create a job-scoped
+container, loopback port, and SSH tunnel automatically when that feature is
+enabled. Do not expose the trainer port publicly: the service has no built-in
+authentication.
+
+The examples use a Docker-managed volume so the image's non-root `trainer`
+user can persist its queue, uploaded datasets, and artifacts without host
+ownership changes. Remove the volume after you no longer need its contents.
+
+```bash
+docker volume create physicalai-trainer-data
+```
+
+Replace `<image-reference>` with an immutable Git-SHA tag or a resolved digest.
+Use `latest` only when explicitly accepting the compatibility fallback.
+
+#### CUDA
+
+The Docker host needs an NVIDIA driver and NVIDIA Container Toolkit. Verify the
+host can grant GPU access with a disposable CUDA container before starting the
+trainer.
+
+```bash
+docker run --rm --gpus all \
+  nvidia/cuda:12.8.0-base-ubuntu24.04 \
+  nvidia-smi
+```
+
+Start the trainer with GPU access and a loopback-only port binding:
+
+```bash
+docker run --rm \
+  --name physicalai-trainer \
+  --gpus all \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=1g \
+  -p 127.0.0.1:8001:8001 \
+  -v physicalai-trainer-data:/var/lib/physicalai-trainer \
+  ghcr.io/open-edge-platform/physicalai-trainer-cuda:<image-reference>
+```
+
+#### XPU
+
+The Docker host needs a supported Intel GPU driver and an accessible
+`/dev/dri/renderD*` device. Set `RENDER_NODE` to the render node on your host;
+the numeric group is passed through so the non-root trainer user can access it.
+
+```bash
+export RENDER_NODE=/dev/dri/renderD128
+test -c "$RENDER_NODE"
+export RENDER_GID="$(stat -c '%g' "$RENDER_NODE")"
+
+docker run --rm \
+  --name physicalai-trainer \
+  --device /dev/dri:/dev/dri \
+  --group-add "$RENDER_GID" \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=1g \
+  -p 127.0.0.1:8001:8001 \
+  -v physicalai-trainer-data:/var/lib/physicalai-trainer \
+  ghcr.io/open-edge-platform/physicalai-trainer-xpu:<image-reference>
+```
+
+Do not use `--privileged` or mount the Docker socket for either image.
+
+#### Optional Hugging Face token
+
+The default HTTP dataset transfer does not need `HF_TOKEN` for the dataset
+upload. You still need a token when you use the `hf` transfer mode or train a
+policy that downloads gated/private model weights. Place a read-only token in a
+host file with restrictive permissions and pass it as an environment file:
+
+```bash
+printf 'HF_TOKEN=<read-only-token>\n' > trainer.env
+chmod 600 trainer.env
+```
+
+Add this option to the appropriate `docker run` command, before the image
+reference:
+
+```bash
+--env-file ./trainer.env
+```
+
+Never commit `trainer.env` or put a token directly in shell history.
+
+#### Verify and stop
+
+Verify the running image before pointing Studio at it. The reported device,
+protocol, and build revision must match the image you selected.
+
+```bash
+curl --fail --silent http://127.0.0.1:8001/health
+```
+
+Stop a manually managed trainer and remove its retained data when it is no
+longer needed:
+
+```bash
+docker stop physicalai-trainer
+docker volume rm physicalai-trainer-data
+```
+
 ## API
 
 | Method | Path                   | Purpose                          |
@@ -87,7 +227,7 @@ uv run --no-sync python -m trainer.main
 | GET    | `/jobs/{id}/events`    | SSE stream of state changes.     |
 | GET    | `/jobs/{id}/artifact`  | Download the model archive.      |
 | POST   | `/jobs/{id}/cancel`    | Cancel a queued or running job.  |
-| GET    | `/health`              | Liveness probe.                  |
+| GET    | `/health`              | Liveness and image/protocol metadata. |
 
 ## Security
 
