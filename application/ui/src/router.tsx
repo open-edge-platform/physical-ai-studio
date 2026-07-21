@@ -7,6 +7,7 @@ import { path } from 'static-path';
 
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
+import { featureFlags } from './config/feature-flags';
 import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
@@ -177,6 +178,17 @@ export const router = createBrowserRouter([
                     {
                         path: paths.project.remoteServers.index.pattern,
                         element: <RemoteServers />,
+                        loader: ({ params }) => {
+                            if (!featureFlags.remoteTrainers) {
+                                if (params.project_id === undefined) {
+                                    return redirect(paths.projects.index({}));
+                                }
+
+                                return redirect(paths.project.robots.index({ project_id: params.project_id }));
+                            }
+
+                            return null;
+                        },
                     },
                     {
                         // robots

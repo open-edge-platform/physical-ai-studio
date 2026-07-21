@@ -19,6 +19,7 @@ export default defineConfig({
         // are first imported.
         env: {
             PUBLIC_API_BASE_URL: 'http://localhost:7860',
+            PUBLIC_ENABLE_REMOTE_TRAINERS: 'true',
         },
         environment: 'jsdom',
         environmentOptions: {
