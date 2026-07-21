@@ -38,7 +38,7 @@ Set environment variables (or an `.env` file):
 
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |
-| `HF_TOKEN`                   | conditional | **Read** access to any gated/private model weights selected for training.|
+| `HF_TOKEN`                   | yes, if training a policy that downloads gated/private model weights | **Read** access to any gated/private model weights selected for training. |
 | `STORAGE_DIR`                | no       | Working directory for jobs and artifacts.    |
 | `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
 | `TRAINER_MAX_UNCOMPRESSED_BYTES` | no   | Cap on an uploaded dataset's uncompressed size. |

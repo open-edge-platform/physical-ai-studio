@@ -44,12 +44,33 @@ app = FastAPI(title="Physical AI Trainer", lifespan=lifespan)
 app.include_router(jobs_router)
 
 
+_DEFAULT_PROTOCOL_VERSION = 1
+
+
+def _read_protocol_version() -> int:
+    """Parse TRAINER_API_PROTOCOL_VERSION, falling back on invalid values.
+
+    Keeps /health resilient to a malformed environment so liveness checks
+    never 500 on a bad build/deploy configuration.
+    """
+    raw = os.environ.get("TRAINER_API_PROTOCOL_VERSION", str(_DEFAULT_PROTOCOL_VERSION))
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid TRAINER_API_PROTOCOL_VERSION={!r}; falling back to {}",
+            raw,
+            _DEFAULT_PROTOCOL_VERSION,
+        )
+        return _DEFAULT_PROTOCOL_VERSION
+
+
 @app.get("/health", response_model=HealthInfo)
 async def health() -> HealthInfo:
     """Return liveness plus non-sensitive image compatibility metadata."""
     return HealthInfo(
         status="healthy",
-        protocol_version=int(os.environ.get("TRAINER_API_PROTOCOL_VERSION", "1")),
+        protocol_version=_read_protocol_version(),
         device_type=os.environ.get("TRAINER_DEVICE_TYPE", "unknown"),
         build_revision=os.environ.get("TRAINER_BUILD_REVISION", "unknown"),
         build_date=os.environ.get("TRAINER_BUILD_DATE", "unknown"),

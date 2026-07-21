@@ -76,7 +76,13 @@ FROM runtime-base AS runtime-xpu
 # host remains responsible for the kernel driver and /dev/dri passthrough.
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN echo "deb [arch=amd64 trusted=yes] https://ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu noble main" \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL \
+        "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&exact=on&search=0x0C0E6AF955CE463C03FC51574D098D70AFBE5E1F" \
+        | gpg --dearmor -o /etc/apt/keyrings/kobuk-intel.gpg \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/kobuk-intel.gpg] https://ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu noble main" \
         > /etc/apt/sources.list.d/kobuk-intel.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -89,6 +95,8 @@ RUN echo "deb [arch=amd64 trusted=yes] https://ppa.launchpadcontent.net/kobuk-te
         libze-dev \
         libze-intel-gpu1 \
         libze1 \
+    && apt-get purge -y gnupg curl \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 SHELL ["/bin/sh", "-c"]
 USER trainer
@@ -99,16 +107,26 @@ FROM runtime-base AS runtime-cuda
 # Requires NVIDIA Container Toolkit on the host for GPU passthrough.
 #
 # Uses the debian12 repo on Debian 13 (trixie) because the debian13 repo
-# only has CUDA 13.1 packages (not 12.8). trusted=yes is required because
-# Debian 13's sqv GPG verifier cannot validate the NVIDIA signing key.
+# only has CUDA 13.1 packages (not 12.8).
+
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN echo "deb [arch=amd64 trusted=yes] https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64 /" \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/3bf863cc.pub \
+        | gpg --dearmor -o /etc/apt/keyrings/nvidia-cuda.gpg \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/nvidia-cuda.gpg] https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64 /" \
         > /etc/apt/sources.list.d/nvidia-cuda.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
+    && printf '[hash_algorithms.sha1]\nsecond_preimage_resistance = "always"\n' > /etc/apt/nvidia-cuda-sequoia-policy.toml \
+    && SEQUOIA_CRYPTO_POLICY=/etc/apt/nvidia-cuda-sequoia-policy.toml apt-get update \
+    && SEQUOIA_CRYPTO_POLICY=/etc/apt/nvidia-cuda-sequoia-policy.toml apt-get install -y --no-install-recommends \
         cuda-cudart-12-8=12.8.90-1 \
         libcublas-12-8=12.8.4.1-1 \
         libcudnn9-cuda-12=9.19.0.56-1 \
+    && apt-get purge -y gnupg curl \
+    && apt-get autoremove -y \
+    && rm -f /etc/apt/nvidia-cuda-sequoia-policy.toml \
     && rm -rf /var/lib/apt/lists/*
 SHELL ["/bin/sh", "-c"]
 
