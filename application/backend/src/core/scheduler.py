@@ -19,7 +19,12 @@ class Scheduler:
         logger.info("Initializing Scheduler...")
         # Event to sync all processes on application shutdown
         self.mp_stop_event = mp.Event()
-        self.training_interrupt_event = mp.Event()
+        # Shared, per-job interrupt flags (job id -> True) so cancelling one
+        # training job cannot cross-cancel another job running concurrently
+        # on a different target. Backed by a Manager dict since training runs
+        # in a separate process from the API.
+        self.manager = mp.Manager()
+        self.job_interrupt_flags = self.manager.dict()
         self.event_queue: mp.Queue = mp.Queue()
 
         self.processes: list[mp.Process] = []
@@ -30,7 +35,7 @@ class Scheduler:
         # mp.set_start_method("spawn", force=True)
         training_proc = TrainingWorker(
             stop_event=self.mp_stop_event,
-            interrupt_event=self.training_interrupt_event,
+            job_interrupt_flags=self.job_interrupt_flags,
             event_queue=self.event_queue,
         )
         training_proc.daemon = False
@@ -84,3 +89,4 @@ class Scheduler:
         # Clear references
         self.processes.clear()
         self.threads.clear()
+        self.manager.shutdown()

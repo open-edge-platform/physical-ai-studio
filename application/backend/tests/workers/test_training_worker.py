@@ -105,21 +105,22 @@ def stop_event():
 
 
 @pytest.fixture
-def interrupt_event():
-    return mp.Event()
+def job_interrupt_flags():
+    """A plain dict stands in for the Manager dict shared across processes."""
+    return {}
 
 
 @pytest.fixture
-def worker(stop_event, interrupt_event, event_queue):
+def worker(stop_event, job_interrupt_flags, event_queue):
     """Build a minimal TrainingWorker without triggering circular imports from scheduler."""
     from workers.training_worker import TrainingWorker
 
     w = object.__new__(TrainingWorker)
     # Mirror BaseProcessWorker/TrainingWorker wiring: should_stop() reads the
-    # private events; _should_interrupt() also reads the public interrupt_event.
+    # private stop event; _should_interrupt() also reads the per-job flags.
     w._stop_event = stop_event
-    w._interrupt_event = interrupt_event
-    w.interrupt_event = interrupt_event
+    w._interrupt_event = mp.Event()
+    w.job_interrupt_flags = job_interrupt_flags
     w.queue = event_queue
     return w
 
@@ -205,14 +206,14 @@ class TestTraining:
             assert canceled_call.kwargs["status"] == JobStatus.CANCELED
 
     @pytest.mark.anyio
-    async def test_interrupt_after_silent_stop_marks_canceled(self, worker, interrupt_event, tmp_path):
+    async def test_interrupt_after_silent_stop_marks_canceled(self, worker, job_interrupt_flags, tmp_path):
         """A backend that stops cooperatively (no raise) while interrupted ends CANCELED."""
         payload = _make_payload(compile_model=False)
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
         job = _make_job(payload)
 
-        interrupt_event.set()
+        job_interrupt_flags[str(job.id)] = True
 
         backend = MagicMock()
         backend.train = AsyncMock()

@@ -101,7 +101,7 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
         await self.db.commit()
 
         item_id = getattr(item, "id", None)
-        if not isinstance(item_id, str | UUID):
+        if item_id is None:
             raise TypeError(f"{item.__class__.__name__} does not provide a usable `id` for update refresh")
         updated = await self.get_by_id(str(item_id))
         if updated is None:
@@ -159,7 +159,7 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
         await self.db.commit()
 
         item_id = getattr(item, "id", None)
-        if not isinstance(item_id, str | UUID):
+        if item_id is None:
             raise TypeError(f"{item.__class__.__name__} does not provide a usable `id` for update refresh")
         updated = await self.get_by_id(str(item_id))
         if updated is None:

@@ -1,10 +1,11 @@
 """Launch commands for Physical AI Studio components.
 
 The ``remote`` command loads the matching ``.env`` file, syncs dependencies for the
-requested hardware (``uv sync``), and then starts the backend with training offloaded
-to a remote trainer service. In-process training is the default and is served by
-``physicalai-studio serve``. The remote trainer service has its own launcher
-(``physicalai-trainer``) in the trainer project.
+requested hardware (``uv sync``), and starts the backend. It defaults to the ``cpu``
+extra so a recording-only node does not need to install torch's GPU wheels; remote
+trainer services are registered through the Studio UI/API and selected per job, so
+this launcher does not require any trainer-specific configuration. The remote
+trainer service has its own launcher (``physicalai-trainer``) in the trainer project.
 
 Because these commands run ``uv sync`` for themselves, they are meant to be
 invoked through ``uv run`` (e.g. ``uv run --no-sync physicalai-studio remote``)
@@ -124,18 +125,15 @@ _port_option = click.option("--port", type=int, default=None, help="Port to bind
 @_device_option
 @_sync_option
 def remote(host: str | None, port: int | None, device: str | None, sync: bool | None) -> None:
-    """Start the backend with training offloaded to a remote trainer service."""
+    """Start the backend, defaulting to a lightweight (cpu-only) dependency sync.
+
+    Remote trainer services are configured through the Studio UI/API and chosen
+    per training job.
+    """
     load_env_file(_backend_dir() / ".env")
     resolved_device, device_explicit = _resolve_device(device)
 
-    os.environ["TRAINING_MODE"] = "remote"
     os.environ["PYTHONUNBUFFERED"] = "1"
-
-    if not os.environ.get("TRAINER_URL"):
-        raise click.ClickException(
-            "'remote' mode requires TRAINER_URL to point at a running trainer service.\n"
-            "Example: TRAINER_URL=http://gpu-host:8001 physicalai-studio remote",
-        )
 
     # Remote/recording nodes offload training, so cpu torch suffices; a GPU extra
     # only matters for local torch-backend GPU inference.

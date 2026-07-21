@@ -7,8 +7,8 @@ set -euo pipefail
 # via `serve`, supporting local and remote training at the same time (remote
 # trainer URLs are configured in the Studio UI and chosen per job). The `remote`
 # subcommand instead loads the matching .env, runs `uv sync` for the chosen
-# DEVICE, runs migrations, and starts the backend with training offloaded to a
-# single trainer service pinned via TRAINING_MODE/TRAINER_URL.
+# DEVICE (defaulting to cpu, since training is offloaded), and starts the
+# backend the same way.
 #
 # The remote trainer service is launched from the trainer project with its own
 # `physicalai-trainer` command (see application/trainer/README.md).

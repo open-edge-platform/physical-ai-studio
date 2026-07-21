@@ -71,7 +71,9 @@ async def interrupt_job(
         raise ResourceNotFoundError(ResourceType.JOB, job_id)
 
     if job.status == JobStatus.RUNNING:
-        scheduler.training_interrupt_event.set()
+        # Flag only this job's interrupt so concurrently running jobs on other
+        # targets are unaffected.
+        scheduler.job_interrupt_flags[str(job_id)] = True
     await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
 
 

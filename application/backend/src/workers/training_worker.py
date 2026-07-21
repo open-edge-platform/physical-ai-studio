@@ -32,6 +32,7 @@ from workers.base import BaseProcessWorker
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from multiprocessing.managers import DictProxy
     from multiprocessing.synchronize import Event as EventClass
 
 SCHEDULE_INTERVAL_SEC = 5
@@ -40,10 +41,13 @@ SCHEDULE_INTERVAL_SEC = 5
 class TrainingWorker(BaseProcessWorker):
     ROLE = "TrainingWorker"
 
-    def __init__(self, stop_event: EventClass, interrupt_event: EventClass, event_queue: mp.Queue):
+    def __init__(self, stop_event: EventClass, job_interrupt_flags: DictProxy, event_queue: mp.Queue):
         super().__init__(stop_event=stop_event)
         self.queue = event_queue
-        self.interrupt_event = interrupt_event
+        # Shared per-job interrupt flags (job id str -> True). Concurrent jobs on
+        # different targets each read/clear only their own entry, so cancelling
+        # one job cannot cross-cancel another running job.
+        self.job_interrupt_flags = job_interrupt_flags
         self._active_training_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def run_loop(self) -> None:
@@ -56,25 +60,25 @@ class TrainingWorker(BaseProcessWorker):
                     target = self._target_key(payload)
                     if target in self._active_training_tasks:
                         continue
-                    self.interrupt_event.clear()
                     task = asyncio.create_task(self._run_training_job(job, payload), name=f"training-{job.id}")
                     self._active_training_tasks[target] = task
-                    task.add_done_callback(self._make_release_callback(target))
+                    task.add_done_callback(self._make_release_callback(target, job.id))
                 self.stop_aware_sleep(0.5)
         finally:
             if self._active_training_tasks:
                 await asyncio.gather(*self._active_training_tasks.values(), return_exceptions=True)
 
-    def _release_target(self, target: str, completed_task: asyncio.Task[None]) -> None:
+    def _release_target(self, target: str, job_id: UUID, completed_task: asyncio.Task[None]) -> None:
         """Release a target only when its currently registered task completes."""
         if self._active_training_tasks.get(target) is completed_task:
             self._active_training_tasks.pop(target)
+        self.job_interrupt_flags.pop(str(job_id), None)
 
-    def _make_release_callback(self, target: str) -> Callable[[asyncio.Task[None]], None]:
-        """Build a done-callback bound to `target` for `add_done_callback`."""
+    def _make_release_callback(self, target: str, job_id: UUID) -> Callable[[asyncio.Task[None]], None]:
+        """Build a done-callback bound to `target`/`job_id` for `add_done_callback`."""
 
         def _on_done(completed_task: asyncio.Task[None]) -> None:
-            self._release_target(target, completed_task)
+            self._release_target(target, job_id, completed_task)
 
         return _on_done
 
@@ -171,7 +175,7 @@ class TrainingWorker(BaseProcessWorker):
                 output_dir=Path(model.path),
                 cache_dir=settings.cache_dir / str(job.id),
                 progress=dispatcher.report,
-                should_stop=self._should_interrupt,
+                should_stop=lambda: self._should_interrupt(job.id),
                 remote_job_id=payload.remote_job_id,
                 on_remote_job_id=lambda remote_job_id: self._persist_remote_job_id(job, payload, remote_job_id),
                 should_suspend=self.should_stop,
@@ -181,7 +185,7 @@ class TrainingWorker(BaseProcessWorker):
             await backend.train(context)
             # The local backend stops cooperatively without raising; treat a
             # completed-but-interrupted run as a cancellation, not a success.
-            interrupted = self._should_interrupt()
+            interrupted = self._should_interrupt(job.id)
         except TrainingSuspendedError:
             # Leave the remote job running so a restart can reattach.
             suspended = True
@@ -233,6 +237,6 @@ class TrainingWorker(BaseProcessWorker):
         await JobService.update_job_payload(job.id, payload)
         logger.info("Persisted remote job id {} for restart recovery", remote_job_id)
 
-    def _should_interrupt(self) -> bool:
-        """Stop training on global shutdown or an explicit interrupt request."""
-        return self.should_stop() or self.interrupt_event.is_set()
+    def _should_interrupt(self, job_id: UUID) -> bool:
+        """Stop training on global shutdown or an interrupt requested for this job."""
+        return self.should_stop() or bool(self.job_interrupt_flags.get(str(job_id), False))

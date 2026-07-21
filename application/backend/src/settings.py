@@ -111,12 +111,10 @@ class Settings(BaseSettings):
         """Storage directory for logs."""
         return self.storage_dir / "logs"
 
-    # Training mode
-    # "local" runs training in-process (requires the [train] extra with torch).
-    # "remote" offloads training to a trainer service, keeping this install lightweight.
-    training_mode: Literal["local", "remote"] = Field(default="local", alias="TRAINING_MODE")
-    # Base URL of the remote trainer service, e.g. "https://trainer.internal:8001".
-    trainer_url: str | None = Field(default=None, alias="TRAINER_URL")
+    # Remote training
+    # Remote trainers are registered through the API/UI (see `RemoteTrainerService`)
+    # and selected per job via `TrainJobPayload.training_target` /
+    # `remote_trainer_id`; there is no global training-mode switch here.
     # Seconds to wait for trainer HTTP requests (excludes long-poll/SSE streams).
     trainer_request_timeout_s: float = Field(default=30.0, alias="TRAINER_REQUEST_TIMEOUT_S")
     # Seconds to wait between chunks while streaming the model artifact. A stalled
