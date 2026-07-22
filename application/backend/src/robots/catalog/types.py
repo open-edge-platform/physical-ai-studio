@@ -2,18 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 from physicalai.robot.interface import Robot as PhysicalAIRobot
 from pydantic import BaseModel, Field
 
-from schemas.robot import RobotType
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from schemas.calibration import Calibration
-    from schemas.robot import SO101Robot
+from schemas.robot import RobotType, SO101Robot
 
 
 @dataclass(frozen=True)
@@ -33,8 +27,6 @@ class CatalogRobotFactory(Protocol):
 
     async def find_port_by_serial(self, serial_number: str) -> str | None: ...
 
-    async def get_calibration_by_id(self, calibration_id: UUID | None) -> Calibration | None: ...
-
 
 _PayloadT = TypeVar("_PayloadT")
 
@@ -45,7 +37,6 @@ class PayloadContainer(Protocol[_PayloadT]):
 
 class CatalogRobot(PayloadContainer[_PayloadT], Protocol[_PayloadT]):
     type: RobotType
-    active_calibration_id: UUID | None
 
 
 _RobotT = TypeVar("_RobotT", bound=CatalogRobot[Any])

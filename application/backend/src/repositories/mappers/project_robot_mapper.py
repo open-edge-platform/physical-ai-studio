@@ -14,7 +14,6 @@ class ProjectRobotMapper(IBaseMapper):
             name=db_schema.name,
             type=db_schema.type,
             payload=db_schema.payload.model_dump(),
-            active_calibration_id=str(db_schema.active_calibration_id) if db_schema.active_calibration_id else None,
         )
 
     @staticmethod
@@ -26,7 +25,6 @@ class ProjectRobotMapper(IBaseMapper):
                 "name": model.name,
                 "type": RobotType(model.type),
                 "payload": model.payload,
-                "active_calibration_id": model.active_calibration_id,
                 "created_at": model.created_at,
                 "updated_at": model.updated_at,
             }

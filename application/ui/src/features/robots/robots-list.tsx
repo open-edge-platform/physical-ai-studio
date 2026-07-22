@@ -4,7 +4,7 @@ import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router-dom';
 
-import { $api, fetchClient } from '../../api/client';
+import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
@@ -13,35 +13,12 @@ import { SchemaRobot } from './robot-types';
 
 import classes from './robots-list.module.css';
 
-const exportCalibration = async (project_id: string, robot: SchemaRobot) => {
-    if (robot.active_calibration_id === null || robot.active_calibration_id === undefined) {
+const exportCalibration = async (_project_id: string, robot: SchemaRobot) => {
+    if (!('calibration' in robot.payload) || !robot.payload.calibration) {
         return;
     }
-
-    const { data, error } = await fetchClient.GET(
-        '/api/projects/{project_id}/robots/{robot_id}/calibrations/{calibration_id}',
-        { params: { path: { project_id, robot_id: robot.id, calibration_id: robot.active_calibration_id } } }
-    );
-
-    if (error || !data) {
-        toast.negative(getApiErrorMessage(error) ?? 'Failed to export calibration.');
-        return;
-    }
-
-    const calibration = Object.fromEntries(
-        Object.entries(data.values).map(([jointName, value]) => [
-            jointName,
-            {
-                id: value.id,
-                drive_mode: value.drive_mode,
-                homing_offset: value.homing_offset,
-                range_min: value.range_min,
-                range_max: value.range_max,
-            },
-        ])
-    );
     const downloadUrl = URL.createObjectURL(
-        new Blob([JSON.stringify(calibration, null, 4)], { type: 'application/json' })
+        new Blob([JSON.stringify(robot.payload.calibration, null, 4)], { type: 'application/json' })
     );
     const link = document.createElement('a');
     link.href = downloadUrl;
@@ -76,9 +53,7 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
             <Menu
                 selectionMode='single'
                 disabledKeys={
-                    robot.active_calibration_id === null || robot.active_calibration_id === undefined
-                        ? ['export-calibration']
-                        : []
+                    !('calibration' in robot.payload) || !robot.payload.calibration ? ['export-calibration'] : []
                 }
                 onAction={async (action) => {
                     if (action === 'delete') {

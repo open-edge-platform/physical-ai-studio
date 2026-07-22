@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 from sqlalchemy.pool import NullPool
 
-from db.schema import DatasetDB, ModelDB, RobotCalibrationDB, SnapshotDB
+from db.schema import DatasetDB, ModelDB, SnapshotDB
 from settings import Settings
 
 OLD_DEFAULT_STORAGE_DIR = Path("~/.cache/physicalai").expanduser()
@@ -164,9 +164,6 @@ def _rewrite_database_paths(settings: Settings, old_storage_dir: Path, new_stora
             _rewrite_table_paths(session, DatasetDB, DatasetDB.path, old_storage_dir, new_storage_dir)
             _rewrite_table_paths(session, ModelDB, ModelDB.path, old_storage_dir, new_storage_dir)
             _rewrite_table_paths(session, SnapshotDB, SnapshotDB.path, old_storage_dir, new_storage_dir)
-            _rewrite_table_paths(
-                session, RobotCalibrationDB, RobotCalibrationDB.file_path, old_storage_dir, new_storage_dir
-            )
             session.commit()
         except Exception:
             session.rollback()
@@ -202,7 +199,7 @@ def _resolve_source_database_path(settings: Settings) -> Path | None:
 
 def _rewrite_table_paths(
     session: Session,
-    model: type[DatasetDB] | type[ModelDB] | type[SnapshotDB] | type[RobotCalibrationDB],
+    model: type[DatasetDB] | type[ModelDB] | type[SnapshotDB],
     column: InstrumentedAttribute[str],
     old_storage_dir: Path,
     new_storage_dir: Path,

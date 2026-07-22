@@ -10,7 +10,6 @@ import { RobotsList } from './robots-list';
 
 const PROJECT_ID = 'test-project-id';
 const ROBOT_ID = 'robot-id';
-const CALIBRATION_ID = 'calibration-id';
 const ROBOTS_PATH = '/api/projects/{project_id}/robots';
 const ONLINE_ROBOTS_PATH = '/api/projects/{project_id}/robots/online';
 
@@ -18,8 +17,13 @@ const so101Robot = {
     id: ROBOT_ID,
     name: 'Test SO101',
     type: 'SO101_Follower' as const,
-    payload: { connection_string: '', serial_number: 'SO101-001' },
-    active_calibration_id: CALIBRATION_ID,
+    payload: {
+        connection_string: '',
+        serial_number: 'SO101-001',
+        calibration: {
+            shoulder_pan: { id: 1, drive_mode: 0, homing_offset: 10, range_min: -100, range_max: 100 },
+        },
+    },
 };
 
 const renderRobotsList = () =>
@@ -64,8 +68,12 @@ describe('RobotsList', () => {
     });
 
     it('disables Export calibration when no calibration is active', async () => {
+        const noCalRobot = {
+            ...so101Robot,
+            payload: { connection_string: '', serial_number: 'SO101-001' },
+        };
         server.use(
-            http.get(ROBOTS_PATH, () => HttpResponse.json([{ ...so101Robot, active_calibration_id: null }])),
+            http.get(ROBOTS_PATH, () => HttpResponse.json([noCalRobot])),
             http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([]))
         );
 
@@ -92,24 +100,7 @@ describe('RobotsList', () => {
         );
         server.use(
             http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot])),
-            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
-            http.get('/api/projects/{project_id}/robots/{robot_id}/calibrations/{calibration_id}', () =>
-                HttpResponse.json({
-                    id: CALIBRATION_ID,
-                    robot_id: ROBOT_ID,
-                    file_path: '/calibration.json',
-                    values: {
-                        shoulder_pan: {
-                            id: 1,
-                            joint_name: 'shoulder_pan',
-                            drive_mode: 0,
-                            homing_offset: 10,
-                            range_min: -100,
-                            range_max: 100,
-                        },
-                    },
-                })
-            )
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([]))
         );
 
         const user = userEvent.setup();

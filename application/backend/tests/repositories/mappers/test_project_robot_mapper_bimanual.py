@@ -23,7 +23,6 @@ def _make_bimanual_db_model(robot_type: RobotType):
         "connection_string_right": "10.0.0.2",
         "serial_number": "",
     }
-    model.active_calibration_id = None
     model.created_at = datetime(2026, 1, 1)
     model.updated_at = datetime(2026, 1, 1)
     return model
@@ -74,7 +73,6 @@ class TestProjectRobotMapperBimanual:
         db_model.name = db_obj.name
         db_model.type = db_obj.type
         db_model.payload = db_obj.payload
-        db_model.active_calibration_id = None
         db_model.created_at = None
         db_model.updated_at = None
 
