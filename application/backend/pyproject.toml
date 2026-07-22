@@ -13,6 +13,7 @@ dependencies = [
   "physicalai[robots, capture]",
   "physicalai-train",
   "lerobot[dataset,feetech]==0.6.0",
+  "torchcodec==0.11.1",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
@@ -59,16 +60,16 @@ train = [
   "torchao===0.15.0",
 ]
 cpu = [
-    "torch<2.13",
-    "torchvision<0.28.0",
+    "torch>=2.11,<2.12",
+    "torchvision>=0.26,<0.27",
 ]
 cuda = [
-    "torch<2.13",
-    "torchvision<0.28.0",
+    "torch>=2.11,<2.12",
+    "torchvision>=0.26,<0.27",
 ]
 xpu = [
-    "torch<2.13",
-    "torchvision<0.28.0",
+    "torch>=2.11,<2.12",
+    "torchvision>=0.26,<0.27",
     "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 

@@ -54,7 +54,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-07-15T14:58:31.15815Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -2520,6 +2520,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "sse-starlette" },
     { name = "tenacity" },
+    { name = "torchcodec" },
     { name = "types-aiofiles" },
     { name = "websockets" },
 ]
@@ -2598,13 +2599,14 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.43" },
     { name = "sse-starlette", specifier = ">=2.0.0" },
     { name = "tenacity", specifier = ">=9.1.2" },
-    { name = "torch", marker = "extra == 'cpu'", specifier = "<2.13", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
-    { name = "torch", marker = "extra == 'cuda'", specifier = "<2.13", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-studio", extra = "cuda" } },
-    { name = "torch", marker = "extra == 'xpu'", specifier = "<2.13", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
+    { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.11,<2.12", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
+    { name = "torch", marker = "extra == 'cuda'", specifier = ">=2.11,<2.12", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-studio", extra = "cuda" } },
+    { name = "torch", marker = "extra == 'xpu'", specifier = ">=2.11,<2.12", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
     { name = "torchao", marker = "extra == 'train'", specifier = "===0.15.0", index = "https://pypi.org/simple" },
-    { name = "torchvision", marker = "extra == 'cpu'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
-    { name = "torchvision", marker = "extra == 'cuda'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-studio", extra = "cuda" } },
-    { name = "torchvision", marker = "extra == 'xpu'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
+    { name = "torchcodec", specifier = "==0.11.1" },
+    { name = "torchvision", marker = "extra == 'cpu'", specifier = ">=0.26,<0.27", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
+    { name = "torchvision", marker = "extra == 'cuda'", specifier = ">=0.26,<0.27", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-studio", extra = "cuda" } },
+    { name = "torchvision", marker = "extra == 'xpu'", specifier = ">=0.26,<0.27", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
     { name = "types-aiofiles", specifier = ">=25.1.0.20251011" },
     { name = "websockets" },
 ]
@@ -4042,14 +4044,14 @@ wheels = [
 
 [[package]]
 name = "tifffile"
-version = "2026.6.1"
+version = "2026.7.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b7/38/5e2ecef5af2f4fd4a89bb8d6240de9458bab4d51a4cbd97aeb3a0cd618e2/tifffile-2026.6.1.tar.gz", hash = "sha256:626c892c0e899d959b9438e7c0e1491dc154a7fead1f1f37a991724a50eceba9", size = 429694, upload-time = "2026-05-31T23:57:12.165Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/20/2f/e5fe51c8f782241d86fdf7251594b195f0d6c2fcf9d389079de212599246/tifffile-2026.7.14.tar.gz", hash = "sha256:ce2703e5ef22c868f1528d5f5b4ef75eefb019cf628a1c9ec0d17e0afeca8ef5", size = 437660, upload-time = "2026-07-14T23:41:31.737Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/59/208f71d70ddc6184f79b8c6d87d46eb7d7b12c19186a817dec9c9c3f3693/tifffile-2026.6.1-py3-none-any.whl", hash = "sha256:0d7382d2769b855b81ce358528e2b40c16d48aa39031746efa81215205332a8d", size = 267108, upload-time = "2026-05-31T23:57:10.597Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/e8/d381de4a3cc4e3682cba0338f43250893508aad0b310af1d0635f7b04413/tifffile-2026.7.14-py3-none-any.whl", hash = "sha256:4eb20372e76edf2c9fed922b1e3a0a0567be3560bd2008336115763bb1f3c034", size = 270614, upload-time = "2026-07-14T23:41:30.078Z" },
 ]
 
 [[package]]
