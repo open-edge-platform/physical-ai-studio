@@ -5,16 +5,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
 import storage_migration
-from db.schema import (
-    Base,
-    DatasetDB,
-    ModelDB,
-    ProjectDB,
-    ProjectEnvironmentDB,
-    ProjectRobotDB,
-    RobotCalibrationDB,
-    SnapshotDB,
-)
+from db.schema import Base, DatasetDB, ModelDB, ProjectDB, ProjectEnvironmentDB, ProjectRobotDB, SnapshotDB
 from schemas.robot import RobotType
 from settings import Settings
 from storage_migration import StorageMigrationError, migrate_default_storage_dir
@@ -182,11 +173,6 @@ def test_migration_rewrites_database_paths(tmp_path: Path, monkeypatch: pytest.M
                     path=str(old_storage / "snapshots" / "snapshot-1"),
                     dataset_id="dataset-1",
                 ),
-                RobotCalibrationDB(
-                    id="calibration-1",
-                    file_path=str(old_storage / "robots" / "robot-1" / "calibration.json"),
-                    robot_id="robot-1",
-                ),
             ]
         )
         session.commit()
@@ -198,15 +184,11 @@ def test_migration_rewrites_database_paths(tmp_path: Path, monkeypatch: pytest.M
         external_dataset_path = session.scalar(select(DatasetDB.path).where(DatasetDB.id == "dataset-2"))
         model_path = session.scalar(select(ModelDB.path).where(ModelDB.id == "model-1"))
         snapshot_path = session.scalar(select(SnapshotDB.path).where(SnapshotDB.id == "snapshot-1"))
-        calibration_path = session.scalar(
-            select(RobotCalibrationDB.file_path).where(RobotCalibrationDB.id == "calibration-1")
-        )
 
     assert dataset_path == str(settings.storage_dir / "datasets" / "dataset-1")
     assert external_dataset_path == str(tmp_path / "external" / "dataset-2")
     assert model_path == str(settings.storage_dir / "models" / "model-1")
     assert snapshot_path == str(settings.storage_dir / "snapshots" / "snapshot-1")
-    assert calibration_path == str(settings.storage_dir / "robots" / "robot-1" / "calibration.json")
     engine.dispose()
 
 

@@ -18,7 +18,7 @@ concurrency:
 jobs:
   check-paths:
     name: Check if workflow should run
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       run_workflow: ${{ steps.check_paths.outputs.run }}
     permissions:
@@ -73,7 +73,7 @@ jobs:
     name: Generate OpenAPI Spec
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
@@ -120,7 +120,7 @@ jobs:
     name: Build UI
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
@@ -175,7 +175,7 @@ jobs:
     name: Eslint checks
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
@@ -213,7 +213,7 @@ jobs:
     name: Unit tests
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
@@ -243,7 +243,7 @@ jobs:
     permissions:
       contents: read # to checkout code
     timeout-minutes: 60
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.61.1-jammy@sha256:7b86926fff94374389e8e1f4fdc5c76d050d4a06a7886bb537bf412b20e2b71e
     steps:
@@ -291,7 +291,7 @@ jobs:
       - lint
       - unit-tests
       - playwright-tests
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}
     if: always() && !cancelled()

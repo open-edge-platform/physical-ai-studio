@@ -146,7 +146,6 @@ class TestHardwareApi:
                             "connection_string": "/dev/ttyUSB0",
                             "serial_number": "",
                         },
-                        "active_calibration_id": None,
                     },
                 )
         finally:
@@ -177,7 +176,6 @@ class TestHardwareApi:
                             "connection_string": "192.168.1.100",
                             "serial_number": "",
                         },
-                        "active_calibration_id": None,
                     },
                 )
         finally:

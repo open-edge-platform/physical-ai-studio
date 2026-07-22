@@ -7,14 +7,7 @@ from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
 
-from api.dependencies import (
-    RobotCalibrationServiceDep,
-    RobotConnectionManagerDep,
-    SchedulerDep,
-    get_project_id,
-    get_robot_id,
-    get_robot_service,
-)
+from api.dependencies import RobotConnectionManagerDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
 from robots.robot_client_factory import RobotClientFactory
 from services import RobotService
 from workers.base import run_at_frequency
@@ -73,7 +66,6 @@ async def robot_websocket(
     project_id: Annotated[UUID, Depends(get_project_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     robot_manager: RobotConnectionManagerDep,
-    calibration_service: RobotCalibrationServiceDep,
     websocket: WebSocket,
     scheduler: SchedulerDep,
     fps: int = 30,
@@ -85,7 +77,6 @@ async def robot_websocket(
         project_id: ID of the project.
         robot_service: Service for robot metadata.
         robot_manager: Connection manager for robot discovery.
-        calibration_service: Service for loading calibration.
         websocket: The FastAPI WebSocket instance.
         registry: Registry for managing active robot workers.
         normalize: Whether to use normalized joint values.
@@ -96,7 +87,7 @@ async def robot_websocket(
     try:
         settings = await websocket.receive_json("text")
         follower_id = get_robot_id(settings["follower_id"])
-        robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
+        robot_client_factory = RobotClientFactory(robot_manager)
         follower = await robot_service.get_robot_by_id(project_id, follower_id)
         follower_client = await robot_client_factory.build(follower)
         features = follower_client.features()

@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
+from physicalai.robot.so101 import SO101JointCalibration
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from schemas.base import BaseIDModel
@@ -35,6 +36,10 @@ class SO101RobotPayload(BaseModel):
         description="Serial port path; leave empty to auto-discover via serial_number",
     )
     serial_number: str = Field(default="", description="USB serial number of the robot (when available)")
+    calibration: dict[str, SO101JointCalibration] | None = Field(
+        default=None,
+        description="Per-joint calibration values (id, drive_mode, homing_offset, range_min, range_max)",
+    )
 
     @model_validator(mode="after")
     def validate_identifier(self) -> "SO101RobotPayload":
@@ -76,7 +81,6 @@ class BaseRobot(BaseIDModel):
     updated_at: datetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable robot name")
-    active_calibration_id: UUID | None = Field(default=None, description="The ID of the active calibration")
 
 
 class SO101Robot(BaseRobot):
@@ -95,7 +99,6 @@ class SO101Robot(BaseRobot):
                     "connection_string": "",
                     "serial_number": "SO101-2024-001",
                 },
-                "active_calibration_id": "b7f3d9e2-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
                 "created_at": "2024-01-15T10:30:00Z",
                 "updated_at": "2024-01-15T10:30:00Z",
             },
@@ -119,7 +122,6 @@ class TrossenSingleArmRobot(BaseRobot):
                     "connection_string": "192.168.1.100",
                     "serial_number": "",
                 },
-                "active_calibration_id": None,
                 "created_at": "2024-01-15T10:30:00Z",
                 "updated_at": "2024-01-15T10:30:00Z",
             },
@@ -144,7 +146,6 @@ class TrossenBimanualRobot(BaseRobot):
                     "connection_string_right": "192.168.1.101",
                     "serial_number": "",
                 },
-                "active_calibration_id": None,
                 "created_at": "2024-01-15T10:30:00Z",
                 "updated_at": "2024-01-15T10:30:00Z",
             },

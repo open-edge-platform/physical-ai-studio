@@ -7,13 +7,7 @@ from fastapi import APIRouter, Depends, WebSocket
 from fastapi.responses import Response
 from loguru import logger
 
-from api.dependencies import (
-    ModelRegistryDep,
-    RecordingLockedCamerasDep,
-    RobotCalibrationServiceDep,
-    RobotConnectionManagerDep,
-    get_scheduler_ws,
-)
+from api.dependencies import ModelRegistryDep, RecordingLockedCamerasDep, RobotConnectionManagerDep, get_scheduler_ws
 from core.scheduler import Scheduler
 from robots.robot_client_factory import RobotClientFactory
 from schemas import Dataset, InferenceDevice, Model
@@ -91,7 +85,6 @@ async def handle_outgoing(websocket: WebSocket, queue: mp.Queue) -> None:
 async def robot_control_websocket(
     websocket: WebSocket,
     robot_manager: RobotConnectionManagerDep,
-    calibration_service: RobotCalibrationServiceDep,
     scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
     model_registry: ModelRegistryDep,
     locked_camera_fingerprints: RecordingLockedCamerasDep,
@@ -101,10 +94,7 @@ async def robot_control_websocket(
     queue: mp.Queue = mp.Queue()
     process = RobotControlWorker(
         stop_event=scheduler.mp_stop_event,
-        robot_client_factory=RobotClientFactory(
-            robot_manager=robot_manager,
-            calibration_service=calibration_service,
-        ),
+        robot_client_factory=RobotClientFactory(robot_manager=robot_manager),
         queue=queue,
         model_worker_registry=model_registry,
     )

@@ -1,6 +1,7 @@
 import { Flex, TextField, View } from '@geti-ui/ui';
 import { v4 as uuidv4 } from 'uuid';
 
+import type { SchemaTrossenBimanualPayload } from '../../../../api/openapi-spec';
 import type { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../../robot-types';
 import { useRobotFormFields } from '../provider';
 import { IdentifyRobot, useIdentifyMutation } from './actions';
@@ -8,18 +9,15 @@ import { buildWidowxBody } from './widowxai';
 
 export interface BimanualFormData {
     name: string;
-    connection_string_left: string;
-    connection_string_right: string;
-    serial_number: string;
+    payload: SchemaTrossenBimanualPayload;
 }
 
 export const getInitialBimanualFormData = (robot?: SchemaRobot): BimanualFormData => ({
     name: robot?.name ?? '',
-    connection_string_left:
-        robot && 'connection_string_left' in robot.payload ? robot.payload.connection_string_left : '',
-    connection_string_right:
-        robot && 'connection_string_right' in robot.payload ? robot.payload.connection_string_right : '',
-    serial_number: robot?.payload?.serial_number ?? '',
+    payload:
+        robot && 'connection_string_left' in robot.payload
+            ? robot.payload
+            : { connection_string_left: '', connection_string_right: '', serial_number: '' },
 });
 
 export const buildBimanualBody = (
@@ -27,7 +25,7 @@ export const buildBimanualBody = (
     schemaType: SchemaRobotType,
     robot_id: string
 ): SchemaRobotInput | null => {
-    if (!formData.connection_string_left || !formData.connection_string_right) {
+    if (!formData.payload.connection_string_left || !formData.payload.connection_string_right) {
         return null;
     }
 
@@ -35,11 +33,7 @@ export const buildBimanualBody = (
         id: robot_id,
         name: formData.name,
         type: schemaType,
-        payload: {
-            connection_string_left: formData.connection_string_left,
-            connection_string_right: formData.connection_string_right,
-            serial_number: formData.serial_number ?? '',
-        },
+        payload: formData.payload,
     } as SchemaRobotInput;
 };
 
@@ -48,12 +42,18 @@ export const BiManualWidowxAIFormFields = () => {
 
     const identifyMutation = useIdentifyMutation();
     const leftIdentifyRobot = buildWidowxBody(
-        { name: formData.name, connection_string: formData.connection_string_left, serial_number: '' },
+        {
+            name: formData.name,
+            payload: { connection_string: formData.payload.connection_string_left, serial_number: '' },
+        },
         'Trossen_WidowXAI_Follower',
         uuidv4()
     );
     const rightIdentifyRobot = buildWidowxBody(
-        { name: formData.name, connection_string: formData.connection_string_right, serial_number: '' },
+        {
+            name: formData.name,
+            payload: { connection_string: formData.payload.connection_string_right, serial_number: '' },
+        },
         'Trossen_WidowXAI_Follower',
         uuidv4()
     );
@@ -66,10 +66,13 @@ export const BiManualWidowxAIFormFields = () => {
                         isRequired
                         label='Left arm IP address'
                         width='100%'
-                        value={formData.connection_string_left}
+                        value={formData.payload.connection_string_left}
                         onChange={(connection_string_left) => {
-                            updateField('connection_string_left', connection_string_left);
-                            updateField('serial_number', '');
+                            updateField('payload', {
+                                ...formData.payload,
+                                connection_string_left,
+                                serial_number: '',
+                            });
                         }}
                         placeholder='192.168.1.2'
                     />
@@ -84,10 +87,13 @@ export const BiManualWidowxAIFormFields = () => {
                     isRequired
                     label='Right arm IP address'
                     width='100%'
-                    value={formData.connection_string_right}
+                    value={formData.payload.connection_string_right}
                     onChange={(connection_string_right) => {
-                        updateField('connection_string_right', connection_string_right);
-                        updateField('serial_number', '');
+                        updateField('payload', {
+                            ...formData.payload,
+                            connection_string_right,
+                            serial_number: '',
+                        });
                     }}
                     placeholder='192.168.1.3'
                 />

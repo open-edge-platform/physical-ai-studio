@@ -23,7 +23,6 @@ from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
 from services.job_service import JobService
 from services.log_service import LogService
-from services.robot_calibration_service import RobotCalibrationService
 from services.robot_catalog_service import RobotCatalogService
 from services.system_service import SystemService
 from settings import get_settings
@@ -73,14 +72,6 @@ def get_robot_manager_service(request: HTTPConnection) -> RobotConnectionManager
 
 
 RobotConnectionManagerDep = Annotated[RobotConnectionManager, Depends(get_robot_manager_service)]
-
-
-def get_robot_calibration_service(robot_manager: RobotConnectionManagerDep) -> RobotCalibrationService:
-    """Provide a RobotCalibrationService instance for managing robot calibrations."""
-    return RobotCalibrationService(robot_manager, settings=get_settings())
-
-
-RobotCalibrationServiceDep = Annotated[RobotCalibrationService, Depends(get_robot_calibration_service)]
 
 
 @lru_cache
@@ -190,13 +181,6 @@ def get_robot_id(robot_id: str) -> UUID:
     if not is_valid_uuid(robot_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid robot ID")
     return UUID(robot_id)
-
-
-def get_calibration_id(calibration_id: str) -> UUID:
-    """Initialize and validates a calibration ID."""
-    if not is_valid_uuid(calibration_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid calibration ID")
-    return UUID(calibration_id)
 
 
 def get_camera_id(camera_id: str) -> UUID:
