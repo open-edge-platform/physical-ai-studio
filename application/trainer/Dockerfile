@@ -7,7 +7,7 @@ ARG PYTHON_VERSION=3.13
 FROM python:${PYTHON_VERSION}-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 UV_PROJECT_ENVIRONMENT=/opt/venv
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -29,7 +29,7 @@ RUN --mount=type=cache,id=uv-trainer-cuda,target=/root/.cache/uv \
 
 # Remove test-only packages that executorch ships as unconditional runtime
 # dependencies (the cuda extra pulls in physicalai-train[executorch]).
-RUN uv pip uninstall --python .venv/bin/python \
+RUN uv pip uninstall --python /opt/venv/bin/python \
     pytest pluggy iniconfig \
     pytest-xdist execnet \
     pytest-json-report pytest-metadata \
@@ -171,7 +171,7 @@ ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_APPLICATION_VERSION="${APPLICATION_VERSION}" \
     TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
     TRAINER_DEVICE_TYPE=cuda
-COPY --from=builder-cuda --chown=trainer:trainer /app/application/trainer/.venv /opt/venv
+COPY --from=builder-cuda --chown=trainer:trainer /opt/venv /opt/venv
 
 FROM runtime-xpu AS physicalai-trainer-xpu
 ARG GIT_SHA=unknown
@@ -192,4 +192,4 @@ ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_APPLICATION_VERSION="${APPLICATION_VERSION}" \
     TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
     TRAINER_DEVICE_TYPE=xpu
-COPY --from=builder-xpu --chown=trainer:trainer /app/application/trainer/.venv /opt/venv
+COPY --from=builder-xpu --chown=trainer:trainer /opt/venv /opt/venv
