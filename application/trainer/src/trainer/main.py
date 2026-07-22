@@ -15,6 +15,7 @@ from loguru import logger
 
 from trainer.api import router as jobs_router
 from trainer.devices import get_training_devices
+from trainer.log_setup import setup_logging, setup_uvicorn_logging
 from trainer.queue_worker import QueueManager
 from trainer.schemas import DeviceInfo, StorageInfo
 from trainer.settings import get_settings
@@ -22,6 +23,12 @@ from trainer.storage import get_storage_info
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+
+# Configure logging at import time so it applies regardless of whether the
+# app is served via `physicalai-trainer`, `uvicorn trainer.main:app`, or the
+# `__main__` block below.
+setup_logging()
+setup_uvicorn_logging()
 
 
 @asynccontextmanager
