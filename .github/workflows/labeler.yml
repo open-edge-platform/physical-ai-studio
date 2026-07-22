@@ -18,6 +18,6 @@ jobs:
     permissions:
       contents: read # Read label configuration from repository
       pull-requests: write # Apply labels on pull requests
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/labeler@f27b608878404679385c85cfa523b85ccb86e213 # v6.1.0
