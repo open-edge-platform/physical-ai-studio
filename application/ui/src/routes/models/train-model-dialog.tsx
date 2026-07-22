@@ -16,7 +16,6 @@ import {
     Heading,
     Item,
     Key,
-    Link,
     NumberField,
     Picker,
     StatusLight,
@@ -33,7 +32,6 @@ import {
 } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
 import { InlineAlert } from '../../features/robots/setup-wizard/shared/inline-alert';
-import { paths } from '../../router';
 
 import classes from './train-model-dialog.module.css';
 
