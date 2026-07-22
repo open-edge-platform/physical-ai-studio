@@ -105,3 +105,38 @@ def test_run_job_reports_progress_to_store(manager, sample_request: SubmitJobReq
 
     # Final state is COMPLETED at 100, but the intermediate report was persisted en route.
     assert manager.store.get(job_id).status == TrainerJobStatus.COMPLETED
+
+
+def test_run_job_completion_does_not_clean_up_outputs(
+    manager,
+    sample_request: SubmitJobRequest,
+    tmp_path: Path,
+) -> None:
+    """A COMPLETED job's model/cache output is kept until the backend explicitly deletes it."""
+    job_id = manager.store.create(sample_request)
+    manager._runner.run = MagicMock(return_value=tmp_path / "model.zip")
+
+    asyncio.run(manager._run_job(job_id))
+
+    manager._runner.cleanup_job_outputs.assert_not_called()
+
+
+def test_run_job_failure_cleans_up_outputs(manager, sample_request: SubmitJobRequest) -> None:
+    """A FAILED job has no artifact worth keeping, so its output/cache is removed."""
+    job_id = manager.store.create(sample_request)
+    manager._runner.run = MagicMock(side_effect=RuntimeError("boom"))
+
+    asyncio.run(manager._run_job(job_id))
+
+    manager._runner.cleanup_job_outputs.assert_called_once_with(job_id)
+
+
+def test_run_job_cancellation_cleans_up_outputs(manager, sample_request: SubmitJobRequest, tmp_path: Path) -> None:
+    """A canceled job (mid-training or otherwise) leaves nothing behind either."""
+    job_id = manager.store.create(sample_request)
+    manager._runner.run = MagicMock(return_value=tmp_path / "model.zip")
+    manager._cancel_requested.add(job_id)
+
+    asyncio.run(manager._run_job(job_id))
+
+    manager._runner.cleanup_job_outputs.assert_called_once_with(job_id)

@@ -118,3 +118,16 @@ class QueueManager:
             self._cancel_requested.discard(job_id)
             self._active.pop(job_id, None)
             self._semaphore.release()
+            self._cleanup_if_not_completed(job_id)
+
+    def _cleanup_if_not_completed(self, job_id: str) -> None:
+        """Remove any leftover model/cache output for a job that didn't complete.
+
+        A COMPLETED job's archive and model directory are kept until the studio
+        backend explicitly deletes them after downloading the artifact (see
+        the ``DELETE /jobs/{id}`` endpoint); every other terminal outcome has
+        nothing worth keeping.
+        """
+        state = self.store.get(job_id)
+        if state is not None and state.status != TrainerJobStatus.COMPLETED:
+            self._runner.cleanup_job_outputs(job_id)

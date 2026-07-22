@@ -146,6 +146,12 @@ class JobStore:
                 self._conn.execute(statement, (value, job_id))
             self._conn.commit()
 
+    def delete(self, job_id: str) -> None:
+        """Remove a job's record from the store."""
+        with self._lock:
+            self._conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            self._conn.commit()
+
     def reset_orphans(self) -> None:
         """Fail running jobs and incomplete HTTP uploads after a restart."""
         with self._lock:

@@ -67,6 +67,21 @@ class TrainerRunner:
         if dataset_dir.exists():
             shutil.rmtree(dataset_dir, ignore_errors=True)
 
+    @staticmethod
+    def cleanup_job_outputs(job_id: str) -> None:
+        """Remove a job's model output and checkpoint cache from disk.
+
+        Called for jobs that end up FAILED or CANCELED: they have no artifact
+        worth keeping, so nothing should be left behind on the trainer's disk.
+        A job canceled mid-training in particular can leave its checkpoint
+        cache directory unmoved since the move only happens on a successful
+        finish (see ``_train``), so this must clean up both directories.
+        """
+        settings = get_settings()
+        for path in (settings.models_dir / job_id, settings.storage_dir / "cache" / job_id):
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+
     def _train(
         self,
         request: SubmitJobRequest,

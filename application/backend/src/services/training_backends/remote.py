@@ -197,6 +197,7 @@ class RemoteTrainingBackend:
         await self._wait_for_completion(context, remote_job_id)
         context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
         await self._download_and_extract(context, remote_job_id)
+        await self._delete_remote_job(remote_job_id)
         context.progress(100, message="Model downloaded")
 
     async def upload_snapshot_http(
@@ -655,6 +656,14 @@ class RemoteTrainingBackend:
                 await client.post(f"{self._base_url}/jobs/{remote_job_id}/cancel")
         except httpx.HTTPError as exc:
             logger.warning("Failed to cancel remote job: {}", exc)
+
+    async def _delete_remote_job(self, remote_job_id: uuid.UUID) -> None:
+        """Ask the trainer to remove its copy of a job's artifacts; best effort."""
+        try:
+            async with await self._client() as client:
+                await client.delete(f"{self._base_url}/jobs/{remote_job_id}")
+        except httpx.HTTPError as exc:
+            logger.warning("Failed to clean up remote job artifacts: {}", exc)
 
     @staticmethod
     def _coerce_progress(value: object) -> int:
