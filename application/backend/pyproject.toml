@@ -12,8 +12,6 @@ dependencies = [
   "fastapi[standard]<1",
   "physicalai[robots, capture]",
   "physicalai-train[pi0,smolvla]",
-  "executorch>=1.1.0",
-  "torchao===0.15.0",
   "lerobot[dataset,feetech]==0.6.0",
   "numpy",
   "websockets",
@@ -55,13 +53,17 @@ exclude = [
 path = "scripts/hatch_build.py"
 
 [project.optional-dependencies]
+# executorch enables the ExecuTorch export backend. It conflicts with the xpu
+# torch build (see library conflicts), so it ships only with cpu/cuda.
 cpu = [
     "torch<2.13",
     "torchvision<0.28.0",
+    "physicalai-train[executorch]",
 ]
 cuda = [
     "torch<2.13",
     "torchvision<0.28.0",
+    "physicalai-train[executorch]",
 ]
 xpu = [
     "torch<2.13",

@@ -1,11 +1,12 @@
 """Unit tests for ModelService."""
 
+import importlib.util
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
 import yaml
-from lightning.pytorch.core.saving import _OMEGACONF_AVAILABLE, save_hparams_to_yaml
+from lightning.pytorch.core.saving import save_hparams_to_yaml
 
 from schemas.model import Model
 from services.model_service import ModelService
@@ -50,7 +51,7 @@ def test_omegaconf_is_installed() -> None:
     message pointing at the root cause, if `omegaconf` is ever actually
     missing.
     """
-    assert _OMEGACONF_AVAILABLE, (
+    assert importlib.util.find_spec("omegaconf") is not None, (
         "omegaconf is not installed. hparams.yaml writes will silently use "
         "the unsafe YAML dumper, emitting `!!python/tuple` tags that "
         "ModelService.get_hparams cannot parse. Ensure `omegaconf` remains "
