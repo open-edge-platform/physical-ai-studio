@@ -95,6 +95,7 @@ def trainer(host: str | None, port: int | None) -> None:
         app,
         host=host if host is not None else settings.host,
         port=port if port is not None else settings.port,
+        log_config=None,
     )
 
 

@@ -72,4 +72,9 @@ async def storage() -> StorageInfo:
 
 if __name__ == "__main__":
     settings = get_settings()
-    uvicorn.run(app, host=settings.host, port=int(os.environ.get("PORT", settings.port)))
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=int(os.environ.get("PORT", settings.port)),
+        log_config=None,
+    )

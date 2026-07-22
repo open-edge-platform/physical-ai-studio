@@ -42,13 +42,14 @@ def test_trainer_command_launches_service(monkeypatch: pytest.MonkeyPatch, tmp_p
     monkeypatch.setattr(cli, "_project_dir", lambda: tmp_path)
     launched: dict[str, object] = {}
 
-    def _fake_run(app: object, *, host: str, port: int) -> None:
+    def _fake_run(app: object, *, host: str, port: int, log_config: object = None) -> None:
         launched["host"] = host
         launched["port"] = port
+        launched["log_config"] = log_config
 
     monkeypatch.setattr(uvicorn, "run", _fake_run)
 
     result = CliRunner().invoke(cli.trainer, ["--host", "127.0.0.1", "--port", "9100"])
 
     assert result.exit_code == 0, result.output
-    assert launched == {"host": "127.0.0.1", "port": 9100}
+    assert launched == {"host": "127.0.0.1", "port": 9100, "log_config": None}
