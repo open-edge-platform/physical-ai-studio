@@ -54,7 +54,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-07-15T13:04:21.995946Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -2459,6 +2459,7 @@ dependencies = [
     { name = "alembic" },
     { name = "click" },
     { name = "cv2-enumerate-cameras" },
+    { name = "executorch" },
     { name = "fastapi", extra = ["standard"] },
     { name = "greenlet" },
     { name = "harvesters", marker = "sys_platform != 'darwin' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
@@ -2468,7 +2469,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "physicalai", extra = ["capture", "robots"] },
-    { name = "physicalai-train" },
+    { name = "physicalai-train", extra = ["pi0", "smolvla"] },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -2477,6 +2478,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "sse-starlette" },
     { name = "tenacity" },
+    { name = "torchao" },
     { name = "types-aiofiles" },
     { name = "websockets" },
 ]
@@ -2494,11 +2496,6 @@ cuda = [
 ]
 tests = [
     { name = "pytest" },
-]
-train = [
-    { name = "executorch" },
-    { name = "physicalai-train", extra = ["pi0", "smolvla"] },
-    { name = "torchao" },
 ]
 xpu = [
     { name = "pytorch-triton-xpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
@@ -2533,7 +2530,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.16.5" },
     { name = "click", specifier = ">=8.3.0" },
     { name = "cv2-enumerate-cameras" },
-    { name = "executorch", marker = "extra == 'train'", specifier = ">=1.1.0" },
+    { name = "executorch", specifier = ">=1.1.0" },
     { name = "fastapi", extras = ["standard"], specifier = "<1" },
     { name = "greenlet", specifier = ">=3.2.4" },
     { name = "harvesters", marker = "sys_platform != 'darwin'" },
@@ -2543,8 +2540,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "physicalai", extras = ["robots", "capture"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=08fcd96389fa9e326946df6affc5c19c4c731633" },
-    { name = "physicalai-train", editable = "../../library" },
-    { name = "physicalai-train", extras = ["pi0", "smolvla"], marker = "extra == 'train'", editable = "../../library" },
+    { name = "physicalai-train", extras = ["pi0", "smolvla"], editable = "../../library" },
     { name = "psutil", specifier = "~=7.2" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
@@ -2558,14 +2554,14 @@ requires-dist = [
     { name = "torch", marker = "extra == 'cpu'", specifier = "<2.13", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cuda'", specifier = "<2.13", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-studio", extra = "cuda" } },
     { name = "torch", marker = "extra == 'xpu'", specifier = "<2.13", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
-    { name = "torchao", marker = "extra == 'train'", specifier = "===0.15.0", index = "https://pypi.org/simple" },
+    { name = "torchao", specifier = "===0.15.0", index = "https://pypi.org/simple" },
     { name = "torchvision", marker = "extra == 'cpu'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cuda'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-studio", extra = "cuda" } },
     { name = "torchvision", marker = "extra == 'xpu'", specifier = "<0.28.0", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
     { name = "types-aiofiles", specifier = ">=25.1.0.20251011" },
     { name = "websockets" },
 ]
-provides-extras = ["train", "cpu", "cuda", "xpu", "tests"]
+provides-extras = ["cpu", "cuda", "xpu", "tests"]
 
 [package.metadata.requires-dev]
 all = [
