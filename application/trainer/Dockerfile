@@ -7,6 +7,10 @@ ARG PYTHON_VERSION=3.13
 FROM python:${PYTHON_VERSION}-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+# UV_PROJECT_ENVIRONMENT must match the runtime COPY destination (/opt/venv).
+# uv embeds an absolute shebang in console-script entry points; if the venv
+# is built at a different path the shebang breaks and the container cannot
+# start.
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 UV_PROJECT_ENVIRONMENT=/opt/venv
 
 RUN apt-get update \
