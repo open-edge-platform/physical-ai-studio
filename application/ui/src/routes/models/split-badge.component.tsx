@@ -10,7 +10,7 @@ interface SplitBadgeProps {
 
 export const SplitBadge = ({ first, second }: SplitBadgeProps) => {
     return (
-        <Flex>
+        <Flex UNSAFE_className={classes.badgeWrapper}>
             <Badge variant={'positive'} UNSAFE_className={classes.badgeLeft}>
                 {first}
             </Badge>
@@ -31,7 +31,7 @@ interface SingleBadgeProps {
 
 export const SingleBadge = ({ text, color, title, preserveCase }: SingleBadgeProps) => {
     return (
-        <span title={title ?? text}>
+        <span title={title ?? text} className={classes.badgeWrapper}>
             <Badge
                 variant={'info'}
                 UNSAFE_className={classes.badge}
