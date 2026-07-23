@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import os
 import shutil
+import sys
 import zipfile
 from typing import TYPE_CHECKING
 
@@ -17,34 +18,38 @@ import numpy as np
 import pytest
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
     from pathlib import Path
 
-# The ExecuTorch/ONNX export path goes through `torch.export`/AOTInductor
-# lowering, which lazily spins up PyTorch Inductor's persistent async-compile
-# worker pool (a subprocess manager thread plus a per-core `ThreadPoolExecutor`).
-# That pool is never shut down by the export code and is a well-known cause of
-# pytest hanging at process exit (the worker threads/subprocesses are still
-# alive and never join). Setting this before torch is imported anywhere in the
-# test session avoids spawning the pool at all, since a single compile thread
-# doesn't need subprocess workers.
-os.environ.setdefault("TORCHINDUCTOR_COMPILE_THREADS", "1")
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Stash the exit status for `pytest_unconfigure` to hard-exit with.
 
-@pytest.fixture(scope="session", autouse=True)
-def _shutdown_torch_inductor_compile_workers() -> Iterator[None]:
-    """Belt-and-suspenders: explicitly stop any Inductor compile workers.
-
-    Guards against the pool still being started (e.g. by code that overrides
-    `TORCHINDUCTOR_COMPILE_THREADS`), which would otherwise hang the test
-    process at exit waiting on non-daemon worker threads/subprocesses.
+    Reporting (terminal summary, warnings, junit-xml, ...) happens in other
+    `pytest_sessionfinish`/`pytest_terminal_summary` implementations that run
+    after this one, so we can't force-exit here without truncating it.
     """
-    yield
-    try:
-        from torch._inductor.async_compile import shutdown_compile_workers
-    except ImportError:
-        return
-    shutdown_compile_workers()
+    global _exitstatus  # noqa: PLW0603
+    _exitstatus = int(exitstatus)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Hard-exit once pytest is fully done, instead of hanging forever.
+
+    The training/export path pulls in pyarrow, HuggingFace `datasets`, and
+    PyTorch, which can leave native worker threads running that were never
+    designed to be joined (e.g. pyarrow's global CPU thread pool). CPython's
+    normal interpreter shutdown blocks forever trying to join them, so we
+    bypass it. `pytest_unconfigure` is pytest's last hook, called strictly
+    after the terminal summary is printed, so this can't truncate any output.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(_exitstatus if _exitstatus is not None else 1)
+
+
+_exitstatus: int | None = None
 
 
 @pytest.fixture(scope="session")
