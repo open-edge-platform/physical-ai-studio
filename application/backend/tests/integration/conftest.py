@@ -8,6 +8,7 @@ migrated schema and a small on-disk LeRobot v3 dataset to upload.
 from __future__ import annotations
 
 import io
+import os
 import shutil
 import zipfile
 from typing import TYPE_CHECKING
@@ -16,7 +17,34 @@ import numpy as np
 import pytest
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
+
+# The ExecuTorch/ONNX export path goes through `torch.export`/AOTInductor
+# lowering, which lazily spins up PyTorch Inductor's persistent async-compile
+# worker pool (a subprocess manager thread plus a per-core `ThreadPoolExecutor`).
+# That pool is never shut down by the export code and is a well-known cause of
+# pytest hanging at process exit (the worker threads/subprocesses are still
+# alive and never join). Setting this before torch is imported anywhere in the
+# test session avoids spawning the pool at all, since a single compile thread
+# doesn't need subprocess workers.
+os.environ.setdefault("TORCHINDUCTOR_COMPILE_THREADS", "1")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _shutdown_torch_inductor_compile_workers() -> Iterator[None]:
+    """Belt-and-suspenders: explicitly stop any Inductor compile workers.
+
+    Guards against the pool still being started (e.g. by code that overrides
+    `TORCHINDUCTOR_COMPILE_THREADS`), which would otherwise hang the test
+    process at exit waiting on non-daemon worker threads/subprocesses.
+    """
+    yield
+    try:
+        from torch._inductor.async_compile import shutdown_compile_workers
+    except ImportError:
+        return
+    shutdown_compile_workers()
 
 
 @pytest.fixture(scope="session")
