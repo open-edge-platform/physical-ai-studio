@@ -12,13 +12,20 @@ import os
 import shutil
 import sys
 import zipfile
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-if TYPE_CHECKING:
-    from pathlib import Path
+_INTEGRATION_TESTS_DIRECTORY = Path(__file__).parent
+_exitstatus: int | None = None
+_hard_exit = False
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    """Enable the shutdown workaround only for selected integration tests."""
+    global _hard_exit  # noqa: PLW0603
+    _hard_exit = any(item.path.is_relative_to(_INTEGRATION_TESTS_DIRECTORY) for item in session.items)
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -44,12 +51,10 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     bypass it. `pytest_unconfigure` is pytest's last hook, called strictly
     after the terminal summary is printed, so this can't truncate any output.
     """
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(_exitstatus if _exitstatus is not None else 1)
-
-
-_exitstatus: int | None = None
+    if _hard_exit:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(_exitstatus if _exitstatus is not None else 1)
 
 
 @pytest.fixture(scope="session")
