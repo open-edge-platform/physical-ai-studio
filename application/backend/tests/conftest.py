@@ -1,3 +1,19 @@
+import os
+import tempfile
+
+# Isolate the test session from the developer's real Studio storage/database.
+#
+# `db/engine.py` builds its SQLAlchemy engines from `settings.get_settings()` at
+# *module import time*, and the first test module imported anywhere in the
+# session (directly or transitively via `main.app`) freezes that choice for
+# the rest of the process. Setting STORAGE_DIR here - before any other import
+# in this file, and before pytest imports any test module - guarantees every
+# test in the session (including real-DB integration tests) reads and writes
+# under an isolated temp directory instead of the user's `~/.local/share`
+# (or platform equivalent) Studio installation. `setdefault` still lets CI or
+# a developer point STORAGE_DIR at a specific location explicitly.
+os.environ.setdefault("STORAGE_DIR", tempfile.mkdtemp(prefix="physicalai-backend-tests-"))
+
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
