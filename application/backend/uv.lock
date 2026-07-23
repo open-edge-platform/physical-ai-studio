@@ -54,7 +54,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-07-15T14:58:31.15815Z"
+exclude-newer = "2026-07-16T13:03:38.501295Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -302,8 +302,8 @@ name = "cattrs"
 version = "26.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "attrs", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "typing-extensions", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
+    { name = "attrs", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "typing-extensions", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a0/ec/ba18945e7d6e55a58364d9fb2e46049c1c2998b3d805f19b703f14e81057/cattrs-26.1.0.tar.gz", hash = "sha256:fa239e0f0ec0715ba34852ce813986dfed1e12117e209b816ab87401271cdd40", size = 495672, upload-time = "2026-02-18T22:15:19.406Z" }
 wheels = [
@@ -452,14 +452,14 @@ name = "coremltools"
 version = "9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "attrs", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "cattrs", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "numpy", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "packaging", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "protobuf", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "pyaml", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "sympy", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "tqdm", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
+    { name = "attrs", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "cattrs", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "numpy", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "packaging", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "protobuf", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "pyaml", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "sympy", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "tqdm", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/79/e6/8cb11a246f61736e75b20488b9c3cf9c208f500c9a3f92d717dbf592348c/coremltools-9.0.tar.gz", hash = "sha256:4ff346b29c31c4b45acd19a20e0f0a1ac65180a96776e62f15bd5c46f4926687", size = 1656978, upload-time = "2025-11-10T21:51:23.855Z" }
 wheels = [
@@ -734,10 +734,10 @@ wheels = [
 
 [[package]]
 name = "executorch"
-version = "1.1.0"
+version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "coremltools", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
+    { name = "coremltools", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "expecttest" },
     { name = "flatbuffers" },
     { name = "hydra-core" },
@@ -760,22 +760,20 @@ dependencies = [
     { name = "sympy" },
     { name = "tabulate" },
     { name = "torch", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "torch", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (platform_machine == 'arm64' and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda' and extra != 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "torch", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "extra == 'extra-17-physicalai-studio-cuda' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu')" },
-    { name = "torch", version = "2.11.0+xpu", source = { registry = "https://download.pytorch.org/whl/xpu" }, marker = "(platform_machine != 'aarch64' and platform_machine != 'arm64' and sys_platform == 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda') or (platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-xpu') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-xpu') or (platform_machine == 'arm64' and sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-xpu') or (platform_machine != 'arm64' and sys_platform == 'darwin' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'extra-17-physicalai-studio-cpu' and extra != 'extra-17-physicalai-studio-cuda') or (sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform == 'linux' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "torchao" },
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/9c/c2019dae4ea1435ce39dcae95def318f09d2328c734aa797afb5179104de/executorch-1.1.0-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:36140a8c5af35376b97c367fbb178039060d8a395484a8525be5d0ecbdae8b86", size = 11457588, upload-time = "2026-01-28T15:58:45.769Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/85/c03b1eba2ac6fde9586087c265f3c97dd2b3f847d088d3a92d601dbb02e7/executorch-1.1.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:a0d8214c3fb260c3d8a039f67fcd9a4dc5dc0c2c9f8b3c6de8f91e5666cfd829", size = 12185514, upload-time = "2026-01-28T15:58:47.89Z" },
-    { url = "https://files.pythonhosted.org/packages/ef/e2/8c109abca6c39d2c723d1fecf01a04fd072ceec1d58ffe60e7c16b6feb68/executorch-1.1.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:3e47235627d63e8b884fbfa628df3b2fb64e67cb92add553e55893cd927f03f3", size = 13009946, upload-time = "2026-01-28T15:58:50.748Z" },
-    { url = "https://files.pythonhosted.org/packages/4e/4f/4653449f1435f39ab7b82344333f631f06db5638763ff18c517a9b638a63/executorch-1.1.0-cp312-cp312-win_amd64.whl", hash = "sha256:1d03dd8cc7c1ceff194e38422711dc9678498c6162064a7438cabb1d0e38f949", size = 9197683, upload-time = "2026-01-28T15:58:53.055Z" },
-    { url = "https://files.pythonhosted.org/packages/9d/a0/3f2f303f1c53ba6ccf0b73bf0f11b9c8eaaf8de44fe454d73202bb1bb244/executorch-1.1.0-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:251baef2a9c15a37e0919b2e6cc4f7b64a620f133633045e8ccf851d1732c84a", size = 11457866, upload-time = "2026-01-28T15:58:56.807Z" },
-    { url = "https://files.pythonhosted.org/packages/5a/fc/04624b6758dadf43ac6b20de3d879c3f452036d6ef17e51680bc401af3d9/executorch-1.1.0-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:776a40ce15d80ed03717d3c7483c6bb22424e6e19e282caba9ecfeeb6e2e5b00", size = 12185082, upload-time = "2026-01-28T15:58:59.525Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/11/f3d7c8867a61295c2d5a70805140b110703c18f53bfff00fd6d075c0030e/executorch-1.1.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:064f29a54504f1902093c6766d0c2a503de67171335a034405b8cbda223c7168", size = 13009867, upload-time = "2026-01-28T15:59:02.084Z" },
-    { url = "https://files.pythonhosted.org/packages/2a/2a/2694a50a7798f28d871214757b9968efffc07145f2e758c656b6ad247b0d/executorch-1.1.0-cp313-cp313-win_amd64.whl", hash = "sha256:948b2fd96d99dc71e2bd2ddb5f48a7f4d59eb023e6a8ba966371581bf8af2fce", size = 9197841, upload-time = "2026-01-28T15:59:04.356Z" },
+    { url = "https://files.pythonhosted.org/packages/38/2a/7b624076e67d71a82b68f07fad90fc9b1e6f3f887460f915cd665d0a27b3/executorch-1.2.0-cp312-cp312-macosx_12_0_arm64.whl", hash = "sha256:ea6848902acabf21c7a6fe078947f50c386bacd9081161761bff27931b3e2af1", size = 12027466, upload-time = "2026-04-01T21:10:32.961Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/59/55a707e4a97667b4e3c03c60d4883891c482e033edd32f3d30966abdb358/executorch-1.2.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:ebcf508bafed6a7eb4f186459ccc921aabd7b1f6c13a2045ed16654075b58a36", size = 12828287, upload-time = "2026-04-01T21:10:35.672Z" },
+    { url = "https://files.pythonhosted.org/packages/11/27/d88311cad6ce5181562fb6cc2123ff197d774e8ec236a2d5a5f0b6bdb361/executorch-1.2.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:44090bb8361de77ae551efae045ec577abfb9a4b7f42365627768d2e5735f542", size = 20526090, upload-time = "2026-04-01T21:10:39.094Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/eb/92ace5cfefbba29217137edabf5ec68b2b60b9e00ae3cc7ecebf79973d5b/executorch-1.2.0-cp312-cp312-win_amd64.whl", hash = "sha256:1e0a885d8ac567c9ff9cf97902745e5090d91b12cd57921edcd3b8cd5a1e2393", size = 9705134, upload-time = "2026-04-01T21:10:42.509Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/a1/fc395be78ae85cd3c19f1436322dc4e8622317cf8ed2ece1155f0ad39e24/executorch-1.2.0-cp313-cp313-macosx_12_0_arm64.whl", hash = "sha256:9e14736f2357aaec6930eda98dc870b08e78ece604a3cdb11fe66d493e6c68c3", size = 12027961, upload-time = "2026-04-01T21:10:45.57Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/43/8b94829c2df0ed57d4286afc8ff2fe54d7108c378c02ecd5190f50c6e74e/executorch-1.2.0-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:148fc9ac6e477fd3421f2795fb9918a0e1c0136d54f50c229f77a5bed6d3138c", size = 12829767, upload-time = "2026-04-01T21:10:48.53Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/c5/d3b77ec2cc6ff4550ffd63f0154e000670730fad5134b4df80419afb89e6/executorch-1.2.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:b93a56a7e080ecc8b0648662d39b0d23d74554e475e97960a8c1ff487488b4c0", size = 20526098, upload-time = "2026-04-01T21:10:52.116Z" },
+    { url = "https://files.pythonhosted.org/packages/07/7b/18fbc1f0f21401e013b91fca3f67d4ae2c426a1ede84a88846ddb4322185/executorch-1.2.0-cp313-cp313-win_amd64.whl", hash = "sha256:c66a5289f9319a64c9a962432aa9cacf4ffa0ac8c99f5f2a694408ebf5102a02", size = 9705167, upload-time = "2026-04-01T21:10:55.374Z" },
 ]
 
 [[package]]
@@ -798,7 +796,7 @@ wheels = [
 
 [[package]]
 name = "fastapi"
-version = "0.139.0"
+version = "0.139.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc" },
@@ -807,9 +805,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "typing-inspection" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d3/af/a5f50ccfa659ec1802cb4ca842c23f06d906a8cc9aef6016a2caeea3d4ed/fastapi-0.139.0.tar.gz", hash = "sha256:99ab7b2d92223c76d6cf10757ab3f89d45b38267fc20b2a136cf02f6beac3145", size = 423016, upload-time = "2026-07-01T16:35:33.436Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d0/71/f4cfcd72fd94af40d1c76141b69c3d27acaa3641e8fd64872929ff6998b9/fastapi-0.139.1.tar.gz", hash = "sha256:99461bde7ac3fc34c78443da1f4dad3ca8f3182580029a2827692db216a8d7ae", size = 422782, upload-time = "2026-07-16T09:18:34.222Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/7c/8e3c6ad324ea5cb36604fc3f968554887891c316d9dfde57761611d907ad/fastapi-0.139.0-py3-none-any.whl", hash = "sha256:cf15e1e9e667ddb0ad63811e60bd11390d1aac838ca4a7a23f421807b2308189", size = 130339, upload-time = "2026-07-01T16:35:32.19Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/4d/73d2e5e891d56722f5b6def27f67e91332342a18468f2ea20aa5da9ff64d/fastapi-0.139.1-py3-none-any.whl", hash = "sha256:17faa81907751a8a85cd44c46f37fb576bde0078cb37de40bf1cd55de7104d87", size = 130147, upload-time = "2026-07-16T09:18:32.723Z" },
 ]
 
 [package.optional-dependencies]
@@ -827,16 +825,16 @@ standard = [
 
 [[package]]
 name = "fastapi-cli"
-version = "0.0.29"
+version = "0.0.32"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "rich-toolkit" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/82/986d498e3b4c41b043bd14ece562fc1a766b56aa1bfd980ae10717c9bc46/fastapi_cli-0.0.29.tar.gz", hash = "sha256:d1140852664a91754da6db4db1e750ace4059f1a21adcf9b161ad4310271a621", size = 23948, upload-time = "2026-07-08T12:45:03.19Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/eb/3b534c6f8e157f9ddbf2a153512307c886cad0b258739c200dd8ff8c4452/fastapi_cli-0.0.32.tar.gz", hash = "sha256:38024d2345275e1b37ce8848727a580d84901b570e96b3256d9d36a9a5039424", size = 26636, upload-time = "2026-07-16T12:16:58.678Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/13/0786e5265018238f9a014270ff89d84b02065c2303df9bfac6857ab54bab/fastapi_cli-0.0.29-py3-none-any.whl", hash = "sha256:05bf08e0e527e3649a50c44bd1e0a2c13575c6cf9a939ff70013f288afc074de", size = 13191, upload-time = "2026-07-08T12:45:02.378Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/53/56ae5ae17bb0a5d89d1d31e5320eb1865553ebbfbde91cdc4c221245f2a8/fastapi_cli-0.0.32-py3-none-any.whl", hash = "sha256:8dcc286fa32f01bbd3f65dd09cfd5a2540ed5f2230b77db7fd30978d6165f3c4", size = 14670, upload-time = "2026-07-16T12:16:57.297Z" },
 ]
 
 [package.optional-dependencies]
@@ -916,11 +914,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/5f/8e/c53d6f9a8bf3a86a6
 
 [[package]]
 name = "filelock"
-version = "3.29.7"
+version = "3.30.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/35/94/00f2059e4835eace3ae8fde680b932c496f8ec7bdc99168dfa53fb2e6b79/filelock-3.29.7.tar.gz", hash = "sha256:5b481979797ae69e72f0b389d89a80bdd585c260c5b3f1fb9c0a5ba9bb3f195d", size = 71521, upload-time = "2026-07-08T05:46:58.716Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/83/2b/8b6480a70a647035334a604d0931926de4b5cd1f57835d45ad5eed2b1a1e/filelock-3.30.0.tar.gz", hash = "sha256:1774e682dbe443bd60f9609162fc596e2c80dc84ffc2957068953406d0520090", size = 174927, upload-time = "2026-07-16T03:53:58.152Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/02/be4a57b60c7149b55b9e3b3c13f609cd8eb5307c751f22bd8fb8d262e75b/filelock-3.29.7-py3-none-any.whl", hash = "sha256:987db6f789a3a2a59f55081801b2b3697cb97e2a736b5f1a9e99b559285fbc51", size = 46036, upload-time = "2026-07-08T05:46:57.53Z" },
+    { url = "https://files.pythonhosted.org/packages/52/af/9b01bcf5c91e81899bb890b87bd9077732a9b3365c098e67fe77958c39ed/filelock-3.30.0-py3-none-any.whl", hash = "sha256:40632998f0772e64183bb819f086a1b9def6be1090cf1dcb9d45f46806ef279b", size = 93131, upload-time = "2026-07-16T03:53:56.727Z" },
 ]
 
 [[package]]
@@ -2511,7 +2509,7 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "physicalai", extra = ["capture", "robots"] },
-    { name = "physicalai-train" },
+    { name = "physicalai-train", extra = ["pi0", "smolvla"] },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -2527,22 +2525,19 @@ dependencies = [
 
 [package.optional-dependencies]
 cpu = [
+    { name = "physicalai-train", extra = ["executorch"], marker = "extra == 'extra-17-physicalai-studio-cpu' or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "torch", version = "2.11.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "torch", version = "2.11.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "torchvision", version = "0.26.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'extra-17-physicalai-studio-cpu') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu') or (extra != 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "torchvision", version = "0.26.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'arm64' and extra == 'extra-17-physicalai-studio-cpu') or (sys_platform != 'darwin' and extra == 'extra-17-physicalai-studio-cpu') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
 ]
 cuda = [
+    { name = "physicalai-train", extra = ["executorch"], marker = "extra == 'extra-17-physicalai-studio-cuda' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu')" },
     { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
     { name = "torchvision", version = "0.26.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" } },
 ]
 tests = [
     { name = "pytest" },
-]
-train = [
-    { name = "executorch" },
-    { name = "physicalai-train", extra = ["pi0", "smolvla"] },
-    { name = "torchao" },
 ]
 xpu = [
     { name = "pytorch-triton-xpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
@@ -2577,7 +2572,6 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.16.5" },
     { name = "click", specifier = ">=8.3.0" },
     { name = "cv2-enumerate-cameras" },
-    { name = "executorch", marker = "extra == 'train'", specifier = ">=1.1.0" },
     { name = "fastapi", extras = ["standard"], specifier = "<1" },
     { name = "greenlet", specifier = ">=3.2.4" },
     { name = "harvesters", marker = "sys_platform != 'darwin'" },
@@ -2587,8 +2581,9 @@ requires-dist = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "physicalai", extras = ["robots", "capture"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=08fcd96389fa9e326946df6affc5c19c4c731633" },
-    { name = "physicalai-train", editable = "../../library" },
-    { name = "physicalai-train", extras = ["pi0", "smolvla"], marker = "extra == 'train'", editable = "../../library" },
+    { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
+    { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
+    { name = "physicalai-train", extras = ["pi0", "smolvla"], editable = "../../library" },
     { name = "psutil", specifier = "~=7.2" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
@@ -2602,7 +2597,6 @@ requires-dist = [
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.11,<2.12", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cuda'", specifier = ">=2.11,<2.12", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-studio", extra = "cuda" } },
     { name = "torch", marker = "extra == 'xpu'", specifier = ">=2.11,<2.12", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
-    { name = "torchao", marker = "extra == 'train'", specifier = "===0.15.0", index = "https://pypi.org/simple" },
     { name = "torchcodec", specifier = "==0.11.1" },
     { name = "torchvision", marker = "extra == 'cpu'", specifier = ">=0.26,<0.27", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-studio", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cuda'", specifier = ">=0.26,<0.27", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-studio", extra = "cuda" } },
@@ -2610,7 +2604,7 @@ requires-dist = [
     { name = "types-aiofiles", specifier = ">=25.1.0.20251011" },
     { name = "websockets" },
 ]
-provides-extras = ["train", "cpu", "cuda", "xpu", "tests"]
+provides-extras = ["cpu", "cuda", "xpu", "tests"]
 
 [package.metadata.requires-dev]
 all = [
@@ -2653,6 +2647,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+executorch = [
+    { name = "executorch" },
+]
 pi0 = [
     { name = "peft" },
     { name = "pillow" },
@@ -2875,7 +2872,7 @@ name = "pyaml"
 version = "26.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyyaml", marker = "sys_platform != 'win32' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
+    { name = "pyyaml", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/15/6a/acfdf17de0d6947b419da8696e02b781b18de2cf49e0472298b50e1f0711/pyaml-26.7.0.tar.gz", hash = "sha256:11cda3a796efc6dbce0d56836be56cfd26289dad07bcd78e9904086729929c93", size = 30669, upload-time = "2026-07-04T00:34:38.532Z" }
 wheels = [
@@ -3829,15 +3826,15 @@ wheels = [
 
 [[package]]
 name = "sentry-sdk"
-version = "2.65.0"
+version = "2.66.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f1/1f/ed17a390348156ca99fe622b97cd7d2f1969b5f49df89084b0f28e7953e9/sentry_sdk-2.65.0.tar.gz", hash = "sha256:c94dc945d54bad49d4f20448b1e6b217ca2f92f46d05c3e83d41764af685c3d1", size = 932133, upload-time = "2026-07-13T11:33:19.92Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/ff/670abe04c5072719b5060ed93851d0d69525d60f8f2c5810f8becd58f9c1/sentry_sdk-2.66.0.tar.gz", hash = "sha256:9727d35aa83c56cd53294676fe65b96296a334c9ce107fa2142bd70f47acb265", size = 935745, upload-time = "2026-07-16T12:42:04.663Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/3b/326ad4c03b5da89b5124c8890af66e8119c4d2e10abc0619e0d67d9f7c7f/sentry_sdk-2.65.0-py3-none-any.whl", hash = "sha256:3595169677a808e4d0e1ea6ffb89443459549c7a98392ed71c77c847182ab6bf", size = 503869, upload-time = "2026-07-13T11:33:17.71Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/bb/49b10783f29067da2eec179320617e94faf63196609de47aeab3c26c3325/sentry_sdk-2.66.0-py3-none-any.whl", hash = "sha256:096136c214c602be2b323524d30755dc5b30ec5a218a206207f33b12c05c6f11", size = 504769, upload-time = "2026-07-16T12:42:02.919Z" },
 ]
 
 [[package]]
@@ -4329,11 +4326,10 @@ wheels = [
 
 [[package]]
 name = "torchao"
-version = "0.15.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.17.0+xpu"
+source = { registry = "https://download.pytorch.org/whl/xpu" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/2d/472b9362dceae05a4599e2b94f86e69a29c0e20964a6af84f34f6ead5938/torchao-0.15.0-cp310-abi3-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1cbe813201314ba6329a650a76944502f3e8ec4b1b44523f3f48676810d8d1f6", size = 7163930, upload-time = "2025-12-18T23:14:41.876Z" },
-    { url = "https://files.pythonhosted.org/packages/f6/3b/6b9d5618720f63dbc2e2509cd6b57aae9c0d61b738d1d2172f4d5d9efaab/torchao-0.15.0-py3-none-any.whl", hash = "sha256:3f3812676048ef8a2a0e9d492d12d8971ba7a7ebb16f54aa56f690414e130d2c", size = 1080679, upload-time = "2025-12-18T23:14:43.807Z" },
+    { url = "https://download.pytorch.org/whl/xpu/torchao-0.17.0%2Bxpu-py3-none-any.whl", hash = "sha256:71a202db483ca84ecf34af2ae065d93a229b8daedb60cde90473de09f8780dae", upload-time = "2026-03-30T20:40:06Z" },
 ]
 
 [[package]]
@@ -4602,7 +4598,7 @@ wheels = [
 
 [[package]]
 name = "typer"
-version = "0.26.8"
+version = "0.27.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-doc" },
@@ -4610,9 +4606,9 @@ dependencies = [
     { name = "rich" },
     { name = "shellingham" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/f7/68adc395201b20b872d68e975386832e8005ffeacedd43a1d837a32815be/typer-0.26.8.tar.gz", hash = "sha256:c244a6bd558886fe3f8780efb6bdd28bb9aff005a94eedebaa5cb32926fe2f7e", size = 202097, upload-time = "2026-06-26T09:22:45.705Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/37/78/fda3361b56efc27944f24225f6ecd13d96d6fcfe37bd0eb34e2f4c63f9fc/typer-0.27.0.tar.gz", hash = "sha256:629bd12ea5d13a17148125d9a264f949eb171fb3f120f9b04d85873cab054fa5", size = 203430, upload-time = "2026-07-15T19:21:07.007Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/80/87/b9fd69c92c6102a066e1b86a35243f53e70bd4c709f2a26d9f4fee4f4dc0/typer-0.26.8-py3-none-any.whl", hash = "sha256:3512ca79ac5c11113414b36e80281b872884477722440691c89d1112e321a49c", size = 122564, upload-time = "2026-06-26T09:22:44.72Z" },
+    { url = "https://files.pythonhosted.org/packages/40/03/26a383c9e58c213199d1aad1c3d353cfc22d4444ec6d2c0bf8ad02523843/typer-0.27.0-py3-none-any.whl", hash = "sha256:6f4b27631e47f077871b7dc30e933ec0131c1390fbe0e387ea5574b5bac9ccf1", size = 122716, upload-time = "2026-07-15T19:21:05.553Z" },
 ]
 
 [[package]]
