@@ -84,8 +84,8 @@ Install the [uv package manager](https://docs.astral.sh/uv/getting-started/insta
 
 ```bash
 cd backend
-uv sync --extra xpu # or `--extra cpu` or `--extra cuda`
-./run.sh
+# or `--extra cpu` or `--extra cuda`
+uv run --extra xpu physicalai-studio serve
 ```
 
 The backend runs at http://localhost:7860
