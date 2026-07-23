@@ -72,7 +72,7 @@ jobs:
   build:
     name: Build (${{ matrix.device }})
     needs: check-paths
-    if: needs.check-paths.outputs.run_workflow == 'true' && github.event.pull_request.head.repo.fork == false
+    if: needs.check-paths.outputs.run_workflow == 'true'
     runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read # Checkout code
