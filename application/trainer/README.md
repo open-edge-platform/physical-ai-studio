@@ -130,6 +130,12 @@ docker volume create physicalai-trainer-data
 Replace `<image-reference>` with an immutable Git-SHA tag or a resolved digest.
 Use `latest` only when explicitly accepting the compatibility fallback.
 
+PyTorch data loaders can exhaust Docker's default 64 MB `/dev/shm` allocation
+during larger training jobs. On a trusted single-tenant host, prefer the host's
+shared-memory pool with `--ipc=host` (or `ipc: host` in Docker Compose). If you
+need an isolated limit instead, set an explicit shared-memory size such as
+`--shm-size=16g` (or `shm_size: 16g` in Docker Compose).
+
 #### CUDA
 
 The Docker host needs an NVIDIA driver and NVIDIA Container Toolkit. Verify the
@@ -148,6 +154,7 @@ Start the trainer with GPU access and a loopback-only port binding:
 docker run --rm \
   --name physicalai-trainer \
   --gpus all \
+  --ipc=host \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=1g \
   -p 127.0.0.1:8001:8001 \
@@ -170,6 +177,7 @@ docker run --rm \
   --name physicalai-trainer \
   --device /dev/dri:/dev/dri \
   --group-add "$RENDER_GID" \
+  --ipc=host \
   --read-only \
   --tmpfs /tmp:rw,noexec,nosuid,size=1g \
   -p 127.0.0.1:8001:8001 \
