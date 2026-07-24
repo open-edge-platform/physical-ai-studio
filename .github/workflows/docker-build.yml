@@ -73,7 +73,7 @@ jobs:
     name: Build (${{ matrix.device }})
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     permissions:
       contents: read # Checkout code
       packages: write # Push/pull registry build cache on GHCR

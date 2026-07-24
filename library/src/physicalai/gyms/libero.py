@@ -363,11 +363,11 @@ class LiberoGym(Gym):
         if seed is not None:
             self.env.seed(seed)
 
+        raw_obs = self.env.reset()
+
         # Apply init state if available
         if self.init_states and self._init_states is not None:
-            self.env.set_init_state(self._init_states[self._init_state_id])
-
-        raw_obs = self.env.reset()
+            raw_obs = self.env.set_init_state(self._init_states[self._init_state_id])
 
         # After reset, objects may be unstable (slightly floating, intersecting, etc.).
         # Step the simulator with a no-op action for a few frames so everything settles.

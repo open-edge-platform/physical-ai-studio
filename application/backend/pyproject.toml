@@ -11,7 +11,7 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
   "physicalai[robots, capture]",
-  "physicalai-train",
+  "physicalai-train[pi0,smolvla]",
   "lerobot[dataset,feetech]==0.6.0",
   "torchcodec==0.11.1",
   "numpy",
@@ -54,18 +54,17 @@ exclude = [
 path = "scripts/hatch_build.py"
 
 [project.optional-dependencies]
-train = [
-  "physicalai-train[pi0,smolvla]",
-  "executorch>=1.1.0",
-  "torchao===0.15.0",
-]
+# executorch enables the ExecuTorch export backend. It conflicts with the xpu
+# torch build (see library conflicts), so it ships only with cpu/cuda.
 cpu = [
     "torch>=2.11,<2.12",
     "torchvision>=0.26,<0.27",
+    "physicalai-train[executorch]",
 ]
 cuda = [
     "torch>=2.11,<2.12",
     "torchvision>=0.26,<0.27",
+    "physicalai-train[executorch]",
 ]
 xpu = [
     "torch>=2.11,<2.12",
@@ -80,13 +79,12 @@ tests = [
 
 # --- PyTorch index configuration ---
 # torch/torchvision are transitive dependencies of the base install via lerobot
-# (and additionally via lightning when the `train` extra is installed). They are
-# present even on recording-only nodes, so the cpu/cuda/xpu extras below are
-# always required: they are the only mechanism that pins torch/torchvision to the
-# correct hardware-specific PyTorch index. Without selecting one, torch defaults
+# and lightning (installed by default via physicalai-train). They are present
+# on every node, so the cpu/cuda/xpu extras below are always required: they
+# are the only mechanism that pins torch/torchvision to the correct
+# hardware-specific PyTorch index. Without selecting one, torch defaults
 # to the wrong wheel (e.g. the fat CUDA wheel on Linux, or a `+xpu` build from the
-# non-explicit XPU index). These extras are independent of the `train` extra:
-# combine them, e.g. `--extra cuda` (recording) or `--extra cuda --extra train`.
+# non-explicit XPU index), e.g. `--extra cuda`.
 # Source routing must be declared in the consumer project because uv does not
 # propagate [tool.uv.sources] from path dependencies (uv #14675).
 #

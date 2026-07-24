@@ -1019,10 +1019,10 @@
       "severity": "error"
     },
     {
-      "line": 368,
-      "column": 13,
-      "stop_line": 368,
-      "stop_column": 36,
+      "line": 370,
+      "column": 23,
+      "stop_line": 370,
+      "stop_column": 46,
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-attribute",
