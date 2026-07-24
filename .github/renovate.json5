@@ -162,6 +162,14 @@
       matchDepNames: ["docker/dockerfile"],
     },
 
+    // Disable digest updates for physicalai git dependency
+    {
+      enabled: false,
+      matchDatasources: ["git-refs"],
+      matchDepNames: ["physicalai"],
+      matchUpdateTypes: ["digest"],
+    },
+
     // Disable non-security upgrades for npm, except lock file update
     {
       enabled: false,

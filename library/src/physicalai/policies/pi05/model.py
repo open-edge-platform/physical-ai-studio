@@ -338,6 +338,10 @@ class PaliGemmaWithExpertModel(nn.Module):
             vocab_size=257152,  # pyrefly: ignore[unexpected-keyword]
             hidden_act="gelu_pytorch_tanh",  # pyrefly: ignore[unexpected-keyword]
             dtype="float32",
+            use_adarms=use_adarms[1],  # pyrefly: ignore[unexpected-keyword]
+            adarms_cond_dim=action_expert_config.width  # pyrefly: ignore[unexpected-keyword]
+            if use_adarms[1]
+            else None,
         )
 
         self.paligemma = PaliGemmaForConditionalGenerationWithPiGemma(
@@ -410,9 +414,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         image_outputs = self.paligemma.model.get_image_features(image)
         if not isinstance(image_outputs, torch.Tensor):
             image_outputs = image_outputs.pooler_output
-        features = (
-            image_outputs * self.paligemma.config.text_config.hidden_size**0.5  # pyrefly: ignore[missing-attribute]
-        )
+        features = image_outputs
         if features.dtype != out_dtype:
             features = features.to(out_dtype)
         return features
@@ -423,7 +425,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         Returns:
             Language token embedding tensor.
         """
-        return self.paligemma.model.language_model.embed_tokens(tokens)
+        return self.paligemma.model.language_model.get_input_embeddings()(tokens)
 
     def forward(
         self,
@@ -840,8 +842,7 @@ class Pi05Model(Model):
             att_masks += [0] * num_img_embs
 
         def lang_embed_func(tokens: Tensor) -> Tensor:
-            lang_emb = self.paligemma_with_expert.embed_language_tokens(tokens)
-            return lang_emb * math.sqrt(lang_emb.shape[-1])
+            return self.paligemma_with_expert.embed_language_tokens(tokens)
 
         lang_emb = lang_embed_func(tokens) if use_batched else self._apply_checkpoint(lang_embed_func, tokens)
 
