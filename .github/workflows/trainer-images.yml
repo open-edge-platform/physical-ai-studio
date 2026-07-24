@@ -28,7 +28,7 @@ env:
 jobs:
   build-and-smoke-test:
     name: Build and smoke-test (${{ matrix.device }})
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -132,7 +132,7 @@ jobs:
     name: Publish, attest, scan, and sign (${{ matrix.device }})
     needs: build-and-smoke-test
     if: github.ref == 'refs/heads/main'
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
