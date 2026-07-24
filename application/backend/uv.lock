@@ -54,7 +54,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-07-15T14:15:57.060784Z"
+exclude-newer = "2026-07-17T12:42:16.397946319Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -2691,6 +2691,7 @@ requires-dist = [
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
     { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=08fcd96389fa9e326946df6affc5c19c4c731633" },
+    { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },

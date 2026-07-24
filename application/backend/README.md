@@ -36,9 +36,14 @@ backend/src/
 
 ### Install Dependencies
 
+Choose the torch variant that matches your hardware:
+
 ```bash
 cd application/backend
-uv sync
+
+uv sync --extra cpu    # CPU only
+uv sync --extra cuda   # NVIDIA GPU (CUDA)
+uv sync --extra xpu    # Intel GPU (XPU)
 ```
 
 This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the physicalai library.
