@@ -97,8 +97,7 @@ def _run_training_job_step() -> None:
             created_at=None,
         )
 
-        worker = TrainingWorker(stop_event=mp.Event(), interrupt_event=mp.Event(), event_queue=mp.Queue())
-        worker.interrupt_event.clear()
+        worker = TrainingWorker(stop_event=mp.Event(), job_interrupt_flags={}, event_queue=mp.Queue())
         await worker._train_model(job, model, snapshot, payload)
 
     asyncio.run(_drain())
@@ -308,7 +307,7 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
 
     job_id = asyncio.run(_submit_and_run(project_id))
 
-    fake_scheduler = SimpleNamespace(training_interrupt_event=mp.Event())
+    fake_scheduler = SimpleNamespace(job_interrupt_flags={})
     app.dependency_overrides[get_scheduler] = lambda: fake_scheduler
     try:
         response = client.post(f"/api/jobs/{job_id}:interrupt")
@@ -316,7 +315,7 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert fake_scheduler.training_interrupt_event.is_set()
+    assert fake_scheduler.job_interrupt_flags[job_id] is True
 
     response = client.get(f"/api/jobs/{job_id}")
     assert response.status_code == 200, response.text
