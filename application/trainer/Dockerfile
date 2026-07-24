@@ -11,7 +11,7 @@ COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d
 # uv embeds an absolute shebang in console-script entry points; if the venv
 # is built at a different path the shebang breaks and the container cannot
 # start.
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0 UV_PROJECT_ENVIRONMENT=/opt/venv
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
