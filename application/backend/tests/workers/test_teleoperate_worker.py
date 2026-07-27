@@ -5,15 +5,16 @@ from uuid import uuid4
 
 import pytest
 
+from robots.catalog.so101 import SO101Robot, SO101RobotPayload
 from robots.robot_client_factory import RobotClientFactory
-from schemas.robot import Robot, RobotType, SO101Robot, SO101RobotPayload
+from schemas.robot import Robot
 from workers.teleoperate_worker import ActionReadState, TeleoperateWorker
 
 FEATURES = ["joint1", "joint2", "joint3"]
 LEADER_ROBOT_TYPES = {
-    RobotType.SO101_LEADER,
-    RobotType.TROSSEN_WIDOWXAI_LEADER,
-    RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER,
+    "SO101_Leader",
+    "Trossen_WidowXAI_Leader",
+    "Trossen_Bimanual_WidowXAI_Leader",
 }
 
 
@@ -25,11 +26,11 @@ def _make_client(state: dict | None = None):
     return client
 
 
-def _make_robot_schema(robot_id: str = "robot-1", robot_type: RobotType = RobotType.SO101_FOLLOWER) -> Robot:
+def _make_robot_schema(robot_id: str = "robot-1", robot_type: str = "SO101_Follower") -> Robot:
     return SO101Robot(
         id=uuid4(),
         name=f"Robot {robot_id}",
-        type=robot_type,
+        type=robot_type,  # type: ignore[arg-type]
         payload=SO101RobotPayload(connection_string="/dev/null"),
     )
 
@@ -149,7 +150,7 @@ class TestTeleoperateWorkerRunLoop:
         factory, _, _ = await _make_factory(follower_client, leader_client)
 
         follower_schema = _make_robot_schema("follower-1")
-        leader_schema = _make_robot_schema("leader-1", RobotType.SO101_LEADER)
+        leader_schema = _make_robot_schema("leader-1", "SO101_Leader")
 
         worker = TeleoperateWorker(
             robot_client_factory=factory,
@@ -278,7 +279,7 @@ class TestTeleoperateWorkerRunLoop:
         factory, _, _ = await _make_factory(follower_client, leader_client)
 
         follower_schema = _make_robot_schema("follower-1")
-        leader_schema = _make_robot_schema("leader-1", RobotType.SO101_LEADER)
+        leader_schema = _make_robot_schema("leader-1", "SO101_Leader")
 
         worker = TeleoperateWorker(
             robot_client_factory=factory,
@@ -314,7 +315,7 @@ class TestTeleoperateWorkerRunLoop:
         factory.build = AsyncMock(side_effect=[follower_client, RuntimeError("Leader build failed")])
 
         follower_schema = _make_robot_schema("follower-1")
-        leader_schema = _make_robot_schema("leader-1", RobotType.SO101_LEADER)
+        leader_schema = _make_robot_schema("leader-1", "SO101_Leader")
 
         worker = TeleoperateWorker(
             robot_client_factory=factory,
@@ -373,7 +374,7 @@ class TestTeleoperateWorkerRunLoop:
         factory, _, _ = await _make_factory(follower_client, leader_client)
 
         follower_schema = _make_robot_schema("follower-1")
-        leader_schema = _make_robot_schema("leader-1", RobotType.SO101_LEADER)
+        leader_schema = _make_robot_schema("leader-1", "SO101_Leader")
 
         worker = TeleoperateWorker(
             robot_client_factory=factory,

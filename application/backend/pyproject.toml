@@ -248,6 +248,8 @@ replace-imports-with-any = ["trossen_arm"]
 addopts = ["--strict-markers", "--strict-config", "--showlocals", "-ra"]
 testpaths = "tests"
 pythonpath = "src"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "requires_download: marks tests that require downloading external datasets",
