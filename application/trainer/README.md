@@ -119,9 +119,30 @@ container, loopback port, and SSH tunnel automatically when that feature is
 enabled. Do not expose the trainer port publicly: the service has no built-in
 authentication.
 
-The examples use a Docker-managed volume so the image's non-root `trainer`
-user can persist its queue, uploaded datasets, and artifacts without host
-ownership changes. Remove the volume after you no longer need its contents.
+[`application/docker/docker-compose.trainer.yaml`](../docker/docker-compose.trainer.yaml)
+wraps the `docker run` invocations below in a Docker Compose file with `cuda`
+and `xpu` profiles, for administrators who prefer Compose over raw `docker
+run`. It is standalone: it does not start the Studio backend/UI images from
+`application/docker/docker-compose.yaml`.
+
+```bash
+cd application/docker
+cp .env.trainer.example .env.trainer   # then edit REGISTRY/TRAINER_IMAGE_TAG
+docker compose -f docker-compose.trainer.yaml --profile cuda up -d   # or --profile xpu
+curl --fail --silent http://127.0.0.1:8001/health
+docker compose -f docker-compose.trainer.yaml --profile cuda down   # add -v to also drop the data volume
+```
+
+Set `TRAINER_IMAGE_TAG` in `.env.trainer` to an immutable Git-SHA tag or
+resolved digest before using this in anything but a throwaway environment;
+`latest` is a compatibility fallback only. The XPU profile also needs
+`RENDER_NODE` and `RENDER_GID` set to the host's Intel GPU render node (see
+`.env.trainer.example`).
+
+The examples below use a Docker-managed volume so the image's non-root
+`trainer` user can persist its queue, uploaded datasets, and artifacts
+without host ownership changes. Remove the volume after you no longer need
+its contents.
 
 ```bash
 docker volume create physicalai-trainer-data
@@ -189,10 +210,9 @@ Do not use `--privileged` or mount the Docker socket for either image.
 
 #### Optional Hugging Face token
 
-The default HTTP dataset transfer does not need `HF_TOKEN` for the dataset
-upload. You still need a token when you use the `hf` transfer mode or train a
-policy that downloads gated/private model weights. Place a read-only token in a
-host file with restrictive permissions and pass it as an environment file:
+Set `HF_TOKEN` only when you train a policy that downloads gated/private
+model weights. Place a read-only token in a host file with restrictive
+permissions and pass it as an environment file:
 
 ```bash
 printf 'HF_TOKEN=<read-only-token>\n' > trainer.env

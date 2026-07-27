@@ -240,6 +240,15 @@ root. Each profiled service targets the corresponding Dockerfile stage
 (e.g. `physical-ai-studio-cuda`). Proxy environment variables from `.env`
 are passed as build arguments automatically.
 
+## Remote training service (trainer)
+
+`docker-compose.trainer.yaml` in this directory is a separate, standalone
+Compose file for the remote training service under `application/trainer/`.
+It does not start the Studio backend/UI images above, and this
+`docker-compose.yaml` does not reference the trainer images. See
+[`application/trainer/README.md`](../trainer/README.md) for setup, security
+notes, and the manual container-startup guide.
+
 ## Troubleshooting
 
 ### Container fails to access serial ports or cameras

@@ -1,0 +1,104 @@
+# ================================================================
+# Physical AI Trainer — standalone Docker Compose
+#
+# Runs the remote training service (application/trainer) on its own,
+# independent of the Studio backend/UI images in docker-compose.yaml.
+#
+# Select a hardware profile with COMPOSE_PROFILES in .env.trainer or
+# --profile on the command line:
+#
+#   docker compose -f docker-compose.trainer.yaml --profile cuda up -d
+#   docker compose -f docker-compose.trainer.yaml --profile xpu up -d
+#
+# See application/trainer/README.md for the full manual-startup guide,
+# including why the loopback-only port binding and --read-only rootfs
+# matter: the trainer has no built-in authentication.
+# ================================================================
+
+x-common: &common
+    ports:
+      - "127.0.0.1:${TRAINER_PORT:-8001}:8001"
+    env_file:
+      - path: .env.trainer
+        required: false
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - NO_PROXY=${NO_PROXY}
+      - http_proxy=${http_proxy}
+      - https_proxy=${https_proxy}
+      - no_proxy=${no_proxy}
+    restart: unless-stopped
+    stop_grace_period: 35s
+
+    # PyTorch DataLoader workers need shared memory beyond Docker's 64 MB
+    # default. ipc: host shares the host's /dev/shm; use shm_size instead
+    # if you need an isolated, fixed-size allocation (see README).
+    ipc: host
+
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1g
+
+    volumes:
+      - physicalai-trainer-data:/var/lib/physicalai-trainer
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+x-common-build: &common-build
+    context: ../../
+    dockerfile: application/trainer/Dockerfile
+    additional_contexts:
+      libs: ../../library
+    args:
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - NO_PROXY=${NO_PROXY}
+      - http_proxy=${http_proxy}
+      - https_proxy=${https_proxy}
+      - no_proxy=${no_proxy}
+
+services:
+  physicalai-trainer-cuda:
+    <<: *common
+    profiles: [cuda]
+    container_name: physicalai-trainer-cuda
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physicalai-trainer-cuda:${TRAINER_IMAGE_TAG:-latest}
+    build:
+      <<: *common-build
+      target: physicalai-trainer-cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  physicalai-trainer-xpu:
+    <<: *common
+    profiles: [xpu]
+    container_name: physicalai-trainer-xpu
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physicalai-trainer-xpu:${TRAINER_IMAGE_TAG:-latest}
+    build:
+      <<: *common-build
+      target: physicalai-trainer-xpu
+    devices:
+      - "${RENDER_NODE:-/dev/dri/renderD128}:${RENDER_NODE:-/dev/dri/renderD128}"
+    group_add:
+      - "${RENDER_GID:?RENDER_GID must be set to the host's render node GID; see .env.trainer.example}"
+
+volumes:
+  physicalai-trainer-data:

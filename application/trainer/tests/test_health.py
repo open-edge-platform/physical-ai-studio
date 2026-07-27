@@ -28,3 +28,12 @@ def test_health_reports_image_compatibility_metadata(monkeypatch) -> None:
         "build_date": "2026-07-14T08:00:00Z",
         "application_version": "0.1.0",
     }
+
+
+def test_health_falls_back_on_invalid_protocol_version(monkeypatch) -> None:
+    """A malformed protocol version env var doesn't crash the health check."""
+    monkeypatch.setenv("TRAINER_API_PROTOCOL_VERSION", "not-a-number")
+
+    result = asyncio.run(health())
+
+    assert result.protocol_version == 1
