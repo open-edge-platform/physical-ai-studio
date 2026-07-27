@@ -54,9 +54,8 @@ def test_sync_missing_robot_assets_exits_when_sync_fails(monkeypatch) -> None:
 def test_configure_packaged_runtime_refreshes_cached_settings(monkeypatch) -> None:
     settings_module = importlib.import_module("settings")
     settings_module.get_settings.cache_clear()
-    original_alembic_config_path = os.environ.get("ALEMBIC_CONFIG_PATH")
-    original_alembic_script_location = os.environ.get("ALEMBIC_SCRIPT_LOCATION")
-    original_static_files_dir = os.environ.get("STATIC_FILES_DIR")
+    env_vars_to_restore = ("ALEMBIC_CONFIG_PATH", "ALEMBIC_SCRIPT_LOCATION", "STATIC_FILES_DIR")
+    original_env = {name: os.environ.get(name) for name in env_vars_to_restore}
 
     try:
         stale_settings = settings_module.get_settings()
@@ -75,20 +74,11 @@ def test_configure_packaged_runtime_refreshes_cached_settings(monkeypatch) -> No
         assert refreshed_settings.alembic_config_path == str(fake_package_root / "alembic.ini")
         assert refreshed_settings.alembic_script_location == str(fake_package_root / "alembic")
     finally:
-        if original_alembic_config_path is None:
-            os.environ.pop("ALEMBIC_CONFIG_PATH", None)
-        else:
-            os.environ["ALEMBIC_CONFIG_PATH"] = original_alembic_config_path
-
-        if original_alembic_script_location is None:
-            os.environ.pop("ALEMBIC_SCRIPT_LOCATION", None)
-        else:
-            os.environ["ALEMBIC_SCRIPT_LOCATION"] = original_alembic_script_location
-
-        if original_static_files_dir is None:
-            os.environ.pop("STATIC_FILES_DIR", None)
-        else:
-            os.environ["STATIC_FILES_DIR"] = original_static_files_dir
+        for env_var_name, original_value in original_env.items():
+            if original_value is None:
+                os.environ.pop(env_var_name, None)
+            else:
+                os.environ[env_var_name] = original_value
 
         settings_module.get_settings.cache_clear()
 
