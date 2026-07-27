@@ -13,6 +13,7 @@ class ResourceType(StrEnum):
     DATASET = "Dataset"
     MODEL = "Model"
     REMOTE_TRAINER = "Remote trainer"
+    REMOTE_SERVER = "Remote server"
     JOB = "JOB"
     JOB_FILE = "JOB_FILE"
 
@@ -191,4 +192,43 @@ class RecordingLockError(BaseException):
             message=message,
             error_code="recording_locked",
             http_status=423,
+        )
+
+
+class RemoteServerSecretKeyMissingError(BaseException):
+    """Raised when REMOTE_SERVER_SECRET_KEY is unset or not a valid Fernet key.
+
+    Remote-server secrets cannot be encrypted or decrypted without this key, so
+    every code path that touches them must fail closed rather than silently
+    storing or exposing plaintext.
+    """
+
+    def __init__(
+        self,
+        message: str = (
+            "REMOTE_SERVER_SECRET_KEY must be configured with a valid Fernet key before remote servers can be "
+            "registered. Rotating or losing this key requires re-entering each server's stored secret."
+        ),
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="remote_server_secret_key_missing",
+            http_status=http.HTTPStatus.INTERNAL_SERVER_ERROR,
+        )
+
+
+class SecretDecryptionError(BaseException):
+    """Raised when a stored confidential secret cannot be decrypted with the configured key."""
+
+    def __init__(
+        self,
+        message: str = (
+            "Stored secret could not be decrypted. REMOTE_SERVER_SECRET_KEY may have changed; "
+            "re-enter the server's secret."
+        ),
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="secret_decryption_failed",
+            http_status=http.HTTPStatus.INTERNAL_SERVER_ERROR,
         )

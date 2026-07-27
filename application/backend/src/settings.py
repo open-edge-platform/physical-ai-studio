@@ -138,6 +138,14 @@ class Settings(BaseSettings):
     # Proxy settings
     no_proxy: str = Field(default="localhost,127.0.0.1,::1", alias="no_proxy")
 
+    # Remote server secret encryption
+    # Fernet key (urlsafe-base64, 32 raw bytes) used to encrypt confidential
+    # remote-server SSH secrets at rest. Not validated here: validation is
+    # lazy, at first use, so the app still starts when the remote-server
+    # feature is unused. Losing or rotating this key makes stored secrets
+    # undecryptable; each server's secret must be re-entered afterwards.
+    remote_server_secret_key: str | None = Field(default=None, alias="REMOTE_SERVER_SECRET_KEY")
+
     @property
     def database_url(self) -> str:
         """Get database URL"""

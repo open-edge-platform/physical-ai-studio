@@ -1,10 +1,12 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
+from schemas.hardware import DeviceType
+from schemas.remote_server import SSHAuthType
 from schemas.robot import RobotType
 
 
@@ -20,6 +22,76 @@ class RemoteTrainerDB(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
+class RemoteServerDB(Base):
+    """A registered SSH-accessible remote server that trainer containers are provisioned on.
+
+    `ssh_secret_encrypted` and `ssh_key_passphrase_encrypted` hold Fernet
+    ciphertext only (see `core/secret_encryption.py`); `host_key` is the
+    pinned TOFU public host key (integrity data, not a secret). None of
+    these three are ever returned by the API — see `schemas/remote_server.py`.
+    """
+
+    __tablename__ = "remote_servers"
+    __table_args__ = (UniqueConstraint("host", "port", "username", name="uq_remote_servers_host_port_username"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False, default=22)
+    username: Mapped[str] = mapped_column(String(255), nullable=False)
+    auth_type: Mapped[SSHAuthType] = mapped_column(Enum(SSHAuthType), nullable=False)
+    device_type: Mapped[DeviceType] = mapped_column(Enum(DeviceType), nullable=False)
+
+    ssh_secret_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    ssh_key_passphrase_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    host_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    last_check_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_check_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_check_reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
+class JobProvisioningDB(Base):
+    """Per-job SSH provisioning state for a dynamically launched trainer container.
+
+    Kept separate from `JobDB.payload` so a crashed backend can sweep an
+    orphaned container using durable, queryable columns (container id/name,
+    ports) instead of parsing the job's JSON payload.
+    """
+
+    __tablename__ = "job_provisioning"
+
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
+    remote_server_id: Mapped[str] = mapped_column(ForeignKey("remote_servers.id"), nullable=False)
+
+    image_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_fallback_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    image_digest: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    container_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    container_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    remote_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    local_tunnel_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    trainer_build_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trainer_protocol_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
