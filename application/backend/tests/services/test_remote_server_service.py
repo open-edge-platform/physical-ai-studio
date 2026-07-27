@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError
+from exceptions import ResourceAlreadyExistsError, ResourceInUseError, ResourceNotFoundError
 from schemas.hardware import DeviceType
 from schemas.remote_server import (
     LastCheckSummary,
@@ -208,6 +208,25 @@ async def test_delete_missing_remote_server_raises_not_found() -> None:
         await RemoteServerService.delete_remote_server(uuid4())
 
     repository.delete_by_id.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_delete_remote_server_in_use_raises_resource_in_use() -> None:
+    session = _session_context()
+    record = _record()
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=record)
+    repository.delete_by_id = AsyncMock(side_effect=IntegrityError("delete", {}, Exception("fk constraint")))
+
+    with (
+        patch(f"{MODULE}.get_async_db_session_ctx", return_value=session),
+        patch(f"{MODULE}.RemoteServerRepository", return_value=repository),
+        pytest.raises(ResourceInUseError) as error,
+    ):
+        await RemoteServerService.delete_remote_server(record.id)
+
+    assert error.value.http_status == 409
+    session.rollback.assert_awaited_once_with()
 
 
 def test_decrypt_helpers_delegate_to_secret_encryption() -> None:

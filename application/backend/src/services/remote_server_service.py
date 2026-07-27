@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 
 from core.secret_encryption import decrypt_secret, encrypt_secret
 from db import get_async_db_session_ctx
-from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType
+from exceptions import ResourceAlreadyExistsError, ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories.remote_server_repo import RemoteServerRepository
 from schemas.remote_server import (
     LastCheckSummary,
@@ -112,7 +112,11 @@ class RemoteServerService:
             repository = RemoteServerRepository(session)
             if await repository.get_by_id(remote_server_id) is None:
                 raise ResourceNotFoundError(ResourceType.REMOTE_SERVER, str(remote_server_id))
-            await repository.delete_by_id(remote_server_id)
+            try:
+                await repository.delete_by_id(remote_server_id)
+            except IntegrityError as error:
+                await session.rollback()
+                raise ResourceInUseError(ResourceType.REMOTE_SERVER, str(remote_server_id)) from error
 
     @staticmethod
     def decrypt_ssh_secret(record: RemoteServerInternal) -> str:
