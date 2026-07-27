@@ -238,7 +238,7 @@ def run_exported_episode(env: gym.Env, model: InferenceModel, seed: int, n_actio
     obs, _info = env.reset(seed=seed)
     success = False
     steps = 0
-    max_steps = env.spec.max_episode_steps
+    max_steps = getattr(env.spec, "max_episode_steps", None) or 10_000
     action_queue: list[np.ndarray] = []
 
     while steps < max_steps:

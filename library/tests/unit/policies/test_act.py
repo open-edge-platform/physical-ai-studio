@@ -286,6 +286,14 @@ class TestACTPreprocessor:
         pre(batch)
         assert batch[IMAGES].shape == original_shape
 
+    def test_forward_non_square_resolution_preserves_height_width_order(self):
+        """A non-square image_resolution=(height, width) is not swapped through forward()."""
+        pre = ACTPreprocessor(image_resolution=(240, 320))
+        batch = {IMAGES: self._img(h=480, w=640)}
+        out = pre(batch)
+        assert out[IMAGES].shape[2] == 240
+        assert out[IMAGES].shape[3] == 320
+
     # ------------------------------------------------------------------
     # forward – nested dict images (multiple cameras)
     # ------------------------------------------------------------------

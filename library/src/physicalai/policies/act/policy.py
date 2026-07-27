@@ -378,7 +378,9 @@ class ACT(ExportablePolicyMixin, Policy):
         if weights_file is not None:
             original_sd = load_file(str(weights_file))
             image_feature_names = [
-                str(stat["name"]) for stat in dataset_stats.values() if stat["type"] is FeatureType.VISUAL
+                str(stat["name"])
+                for stat in dataset_stats.values()
+                if FeatureType(stat["type"]) == FeatureType.VISUAL
             ]
             remapped_sd = _remap_lerobot_act_state_dict(original_sd, image_feature_names)
 
