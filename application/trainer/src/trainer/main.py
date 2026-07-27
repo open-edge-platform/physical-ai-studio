@@ -44,7 +44,7 @@ app = FastAPI(title="Physical AI Trainer", lifespan=lifespan)
 app.include_router(jobs_router)
 
 
-@app.get("/health", response_model=HealthInfo)
+@app.get("/health", response_model=HealthInfo, response_model_by_alias=False)
 async def health() -> HealthInfo:
     """Return liveness plus non-sensitive image compatibility metadata."""
     return HealthInfo()  # type: ignore[call-arg]
