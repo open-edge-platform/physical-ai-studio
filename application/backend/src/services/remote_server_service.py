@@ -20,10 +20,8 @@ _CONFLICT_DETAIL = "A server with this host, port, and username is already confi
 class RemoteServerService:
     """Manage globally registered SSH-accessible remote server configurations.
 
-    Persists servers with their SSH secrets encrypted at rest. Live SSH
-    verification (preflight), host-key pinning, and container provisioning
-    are implemented by a later PR; this service only owns durable storage
-    and the encryption boundary.
+    Persists servers with their SSH secrets encrypted at rest. This service only
+    owns durable storage and the encryption boundary.
     """
 
     @staticmethod
@@ -43,8 +41,7 @@ class RemoteServerService:
     async def get_remote_server_record(remote_server_id: UUID) -> RemoteServerInternal:
         """Return the full internal record, including encrypted secrets and the host key.
 
-        Reserved for the SSH provisioning boundary (added in a later PR).
-        Never return this value from an HTTP response.
+        Reserved for the SSH provisioning boundary. Never return this value from an HTTP response.
         """
         return await RemoteServerService._get_record(remote_server_id)
 

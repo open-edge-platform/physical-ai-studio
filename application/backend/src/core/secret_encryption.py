@@ -1,12 +1,11 @@
 """Fernet-based encryption for confidential remote-server SSH secrets.
 
 Secrets (`ssh_secret`, `ssh_key_passphrase`) are encrypted before persistence
-and must only be decrypted inside the SSH provisioning boundary (added in a
-later PR) — never on a path that can reach an API response. The encryption
-key comes solely from the `REMOTE_SERVER_SECRET_KEY` environment variable
-(see `Settings.remote_server_secret_key`); it never lives in the database.
-Rotating or losing that key makes stored secrets undecryptable, so every
-registered server's secret must be re-entered afterward.
+and must only be decrypted inside the SSH provisioning boundary — never on a
+path that can reach an API response. The encryption key comes solely from the
+`REMOTE_SERVER_SECRET_KEY` environment variable (see `Settings.remote_server_secret_key`)
+it never lives in the database. Rotating or losing that key makes stored secrets
+undecryptable, so every registered server's secret must be re-entered afterward.
 """
 
 from functools import lru_cache

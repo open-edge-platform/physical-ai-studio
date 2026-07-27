@@ -1,8 +1,7 @@
 """Per-job SSH provisioning state for a dynamically launched trainer container.
 
 Persisted so a crashed backend can reclaim (or an operator can diagnose) an
-orphaned container by its recorded id/name and remote/tunnel ports. See
-``remote-ssh-trainer-plan.md`` step 4 (SSH container provisioning service).
+orphaned container by its recorded id/name and remote/tunnel ports.
 """
 
 from datetime import datetime

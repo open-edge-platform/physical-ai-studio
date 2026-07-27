@@ -1,7 +1,6 @@
 """Schemas for registered SSH-accessible remote training servers.
 
-See ``remote-ssh-trainer-plan.md`` for the trust model. `ssh_secret`,
-`ssh_key_passphrase`, and `host_key` are confidential/internal and must never
+`ssh_secret`, `ssh_key_passphrase`, and `host_key` are confidential/internal and must never
 be returned from a service's public API or an HTTP response; only
 :class:`RemoteServerInternal` (used by the repository/mapper and the future
 SSH provisioning boundary) carries them.
@@ -109,9 +108,9 @@ class RemoteServer(BaseModel):
 class RemoteServerInternal(RemoteServer):
     """Full persisted record, including confidential/internal fields.
 
-    Used only by the repository/mapper and (in a later PR) the SSH
-    provisioning boundary. Never returned directly from a service's public
-    API or an HTTP response — always convert with :meth:`to_public` first.
+    Used only by the repository/mapper and the SSH provisioning boundary.
+    Never returned directly from a service's public API or an HTTP response,
+    always convert with :meth:`to_public` first.
     """
 
     ssh_secret_encrypted: str = Field(
