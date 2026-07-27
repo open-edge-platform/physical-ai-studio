@@ -53,22 +53,43 @@ def test_sync_missing_robot_assets_exits_when_sync_fails(monkeypatch) -> None:
 def test_configure_packaged_runtime_refreshes_cached_settings(monkeypatch) -> None:
     settings_module = importlib.import_module("settings")
     settings_module.get_settings.cache_clear()
+    original_alembic_config_path = serve_module.os.environ.get("ALEMBIC_CONFIG_PATH")
+    original_alembic_script_location = serve_module.os.environ.get("ALEMBIC_SCRIPT_LOCATION")
+    original_static_files_dir = serve_module.os.environ.get("STATIC_FILES_DIR")
 
-    stale_settings = settings_module.get_settings()
-    assert stale_settings.alembic_script_location == "src/alembic"
+    try:
+        stale_settings = settings_module.get_settings()
+        assert stale_settings.alembic_script_location == "src/alembic"
 
-    fake_package_root = Path("/tmp/packaged-root")
-    monkeypatch.setattr(serve_module, "_package_root", lambda: fake_package_root)
+        fake_package_root = Path("/tmp/packaged-root")
+        monkeypatch.setattr(serve_module, "_package_root", lambda: fake_package_root)
 
-    monkeypatch.delenv("ALEMBIC_CONFIG_PATH", raising=False)
-    monkeypatch.delenv("ALEMBIC_SCRIPT_LOCATION", raising=False)
-    monkeypatch.delenv("STATIC_FILES_DIR", raising=False)
+        monkeypatch.delenv("ALEMBIC_CONFIG_PATH", raising=False)
+        monkeypatch.delenv("ALEMBIC_SCRIPT_LOCATION", raising=False)
+        monkeypatch.delenv("STATIC_FILES_DIR", raising=False)
 
-    serve_module._configure_packaged_runtime()
+        serve_module._configure_packaged_runtime()
 
-    refreshed_settings = settings_module.get_settings()
-    assert refreshed_settings.alembic_config_path == str(fake_package_root / "alembic.ini")
-    assert refreshed_settings.alembic_script_location == str(fake_package_root / "alembic")
+        refreshed_settings = settings_module.get_settings()
+        assert refreshed_settings.alembic_config_path == str(fake_package_root / "alembic.ini")
+        assert refreshed_settings.alembic_script_location == str(fake_package_root / "alembic")
+    finally:
+        if original_alembic_config_path is None:
+            serve_module.os.environ.pop("ALEMBIC_CONFIG_PATH", None)
+        else:
+            serve_module.os.environ["ALEMBIC_CONFIG_PATH"] = original_alembic_config_path
+
+        if original_alembic_script_location is None:
+            serve_module.os.environ.pop("ALEMBIC_SCRIPT_LOCATION", None)
+        else:
+            serve_module.os.environ["ALEMBIC_SCRIPT_LOCATION"] = original_alembic_script_location
+
+        if original_static_files_dir is None:
+            serve_module.os.environ.pop("STATIC_FILES_DIR", None)
+        else:
+            serve_module.os.environ["STATIC_FILES_DIR"] = original_static_files_dir
+
+        settings_module.get_settings.cache_clear()
 
 
 def test_serve_click_defaults_are_lazy_and_use_settings() -> None:
