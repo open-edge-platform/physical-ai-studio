@@ -148,6 +148,7 @@ class Settings(BaseSettings):
     # Database
     database_file: str = Field(default="physicalai.db", alias="DATABASE_FILE", description="Database filename")
     db_echo: bool = Field(default=False, alias="DB_ECHO")
+    allow_unknown_db_revision: bool = Field(default=False, alias="ALLOW_UNKNOWN_DB_REVISION")
 
     # Alembic
     alembic_config_path: str = Field(default="src/alembic.ini", alias="ALEMBIC_CONFIG_PATH")
