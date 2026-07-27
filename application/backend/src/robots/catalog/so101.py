@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from physicalai.robot import SharedRobot
-from physicalai.robot.so101 import SO101, SO101Calibration, SO101JointCalibration
+from physicalai.robot.so101 import SO101Calibration, SO101JointCalibration
 from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -94,7 +94,7 @@ async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: C
         resource_key = robot.payload.serial_number or robot.payload.connection_string
         raise ValueError(f"Could not resolve a serial port for {resource_key}")
 
-    # SharedRobot requires JSON-serializable kwargs; pass calibration as a dict.
+    # SharedRobot takes a nested ComponentConfig; calibration must be JSON-serializable.
     calibration: dict[str, dict[str, int]] | None = None
     if robot.payload.calibration is not None:
         calibration = SO101Calibration(joints=robot.payload.calibration).to_dict()
@@ -102,8 +102,15 @@ async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: C
     role = "follower" if robot.type == "SO101_Follower" else "leader"
     return SharedRobot(
         name=robot.name,
-        robot_class=SO101,
-        robot_kwargs={"port": port, "calibration": calibration, "role": role, "unit": "normalized"},
+        robot={
+            "class_path": "physicalai.robot.SO101",
+            "init_args": {
+                "port": port,
+                "calibration": calibration,
+                "role": role,
+                "unit": "normalized",
+            },
+        },
     )
 
 

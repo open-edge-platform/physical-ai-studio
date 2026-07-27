@@ -1,6 +1,6 @@
 # Config System
 
-Reference docs for `physicalai.config`.
+Reference docs for `physicalai.train_config`.
 
 ## Pages
 

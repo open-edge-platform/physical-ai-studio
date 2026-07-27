@@ -29,7 +29,7 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, cast
 import torch
 from lightning_utilities import module_available
 
-from physicalai.config.serializable import dataclass_to_dict, dict_to_dataclass
+from physicalai.train_config.serializable import dataclass_to_dict, dict_to_dataclass
 from physicalai.data import Observation
 from physicalai.data.lerobot import FormatConverter
 from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
