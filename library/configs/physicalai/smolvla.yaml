@@ -5,6 +5,13 @@
 
 model:
   class_path: physicalai.policies.SmolVLA
+  # init_args:
+  # SnapFlow self-distillation (arxiv.org/abs/2604.05656)
+  # Uncomment to enable 1-step inference via progressive self-distillation:
+  # snapflow_enabled: true
+  # snapflow_alpha: 0.5
+  # snapflow_lambda: 1.0
+  # snapflow_num_inference_steps: 1
 
 data:
   class_path: physicalai.data.lerobot.LeRobotDataModule
