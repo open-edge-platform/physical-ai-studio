@@ -5,6 +5,8 @@
 
 """Utilities for loading pretrained Pi05 weights from HuggingFace/lerobot format.
 
+Includes auto-detection of adaRMSNorm (adaRMS) configuration from checkpoint keys.
+
 Handles:
 - Normalization stat extraction (preserves q01/q99 and derives mean/std)
 - State dict key remapping (lerobot → Pi05Model)
@@ -238,6 +240,46 @@ def resolve_feature_shape(feat_name: str, hf_config: dict[str, Any], feat_stats:
             return (len(val),)
 
     return (1,)
+
+
+def detect_adarms_from_checkpoint(weights_file: Path, hf_config: dict[str, Any]) -> None:
+    """Auto-detect adaRMSNorm (adaRMS) config fields from checkpoint keys.
+
+    Some Pi05 checkpoints (e.g. lerobot/pi05_libero_finetuned_v044) were trained
+    with adaptive RMS-norm conditioning but their config.json omits ``use_adarms``
+    and ``adarms_cond_dim``.  This function inspects the safetensors keys and, if
+    ``*.input_layernorm.dense.weight`` keys are found, injects the correct values
+    into *hf_config* in-place so that ``Pi05Config.from_dict`` picks them up.
+
+    The dense linear has shape ``[dim * 3, cond_dim]``, so ``cond_dim`` is read
+    from ``shape[1]``.
+
+    Args:
+        weights_file: Path to the checkpoint's ``model.safetensors``.
+        hf_config: Mutable config dict that will be updated in-place.
+    """
+    if hf_config.get("use_adarms"):
+        return  # Already set — nothing to do
+
+    try:
+        from safetensors import safe_open  # noqa: PLC0415
+
+        with safe_open(weights_file, framework="pt", device="cpu") as f:
+            for key in f.keys():  # noqa: SIM118
+                if ".input_layernorm.dense.weight" in key:
+                    tensor = f.get_tensor(key)
+                    # shape: [dim * 3, cond_dim]
+                    cond_dim = int(tensor.shape[1])
+                    hf_config["use_adarms"] = True
+                    hf_config["adarms_cond_dim"] = cond_dim
+                    logger.info(
+                        "pi05 | auto-detected use_adarms=True, adarms_cond_dim=%d from %s",
+                        cond_dim,
+                        weights_file.name,
+                    )
+                    return
+    except Exception:  # noqa: BLE001
+        logger.debug("pi05 | adarms auto-detection failed (safetensors unavailable or key scan error)")
 
 
 def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:

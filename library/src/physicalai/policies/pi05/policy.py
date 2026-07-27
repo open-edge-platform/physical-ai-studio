@@ -34,6 +34,7 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 from .config import Pi05Config
 from .model import Pi05Model
 from .preprocessor import make_pi05_preprocessors
+from .pretrained_utils import detect_adarms_from_checkpoint as _detect_adarms_from_checkpoint
 from .pretrained_utils import detect_normalization_mode as _detect_normalization_mode
 from .pretrained_utils import extract_dataset_stats as _extract_dataset_stats
 from .pretrained_utils import fix_state_dict_keys as _fix_state_dict_keys
@@ -486,6 +487,11 @@ class Pi05(ExportablePolicyMixin, Policy):
             detected = _detect_normalization_mode(preprocessor_file)
             if detected is not None:
                 hf_config["normalization_mode"] = detected
+
+        # Auto-detect adaRMSNorm config from checkpoint keys.
+        # Some checkpoints (e.g. pi05_libero_finetuned_v044) were trained
+        # with use_adarms=True but omit it from config.json.
+        _detect_adarms_from_checkpoint(weights_file, hf_config)
 
         # from_dict skips unknown keys and coerces lists→tuples via type hints
         config = Pi05Config.from_dict(hf_config)
