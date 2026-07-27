@@ -395,30 +395,6 @@
       "severity": "error"
     },
     {
-      "line": 115,
-      "column": 24,
-      "stop_line": 115,
-      "stop_column": 53,
-      "path": "src/physicalai/data/lerobot/utils/video_repair.py",
-      "code": -2,
-      "name": "missing-attribute",
-      "description": "Object of class `LeRobotDataset` has no attribute `_get_query_timestamps`",
-      "concise_description": "Object of class `LeRobotDataset` has no attribute `_get_query_timestamps`",
-      "severity": "error"
-    },
-    {
-      "line": 120,
-      "column": 83,
-      "stop_line": 120,
-      "stop_column": 104,
-      "path": "src/physicalai/data/lerobot/utils/video_repair.py",
-      "code": -2,
-      "name": "missing-attribute",
-      "description": "Object of class `LeRobotDataset` has no attribute `video_backend`\n  Did you mean `_video_backend`?",
-      "concise_description": "Object of class `LeRobotDataset` has no attribute `video_backend`",
-      "severity": "error"
-    },
-    {
       "line": 21,
       "column": 9,
       "stop_line": 21,

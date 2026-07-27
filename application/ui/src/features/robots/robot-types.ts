@@ -1,27 +1,16 @@
-import {
-    SchemaSo101RobotInput,
-    SchemaSo101RobotOutput,
-    SchemaSo101RobotWithConnectionState,
-    SchemaTrossenBimanualRobotInput,
-    SchemaTrossenBimanualRobotOutput,
-    SchemaTrossenBimanualRobotWithConnectionState,
-    SchemaTrossenSingleArmRobotInput,
-    SchemaTrossenSingleArmRobotOutput,
-    SchemaTrossenSingleArmRobotWithConnectionState,
-} from '../../api/openapi-spec';
+import type { operations } from '../../api/openapi-spec';
 
-/** Union of all concrete robot output schemas (as returned by the API). */
-export type SchemaRobot = SchemaSo101RobotOutput | SchemaTrossenSingleArmRobotOutput | SchemaTrossenBimanualRobotOutput;
+type ListProjectRobotsOperation = operations['list_project_robots_api_projects__project_id__robots_get'];
+type CreateProjectRobotOperation = operations['create_project_robot_api_projects__project_id__robots_post'];
 
-/** Union of all concrete robot input schemas (for create/update requests). */
-export type SchemaRobotInput =
-    SchemaSo101RobotInput | SchemaTrossenSingleArmRobotInput | SchemaTrossenBimanualRobotInput;
+/** Union of all concrete robot output schemas (as returned by list/get/create robot APIs). */
+export type SchemaRobot = ListProjectRobotsOperation['responses'][200]['content']['application/json'][number];
+
+/** Union of all concrete robot input schemas (for create robot requests). */
+export type SchemaRobotInput = CreateProjectRobotOperation['requestBody']['content']['application/json'];
+
+/** Single robot response payload from create robot API. */
+export type SchemaRobotCreateResponse = CreateProjectRobotOperation['responses'][201]['content']['application/json'];
 
 /** All possible robot type discriminators. */
 export type SchemaRobotType = SchemaRobot['type'];
-
-/** Union of all robot-with-connection-state schemas (as returned by the online endpoint). */
-export type SchemaRobotWithConnectionState =
-    | SchemaSo101RobotWithConnectionState
-    | SchemaTrossenSingleArmRobotWithConnectionState
-    | SchemaTrossenBimanualRobotWithConnectionState;

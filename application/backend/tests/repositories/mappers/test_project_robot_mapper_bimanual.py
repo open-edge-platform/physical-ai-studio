@@ -10,10 +10,10 @@ from uuid import uuid4
 import pytest
 
 from repositories.mappers.project_robot_mapper import ProjectRobotMapper
-from schemas.robot import RobotType, TrossenBimanualPayload, TrossenBimanualRobot
+from robots.catalog.widowxai import TrossenBimanualPayload, TrossenBimanualRobot
 
 
-def _make_bimanual_db_model(robot_type: RobotType):
+def _make_bimanual_db_model(robot_type: str):
     model = MagicMock()
     model.id = str(uuid4())
     model.name = "Bimanual Test Robot"
@@ -32,15 +32,14 @@ class TestProjectRobotMapperBimanual:
     @pytest.mark.parametrize(
         "robot_type",
         [
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER,
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER,
+            "Trossen_Bimanual_WidowXAI_Follower",
+            "Trossen_Bimanual_WidowXAI_Leader",
         ],
     )
     def test_from_schema_returns_bimanual_robot(self, robot_type):
         db_model = _make_bimanual_db_model(robot_type)
         result = ProjectRobotMapper.from_schema(db_model)
 
-        assert isinstance(result, TrossenBimanualRobot)
         assert result.type == robot_type
         assert isinstance(result.payload, TrossenBimanualPayload)
         assert result.payload.connection_string_left == "10.0.0.1"
@@ -49,8 +48,8 @@ class TestProjectRobotMapperBimanual:
     @pytest.mark.parametrize(
         "robot_type",
         [
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER,
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER,
+            "Trossen_Bimanual_WidowXAI_Follower",
+            "Trossen_Bimanual_WidowXAI_Leader",
         ],
     )
     def test_roundtrip_to_schema_and_back(self, robot_type):
@@ -78,7 +77,6 @@ class TestProjectRobotMapperBimanual:
 
         restored = ProjectRobotMapper.from_schema(db_model)
 
-        assert isinstance(restored, TrossenBimanualRobot)
         assert restored.payload.connection_string_left == "192.168.10.1"
         assert restored.payload.connection_string_right == "192.168.10.2"
         assert restored.payload.serial_number == "SN-BIMAN-001"

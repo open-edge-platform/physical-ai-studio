@@ -6,7 +6,6 @@ from loguru import logger
 from physicalai.robot.interface import Robot, RobotObservation
 
 from robots.robot_client import RobotClient
-from schemas.robot import RobotType
 
 
 @dataclass(frozen=True)
@@ -27,7 +26,7 @@ class PhysicalAIRobotAdapter(RobotClient):
         self,
         *,
         robot: Robot,
-        robot_type: RobotType,
+        robot_type: str,
         robot_role: Literal["follower", "leader"],
         config: PhysicalAIRobotAdapterConfig | None = None,
     ) -> None:
@@ -65,7 +64,7 @@ class PhysicalAIRobotAdapter(RobotClient):
         return action
 
     @property
-    def robot_type(self) -> RobotType:
+    def robot_type(self) -> str:
         return self._robot_type
 
     @property

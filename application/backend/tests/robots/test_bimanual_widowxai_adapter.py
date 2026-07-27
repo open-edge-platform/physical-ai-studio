@@ -10,7 +10,6 @@ import pytest
 from physicalai.robot.trossen.constants import WIDOWXAI_JOINT_ORDER
 
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
-from schemas.robot import RobotType
 
 NUM_JOINTS = len(WIDOWXAI_JOINT_ORDER)
 
@@ -36,11 +35,7 @@ def _make_bimanual_robot(role: str = "follower") -> MagicMock:
 
 def _make_adapter(mode: str = "follower") -> tuple[PhysicalAIRobotAdapter, MagicMock]:
     robot = _make_bimanual_robot(mode)
-    robot_type = (
-        RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER
-        if mode == "follower"
-        else RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER
-    )
+    robot_type = "Trossen_Bimanual_WidowXAI_Follower" if mode == "follower" else "Trossen_Bimanual_WidowXAI_Leader"
     adapter = PhysicalAIRobotAdapter(
         robot=robot,
         robot_type=robot_type,
@@ -57,11 +52,11 @@ def _make_adapter(mode: str = "follower") -> tuple[PhysicalAIRobotAdapter, Magic
 class TestProperties:
     def test_robot_type_follower(self):
         adapter, _ = _make_adapter("follower")
-        assert adapter.robot_type == RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER
+        assert adapter.robot_type == "Trossen_Bimanual_WidowXAI_Follower"
 
     def test_robot_type_leader(self):
         adapter, _ = _make_adapter("leader")
-        assert adapter.robot_type == RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER
+        assert adapter.robot_type == "Trossen_Bimanual_WidowXAI_Leader"
 
     def test_features_prefixed(self):
         adapter, _ = _make_adapter("follower")

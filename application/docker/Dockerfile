@@ -95,6 +95,12 @@ COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
 
+# Local plugin dependency manifest (required by backend's tool.uv.sources path).
+# Keep source out of builder-base so source-only changes do not invalidate
+# the shared hardware-independent sync layer.
+COPY --link --from=plugin ./pyproject.toml \
+    /app/application/plugin/pyproject.toml
+
 WORKDIR /app/application/backend
 
 # Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
@@ -120,6 +126,7 @@ FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
+    --mount=type=bind,from=plugin,target=/app/application/plugin \
     uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
@@ -137,6 +144,7 @@ FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
+    --mount=type=bind,from=plugin,target=/app/application/plugin \
     uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
@@ -165,6 +173,7 @@ FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
+    --mount=type=bind,from=plugin,target=/app/application/plugin \
     uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
@@ -185,7 +194,8 @@ FROM builder-base AS robot-assets
 
 COPY --link --from=app-source /app/application/backend/src /app/application/backend/src
 
-RUN PYTHONPATH=/app/application/backend/src \
+RUN --mount=type=bind,from=plugin,target=/app/application/plugin \
+    PYTHONPATH=/app/application/backend/src:/app/application/plugin/src \
     /app/application/backend/.venv/bin/python -c \
     "from robots.catalog.sync_robot_assets import sync_robot_assets; sync_robot_assets()"
 

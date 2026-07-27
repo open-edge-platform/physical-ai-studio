@@ -1,6 +1,6 @@
 import { $api } from '../../api/client';
-import { SchemaRobotCatalogDefinitionResponse, SchemaRobotType } from '../../api/openapi-spec';
-import { SchemaRobot } from './robot-types';
+import { SchemaRobotCatalogDefinitionResponse } from '../../api/openapi-spec';
+import { SchemaRobot, SchemaRobotType } from './robot-types';
 
 export const useRobotCatalogQuery = () => {
     return $api.useSuspenseQuery('get', '/api/robots/catalog', {
@@ -28,12 +28,24 @@ export const useRobotCatalogDefinitionQuery = (robotType: SchemaRobotType) => {
     );
 };
 
+export const useDiscoverRobotsQuery = (robotType: SchemaRobotType) => {
+    return $api.useQuery('get', '/api/robots/catalog/{robot_type}/discover', {
+        params: { path: { robot_type: robotType } },
+    });
+};
+
+export const useCatalogIdentifyMutation = () => {
+    return $api.useMutation('post', '/api/robots/catalog/{robot_type}/identify', {
+        meta: { skipInvalidation: true },
+    });
+};
+
 const useRobotCatalogMap = () => {
     const query = useRobotCatalogQuery();
 
     const byType = new Map<SchemaRobotType, SchemaRobotCatalogDefinitionResponse>();
     query.data.forEach((entry) => {
-        byType.set(entry.type, entry);
+        byType.set(entry.type as SchemaRobotType, entry);
     });
 
     return byType;

@@ -4,14 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 from repositories.project_environment_repo import ProjectEnvironmentRepository
-from schemas.robot import RobotType
 
 
 def _make_robot_db_model(*, robot_id: UUID | None = None, name: str = "Robot") -> MagicMock:
     model = MagicMock()
     model.id = str(robot_id or uuid4())
     model.name = name
-    model.type = str(RobotType.SO101_FOLLOWER)
+    model.type = "SO101_Follower"
     model.payload = {
         "connection_string": "/dev/ttyUSB0",
         "serial_number": "SO101-TEST-001",

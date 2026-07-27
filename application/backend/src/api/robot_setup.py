@@ -7,7 +7,6 @@ from loguru import logger
 
 from api.dependencies import RobotConnectionManagerDep, get_project_id
 from schemas import SerialPortInfo
-from schemas.robot import RobotType
 from workers.robots.so101_setup_worker import SO101SetupWorker
 from workers.transport.websocket_transport import WebSocketTransport
 
@@ -31,7 +30,7 @@ async def robot_setup_websocket(
         connection_string: serial port path (fallback when serial_number is unavailable)
     """
     # Validate robot type
-    if robot_type not in {RobotType.SO101_FOLLOWER, RobotType.SO101_LEADER}:
+    if robot_type not in {"SO101_Follower", "SO101_Leader"}:
         await websocket.accept()
         await websocket.send_json(
             {
