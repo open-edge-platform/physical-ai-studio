@@ -2,8 +2,16 @@ from collections.abc import Callable
 from unittest.mock import MagicMock
 
 from fastapi.dependencies.utils import get_dependant
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_log_service, get_model_metrics_service, get_robot_client_factory
+from api.dependencies import (
+    get_dataset_service,
+    get_job_service,
+    get_log_service,
+    get_model_metrics_service,
+    get_model_service,
+    get_robot_client_factory,
+)
 from api.record import robot_control_websocket
 from api.robot_control import robot_websocket
 from robots.robot_client_factory import RobotClientFactory
@@ -43,6 +51,22 @@ def test_log_service_uses_injected_collaborators() -> None:
 
     assert service.settings is settings
     assert service.job_service is job_service
+
+
+def test_job_service_uses_dependency_provided_session() -> None:
+    session = MagicMock(spec=AsyncSession)
+
+    service = get_job_service(session)
+
+    assert service.session is session
+
+
+def test_database_services_share_dependency_provided_session() -> None:
+    session = MagicMock(spec=AsyncSession)
+
+    services = [get_job_service(session), get_model_service(session), get_dataset_service(session)]
+
+    assert all(service.session is session for service in services)
 
 
 def test_record_websocket_depends_on_robot_client_factory() -> None:

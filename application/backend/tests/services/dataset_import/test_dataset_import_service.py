@@ -1,12 +1,9 @@
 """Focused unit tests for DatasetImportService step/ownership validation logic.
 
 These tests cover the three public methods that enforce ownership and step
-guards without requiring a real database.  Each test patches only the minimal
-surface area needed:
+guards without requiring a real database. Each test constructs the service
+with a sentinel session and patches only the minimal surface area needed:
 
-* ``db.get_async_db_session_ctx`` - returns a lightweight async context manager
-  that yields a sentinel session object (never used directly, because
-  ``JobRepository`` is also patched).
 * ``services.dataset_import.service.JobRepository`` - replaced by a
   ``_StubJobRepository`` that returns pre-built ``DatasetImportJob`` fixtures.
 * ``services.staged_archive.cleanup_staged_archive`` - no-op to avoid
@@ -68,12 +65,6 @@ class _StubJobRepository:
         return job.model_copy(update=updates, deep=True)
 
 
-@contextlib.asynccontextmanager
-async def _fake_db_session_ctx():
-    """Fake async context manager that yields a sentinel session."""
-    yield MagicMock()
-
-
 def _patch_repo(stub: _StubJobRepository):
     """Return a context manager that injects *stub* as JobRepository."""
     return patch(
@@ -83,16 +74,8 @@ def _patch_repo(stub: _StubJobRepository):
 
 
 def _patch_db():
-    """Return a context manager that replaces the DB session factory.
-
-    Uses ``new=_fake_db_session_ctx`` so each call to the patched symbol
-    produces a *fresh* async context manager instead of reusing a single
-    pre-created instance.
-    """
-    return patch(
-        "services.dataset_import.service.get_async_db_session_ctx",
-        new=_fake_db_session_ctx,
-    )
+    """Return a no-op context manager retained for compact test setup."""
+    return contextlib.nullcontext()
 
 
 def _patch_cleanup():
@@ -112,7 +95,7 @@ async def test_attach_raises_resource_not_found_when_job_not_found() -> None:
     stub = _StubJobRepository(job=None)
 
     with _patch_db(), _patch_repo(stub), pytest.raises(ResourceNotFoundError):
-        await DatasetImportService.attach_dataset_import_archive(
+        await DatasetImportService(MagicMock()).attach_dataset_import_archive(
             project_id=project_id,
             job_id=uuid4(),
             uploaded_archive_name="dataset.zip",
@@ -128,7 +111,7 @@ async def test_attach_raises_resource_not_found_when_project_mismatch() -> None:
     stub = _StubJobRepository(job=job)
 
     with _patch_db(), _patch_repo(stub), pytest.raises(ResourceNotFoundError):
-        await DatasetImportService.attach_dataset_import_archive(
+        await DatasetImportService(MagicMock()).attach_dataset_import_archive(
             project_id=project_id,
             job_id=job.id,
             uploaded_archive_name="dataset.zip",
@@ -143,7 +126,7 @@ async def test_attach_raises_invalid_job_state_when_wrong_step() -> None:
     stub = _StubJobRepository(job=job)
 
     with _patch_db(), _patch_repo(stub), pytest.raises(InvalidJobStateError):
-        await DatasetImportService.attach_dataset_import_archive(
+        await DatasetImportService(MagicMock()).attach_dataset_import_archive(
             project_id=project_id,
             job_id=job.id,
             uploaded_archive_name="dataset.zip",
@@ -158,7 +141,7 @@ async def test_attach_succeeds_when_step_is_awaiting_upload() -> None:
     stub = _StubJobRepository(job=job)
 
     with _patch_db(), _patch_repo(stub):
-        result = await DatasetImportService.attach_dataset_import_archive(
+        result = await DatasetImportService(MagicMock()).attach_dataset_import_archive(
             project_id=project_id,
             job_id=job.id,
             uploaded_archive_name="dataset.zip",
@@ -187,7 +170,7 @@ async def test_finalize_raises_resource_not_found_when_job_not_found() -> None:
     finalize_input = DatasetImportFinalizeInput(environment_id=uuid4())
 
     with _patch_db(), _patch_repo(stub), pytest.raises(ResourceNotFoundError):
-        await DatasetImportService.finalize_dataset_import_job(
+        await DatasetImportService(MagicMock()).finalize_dataset_import_job(
             project_id=project_id,
             job_id=uuid4(),
             finalize_input=finalize_input,
@@ -204,7 +187,7 @@ async def test_finalize_raises_resource_not_found_when_project_mismatch() -> Non
     finalize_input = DatasetImportFinalizeInput(environment_id=uuid4())
 
     with _patch_db(), _patch_repo(stub), pytest.raises(ResourceNotFoundError):
-        await DatasetImportService.finalize_dataset_import_job(
+        await DatasetImportService(MagicMock()).finalize_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
             finalize_input=finalize_input,
@@ -220,7 +203,7 @@ async def test_finalize_raises_invalid_job_state_when_wrong_step() -> None:
     finalize_input = DatasetImportFinalizeInput(environment_id=uuid4())
 
     with _patch_db(), _patch_repo(stub), pytest.raises(InvalidJobStateError):
-        await DatasetImportService.finalize_dataset_import_job(
+        await DatasetImportService(MagicMock()).finalize_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
             finalize_input=finalize_input,
@@ -248,7 +231,7 @@ async def test_finalize_raises_invalid_job_state_for_every_non_waiting_step(bad_
     finalize_input = DatasetImportFinalizeInput(environment_id=uuid4())
 
     with _patch_db(), _patch_repo(stub), pytest.raises(InvalidJobStateError):
-        await DatasetImportService.finalize_dataset_import_job(
+        await DatasetImportService(MagicMock()).finalize_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
             finalize_input=finalize_input,
@@ -265,7 +248,7 @@ async def test_finalize_succeeds_when_step_is_waiting_for_user_input() -> None:
     finalize_input = DatasetImportFinalizeInput(environment_id=environment_id)
 
     with _patch_db(), _patch_repo(stub):
-        result = await DatasetImportService.finalize_dataset_import_job(
+        result = await DatasetImportService(MagicMock()).finalize_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
             finalize_input=finalize_input,
@@ -290,7 +273,7 @@ async def test_cancel_raises_resource_not_found_when_job_not_found() -> None:
     stub = _StubJobRepository(job=None)
 
     with _patch_db(), _patch_repo(stub), _patch_cleanup(), pytest.raises(ResourceNotFoundError):
-        await DatasetImportService.cancel_dataset_import_job(
+        await DatasetImportService(MagicMock()).cancel_dataset_import_job(
             project_id=project_id,
             job_id=uuid4(),
         )
@@ -305,7 +288,7 @@ async def test_cancel_raises_resource_not_found_when_project_mismatch() -> None:
     stub = _StubJobRepository(job=job)
 
     with _patch_db(), _patch_repo(stub), _patch_cleanup(), pytest.raises(ResourceNotFoundError):
-        await DatasetImportService.cancel_dataset_import_job(
+        await DatasetImportService(MagicMock()).cancel_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
         )
@@ -333,7 +316,7 @@ async def test_cancel_raises_invalid_job_state_for_steps_other_than_awaiting_use
     stub = _StubJobRepository(job=job)
 
     with _patch_db(), _patch_repo(stub), _patch_cleanup(), pytest.raises(InvalidJobStateError):
-        await DatasetImportService.cancel_dataset_import_job(
+        await DatasetImportService(MagicMock()).cancel_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
         )
@@ -347,7 +330,7 @@ async def test_cancel_succeeds_for_awaiting_user_review_with_staging_id() -> Non
     stub = _StubJobRepository(job=job)
 
     with _patch_db(), _patch_repo(stub), _patch_cleanup() as mock_cleanup:
-        result = await DatasetImportService.cancel_dataset_import_job(
+        result = await DatasetImportService(MagicMock()).cancel_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
         )
@@ -467,7 +450,7 @@ async def test_attach_archive_does_not_set_end_time_for_pending_status() -> None
     stub = _StubJobRepository(job=job)
 
     with _patch_db(), _patch_repo(stub):
-        await DatasetImportService.attach_dataset_import_archive(
+        await DatasetImportService(MagicMock()).attach_dataset_import_archive(
             project_id=project_id,
             job_id=job.id,
             uploaded_archive_name="dataset.zip",
@@ -487,7 +470,7 @@ async def test_finalize_does_not_set_end_time_for_pending_status() -> None:
     finalize_input = DatasetImportFinalizeInput(environment_id=environment_id)
 
     with _patch_db(), _patch_repo(stub):
-        await DatasetImportService.finalize_dataset_import_job(
+        await DatasetImportService(MagicMock()).finalize_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
             finalize_input=finalize_input,
@@ -505,7 +488,7 @@ async def test_cancel_sets_end_time() -> None:
     stub = _StubJobRepository(job=job)
 
     with _patch_db(), _patch_repo(stub), _patch_cleanup():
-        await DatasetImportService.cancel_dataset_import_job(
+        await DatasetImportService(MagicMock()).cancel_dataset_import_job(
             project_id=project_id,
             job_id=job.id,
         )

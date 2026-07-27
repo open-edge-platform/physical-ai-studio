@@ -5,8 +5,10 @@ from uuid import UUID
 from fastapi import Depends, status
 from fastapi.exceptions import HTTPException
 from fastapi.requests import HTTPConnection
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.scheduler import Scheduler
+from db.engine import get_async_db_session
 from robots.robot_client_factory import RobotClientFactory
 from services import (
     DatasetDownloadService,
@@ -25,12 +27,14 @@ from services.event_processor import EventProcessor
 from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_catalog_service import RobotCatalogService
+from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
 from settings import Settings, get_settings
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.model_worker_registry import ModelWorkerRegistry
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_db_session)]
 
 
 def is_valid_uuid(identifier: str) -> bool:
@@ -55,19 +59,17 @@ def get_system_service() -> SystemService:
 SystemServiceDep = Annotated[SystemService, Depends(get_system_service)]
 
 
-@lru_cache
-def get_project_service() -> ProjectService:
+def get_project_service(session: AsyncSessionDep) -> ProjectService:
     """Provide a ProjectService instance for managing projects."""
-    return ProjectService()
+    return ProjectService(session)
 
 
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
 
 
-@lru_cache
-def get_robot_service() -> RobotService:
+def get_robot_service(session: AsyncSessionDep) -> RobotService:
     """Provide a RobotService instance for managing robots in a project."""
-    return RobotService()
+    return RobotService(session)
 
 
 RobotServiceDep = Annotated[RobotService, Depends(get_robot_service)]
@@ -107,28 +109,25 @@ def get_robot_catalog_service() -> RobotCatalogService:
 RobotCatalogServiceDep = Annotated[RobotCatalogService, Depends(get_robot_catalog_service)]
 
 
-@lru_cache
-def get_camera_service() -> ProjectCameraService:
+def get_camera_service(session: AsyncSessionDep) -> ProjectCameraService:
     """Provide a ProjectCameraService instance for managing cameras in a project."""
-    return ProjectCameraService()
+    return ProjectCameraService(session)
 
 
 ProjectCameraServiceDep = Annotated[ProjectCameraService, Depends(get_camera_service)]
 
 
-@lru_cache
-def get_environment_service() -> EnvironmentService:
+def get_environment_service(session: AsyncSessionDep) -> EnvironmentService:
     """Provide a EnvironmentService instance for managing environments in a project."""
-    return EnvironmentService()
+    return EnvironmentService(session)
 
 
 EnvironmentServiceDep = Annotated[EnvironmentService, Depends(get_environment_service)]
 
 
-@lru_cache
-def get_dataset_service() -> DatasetService:
+def get_dataset_service(session: AsyncSessionDep) -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
-    return DatasetService()
+    return DatasetService(session)
 
 
 DatasetServiceDep = Annotated[DatasetService, Depends(get_dataset_service)]
@@ -152,10 +151,9 @@ def get_episode_thumbnail_service() -> EpisodeThumbnailService:
 EpisodeThumbnailServiceDep = Annotated[EpisodeThumbnailService, Depends(get_episode_thumbnail_service)]
 
 
-@lru_cache
-def get_model_service() -> ModelService:
+def get_model_service(session: AsyncSessionDep) -> ModelService:
     """Provides a ModelService instance for managing models."""
-    return ModelService()
+    return ModelService(session)
 
 
 ModelServiceDep = Annotated[ModelService, Depends(get_model_service)]
@@ -182,22 +180,28 @@ def get_model_download_service() -> ModelDownloadService:
 ModelDownloadServiceDep = Annotated[ModelDownloadService, Depends(get_model_download_service)]
 
 
-@lru_cache
-def get_job_service() -> JobService:
+def get_job_service(session: AsyncSessionDep) -> JobService:
     """Provides a JobService instance for managing jobs."""
-    return JobService()
+    return JobService(session)
 
 
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]
 
 
-@lru_cache
-def get_dataset_import_service() -> DatasetImportService:
+def get_dataset_import_service(session: AsyncSessionDep) -> DatasetImportService:
     """Provides a DatasetImportService instance for dataset import jobs."""
-    return DatasetImportService()
+    return DatasetImportService(session)
 
 
 DatasetImportServiceDep = Annotated[DatasetImportService, Depends(get_dataset_import_service)]
+
+
+def get_snapshot_service(session: AsyncSessionDep) -> SnapshotService:
+    """Provide a request-scoped snapshot service."""
+    return SnapshotService(session)
+
+
+SnapshotServiceDep = Annotated[SnapshotService, Depends(get_snapshot_service)]
 
 
 def get_log_service(settings: SettingsDep, job_service: JobServiceDep) -> LogService:

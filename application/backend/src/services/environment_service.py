@@ -1,61 +1,52 @@
 from uuid import UUID
 
-from db import get_async_db_session_ctx
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories.project_environment_repo import ProjectEnvironmentRepository
 from schemas.environment import Environment, EnvironmentWithRelations
 
 
 class EnvironmentService:
-    @staticmethod
-    async def get_environment_list(project_id: UUID) -> list[Environment]:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectEnvironmentRepository(session, project_id)
-            return await repo.get_all()
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
 
-    @staticmethod
-    async def get_environment_by_id(project_id: UUID, environment_id: UUID) -> EnvironmentWithRelations:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectEnvironmentRepository(session, project_id)
-            environment = await repo.get_by_id_with_relations(environment_id)
+    def _repo(self, project_id: UUID) -> ProjectEnvironmentRepository:
+        return ProjectEnvironmentRepository(self.session, project_id)
 
-            if environment is None:
-                raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment_id))
+    async def get_environment_list(self, project_id: UUID) -> list[Environment]:
+        return await self._repo(project_id).get_all()
 
-            return environment
+    async def get_environment_by_id(self, project_id: UUID, environment_id: UUID) -> EnvironmentWithRelations:
+        environment = await self._repo(project_id).get_by_id_with_relations(environment_id)
 
-    @staticmethod
-    async def create_environment(project_id: UUID, environment: Environment) -> Environment:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectEnvironmentRepository(session, project_id)
-            return await repo.save(environment)
+        if environment is None:
+            raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment_id))
 
-    @staticmethod
-    async def update_environment(project_id: UUID, environment: Environment) -> EnvironmentWithRelations:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectEnvironmentRepository(session, project_id)
+        return environment
 
-            # Use base repository's update with partial_update dict
-            # Then fetch the updated environment with relations
-            existing = await repo.get_by_id(environment.id)
-            if existing is None:
-                raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment.id))
+    async def create_environment(self, project_id: UUID, environment: Environment) -> Environment:
+        return await self._repo(project_id).save(environment)
 
-            await repo.update(existing, environment.model_dump(exclude={"id", "created_at", "updated_at"}))
+    async def update_environment(self, project_id: UUID, environment: Environment) -> EnvironmentWithRelations:
+        repo = self._repo(project_id)
+        existing = await repo.get_by_id(environment.id)
+        if existing is None:
+            raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment.id))
 
-            updated = await repo.get_by_id_with_relations(environment.id)
-            if updated is None:
-                raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment.id))
+        await repo.update(existing, environment.model_dump(exclude={"id", "created_at", "updated_at"}))
 
-            return updated
+        updated = await repo.get_by_id_with_relations(environment.id)
+        if updated is None:
+            raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment.id))
 
-    @staticmethod
-    async def delete_environment(project_id: UUID, environment_id: UUID) -> None:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectEnvironmentRepository(session, project_id)
+        return updated
 
-            environment = await repo.get_by_id(environment_id)
-            if environment is None:
-                raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment_id))
+    async def delete_environment(self, project_id: UUID, environment_id: UUID) -> None:
+        repo = self._repo(project_id)
 
-            await repo.delete_by_id(environment_id)
+        environment = await repo.get_by_id(environment_id)
+        if environment is None:
+            raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment_id))
+
+        await repo.delete_by_id(environment_id)

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from services.training_backends import get_training_backend
@@ -40,7 +40,7 @@ def test_get_training_backend_returns_remote_in_remote_mode() -> None:
 
 
 def test_dispatcher_report_enqueues_progress_tuple() -> None:
-    dispatcher = TrainingTrackingDispatcher(uuid4(), mp.Queue(), mp.Event())
+    dispatcher = TrainingTrackingDispatcher(uuid4(), mp.Queue(), mp.Event(), AsyncMock())
 
     dispatcher.report(42, message="halfway", extra_info={"train/loss_step": 0.1})
 
@@ -48,7 +48,7 @@ def test_dispatcher_report_enqueues_progress_tuple() -> None:
 
 
 def test_dispatcher_report_defaults_message_and_extra_to_none() -> None:
-    dispatcher = TrainingTrackingDispatcher(uuid4(), mp.Queue(), mp.Event())
+    dispatcher = TrainingTrackingDispatcher(uuid4(), mp.Queue(), mp.Event(), AsyncMock())
 
     dispatcher.report(10)
 

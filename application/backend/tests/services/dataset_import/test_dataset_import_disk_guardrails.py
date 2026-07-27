@@ -53,7 +53,7 @@ def test_worker_run_commit_raises_when_datasets_dir_has_insufficient_space(tmp_p
         patch("services.dataset_import.adapters.lerobot_v3.get_settings", return_value=fake_settings),
         patch("services.dataset_import.staging.get_settings", return_value=fake_settings),
         patch("physicalai.data.archive_safety.shutil.disk_usage", return_value=disk_usage),
-        patch("workers.dataset_import_worker.JobService.update_job_payload", new=AsyncMock(return_value=MagicMock())),
+        patch.object(worker, "_update_job_payload", new=AsyncMock(return_value=MagicMock())),
         pytest.raises(InsufficientDiskSpaceError),
     ):
         asyncio.run(worker._run_commit(job_id=uuid4(), project_id=uuid4(), payload=payload))

@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from loguru import logger
 
 from core.logging.utils import job_logging_ctx
+from db import get_async_db_session_ctx
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
 from schemas.job import TrainJobPayload
@@ -45,12 +46,12 @@ class TrainingWorker(BaseProcessWorker):
         self.interrupt_event = interrupt_event
 
     async def run_loop(self) -> None:
-        job_service = JobService()
         logger.info("Training Worker is running")
         while not self.should_stop():
             settings = get_settings()
 
-            job = await job_service.get_pending_train_job()
+            async with get_async_db_session_ctx() as session:
+                job = await JobService(session).get_pending_train_job()
             if job is not None:
                 with job_logging_ctx(job_id=str(job.id)):
                     payload = TrainJobPayload.model_validate(job.payload)
@@ -60,7 +61,8 @@ class TrainingWorker(BaseProcessWorker):
 
                     base_model = None
                     if payload.base_model_id is not None:
-                        base_model = await ModelService.get_model_by_id(payload.base_model_id)
+                        async with get_async_db_session_ctx() as session:
+                            base_model = await ModelService(session).get_model_by_id(payload.base_model_id)
 
                     model_dir = Path(str(settings.models_dir / str(id)))
 
@@ -70,9 +72,13 @@ class TrainingWorker(BaseProcessWorker):
                         snapshot: Snapshot | None = None
                         snapshot_id = payload.snapshot_id
                     else:
-                        dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
+                        async with get_async_db_session_ctx() as session:
+                            dataset = await DatasetService(session).get_dataset_by_id(payload.dataset_id)
                         snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
-                        snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
+                        async with get_async_db_session_ctx() as session:
+                            snapshot = await SnapshotService(session).create_snapshot_for_dataset(
+                                dataset, destination=snapshot_dir
+                            )
                         snapshot_id = snapshot.id
                         payload.snapshot_id = snapshot_id
 
@@ -98,12 +104,30 @@ class TrainingWorker(BaseProcessWorker):
     async def setup(self) -> None:
         await super().setup()
         with logger.contextualize(worker=self.__class__.__name__):
-            await TrainingService.abort_orphan_jobs()
+            await self._abort_orphan_jobs()
 
     async def teardown(self) -> None:
         await super().teardown()
         with logger.contextualize(worker=self.__class__.__name__):
-            await TrainingService.abort_orphan_jobs()
+            await self._abort_orphan_jobs()
+
+    @staticmethod
+    async def _abort_orphan_jobs() -> None:
+        async with get_async_db_session_ctx() as session:
+            await TrainingService.abort_orphan_jobs(JobService(session))
+
+    @staticmethod
+    async def _update_training_progress(
+        job_id: UUID, progress: int, message: str | None, extra_info: dict | None
+    ) -> Job:
+        async with get_async_db_session_ctx() as session:
+            return await JobService(session).update_job_status(
+                job_id,
+                JobStatus.RUNNING,
+                message=message,
+                progress=progress,
+                extra_info=extra_info,
+            )
 
     async def _train_model(
         self,
@@ -114,18 +138,20 @@ class TrainingWorker(BaseProcessWorker):
         base_model: Model | None = None,
     ) -> None:
         settings = get_settings()
-        await JobService.update_job(
-            job=job,
-            update={
-                "status": JobStatus.RUNNING,
-                "message": "Training started",
-                "start_time": datetime.datetime.now(tz=datetime.UTC),
-            },
-        )
+        async with get_async_db_session_ctx() as session:
+            await JobService(session).update_job(
+                job=job,
+                update={
+                    "status": JobStatus.RUNNING,
+                    "message": "Training started",
+                    "start_time": datetime.datetime.now(tz=datetime.UTC),
+                },
+            )
         dispatcher = TrainingTrackingDispatcher(
             job_id=job.id,
             event_queue=self.queue,
             interrupt_event=self.interrupt_event,
+            update_progress=self._update_training_progress,
         )
         interrupted = False
         suspended = False
@@ -171,28 +197,32 @@ class TrainingWorker(BaseProcessWorker):
 
         if suspended:
             # Requeue for reattachment after restart.
-            job = await JobService.update_job_status(
-                job_id=job.id,
-                status=JobStatus.PENDING,
-                message="Reconnecting to remote training job after restart",
-            )
+            async with get_async_db_session_ctx() as session:
+                job = await JobService(session).update_job_status(
+                    job_id=job.id,
+                    status=JobStatus.PENDING,
+                    message="Reconnecting to remote training job after restart",
+                )
             self.queue.put((EventType.JOB_UPDATE, job))
             return
 
         if error is not None:
-            job = await JobService.update_job_status(
-                job_id=job.id, status=JobStatus.FAILED, message=f"Training failed: {error}"
-            )
+            async with get_async_db_session_ctx() as session:
+                job = await JobService(session).update_job_status(
+                    job_id=job.id, status=JobStatus.FAILED, message=f"Training failed: {error}"
+                )
         elif interrupted:
             logger.info("Training canceled")
-            job = await JobService.update_job_status(
-                job_id=job.id, status=JobStatus.CANCELED, message="Training canceled"
-            )
+            async with get_async_db_session_ctx() as session:
+                job = await JobService(session).update_job_status(
+                    job_id=job.id, status=JobStatus.CANCELED, message="Training canceled"
+                )
         else:
-            job = await JobService.update_job_status(
-                job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
-            )
-            model = await ModelService.create_model(model)
+            async with get_async_db_session_ctx() as session:
+                job = await JobService(session).update_job_status(
+                    job_id=job.id, status=JobStatus.COMPLETED, message="Training finished"
+                )
+                model = await ModelService(session).create_model(model)
             self.queue.put((EventType.MODEL_UPDATE, model))
 
         self.queue.put((EventType.JOB_UPDATE, job))
@@ -200,7 +230,8 @@ class TrainingWorker(BaseProcessWorker):
     async def _persist_remote_job_id(self, job: Job, payload: TrainJobPayload, remote_job_id: UUID) -> None:
         """Persist the remote job id for restart recovery."""
         payload.remote_job_id = remote_job_id
-        await JobService.update_job_payload(job.id, payload)
+        async with get_async_db_session_ctx() as session:
+            await JobService(session).update_job_payload(job.id, payload)
         logger.info("Persisted remote job id {} for restart recovery", remote_job_id)
 
     def _should_interrupt(self) -> bool:

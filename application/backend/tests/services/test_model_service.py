@@ -142,16 +142,13 @@ async def test_delete_model_deletes_snapshot_when_snapshot_id_set() -> None:
     mock_snapshot_repo = AsyncMock()
 
     mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("services.model_service.get_async_db_session_ctx", return_value=mock_session),
         patch("services.model_service.ModelRepository", return_value=mock_model_repo),
         patch("services.model_service.SnapshotRepository", return_value=mock_snapshot_repo),
         patch("services.model_service.shutil.rmtree"),
     ):
-        await ModelService.delete_model(model)
+        await ModelService(mock_session).delete_model(model)
 
     mock_model_repo.delete_by_id.assert_awaited_once_with(model.id)
     mock_snapshot_repo.delete_by_id.assert_awaited_once_with(model.snapshot_id)
@@ -166,16 +163,13 @@ async def test_delete_model_skips_snapshot_delete_when_no_snapshot_id() -> None:
     mock_snapshot_repo = AsyncMock()
 
     mock_session = AsyncMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with (
-        patch("services.model_service.get_async_db_session_ctx", return_value=mock_session),
         patch("services.model_service.ModelRepository", return_value=mock_model_repo),
         patch("services.model_service.SnapshotRepository", return_value=mock_snapshot_repo),
         patch("services.model_service.shutil.rmtree"),
     ):
-        await ModelService.delete_model(model)
+        await ModelService(mock_session).delete_model(model)
 
     mock_model_repo.delete_by_id.assert_awaited_once_with(model.id)
     mock_snapshot_repo.delete_by_id.assert_not_awaited()

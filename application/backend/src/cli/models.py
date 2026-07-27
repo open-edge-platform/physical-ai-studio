@@ -36,13 +36,28 @@ def import_dir(
     original training. The inference UI uses this dataset to determine which environment
     to load when running the model.
     """
+    from db import get_async_db_session_ctx
+    from schemas import Model, TrainJob
+    from schemas.dataset import Dataset
+    from services.dataset_service import DatasetService
+    from services.job_service import JobService
     from services.model_import_service import ModelImportService
+    from services.model_service import ModelService
 
     click.echo(f"Importing model from folder: {source_dir}")
     click.echo(f"Mode: {'move' if move else 'copy'}")
 
     async def _run_import() -> None:
-        service = ModelImportService()
+        async def get_dataset(dataset_id: UUID) -> Dataset:
+            async with get_async_db_session_ctx() as session:
+                return await DatasetService(session).get_dataset_by_id(dataset_id)
+
+        async def persist_import(job: TrainJob, model: Model) -> Model:
+            async with get_async_db_session_ctx() as session:
+                saved_job = await JobService(session).create_job(job)
+                return await ModelService(session).create_model(model.model_copy(update={"train_job_id": saved_job.id}))
+
+        service = ModelImportService(get_dataset=get_dataset, persist_import=persist_import)
         model = await service.import_model_directory(
             source_dir=source_dir,
             project_id=project_id,

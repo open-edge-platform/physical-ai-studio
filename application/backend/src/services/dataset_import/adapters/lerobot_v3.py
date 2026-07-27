@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 from io import BytesIO
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pandas as pd
@@ -22,11 +23,13 @@ from schemas.dataset_import_job import (
     DatasetManifestStatistics,
     ImportValidationReport,
 )
-from services.dataset_service import DatasetService
 from settings import get_settings
 
 from .base import DatasetImportAdapter
 from .recording_schema import extract_recording_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 class LeRobotV3Adapter(DatasetImportAdapter):
@@ -262,7 +265,13 @@ class LeRobotV3Adapter(DatasetImportAdapter):
 
         return report
 
-    async def commit(self, payload: DatasetImportJobPayload, project_id: UUID, archive: SafeZipArchive) -> Dataset:
+    async def commit(
+        self,
+        payload: DatasetImportJobPayload,
+        project_id: UUID,
+        archive: SafeZipArchive,
+        persist_dataset: Callable[[Dataset], Awaitable[Dataset]],
+    ) -> Dataset:
         if payload.finalize_input is None:
             raise ValueError("Cannot commit dataset import without finalize input")
 
@@ -309,7 +318,7 @@ class LeRobotV3Adapter(DatasetImportAdapter):
                 environment_id=payload.finalize_input.environment_id,
             )
 
-            saved = await DatasetService.create_dataset(dataset)
+            saved = await persist_dataset(dataset)
             logger.info(
                 "LeRobotV3Adapter dataset persisted: dataset_id='{}', project_id='{}', environment_id='{}', path='{}'",
                 saved.id,

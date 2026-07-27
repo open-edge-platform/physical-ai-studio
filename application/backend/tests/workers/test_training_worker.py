@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import multiprocessing as mp
 import queue
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -123,6 +124,16 @@ def worker(stop_event, interrupt_event, event_queue):
     return w
 
 
+@pytest.fixture(autouse=True)
+def session_scope():
+    @asynccontextmanager
+    async def _scope():
+        yield MagicMock()
+
+    with patch(f"{MODULE}.get_async_db_session_ctx", new=_scope):
+        yield
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -156,6 +167,7 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService"),
         ):
+            MockJobService.return_value = MockJobService
             MockJobService.update_job_status = AsyncMock(return_value=failed_job)
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
 
@@ -193,6 +205,8 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
+            MockJobService.return_value = MockJobService
+            MockModelService.return_value = MockModelService
             MockJobService.update_job_status = AsyncMock(return_value=canceled_job)
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
             MockModelService.create_model = AsyncMock()
@@ -230,6 +244,7 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
+            MockJobService.return_value = MockJobService
             MockJobService.update_job_status = AsyncMock(return_value=canceled_job)
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
             MockModelService.create_model = AsyncMock()
@@ -264,6 +279,8 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
+            MockJobService.return_value = MockJobService
+            MockModelService.return_value = MockModelService
             MockJobService.update_job_status = AsyncMock(return_value=completed_job)
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
             MockModelService.create_model = AsyncMock(return_value=model)
@@ -300,6 +317,8 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
+            MockJobService.return_value = MockJobService
+            MockModelService.return_value = MockModelService
             MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
             MockModelService.create_model = AsyncMock(return_value=model)
@@ -338,6 +357,7 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
+            MockJobService.return_value = MockJobService
             MockJobService.update_job_status = AsyncMock(return_value=pending_job)
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
             MockModelService.create_model = AsyncMock()
@@ -381,6 +401,8 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
+            MockJobService.return_value = MockJobService
+            MockModelService.return_value = MockModelService
             MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
             MockJobService.update_job = AsyncMock(return_value=MagicMock())
             MockModelService.create_model = AsyncMock(return_value=model)
@@ -404,6 +426,7 @@ class TestTraining:
         job = _make_job(payload)
 
         with patch(f"{MODULE}.JobService") as MockJobService:
+            MockJobService.return_value = MockJobService
             MockJobService.update_job_payload = AsyncMock(return_value=MagicMock())
 
             remote_job_id = uuid4()
