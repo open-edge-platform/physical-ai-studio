@@ -177,6 +177,9 @@ class ACT(ExportablePolicyMixin, Policy):
         """
         super().__init__(n_action_steps=n_action_steps)
 
+        if pretrained_name_or_path is not None and dataset_stats is not None:
+            raise ValueError("Pass either pretrained_name_or_path or dataset_stats, not both.")
+
         weights_file = None
         if pretrained_name_or_path is not None:
             self.config, dataset_stats, weights_file = self._from_hf(
