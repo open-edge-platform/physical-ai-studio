@@ -82,6 +82,13 @@ class RemoteServerUpdate(BaseModel):
     ssh_secret: str | None = Field(default=None, min_length=1, description="Rotate the stored secret")
     ssh_key_passphrase: str | None = Field(default=None, min_length=1, description="Rotate the stored passphrase")
 
+    @model_validator(mode="after")
+    def validate_auth_material(self) -> "RemoteServerUpdate":
+        """Keep the passphrase scoped to key-based authentication."""
+        if self.auth_type is SSHAuthType.PASSWORD and self.ssh_key_passphrase is not None:
+            raise ValueError("ssh_key_passphrase is only valid when auth_type='key'")
+        return self
+
 
 class RemoteServer(BaseModel):
     """Public, sanitized view of a registered SSH remote server.
