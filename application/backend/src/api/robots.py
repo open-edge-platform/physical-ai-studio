@@ -4,8 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 
 from api.dependencies import get_project_id, get_robot_id, get_robot_service
-from schemas import Robot
-from schemas.robot import RobotWithConnectionState
+from schemas.robot import Robot, RobotWithConnectionState
 from services import RobotService
 
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])

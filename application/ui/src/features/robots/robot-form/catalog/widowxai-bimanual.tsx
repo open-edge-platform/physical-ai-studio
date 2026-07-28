@@ -2,9 +2,10 @@ import { Flex, TextField, View } from '@geti-ui/ui';
 import { v4 as uuidv4 } from 'uuid';
 
 import type { SchemaTrossenBimanualPayload } from '../../../../api/openapi-spec';
+import { useCatalogIdentifyMutation } from '../../robot-catalog.hooks';
 import type { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../../robot-types';
 import { useRobotFormFields } from '../provider';
-import { IdentifyRobot, useIdentifyMutation } from './actions';
+import { IdentifyRobot } from './actions';
 import { buildWidowxBody } from './widowxai';
 
 export interface BimanualFormData {
@@ -17,7 +18,7 @@ export const getInitialBimanualFormData = (robot?: SchemaRobot): BimanualFormDat
     payload:
         robot && 'connection_string_left' in robot.payload
             ? robot.payload
-            : { connection_string_left: '', connection_string_right: '', serial_number: '' },
+            : { connection_string_left: '', connection_string_right: '' },
 });
 
 export const buildBimanualBody = (
@@ -40,11 +41,11 @@ export const buildBimanualBody = (
 export const BiManualWidowxAIFormFields = () => {
     const { formData, updateField } = useRobotFormFields<BimanualFormData>();
 
-    const identifyMutation = useIdentifyMutation();
+    const identifyMutation = useCatalogIdentifyMutation();
     const leftIdentifyRobot = buildWidowxBody(
         {
             name: formData.name,
-            payload: { connection_string: formData.payload.connection_string_left, serial_number: '' },
+            payload: { connection_string: formData.payload.connection_string_left },
         },
         'Trossen_WidowXAI_Follower',
         uuidv4()
@@ -52,7 +53,7 @@ export const BiManualWidowxAIFormFields = () => {
     const rightIdentifyRobot = buildWidowxBody(
         {
             name: formData.name,
-            payload: { connection_string: formData.payload.connection_string_right, serial_number: '' },
+            payload: { connection_string: formData.payload.connection_string_right },
         },
         'Trossen_WidowXAI_Follower',
         uuidv4()
@@ -71,13 +72,16 @@ export const BiManualWidowxAIFormFields = () => {
                             updateField('payload', {
                                 ...formData.payload,
                                 connection_string_left,
-                                serial_number: '',
                             });
                         }}
                         placeholder='192.168.1.2'
                     />
                     <View>
-                        <IdentifyRobot identifyMutation={identifyMutation} robot={leftIdentifyRobot} />
+                        <IdentifyRobot
+                            identifyMutation={identifyMutation}
+                            payload={leftIdentifyRobot?.payload}
+                            robotType={'Trossen_WidowXAI_Follower'}
+                        />
                     </View>
                 </Flex>
             </Flex>
@@ -92,13 +96,16 @@ export const BiManualWidowxAIFormFields = () => {
                         updateField('payload', {
                             ...formData.payload,
                             connection_string_right,
-                            serial_number: '',
                         });
                     }}
                     placeholder='192.168.1.3'
                 />
                 <View>
-                    <IdentifyRobot identifyMutation={identifyMutation} robot={rightIdentifyRobot} />
+                    <IdentifyRobot
+                        identifyMutation={identifyMutation}
+                        payload={rightIdentifyRobot?.payload}
+                        robotType={'Trossen_WidowXAI_Follower'}
+                    />
                 </View>
             </Flex>
         </>
