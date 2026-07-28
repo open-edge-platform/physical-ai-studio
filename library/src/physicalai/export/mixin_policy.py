@@ -506,8 +506,10 @@ class ExportablePolicyMixin:
         Args:
             output_path: Directory or file path where the ExecuTorch model will be saved.
                 If directory, creates ``{policy_name}.pte``. If file, uses as-is.
-            input_sample: A sample input tensor dictionary used to trace/export the model.
-                If ``None``, attempts to use the policy's ``sample_input`` property.
+            input_sample: A preprocessed, tensor-only sample dictionary used to trace/export
+                the model. If ``None``, uses the policy's default preprocessed export sample
+                (derived from the ``sample_input`` property). If provided, every value must be
+                a ``torch.Tensor`` — non-tensor entries raise ``ValueError``
             delegate: ExecuTorch delegate backend to use. Defaults to ``None``
                 (uses value from ``ExecuTorchExportParameters``). Supported values:
 
@@ -529,7 +531,8 @@ class ExportablePolicyMixin:
                 implement ``sample_input`` property.
             ImportError: If the required ``executorch`` package (or selected delegate
                 dependencies) is not installed.
-            ValueError: If an unsupported delegate is specified.
+            ValueError: If an unsupported delegate is specified, or if ``input_sample``
+                contains non-tensor entries.
         """
         if ExportBackend.EXECUTORCH not in self.get_supported_export_backends():
             msg = (
@@ -539,15 +542,23 @@ class ExportablePolicyMixin:
             raise NotImplementedError(msg)
 
         if input_sample is None:
-            # Preprocessed sample, matching to_onnx / to_openvino.
             input_sample = self._get_default_export_input_sample()
-
         if input_sample is None:
             msg = (
                 "An input sample must be provided for ExecuTorch export, "
                 "or the policy must implement the `sample_input` property."
             )
             raise RuntimeError(msg)
+
+        # The traced graph only accepts tensors.
+        non_tensor_keys = [key for key, value in input_sample.items() if not isinstance(value, torch.Tensor)]
+        if non_tensor_keys:
+            msg = (
+                f"input_sample for ExecuTorch export must contain only tensors, but these entries are "
+                f"non-tensor: {non_tensor_keys}. Pass a preprocessed tensor-only sample, or pass "
+                f"input_sample=None to use the policy's default preprocessed export sample."
+            )
+            raise ValueError(msg)
 
         model_path = self._prepare_export_path(output_path, ".pte")
         export_dir = model_path.parent
@@ -568,11 +579,8 @@ class ExportablePolicyMixin:
             msg = "executorch package is required for ExecuTorch export. Install with: pip install executorch"
             raise ImportError(msg) from e
 
-        # Drop non-tensor entries (e.g. the raw ``task`` string); the traced
-        # graph only takes tensors.
-        tensor_input_sample = {
-            key: value for key, value in input_sample.items() if isinstance(value, torch.Tensor)
-        }
+        # input_sample is tensor-only here, matching what the traced graph accepts.
+        tensor_input_sample = input_sample
 
         self.model.eval()
         aten_dialect = torch.export.export(

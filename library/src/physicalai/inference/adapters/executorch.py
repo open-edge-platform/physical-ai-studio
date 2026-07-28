@@ -105,7 +105,11 @@ class ExecuTorchAdapter(RuntimeAdapter):
     def _read_input_dtypes(self) -> list[torch.dtype | None]:
         """Read expected dtype per ``forward`` input; ``None`` if non-tensor/unknown."""
         # input_tensor_meta().dtype() returns an ExecuTorch ScalarType int code.
-        from executorch.exir.tensor import ScalarType, enum_to_scalar_map  # noqa: PLC0415
+        try:
+            from executorch.exir.tensor import ScalarType, enum_to_scalar_map  # noqa: PLC0415
+        except ImportError as exc:
+            logger.warning("Could not import ExecuTorch EXIR tensor metadata helpers: %s", exc)
+            return []
 
         dtypes: list[torch.dtype | None] = []
         try:
@@ -148,7 +152,7 @@ class ExecuTorchAdapter(RuntimeAdapter):
         # ExecuTorch requires contiguous inputs.
         return tensor.contiguous()
 
-    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def predict(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:
         """Run inference.
 
         Args:
