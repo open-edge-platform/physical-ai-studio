@@ -52,7 +52,7 @@ describe('RobotsList', () => {
                         id: 'widowx-id',
                         name: 'Test WidowX',
                         type: 'Trossen_WidowXAI_Follower',
-                        payload: { connection_string: '', serial_number: 'widowx-001' },
+                        payload: { connection_string: '' },
                     },
                 ])
             ),

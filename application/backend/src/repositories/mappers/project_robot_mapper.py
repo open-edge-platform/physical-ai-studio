@@ -1,6 +1,6 @@
 from db.schema import ProjectRobotDB
 from repositories.mappers.base_mapper_interface import IBaseMapper
-from schemas.robot import Robot, RobotAdapter, RobotType
+from schemas.robot import Robot, RobotAdapter
 
 
 class ProjectRobotMapper(IBaseMapper):
@@ -23,7 +23,7 @@ class ProjectRobotMapper(IBaseMapper):
             {
                 "id": model.id,
                 "name": model.name,
-                "type": RobotType(model.type),
+                "type": model.type,
                 "payload": model.payload,
                 "created_at": model.created_at,
                 "updated_at": model.updated_at,
