@@ -83,10 +83,10 @@ git clone https://github.com/open-edge-platform/physical-ai-studio.git
 cd physical-ai-studio
 
 # Install and run backend
-cd application/backend && uv sync --extra xpu # or --extra cpu, --extra cuda
+cd application/backend 
 
-# Start the backend
-uv run physicalai-studio serve  # or: ./run.sh
+# Start the backend, or use --extra cpu, --extra cuda
+uv run --extra xpu physicalai-studio serve  # or: ./run.sh
 ```
 
 ```bash

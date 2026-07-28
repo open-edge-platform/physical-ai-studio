@@ -7,6 +7,8 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime import migration
 from alembic.script import ScriptDirectory
+from alembic.script.revision import ResolutionError
+from alembic.util.exc import CommandError
 from db import sync_engine
 from settings import Settings
 
@@ -63,6 +65,12 @@ class MigrationManager:
             command.upgrade(alembic_cfg, "head")
             logger.info("✓ Database migrations completed successfully")
             return True
+        except CommandError as e:
+            if self.settings.allow_unknown_db_revision and isinstance(e.__cause__, ResolutionError):
+                logger.warning(f"{e} Continuing because ALLOW_UNKNOWN_DB_REVISION is enabled.")
+                return True
+            logger.error(f"✗ Database migration failed: {e}")
+            return False
         except Exception as e:
             logger.error(f"✗ Database migration failed: {e}")
             return False
@@ -117,6 +125,9 @@ class MigrationManager:
             return True
 
         except RevisionNotFoundError as e:
+            if self.settings.allow_unknown_db_revision:
+                logger.warning(f"{e} Attempting migrations because ALLOW_UNKNOWN_DB_REVISION is enabled.")
+                return self.run_migrations()
             logger.error(f"Revision not found: {e}")
             return False
         except Exception as e:

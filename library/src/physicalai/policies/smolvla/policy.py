@@ -103,6 +103,9 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         >>> action = policy.select_action(obs)
     """
 
+    model: Any
+    _preprocessor: Any
+
     def __init__(  # noqa: PLR0913
         self,
         # Pretrained model id
@@ -136,6 +139,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         use_random_input_noise: bool = False,
         # Compilation
         compile_model: bool = False,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
         # Decoding
         num_steps: int = 10,
         # Attention utils
@@ -170,6 +177,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 pad_language_to=pad_language_to,
                 use_random_input_noise=use_random_input_noise,
                 compile_model=compile_model,
+                snapflow_enabled=snapflow_enabled,
+                snapflow_alpha=snapflow_alpha,
+                snapflow_lambda=snapflow_lambda,
+                snapflow_num_inference_steps=snapflow_num_inference_steps,
                 num_steps=num_steps,
                 use_cache=use_cache,
                 freeze_vision_encoder=freeze_vision_encoder,
@@ -208,6 +219,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 max_period=max_period,
                 use_random_input_noise=use_random_input_noise,
                 compile_model=compile_model,
+                snapflow_enabled=snapflow_enabled,
+                snapflow_alpha=snapflow_alpha,
+                snapflow_lambda=snapflow_lambda,
+                snapflow_num_inference_steps=snapflow_num_inference_steps,
                 num_steps=num_steps,
                 use_cache=use_cache,
                 freeze_vision_encoder=freeze_vision_encoder,
@@ -289,6 +304,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             use_random_input_noise=self.config.use_random_input_noise,
             tokenizer_max_length=self.config.tokenizer_max_length,
             compile_model=self.config.compile_model,
+            snapflow_enabled=self.config.snapflow_enabled,
+            snapflow_alpha=self.config.snapflow_alpha,
+            snapflow_lambda=self.config.snapflow_lambda,
+            snapflow_num_inference_steps=self.config.snapflow_num_inference_steps,
         )
 
         if weights_file is not None:
@@ -326,6 +345,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         pad_language_to: str = "max_length",
         use_random_input_noise: bool = False,
         compile_model: bool = False,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
         num_steps: int = 10,
         use_cache: bool = True,
         freeze_vision_encoder: bool = True,
@@ -385,6 +408,10 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         hf_config["pad_language_to"] = pad_language_to
         hf_config["use_random_input_noise"] = use_random_input_noise
         hf_config["compile_model"] = compile_model
+        hf_config["snapflow_enabled"] = snapflow_enabled
+        hf_config["snapflow_alpha"] = snapflow_alpha
+        hf_config["snapflow_lambda"] = snapflow_lambda
+        hf_config["snapflow_num_inference_steps"] = snapflow_num_inference_steps
         hf_config["num_steps"] = num_steps
         hf_config["use_cache"] = use_cache
         hf_config["freeze_vision_encoder"] = freeze_vision_encoder

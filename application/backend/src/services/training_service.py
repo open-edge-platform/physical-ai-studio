@@ -1,11 +1,13 @@
 import asyncio
 import multiprocessing as mp
+from collections.abc import Awaitable, Callable
 from multiprocessing.synchronize import Event
 from queue import Empty
 from uuid import UUID
 
 from loguru import logger
 
+from schemas import Job
 from schemas.base_job import JobStatus, JobType
 from schemas.job import TrainJobPayload
 from services.event_processor import EventType
@@ -22,12 +24,19 @@ class TrainingTrackingDispatcher(BaseThreadWorker):
     DB writes so training is never blocked on I/O.
     """
 
-    def __init__(self, job_id: UUID, event_queue: mp.Queue, interrupt_event: Event):
+    def __init__(
+        self,
+        job_id: UUID,
+        event_queue: mp.Queue,
+        interrupt_event: Event,
+        update_progress: Callable[[UUID, int, str | None, dict | None], Awaitable[Job]],
+    ):
         super().__init__(stop_event=interrupt_event)
         self.job_id = job_id
         self.event_queue = event_queue
         self.queue: mp.Queue = mp.Queue()
         self.interrupt_event = interrupt_event
+        self.update_progress = update_progress
 
     async def run_loop(self) -> None:
         while not self.interrupt_event.is_set():
@@ -42,13 +51,7 @@ class TrainingTrackingDispatcher(BaseThreadWorker):
             progress, message, extra_info = self.queue.get_nowait()
         except Empty:
             return False
-        job = await JobService.update_job_status(
-            self.job_id,
-            JobStatus.RUNNING,
-            message=message,
-            progress=progress,
-            extra_info=extra_info,
-        )
+        job = await self.update_progress(self.job_id, progress, message, extra_info)
         self.event_queue.put((EventType.JOB_UPDATE, job))
         return True
 
@@ -70,7 +73,7 @@ class TrainingService:
     """
 
     @staticmethod
-    async def abort_orphan_jobs() -> None:
+    async def abort_orphan_jobs(job_service: JobService) -> None:
         """
         Reconcile RUNNING training jobs left behind by a previous process.
 
@@ -83,7 +86,7 @@ class TrainingService:
         """
         remote_mode = get_settings().training_mode == "remote"
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}
-        running_jobs = await JobService.get_job_list(extra_filters=query)
+        running_jobs = await job_service.get_job_list(extra_filters=query)
         for job in running_jobs:
             remote_job_id = TrainingService._reattachable_remote_job_id(job) if remote_mode else None
             if remote_job_id is not None:
@@ -92,14 +95,14 @@ class TrainingService:
                     job.id,
                     remote_job_id,
                 )
-                await JobService.update_job_status(
+                await job_service.update_job_status(
                     job_id=job.id,
                     status=JobStatus.PENDING,
                     message="Reconnecting to remote training job after restart",
                 )
                 continue
             logger.warning(f"Aborting orphan training job with id: {job.id}")
-            await JobService.update_job_status(
+            await job_service.update_job_status(
                 job_id=job.id,
                 status=JobStatus.FAILED,
                 message="Job aborted due to application shutdown",

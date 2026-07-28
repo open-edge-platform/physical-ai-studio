@@ -46,49 +46,43 @@ class TestReattachOrphans:
         """A RUNNING remote job that recorded its remote id is requeued, not failed."""
         job = _job(_payload(remote_job_id=uuid4()))
 
-        with (
-            patch(f"{MODULE}.get_settings", return_value=_settings(training_mode="remote")),
-            patch(f"{MODULE}.JobService") as MockJobService,
-        ):
-            MockJobService.get_job_list = AsyncMock(return_value=[job])
-            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
+        with patch(f"{MODULE}.get_settings", return_value=_settings(training_mode="remote")):
+            service = MagicMock()
+            service.get_job_list = AsyncMock(return_value=[job])
+            service.update_job_status = AsyncMock(return_value=MagicMock())
 
-            await TrainingService.abort_orphan_jobs()
+            await TrainingService.abort_orphan_jobs(service)
 
-            MockJobService.update_job_status.assert_awaited_once()
-            assert MockJobService.update_job_status.call_args.kwargs["status"] == JobStatus.PENDING
+            service.update_job_status.assert_awaited_once()
+            assert service.update_job_status.call_args.kwargs["status"] == JobStatus.PENDING
 
     @pytest.mark.anyio
     async def test_remote_running_job_without_remote_id_is_failed(self):
         """A RUNNING remote job that never got a remote id cannot resume and is failed."""
         job = _job(_payload(remote_job_id=None))
 
-        with (
-            patch(f"{MODULE}.get_settings", return_value=_settings(training_mode="remote")),
-            patch(f"{MODULE}.JobService") as MockJobService,
-        ):
-            MockJobService.get_job_list = AsyncMock(return_value=[job])
-            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
+        with patch(f"{MODULE}.get_settings", return_value=_settings(training_mode="remote")):
+            service = MagicMock()
+            service.get_job_list = AsyncMock(return_value=[job])
+            service.update_job_status = AsyncMock(return_value=MagicMock())
 
-            await TrainingService.abort_orphan_jobs()
+            await TrainingService.abort_orphan_jobs(service)
 
-            assert MockJobService.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
+            assert service.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
 
     @pytest.mark.anyio
     async def test_local_mode_always_fails_orphans(self):
         """In local mode a remote id is irrelevant; orphan jobs are failed."""
         job = _job(_payload(remote_job_id=uuid4()))
 
-        with (
-            patch(f"{MODULE}.get_settings", return_value=_settings(training_mode="local")),
-            patch(f"{MODULE}.JobService") as MockJobService,
-        ):
-            MockJobService.get_job_list = AsyncMock(return_value=[job])
-            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
+        with patch(f"{MODULE}.get_settings", return_value=_settings(training_mode="local")):
+            service = MagicMock()
+            service.get_job_list = AsyncMock(return_value=[job])
+            service.update_job_status = AsyncMock(return_value=MagicMock())
 
-            await TrainingService.abort_orphan_jobs()
+            await TrainingService.abort_orphan_jobs(service)
 
-            assert MockJobService.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
+            assert service.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
 
     def test_reattachable_remote_job_id_reads_dict_payload(self):
         """Payloads persisted as plain dicts are also understood."""
