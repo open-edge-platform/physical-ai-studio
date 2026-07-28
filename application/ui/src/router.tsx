@@ -1,8 +1,7 @@
 import { Suspense } from 'react';
 
 import { Content, Grid, Heading, IllustratedMessage, Loading, View } from '@geti-ui/ui';
-import { Outlet, redirect } from 'react-router';
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Outlet, redirect } from 'react-router';
 import { path } from 'static-path';
 
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';

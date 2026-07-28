@@ -1,7 +1,7 @@
 import io
 import json
 import zipfile
-from contextlib import ExitStack, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -114,26 +114,16 @@ def _create_model_directory(base_path: Path, files: dict[str, str]) -> Path:
 @contextmanager
 def _mock_services(settings, dataset, job=None):
     """Context manager for common service mocks."""
-    with ExitStack() as stack:
-        # get_settings is sync, not async
-        stack.enter_context(patch("services.model_import_service.get_settings", return_value=settings))
-        stack.enter_context(
-            patch("services.model_import_service.DatasetService.get_dataset_by_id", AsyncMock(return_value=dataset))
-        )
-        stack.enter_context(
-            patch(
-                "services.model_import_service.asyncio.to_thread",
-                AsyncMock(side_effect=lambda fn, *a, **k: fn(*a, **k)),
-            )
-        )
-        if job is not None:
-            stack.enter_context(
-                patch("services.model_import_service.JobService.create_job", AsyncMock(return_value=job))
-            )
-            stack.enter_context(
-                patch("services.model_import_service.ModelService.create_model", AsyncMock(side_effect=lambda m: m))
-            )
-        yield
+    get_dataset = AsyncMock(return_value=dataset)
+    persist_import = AsyncMock(side_effect=lambda _job, model: model)
+    with (
+        patch("services.model_import_service.get_settings", return_value=settings),
+        patch(
+            "services.model_import_service.asyncio.to_thread",
+            AsyncMock(side_effect=lambda fn, *a, **k: fn(*a, **k)),
+        ),
+    ):
+        yield ModelImportService(get_dataset=get_dataset, persist_import=persist_import)
 
 
 # ---------------------------------------------------------------------------
@@ -145,8 +135,8 @@ def _mock_services(settings, dataset, job=None):
 async def test_import_model_directory_success(tmp_path, project_id, dataset_id, settings, dataset, job):
     source_dir = _create_model_directory(tmp_path, _base_files())
 
-    with _mock_services(settings, dataset, job):
-        model = await ModelImportService().import_model_directory(
+    with _mock_services(settings, dataset, job) as service:
+        model = await service.import_model_directory(
             source_dir=source_dir,
             project_id=project_id,
             dataset_id=dataset_id,
@@ -163,8 +153,8 @@ async def test_import_model_directory_success(tmp_path, project_id, dataset_id, 
 async def test_import_model_directory_move_removes_source(tmp_path, project_id, dataset_id, settings, dataset, job):
     source_dir = _create_model_directory(tmp_path, _base_files())
 
-    with _mock_services(settings, dataset, job):
-        model = await ModelImportService().import_model_directory(
+    with _mock_services(settings, dataset, job) as service:
+        model = await service.import_model_directory(
             source_dir=source_dir,
             project_id=project_id,
             dataset_id=dataset_id,
@@ -178,8 +168,9 @@ async def test_import_model_directory_move_removes_source(tmp_path, project_id, 
 
 @pytest.mark.anyio
 async def test_import_model_directory_rejects_nonexistent(tmp_path, project_id, dataset_id):
+    service = ModelImportService(get_dataset=AsyncMock(), persist_import=AsyncMock())
     with pytest.raises(InvalidArchiveError, match="does not exist"):
-        await ModelImportService().import_model_directory(
+        await service.import_model_directory(
             source_dir=tmp_path / "nonexistent",
             project_id=project_id,
             dataset_id=dataset_id,
@@ -191,19 +182,16 @@ async def test_import_model_directory_rejects_nonexistent(tmp_path, project_id, 
 async def test_import_model_directory_cleans_up_on_failure(tmp_path, project_id, dataset_id, settings, dataset):
     source_dir = _create_model_directory(tmp_path, _base_files())
 
+    get_dataset = AsyncMock(return_value=dataset)
+    persist_import = AsyncMock(side_effect=RuntimeError("fail"))
     with (
         patch("services.model_import_service.get_settings", return_value=settings),
-        patch("services.model_import_service.DatasetService.get_dataset_by_id", AsyncMock(return_value=dataset)),
-        patch(
-            "services.model_import_service.JobService.create_job",
-            AsyncMock(side_effect=RuntimeError("fail")),
-        ),
         patch(
             "services.model_import_service.asyncio.to_thread", AsyncMock(side_effect=lambda fn, *a, **k: fn(*a, **k))
         ),
         pytest.raises(RuntimeError, match="fail"),
     ):
-        await ModelImportService().import_model_directory(
+        await ModelImportService(get_dataset=get_dataset, persist_import=persist_import).import_model_directory(
             source_dir=source_dir,
             project_id=project_id,
             dataset_id=dataset_id,

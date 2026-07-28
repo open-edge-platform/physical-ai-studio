@@ -3,7 +3,6 @@ from unittest.mock import MagicMock
 from physicalai.robot.so101.constants import SO101_JOINT_ORDER
 
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
-from schemas.robot import RobotType
 
 
 def _make_mock_robot() -> MagicMock:
@@ -22,7 +21,7 @@ def _make_adapter(
     mode: str = "follower",
 ) -> tuple[PhysicalAIRobotAdapter, MagicMock]:
     robot = _make_mock_robot()
-    robot_type = RobotType.SO101_FOLLOWER if mode == "follower" else RobotType.SO101_LEADER
+    robot_type = "SO101_Follower" if mode == "follower" else "SO101_Leader"
     robot_role = "follower" if mode == "follower" else "leader"
     adapter = PhysicalAIRobotAdapter(
         robot=robot,
@@ -44,11 +43,11 @@ class TestProperties:
 
     def test_robot_type_follower(self):
         adapter, _ = _make_adapter(mode="follower")
-        assert adapter.robot_type == RobotType.SO101_FOLLOWER
+        assert adapter.robot_type == "SO101_Follower"
 
     def test_robot_type_teleoperator(self):
         adapter, _ = _make_adapter(mode="teleoperator")
-        assert adapter.robot_type == RobotType.SO101_LEADER
+        assert adapter.robot_type == "SO101_Leader"
 
     def test_is_connected_delegates_to_robot(self):
         adapter, robot = _make_adapter()

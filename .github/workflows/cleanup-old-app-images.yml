@@ -1,6 +1,7 @@
 name: Cleanup Old Application Container Images
 
-# Deletes old physical-ai-studio-cpu / physical-ai-studio-xpu / physical-ai-studio-cuda container image versions from GHCR,
+# Deletes old physical-ai-studio-cpu / physical-ai-studio-xpu / physical-ai-studio-cuda and
+# physicalai-trainer-xpu / physicalai-trainer-cuda container image versions from GHCR,
 # while always retaining release and release-candidate (RC) images.
 #
 # This workflow delegates to the shared `cleanup-images` composite action in the
@@ -16,7 +17,7 @@ name: Cleanup Old Application Container Images
 #   most recent `min_versions_to_keep` are kept; older ones are deleted.
 #
 # Supports a dry-run mode (default) that previews deletions without removing
-# anything.
+# anything for dispatched runs.
 
 on:
   workflow_dispatch:
@@ -37,6 +38,11 @@ on:
 
 permissions: {} # No permissions by default
 
+# Ensure only one cleanup runs at a time.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 jobs:
   cleanup-old-images:
     name: Delete old GHCR application images
@@ -56,5 +62,7 @@ jobs:
             physical-ai-studio-cpu
             physical-ai-studio-xpu
             physical-ai-studio-cuda
-          min-versions-to-keep: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.min_versions_to_keep || 10 }}
-          dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' && 'false' || 'true' }}
+            physicalai-trainer-xpu
+            physicalai-trainer-cuda
+          min-versions-to-keep: ${{ github.event_name == 'workflow_dispatch' && inputs.min_versions_to_keep || 10 }}
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}

@@ -1,6 +1,6 @@
 import { Flex, Heading, Key, Text, View } from '@geti-ui/ui';
 import { clsx } from 'clsx';
-import { NavLink } from 'react-router-dom';
+import { NavLink } from 'react-router';
 
 import { $api } from '../../../api/client';
 import { SchemaProjectInput } from '../../../api/openapi-spec';

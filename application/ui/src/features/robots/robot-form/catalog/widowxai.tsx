@@ -1,10 +1,10 @@
 import { Flex, TextField } from '@geti-ui/ui';
-import { v4 as uuidv4 } from 'uuid';
 
 import type { SchemaTrossenSingleArmPayload } from '../../../../api/openapi-spec';
+import { useCatalogIdentifyMutation } from '../../robot-catalog.hooks';
 import type { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../../robot-types';
 import { useRobotFormFields } from '../provider';
-import { IdentifyRobot, useIdentifyMutation } from './actions';
+import { IdentifyRobot } from './actions';
 
 export interface WidowxFormData {
     name: string;
@@ -13,8 +13,7 @@ export interface WidowxFormData {
 
 export const getInitialWidowxFormData = (robot?: SchemaRobot): WidowxFormData => ({
     name: robot?.name ?? '',
-    payload:
-        robot && 'connection_string' in robot.payload ? robot.payload : { connection_string: '', serial_number: '' },
+    payload: robot && 'connection_string' in robot.payload ? robot.payload : { connection_string: '' },
 });
 
 export const buildWidowxBody = (
@@ -35,10 +34,8 @@ export const buildWidowxBody = (
 };
 
 export const WidowxAIFormFields = () => {
-    const { formData, updateField, activeType } = useRobotFormFields<WidowxFormData>();
-
-    const identifyMutation = useIdentifyMutation();
-    const identifyRobot = buildWidowxBody(formData, activeType, uuidv4());
+    const { formData, updateField } = useRobotFormFields<WidowxFormData>();
+    const identifyMutation = useCatalogIdentifyMutation();
 
     return (
         <Flex gap='size-100' justifyContent={'space-between'} alignItems={'end'}>
@@ -48,12 +45,12 @@ export const WidowxAIFormFields = () => {
                 width='100%'
                 value={formData.payload.connection_string}
                 onChange={(connection_string) => {
-                    updateField('payload', { ...formData.payload, connection_string, serial_number: '' });
+                    updateField('payload', { ...formData.payload, connection_string });
                 }}
                 placeholder='192.168.1.2'
             />
             <Flex gap='size-100'>
-                <IdentifyRobot identifyMutation={identifyMutation} robot={identifyRobot} />
+                <IdentifyRobot identifyMutation={identifyMutation} />
             </Flex>
         </Flex>
     );

@@ -1,8 +1,7 @@
 import { Suspense, useState } from 'react';
 
 import { Button, ButtonGroup, Content, Dialog, Divider, Heading, ProgressCircle } from '@geti-ui/ui';
-import { useNavigate } from 'react-router';
-import { createSearchParams } from 'react-router-dom';
+import { createSearchParams, useNavigate } from 'react-router';
 
 import { $api } from '../../api/client';
 import { SchemaModel } from '../../api/openapi-spec';
