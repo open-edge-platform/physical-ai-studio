@@ -258,8 +258,8 @@ def detect_adarms_from_checkpoint(weights_file: Path, hf_config: dict[str, Any])
         weights_file: Path to the checkpoint's ``model.safetensors``.
         hf_config: Mutable config dict that will be updated in-place.
     """
-    if hf_config.get("use_adarms"):
-        return  # Already set — nothing to do
+    if hf_config.get("use_adarms") and hf_config.get("adarms_cond_dim") is not None:
+        return  # Already fully specified — nothing to do
 
     try:
         from safetensors import safe_open  # noqa: PLC0415
@@ -279,7 +279,10 @@ def detect_adarms_from_checkpoint(weights_file: Path, hf_config: dict[str, Any])
                     )
                     return
     except Exception:  # noqa: BLE001
-        logger.debug("pi05 | adarms auto-detection failed (safetensors unavailable or key scan error)")
+        logger.debug(
+            "pi05 | adarms auto-detection failed (safetensors key scan error)",
+            exc_info=True,
+        )
 
 
 def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:

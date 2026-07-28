@@ -90,6 +90,11 @@ class ACT(ExportablePolicyMixin, Policy):
     when ``dataset_stats`` is provided (e.g. when restoring from a checkpoint).
 
     Args:
+        pretrained_name_or_path: HuggingFace repo ID or local directory containing a pretrained
+            LeRobot ACT checkpoint. When provided, the checkpoint's ``config.json`` and weights
+            override most of the other constructor arguments below (architecture, normalization
+            stats, etc.); only arguments unrelated to the checkpoint (e.g. ``compile_model``)
+            are respected as-is.
         n_obs_steps: Number of observation steps to pass to the policy.
         chunk_size: Size of the action prediction chunk in environment steps.
         n_action_steps: Number of action steps to execute per policy invocation.

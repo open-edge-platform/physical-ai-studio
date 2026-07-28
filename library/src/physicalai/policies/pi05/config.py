@@ -168,3 +168,7 @@ class Pi05Config(Config):
         if self.snapflow_num_inference_steps < 1:
             msg = f"snapflow_num_inference_steps must be >= 1, got {self.snapflow_num_inference_steps}"
             raise ValueError(msg)
+
+        if self.use_adarms and self.adarms_cond_dim is None:
+            msg = "adarms_cond_dim must be set when use_adarms is True"
+            raise ValueError(msg)
