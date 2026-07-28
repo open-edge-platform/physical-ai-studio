@@ -3,9 +3,10 @@
 ## Overview
 
 Add a managed "remote server" concept to Physical AI Studio. Users register a
-remote GPU/XPU server with SSH credentials and a target device type through the
-web UI. When a training job is started, the backend SSHes into the selected
-server, resolves the device-specific trainer image from the local Git SHA (or
+remote GPU/XPU server, select a deployment-provided SSH credential profile, and
+choose a target device type through the web UI. When a training job is started,
+the backend SSHes into the selected server, resolves the device-specific trainer
+image from the local Git SHA (or
 `latest` when the SHA-tagged image cannot be resolved), starts one isolated
 trainer container for the job, runs the job through the existing HTTP
 `RemoteTrainingBackend`, and removes the container when the job completes.
@@ -30,10 +31,12 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
   (see Step 5) and is documented next to the schema fields. Do not discriminate
   purely on "`remote_server_id` is not None" — the enum must stay the single
   source of truth so the payload cannot express two targets at once.
-- **No new required settings:** SSH provisioning must not require any global
-  setting. It is configured entirely through the `RemoteServerDB` record
-  referenced by `remote_server_id`, mirroring how `remote_trainer_id` already
-  works for the direct-URL registry.
+- **Credential configuration:** SSH credentials are configured by the deployment
+  operator through an environment-injected profile map. `RemoteServerDB` stores
+  only a validated, non-secret `credential_profile` identifier; it never stores
+  an SSH private key, password, or passphrase. The backend resolves the profile
+  only while establishing an SSH connection and fails closed when it is absent
+  or invalid.
 - **Device listing:** `SystemService.get_available_training_devices` already
   always reports the Studio host's local devices (`mode="local"`); per-trainer
   device listing for the direct-URL registry goes through
@@ -47,20 +50,19 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
 
 | Topic                           | Decision                                                                                                                                                                                                                                                                                                                                               |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Secret storage                  | Fernet symmetric encryption at rest; key from an env var.                                                                                                                                                                                                                                                                                              |
-| Encrypted (confidential) fields | Fernet-encrypt only the SSH auth material: `ssh_secret_encrypted` (private key for `auth_type=key`, or password for `auth_type=password`) and `ssh_key_passphrase_encrypted` (nullable, key auth only).                                                                                                                                                |
+| SSH login credentials           | The deployment injects SSH credential profiles through the backend environment (for example, `REMOTE_SERVER_SSH_CREDENTIALS_JSON` or an equivalent secret-injected source). Profile values include the SSH username, authentication method, and private key/password/passphrase as needed; they are never persisted by Studio.                                                                                |
+| Credential-profile persistence  | `RemoteServerDB` stores only an allowlisted, non-secret `credential_profile` identifier. The same identifier is snapshotted with provisioning state for restart reattach; secret values are never stored in `RemoteServerDB`, `JobProvisioningDB`, payload JSON, logs, API responses, UI state, or trainer images.                                                                                       |
 | Non-encrypted, never-serialized | `host_key` is integrity data (the server's public host key for TOFU), not a secret: stored in plaintext, but never returned in API responses.                                                                                                                                                                                                          |
-| Secret key lifecycle            | Fernet key lives in an env var (e.g. `REMOTE_SERVER_SECRET_KEY`), never in the DB. Losing/rotating the key makes stored secrets undecryptable, so document that rotating the key requires re-entering each server's secret.                                                                                                                            |
-| Auth material                   | `auth_type=key` supports passphrase-protected private keys via an optional encrypted `ssh_key_passphrase`; `auth_type=password` stores the encrypted password.                                                                                                                                                                                         |
+| Profile lifecycle               | Operators add, rotate, or remove credentials by updating the deployment's secret-injected environment and restarting/redeploying Studio. Every Studio instance eligible to provision or reattach jobs must receive the relevant profiles. Users cannot upload, edit, or rotate SSH secrets through the API or UI in this initial scope.                                                                       |
 | Host key verification           | Pin the server host key on first successful preflight (TOFU), store it with the record, and verify it (fail-closed) on every later connect. A mismatch blocks the job/preflight with a clear error.                                                                                                                                                    |
 | Command safety                  | All remote commands run as argument arrays (no shell string interpolation). Image names, container names, labels, and device arguments come from trusted application constants or validated identifiers, not arbitrary user input.                                                                                                                     |
 | Trainer distribution            | Publish dedicated `physicalai-trainer-cuda` and `physicalai-trainer-xpu` OCI images. Do not reuse the full Studio application images as trainer images.                                                                                                                                                                                                |
 | Trainer launch                  | Prefer the device-specific image tagged with the local Git SHA; use `latest` only when that SHA-tagged image cannot be resolved. Resolve and record the selected image's immutable digest, then run `physicalai-trainer` in a job-scoped Docker container bound only to remote loopback.                                                               |
-| Trainer lifecycle               | One container per job. Persist the container id/name, image digest, remote published port, and local tunnel port so orphans can be swept after a crash.                                                                                                                                                                                                |
+| Trainer lifecycle               | One container per job. Persist the container id/name, image digest, remote published port, local tunnel port, and non-secret credential-profile identifier so orphans can be swept and recoverable jobs reattached after a crash.                                                                                                                     |
 | Concurrency                     | Reuse the existing **per-execution-target** serialization in `TrainingWorker.run_loop`: one job at a time per target, jobs on distinct targets run concurrently. SSH jobs need their own target key (next row). Throttle status/preflight SSH connections per server with short timeouts so UI polling cannot disrupt a running job.                   |
 | Execution target key            | An SSH job's target key must be `ssh:<remote_server_id>`. Reusing the existing `remote:<remote_trainer_id>` branch is **not** acceptable: SSH jobs carry no `remote_trainer_id`, so every SSH job on every server would collapse onto the single key `remote:None`. `TrainingWorker._target_key` must be extended explicitly.                          |
 | Job target discriminator        | Add a third `TrainingTarget.SSH` member rather than overloading `REMOTE` with an optional `remote_server_id`. Overloading `REMOTE` breaks `get_training_backend` (raises when `remote_trainer_url is None`) and the worker's `reattaching` check.                                                                                                      |
-| Backend restart behavior        | **Reattach.** On startup, for each non-terminal job with a `JobProvisioningDB` row, re-open the SSH tunnel to the persisted `remote_port`/`container_id`, re-verify `/health` and image digest, and resume streaming. Only genuinely orphaned containers are swept. See [Restart and Reattach](#restart-and-reattach).                                 |
+| Backend restart behavior        | **Reattach.** On startup, for each non-terminal job with a `JobProvisioningDB` row, resolve its persisted credential-profile identifier from the environment, re-open the SSH tunnel to the persisted `remote_port`/`container_id`, re-verify `/health` and image digest, and resume streaming. Only genuinely orphaned containers are swept. See [Restart and Reattach](#restart-and-reattach). |
 | Tunnel drop mid-training        | **Reconnect and resume.** A dropped tunnel does not fail the job. Use SSH keepalives, re-open the forward against the still-running container, and resume streaming. Consistent with the reattach decision above.                                                                                                                                      |
 | Bastion / `ProxyJump`           | **Out of scope.** All target servers are directly reachable from where Studio runs. Document the limitation; do not add a hop config field.                                                                                                                                                                                                            |
 | Build revision source           | Read the Studio build revision from a baked-in OCI label / build arg / `../../../VERSION`, **not** `git rev-parse HEAD`. The backend ships inside a container with no `.git`, so a git-only lookup would silently make `latest` the permanent production path. Git is a developer-mode fallback only.                                               |
@@ -78,7 +80,6 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
 | GPU availability                | Before launching training, check the server GPU is free. CUDA: reliable via `nvidia-smi` compute-apps + memory. XPU: best-effort via `xpu-smi stats` / memory heuristic. If occupied, the job **stays pending with backoff** in a visible "waiting for GPU" state and a give-up timeout — it is not failed immediately. See Step 4.                    |
 | Backend authorization           | **None today — single trusted local user.** Anyone who can reach the API can register a server and submit a job, which grants root-equivalent execution on that host. Therefore remote SSH training ships **feature-flagged off by default**, and the trust assumption is stated plainly in the docs. See Step 8.                                      |
 | Progress reporting              | Phase-windowed 0–100 bar plus a structured `phase` descriptor in `extra_info` so the UI shows a stepper (connect → image pull → verify → start → upload → train → download). Indeterminate setup phases stream sanitized command output + heartbeats. **One phase table for all targets** — the ~1–2% shift for local and direct-URL jobs is accepted. |
-| Fernet key fingerprint          | **Store a key fingerprint/version alongside each ciphertext** so records encrypted under a lost or rotated key are identifiable in the UI before provisioning fails. Additive follow-up migration on `remote_servers`.                                                                                                                                 |
 
 ## Architecture Context
 
@@ -107,55 +108,54 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
 
 ## Implementation Steps
 
-### 1. Persist servers with encrypted secrets — **Done**
+### 1. Persist servers with credential-profile references
 
-Implemented on `albert/ssh-server-persistence`. Recorded here as the shipped
-shape, not as remaining work.
+The prior persisted-secret shape on `albert/ssh-server-persistence` is
+superseded by this temporary environment-backed login design and requires a
+migration before this feature ships.
 
-- `RemoteServerDB` in `../../src/db/schema.py` with `id`, `name`,
-  `host`, `port`, `username`, `auth_type` (`SSHAuthType`), `device_type`
-  (`DeviceType`), `created_at`, `updated_at`, plus:
-  - **Fernet-encrypted (confidential):** `ssh_secret_encrypted` (private key or
-    password), `ssh_key_passphrase_encrypted` (nullable, key auth only).
+- `RemoteServerDB` in `../../src/db/schema.py` with `id`, `name`, `host`,
+  `port`, non-secret `credential_profile`, `device_type` (`DeviceType`),
+  `created_at`, and `updated_at`, plus:
+  - `credential_profile` must be a stable, allowlisted identifier resolvable by
+    the backend's environment-backed profile resolver. It must not contain a
+    username, private key, password, passphrase, or other secret value.
   - **Plaintext but never serialized:** `host_key` (pinned public host key for
     TOFU verification — integrity data, not a secret, so no encryption needed).
   - **Last-check summary:** `last_check_status`, `last_check_at`,
     `last_check_latency_ms`, `last_check_reason_code`. These exist so a
     transient preflight failure updates status instead of destroying the record.
-  - A `uq_remote_servers_host_port_username` unique constraint prevents
+  - A uniqueness constraint over host, port, and credential profile prevents
     duplicate registrations of the same endpoint.
 - `JobProvisioningDB` (separate table keyed by `job_id`, **not** the job payload
   JSON) holds per-job provisioning state so a crashed backend can sweep or
   reclaim an orphaned container from durable, queryable columns: `image_ref`,
   `image_fallback_reason`, `image_digest`, `container_id`, `container_name`,
-  `remote_port`, `local_tunnel_port`, `trainer_build_version`,
+  `remote_port`, `local_tunnel_port`, `credential_profile`, `trainer_build_version`,
   `trainer_protocol_version`.
 - Alembic migration `d4f8a1c9b3e6_add_remote_servers.py`.
 - `repositories/remote_server_repo.py`, `repositories/job_provisioning_repo.py`,
   and mappers under `repositories/mappers/`.
-- `schemas/remote_server.py`, `schemas/job_provisioning.py` — the encrypted
-  fields and `host_key` are never serialized; asserted by
+- `schemas/remote_server.py`, `schemas/job_provisioning.py` — no schema accepts
+  or returns SSH credential values; `host_key` is never serialized; asserted by
   `tests/schemas/test_remote_server.py`.
 - `services/remote_server_service.py` and the CRUD router `api/remote_servers.py`.
-- `REMOTE_SERVER_SECRET_KEY` in `settings.py` (`remote_server_secret_key`,
-  default `None`) with lazy, fail-closed cipher construction in
-  `core/secret_encryption.py` (`RemoteServerSecretKeyMissingError`).
+- A credential-profile resolver reads the environment-injected profile map and
+  fails closed with an actionable `RemoteServerCredentialProfileMissingError`
+  (or equivalent) when the selected profile is absent or malformed.
 
 **Remaining follow-ups on this step:**
 
-- **Store a Fernet key fingerprint/version alongside each ciphertext** (agreed).
-  Add an additive migration on `remote_servers` carrying, for example, a short
-  non-reversible digest of the active key. On read, compare it to the currently
-  configured key so records encrypted under a lost or rotated key are
-  _identifiable up front_ and can be flagged as "secret needs re-entry" in the
-  list UI, instead of failing opaquely at provisioning time. The fingerprint must
-  not weaken the key: store a truncated hash of the key, never the key itself.
-- Define the "key not configured" UX: `RemoteServerSecretKeyMissingError` must
-  surface as an actionable "set `REMOTE_SERVER_SECRET_KEY`" message on the
-  training-targets screen, not a 500.
+- Migrate/remove legacy `ssh_secret_encrypted`,
+  `ssh_key_passphrase_encrypted`, and related authentication columns. Existing
+  records require an administrator-selected credential-profile assignment.
+- Define the "credential profile unavailable" UX: a missing or invalid profile
+  must surface as an actionable deployment-configuration message on the
+  training-targets screen, not a 500. Never include profile contents in errors.
 - The status endpoint (e.g. `POST /api/remote-servers/{id}:check` and/or
   `GET /api/remote-servers/{id}/status`) still needs to run the Step 2 preflight
-  and return a structured result the UI can render (reachable, authenticated,
+  and return a structured result the UI can render (credential profile available,
+  reachable, authenticated,
   Docker usable, registry reachable, driver present/version, container device
   probe result, image/protocol version, last-checked timestamp, and whether the
   server is currently in use by a running job or waiting on a busy GPU).
@@ -167,7 +167,9 @@ container must not run inside a create/update request handler.
 
 **Tier 1 — cheap checks, gate the save (seconds, bounded timeout):**
 
-- reachability and authentication,
+- resolve the selected credential profile from the environment; reject an
+  unknown or malformed profile without persisting resolved credential values,
+- reachability and authentication using the resolved profile,
 - **host key**: on the first successful preflight, pin (store) the presented
   host key on the record (TOFU); on later connects, verify it and fail-closed
   on mismatch,
@@ -256,9 +258,11 @@ Per job, on the selected server:
 
 - **Safety invariants for every remote command** — run commands as argument
   arrays (never interpolate config fields into a shell string), verify the
-  pinned host key on connect, derive image names from the configured device
-  type, validate job ids used in names/labels, and never pass user-controlled
-  strings as Docker options.
+  pinned host key on connect, resolve the validated credential profile only in
+  memory immediately before connecting, derive image names from the configured
+  device type, validate job ids used in names/labels, and never pass
+  user-controlled strings as Docker options. Do not persist, log, or include
+  resolved credential values in commands, progress, errors, or telemetry.
 - **Pre-launch GPU availability check** — before pulling/launching, verify the
   server's GPU is not already occupied by another task (foreign training,
   inference server, notebook, etc.):
@@ -316,9 +320,9 @@ Per job, on the selected server:
 - **Bastion / `ProxyJump` is out of scope.** All target servers are assumed
   directly reachable from where Studio runs. Document the limitation; do not add
   a hop configuration field.
-- Persist the container id/name, resolved image digest, remote port, and local
-  tunnel port for the job (Step 1, `JobProvisioningDB`) so startup reattach and
-  the orphan sweep can find it.
+- Persist the container id/name, resolved image digest, remote port, local
+  tunnel port, and non-secret credential-profile identifier for the job (Step 1,
+  `JobProvisioningDB`) so startup reattach and the orphan sweep can find it.
 - Poll `/health` with a bounded timeout and verify the reported image/protocol
   metadata matches the inspected image before dataset upload.
 - Report progress for each stage via the phase-windowed model (see
@@ -404,7 +408,9 @@ would discard hours of completed GPU work on every restart or redeploy.
 **Startup recovery procedure.** For each `JobProvisioningDB` row whose job is in
 a non-terminal state:
 
-1. Connect to the server and verify the pinned host key (fail-closed as usual).
+1. Resolve the persisted credential-profile identifier from the current backend
+   environment, then connect to the server and verify the pinned host key
+   (fail-closed as usual).
 2. Inspect the persisted `container_id` / `container_name`. Confirm it exists, is
    running, and carries this deployment's management labels including
    `backend_instance_id`.
@@ -424,6 +430,10 @@ a non-terminal state:
 - Digest mismatch → treat as untrusted; tear down and fail.
 - Host key mismatch → fail-closed, and do **not** tear down (we cannot prove the
   host is the one we provisioned on).
+- Credential profile unavailable or invalid → mark the job failed with an
+  actionable deployment-configuration message. Do not attempt an unauthenticated
+  fallback or expose profile contents; do not tear down when host identity and
+  container ownership cannot be established.
 - The remote port is no longer bound / reachable → tear down and fail.
 
 **Interaction with the orphan sweep (Step 4).** Reattach runs _before_ the sweep.
@@ -442,8 +452,8 @@ forward and resume streaming" code path.
   `../../src/schemas/job.py`, alongside the existing
   `remote_trainer_id`/`remote_trainer_url` fields for the direct-URL registry,
   and add the `TrainingTarget.SSH` member plus validator rules from Step 5.
-- Validate it in `JobService.submit_train_job` (reject if the server is unknown
-  or its last preflight failed).
+- Validate it in `JobService.submit_train_job` (reject if the server is unknown,
+  its credential profile is unavailable, or its last preflight failed).
 - Resolve the server in `../../src/workers/training_worker.py` and
   pass it into the backend factory (Step 5). Update `_target_key` (Step 5).
 - Serve the server's **configured** `device_type` from the DB record via the
@@ -502,8 +512,9 @@ used by robots and cameras (`routes/robots/layout.tsx` + `robot.tsx`).
 
 - Build out the list/detail split: list of targets (name, type badge, host,
   device type, status badge) with a "New" action; create/edit form for SSH
-  entries covering name, host, port, username, auth type (SSH key or password)
-  with a secret field, and device type (CUDA/XPU); and a detail/status view.
+  entries covering name, host, port, non-secret credential-profile selection,
+  and device type (CUDA/XPU); and a detail/status view. The UI must not provide
+  key, password, or passphrase fields in this initial scope.
 - **Status view** — driven by the status endpoint (Step 1): reachable,
   authenticated, Docker usable, registry reachable, driver present + version,
   container device probe, compatible image version (or "protocol unknown" for a
@@ -511,9 +522,8 @@ used by robots and cameras (`routes/robots/layout.tsx` + `robot.tsx`).
   "waiting for GPU" indicator. Add a "Test connection" button that runs the
   Tier 2 verification (Step 2) with progress, and reflect live state with a
   status badge (Healthy / Unreachable / Misconfigured / Busy / Checking).
-- Surface a distinct, actionable state when `REMOTE_SERVER_SECRET_KEY` is not
-  configured, or when a record's stored key fingerprint does not match the
-  active key (secret needs re-entry after rotation).
+- Surface a distinct, actionable "Credential profile unavailable" state when
+  the selected profile is missing or invalid in the backend environment.
 - **Data layer** — use the generated `$api` hooks (`$api.useQuery` /
   `$api.useMutation`) against the new endpoints, following existing route
   patterns; never render secret material returned from the API (it never is).
@@ -544,10 +554,11 @@ forces the following:
   this feature means anyone who can reach the Studio API can execute code as
   root on every registered server. Do not enable it on a network-exposed Studio
   instance.
-- **Blast radius of a compromised backend:** it holds Fernet-decryptable SSH
-  credentials for every registered server. A single compromise is a compromise
-  of the whole GPU fleet. Note this explicitly; it is the strongest argument for
-  a dedicated, unprivileged, per-purpose SSH account.
+- **Blast radius of a compromised backend/runtime:** it can use every SSH
+  credential profile injected into its environment. A single compromise can
+  compromise the corresponding GPU fleet. Database exfiltration alone must not
+  reveal usable SSH credentials; restrict environment access and inject only the
+  least-privilege profiles required by this deployment.
 
 Record in the threat model at minimum:
 
@@ -562,10 +573,12 @@ Record in the threat model at minimum:
 
 #### Docs
 
-- Extend `../../../trainer/README.md` and backend docs with the secret/trust
-  and provisioning model, Fernet key setup, key rotation/loss remediation, host
-  setup for CUDA/XPU, XPU limitations, image verification, and cleanup/recovery
-  procedures.
+- Extend `../../../trainer/README.md` and backend docs with the credential-profile
+  environment contract, secure deployment injection, profile naming and
+  selection, rotation by redeploy, multi-instance reattach requirements, missing
+  profile recovery, the fact that Studio stores no SSH credentials in its
+  database, host setup for CUDA/XPU, XPU limitations, image verification, and
+  cleanup/recovery procedures.
 
 #### Tests
 
@@ -576,8 +589,11 @@ Record in the threat model at minimum:
   - host-key mismatch fails-closed,
   - config fields with shell metacharacters are rejected / cannot inject
     commands,
-  - secret material (`ssh_secret_encrypted`, `ssh_key_passphrase_encrypted`,
-    `host_key`) is never serialized in API responses,
+  - no server or provisioning schema accepts or serializes private keys,
+    passwords, passphrases, or `host_key`; only non-secret credential-profile
+    identifiers may be returned,
+  - unknown or malformed credential profiles fail preflight, provisioning, and
+    reattach closed without exposing profile contents,
   - registry/image pull failures return a clear error,
   - an incompatible or incorrectly signed image is rejected before upload,
   - a resolvable SHA-tagged image is selected instead of `latest`,
@@ -596,10 +612,11 @@ Record in the threat model at minimum:
     embeds `None`,
   - two SSH jobs on two different servers run concurrently; two on the same
     server serialize,
-  - **reattach**: after a simulated backend restart, a still-running container is
-    reclaimed, the tunnel is re-opened on a fresh local port, and streaming
-    resumes; and each failure branch (container gone, `/health` never ready,
-    digest mismatch, host-key mismatch, port unreachable) behaves as specified,
+  - **reattach**: after a simulated backend restart with the same credential
+    profile available, a still-running container is reclaimed, the tunnel is
+    re-opened on a fresh local port, and streaming resumes; and each failure
+    branch (container gone, `/health` never ready, digest mismatch, host-key
+    mismatch, profile unavailable, port unreachable) behaves as specified,
   - **sweep ordering**: reattach runs before the sweep, so a recoverable
     container is never removed,
   - a dropped SSH tunnel mid-training reconnects and resumes rather than failing
@@ -609,13 +626,14 @@ Record in the threat model at minimum:
   - a direct-URL trainer reporting no protocol version is accepted
     (grandfathered) while an SSH image reporting no protocol version is rejected
     before dataset upload,
-  - a record whose stored Fernet key fingerprint does not match the active key is
-    flagged as needing re-entry rather than failing at provisioning time,
+  - credential values never appear in logs, exceptions, streamed command output,
+    job messages, telemetry, or persisted provisioning rows,
   - SSH job submission is rejected when the backend-side feature switch is off,
   - streamed remote command output is sanitized/capped before becoming a
     `message`.
-- Add at least one **integration test against a containerized `sshd`**. Every
-  test listed above is otherwise mock-level, which cannot catch host-key,
+- Add at least one **integration test against a containerized `sshd`** with
+  credentials injected through the test process environment/profile resolver.
+  Every test listed above is otherwise mock-level, which cannot catch host-key,
   tunnel, or auth-negotiation regressions.
 - Add UI tests for the remote server management screen (list/detail render,
   create/edit form validation, status badge states, and the "Test connection"
@@ -764,7 +782,9 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
   resolution open SSH connections from API request handlers, which can run while
   a job trains on the same server. Throttle these per server (short timeouts,
   limited concurrency) so UI polling cannot disrupt provisioning or pile up
-  connections, and give the UI explicit "Checking" loading states.
+  connections, resolve credentials only through the selected non-secret profile
+  identifier, and give the UI explicit "Checking" loading states. Do not cache
+  or persist resolved credential values beyond the active connection.
 - Optional future safety net: a per-server "busy" flag so a job whose selected
   server is occupied is left pending rather than double-provisioned.
 - Per-server parallelism (two different servers at once) already falls out of
@@ -823,3 +843,8 @@ not open questions.
 12. **No bastion support** — declared out of scope. If a future target sits
     behind a jump host, the SSH transport will need a hop configuration; keep the
     transport abstraction from hard-coding a single-hop assumption where cheap.
+13. **Credential-profile availability** — a restart or multi-instance deployment
+    without the profile required by a running job cannot reattach. Inject the
+    same relevant profile map into every instance eligible to run or recover SSH
+    jobs, fail closed when a profile is unavailable, and never fall back to a
+    different profile implicitly.
