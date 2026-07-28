@@ -134,9 +134,12 @@ class Pi05Config(Config):
 
     # Adaptive RMS norm conditioning (adaRMSNorm / adaRMS)
     # When True the gemma_expert layernorms are conditioned on a cond vector
-    # of dimension adarms_cond_dim.  Automatically detected from checkpoint
-    # keys during pretrained loading when not present in config.json.
-    use_adarms: bool = False
+    # of dimension adarms_cond_dim.  Defaults to True because all Pi05 models
+    # use adaRMS for the action expert by design (matches upstream LeRobot Pi05).
+    # Set to False only for legacy checkpoints trained without adaRMS.
+    # adarms_cond_dim is an optional hint used by detect_adarms_from_checkpoint;
+    # the model derives the actual dim from the action expert architecture width.
+    use_adarms: bool = True
     adarms_cond_dim: int | None = None
 
     def __post_init__(self) -> None:
@@ -169,6 +172,4 @@ class Pi05Config(Config):
             msg = f"snapflow_num_inference_steps must be >= 1, got {self.snapflow_num_inference_steps}"
             raise ValueError(msg)
 
-        if self.use_adarms and self.adarms_cond_dim is None:
-            msg = "adarms_cond_dim must be set when use_adarms is True"
-            raise ValueError(msg)
+
