@@ -2,13 +2,15 @@
 #
 # Physical AI Studio model server: LIBERO reproduction target, loaded as a
 # live Policy object (no export step) — see configs/policies/pi05_policy.yaml
-# for the policy config format. Use configs/pi05_libero.yaml + the
-# InferenceModel policy config instead once you have an exported artifact.
+# for the policy config format. Use configs/pi05_libero_inference_model.yaml +
+# the InferenceModel policy config instead once you have an exported artifact.
 #
 # The pi05_libero_finetuned checkpoint declares two image features:
 #   image  (base / agentview), image2 (wrist).
 # Match LeRobot / OpenPI LIBERO protocol with chunk_size=10.
-script: "model_servers/physicalai_harness.py"
+#
+# Run directly in the active Python environment:
+#   python model_servers/physicalai_harness.py --config configs/pi05_libero_policy.yaml
 args:
   policy_config: "configs/policies/pi05_policy.yaml"
   # Map LIBERO cameras to the policy's image feature slots.

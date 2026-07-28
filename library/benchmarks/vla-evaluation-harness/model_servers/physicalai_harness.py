@@ -1,27 +1,6 @@
-# /// script
-# requires-python = ">=3.12,<3.13"
-# dependencies = [
-#     "vla-eval",
-#     "physicalai-train[cu128,pi05]",
-#     "numpy>=1.24",
-#     "lerobot[dataset]",
-# ]
-#
-# [tool.uv.sources]
-# vla-eval = { git = "https://github.com/allenai/vla-evaluation-harness.git", tag = "v0.4.0" }
-# physicalai-train = { path = "../../..", editable = true }
-# torch = { index = "pytorch-cu128" }
-#
-# [[tool.uv.index]]
-# name = "pytorch-cu128"
-# url = "https://download.pytorch.org/whl/cu128"
-# explicit = true
-#
-# [tool.uv]
-# exclude-newer = "2026-07-20T00:00:00Z"
-# ///
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+# ruff: noqa: INP001
 
 """vla-eval bridge for Physical AI Studio policies.
 
@@ -39,14 +18,33 @@ The policy config can target either:
 
 ``jsonargparse.add_subclass_arguments`` accepts a tuple of base classes, so
 both are admitted without any special-casing in this bridge.
+
+Run directly in the active Python environment (no ``uv run`` / ``vla-eval serve``
+wrapper required)::
+
+    python model_servers/physicalai_harness.py \
+        --config configs/pi05_libero_policy.yaml
+
+CLI overrides work as usual::
+
+    python model_servers/physicalai_harness.py \
+        --config configs/pi05_libero_policy.yaml --port 8001 --args.device=cpu
 """
 
 from __future__ import annotations
 
+import argparse
+import atexit
+import contextlib
 import logging
+import os
+import sys
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import yaml
 from vla_eval.model_servers.predict import PredictModelServer
 from vla_eval.specs import RAW, DimSpec
 
@@ -95,8 +93,6 @@ def load_policy_from_config(policy_config: str) -> Policy | InferenceModel:
 
     # Accept flat (class_path/init_args at top level) as well as nested
     # (policy: {class_path, init_args}) layouts by normalising before parse.
-    import yaml  # noqa: PLC0415
-
     with open(policy_config, encoding="utf-8") as f:  # noqa: PTH123
         raw = yaml.safe_load(f)
     if isinstance(raw, dict) and "class_path" in raw:
@@ -325,19 +321,98 @@ class PhysicalAIHarness(PredictModelServer):
             params["send_wrist_image"] = True
         return params
 
-    def get_action_spec(self) -> dict[str, DimSpec]:
+    def get_action_spec(self) -> dict[str, DimSpec]:  # noqa: PLR6301
+        """Declare the action output format of this model server.
+
+        Returns:
+            Mapping from action component name to dimension spec.
+        """
         # Action convention is checkpoint-specific; declared RAW so the
         # orchestrator doesn't warn spuriously, same as the LeRobot bridge.
         return {"actions": RAW}
 
     def get_observation_spec(self) -> dict[str, DimSpec]:
+        """Declare the observation input format this model server expects.
+
+        Returns:
+            Mapping from observation component name to dimension spec.
+        """
         spec: dict[str, DimSpec] = {"image": RAW, "language": RAW}
         if self.state_key:
             spec["state"] = RAW
         return spec
 
 
-if __name__ == "__main__":
-    from vla_eval.model_servers.serve import run_server
+def _run_current_env(server_cls: type[PredictModelServer]) -> None:
+    """Run ``run_server`` after rewriting the YAML for current-env usage.
 
-    run_server(PhysicalAIHarness)
+    ``vla-eval serve`` pops ``port`` / ``host`` out of the YAML's ``args:``
+    block and strips the ``script:`` metadata key before invoking the server.
+    ``run_server``'s own ``--config`` loader keeps them nested under ``args:``,
+    which would pass ``port`` / ``host`` to the model-server ``__init__`` and
+    fail.  This helper mirrors the ``vla-eval serve`` normalisation so the same
+    config files work when the script is run directly with ``python``.
+
+    The original config path is preserved for relative-path resolution by
+    writing the sanitised copy next to it.
+    """
+    from vla_eval.model_servers.serve import run_server  # noqa: PLC0415
+
+    pre_parser = argparse.ArgumentParser()
+    pre_parser.add_argument("--config", required=True)
+    pre_parser.add_argument("--port", type=int, default=None)
+    pre_parser.add_argument("--host", default=None)
+    known, remainder = pre_parser.parse_known_args()
+
+    config_path = Path(known.config)
+    with config_path.open(encoding="utf-8") as f:
+        raw: dict[str, Any] = yaml.safe_load(f) or {}
+
+    # ``script`` was metadata for ``vla-eval serve``; drop it.
+    raw.pop("script", None)
+
+    args_block: dict[str, Any] = raw.setdefault("args", {})
+    server_level: dict[str, Any] = {}
+    for key in ("port", "host"):
+        if key in args_block:
+            server_level[key] = args_block.pop(key)
+
+    # CLI flags take precedence over YAML values.
+    if known.port is not None:
+        server_level["port"] = known.port
+    if known.host is not None:
+        server_level["host"] = known.host
+
+    # Keep the sanitised file next to the original so relative paths inside
+    # the YAML (e.g. ``policy_config: configs/policies/...``) resolve the
+    # same way ``vla-eval serve`` would have resolved them.
+    config_dir = config_path.parent
+    fd, temp_path_str = tempfile.mkstemp(
+        suffix=".yaml",
+        dir=config_dir,
+        prefix=f"._sanitized_{server_cls.__name__.lower()}_",
+    )
+    temp_path = Path(temp_path_str)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            yaml.safe_dump(raw, f)
+    except Exception:
+        os.close(fd)
+        raise
+
+    def _cleanup() -> None:
+        with contextlib.suppress(FileNotFoundError):
+            temp_path.unlink()
+
+    atexit.register(_cleanup)
+
+    new_argv = [sys.argv[0], "--config", str(temp_path)]
+    new_argv.extend(f"--{key}={server_level[key]}" for key in ("port", "host") if key in server_level)
+    new_argv.extend(remainder)
+    sys.argv = new_argv
+
+    run_server(server_cls)
+
+
+if __name__ == "__main__":
+    _run_current_env(PhysicalAIHarness)

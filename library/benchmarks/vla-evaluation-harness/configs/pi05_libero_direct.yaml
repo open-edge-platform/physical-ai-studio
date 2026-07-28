@@ -1,0 +1,16 @@
+# configs/pi05_libero_direct.yaml
+#
+# Mode 3 — hardcoded Pi05LiberoServer subclass for LIBERO.
+# No policy_config file is required; Pi05LiberoServer builds Pi0.5 directly
+# with LIBERO-tuned defaults.
+#
+# Run directly in the active Python environment:
+#   python model_servers/pi05_libero.py --config configs/pi05_libero_direct.yaml
+#
+# Or skip the YAML entirely:
+#   python model_servers/pi05_libero.py --port 8000
+args:
+  port: 8000
+  # pretrained_name_or_path, device, chunk_size, image_keys all default to
+  # LIBERO settings baked into Pi05LiberoServer; override individually if a
+  # run needs a different checkpoint or camera mapping.
