@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import ClassVar, Literal, cast
 
-from physicalai.train_config import Config
+from physicalai.training_config import Config
 
 
 @dataclass

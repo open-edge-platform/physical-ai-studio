@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from physicalai.train_config import Config
+from physicalai.training_config import Config
 
 
 @dataclass
