@@ -3,8 +3,8 @@ from pathlib import Path
 from uuid import UUID
 
 import yaml
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import get_async_db_session_ctx
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories import ModelRepository, SnapshotRepository
 from schemas.job import TrainJob
@@ -12,54 +12,38 @@ from schemas.model import BackendExportDetail, Model, TrainingSummary
 
 
 class ModelService:
-    @staticmethod
-    async def get_model_list() -> list[Model]:
-        async with get_async_db_session_ctx() as session:
-            repo = ModelRepository(session)
-            return await repo.get_all()
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repo = ModelRepository(session)
 
-    @staticmethod
-    async def get_model_by_id(model_id: UUID) -> Model:
-        async with get_async_db_session_ctx() as session:
-            repo = ModelRepository(session)
-            model = await repo.get_by_id(model_id)
-            if model is None:
-                raise ResourceNotFoundError(ResourceType.MODEL, str(model_id))
+    async def get_model_list(self) -> list[Model]:
+        return await self.repo.get_all()
 
-            return model
+    async def get_model_by_id(self, model_id: UUID) -> Model:
+        model = await self.repo.get_by_id(model_id)
+        if model is None:
+            raise ResourceNotFoundError(ResourceType.MODEL, str(model_id))
 
-    @staticmethod
-    async def create_model(model: Model) -> Model:
-        async with get_async_db_session_ctx() as session:
-            repo = ModelRepository(session)
-            return await repo.save(model)
+        return model
 
-    @staticmethod
-    async def update_model(model: Model, update: dict) -> Model:
-        async with get_async_db_session_ctx() as session:
-            repo = ModelRepository(session)
-            return await repo.update(model, update)
+    async def create_model(self, model: Model) -> Model:
+        return await self.repo.save(model)
 
-    @staticmethod
-    async def delete_model(model: Model) -> None:
-        async with get_async_db_session_ctx() as session:
-            model_repo = ModelRepository(session)
-            snapshot_repo = SnapshotRepository(session)
+    async def update_model(self, model: Model, update: dict) -> Model:
+        return await self.repo.update(model, update)
 
-            await model_repo.delete_by_id(model.id)
+    async def delete_model(self, model: Model) -> None:
+        snapshot_repo = SnapshotRepository(self.session)
+        await self.repo.delete_by_id(model.id)
 
-            # Remove the associated snapshot row to avoid stale FK references
-            if model.snapshot_id is not None:
-                await snapshot_repo.delete_by_id(model.snapshot_id)
+        if model.snapshot_id is not None:
+            await snapshot_repo.delete_by_id(model.snapshot_id)
 
         model_path = Path(model.path).expanduser()
         shutil.rmtree(model_path)
 
-    @staticmethod
-    async def get_project_models(project_id: UUID) -> list[Model]:
-        async with get_async_db_session_ctx() as session:
-            repo = ModelRepository(session)
-            return await repo.get_project_models(project_id)
+    async def get_project_models(self, project_id: UUID) -> list[Model]:
+        return await self.repo.get_project_models(project_id)
 
     @staticmethod
     def get_backend_details(model: Model) -> list[BackendExportDetail]:

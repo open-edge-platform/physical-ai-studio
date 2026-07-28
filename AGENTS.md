@@ -21,6 +21,7 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 - Run repo hooks with `prek run --all-files` from the repo root.
 - Limit hooks to the library with `prek run --all-files library/`.
 - Limit hooks to the backend with `prek run --all-files application/backend/`.
+- Limit hooks to the UI with `prek run --all-files application/ui/` (requires `npm install` in `application/ui/` first).
 - Regenerate UI API types with `npm run build:api:download && npm run build:api` from `application/ui/` while the backend is serving OpenAPI.
 
 ## Cross-Repo Rules

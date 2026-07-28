@@ -13,7 +13,7 @@ permissions: {} # No permissions by default on workflow level
 jobs:
   validate:
     name: Validate PR title
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: read
     steps:

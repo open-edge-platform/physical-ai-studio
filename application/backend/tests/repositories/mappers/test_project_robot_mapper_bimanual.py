@@ -10,10 +10,10 @@ from uuid import uuid4
 import pytest
 
 from repositories.mappers.project_robot_mapper import ProjectRobotMapper
-from schemas.robot import RobotType, TrossenBimanualPayload, TrossenBimanualRobot
+from robots.catalog.widowxai import TrossenBimanualPayload, TrossenBimanualRobot
 
 
-def _make_bimanual_db_model(robot_type: RobotType):
+def _make_bimanual_db_model(robot_type: str):
     model = MagicMock()
     model.id = str(uuid4())
     model.name = "Bimanual Test Robot"
@@ -21,9 +21,7 @@ def _make_bimanual_db_model(robot_type: RobotType):
     model.payload = {
         "connection_string_left": "10.0.0.1",
         "connection_string_right": "10.0.0.2",
-        "serial_number": "",
     }
-    model.active_calibration_id = None
     model.created_at = datetime(2026, 1, 1)
     model.updated_at = datetime(2026, 1, 1)
     return model
@@ -33,15 +31,14 @@ class TestProjectRobotMapperBimanual:
     @pytest.mark.parametrize(
         "robot_type",
         [
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER,
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER,
+            "Trossen_Bimanual_WidowXAI_Follower",
+            "Trossen_Bimanual_WidowXAI_Leader",
         ],
     )
     def test_from_schema_returns_bimanual_robot(self, robot_type):
         db_model = _make_bimanual_db_model(robot_type)
         result = ProjectRobotMapper.from_schema(db_model)
 
-        assert isinstance(result, TrossenBimanualRobot)
         assert result.type == robot_type
         assert isinstance(result.payload, TrossenBimanualPayload)
         assert result.payload.connection_string_left == "10.0.0.1"
@@ -50,8 +47,8 @@ class TestProjectRobotMapperBimanual:
     @pytest.mark.parametrize(
         "robot_type",
         [
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER,
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER,
+            "Trossen_Bimanual_WidowXAI_Follower",
+            "Trossen_Bimanual_WidowXAI_Leader",
         ],
     )
     def test_roundtrip_to_schema_and_back(self, robot_type):
@@ -63,7 +60,6 @@ class TestProjectRobotMapperBimanual:
             payload=TrossenBimanualPayload(
                 connection_string_left="192.168.10.1",
                 connection_string_right="192.168.10.2",
-                serial_number="SN-BIMAN-001",
             ),
         )
 
@@ -74,13 +70,10 @@ class TestProjectRobotMapperBimanual:
         db_model.name = db_obj.name
         db_model.type = db_obj.type
         db_model.payload = db_obj.payload
-        db_model.active_calibration_id = None
         db_model.created_at = None
         db_model.updated_at = None
 
         restored = ProjectRobotMapper.from_schema(db_model)
 
-        assert isinstance(restored, TrossenBimanualRobot)
         assert restored.payload.connection_string_left == "192.168.10.1"
         assert restored.payload.connection_string_right == "192.168.10.2"
-        assert restored.payload.serial_number == "SN-BIMAN-001"

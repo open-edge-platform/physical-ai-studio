@@ -1,6 +1,5 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -117,7 +116,7 @@ class TestHardwareApi:
 
         try:
             client = TestClient(app)
-            response = client.get("/api/hardware/serial_devices")
+            response = client.get("/api/robots/catalog/SO101_Follower/discover")
         finally:
             app.dependency_overrides.clear()
 
@@ -134,20 +133,11 @@ class TestHardwareApi:
 
         try:
             client = TestClient(app)
-            with patch("api.hardware.identify_so101_robot_visually", new_callable=AsyncMock) as identify:
+            with patch("robots.catalog.so101.identify_so101_robot_visually", new_callable=AsyncMock) as identify:
                 response = client.post(
-                    "/api/hardware/identify",
+                    "/api/robots/catalog/SO101_Follower/identify",
                     params={"joint": "gripper"},
-                    json={
-                        "id": str(uuid4()),
-                        "name": "Test SO101",
-                        "type": "SO101_Follower",
-                        "payload": {
-                            "connection_string": "/dev/ttyUSB0",
-                            "serial_number": "",
-                        },
-                        "active_calibration_id": None,
-                    },
+                    json={"connection_string": "/dev/ttyUSB0", "serial_number": ""},
                 )
         finally:
             app.dependency_overrides.clear()
@@ -166,19 +156,10 @@ class TestHardwareApi:
 
         try:
             client = TestClient(app)
-            with patch("api.hardware.identify_trossen_robot_visually", new_callable=AsyncMock) as identify:
+            with patch("robots.catalog.widowxai.identify_trossen_robot_visually", new_callable=AsyncMock) as identify:
                 response = client.post(
-                    "/api/hardware/identify",
-                    json={
-                        "id": str(uuid4()),
-                        "name": "Test Trossen",
-                        "type": "Trossen_WidowXAI_Follower",
-                        "payload": {
-                            "connection_string": "192.168.1.100",
-                            "serial_number": "",
-                        },
-                        "active_calibration_id": None,
-                    },
+                    "/api/robots/catalog/Trossen_WidowXAI_Follower/identify",
+                    json={"connection_string": "192.168.1.100"},
                 )
         finally:
             app.dependency_overrides.clear()
