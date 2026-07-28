@@ -33,10 +33,10 @@ physicalai-trainer = "trainer.cli:trainer"
 [project.optional-dependencies]
 # executorch enables the ExecuTorch export backend. It conflicts with the xpu
 # torch build (see library conflicts), so it ships only with cpu/cuda.
-cpu = ["torch>=2.11,<2.12", "torchvision>=0.26,<0.27", "physicalai-train[executorch]"]
-cuda = ["torch>=2.11,<2.12", "torchvision>=0.26,<0.27", "physicalai-train[executorch]"]
+cpu = ["torch>=2.13,<2.14", "torchvision>=0.26,<0.27", "physicalai-train[executorch]"]
+cuda = ["torch>=2.13,<2.14", "torchvision>=0.26,<0.27", "physicalai-train[executorch]"]
 xpu = [
-  "torch>=2.11,<2.12",
+  "torch>=2.13,<2.14",
   "torchvision>=0.26,<0.27",
   "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
