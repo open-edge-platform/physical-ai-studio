@@ -42,7 +42,7 @@ class TorchAdapter(RuntimeAdapter):
         >>> outputs = adapter.predict({"state": state_array, "images": images_dict})
     """
 
-    def __init__(self, device: torch.device | str = "cpu", compile_model: bool = False) -> None:
+    def __init__(self, device: torch.device | str = "cpu", *, compile_model: bool = False) -> None:
         """Initialize the Torch adapter.
 
         Args:
@@ -91,7 +91,14 @@ class TorchAdapter(RuntimeAdapter):
             )
 
             self._policy = (
-                load_from_checkpoint(model_path, map_location="cpu", weights_only=False, compile_model=self.compile_model).to(self.device).eval()
+                load_from_checkpoint(
+                    model_path,
+                    map_location="cpu",
+                    weights_only=False,
+                    compile_model=self.compile_model,
+                )
+                .to(self.device)
+                .eval()
             )
 
             # ``extra_export_args`` is contributed by ``ExportablePolicyMixin``
