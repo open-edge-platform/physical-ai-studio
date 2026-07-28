@@ -71,8 +71,7 @@ class ACTPreprocessor(torch.nn.Module):
             is_flat = False
 
         for key in target_keys:
-            target_height, target_width = self.image_resolution
-            target_dict[key] = self._resize_with_ar_pad(target_dict[key], target_width, target_height)
+            target_dict[key] = self._resize_with_ar_pad(target_dict[key], *self.image_resolution)
 
         if not is_flat:
             batch[IMAGES] = target_dict
