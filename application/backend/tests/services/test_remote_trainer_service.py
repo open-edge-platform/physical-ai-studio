@@ -12,11 +12,8 @@ from services import RemoteTrainerService
 MODULE = "services.remote_trainer_service"
 
 
-def _session_context() -> AsyncMock:
-    session = AsyncMock()
-    session.__aenter__ = AsyncMock(return_value=session)
-    session.__aexit__ = AsyncMock(return_value=False)
-    return session
+def _session() -> AsyncMock:
+    return AsyncMock()
 
 
 def _remote_trainer() -> RemoteTrainer:
@@ -36,15 +33,12 @@ def test_remote_trainer_rejects_whitespace_only_name() -> None:
 
 @pytest.mark.anyio
 async def test_list_remote_trainers_uses_stable_repository_order() -> None:
-    session = _session_context()
+    session = _session()
     repository = MagicMock()
     repository.list_ordered = AsyncMock(return_value=[_remote_trainer()])
 
-    with (
-        patch(f"{MODULE}.get_async_db_session_ctx", return_value=session),
-        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
-    ):
-        result = await RemoteTrainerService.list_remote_trainers()
+    with patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository):
+        result = await RemoteTrainerService(session).list_remote_trainers()
 
     assert result == [repository.list_ordered.return_value[0]]
     repository.list_ordered.assert_awaited_once_with()
@@ -52,16 +46,15 @@ async def test_list_remote_trainers_uses_stable_repository_order() -> None:
 
 @pytest.mark.anyio
 async def test_create_duplicate_remote_trainer_returns_conflict() -> None:
-    session = _session_context()
+    session = _session()
     repository = MagicMock()
     repository.save = AsyncMock(side_effect=IntegrityError("insert", {}, Exception("duplicate")))
 
     with (
-        patch(f"{MODULE}.get_async_db_session_ctx", return_value=session),
         patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
         pytest.raises(ResourceAlreadyExistsError) as error,
     ):
-        await RemoteTrainerService.create_remote_trainer(
+        await RemoteTrainerService(session).create_remote_trainer(
             RemoteTrainerCreate(name="trainer", url="https://trainer.test")
         )
 
@@ -71,32 +64,25 @@ async def test_create_duplicate_remote_trainer_returns_conflict() -> None:
 
 @pytest.mark.anyio
 async def test_update_ignores_explicit_null_fields() -> None:
-    session = _session_context()
+    session = _session()
     remote_trainer = _remote_trainer()
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=remote_trainer)
     repository.update = AsyncMock(return_value=remote_trainer)
 
-    with (
-        patch(f"{MODULE}.get_async_db_session_ctx", return_value=session),
-        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
-    ):
-        await RemoteTrainerService.update_remote_trainer(remote_trainer.id, RemoteTrainerUpdate(name=None))
+    with patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository):
+        await RemoteTrainerService(session).update_remote_trainer(remote_trainer.id, RemoteTrainerUpdate(name=None))
 
     repository.update.assert_awaited_once_with(remote_trainer, {})
 
 
 @pytest.mark.anyio
 async def test_delete_missing_remote_trainer_raises_not_found() -> None:
-    session = _session_context()
+    session = _session()
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=None)
 
-    with (
-        patch(f"{MODULE}.get_async_db_session_ctx", return_value=session),
-        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
-        pytest.raises(ResourceNotFoundError),
-    ):
-        await RemoteTrainerService.delete_remote_trainer(uuid4())
+    with patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository), pytest.raises(ResourceNotFoundError):
+        await RemoteTrainerService(session).delete_remote_trainer(uuid4())
 
     repository.delete_by_id.assert_not_called()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Self
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import httpx
@@ -67,7 +67,7 @@ async def test_check_remote_trainer_reports_healthy_devices() -> None:
         patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
         patch(f"{MODULE}.httpx.AsyncClient", return_value=client) as async_client,
     ):
-        result = await RemoteTrainerService.check_remote_trainer(trainer.id)
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
 
     assert result.remote_trainer_id == trainer.id
     assert result.status == "healthy"
@@ -97,7 +97,7 @@ async def test_check_remote_trainer_tolerates_missing_storage_endpoint() -> None
         patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
         patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
     ):
-        result = await RemoteTrainerService.check_remote_trainer(trainer.id)
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
 
     assert result.status == "healthy"
     assert result.storage is None
@@ -112,7 +112,7 @@ async def test_check_remote_trainer_reports_timeout_without_upstream_details() -
         patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
         patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
     ):
-        result = await RemoteTrainerService.check_remote_trainer(trainer.id)
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
 
     assert result.status == "unreachable"
     assert result.reason_code == "timeout"
@@ -128,7 +128,7 @@ async def test_check_remote_trainer_reports_malformed_devices_as_degraded() -> N
         patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
         patch(f"{MODULE}.httpx.AsyncClient", return_value=client),
     ):
-        result = await RemoteTrainerService.check_remote_trainer(trainer.id)
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
 
     assert result.status == "degraded"
     assert result.reason_code == "invalid_devices_response"

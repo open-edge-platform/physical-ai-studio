@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -43,40 +43,40 @@ class TestReattachOrphans:
         """A RUNNING remote job that recorded its remote id is requeued, not failed."""
         job = _job(_payload(remote_job_id=uuid4()))
 
-        with patch(f"{MODULE}.JobService") as MockJobService:
-            MockJobService.get_job_list = AsyncMock(return_value=[job])
-            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
+        service = MagicMock()
+        service.get_job_list = AsyncMock(return_value=[job])
+        service.update_job_status = AsyncMock(return_value=MagicMock())
 
-            await TrainingService.abort_orphan_jobs()
+        await TrainingService.abort_orphan_jobs(service)
 
-            MockJobService.update_job_status.assert_awaited_once()
-            assert MockJobService.update_job_status.call_args.kwargs["status"] == JobStatus.PENDING
+        service.update_job_status.assert_awaited_once()
+        assert service.update_job_status.call_args.kwargs["status"] == JobStatus.PENDING
 
     @pytest.mark.anyio
     async def test_remote_running_job_without_remote_id_is_failed(self):
         """A RUNNING remote job that never got a remote id cannot resume and is failed."""
         job = _job(_payload(remote_job_id=None))
 
-        with patch(f"{MODULE}.JobService") as MockJobService:
-            MockJobService.get_job_list = AsyncMock(return_value=[job])
-            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
+        service = MagicMock()
+        service.get_job_list = AsyncMock(return_value=[job])
+        service.update_job_status = AsyncMock(return_value=MagicMock())
 
-            await TrainingService.abort_orphan_jobs()
+        await TrainingService.abort_orphan_jobs(service)
 
-            assert MockJobService.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
+        assert service.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
 
     @pytest.mark.anyio
     async def test_local_job_always_fails_orphans(self):
         """A local job cannot reattach, even if a stale remote id is present."""
         job = _job(_payload(remote_job_id=uuid4(), target=TrainingTarget.LOCAL))
 
-        with patch(f"{MODULE}.JobService") as MockJobService:
-            MockJobService.get_job_list = AsyncMock(return_value=[job])
-            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
+        service = MagicMock()
+        service.get_job_list = AsyncMock(return_value=[job])
+        service.update_job_status = AsyncMock(return_value=MagicMock())
 
-            await TrainingService.abort_orphan_jobs()
+        await TrainingService.abort_orphan_jobs(service)
 
-            assert MockJobService.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
+        assert service.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
 
     def test_reattachable_remote_job_id_reads_dict_payload(self):
         """Payloads persisted as plain dicts are also understood."""

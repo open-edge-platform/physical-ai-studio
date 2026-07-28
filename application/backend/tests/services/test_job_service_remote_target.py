@@ -39,12 +39,11 @@ async def test_submit_remote_job_pins_configured_url_and_ignores_client_url() ->
         remote_trainer_url="https://client-supplied.test",
     )
 
-    with (
-        patch(f"{MODULE}.get_async_db_session_ctx", return_value=session),
-        patch(f"{MODULE}.JobRepository", return_value=repository),
-        patch(f"{MODULE}.RemoteTrainerService.get_remote_trainer", AsyncMock(return_value=configured_trainer)),
-    ):
-        job = await JobService.submit_train_job(payload)
+    remote_trainer_service = MagicMock()
+    remote_trainer_service.get_remote_trainer = AsyncMock(return_value=configured_trainer)
+
+    with patch(f"{MODULE}.JobRepository", return_value=repository):
+        job = await JobService(session, remote_trainer_service).submit_train_job(payload)
 
     assert str(job.payload.remote_trainer_url) == "https://configured-trainer.test/"
     assert job.payload.remote_trainer_id == remote_trainer_id

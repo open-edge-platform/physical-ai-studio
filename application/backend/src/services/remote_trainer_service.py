@@ -6,8 +6,8 @@ from uuid import UUID, uuid4
 import httpx
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import get_async_db_session_ctx
 from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType
 from repositories.remote_trainer_repo import RemoteTrainerRepository
 from schemas.hardware import DeviceInfo, DeviceType, StorageInfo
@@ -19,25 +19,24 @@ _HEALTH_CHECK_TIMEOUT_S = 5.0
 class RemoteTrainerService:
     """Manage global direct remote trainer endpoint configurations."""
 
-    @staticmethod
-    async def list_remote_trainers() -> list[RemoteTrainer]:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repo = RemoteTrainerRepository(session)
+
+    async def list_remote_trainers(self) -> list[RemoteTrainer]:
         """Return configured endpoints ordered by their creation time."""
-        async with get_async_db_session_ctx() as session:
-            return await RemoteTrainerRepository(session).list_ordered()
+        return await self.repo.list_ordered()
 
-    @staticmethod
-    async def get_remote_trainer(remote_trainer_id: UUID) -> RemoteTrainer:
+    async def get_remote_trainer(self, remote_trainer_id: UUID) -> RemoteTrainer:
         """Return one configured endpoint or raise a not-found error."""
-        async with get_async_db_session_ctx() as session:
-            remote_trainer = await RemoteTrainerRepository(session).get_by_id(remote_trainer_id)
-            if remote_trainer is None:
-                raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
-            return remote_trainer
+        remote_trainer = await self.repo.get_by_id(remote_trainer_id)
+        if remote_trainer is None:
+            raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
+        return remote_trainer
 
-    @classmethod
-    async def check_remote_trainer(cls, remote_trainer_id: UUID) -> RemoteTrainerHealth:
+    async def check_remote_trainer(self, remote_trainer_id: UUID) -> RemoteTrainerHealth:
         """Check a configured trainer's liveness and available compute devices."""
-        remote_trainer = await cls.get_remote_trainer(remote_trainer_id)
+        remote_trainer = await self.get_remote_trainer(remote_trainer_id)
         checked_at = datetime.now(UTC)
         started = perf_counter()
         base_url = str(remote_trainer.url).rstrip("/")
@@ -65,7 +64,7 @@ class RemoteTrainerService:
                         devices = [
                             device for device in validated_devices if device.type in {DeviceType.XPU, DeviceType.CUDA}
                         ]
-                        storage = await cls._fetch_storage(client, base_url)
+                        storage = await self._fetch_storage(client, base_url)
         except httpx.TimeoutException:
             status, reason_code = "unreachable", "timeout"
         except httpx.HTTPStatusError:
@@ -95,42 +94,34 @@ class RemoteTrainerService:
         except (httpx.HTTPError, ValidationError, ValueError):
             return None
 
-    @staticmethod
-    async def create_remote_trainer(config: RemoteTrainerCreate) -> RemoteTrainer:
-        """Persist a direct remote trainer endpoint."""
+    async def create_remote_trainer(self, config: RemoteTrainerCreate) -> RemoteTrainer:
+        """Persist a direct trainer endpoint."""
         remote_trainer = RemoteTrainer(id=uuid4(), **config.model_dump())
-        async with get_async_db_session_ctx() as session:
-            try:
-                return await RemoteTrainerRepository(session).save(remote_trainer)
-            except IntegrityError as error:
-                await session.rollback()
-                raise ResourceAlreadyExistsError(
-                    "Remote trainer",
-                    "A trainer with this URL is already configured.",
-                ) from error
+        try:
+            return await self.repo.save(remote_trainer)
+        except IntegrityError as error:
+            await self.session.rollback()
+            raise ResourceAlreadyExistsError(
+                "Remote trainer",
+                "A trainer with this URL is already configured.",
+            ) from error
 
-    @staticmethod
-    async def update_remote_trainer(remote_trainer_id: UUID, update: RemoteTrainerUpdate) -> RemoteTrainer:
-        """Update a direct remote trainer endpoint."""
-        async with get_async_db_session_ctx() as session:
-            repository = RemoteTrainerRepository(session)
-            remote_trainer = await repository.get_by_id(remote_trainer_id)
-            if remote_trainer is None:
-                raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
-            try:
-                return await repository.update(remote_trainer, update.model_dump(exclude_none=True, exclude_unset=True))
-            except IntegrityError as error:
-                await session.rollback()
-                raise ResourceAlreadyExistsError(
-                    "Remote trainer",
-                    "A trainer with this URL is already configured.",
-                ) from error
+    async def update_remote_trainer(self, remote_trainer_id: UUID, update: RemoteTrainerUpdate) -> RemoteTrainer:
+        """Update a direct trainer endpoint."""
+        remote_trainer = await self.repo.get_by_id(remote_trainer_id)
+        if remote_trainer is None:
+            raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
+        try:
+            return await self.repo.update(remote_trainer, update.model_dump(exclude_none=True, exclude_unset=True))
+        except IntegrityError as error:
+            await self.session.rollback()
+            raise ResourceAlreadyExistsError(
+                "Remote trainer",
+                "A trainer with this URL is already configured.",
+            ) from error
 
-    @staticmethod
-    async def delete_remote_trainer(remote_trainer_id: UUID) -> None:
+    async def delete_remote_trainer(self, remote_trainer_id: UUID) -> None:
         """Delete a configured endpoint without changing already-submitted jobs."""
-        async with get_async_db_session_ctx() as session:
-            repository = RemoteTrainerRepository(session)
-            if await repository.get_by_id(remote_trainer_id) is None:
-                raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
-            await repository.delete_by_id(remote_trainer_id)
+        if await self.repo.get_by_id(remote_trainer_id) is None:
+            raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
+        await self.repo.delete_by_id(remote_trainer_id)
