@@ -1,5 +1,5 @@
 import { Flex, Item, TabList, Tabs, View } from '@geti-ui/ui';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
