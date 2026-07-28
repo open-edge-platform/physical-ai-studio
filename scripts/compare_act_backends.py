@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import random
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -318,7 +319,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--checkpoint", default="lerobot/act_aloha_sim_transfer_cube_human",
                         help="HF Hub repo id or local dir with config.json + model.safetensors")
-    parser.add_argument("--export-dir", type=Path, default=Path("/tmp/act_export_openvino"),  # noqa: S108
+    parser.add_argument("--export-dir", type=Path,
+                        default=Path(tempfile.gettempdir()) / "act_export_openvino",
                         help="Directory for the OpenVINO export (reused if it already exists)")
     parser.add_argument("--force-export", action="store_true", help="Re-export even if --export-dir already exists")
     parser.add_argument("--compress-to-fp16", action="store_true",
@@ -333,7 +335,8 @@ def parse_args() -> argparse.Namespace:
                         help="Numeric comparison PASS threshold for max abs diff")
     parser.add_argument("--success-rate-diff-tolerance", type=float, default=15.0,
                         help="PASS threshold (percentage points) for |native_rate - exported_rate|")
-    parser.add_argument("--output", type=Path, default=Path("/tmp/compare_act_backends_report.json"),  # noqa: S108
+    parser.add_argument("--output", type=Path,
+                        default=Path(tempfile.gettempdir()) / "compare_act_backends_report.json",
                         help="Destination JSON report path")
     return parser.parse_args()
 
