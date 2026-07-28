@@ -8,16 +8,21 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+
 import pytest
 import torch
 from physicalai.config import Config
 from physicalai.data.observation import IMAGES, STATE
 from physicalai.policies.pi05 import Pi05, Pi05Config, Pi05Model
 from physicalai.policies.pi05.pretrained_utils import (
+    detect_adarms_from_checkpoint,
     fix_state_dict_keys,
     parse_config_features,
     resolve_feature_shape,
 )
+from safetensors.torch import save_file
 
 
 # ============================================================================ #
@@ -918,6 +923,78 @@ class TestPretrainedUtils:
         """Test _resolve_feature_shape falls back to (1,)."""
         shape = resolve_feature_shape("unknown", {}, {})
         assert shape == (1,)
+
+    def test_detect_adarms_from_checkpoint_detects_dense_layer(self, tmp_path: Path) -> None:
+        """Test detect_adarms_from_checkpoint sets use_adarms/adarms_cond_dim from a dense layernorm key."""
+        weights_file = tmp_path / "model.safetensors"
+        save_file(
+            {
+                "paligemma_with_expert.gemma_expert.model.layers.0.input_layernorm.dense.weight": torch.randn(48, 16),
+            },
+            str(weights_file),
+        )
+        hf_config: dict[str, object] = {}
+
+        detect_adarms_from_checkpoint(weights_file, hf_config)
+
+        assert hf_config["use_adarms"] is True
+        assert hf_config["adarms_cond_dim"] == 16
+
+    def test_detect_adarms_from_checkpoint_no_dense_layer(self, tmp_path: Path) -> None:
+        """Test detect_adarms_from_checkpoint leaves hf_config untouched without dense layernorm keys."""
+        weights_file = tmp_path / "model.safetensors"
+        save_file(
+            {
+                "paligemma_with_expert.gemma_expert.model.layers.0.input_layernorm.weight": torch.randn(16),
+            },
+            str(weights_file),
+        )
+        hf_config: dict[str, object] = {}
+
+        detect_adarms_from_checkpoint(weights_file, hf_config)
+
+        assert "use_adarms" not in hf_config
+        assert "adarms_cond_dim" not in hf_config
+
+    def test_detect_adarms_from_checkpoint_skips_when_already_fully_set(self, tmp_path: Path) -> None:
+        """Test detect_adarms_from_checkpoint short-circuits when both fields are already specified."""
+        # Non-existent path: if the early return didn't trigger, opening this file would raise.
+        weights_file = tmp_path / "does-not-exist.safetensors"
+        hf_config: dict[str, object] = {"use_adarms": True, "adarms_cond_dim": 32}
+
+        detect_adarms_from_checkpoint(weights_file, hf_config)
+
+        assert hf_config == {"use_adarms": True, "adarms_cond_dim": 32}
+
+    def test_detect_adarms_from_checkpoint_runs_detection_when_cond_dim_missing(self, tmp_path: Path) -> None:
+        """Test detect_adarms_from_checkpoint re-runs detection when adarms_cond_dim is missing."""
+        weights_file = tmp_path / "model.safetensors"
+        save_file(
+            {
+                "paligemma_with_expert.gemma_expert.model.layers.0.input_layernorm.dense.weight": torch.randn(48, 24),
+            },
+            str(weights_file),
+        )
+        hf_config: dict[str, object] = {"use_adarms": True}
+
+        detect_adarms_from_checkpoint(weights_file, hf_config)
+
+        assert hf_config["use_adarms"] is True
+        assert hf_config["adarms_cond_dim"] == 24
+
+    def test_detect_adarms_from_checkpoint_logs_on_scan_error(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test detect_adarms_from_checkpoint logs a debug message when the checkpoint can't be scanned."""
+        weights_file = tmp_path / "model.safetensors"
+        weights_file.write_bytes(b"not-a-safetensors-file")
+        hf_config: dict[str, object] = {}
+
+        with caplog.at_level(logging.DEBUG, logger="physicalai.policies.pi05.pretrained_utils"):
+            detect_adarms_from_checkpoint(weights_file, hf_config)
+
+        assert "use_adarms" not in hf_config
+        assert "adarms auto-detection failed" in caplog.text
 
 
 # ============================================================================ #
