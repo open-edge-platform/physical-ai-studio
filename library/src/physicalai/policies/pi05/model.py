@@ -571,6 +571,7 @@ class Pi05Model(Model):
         gradient_checkpointing: bool = False,
         compile_model: bool = False,
         use_random_input_noise: bool = False,
+        use_adarms: bool = True,
     ) -> None:
         """Initialize Pi05Model.
 
@@ -604,6 +605,8 @@ class Pi05Model(Model):
             compile_model: Whether to use torch.compile.
             use_random_input_noise: Whether to use random noise as the initial input for the denoising
                 process during inference. If False, zeros are used instead.
+            use_adarms: Whether to use AdaRMS conditioning in the action expert.
+                Set based on checkpoint detection; True for new checkpoints with adaRMS weights.
 
         Raises:
             ValueError: If image resolution is not square.
@@ -638,7 +641,7 @@ class Pi05Model(Model):
         self.paligemma_with_expert = PaliGemmaWithExpertModel(
             paligemma_config,
             action_expert_config,
-            use_adarms=[False, True],
+            use_adarms=[False, use_adarms],
             precision=dtype,
             image_size=self._image_resolution[0],
             freeze_vision_encoder=freeze_vision_encoder,

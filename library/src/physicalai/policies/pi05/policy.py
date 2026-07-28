@@ -292,6 +292,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
             use_random_input_noise=self.config.use_random_input_noise,
+            use_adarms=self.config.use_adarms,
         )
         if weights_file is not None:
             # load raw state dict
