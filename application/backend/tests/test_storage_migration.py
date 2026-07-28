@@ -6,7 +6,6 @@ from sqlalchemy.orm import sessionmaker
 
 import storage_migration
 from db.schema import Base, DatasetDB, ModelDB, ProjectDB, ProjectEnvironmentDB, ProjectRobotDB, SnapshotDB
-from schemas.robot import RobotType
 from settings import Settings
 from storage_migration import StorageMigrationError, migrate_default_storage_dir
 
@@ -135,7 +134,7 @@ def test_migration_rewrites_database_paths(tmp_path: Path, monkeypatch: pytest.M
                     id="robot-1",
                     project_id="project-1",
                     name="Robot",
-                    type=RobotType.SO101_FOLLOWER,
+                    type="SO101_Follower",
                     payload={},
                 ),
             ]

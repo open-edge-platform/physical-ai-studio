@@ -1,6 +1,21 @@
 from db.schema import ProjectRobotDB
 from repositories.mappers.base_mapper_interface import IBaseMapper
-from schemas.robot import Robot, RobotAdapter, RobotType
+from schemas.robot import Robot, RobotAdapter
+
+# Our database initially stored types using all uppercase due to them
+# being stored as StrEnum
+_TYPE_NORMALIZATION: dict[str, str] = {
+    "SO101_FOLLOWER": "SO101_Follower",
+    "SO101_LEADER": "SO101_Leader",
+    "TROSSEN_WIDOWXAI_FOLLOWER": "Trossen_WidowXAI_Follower",
+    "TROSSEN_WIDOWXAI_LEADER": "Trossen_WidowXAI_Leader",
+    "TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER": "Trossen_Bimanual_WidowXAI_Follower",
+    "TROSSEN_BIMANUAL_WIDOWXAI_LEADER": "Trossen_Bimanual_WidowXAI_Leader",
+}
+
+
+def _convert_databasee_type(raw: str) -> str:
+    return _TYPE_NORMALIZATION.get(raw, raw)
 
 
 class ProjectRobotMapper(IBaseMapper):
@@ -12,7 +27,7 @@ class ProjectRobotMapper(IBaseMapper):
         return ProjectRobotDB(
             id=str(db_schema.id),
             name=db_schema.name,
-            type=db_schema.type,
+            type=_convert_databasee_type(db_schema.type),
             payload=db_schema.payload.model_dump(),
         )
 
@@ -23,7 +38,7 @@ class ProjectRobotMapper(IBaseMapper):
             {
                 "id": model.id,
                 "name": model.name,
-                "type": RobotType(model.type),
+                "type": _convert_databasee_type(model.type),
                 "payload": model.payload,
                 "created_at": model.created_at,
                 "updated_at": model.updated_at,

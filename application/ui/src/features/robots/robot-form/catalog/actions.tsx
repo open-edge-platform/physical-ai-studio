@@ -1,13 +1,15 @@
 import { ActionButton, Icon } from '@geti-ui/ui';
 import { Refresh } from '@geti-ui/ui/icons';
 
-import { $api } from '../../../../api/client';
-import type { SchemaRobotInput } from '../../robot-types';
+import { useCatalogIdentifyMutation, useDiscoverRobotsQuery } from '../../robot-catalog.hooks';
+import type { SchemaRobot } from '../../robot-types';
+import { useRobotFormFields } from '../provider';
 
 import classes from '../form.module.css';
 
 export const RefreshRobotsButton = () => {
-    const { refetch, isFetching } = $api.useSuspenseQuery('get', '/api/hardware/serial_devices');
+    const { activeType } = useRobotFormFields();
+    const { refetch, isFetching } = useDiscoverRobotsQuery(activeType);
 
     return (
         <ActionButton
@@ -24,27 +26,26 @@ export const RefreshRobotsButton = () => {
     );
 };
 
-export const useIdentifyMutation = () => {
-    return $api.useMutation('post', '/api/hardware/identify', {
-        meta: { skipInvalidation: true },
-    });
-};
-
 export const IdentifyRobot = ({
     identifyMutation,
-    robot,
+    payload: override,
 }: {
-    identifyMutation: ReturnType<typeof useIdentifyMutation>;
-    robot: SchemaRobotInput | null;
+    identifyMutation: ReturnType<typeof useCatalogIdentifyMutation>;
+    payload?: SchemaRobot['payload'] | null;
 }) => {
-    const isDisabled = robot === null || identifyMutation.isPending;
+    const { formData, activeType: robotType } = useRobotFormFields();
+    const payload = override ?? formData.payload;
+    const isDisabled = payload === null || identifyMutation.isPending;
 
     const onIdentify = () => {
-        if (isDisabled || robot === null) {
+        if (isDisabled || payload === null) {
             return;
         }
 
-        identifyMutation.mutate({ body: robot });
+        identifyMutation.mutate({
+            params: { path: { robot_type: robotType } },
+            body: payload,
+        });
     };
 
     return (

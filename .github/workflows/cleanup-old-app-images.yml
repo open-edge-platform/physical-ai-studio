@@ -17,7 +17,7 @@ name: Cleanup Old Application Container Images
 #   most recent `min_versions_to_keep` are kept; older ones are deleted.
 #
 # Supports a dry-run mode (default) that previews deletions without removing
-# anything.
+# anything for dispatched runs.
 
 on:
   workflow_dispatch:
@@ -37,6 +37,11 @@ on:
     - cron: "0 3 * * 0"
 
 permissions: {} # No permissions by default
+
+# Ensure only one cleanup runs at a time.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
   cleanup-old-images:
@@ -59,5 +64,5 @@ jobs:
             physical-ai-studio-cuda
             physicalai-trainer-xpu
             physicalai-trainer-cuda
-          min-versions-to-keep: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.min_versions_to_keep || 10 }}
-          dry-run: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' && 'false' || 'true' }}
+          min-versions-to-keep: ${{ github.event_name == 'workflow_dispatch' && inputs.min_versions_to_keep || 10 }}
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
