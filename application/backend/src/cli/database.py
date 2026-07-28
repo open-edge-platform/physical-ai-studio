@@ -24,7 +24,7 @@ def _run_migrations() -> None:
         sys.exit(1)
 
     migration_manager = MigrationManager(settings)
-    if not migration_manager.run_migrations():
+    if not migration_manager.initialize_database():
         click.echo("✗ Migration failed!", err=True)
         sys.exit(1)
 

@@ -1,15 +1,12 @@
 import asyncio
 import multiprocessing as mp
 from queue import Empty
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, WebSocket
+from fastapi import APIRouter, WebSocket
 from fastapi.responses import Response
 from loguru import logger
 
-from api.dependencies import ModelRegistryDep, RecordingLockedCamerasDep, RobotConnectionManagerDep, get_scheduler_ws
-from core.scheduler import Scheduler
-from robots.robot_client_factory import RobotClientFactory
+from api.dependencies import ModelRegistryDep, RecordingLockedCamerasDep, RobotClientFactoryDep, SchedulerDep
 from schemas import Dataset, InferenceDevice, Model
 from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
@@ -84,8 +81,8 @@ async def handle_outgoing(websocket: WebSocket, queue: mp.Queue) -> None:
 @router.websocket("/robot_control/ws")
 async def robot_control_websocket(
     websocket: WebSocket,
-    robot_manager: RobotConnectionManagerDep,
-    scheduler: Annotated[Scheduler, Depends(get_scheduler_ws)],
+    robot_client_factory: RobotClientFactoryDep,
+    scheduler: SchedulerDep,
     model_registry: ModelRegistryDep,
     locked_camera_fingerprints: RecordingLockedCamerasDep,
 ) -> None:
@@ -94,7 +91,7 @@ async def robot_control_websocket(
     queue: mp.Queue = mp.Queue()
     process = RobotControlWorker(
         stop_event=scheduler.mp_stop_event,
-        robot_client_factory=RobotClientFactory(robot_manager=robot_manager),
+        robot_client_factory=robot_client_factory,
         queue=queue,
         model_worker_registry=model_registry,
     )

@@ -163,6 +163,7 @@ jobs:
             ghcr1production.blob.core.windows.net:443
             github.com:443
             keyserver.ubuntu.com:443
+            pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443

@@ -1,12 +1,15 @@
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import Depends, status
 from fastapi.exceptions import HTTPException
 from fastapi.requests import HTTPConnection
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.scheduler import Scheduler
+from db.engine import get_async_db_session
+from robots.robot_client_factory import RobotClientFactory
 from services import (
     DatasetDownloadService,
     DatasetService,
@@ -24,10 +27,14 @@ from services.event_processor import EventProcessor
 from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_catalog_service import RobotCatalogService
+from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
-from settings import get_settings
+from settings import Settings, get_settings
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.model_worker_registry import ModelWorkerRegistry
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
+AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_db_session)]
 
 
 def is_valid_uuid(identifier: str) -> bool:
@@ -49,16 +56,23 @@ def get_system_service() -> SystemService:
     return SystemService()
 
 
-@lru_cache
-def get_project_service() -> ProjectService:
+SystemServiceDep = Annotated[SystemService, Depends(get_system_service)]
+
+
+def get_project_service(session: AsyncSessionDep) -> ProjectService:
     """Provide a ProjectService instance for managing projects."""
-    return ProjectService()
+    return ProjectService(session)
 
 
-@lru_cache
-def get_robot_service() -> RobotService:
+ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
+
+
+def get_robot_service(session: AsyncSessionDep) -> RobotService:
     """Provide a RobotService instance for managing robots in a project."""
-    return RobotService()
+    return RobotService(session)
+
+
+RobotServiceDep = Annotated[RobotService, Depends(get_robot_service)]
 
 
 def get_robot_manager_service(request: HTTPConnection) -> RobotConnectionManager:
@@ -68,10 +82,22 @@ def get_robot_manager_service(request: HTTPConnection) -> RobotConnectionManager
     if robot_manager is None:
         raise RuntimeError("Robot manager not initialized")
 
-    return robot_manager
+    return cast("RobotConnectionManager", robot_manager)
 
 
 RobotConnectionManagerDep = Annotated[RobotConnectionManager, Depends(get_robot_manager_service)]
+
+
+def get_robot_client_factory(robot_manager: RobotConnectionManagerDep) -> RobotClientFactory:
+    """Provide a RobotClientFactory bound to the application robot manager.
+
+    Request scoped: the factory is a thin wrapper around the shared
+    RobotConnectionManager and is the seam used to fake robot hardware in tests.
+    """
+    return RobotClientFactory(robot_manager=robot_manager)
+
+
+RobotClientFactoryDep = Annotated[RobotClientFactory, Depends(get_robot_client_factory)]
 
 
 @lru_cache
@@ -83,22 +109,28 @@ def get_robot_catalog_service() -> RobotCatalogService:
 RobotCatalogServiceDep = Annotated[RobotCatalogService, Depends(get_robot_catalog_service)]
 
 
-@lru_cache
-def get_camera_service() -> ProjectCameraService:
+def get_camera_service(session: AsyncSessionDep) -> ProjectCameraService:
     """Provide a ProjectCameraService instance for managing cameras in a project."""
-    return ProjectCameraService()
+    return ProjectCameraService(session)
 
 
-@lru_cache
-def get_environment_service() -> EnvironmentService:
+ProjectCameraServiceDep = Annotated[ProjectCameraService, Depends(get_camera_service)]
+
+
+def get_environment_service(session: AsyncSessionDep) -> EnvironmentService:
     """Provide a EnvironmentService instance for managing environments in a project."""
-    return EnvironmentService()
+    return EnvironmentService(session)
 
 
-@lru_cache
-def get_dataset_service() -> DatasetService:
+EnvironmentServiceDep = Annotated[EnvironmentService, Depends(get_environment_service)]
+
+
+def get_dataset_service(session: AsyncSessionDep) -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
-    return DatasetService()
+    return DatasetService(session)
+
+
+DatasetServiceDep = Annotated[DatasetService, Depends(get_dataset_service)]
 
 
 @lru_cache
@@ -107,26 +139,36 @@ def get_dataset_download_service() -> DatasetDownloadService:
     return DatasetDownloadService()
 
 
+DatasetDownloadServiceDep = Annotated[DatasetDownloadService, Depends(get_dataset_download_service)]
+
+
 @lru_cache
 def get_episode_thumbnail_service() -> EpisodeThumbnailService:
     """Provides a service for building episode thumbnails."""
     return EpisodeThumbnailService()
 
 
-@lru_cache
-def get_model_service() -> ModelService:
+EpisodeThumbnailServiceDep = Annotated[EpisodeThumbnailService, Depends(get_episode_thumbnail_service)]
+
+
+def get_model_service(session: AsyncSessionDep) -> ModelService:
     """Provides a ModelService instance for managing models."""
-    return ModelService()
+    return ModelService(session)
 
 
-@lru_cache
-def get_model_metrics_service(request: HTTPConnection) -> ModelMetricsService:
-    """Provides a ModelService instance for managing models."""
-    settings = getattr(request.app.state, "settings", None)
-    if settings is None:
-        settings = get_settings()
+ModelServiceDep = Annotated[ModelService, Depends(get_model_service)]
 
+
+def get_model_metrics_service(settings: SettingsDep) -> ModelMetricsService:
+    """Provides a ModelMetricsService instance for reading training metrics.
+
+    Not cached: the constructor is trivial, and caching on a request-scoped
+    argument would retain every request for the lifetime of the process.
+    """
     return ModelMetricsService(settings=settings)
+
+
+ModelMetricsServiceDep = Annotated[ModelMetricsService, Depends(get_model_metrics_service)]
 
 
 @lru_cache
@@ -135,24 +177,39 @@ def get_model_download_service() -> ModelDownloadService:
     return ModelDownloadService()
 
 
-@lru_cache
-def get_job_service() -> JobService:
+ModelDownloadServiceDep = Annotated[ModelDownloadService, Depends(get_model_download_service)]
+
+
+def get_job_service(session: AsyncSessionDep) -> JobService:
     """Provides a JobService instance for managing jobs."""
-    return JobService()
+    return JobService(session)
 
 
-@lru_cache
-def get_dataset_import_service() -> DatasetImportService:
+JobServiceDep = Annotated[JobService, Depends(get_job_service)]
+
+
+def get_dataset_import_service(session: AsyncSessionDep) -> DatasetImportService:
     """Provides a DatasetImportService instance for dataset import jobs."""
-    return DatasetImportService()
+    return DatasetImportService(session)
 
 
-def get_log_service(request: HTTPConnection) -> LogService:
+DatasetImportServiceDep = Annotated[DatasetImportService, Depends(get_dataset_import_service)]
+
+
+def get_snapshot_service(session: AsyncSessionDep) -> SnapshotService:
+    """Provide a request-scoped snapshot service."""
+    return SnapshotService(session)
+
+
+SnapshotServiceDep = Annotated[SnapshotService, Depends(get_snapshot_service)]
+
+
+def get_log_service(settings: SettingsDep, job_service: JobServiceDep) -> LogService:
     """Provides a LogService instance for managing logs."""
-    settings = getattr(request.app.state, "settings", None)
-    if settings is None:
-        settings = get_settings()
-    return LogService(settings=settings, job_service=JobService())
+    return LogService(settings=settings, job_service=job_service)
+
+
+LogServiceDep = Annotated[LogService, Depends(get_log_service)]
 
 
 def get_project_id(project_id: str) -> UUID:
@@ -205,16 +262,14 @@ def get_environment_id(environment_id: str) -> UUID:
 
 
 def get_scheduler(request: HTTPConnection) -> Scheduler:
-    """Provide the global Scheduler instance."""
+    """Provide the global Scheduler instance.
+
+    Typed as HTTPConnection so it resolves for both HTTP routes and WebSocket endpoints.
+    """
     return request.app.state.scheduler
 
 
 SchedulerDep = Annotated[Scheduler, Depends(get_scheduler)]
-
-
-def get_scheduler_ws(request: HTTPConnection) -> Scheduler:
-    """Provide the global Scheduler instance for WebSocket."""
-    return request.app.state.scheduler
 
 
 def get_event_processor_ws(request: HTTPConnection) -> EventProcessor:
@@ -222,12 +277,15 @@ def get_event_processor_ws(request: HTTPConnection) -> EventProcessor:
     return request.app.state.event_processor
 
 
+EventProcessorDep = Annotated[EventProcessor, Depends(get_event_processor_ws)]
+
+
 def get_recording_locked_camera_fingerprints(request: HTTPConnection) -> set[str]:
     """Set of camera fingerprints locked by an active recording session."""
     locked = getattr(request.app.state, "recording_locked_camera_fingerprints", None)
     if locked is None:
         raise RuntimeError("Recording lock state not initialized")
-    return locked
+    return cast("set[str]", locked)
 
 
 RecordingLockedCamerasDep = Annotated[set[str], Depends(get_recording_locked_camera_fingerprints)]
@@ -238,7 +296,7 @@ def get_model_registry(request: HTTPConnection) -> ModelWorkerRegistry:
     registry = getattr(request.app.state, "model_registry", None)
     if registry is None:
         raise RuntimeError("Model worker registry not initialized")
-    return registry
+    return cast("ModelWorkerRegistry", registry)
 
 
 ModelRegistryDep = Annotated[ModelWorkerRegistry, Depends(get_model_registry)]
