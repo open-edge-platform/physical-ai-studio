@@ -1,0 +1,1018 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #835 — Guided Architecture Review</title>
+<style>
+  :root {
+    --ink: #142033;
+    --muted: #5c6b80;
+    --paper: #f3f6fa;
+    --panel: #ffffff;
+    --line: #d5deea;
+    --accent: #0e6e56;
+    --accent-soft: #e6f4ef;
+    --warn: #9a4d00;
+    --warn-soft: #fff3e0;
+    --danger: #a61b1b;
+    --danger-soft: #fdecea;
+    --info: #1f4e79;
+    --info-soft: #e8f0f8;
+    --rail: 268px;
+    --ease: cubic-bezier(.22,.8,.28,1);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 500px at 10% -10%, #dfeaf5 0%, transparent 55%),
+      radial-gradient(900px 420px at 100% 0%, #dff0e8 0%, transparent 50%),
+      var(--paper);
+    font: 15px/1.55 "IBM Plex Sans", "Segoe UI", sans-serif;
+  }
+
+  button, a { font: inherit; }
+  code {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: .88em;
+    background: #eef3f8;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  pre {
+    margin: 12px 0 0;
+    padding: 14px 16px;
+    overflow: auto;
+    background: #101826;
+    color: #dbe7f3;
+    border-radius: 10px;
+    font: 12.5px/1.5 "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+
+  .shell {
+    min-height: 100%;
+    display: grid;
+    grid-template-columns: var(--rail) 1fr;
+  }
+
+  /* ---------- rail ---------- */
+  .rail {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    padding: 28px 18px 24px;
+    border-right: 1px solid var(--line);
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .rail-brand {
+    padding: 0 8px;
+  }
+  .rail-brand .kicker {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .rail-brand h1 {
+    margin: 6px 0 0;
+    font-size: 20px;
+    line-height: 1.25;
+    font-weight: 650;
+  }
+  .progress {
+    height: 4px;
+    background: #e4ebf3;
+    border-radius: 999px;
+    overflow: hidden;
+    margin: 12px 8px 0;
+  }
+  .progress > i {
+    display: block;
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width .45s var(--ease);
+  }
+
+  .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .steps button {
+    width: 100%;
+    text-align: left;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 10px;
+    align-items: start;
+    transition: background .2s var(--ease), color .2s var(--ease);
+  }
+  .steps button:hover { background: #eef3f8; color: var(--ink); }
+  .steps button[aria-current="step"] {
+    background: var(--accent-soft);
+    color: var(--ink);
+  }
+  .steps .n {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 700;
+    border: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .steps button[aria-current="step"] .n {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+  }
+  .steps button.is-done .n {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .steps .label { font-weight: 600; font-size: 13.5px; }
+  .steps .hint { display:block; font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .rail-foot {
+    margin-top: auto;
+    padding: 0 8px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  /* ---------- stage ---------- */
+  .stage {
+    padding: 36px 40px 56px;
+    max-width: 980px;
+  }
+
+  .panel {
+    display: none;
+    animation: rise .42s var(--ease) both;
+  }
+  .panel.is-active { display: block; }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .eyebrow {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    font-size: 30px;
+    line-height: 1.15;
+    font-weight: 650;
+    letter-spacing: -.02em;
+  }
+  .lede {
+    margin: 0 0 22px;
+    color: var(--muted);
+    font-size: 16px;
+    max-width: 62ch;
+  }
+
+  .nav-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 28px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .btn {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    border-radius: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: transform .15s var(--ease), background .2s, border-color .2s;
+  }
+  .btn:hover { transform: translateY(-1px); border-color: #b7c5d8; }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+
+  /* ---------- intro metrics ---------- */
+  .verdict {
+    display: grid;
+    grid-template-columns: 1.3fr .7fr;
+    gap: 18px;
+    align-items: stretch;
+    margin-bottom: 18px;
+  }
+  .verdict-main {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 22px;
+  }
+  .verdict-main strong {
+    display: inline-block;
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .verdict-side {
+    display: grid;
+    gap: 10px;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .stat b { display:block; font-size: 24px; line-height:1; }
+  .stat span { color: var(--muted); font-size: 12px; }
+
+  .journey {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .journey button {
+    border: 1px dashed #c9d4e3;
+    background: transparent;
+    border-radius: 12px;
+    padding: 14px 10px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .2s, background .2s, transform .2s var(--ease);
+  }
+  .journey button:hover {
+    border-style: solid;
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    transform: translateY(-2px);
+  }
+  .journey .idx { display:block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  .journey .ttl { display:block; font-weight: 650; font-size: 13px; }
+
+  /* ---------- architecture map ---------- */
+  .arch {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 18px;
+  }
+  .arch svg { width: 100%; height: auto; display: block; }
+  .node {
+    cursor: pointer;
+    transition: filter .2s;
+  }
+  .node:hover, .node.is-hot {
+    filter: brightness(1.02);
+  }
+  .node rect, .node path {
+    transition: stroke-width .2s, stroke .2s, fill .2s;
+  }
+  .node.is-hot rect, .node.is-hot path {
+    stroke-width: 2.5;
+  }
+  .flow-line {
+    stroke: #90a0b5;
+    stroke-width: 1.75;
+    fill: none;
+    stroke-dasharray: 5 5;
+    animation: dash 18s linear infinite;
+  }
+  .flow-line.is-warn { stroke: #c47a1a; }
+  .flow-line.is-danger { stroke: #c0392b; }
+  @keyframes dash { to { stroke-dashoffset: -180; } }
+
+  .inspect {
+    margin-top: 14px;
+    min-height: 120px;
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+  }
+  .inspect h3 { margin: 0 0 6px; font-size: 16px; }
+  .inspect p { margin: 0; color: var(--muted); max-width: 70ch; }
+  .chip-row { display:flex; flex-wrap:wrap; gap:8px; margin-top: 12px; }
+  .chip {
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: #f7fafc;
+    color: var(--muted);
+  }
+  .chip.warn { background: var(--warn-soft); color: var(--warn); border-color: #f0d3a2; }
+  .chip.danger { background: var(--danger-soft); color: var(--danger); border-color: #f0b8b2; }
+  .chip.ok { background: var(--accent-soft); color: var(--accent); border-color: #b9dfcf; }
+
+  /* ---------- findings ---------- */
+  .finder {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .issue-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .issue-list button {
+    text-align: left;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color .2s, background .2s, transform .15s var(--ease);
+  }
+  .issue-list button:hover { transform: translateX(2px); }
+  .issue-list button[aria-current="true"] {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .issue-list .sev {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .sev.p0 { color: var(--danger); }
+  .sev.p1 { color: #c2410c; }
+  .sev.p2 { color: var(--warn); }
+  .sev.p3 { color: var(--info); }
+  .issue-list .title { display:block; font-weight: 650; font-size: 13px; line-height: 1.3; }
+
+  .issue-detail {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 20px;
+    min-height: 360px;
+  }
+  .issue-detail h3 { margin: 0 0 8px; font-size: 20px; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .fix {
+    margin-top: 14px;
+    background: var(--accent-soft);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    padding: 12px 14px;
+  }
+  .fix strong { display:block; margin-bottom: 4px; }
+
+  .filters {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .filters button {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .filters button[aria-pressed="true"] {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: #fff;
+  }
+
+  /* ---------- checklist / end ---------- */
+  .checklist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .checklist li {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  .checklist input {
+    width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent);
+  }
+  .checklist label { cursor: pointer; }
+  .checklist label span { display:block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+  .good-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .good-grid article {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .good-grid h3 { margin: 0 0 6px; font-size: 14px; color: var(--accent); }
+
+  @media (max-width: 960px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail {
+      position: relative;
+      height: auto;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .steps { display: grid; grid-template-columns: 1fr 1fr; }
+    .stage { padding: 24px 18px 40px; }
+    .verdict, .finder, .journey, .good-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail" aria-label="Review guide">
+      <div class="rail-brand">
+        <div class="kicker">Physical AI Studio · PR #835</div>
+        <h1>Guided architecture review</h1>
+        <div class="progress" aria-hidden="true"><i id="progressFill"></i></div>
+      </div>
+
+      <ol class="steps" id="stepNav">
+        <li><button type="button" data-step="0" aria-current="step">
+          <span class="n">1</span>
+          <span><span class="label">Start here</span><span class="hint">Verdict &amp; path</span></span>
+        </button></li>
+        <li><button type="button" data-step="1">
+          <span class="n">2</span>
+          <span><span class="label">System map</span><span class="hint">Click nodes to inspect</span></span>
+        </button></li>
+        <li><button type="button" data-step="2">
+          <span class="n">3</span>
+          <span><span class="label">Blockers</span><span class="hint">3 must-fix items</span></span>
+        </button></li>
+        <li><button type="button" data-step="3">
+          <span class="n">4</span>
+          <span><span class="label">Risks</span><span class="hint">High &amp; medium</span></span>
+        </button></li>
+        <li><button type="button" data-step="4">
+          <span class="n">5</span>
+          <span><span class="label">Ship plan</span><span class="hint">Checklist to merge</span></span>
+        </button></li>
+      </ol>
+
+      <div class="rail-foot">
+        Head <code>f51a44cf</code><br>
+        10 commits · 60 files · +3458/−720
+      </div>
+    </aside>
+
+    <main class="stage">
+      <!-- STEP 0 -->
+      <section class="panel is-active" id="step-0" aria-labelledby="t0">
+        <p class="eyebrow">Step 1 of 5</p>
+        <h2 id="t0">Request changes — then walk the seams</h2>
+        <p class="lede">
+          The backend plugin contract is the right idea. The release gap is that catalog listing is dynamic,
+          while UI forms, OpenAPI types, and Compose wiring still assume a closed built-in set.
+        </p>
+
+        <div class="verdict">
+          <div class="verdict-main">
+            <strong>Do not merge yet</strong>
+            <p style="margin:0">
+              Fix three blockers first: Compose context naming, UI types the form cannot submit,
+              and README documenting <code>register</code> instead of <code>register_robot</code>.
+              Everything else is sequenced after that.
+            </p>
+          </div>
+          <div class="verdict-side">
+            <div class="stat"><b>3</b><span>Blockers (P0)</span></div>
+            <div class="stat"><b>4</b><span>High risks (P1)</span></div>
+            <div class="stat"><b>5</b><span>Medium follow-ups</span></div>
+          </div>
+        </div>
+
+        <p class="eyebrow" style="margin-top:8px">Suggested reading order</p>
+        <div class="journey" id="journey">
+          <button type="button" data-goto="1"><span class="idx">Next</span><span class="ttl">See how data flows</span></button>
+          <button type="button" data-goto="2"><span class="idx">Then</span><span class="ttl">Clear the blockers</span></button>
+          <button type="button" data-goto="3"><span class="idx">Then</span><span class="ttl">Probe architecture risks</span></button>
+          <button type="button" data-goto="4"><span class="idx">Finally</span><span class="ttl">Check off a ship plan</span></button>
+          <button type="button" data-goto="4" data-focus="goods"><span class="idx">Also</span><span class="ttl">What already works</span></button>
+        </div>
+
+        <div class="nav-row">
+          <button class="btn" disabled>Back</button>
+          <button class="btn primary" data-next>Open system map →</button>
+        </div>
+      </section>
+
+      <!-- STEP 1 -->
+      <section class="panel" id="step-1" aria-labelledby="t1">
+        <p class="eyebrow">Step 2 of 5</p>
+        <h2 id="t1">System map</h2>
+        <p class="lede">
+          Click a box to inspect that seam. Warm edges mark places this PR still couples poorly.
+        </p>
+
+        <div class="arch">
+          <svg viewBox="0 0 920 320" role="img" aria-label="Plugin architecture map">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" fill="#90a0b5"/>
+              </marker>
+            </defs>
+
+            <path class="flow-line" d="M190 150 H250" marker-end="url(#arrow)"/>
+            <path class="flow-line" d="M430 110 H500" marker-end="url(#arrow)"/>
+            <path class="flow-line is-warn" d="M430 190 H500" marker-end="url(#arrow)"/>
+            <path class="flow-line is-danger" d="M700 110 H760" marker-end="url(#arrow)"/>
+            <path class="flow-line" d="M700 190 H760" marker-end="url(#arrow)"/>
+
+            <g class="node is-hot" data-node="plugin" tabindex="0" role="button" aria-label="Third-party plugin">
+              <rect x="40" y="100" width="150" height="100" rx="14" fill="#eef5ff" stroke="#1f4e79"/>
+              <text x="115" y="140" text-anchor="middle" font-size="14" font-weight="700" fill="#142033">Third-party pkg</text>
+              <text x="115" y="162" text-anchor="middle" font-size="12" fill="#5c6b80">entry point</text>
+              <text x="115" y="180" text-anchor="middle" font-size="12" fill="#5c6b80">+ definition</text>
+            </g>
+
+            <g class="node is-hot" data-node="registry" tabindex="0" role="button" aria-label="Registry and SDK">
+              <rect x="250" y="70" width="180" height="160" rx="14" fill="#e6f4ef" stroke="#0e6e56"/>
+              <text x="340" y="110" text-anchor="middle" font-size="14" font-weight="700" fill="#142033">Registry / SDK</text>
+              <text x="340" y="136" text-anchor="middle" font-size="12" fill="#5c6b80">payload · builder</text>
+              <text x="340" y="156" text-anchor="middle" font-size="12" fill="#5c6b80">probe · assets</text>
+              <text x="340" y="186" text-anchor="middle" font-size="12" fill="#9a4d00">⚠ rebuilt often</text>
+            </g>
+
+            <g class="node" data-node="api" tabindex="0" role="button" aria-label="Backend API">
+              <rect x="500" y="55" width="200" height="90" rx="14" fill="#fff8ec" stroke="#9a4d00"/>
+              <text x="600" y="95" text-anchor="middle" font-size="14" font-weight="700" fill="#142033">Backend catalog API</text>
+              <text x="600" y="118" text-anchor="middle" font-size="12" fill="#5c6b80">list · schema · probe · assets</text>
+            </g>
+
+            <g class="node" data-node="runtime" tabindex="0" role="button" aria-label="Robot runtime">
+              <rect x="500" y="175" width="200" height="90" rx="14" fill="#fff8ec" stroke="#9a4d00"/>
+              <text x="600" y="215" text-anchor="middle" font-size="14" font-weight="700" fill="#142033">Robot runtime</text>
+              <text x="600" y="238" text-anchor="middle" font-size="12" fill="#5c6b80">factory + adapters</text>
+            </g>
+
+            <g class="node is-hot" data-node="ui" tabindex="0" role="button" aria-label="Compiled UI">
+              <rect x="760" y="100" width="120" height="100" rx="14" fill="#fdecea" stroke="#a61b1b"/>
+              <text x="820" y="145" text-anchor="middle" font-size="14" font-weight="700" fill="#142033">UI forms</text>
+              <text x="820" y="168" text-anchor="middle" font-size="12" fill="#a61b1b">built-ins only</text>
+            </g>
+          </svg>
+
+          <div class="inspect" id="nodeInspect">
+            <h3>Select a node</h3>
+            <p>Start with <strong>Registry / SDK</strong> or <strong>UI forms</strong> — those are where the review pressure is highest.</p>
+          </div>
+        </div>
+
+        <div class="nav-row">
+          <button class="btn" data-prev>← Back</button>
+          <button class="btn primary" data-next>Review blockers →</button>
+        </div>
+      </section>
+
+      <!-- STEP 2 -->
+      <section class="panel" id="step-2" aria-labelledby="t2">
+        <p class="eyebrow">Step 3 of 5 · Blockers only</p>
+        <h2 id="t2">Clear these before anything else</h2>
+        <p class="lede">One issue at a time. Use the list on the left; the detail pane shows snippet + concrete fix.</p>
+
+        <div class="finder" data-bucket="blocker">
+          <div class="issue-list" id="blockerList"></div>
+          <article class="issue-detail" id="blockerDetail"></article>
+        </div>
+
+        <div class="nav-row">
+          <button class="btn" data-prev>← Back</button>
+          <button class="btn primary" data-next>Continue to risks →</button>
+        </div>
+      </section>
+
+      <!-- STEP 3 -->
+      <section class="panel" id="step-3" aria-labelledby="t3">
+        <p class="eyebrow">Step 4 of 5 · After blockers</p>
+        <h2 id="t3">Architecture risks to probe</h2>
+        <p class="lede">Filter by severity, then walk each finding. Prefer fixing registry ownership and adding one positive plugin test before expanding the UI story.</p>
+
+        <div class="filters" id="riskFilters" role="group" aria-label="Severity filter">
+          <button type="button" data-filter="all" aria-pressed="true">All</button>
+          <button type="button" data-filter="p1" aria-pressed="false">P1 High</button>
+          <button type="button" data-filter="p2" aria-pressed="false">P2 Medium</button>
+          <button type="button" data-filter="p3" aria-pressed="false">P3 Low</button>
+        </div>
+
+        <div class="finder" data-bucket="risk">
+          <div class="issue-list" id="riskList"></div>
+          <article class="issue-detail" id="riskDetail"></article>
+        </div>
+
+        <div class="nav-row">
+          <button class="btn" data-prev>← Back</button>
+          <button class="btn primary" data-next>Open ship plan →</button>
+        </div>
+      </section>
+
+      <!-- STEP 4 -->
+      <section class="panel" id="step-4" aria-labelledby="t4">
+        <p class="eyebrow">Step 5 of 5</p>
+        <h2 id="t4">Ship plan</h2>
+        <p class="lede">Check items as you verify them. The goal is a mergeable PR with an explicit product boundary for plugins.</p>
+
+        <ul class="checklist" id="shipList">
+          <li>
+            <input id="c1" type="checkbox">
+            <label for="c1">Fix Compose context name to <code>plugin</code> and build cpu/xpu/cuda locally
+              <span>Unblocks the deployment path this PR claims to support.</span>
+            </label>
+          </li>
+          <li>
+            <input id="c2" type="checkbox">
+            <label for="c2">Choose product scope: backend-only plugins <em>or</em> schema-driven UI
+              <span>If backend-only, filter the picker to UI-supported types. Do not leave the middle state.</span>
+            </label>
+          </li>
+          <li>
+            <input id="c3" type="checkbox">
+            <label for="c3">Update README to <code>register_robot</code> and add a positive entry-point test
+              <span>Prove an external plugin can register, validate, build, and serve assets.</span>
+            </label>
+          </li>
+          <li>
+            <input id="c4" type="checkbox">
+            <label for="c4">Collapse to one app-lifecycle registry
+              <span>Inject into catalog service, factory, and schema adapters; avoid import-time reloads.</span>
+            </label>
+          </li>
+          <li>
+            <input id="c5" type="checkbox">
+            <label for="c5">Deduplicate port resolution; resolve plugin asset roots; quiet discover logging
+              <span>Small hardening once the blockers are gone.</span>
+            </label>
+          </li>
+          <li>
+            <input id="c6" type="checkbox">
+            <label for="c6">Rebase onto latest <code>main</code> (currently behind 3 commits)
+              <span>Then re-run CI / Compose smoke.</span>
+            </label>
+          </li>
+        </ul>
+
+        <div class="good-grid" id="goods">
+          <article>
+            <h3>Already strong</h3>
+            <p><code>RobotCatalogDefinition</code> cleanly separates payload, builder, probe, assets, and adapter options.</p>
+          </article>
+          <article>
+            <h3>Already strong</h3>
+            <p>Probe endpoints validate against registered Pydantic models; catalog DTO stays narrow.</p>
+          </article>
+          <article>
+            <h3>Already strong</h3>
+            <p>Asset path containment rejects traversal; API tests cover forbidden and missing files.</p>
+          </article>
+          <article>
+            <h3>Already strong</h3>
+            <p>WidowX ping and SO101 serial online checks moved into probes without dropping behavior.</p>
+          </article>
+        </div>
+
+        <div class="nav-row">
+          <button class="btn" data-prev>← Back</button>
+          <button class="btn primary" id="restart">Restart walkthrough</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+<script>
+const NODES = {
+  plugin: {
+    title: "Third-party package",
+    body: "External robots register through entry point group physicalai.studio.catalog_plugins. The package depends on the SDK and returns RobotCatalogDefinition objects.",
+    chips: [
+      { t: "docs call register()", c: "danger" },
+      { t: "SDK not published yet", c: "warn" },
+      { t: "trusted in-process code", c: "warn" },
+    ],
+  },
+  registry: {
+    title: "Registry / SDK",
+    body: "RobotCatalogRegistry loads built-ins, then entry points. Today it is constructed in schemas/robot.py, RobotCatalogService, RobotService, and RobotClientFactory — so plugins initialize more than once.",
+    chips: [
+      { t: "rebuilt on many paths", c: "warn" },
+      { t: "entry-point load = startup risk", c: "warn" },
+      { t: "good definition shape", c: "ok" },
+    ],
+  },
+  api: {
+    title: "Backend catalog API",
+    body: "Exposes list, JSON Schema, discover/identify/is-online, and URDF/assets. Payload validation at the boundary is solid. Discover currently logs the full definition object.",
+    chips: [
+      { t: "schema endpoint unused by UI", c: "warn" },
+      { t: "narrow response DTO", c: "ok" },
+      { t: "validation at boundary", c: "ok" },
+    ],
+  },
+  runtime: {
+    title: "Robot runtime",
+    body: "Builders receive CatalogRobotFactory.find_port(...). Empty-serial handling was fixed in the factory, but SO101 still keeps a divergent resolver copy.",
+    chips: [
+      { t: "duplicated port resolve", c: "warn" },
+      { t: "probe-driven online checks", c: "ok" },
+    ],
+  },
+  ui: {
+    title: "UI forms",
+    body: "The picker renders every catalog entry, but form state and body builders are hard-coded to six built-ins. Selecting a plugin type can crash on formData.name or submit null.",
+    chips: [
+      { t: "blocker for third-party story", c: "danger" },
+      { t: "OpenAPI types freeze at generate", c: "warn" },
+    ],
+  },
+};
+
+const BLOCKERS = [
+  {
+    id: "compose",
+    sev: "p0",
+    title: "Compose context name mismatch",
+    loc: "docker-compose.yaml:103 · Dockerfile:101+",
+    body: "GitHub Actions and the Dockerfile use singular plugin=. Local Compose declares plugins: (plural), so local image builds cannot resolve the plugin context.",
+    snippet: `additional_contexts:\n  libs: ../../library\n  plugins: ../../application/plugin   # ← plural\n\n# Dockerfile / GHA\n--from=plugin\nplugin=application/plugin`,
+    fix: "Rename the Compose key to plugin: and build every Compose profile once (cpu/xpu/cuda).",
+  },
+  {
+    id: "ui",
+    sev: "p0",
+    title: "UI advertises types it cannot submit",
+    loc: "robot-form/form.tsx · provider.tsx · form-data.ts",
+    body: "Catalog listing is dynamic; form state, field rendering, and request construction are closed over six built-ins. External types leave formData undefined or produce a null body. GET /{robot_type}/schema exists but is unused.",
+    snippet: `{catalogQuery.data.map((entry) => (\n  <Item key={entry.type}>{entry.display_name}</Item>\n))}\n\nswitch (activeType) {\n  case 'SO101_Follower': ...\n  case 'Trossen_WidowXAI_*': ...\n  // no default / generic plugin branch\n}`,
+    fix: "Either implement schema-driven forms, or filter the picker to UI-supported types and call this release backend-only.",
+  },
+  {
+    id: "readme",
+    sev: "p0",
+    title: "README documents the wrong register API",
+    loc: "plugin/README.md · catalog.py:69",
+    body: "The protocol and backend expose register_robot. The public quick-start still calls registry.register(...), which fails for every plugin that follows the docs.",
+    snippet: `# protocol\ndef register_robot(self, definition: RobotCatalogDefinition) -> None: ...\n\n# README (wrong)\nregistry.register(definition)  # AttributeError`,
+    fix: "Update README examples to register_robot and add a contract test against the real registry protocol.",
+  },
+];
+
+const RISKS = [
+  {
+    id: "many-reg",
+    sev: "p1",
+    title: "Many registries, not one lifecycle catalog",
+    loc: "schemas/robot.py · robot_service.py · robot_client_factory.py",
+    body: "Each RobotCatalogRegistry() reloads built-ins and entry points. Import-time construction also means a bad plugin can break schema import.",
+    snippet: `_registry = RobotCatalogRegistry()          # schemas/robot.py\nself._registry = RobotCatalogRegistry()     # catalog service\nregistry = RobotCatalogRegistry()           # find_online_robots\ncatalog_registry or RobotCatalogRegistry()  # factory`,
+    fix: "Build one registry during app lifespan and inject it everywhere OpenAPI, persistence, and runtime need it.",
+  },
+  {
+    id: "no-e2e",
+    sev: "p1",
+    title: "No positive external-plugin integration test",
+    loc: "tests/api/test_robot_catalog.py",
+    body: "LeKiwi_* cases only assert 404 when the type is absent. Nothing proves entry-point registration through create/probe/build/assets.",
+    snippet: `response = client.get("/api/robots/catalog/LeKiwi_Follower/schema")\nassert response.status_code == 404`,
+    fix: "Add a tiny fixture plugin (or metadata monkeypatch) and assert the happy path once.",
+  },
+  {
+    id: "openapi",
+    sev: "p1",
+    title: "OpenAPI / UI types freeze at generation time",
+    loc: "robot-types.ts · generated OpenAPI",
+    body: "SchemaRobotType is derived from OpenAPI generated against whatever plugins were installed at export time. Later-installed plugins appear in catalog JSON but not in TS unions or form maps.",
+    snippet: `export type SchemaRobotType = SchemaRobot['type'];\nsetActiveType(selected as SchemaRobotType);`,
+    fix: "Treat unknown plugin payloads as schema-driven/unknown in the UI, or explicitly exclude them from the picker.",
+  },
+  {
+    id: "sdk",
+    sev: "p1",
+    title: "SDK distribution story is incomplete",
+    loc: "plugin/README.md · plugin/pyproject.toml",
+    body: "README says uv add physicalai-studio-plugin, but this PR only wires a local path dependency. The package also depends on full physicalai mainly for builder return typing.",
+    snippet: `dependencies = [\n  "pydantic>=2.12",\n  "physicalai",\n]`,
+    fix: "Define publish + semver policy before external promotion; consider a Protocol boundary to slim the typing dependency.",
+  },
+  {
+    id: "ports",
+    sev: "p2",
+    title: "Port resolution duplicated and already diverged",
+    loc: "robot_client_factory.py · so101.py",
+    body: "Empty serial numbers were fixed in the factory, but SO101 keeps a parallel resolver that still treats '' as a serial identity.",
+    snippet: `# factory (fixed)\nif target.serial_number is not None and target.serial_number != "":\n\n# so101 (old)\nif target.serial_number is not None:`,
+    fix: "Keep one shared helper; delete the SO101 copy.",
+  },
+  {
+    id: "trust",
+    sev: "p2",
+    title: "Plugin trust / failure model undefined",
+    loc: "registry.py:_load_external_plugins",
+    body: "Entry points load and register synchronously. Probe/builder IO has no timeout. A slow or broken plugin can hang APIs or block startup.",
+    snippet: `register_plugin = discovered_entry_point.load()\nplugin_callable(self)  # exceptions abort registry build`,
+    fix: "Document trusted in-process plugins; add identity diagnostics and probe failure translation/timeouts.",
+  },
+  {
+    id: "coerce",
+    sev: "p2",
+    title: "Undocumented legacy coerce path",
+    loc: "registry.py:_coerce_definition",
+    body: "The registry still accepts older attribute layouts and rewrites them. That softens migration but expands the public contract without docs or tests.",
+    snippet: `robot_payload = getattr(definition, "robot_payload", None)\nif robot_payload is None:\n    robot_payload = definition.robot_model.model_fields["payload"].annotation`,
+    fix: "Delete coerce before first external release, or lock it with compatibility tests + deprecation.",
+  },
+  {
+    id: "assets",
+    sev: "p2",
+    title: "Plugin asset root not resolved",
+    loc: "catalog/assets.py",
+    body: "Built-in roots call .resolve(); plugin root_resolver() results are used raw while requested paths are resolved, which can break containment checks.",
+    snippet: `root = ... if asset.root_resolver is None else asset.root_resolver()\nrequested_path = (root / asset_path).resolve()\nif not requested_path.is_relative_to(root):`,
+    fix: "Always Path(root_resolver()).resolve() before joining.",
+  },
+  {
+    id: "log",
+    sev: "p2",
+    title: "Discover logs full definition objects",
+    loc: "api/robot_catalog.py:83",
+    body: "Every discover call logs callables, asset paths, and probe instances.",
+    snippet: `logger.info("Discover from definition {} as {}", definition.type, definition)`,
+    fix: "Log definition.type only, or drop to debug.",
+  },
+  {
+    id: "docs-stale",
+    sev: "p3",
+    title: "Factory docstring still mentions loading calibrations",
+    loc: "plugin/factory.py",
+    body: "Calibration now lives in the payload; the CatalogRobotFactory docstring is stale.",
+    snippet: `so they can resolve serial ports and load calibrations at build time.`,
+    fix: "Update the docstring to match the payload-owned calibration model.",
+  },
+  {
+    id: "missing-plugin",
+    sev: "p3",
+    title: "Uninstalled plugin + existing DB rows",
+    loc: "project_robot_mapper.py · schemas/robot.py",
+    body: "type is a free String(64). If a plugin disappears, RobotAdapter.validate_python can 500 when reading old rows.",
+    snippet: `return RobotAdapter.validate_python({ "type": _normalize_type(model.type), ... })`,
+    fix: "Soft-fail with a clear “plugin missing” error instead of an unhandled validation failure.",
+  },
+];
+
+const TOTAL_STEPS = 5;
+let step = 0;
+
+function setStep(next) {
+  step = Math.max(0, Math.min(TOTAL_STEPS - 1, next));
+  document.querySelectorAll(".panel").forEach((p, i) => {
+    p.classList.toggle("is-active", i === step);
+  });
+  document.querySelectorAll("#stepNav button").forEach((btn, i) => {
+    btn.setAttribute("aria-current", i === step ? "step" : "false");
+    btn.classList.toggle("is-done", i < step);
+  });
+  document.getElementById("progressFill").style.width = `${((step + 1) / TOTAL_STEPS) * 100}%`;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function renderIssue(issue, mount) {
+  mount.innerHTML = `
+    <div class="sev ${issue.sev}">${issue.sev.toUpperCase()}</div>
+    <h3>${issue.title}</h3>
+    <div class="meta">${issue.loc}</div>
+    <p>${issue.body}</p>
+    <pre>${issue.snippet.replace(/</g, "&lt;")}</pre>
+    <div class="fix"><strong>Fix</strong>${issue.fix}</div>
+  `;
+}
+
+function mountIssueList(issues, listEl, detailEl, selectedId) {
+  listEl.innerHTML = "";
+  const selected = issues.find((i) => i.id === selectedId) || issues[0];
+  issues.forEach((issue) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("aria-current", issue.id === selected.id ? "true" : "false");
+    btn.innerHTML = `<span class="sev ${issue.sev}">${issue.sev.toUpperCase()}</span><span class="title">${issue.title}</span>`;
+    btn.addEventListener("click", () => mountIssueList(issues, listEl, detailEl, issue.id));
+    listEl.appendChild(btn);
+  });
+  if (selected) renderIssue(selected, detailEl);
+}
+
+function showNode(id) {
+  const node = NODES[id];
+  if (!node) return;
+  document.querySelectorAll(".node").forEach((n) => n.classList.toggle("is-hot", n.dataset.node === id));
+  const chips = node.chips.map((c) => `<span class="chip ${c.c}">${c.t}</span>`).join("");
+  document.getElementById("nodeInspect").innerHTML = `
+    <h3>${node.title}</h3>
+    <p>${node.body}</p>
+    <div class="chip-row">${chips}</div>
+  `;
+}
+
+// navigation
+document.getElementById("stepNav").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-step]");
+  if (!btn) return;
+  setStep(Number(btn.dataset.step));
+});
+
+document.querySelectorAll("[data-next]").forEach((btn) => btn.addEventListener("click", () => setStep(step + 1)));
+document.querySelectorAll("[data-prev]").forEach((btn) => btn.addEventListener("click", () => setStep(step - 1)));
+document.getElementById("restart").addEventListener("click", () => setStep(0));
+
+document.getElementById("journey").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-goto]");
+  if (!btn) return;
+  setStep(Number(btn.dataset.goto));
+  if (btn.dataset.focus) {
+    requestAnimationFrame(() => document.getElementById(btn.dataset.focus)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+});
+
+// architecture nodes
+document.querySelectorAll(".node").forEach((node) => {
+  const activate = () => showNode(node.dataset.node);
+  node.addEventListener("click", activate);
+  node.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      activate();
+    }
+  });
+});
+showNode("registry");
+
+// issue panes
+mountIssueList(BLOCKERS, document.getElementById("blockerList"), document.getElementById("blockerDetail"), BLOCKERS[0].id);
+
+let riskFilter = "all";
+function refreshRisks() {
+  const filtered = RISKS.filter((r) => riskFilter === "all" || r.sev === riskFilter);
+  mountIssueList(filtered, document.getElementById("riskList"), document.getElementById("riskDetail"), filtered[0]?.id);
+}
+document.getElementById("riskFilters").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-filter]");
+  if (!btn) return;
+  riskFilter = btn.dataset.filter;
+  document.querySelectorAll("#riskFilters button").forEach((b) => b.setAttribute("aria-pressed", b === btn ? "true" : "false"));
+  refreshRisks();
+});
+refreshRisks();
+
+// persist checklist lightly
+const shipList = document.getElementById("shipList");
+shipList.querySelectorAll("input[type=checkbox]").forEach((input) => {
+  const key = `pr835-check-${input.id}`;
+  input.checked = localStorage.getItem(key) === "1";
+  input.addEventListener("change", () => localStorage.setItem(key, input.checked ? "1" : "0"));
+});
+
+setStep(0);
+</script>
+</body>
+</html>
