@@ -95,7 +95,7 @@ class BaseRepository(Generic[ModelType, SchemaType], metaclass=abc.ABCMeta):
     async def update(self, item: ModelType, partial_update: dict) -> ModelType:
         # note: model_copy does not validate the model, so we need to validate explicitly
         to_update = item.model_copy(update=partial_update, deep=True)
-        to_update = cast("ModelType", item.__class__.model_validate(to_update.__dict__))
+        to_update = cast("ModelType", item.__class__.model_validate(dict(to_update)))
         schema_item: SchemaType = self.to_schema(to_update)
         await self.db.merge(schema_item)
         await self.db.commit()
@@ -149,7 +149,7 @@ class ProjectBaseRepository(BaseRepository[ModelType, SchemaType], metaclass=abc
 
         to_update = item.model_copy(update=partial_update, deep=True)
         # Re-validate to convert dicts back to their proper model types.
-        to_update = cast("ModelType", item.__class__.model_validate(to_update.__dict__))
+        to_update = cast("ModelType", item.__class__.model_validate(dict(to_update)))
         schema_item = self.to_schema(to_update)
 
         if hasattr(schema_item, "project_id"):

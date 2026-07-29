@@ -72,14 +72,13 @@ def load_env_file(env_file: Path) -> None:
             os.environ[key] = val
 
 
-def _resolve_device(device: str | None) -> tuple[str, bool]:
-    """Resolve the hardware extra and whether it was explicitly requested."""
+def _resolve_device(device: str | None) -> str:
+    """Resolve the hardware extra."""
     env_device = os.environ.get("DEVICE")
-    explicit = device is not None or bool(env_device)
     resolved = (device or env_device or "cpu").lower()
     if resolved not in _VALID_DEVICES:
         raise click.ClickException(f"DEVICE must be one of {', '.join(_VALID_DEVICES)} (got '{resolved}').")
-    return resolved, explicit
+    return resolved
 
 
 def _should_sync(sync: bool | None) -> bool:
@@ -131,17 +130,10 @@ def remote(host: str | None, port: int | None, device: str | None, sync: bool | 
     per training job.
     """
     load_env_file(_backend_dir() / ".env")
-    resolved_device, device_explicit = _resolve_device(device)
+    resolved_device = _resolve_device(device)
 
     os.environ["PYTHONUNBUFFERED"] = "1"
 
-    # Remote/recording nodes offload training, so cpu torch suffices; a GPU extra
-    # only matters for local torch-backend GPU inference.
-    if device_explicit and resolved_device != "cpu":
-        click.echo(
-            f"Note: DEVICE={resolved_device} on a remote node only affects local torch-backend "
-            "GPU inference; training is offloaded, so cpu torch suffices for recording.",
-        )
     maybe_sync(_backend_dir(), resolved_device, sync=sync)
 
     from settings import get_settings

@@ -30,7 +30,7 @@ const healthyTrainer = {
 
 describe('RemoteTrainersPage', () => {
     beforeEach(() => {
-        server.use(http.post(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
+        server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
     });
 
     it('shows configured remote trainers and their connection details', async () => {
@@ -54,7 +54,7 @@ describe('RemoteTrainersPage', () => {
     it('attributes an invalid device report to compute capability', async () => {
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
-            http.post(REMOTE_TRAINER_HEALTH_PATH, () =>
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
                 HttpResponse.json({
                     ...healthyTrainer,
                     status: 'degraded',
@@ -80,7 +80,7 @@ describe('RemoteTrainersPage', () => {
     it('distinguishes a failed health request from an unreachable trainer', async () => {
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
-            http.post(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json({ detail: [] }, { status: 422 }))
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json({ detail: [] }, { status: 422 }))
         );
 
         render(<RemoteTrainersPage />);

@@ -1,6 +1,5 @@
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import Literal
 from uuid import UUID, uuid4
 
 import httpx
@@ -11,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType
 from repositories.remote_trainer_repo import RemoteTrainerRepository
 from schemas.hardware import DeviceInfo, DeviceType, StorageInfo
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerCreate, RemoteTrainerHealth, RemoteTrainerUpdate
+from schemas.remote_trainer import (
+    HealthStatus,
+    RemoteTrainer,
+    RemoteTrainerCreate,
+    RemoteTrainerHealth,
+    RemoteTrainerUpdate,
+)
 
 _HEALTH_CHECK_TIMEOUT_S = 5.0
 
@@ -41,7 +46,7 @@ class RemoteTrainerService:
         started = perf_counter()
         base_url = str(remote_trainer.url).rstrip("/")
         timeout = httpx.Timeout(_HEALTH_CHECK_TIMEOUT_S)
-        status: Literal["healthy", "degraded", "unreachable"] = "healthy"
+        status: HealthStatus = "healthy"
         reason_code: str | None = None
         devices: list[DeviceInfo] = []
         storage: StorageInfo | None = None

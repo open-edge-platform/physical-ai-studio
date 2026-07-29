@@ -6,6 +6,8 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 from schemas.hardware import DeviceInfo, StorageInfo
 
+HealthStatus = Literal["healthy", "degraded", "unreachable"]
+
 
 class RemoteTrainerCreate(BaseModel):
     """Configuration for a direct remote trainer endpoint."""
@@ -35,7 +37,7 @@ class RemoteTrainerHealth(BaseModel):
     """A sanitized, point-in-time health result for a configured trainer."""
 
     remote_trainer_id: UUID
-    status: Literal["healthy", "degraded", "unreachable"]
+    status: HealthStatus
     checked_at: datetime
     latency_ms: int | None = Field(default=None, ge=0)
     devices: list[DeviceInfo] = Field(default_factory=list)

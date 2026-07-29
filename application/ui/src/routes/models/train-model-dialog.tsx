@@ -203,7 +203,7 @@ const useTrainingDevices = () => {
  * exposed so callers can force a final check (e.g. right before submitting).
  */
 const useRemoteTrainerHealth = (remoteTrainerId: string | null) => {
-    const healthCheckMutation = $api.useMutation('post', '/api/remote-trainers/{remote_trainer_id}/health');
+    const healthCheckMutation = $api.useMutation('get', '/api/remote-trainers/{remote_trainer_id}/health');
     const [health, setHealth] = useState<SchemaRemoteTrainerHealth | null>(null);
     const [isChecking, setIsChecking] = useState(false);
     const generationRef = useRef(0);

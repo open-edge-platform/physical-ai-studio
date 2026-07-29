@@ -116,39 +116,35 @@ class TestResolveDevice:
     def test_defaults_to_cpu_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("DEVICE", raising=False)
 
-        resolved, explicit = run_module._resolve_device(None)
+        resolved = run_module._resolve_device(None)
 
         assert resolved == "cpu"
-        assert explicit is False
 
     def test_uses_explicit_device_argument(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("DEVICE", raising=False)
 
-        resolved, explicit = run_module._resolve_device("cuda")
+        resolved = run_module._resolve_device("cuda")
 
         assert resolved == "cuda"
-        assert explicit is True
 
     def test_falls_back_to_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DEVICE", "xpu")
 
-        resolved, explicit = run_module._resolve_device(None)
+        resolved = run_module._resolve_device(None)
 
         assert resolved == "xpu"
-        assert explicit is True
 
     def test_argument_takes_precedence_over_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DEVICE", "xpu")
 
-        resolved, explicit = run_module._resolve_device("cuda")
+        resolved = run_module._resolve_device("cuda")
 
         assert resolved == "cuda"
-        assert explicit is True
 
     def test_is_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("DEVICE", raising=False)
 
-        resolved, _ = run_module._resolve_device("CUDA")
+        resolved = run_module._resolve_device("CUDA")
 
         assert resolved == "cuda"
 

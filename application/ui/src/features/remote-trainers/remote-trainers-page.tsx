@@ -402,7 +402,7 @@ const RemoteTrainerDetail = ({
 
 export const RemoteTrainersPage = () => {
     const { data: remoteTrainers = [], isPending } = $api.useQuery('get', '/api/remote-trainers');
-    const healthCheckMutation = $api.useMutation('post', '/api/remote-trainers/{remote_trainer_id}/health');
+    const healthCheckMutation = $api.useMutation('get', '/api/remote-trainers/{remote_trainer_id}/health');
     const [selectedRemoteTrainerId, setSelectedRemoteTrainerId] = useState<string>();
     const [formRemoteTrainer, setFormRemoteTrainer] = useState<SchemaRemoteTrainer | null>();
     const [deleteRemoteTrainer, setDeleteRemoteTrainer] = useState<SchemaRemoteTrainer>();

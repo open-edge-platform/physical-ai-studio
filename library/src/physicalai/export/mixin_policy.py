@@ -450,11 +450,7 @@ class ExportablePolicyMixin:
                         arg_name=arg_name,
                         **extra_export_kwargs,
                     )
-                    ov_model = openvino.convert_model(
-                        tmp.name,
-                        example_input={arg_name: input_sample},
-                        input=input_shapes,
-                    )
+                    ov_model = openvino.Core().read_model(tmp.name)
             else:
                 ov_model = openvino.convert_model(
                     self.model,

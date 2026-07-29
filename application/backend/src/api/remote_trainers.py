@@ -27,7 +27,7 @@ async def create_remote_trainer(
     return await remote_trainer_service.create_remote_trainer(config)
 
 
-@router.post("/{remote_trainer_id}/health")
+@router.get("/{remote_trainer_id}/health")
 async def check_remote_trainer(
     remote_trainer_id: UUID,
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],

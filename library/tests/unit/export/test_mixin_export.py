@@ -414,10 +414,12 @@ class TestToOpenVINO:
         }
 
         output_path = tmp_path / "model.xml"
-        wrapper.to_openvino(output_path)
+        with patch("torch.export.load", wraps=torch.export.load) as torch_export_load:
+            wrapper.to_openvino(output_path)
 
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
+        torch_export_load.assert_not_called()
 
 
 class TestToExecutorch:
