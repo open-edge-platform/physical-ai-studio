@@ -217,8 +217,22 @@ class PhysicalAIHarness(PredictModelServer):
             self._logged_image_map = True
         return resolved
 
-    def _build_policy_observation(self, obs: Observation) -> PhysicalAIObservation:
+    def _build_policy_observation(
+        self,
+        obs: Observation,
+        *,
+        channels_first: bool,
+    ) -> PhysicalAIObservation:
         """Build a ``physicalai.data.Observation`` from a vla-eval observation.
+
+        Args:
+            obs: vla-eval observation dict (images as HWC uint8).
+            channels_first: When ``True`` (Policy path), convert images to
+                ``(B, C, H, W)`` float32 in ``[0, 1]`` — the layout the
+                training-time preprocessors expect.  When ``False``
+                (InferenceModel path), keep images as ``(B, H, W, C)`` uint8
+                — the exported preprocessors handle layout detection and
+                normalisation internally.
 
         Returns:
             Observation populated with batched numpy images / state / task.
@@ -228,8 +242,14 @@ class PhysicalAIHarness(PredictModelServer):
         images = obs.get("images", {}) or {}
         images_nested: dict[str, np.ndarray] = {}
         for bench_key, policy_slot in self._resolve_image_map(images).items():
-            img = np.asarray(images[bench_key], dtype=np.uint8)
-            images_nested[policy_slot] = img[None, ...] if img.ndim == 3 else img  # noqa: PLR2004
+            img = np.asarray(images[bench_key])
+            if img.ndim == 3:  # noqa: PLR2004
+                img = img[None, ...]  # (H, W, C) → (1, H, W, C)
+
+            # (B, H, W, C) uint8 → (B, C, H, W) float32 [0, 1]
+            img = np.transpose(img, (0, 3, 1, 2)).astype(np.float32) / 255.0 if channels_first else img.astype(np.uint8)
+
+            images_nested[policy_slot] = img
 
         state = None
         if self.state_key:
@@ -269,11 +289,16 @@ class PhysicalAIHarness(PredictModelServer):
             float32 numpy array.
         """
         del ctx
-        policy_obs = self._build_policy_observation(obs)
 
         from physicalai.inference import InferenceModel  # noqa: PLC0415
 
-        if isinstance(self._policy, InferenceModel):
+        is_inference = isinstance(self._policy, InferenceModel)
+        # Policy subclasses expect (B, C, H, W) float32 [0, 1] images; the
+        # exported InferenceModel preprocessors accept (B, H, W, C) uint8 and
+        # handle layout/normalisation internally.
+        policy_obs = self._build_policy_observation(obs, channels_first=not is_inference)
+
+        if is_inference:
             # InferenceModel expects a plain numpy dict; build it from the
             # Observation fields, skipping None values so preprocessors don't
             # see unset features.
