@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
     Button,
@@ -31,6 +31,7 @@ import {
     SchemaRemoteTrainerHealth,
 } from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
+import { useRemoteTrainerHealth } from '../../features/remote-trainers/use-remote-trainer-health';
 import { InlineAlert } from '../../features/robots/setup-wizard/shared/inline-alert';
 
 import classes from './train-model-dialog.module.css';
@@ -40,9 +41,6 @@ export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
 };
 
 const GB = 1024 ** 3;
-
-/** How often to re-check a remote trainer's health while it is unreachable (ms). */
-const REMOTE_UNAVAILABLE_POLL_MS = 5000;
 
 /** Format bytes as a human-readable GB string. */
 const formatBytes = (bytes: number): string => {
@@ -192,90 +190,6 @@ const useTrainingDevices = () => {
     return {
         devices: data?.devices ?? [],
     };
-};
-
-/**
- * Checks and polls a selected remote trainer's health.
- *
- * The trainer is re-checked whenever `remoteTrainerId` changes, and polled
- * every `REMOTE_UNAVAILABLE_POLL_MS` while it is unreachable so the UI
- * recovers automatically once the trainer comes back. `checkHealth` is also
- * exposed so callers can force a final check (e.g. right before submitting).
- */
-const useRemoteTrainerHealth = (remoteTrainerId: string | null) => {
-    const healthCheckMutation = $api.useMutation('get', '/api/remote-trainers/{remote_trainer_id}/health');
-    const [health, setHealth] = useState<SchemaRemoteTrainerHealth | null>(null);
-    const [isChecking, setIsChecking] = useState(false);
-    const generationRef = useRef(0);
-
-    // `healthCheckMutation` is a new object every render (React Query does not
-    // memoize the whole mutation result), but `mutateAsync` itself is stable.
-    // Read it through a ref so `checkHealth` below only changes identity when
-    // `remoteTrainerId` changes, otherwise the effects below would re-fire on
-    // every render and hammer the health endpoint in a tight loop.
-    const mutateAsyncRef = useRef(healthCheckMutation.mutateAsync);
-    mutateAsyncRef.current = healthCheckMutation.mutateAsync;
-
-    const checkHealth = useCallback(async (): Promise<SchemaRemoteTrainerHealth | null> => {
-        if (remoteTrainerId === null) {
-            return null;
-        }
-
-        const generation = ++generationRef.current;
-        setIsChecking(true);
-
-        try {
-            const result = await mutateAsyncRef.current({
-                params: { path: { remote_trainer_id: remoteTrainerId } },
-            });
-
-            if (generationRef.current === generation) {
-                setHealth(result);
-            }
-
-            return result;
-        } catch {
-            const failed: SchemaRemoteTrainerHealth = {
-                remote_trainer_id: remoteTrainerId,
-                status: 'unreachable',
-                checked_at: new Date().toISOString(),
-                latency_ms: null,
-                devices: [],
-                reason_code: 'check_failed',
-            };
-
-            if (generationRef.current === generation) {
-                setHealth(failed);
-            }
-
-            return failed;
-        } finally {
-            if (generationRef.current === generation) {
-                setIsChecking(false);
-            }
-        }
-    }, [remoteTrainerId]);
-
-    useEffect(() => {
-        setHealth(null);
-
-        if (remoteTrainerId === null) {
-            return;
-        }
-
-        checkHealth();
-    }, [remoteTrainerId, checkHealth]);
-
-    useEffect(() => {
-        if (remoteTrainerId === null || health?.status !== 'unreachable') {
-            return undefined;
-        }
-
-        const timer = setInterval(checkHealth, REMOTE_UNAVAILABLE_POLL_MS);
-        return () => clearInterval(timer);
-    }, [remoteTrainerId, health?.status, checkHealth]);
-
-    return { health, isChecking, checkHealth };
 };
 
 interface TrainingDeviceInfoProps {
@@ -552,7 +466,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             // Final guard: the remote trainer may have gone offline since the last
             // poll, so re-check availability right before submitting the job.
             const latestHealth = await checkRemoteTrainerHealth();
-            if (latestHealth?.status === 'unreachable') {
+            if (latestHealth === null || latestHealth.status === 'unreachable') {
                 return;
             }
         }
@@ -588,7 +502,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
 
                     <TrainingDeviceInfo
                         isRemoteTarget={isRemoteTarget}
-                        remoteHealth={remoteTrainerHealth}
+                        remoteHealth={remoteTrainerHealth ?? null}
                         isCheckingRemote={isCheckingRemoteTrainer}
                     />
                 </Flex>

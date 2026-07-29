@@ -28,6 +28,12 @@ const healthyTrainer = {
     reason_code: null,
 };
 
+const unavailableTrainer = {
+    ...remoteTrainer,
+    id: 'b5a0da22-7066-426d-b0ae-6dfae2d983dc',
+    name: 'unavailable-trainer',
+};
+
 describe('RemoteTrainersPage', () => {
     beforeEach(() => {
         server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
@@ -39,7 +45,7 @@ describe('RemoteTrainersPage', () => {
         render(<RemoteTrainersPage />);
 
         expect(await screen.findByRole('heading', { name: 'Remote Trainers' })).toBeInTheDocument();
-        expect(await screen.findByText('managed-trainer')).toBeInTheDocument();
+        expect(await screen.findAllByText('managed-trainer')).not.toHaveLength(0);
         expect(await screen.findByRole('heading', { name: 'managed-trainer' })).toBeInTheDocument();
         expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);
         expect(screen.getByText(/ready for training requests/)).toBeInTheDocument();
@@ -66,6 +72,7 @@ describe('RemoteTrainersPage', () => {
 
         render(<RemoteTrainersPage />);
 
+        expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);
         const trainerHealthRow = (await screen.findByText('Trainer health endpoint')).closest('div');
         const computeRow = screen.getByText('Compute capability').closest('div');
 
@@ -87,6 +94,22 @@ describe('RemoteTrainersPage', () => {
 
         expect(await screen.findAllByText('Check failed')).not.toHaveLength(0);
         expect(screen.getAllByText('Studio could not complete the health check. Try again.')).not.toHaveLength(0);
+    });
+
+    it('shows a failed health check for an unselected trainer', async () => {
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer, unavailableTrainer])),
+            http.get(REMOTE_TRAINER_HEALTH_PATH, ({ params }) =>
+                params.remote_trainer_id === unavailableTrainer.id
+                    ? HttpResponse.json({ detail: [] }, { status: 503 })
+                    : HttpResponse.json(healthyTrainer)
+            )
+        );
+
+        render(<RemoteTrainersPage />);
+
+        const unavailableCard = await screen.findByRole('button', { name: /unavailable-trainer/i });
+        expect(await within(unavailableCard).findByText('Check failed')).toBeInTheDocument();
     });
 
     it('creates a configured remote trainer URL', async () => {

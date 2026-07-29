@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 import {
     ActionButton,
@@ -13,7 +13,6 @@ import {
     Form,
     Heading,
     Icon,
-    Loading,
     StatusLight,
     Text,
     TextField,
@@ -24,6 +23,7 @@ import { Add, Delete, Edit, Refresh } from '@geti-ui/ui/icons';
 import { $api } from '../../api/client';
 import { getApiErrorMessage } from '../../api/errors';
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../api/openapi-spec';
+import { useRemoteTrainerHealth } from './use-remote-trainer-health';
 
 import classes from './remote-trainers-page.module.css';
 
@@ -242,6 +242,29 @@ const formatBytes = (bytes: number): string => {
 const formatStorage = (storage: SchemaRemoteTrainerHealth['storage']) =>
     storage ? `${formatBytes(storage.free_bytes)} free of ${formatBytes(storage.total_bytes)}` : undefined;
 
+const getCapabilityState = (health: SchemaRemoteTrainerHealth | undefined, isChecking: boolean): CheckState => {
+    if (isChecking || health === undefined || health.status === 'unreachable') return 'neutral';
+    return (health.devices?.length ?? 0) > 0 ? 'positive' : 'yellow';
+};
+
+const getStorageState = (health: SchemaRemoteTrainerHealth | undefined, isChecking: boolean): CheckState => {
+    if (isChecking || health === undefined || health.status === 'unreachable') return 'neutral';
+    return health.storage ? 'positive' : 'yellow';
+};
+
+const getDisplayHealth = (remoteTrainerId: string, health: SchemaRemoteTrainerHealth | undefined, hasError: boolean) =>
+    health ??
+    (hasError
+        ? {
+              remote_trainer_id: remoteTrainerId,
+              status: 'unreachable' as const,
+              checked_at: new Date().toISOString(),
+              latency_ms: null,
+              devices: [],
+              reason_code: 'check_failed' as const,
+          }
+        : undefined);
+
 const RemoteTrainerDetail = ({
     remoteTrainer,
     health,
@@ -255,24 +278,8 @@ const RemoteTrainerDetail = ({
     const state = healthVariant(health, isChecking);
     const deviceReportIsInvalid = health?.reason_code === 'invalid_devices_response';
     const trainerHealthState = deviceReportIsInvalid ? 'positive' : state;
-    const capabilityState = isChecking
-        ? 'neutral'
-        : health === undefined
-          ? 'neutral'
-          : devices.length > 0
-            ? 'positive'
-            : health.status === 'unreachable'
-              ? 'neutral'
-              : 'yellow';
-    const storageState = isChecking
-        ? 'neutral'
-        : health === undefined
-          ? 'neutral'
-          : health.storage
-            ? 'positive'
-            : health.status === 'unreachable'
-              ? 'neutral'
-              : 'yellow';
+    const capabilityState = getCapabilityState(health, isChecking);
+    const storageState = getStorageState(health, isChecking);
     const lastChecked = health ? new Date(health.checked_at).toLocaleString() : 'Not checked';
 
     return (
@@ -400,75 +407,85 @@ const RemoteTrainerDetail = ({
     );
 };
 
-export const RemoteTrainersPage = () => {
-    const { data: remoteTrainers = [], isPending } = $api.useQuery('get', '/api/remote-trainers');
-    const healthCheckMutation = $api.useMutation('get', '/api/remote-trainers/{remote_trainer_id}/health');
-    const [selectedRemoteTrainerId, setSelectedRemoteTrainerId] = useState<string>();
-    const [formRemoteTrainer, setFormRemoteTrainer] = useState<SchemaRemoteTrainer | null>();
-    const [deleteRemoteTrainer, setDeleteRemoteTrainer] = useState<SchemaRemoteTrainer>();
-    const [healthByTrainerId, setHealthByTrainerId] = useState<Record<string, SchemaRemoteTrainerHealth>>({});
-    const [checkingTrainerIds, setCheckingTrainerIds] = useState<Set<string>>(new Set());
-    const checkedTrainerUrls = useRef<Map<string, string>>(new Map());
-    const checkGenerationByTrainerId = useRef<Map<string, number>>(new Map());
-    const selectedRemoteTrainer = remoteTrainers.find((remoteTrainer) => remoteTrainer.id === selectedRemoteTrainerId);
+type RemoteTrainerAction =
+    | { type: 'create' }
+    | { type: 'edit'; remoteTrainer: SchemaRemoteTrainer }
+    | { type: 'delete'; remoteTrainer: SchemaRemoteTrainer }
+    | undefined;
 
-    const checkRemoteTrainer = useCallback(
-        async (remoteTrainerId: string) => {
-            const generation = (checkGenerationByTrainerId.current.get(remoteTrainerId) ?? 0) + 1;
-            checkGenerationByTrainerId.current.set(remoteTrainerId, generation);
-            setCheckingTrainerIds((ids) => new Set(ids).add(remoteTrainerId));
-            try {
-                const health = await healthCheckMutation.mutateAsync({
-                    params: { path: { remote_trainer_id: remoteTrainerId } },
-                });
-                if (checkGenerationByTrainerId.current.get(remoteTrainerId) === generation) {
-                    setHealthByTrainerId((healthById) => ({ ...healthById, [remoteTrainerId]: health }));
-                }
-            } catch {
-                if (checkGenerationByTrainerId.current.get(remoteTrainerId) === generation) {
-                    setHealthByTrainerId((healthById) => ({
-                        ...healthById,
-                        [remoteTrainerId]: {
-                            remote_trainer_id: remoteTrainerId,
-                            status: 'unreachable',
-                            checked_at: new Date().toISOString(),
-                            latency_ms: null,
-                            devices: [],
-                            reason_code: 'check_failed',
-                        },
-                    }));
-                }
-            } finally {
-                if (checkGenerationByTrainerId.current.get(remoteTrainerId) === generation) {
-                    setCheckingTrainerIds((ids) => {
-                        const nextIds = new Set(ids);
-                        nextIds.delete(remoteTrainerId);
-                        return nextIds;
-                    });
-                }
-            }
-        },
-        [healthCheckMutation]
+const SelectTrainerButton = ({
+    remoteTrainer,
+    isSelected,
+    onSelect,
+}: {
+    remoteTrainer: SchemaRemoteTrainer;
+    isSelected: boolean;
+    onSelect: () => void;
+}) => {
+    const { health, hasError, isChecking } = useRemoteTrainerHealth(remoteTrainer.id);
+    const displayHealth = getDisplayHealth(remoteTrainer.id, health, hasError);
+
+    return (
+        <ActionButton
+            aria-pressed={isSelected}
+            onPress={onSelect}
+            isQuiet
+            UNSAFE_className={`${classes.trainerCard} ${isSelected ? classes.trainerCardSelected : ''}`}
+        >
+            <Flex direction='column' alignItems='start' gap='size-50'>
+                <Flex width='100%' justifyContent='space-between' alignItems='center'>
+                    <Text UNSAFE_className={classes.trainerName}>{remoteTrainer.name}</Text>
+                    <StatusLight variant={healthVariant(displayHealth, isChecking)}>
+                        {healthLabel(displayHealth, isChecking)}
+                    </StatusLight>
+                </Flex>
+                <Flex gap='size-100' alignItems='center' wrap UNSAFE_className={classes.cardMeta}>
+                    <Text UNSAFE_className={classes.connectionTag}>TRAINER URL</Text>
+                    {deviceTypes(displayHealth).map((type) => (
+                        <Text key={type} UNSAFE_className={deviceTagClass(type)}>
+                            {type}
+                        </Text>
+                    ))}
+                    <Text UNSAFE_className={classes.cardMetaText}>
+                        {displayHealth?.devices?.[0]?.name ??
+                            (isChecking ? 'Checking capability…' : 'Capability not reported')}
+                    </Text>
+                </Flex>
+            </Flex>
+        </ActionButton>
     );
+};
 
-    useEffect(() => {
-        if (selectedRemoteTrainer === undefined) {
-            setSelectedRemoteTrainerId(remoteTrainers[0]?.id);
-        }
-    }, [remoteTrainers, selectedRemoteTrainer]);
+const SelectedRemoteTrainerDetail = ({
+    remoteTrainer,
+    onEdit,
+    onDelete,
+}: {
+    remoteTrainer: SchemaRemoteTrainer;
+    onEdit: () => void;
+    onDelete: () => void;
+}) => {
+    const { health, hasError, isChecking, checkHealth } = useRemoteTrainerHealth(remoteTrainer.id);
+    const displayHealth = getDisplayHealth(remoteTrainer.id, health, hasError);
 
-    useEffect(() => {
-        const configuredTrainerIds = new Set(remoteTrainers.map((remoteTrainer) => remoteTrainer.id));
-        checkedTrainerUrls.current = new Map(
-            [...checkedTrainerUrls.current].filter(([remoteTrainerId]) => configuredTrainerIds.has(remoteTrainerId))
-        );
-        remoteTrainers.forEach((remoteTrainer) => {
-            if (checkedTrainerUrls.current.get(remoteTrainer.id) !== remoteTrainer.url) {
-                checkedTrainerUrls.current.set(remoteTrainer.id, remoteTrainer.url);
-                void checkRemoteTrainer(remoteTrainer.id);
-            }
-        });
-    }, [checkRemoteTrainer, remoteTrainers]);
+    return (
+        <RemoteTrainerDetail
+            remoteTrainer={remoteTrainer}
+            health={displayHealth}
+            isChecking={isChecking}
+            onCheck={() => void checkHealth()}
+            onEdit={onEdit}
+            onDelete={onDelete}
+        />
+    );
+};
+
+export const RemoteTrainersPage = () => {
+    const { data: remoteTrainers } = $api.useSuspenseQuery('get', '/api/remote-trainers');
+    const [selectedRemoteTrainerId, setSelectedRemoteTrainerId] = useState<string | undefined>(remoteTrainers[0]?.id);
+    const [action, setAction] = useState<RemoteTrainerAction>();
+    const selectedRemoteTrainer =
+        remoteTrainers.find((remoteTrainer) => remoteTrainer.id === selectedRemoteTrainerId) ?? remoteTrainers[0];
 
     return (
         <View padding='size-400' height='100%' maxWidth='240ch' marginX='auto'>
@@ -483,68 +500,29 @@ export const RemoteTrainersPage = () => {
                         variant='accent'
                         width='100%'
                         UNSAFE_className={classes.addButton}
-                        onPress={() => setFormRemoteTrainer(null)}
+                        onPress={() => setAction({ type: 'create' })}
                     >
                         <Add />
                         New remote trainer
                     </Button>
-                    {isPending ? (
-                        <Loading mode='inline' />
-                    ) : remoteTrainers.length === 0 ? (
+                    {remoteTrainers.length === 0 ? (
                         <Text UNSAFE_className={classes.emptyList}>No remote trainers are configured.</Text>
                     ) : (
                         remoteTrainers.map((remoteTrainer) => (
-                            <ActionButton
+                            <SelectTrainerButton
                                 key={remoteTrainer.id}
-                                aria-pressed={remoteTrainer.id === selectedRemoteTrainerId}
-                                onPress={() => setSelectedRemoteTrainerId(remoteTrainer.id)}
-                                isQuiet
-                                UNSAFE_className={`${classes.trainerCard} ${
-                                    remoteTrainer.id === selectedRemoteTrainerId ? classes.trainerCardSelected : ''
-                                }`}
-                            >
-                                <Flex direction='column' alignItems='start' gap='size-50'>
-                                    <Flex width='100%' justifyContent='space-between' alignItems='center'>
-                                        <Text UNSAFE_className={classes.trainerName}>{remoteTrainer.name}</Text>
-                                        <StatusLight
-                                            variant={healthVariant(
-                                                healthByTrainerId[remoteTrainer.id],
-                                                checkingTrainerIds.has(remoteTrainer.id)
-                                            )}
-                                        >
-                                            {healthLabel(
-                                                healthByTrainerId[remoteTrainer.id],
-                                                checkingTrainerIds.has(remoteTrainer.id)
-                                            )}
-                                        </StatusLight>
-                                    </Flex>
-                                    <Flex gap='size-100' alignItems='center' wrap UNSAFE_className={classes.cardMeta}>
-                                        <Text UNSAFE_className={classes.connectionTag}>TRAINER URL</Text>
-                                        {deviceTypes(healthByTrainerId[remoteTrainer.id]).map((type) => (
-                                            <Text key={type} UNSAFE_className={deviceTagClass(type)}>
-                                                {type}
-                                            </Text>
-                                        ))}
-                                        <Text UNSAFE_className={classes.cardMetaText}>
-                                            {healthByTrainerId[remoteTrainer.id]?.devices?.[0]?.name ??
-                                                (checkingTrainerIds.has(remoteTrainer.id)
-                                                    ? 'Checking capability…'
-                                                    : 'Capability not reported')}
-                                        </Text>
-                                    </Flex>
-                                </Flex>
-                            </ActionButton>
+                                remoteTrainer={remoteTrainer}
+                                isSelected={remoteTrainer.id === selectedRemoteTrainer.id}
+                                onSelect={() => setSelectedRemoteTrainerId(remoteTrainer.id)}
+                            />
                         ))
                     )}
                 </View>
                 {selectedRemoteTrainer ? (
-                    <RemoteTrainerDetail
+                    <SelectedRemoteTrainerDetail
                         remoteTrainer={selectedRemoteTrainer}
-                        health={healthByTrainerId[selectedRemoteTrainer.id]}
-                        isChecking={checkingTrainerIds.has(selectedRemoteTrainer.id)}
-                        onCheck={() => void checkRemoteTrainer(selectedRemoteTrainer.id)}
-                        onEdit={() => setFormRemoteTrainer(selectedRemoteTrainer)}
-                        onDelete={() => setDeleteRemoteTrainer(selectedRemoteTrainer)}
+                        onEdit={() => setAction({ type: 'edit', remoteTrainer: selectedRemoteTrainer })}
+                        onDelete={() => setAction({ type: 'delete', remoteTrainer: selectedRemoteTrainer })}
                     />
                 ) : (
                     <View UNSAFE_className={classes.emptyDetail}>
@@ -553,20 +531,18 @@ export const RemoteTrainersPage = () => {
                     </View>
                 )}
             </div>
-            <DialogContainer onDismiss={() => setFormRemoteTrainer(undefined)}>
-                {formRemoteTrainer !== undefined && (
+            <DialogContainer onDismiss={() => setAction(undefined)}>
+                {(action?.type === 'create' || action?.type === 'edit') && (
                     <RemoteTrainerForm
-                        remoteTrainer={formRemoteTrainer ?? undefined}
-                        close={() => setFormRemoteTrainer(undefined)}
+                        remoteTrainer={action.type === 'edit' ? action.remoteTrainer : undefined}
+                        close={() => setAction(undefined)}
                     />
                 )}
-            </DialogContainer>
-            <DialogContainer onDismiss={() => setDeleteRemoteTrainer(undefined)}>
-                {deleteRemoteTrainer !== undefined && (
+                {action?.type === 'delete' && (
                     <DeleteRemoteTrainerDialog
-                        remoteTrainer={deleteRemoteTrainer}
+                        remoteTrainer={action.remoteTrainer}
                         onDeleted={() => {
-                            setDeleteRemoteTrainer(undefined);
+                            setAction(undefined);
                             setSelectedRemoteTrainerId(undefined);
                         }}
                     />
