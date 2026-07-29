@@ -174,11 +174,15 @@ class ACT(ExportablePolicyMixin, Policy):
         """Initialize ACT policy.
 
         Creates ACTConfig from explicit args and saves it as hyperparameters.
+
+        Raises:
+            ValueError: If both ``pretrained_name_or_path`` and ``dataset_stats`` are provided.
         """
         super().__init__(n_action_steps=n_action_steps)
 
         if pretrained_name_or_path is not None and dataset_stats is not None:
-            raise ValueError("Pass either pretrained_name_or_path or dataset_stats, not both.")
+            msg = "Pass either pretrained_name_or_path or dataset_stats, not both."
+            raise ValueError(msg)
 
         weights_file = None
         if pretrained_name_or_path is not None:
@@ -331,6 +335,9 @@ class ACT(ExportablePolicyMixin, Policy):
             dataset_stats: Dataset normalization statistics.
             weights_file: Optional path to a LeRobot ``model.safetensors`` checkpoint to load
                 pretrained weights from, after the model architecture is built.
+
+        Raises:
+            RuntimeError: If unexpected keys are found when loading pretrained weights.
         """
         features: dict[str, Feature] = {}
         for stat in dataset_stats.values():
@@ -378,9 +385,7 @@ class ACT(ExportablePolicyMixin, Policy):
         if weights_file is not None:
             original_sd = load_file(str(weights_file))
             image_feature_names = [
-                str(stat["name"])
-                for stat in dataset_stats.values()
-                if FeatureType(stat["type"]) == FeatureType.VISUAL
+                str(stat["name"]) for stat in dataset_stats.values() if FeatureType(stat["type"]) == FeatureType.VISUAL
             ]
             remapped_sd = _remap_lerobot_act_state_dict(original_sd, image_feature_names)
 
