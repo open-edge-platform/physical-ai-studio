@@ -13,7 +13,7 @@ import {
     TextField,
 } from '@geti-ui/ui';
 import { AddCircle } from '@geti-ui/ui/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';

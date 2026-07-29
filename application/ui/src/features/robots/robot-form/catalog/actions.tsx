@@ -2,7 +2,7 @@ import { ActionButton, Icon } from '@geti-ui/ui';
 import { Refresh } from '@geti-ui/ui/icons';
 
 import { useCatalogIdentifyMutation, useDiscoverRobotsQuery } from '../../robot-catalog.hooks';
-import type { SchemaRobot } from '../../robot-types';
+import type { SchemaRobot, SchemaRobotType } from '../../robot-types';
 import { useRobotFormFields } from '../provider';
 
 import classes from '../form.module.css';
@@ -29,11 +29,13 @@ export const RefreshRobotsButton = () => {
 export const IdentifyRobot = ({
     identifyMutation,
     payload: override,
+    robotType,
 }: {
     identifyMutation: ReturnType<typeof useCatalogIdentifyMutation>;
     payload?: SchemaRobot['payload'] | null;
+    robotType?: SchemaRobotType;
 }) => {
-    const { formData, activeType: robotType } = useRobotFormFields();
+    const { formData, activeType } = useRobotFormFields();
     const payload = override ?? formData.payload;
     const isDisabled = payload === null || identifyMutation.isPending;
 
@@ -43,7 +45,7 @@ export const IdentifyRobot = ({
         }
 
         identifyMutation.mutate({
-            params: { path: { robot_type: robotType } },
+            params: { path: { robot_type: robotType ?? activeType } },
             body: payload,
         });
     };

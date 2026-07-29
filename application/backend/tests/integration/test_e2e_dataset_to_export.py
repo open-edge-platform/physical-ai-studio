@@ -40,12 +40,14 @@ def _run_dataset_import_job_step() -> None:
     """Claim and process exactly one pending dataset-import job, in-process."""
     import asyncio
 
+    from db import get_async_db_session_ctx
     from schemas.job import DatasetImportJob
     from services.dataset_import.service import DatasetImportService
     from workers.dataset_import_worker import DatasetImportWorker
 
     async def _drain() -> None:
-        job = await DatasetImportService.claim_pending_dataset_import_job()
+        async with get_async_db_session_ctx() as session:
+            job = await DatasetImportService(session).claim_pending_dataset_import_job()
         assert isinstance(job, DatasetImportJob), "Expected a pending dataset import job"
         worker = DatasetImportWorker(stop_event=mp.Event(), event_queue=mp.Queue())
         await worker._process_job(job)
@@ -61,6 +63,7 @@ def _run_training_job_step() -> None:
     """
     import asyncio
 
+    from db import get_async_db_session_ctx
     from schemas import Model
     from services import DatasetService
     from services.job_service import JobService
@@ -69,7 +72,8 @@ def _run_training_job_step() -> None:
     from workers.training_worker import TrainingWorker
 
     async def _drain() -> None:
-        job = await JobService.get_pending_train_job()
+        async with get_async_db_session_ctx() as session:
+            job = await JobService(session).get_pending_train_job()
         assert job is not None, "Expected a pending training job"
         payload = TrainJobPayload.model_validate(job.payload)
 
@@ -77,9 +81,11 @@ def _run_training_job_step() -> None:
         model_id = uuid4()
         model_dir = settings.models_dir / str(model_id)
 
-        dataset = await DatasetService.get_dataset_by_id(payload.dataset_id)
+        async with get_async_db_session_ctx() as session:
+            dataset = await DatasetService(session).get_dataset_by_id(payload.dataset_id)
         snapshot_dir = settings.snapshot_dir / SnapshotService.generate_snapshot_folder_name()
-        snapshot = await SnapshotService.create_snapshot_for_dataset(dataset, destination=snapshot_dir)
+        async with get_async_db_session_ctx() as session:
+            snapshot = await SnapshotService(session).create_snapshot_for_dataset(dataset, destination=snapshot_dir)
         payload.snapshot_id = snapshot.id
 
         model = Model(
@@ -97,8 +103,7 @@ def _run_training_job_step() -> None:
             created_at=None,
         )
 
-        worker = TrainingWorker(stop_event=mp.Event(), interrupt_event=mp.Event(), event_queue=mp.Queue())
-        worker.interrupt_event.clear()
+        worker = TrainingWorker(stop_event=mp.Event(), job_interrupt_flags={}, event_queue=mp.Queue())
         await worker._train_model(job, model, snapshot, payload)
 
     asyncio.run(_drain())
@@ -292,23 +297,26 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
     assert response.status_code == 201, response.text
 
     async def _submit_and_run(project_id: UUID) -> str:
+        from db import get_async_db_session_ctx
         from services.job_service import JobService
 
-        job = await JobService.submit_train_job(
-            TrainJobPayload(
-                project_id=project_id,
-                dataset_id=uuid4(),
-                policy="act",
-                model_name="Interrupt Me",
-                max_steps=100,
+        async with get_async_db_session_ctx() as session:
+            job_service = JobService(session)
+            job = await job_service.submit_train_job(
+                TrainJobPayload(
+                    project_id=project_id,
+                    dataset_id=uuid4(),
+                    policy="act",
+                    model_name="Interrupt Me",
+                    max_steps=100,
+                )
             )
-        )
-        await JobService.update_job_status(job.id, status=JobStatus.RUNNING, message="Training started")
+            await job_service.update_job_status(job.id, status=JobStatus.RUNNING, message="Training started")
         return str(job.id)
 
     job_id = asyncio.run(_submit_and_run(project_id))
 
-    fake_scheduler = SimpleNamespace(training_interrupt_event=mp.Event())
+    fake_scheduler = SimpleNamespace(job_interrupt_flags={})
     app.dependency_overrides[get_scheduler] = lambda: fake_scheduler
     try:
         response = client.post(f"/api/jobs/{job_id}:interrupt")
@@ -316,7 +324,7 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert fake_scheduler.training_interrupt_event.is_set()
+    assert fake_scheduler.job_interrupt_flags[job_id] is True
 
     response = client.get(f"/api/jobs/{job_id}")
     assert response.status_code == 200, response.text

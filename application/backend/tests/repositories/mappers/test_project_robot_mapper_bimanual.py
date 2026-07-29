@@ -21,7 +21,6 @@ def _make_bimanual_db_model(robot_type: str):
     model.payload = {
         "connection_string_left": "10.0.0.1",
         "connection_string_right": "10.0.0.2",
-        "serial_number": "",
     }
     model.created_at = datetime(2026, 1, 1)
     model.updated_at = datetime(2026, 1, 1)
@@ -61,7 +60,6 @@ class TestProjectRobotMapperBimanual:
             payload=TrossenBimanualPayload(
                 connection_string_left="192.168.10.1",
                 connection_string_right="192.168.10.2",
-                serial_number="SN-BIMAN-001",
             ),
         )
 
@@ -79,4 +77,3 @@ class TestProjectRobotMapperBimanual:
 
         assert restored.payload.connection_string_left == "192.168.10.1"
         assert restored.payload.connection_string_right == "192.168.10.2"
-        assert restored.payload.serial_number == "SN-BIMAN-001"

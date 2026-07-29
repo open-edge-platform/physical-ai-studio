@@ -13,8 +13,7 @@ export interface WidowxFormData {
 
 export const getInitialWidowxFormData = (robot?: SchemaRobot): WidowxFormData => ({
     name: robot?.name ?? '',
-    payload:
-        robot && 'connection_string' in robot.payload ? robot.payload : { connection_string: '', serial_number: '' },
+    payload: robot && 'connection_string' in robot.payload ? robot.payload : { connection_string: '' },
 });
 
 export const buildWidowxBody = (
@@ -46,7 +45,7 @@ export const WidowxAIFormFields = () => {
                 width='100%'
                 value={formData.payload.connection_string}
                 onChange={(connection_string) => {
-                    updateField('payload', { ...formData.payload, connection_string, serial_number: '' });
+                    updateField('payload', { ...formData.payload, connection_string });
                 }}
                 placeholder='192.168.1.2'
             />

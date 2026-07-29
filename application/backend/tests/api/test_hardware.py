@@ -159,7 +159,7 @@ class TestHardwareApi:
             with patch("robots.catalog.widowxai.identify_trossen_robot_visually", new_callable=AsyncMock) as identify:
                 response = client.post(
                     "/api/robots/catalog/Trossen_WidowXAI_Follower/identify",
-                    json={"connection_string": "192.168.1.100", "serial_number": ""},
+                    json={"connection_string": "192.168.1.100"},
                 )
         finally:
             app.dependency_overrides.clear()

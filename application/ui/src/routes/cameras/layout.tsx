@@ -18,7 +18,7 @@ import {
 } from '@geti-ui/ui';
 import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { NavLink, Outlet, useParams } from 'react-router-dom';
+import { NavLink, Outlet, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
 import { getApiErrorMessage, isRecordingLockedError, isResourceInUseError } from '../../api/errors';
