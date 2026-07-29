@@ -104,6 +104,17 @@ class HealthInfo(BaseSettings):
             return _DEFAULT_PROTOCOL_VERSION
 
 
+class StorageInfo(BaseModel):
+    """Disk usage for the volume backing the trainer's storage directory.
+
+    Mirrors the studio backend's ``StorageInfo`` schema so the studio can
+    ingest the trainer's storage report without translation.
+    """
+
+    total_bytes: int = Field(..., ge=0, description="Total capacity of the storage volume in bytes")
+    free_bytes: int = Field(..., ge=0, description="Free space available on the storage volume in bytes")
+
+
 class SubmitJobRequest(BaseModel):
     """Job submission payload sent by the studio backend."""
 

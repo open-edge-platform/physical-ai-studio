@@ -15,12 +15,20 @@ from loguru import logger
 
 from trainer.api import router as jobs_router
 from trainer.devices import get_training_devices
+from trainer.log_setup import setup_logging, setup_uvicorn_logging
 from trainer.queue_worker import QueueManager
-from trainer.schemas import DeviceInfo, HealthInfo
+from trainer.schemas import DeviceInfo, HealthInfo, StorageInfo
 from trainer.settings import get_settings
+from trainer.storage import get_storage_info
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+
+# Configure logging at import time so it applies regardless of whether the
+# app is served via `physicalai-trainer`, `uvicorn trainer.main:app`, or the
+# `__main__` block below.
+setup_logging()
+setup_uvicorn_logging()
 
 
 @asynccontextmanager
@@ -56,6 +64,17 @@ async def devices() -> list[DeviceInfo]:
     return get_training_devices()
 
 
+@app.get("/storage")
+async def storage() -> StorageInfo:
+    """Report the available storage capacity on this trainer's storage volume."""
+    return get_storage_info()
+
+
 if __name__ == "__main__":
     settings = get_settings()
-    uvicorn.run(app, host=settings.host, port=int(os.environ.get("PORT", settings.port)))
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=int(os.environ.get("PORT", settings.port)),
+        log_config=None,
+    )

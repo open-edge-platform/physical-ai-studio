@@ -6,9 +6,9 @@ lightweight.
 
 ## How it fits together
 
-The studio backend (`TRAINING_MODE=remote`) delivers the dataset snapshot to
-this service by zipping it and streaming it straight to `PUT /jobs/{id}/dataset`
-over HTTP.
+The studio backend delivers the dataset snapshot to this service by zipping it
+and streaming it straight to `PUT /jobs/{id}/dataset` over HTTP, once a job is
+submitted against a remote trainer registered in the Studio UI/API.
 
 Then:
 

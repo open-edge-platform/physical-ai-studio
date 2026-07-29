@@ -86,11 +86,21 @@ class MigrationManager:
                 context = migration.MigrationContext.configure(conn)
                 current_rev = context.get_current_revision()
 
-            # Check if current_rev is in Alembic's tracked revisions
-            if current_rev and current_rev not in script.get_heads() + script.get_bases():
-                raise RevisionNotFoundError(
-                    f"Current revision '{current_rev}' not found in Alembic history. Please, recreate the database."
-                )
+            # Check if current_rev exists anywhere in Alembic's revision map.
+            # A valid database can sit on an intermediate revision, not only
+            # on a base or the current head.
+            if current_rev:
+                try:
+                    resolved_revision = script.get_revision(current_rev)
+                except ResolutionError as e:
+                    raise RevisionNotFoundError(
+                        f"Current revision '{current_rev}' not found in Alembic history. Please, recreate the database."
+                    ) from e
+
+                if resolved_revision is None:
+                    raise RevisionNotFoundError(
+                        f"Current revision '{current_rev}' not found in Alembic history. Please, recreate the database."
+                    )
 
             needs_migration = current_rev != current_head
             status = f"Current: {current_rev or 'None'}, Head: {current_head or 'None'}"

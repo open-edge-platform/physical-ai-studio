@@ -10,7 +10,7 @@ interface SplitBadgeProps {
 
 export const SplitBadge = ({ first, second }: SplitBadgeProps) => {
     return (
-        <Flex>
+        <Flex UNSAFE_className={classes.badgeWrapper}>
             <Badge variant={'positive'} UNSAFE_className={classes.badgeLeft}>
                 {first}
             </Badge>
@@ -21,10 +21,24 @@ export const SplitBadge = ({ first, second }: SplitBadgeProps) => {
     );
 };
 
-export const SingleBadge = ({ text, color }: { text: string; color: string }) => {
+interface SingleBadgeProps {
+    text: string;
+    color: string;
+    title?: string;
+    /** Preserve the exact casing of `text` instead of capitalizing each word. */
+    preserveCase?: boolean;
+}
+
+export const SingleBadge = ({ text, color, title, preserveCase }: SingleBadgeProps) => {
     return (
-        <Badge variant={'info'} UNSAFE_className={classes.badge} UNSAFE_style={{ backgroundColor: color }}>
-            {text}
-        </Badge>
+        <span title={title ?? text} className={classes.badgeWrapper}>
+            <Badge
+                variant={'info'}
+                UNSAFE_className={classes.badge}
+                UNSAFE_style={{ backgroundColor: color, ...(preserveCase && { textTransform: 'none' }) }}
+            >
+                {text}
+            </Badge>
+        </span>
     );
 };
