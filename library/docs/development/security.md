@@ -25,7 +25,7 @@ These rules apply when writing, editing, or reviewing code under `library/` (`ph
 
 6. Avoid `trust_remote_code=True` in `from_pretrained`, `AutoTokenizer`, and `AutoModel` calls. It is only acceptable when all three conditions hold: (1) the repo ID is a hardcoded first-party constant (not user-supplied or read from remote JSON), (2) the need is documented with a comment explaining which model and why custom code is required, and (3) the call site uses a pinned `revision=` SHA.
 
-7. No unbounded recursion in config walkers. Every recursive config walker (e.g., `_instantiate_recursive` in `config/instantiate.py`) must enforce an explicit depth limit via a `depth: int` parameter with a hard cap (`MAX_INSTANTIATE_DEPTH = 32`). Do not rely on `sys.getrecursionlimit()`. Required pattern: `if depth > MAX_INSTANTIATE_DEPTH: raise ValueError(f"Config nesting exceeds maximum depth {MAX_INSTANTIATE_DEPTH}")`.
+7. No unbounded recursion in config walkers. Every recursive config walker in `physicalai.config` (for example `_instantiate.py` and `_normalize.py`) must enforce an explicit depth limit via a `depth` parameter with a hard cap (`_MAX_CONFIG_DEPTH` in `physicalai.config._types`, currently `10`). Do not rely on `sys.getrecursionlimit()`. Required pattern: raise `ConfigError` when depth exceeds the cap.
 
 8. No `snapshot_download` without an explicit `allow_patterns` list. Use `allow_patterns=["*.safetensors", "*.json", "*.txt", "*.md"]`. Never use `ignore_patterns=` as a substitute — it is a denylist that silently allows new dangerous formats (`.pkl`, `.pt`, `.tar`, `.npy`, etc.).
 

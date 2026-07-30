@@ -10,7 +10,7 @@ Detailed design documentation for each module (for contributors and advanced use
 | -------------------------------- | -------------------------------------------------- |
 | [Benchmark](benchmark/README.md) | Policy evaluation and benchmarking                 |
 | [CLI](cli/README.md)             | Command-line interface using PyTorch Lightning CLI |
-| [Config](config/README.md)       | Configuration system (dataclasses, Pydantic, YAML) |
+| Config                           | Runtime [`physicalai.config`](https://github.com/openvinotoolkit/physicalai/tree/main/docs/how-to/config) (not documented in this repo) |
 | [Data](data/README.md)           | Dataset management and data loading                |
 | [Gyms](gyms/README.md)           | Simulation environments for training               |
 | [Policy](policy/README.md)       | Policy implementations and base classes            |
