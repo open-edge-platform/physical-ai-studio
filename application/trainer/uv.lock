@@ -2438,8 +2438,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.1.2.dev35+g5b0b6ea9d"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=5b0b6ea9d15eef7bc3765a9bbddbb76688156151#5b0b6ea9d15eef7bc3765a9bbddbb76688156151" }
+version = "0.1.2.dev35+g7118732f0"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=7118732f0f6a54cf6ef580c0f69c31790f39124e#7118732f0f6a54cf6ef580c0f69c31790f39124e" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2524,7 +2524,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=5b0b6ea9d15eef7bc3765a9bbddbb76688156151" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=7118732f0f6a54cf6ef580c0f69c31790f39124e" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },

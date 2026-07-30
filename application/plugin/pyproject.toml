@@ -16,7 +16,7 @@ build-backend = "hatchling.build"
 packages = ["src/physicalai_studio_plugin"]
 
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "5b0b6ea9d15eef7bc3765a9bbddbb76688156151" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "7118732f0f6a54cf6ef580c0f69c31790f39124e" }
 
 [dependency-groups]
 dev = [
