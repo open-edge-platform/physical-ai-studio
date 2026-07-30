@@ -3,6 +3,7 @@
 
 """Unit tests for mixin_export module."""
 
+import logging
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
@@ -16,7 +17,11 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
-from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
+from physicalai.export.mixin_policy import (
+    ExportablePolicyMixin,
+    ExportBackend,
+    _quiet_onnx_export_logs,  # noqa: PLC2701
+)
 from physicalai.inference.data import (
     InferenceFeature,
     InferenceFeatureDtype,
@@ -297,6 +302,50 @@ class TestToOnnx:
         # Verify the ONNX model can be loaded
         onnx_model = onnx.load(str(output_path))
         onnx.checker.check_model(onnx_model)
+
+    def test_to_onnx_suppresses_per_node_exporter_logs(self, tmp_path, caplog):
+        """Test that the exporter's per-node INFO chatter is not propagated."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        with caplog.at_level(logging.INFO):
+            wrapper.to_onnx(tmp_path / "model.onnx")
+
+        noisy = [
+            record
+            for record in caplog.records
+            if record.levelno <= logging.INFO and record.name.split(".")[0] in {"onnxscript", "onnx_ir"}
+        ]
+        assert noisy == []
+
+
+class TestQuietOnnxExportLogs:
+    """Tests for the _quiet_onnx_export_logs context manager."""
+
+    def test_levels_restored_on_exception(self):
+        """Test that original levels are restored even when the block raises."""
+        onnxscript_logger = logging.getLogger("onnxscript")
+        onnxscript_logger.setLevel(logging.DEBUG)
+
+        try:
+            with pytest.raises(ValueError, match="boom"), _quiet_onnx_export_logs():
+                assert onnxscript_logger.level == logging.WARNING
+                raise ValueError("boom")
+
+            assert onnxscript_logger.level == logging.DEBUG
+        finally:
+            onnxscript_logger.setLevel(logging.NOTSET)
+
+    def test_explicitly_quieter_logger_left_untouched(self):
+        """Test that a logger already above WARNING keeps its configured level."""
+        onnxscript_logger = logging.getLogger("onnxscript")
+        onnxscript_logger.setLevel(logging.ERROR)
+
+        try:
+            with _quiet_onnx_export_logs():
+                assert onnxscript_logger.level == logging.ERROR
+        finally:
+            onnxscript_logger.setLevel(logging.NOTSET)
 
 
 class TestToOpenVINO:
