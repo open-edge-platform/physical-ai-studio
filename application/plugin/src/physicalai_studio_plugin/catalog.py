@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from .factory import CatalogRobotFactory
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from .assets import RobotAsset
     from .probe import RobotProbe
 
@@ -36,8 +38,16 @@ class PayloadContainer(Protocol[_PayloadT]):
 
 
 class CatalogRobot(PayloadContainer[_PayloadT], Protocol[_PayloadT]):
-    """Typed robot descriptor passed to catalog robot builders."""
+    """Typed robot descriptor passed to catalog robot builders.
 
+    Studio builds the concrete model dynamically per registered robot type, so
+    builders must not narrow on a hand-written model class — match on
+    ``payload`` instead. These attributes are the stable surface builders can
+    rely on.
+    """
+
+    id: UUID
+    name: str
     type: str
 
 

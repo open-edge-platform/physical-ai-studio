@@ -52,14 +52,26 @@ class TrossenBimanualPayload(BaseModel):
 
 
 class TrossenSingleArmRobot(BaseRobot):
-    """Trossen WidowX AI follower or leader robot using an IP connection."""
+    """Trossen WidowX AI follower or leader robot using an IP connection.
+
+    Note:
+        Local convenience model for probe/identify helpers. Robots that reach a
+        builder come from ``RobotCatalogRegistry``, which generates a separate
+        model per type deriving straight from ``BaseRobot``, so an
+        ``isinstance`` check against this class in a builder never matches.
+        Match on the payload type instead.
+    """
 
     type: TrossenTypes = Field(..., description="Type of robot configuration")
     payload: TrossenSingleArmPayload = Field(..., description="Trossen single-arm connection configuration")
 
 
 class TrossenBimanualRobot(BaseRobot):
-    """Trossen Bimanual WidowX AI robot using two IP connections (left + right)."""
+    """Trossen Bimanual WidowX AI robot using two IP connections (left + right).
+
+    Note:
+        Local convenience model; see :class:`TrossenSingleArmRobot`.
+    """
 
     type: TrossenBimanualTypes = Field(..., description="Type of robot configuration")
     payload: TrossenBimanualPayload = Field(..., description="Trossen bimanual connection configuration")
@@ -108,25 +120,29 @@ _TROSSEN_BIMANUAL_ASSET = RobotAsset(
 async def _build_trossen_single_arm_driver(
     robot: CatalogRobot[TrossenSingleArmPayload], _factory: CatalogRobotFactory
 ) -> SharedRobot:
-    if not isinstance(robot, TrossenSingleArmRobot):
-        raise TypeError("Expected TrossenSingleArmRobot")
+    # Studio generates the robot model per registered type, so match on the
+    # payload; the model is never a ``TrossenSingleArmRobot`` instance.
+    payload = robot.payload
+    if not isinstance(payload, TrossenSingleArmPayload):
+        raise TypeError(f"Expected TrossenSingleArmPayload, got {type(payload).__name__}")
     role = "follower" if robot.type == "Trossen_WidowXAI_Follower" else "leader"
     # Construct the driver so its own validation runs here, then hand SharedRobot
     # only the recipe: the owner process builds the real driver.
-    widowx = WidowXAI(ip=robot.payload.connection_string, role=role)
+    widowx = WidowXAI(ip=payload.connection_string, role=role)
     return SharedRobot.from_config(to_config(widowx), name=shared_robot_name(robot.id))
 
 
 async def _build_trossen_bimanual_driver(
     robot: CatalogRobot[TrossenBimanualPayload], _factory: CatalogRobotFactory
 ) -> SharedRobot:
-    if not isinstance(robot, TrossenBimanualRobot):
-        raise TypeError("Expected TrossenBimanualRobot")
+    payload = robot.payload
+    if not isinstance(payload, TrossenBimanualPayload):
+        raise TypeError(f"Expected TrossenBimanualPayload, got {type(payload).__name__}")
     mode = "follower" if robot.type == "Trossen_Bimanual_WidowXAI_Follower" else "leader"
     # One SharedRobot owns the whole bimanual robot (not per-arm wrappers).
     bimanual = BimanualWidowXAI(
-        left=WidowXAI(ip=robot.payload.connection_string_left, role=mode),
-        right=WidowXAI(ip=robot.payload.connection_string_right, role=mode),
+        left=WidowXAI(ip=payload.connection_string_left, role=mode),
+        right=WidowXAI(ip=payload.connection_string_right, role=mode),
     )
     return SharedRobot.from_config(to_config(bimanual), name=shared_robot_name(robot.id))
 
