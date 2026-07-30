@@ -6,6 +6,7 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../../api/client';
+import type { SchemaSo101RobotPayload } from '../../../../api/openapi-spec';
 import { paths } from '../../../../router';
 import { useProjectId } from '../../../projects/use-project';
 import { buildRobotBody } from '../../robot-form/form-data';
@@ -71,9 +72,12 @@ export const VerificationStep = () => {
     const { wsState } = useSetupState();
     const { activeType, robotForm } = useRobotForm();
 
-    const payload = 'connection_string' in robotForm.payload ? robotForm.payload : null;
-    const serialNumber = payload?.serial_number ?? '';
-    const connectionString = payload?.connection_string ?? '';
+    const so101Payload: SchemaSo101RobotPayload | null =
+        activeType === 'SO101_Follower' || activeType === 'SO101_Leader'
+            ? (robotForm.payload as SchemaSo101RobotPayload)
+            : null;
+    const serialNumber = so101Payload?.serial_number ?? '';
+    const connectionString = so101Payload?.connection_string ?? '';
     const robotType = activeType;
 
     const [robotId] = useState(() => uuidv4());

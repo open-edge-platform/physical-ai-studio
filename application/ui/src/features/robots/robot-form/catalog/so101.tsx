@@ -15,7 +15,9 @@ export interface SO101FormData {
 export const getInitialSO101FormData = (robot?: SchemaRobot): SO101FormData => ({
     name: robot?.name ?? '',
     payload:
-        robot && 'connection_string' in robot.payload ? robot.payload : { connection_string: '', serial_number: '' },
+        robot && (robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader')
+            ? robot.payload
+            : { connection_string: '', serial_number: '' },
 });
 
 export const buildSO101Body = (

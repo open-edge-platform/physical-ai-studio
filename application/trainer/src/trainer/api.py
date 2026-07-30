@@ -315,3 +315,37 @@ async def cancel_job(job_id: ResolvedJob) -> CancelResponse:
     if final is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
     return CancelResponse(remote_job_id=final.remote_job_id, status=final.status)
+
+
+def _remove_path(path: Path) -> None:
+    """Best-effort removal of a file or directory, ignoring missing paths."""
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        path.unlink(missing_ok=True)
+
+
+@router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_job(job_id: ResolvedJob) -> Response:
+    """Remove a job's on-disk artifacts and its record.
+
+    The studio backend calls this after it has retrieved everything it needs
+    from a job (e.g. once a completed model archive has been downloaded and
+    extracted locally), so the trainer never accumulates datasets, model
+    checkpoints, or archives indefinitely. Not required for FAILED/CANCELED
+    jobs, whose outputs the queue worker already cleans up as soon as the job
+    ends; calling it for those is a harmless no-op.
+    """
+    if job_id.state.status not in _TERMINAL:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Job is still in progress")
+
+    settings = get_settings()
+    paths = (
+        settings.models_dir / job_id.id,
+        settings.storage_dir / "cache" / job_id.id,
+        settings.datasets_dir / job_id.id,
+        settings.archives_dir / f"{job_id.id}.zip",
+    )
+    await asyncio.gather(*(asyncio.to_thread(_remove_path, path) for path in paths))
+    job_id.manager.store.delete(job_id.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -5,6 +5,7 @@ from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
+from loguru import logger
 from physicalai_studio_plugin import RobotAsset, RobotCatalogDefinition
 from physicalai_studio_plugin import RobotCatalogRegistry as RobotCatalogRegistryProtocol
 from pydantic import BaseModel, Field, TypeAdapter, create_model
@@ -120,18 +121,42 @@ class RobotCatalogRegistry(RobotCatalogRegistryProtocol):
         return Annotated[_build_union(models), Field(discriminator="type")]
 
     def _load_external_plugins(self) -> None:
-        discovered_entry_points = list(entry_points(group=CATALOG_PLUGIN_ENTRYPOINT_GROUP))
+        try:
+            discovered_entry_points = list(entry_points(group=CATALOG_PLUGIN_ENTRYPOINT_GROUP))
+        except Exception:
+            logger.exception(
+                "Failed to discover robot catalog plugins from entry point group '{}'",
+                CATALOG_PLUGIN_ENTRYPOINT_GROUP,
+            )
+            return
 
         for discovered_entry_point in discovered_entry_points:
-            register_plugin = discovered_entry_point.load()
-            if not callable(register_plugin):
-                raise ValueError(
-                    f"Catalog plugin entry point '{discovered_entry_point.name}' must load a callable "
-                    "register_physicalai_studio_plugin(registry)"
+            try:
+                register_plugin = discovered_entry_point.load()
+            except Exception:
+                logger.exception(
+                    "Failed to load robot catalog plugin entry point '{}' ({})",
+                    discovered_entry_point.name,
+                    discovered_entry_point.value,
                 )
+                continue
+
+            if not callable(register_plugin):
+                logger.error(
+                    "Catalog plugin entry point '{}' loaded non-callable object ({})",
+                    discovered_entry_point.name,
+                    type(register_plugin).__name__,
+                )
+                continue
 
             plugin_callable: RegisterPluginCallable = cast("RegisterPluginCallable", register_plugin)
-            plugin_callable(self)
+            try:
+                plugin_callable(self)
+            except Exception:
+                logger.exception(
+                    "Catalog plugin entry point '{}' failed during registration",
+                    discovered_entry_point.name,
+                )
 
     def get_robot_adapter(self) -> TypeAdapter:
         if self._robot_adapter is None:

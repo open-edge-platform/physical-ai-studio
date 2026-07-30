@@ -5,6 +5,8 @@ import { pluginSvgr } from '@rsbuild/plugin-svgr';
 
 const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
 
+const DEFAULT_FALSE = '"false"';
+
 export default defineConfig({
     plugins: [
         pluginReact(),
@@ -30,6 +32,10 @@ export default defineConfig({
                 publicVars['import.meta.env.PUBLIC_API_BASE_URL'] ?? '"http://localhost:3000"',
             'process.env.PUBLIC_API_BASE_URL':
                 publicVars['process.env.PUBLIC_API_BASE_URL'] ?? '"http://localhost:3000"',
+            'import.meta.env.PUBLIC_ENABLE_REMOTE_TRAINERS':
+                publicVars['import.meta.env.PUBLIC_ENABLE_REMOTE_TRAINERS'] ?? DEFAULT_FALSE,
+            'process.env.PUBLIC_ENABLE_REMOTE_TRAINERS':
+                publicVars['process.env.PUBLIC_ENABLE_REMOTE_TRAINERS'] ?? DEFAULT_FALSE,
             // Needed to prevent an issue with spectrum's picker
             // eslint-disable-next-line max-len
             // https://github.com/adobe/react-spectrum/blob/6173beb4dad153aef74fc81575fd97f8afcf6cb3/packages/%40react-spectrum/overlays/src/OpenTransition.tsx#L40

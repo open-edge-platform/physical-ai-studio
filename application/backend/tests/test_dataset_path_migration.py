@@ -9,9 +9,11 @@ from settings import Settings
 
 # The Alembic revision owns the relocation logic. Its directory shares the name of
 # the installed ``alembic`` package and lacks an ``__init__.py``, so load it by path.
-_revision_path = (
-    Path(__file__).resolve().parents[1] / "src" / "alembic" / "versions" / "f3a1c9d2b8e4_dataset_id_based_folders.py"
-)
+# Migration filenames can be prefixed by timestamps, so discover by revision ID.
+_versions_dir = Path(__file__).resolve().parents[1] / "src" / "alembic" / "versions"
+_matches = sorted(_versions_dir.glob("*_f3a1c9d2b8e4_dataset_id_based_folders.py"))
+assert len(_matches) == 1, "Expected exactly one dataset_id_based_folders migration file"
+_revision_path = _matches[0]
 _spec = importlib.util.spec_from_file_location("dataset_id_based_folders_migration", _revision_path)
 assert _spec is not None and _spec.loader is not None
 _migration = importlib.util.module_from_spec(_spec)

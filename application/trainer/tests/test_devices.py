@@ -25,14 +25,12 @@ def _torch_stub(*, cuda: list[tuple[str, int]] | None = None, xpu: list[tuple[st
     return torch
 
 
-def test_get_training_devices_reports_cpu_only_without_accelerators(monkeypatch) -> None:
+def test_get_training_devices_reports_no_devices_without_accelerators(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "torch", _torch_stub())
 
     result = devices_module.get_training_devices()
 
-    assert [d.type for d in result] == ["cpu"]
-    assert result[0].name == "CPU"
-    assert result[0].memory is None
+    assert result == []
 
 
 def test_get_training_devices_reports_cuda(monkeypatch) -> None:
@@ -40,11 +38,29 @@ def test_get_training_devices_reports_cuda(monkeypatch) -> None:
 
     result = devices_module.get_training_devices()
 
-    assert [d.type for d in result] == ["cpu", "cuda"]
-    gpu = result[1]
+    assert [d.type for d in result] == ["cuda"]
+    gpu = result[0]
     assert gpu.name == "NVIDIA A100"
     assert gpu.memory == 42949672960
     assert gpu.index == 0
+
+
+def test_get_training_devices_reports_xpu_and_cuda(monkeypatch) -> None:
+    monkeypatch.setitem(
+        sys.modules,
+        "torch",
+        _torch_stub(
+            xpu=[("Intel Arc", 17179869184)],
+            cuda=[("NVIDIA A100", 42949672960)],
+        ),
+    )
+
+    result = devices_module.get_training_devices()
+
+    assert [(device.type, device.name, device.index) for device in result] == [
+        ("xpu", "Intel Arc", 0),
+        ("cuda", "NVIDIA A100", 0),
+    ]
 
 
 def test_devices_endpoint_returns_device_list(monkeypatch) -> None:

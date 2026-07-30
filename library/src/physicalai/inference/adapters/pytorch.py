@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -29,6 +31,9 @@ if TYPE_CHECKING:
     from physicalai.policies.base import Policy
 
 
+logger = logging.getLogger(__name__)
+
+
 @adapter_registry.register("torch", extensions=(".ckpt", ".pt"))
 class TorchAdapter(RuntimeAdapter):
     """Runtime adapter for Torch models.
@@ -42,13 +47,15 @@ class TorchAdapter(RuntimeAdapter):
         >>> outputs = adapter.predict({"state": state_array, "images": images_dict})
     """
 
-    def __init__(self, device: torch.device | str = "cpu") -> None:
+    def __init__(self, device: torch.device | str = "cpu", *, compile_model: bool = False) -> None:
         """Initialize the Torch adapter.
 
         Args:
             device: Device for inference ('cpu', 'cuda', 'xpu', etc.)
+            compile_model: Whether to compile the model using torch.compile()
         """
         self.device = str(device)
+        self.compile_model = compile_model
         self._policy: Policy | None = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
@@ -88,8 +95,26 @@ class TorchAdapter(RuntimeAdapter):
                 load_from_checkpoint,
             )
 
+            # Backwards compatible compile_model arg. This keeps third-party/custom policies
+            # loadable when torch.compile() support isn't implemented.
+            supports_compile_model = "compile_model" in inspect.signature(policy_class.__init__).parameters
+
+            # if compile_model is True but supports is False, log a warning that the model will not be compiled
+            if self.compile_model and not supports_compile_model:
+                logger.warning(
+                    "Policy class '%s' does not support 'compile_model'. ",
+                    policy_class_path,
+                )
+
             self._policy = (
-                load_from_checkpoint(model_path, map_location="cpu", weights_only=False).to(self.device).eval()
+                load_from_checkpoint(
+                    model_path,
+                    map_location="cpu",
+                    weights_only=False,
+                    **({"compile_model": self.compile_model} if self.compile_model and supports_compile_model else {}),
+                )
+                .to(self.device)
+                .eval()
             )
 
             # ``extra_export_args`` is contributed by ``ExportablePolicyMixin``

@@ -7,9 +7,8 @@ from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
 
-from api.dependencies import RobotConnectionManagerDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
+from api.dependencies import RobotClientFactoryDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
 from exceptions import BaseException as AppBaseException
-from robots.robot_client_factory import RobotClientFactory
 from services import RobotService
 from workers.base import run_at_frequency
 from workers.teleoperate_worker import TeleoperateWorker
@@ -76,7 +75,7 @@ async def handle_incoming(websocket: WebSocket, worker: TeleoperateWorker) -> No
 async def robot_websocket(
     project_id: Annotated[UUID, Depends(get_project_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
-    robot_manager: RobotConnectionManagerDep,
+    robot_client_factory: RobotClientFactoryDep,
     websocket: WebSocket,
     scheduler: SchedulerDep,
     fps: int = 30,
@@ -98,7 +97,6 @@ async def robot_websocket(
     try:
         settings = await websocket.receive_json("text")
         follower_id = get_robot_id(settings["follower_id"])
-        robot_client_factory = RobotClientFactory(robot_manager)
         follower = await robot_service.get_robot_by_id(project_id, follower_id)
         leader = None
         if "leader_id" in settings:

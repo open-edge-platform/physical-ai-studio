@@ -24,13 +24,11 @@ class TrossenSingleArmPayload(BaseModel):
     """Connection configuration for Trossen single-arm robots."""
 
     connection_string: str = Field(..., description="IP address of the robot")
-    serial_number: str = Field(default="", description="Serial number (unused for IP robots)")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "connection_string": "192.168.1.100",
-                "serial_number": "",
             },
         },
     )
@@ -41,14 +39,12 @@ class TrossenBimanualPayload(BaseModel):
 
     connection_string_left: str = Field(..., description="IP address of the left arm")
     connection_string_right: str = Field(..., description="IP address of the right arm")
-    serial_number: str = Field(default="", description="Serial number (unused for IP robots)")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "connection_string_left": "192.168.1.100",
                 "connection_string_right": "192.168.1.101",
-                "serial_number": "",
             },
         },
     )
