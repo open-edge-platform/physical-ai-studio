@@ -26,11 +26,11 @@ for pid in "${pids[@]}"; do
   fi
 done
 
-uv run --no-sync vla-eval merge \
-  --config "$CONFIG" \
-  --eval-id "$EVAL_ID"
-
 if ((failed > 0)); then
   echo "${failed} of ${NUM_SHARDS} shards failed" >&2
   exit 1
 fi
+
+uv run --no-sync vla-eval merge \
+  --config "$CONFIG" \
+  --eval-id "$EVAL_ID"

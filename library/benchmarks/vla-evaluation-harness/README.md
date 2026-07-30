@@ -73,7 +73,7 @@ configs/
 ├── physicalai_pi05_libero_torch.yaml
 └── benchmarks/libero/
     ├── smoke_test.yaml
-  └── 10.yaml
+    └── 10.yaml
 model_servers/
 ├── physicalai.py
 └── libero_pi05.py

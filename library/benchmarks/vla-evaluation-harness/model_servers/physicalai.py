@@ -18,7 +18,7 @@ import numpy as np
 from jsonargparse import ArgumentParser
 from vla_eval.model_servers.predict import PredictModelServer
 from vla_eval.model_servers.serve import run_server
-from vla_eval.specs import RAW, DimSpec
+from vla_eval.specs import IMAGE_RGB, LANGUAGE, RAW, DimSpec
 
 from physicalai.data import Observation as PhysicalAIObservation
 from physicalai.inference import InferenceModel
@@ -36,16 +36,17 @@ _BATCHED_ACTION_NDIM = 3
 
 
 def _reshape_camera_image(image: np.ndarray, *, for_inference: bool) -> np.ndarray:
-    """Batch and normalize one camera image for policy consumption.
+    """Batch and format one camera image for policy consumption.
 
     Returns:
-        A batched image in policy-expected dtype and layout.
+        A batched image in policy-expected layout.
     """
     if image.ndim == _BATCHED_IMAGE_NDIM:
         image = image[None, ...]
-    if for_inference:
-        return image.astype(np.uint8, copy=False)
-    return np.transpose(image, (0, 3, 1, 2)).astype(np.float32) / 255.0
+    if not for_inference:
+        # B, C, H, W
+        return np.transpose(image, (0, 3, 1, 2)).astype(np.float32) / 255.0
+    return image
 
 
 def _format_actions(result: object) -> np.ndarray:
@@ -137,8 +138,19 @@ class PhysicalAIModelServer(PredictModelServer):
             resolved = {camera: key for camera, key in self.image_keys.items() if camera in images}
             missing = [camera for camera in self.image_keys if camera not in images]
         else:
-            resolved = dict(zip(sorted(images), sorted(self._expected_image_keys), strict=False))
-            missing = []
+            cameras = sorted(images)
+            image_keys = sorted(self._expected_image_keys)
+            resolved = dict(zip(cameras, image_keys, strict=False))
+            if len(cameras) != len(image_keys):
+                missing = cameras[len(image_keys) :] if len(cameras) > len(image_keys) else image_keys[len(cameras) :]
+                logger.warning(
+                    "Image mapping is incomplete; dropping unmatched cameras/keys: %s (available: %s, policy keys: %s)",
+                    missing,
+                    list(images),
+                    self._expected_image_keys,
+                )
+            else:
+                missing = []
 
         if not self._logged_image_map:
             if missing:
@@ -156,9 +168,16 @@ class PhysicalAIModelServer(PredictModelServer):
 
         Returns:
             The batched observation expected by the policy.
+
+        Raises:
+            KeyError: If the configured state field and legacy fallback keys are missing.
         """
-        # find images
-        source_images = obs.get("images", {}) or {}
+        observation = obs.get("observation")
+        if not isinstance(observation, dict):
+            observation = obs
+
+        # find images - reshape and noramlize for torch policies
+        source_images = observation.get("images", {}) or {}
         images: dict[str, np.ndarray] = {}
         for camera, feature_key in self._resolve_image_map(source_images).items():
             image = np.asarray(source_images[camera])
@@ -167,19 +186,26 @@ class PhysicalAIModelServer(PredictModelServer):
         # find state
         state = None
         if self.state_key:
-            raw_state = obs.get("states")
-            if raw_state is None:
-                raw_state = obs.get("state")
-            if raw_state is not None:
-                state = np.asarray(raw_state, dtype=np.float32)
-                if state.ndim == 1:
-                    state = state[None, :]
+            state = observation.get(self.state_key)
+            if state is None:
+                state = observation.get((self.state_key or "state").split(".")[-1])
+            if state is None:
+                state = observation.get("states")
+            if state is None:
+                msg = f"Missing required observation state field for {self.state_key!r} or default key 'state'."
+                raise KeyError(msg)
+            state = np.asarray(state, dtype=np.float32)
+            # batchify if singular
+            if state.ndim == 1:
+                state = state[None, :]
 
         # find task
-        task_description = obs.get("task_description")
+        task_description = observation.get("task_description")
         task = task_description if isinstance(task_description, str) else None
         # Observation is used in vla-eval, type to distinguish
-        return PhysicalAIObservation(images=images or None, state=state, task=task)  # pyright: ignore[reportArgumentType]
+        payload = dict(observation)
+        payload.update({"images": images or None, "state": state, "task": task})
+        return PhysicalAIObservation.from_dict(payload)
 
     def _policy_device(self) -> str:
         """Return the device used by a live policy."""
@@ -245,14 +271,13 @@ class PhysicalAIModelServer(PredictModelServer):
         return {"actions": RAW}
 
     def get_observation_spec(self) -> dict[str, DimSpec]:
-        """Declare the observation fields consumed by the policy.
+        """Declare observation conventions that can be inferred safely.
 
         Returns:
-            The raw image, language, and optional state specifications.
+            RGB camera and language specifications.
         """
-        spec: dict[str, DimSpec] = {"image": RAW, "language": RAW}
-        if self.state_key:
-            spec["state"] = RAW
+        spec = dict.fromkeys(self.image_keys or {}, IMAGE_RGB)
+        spec["language"] = LANGUAGE
         return spec
 
 
