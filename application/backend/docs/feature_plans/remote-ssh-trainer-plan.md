@@ -1,18 +1,44 @@
 # Remote Server SSH Container Provisioning for Training
 
+**Scope of this document: backend only** — SSH transport, preflight, container
+provisioning, and worker integration. The management screen, the unified target
+selector, and the progress stepper live in
+[`remote-ssh-trainer-ui-plan.md`](remote-ssh-trainer-ui-plan.md). PR sequencing
+across both lives in
+[`remote-ssh-trainer-pr-plan.md`](remote-ssh-trainer-pr-plan.md).
+
 ## Overview
 
-Add a managed "remote server" concept to Physical AI Studio. Users register a
-remote GPU/XPU server, select a deployment-provided SSH credential profile, and
-choose a target device type through the web UI. When a training job is started,
-the backend SSHes into the selected server, resolves the device-specific trainer
-image from the local Git SHA (or
-`latest` when the SHA-tagged image cannot be resolved), starts one isolated
-trainer container for the job, runs the job through the existing HTTP
+Add a managed "remote server" concept to Physical AI Studio. A user registers a
+remote GPU/XPU server by picking one of the SSH hosts they **already have
+configured in `~/.ssh/config`**, names it, and declares its device type. When a
+training job is started, the backend SSHes into that server, resolves the
+device-specific trainer image from the Studio build revision (or `latest` when
+the revision-tagged image cannot be resolved), starts one isolated trainer
+container for the job, runs the job through the existing HTTP
 `RemoteTrainingBackend`, and removes the container when the job completes.
 
-This extends today's per-job remote trainer selection into per-job,
-dynamically provisioned trainers.
+This extends today's per-job remote trainer selection into per-job, dynamically
+provisioned trainers.
+
+### Deployment model: the user's own workstation
+
+**Studio runs on the user's machine.** `Settings.storage_dir` defaults to a
+per-user directory (`~/Library/Application Support/physicalai` on macOS,
+`$XDG_DATA_HOME/physicalai` on Linux), and the API has no authentication because
+it assumes a single trusted local user. That assumption is what makes this
+feature's credential design simple:
+
+- There is **no deployment operator** to inject secrets. The person configuring
+  a remote server is the person who owns the SSH key.
+- The user almost certainly **already has a working `Host` entry** for their GPU
+  box — that is how they log into it today.
+- Therefore Studio does not need to receive, store, encrypt, or transport SSH
+  credentials at all. It needs to name one.
+
+The containerized `physical-ai-studio-{cpu,xpu,cuda}` images are a **secondary**
+target and inherit the identical mechanism: the operator mounts the user's
+`~/.ssh` (or exposes an agent socket) into the container. No separate code path.
 
 ### Relationship to the existing remote trainer registry
 
@@ -31,55 +57,54 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
   (see Step 5) and is documented next to the schema fields. Do not discriminate
   purely on "`remote_server_id` is not None" — the enum must stay the single
   source of truth so the payload cannot express two targets at once.
-- **Credential configuration:** SSH credentials are configured by the deployment
-  operator through an environment-injected profile map. `RemoteServerDB` stores
-  only a validated, non-secret `credential_profile` identifier; it never stores
-  an SSH private key, password, or passphrase. The backend resolves the profile
-  only while establishing an SSH connection and fails closed when it is absent
-  or invalid.
+- **Credential configuration:** `RemoteServerDB` stores a single non-secret
+  `ssh_host_alias` — the name of a `Host` stanza in the user's SSH config. It
+  stores no key, password, passphrase, or username. `asyncssh` resolves the
+  alias and authenticates; Studio never reads key material.
 - **Device listing:** `SystemService.get_available_training_devices` already
   always reports the Studio host's local devices (`mode="local"`); per-trainer
   device listing for the direct-URL registry goes through
   `RemoteTrainerService`'s health check, not this endpoint. The SSH path
   follows the same pattern: it serves the server's **configured** `device_type`
-  from the DB record (the trainer is not running at dialog time; see Step 6)
-  through the remote-server status endpoint (Step 1), not a live `/devices`
-  probe.
+  from the DB record (the trainer is not running at dialog time) through the
+  remote-server status endpoint (Step 1), not a live `/devices` probe.
 
 ## Confirmed Decisions
 
-| Topic                           | Decision                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| SSH login credentials           | The deployment injects SSH credential profiles through the backend environment (for example, `REMOTE_SERVER_SSH_CREDENTIALS_JSON` or an equivalent secret-injected source). Profile values include the SSH username, authentication method, and private key/password/passphrase as needed; they are never persisted by Studio.                                                                                |
-| Credential-profile persistence  | `RemoteServerDB` stores only an allowlisted, non-secret `credential_profile` identifier. The same identifier is snapshotted with provisioning state for restart reattach; secret values are never stored in `RemoteServerDB`, `JobProvisioningDB`, payload JSON, logs, API responses, UI state, or trainer images.                                                                                       |
-| Non-encrypted, never-serialized | `host_key` is integrity data (the server's public host key for TOFU), not a secret: stored in plaintext, but never returned in API responses.                                                                                                                                                                                                          |
-| Profile lifecycle               | Operators add, rotate, or remove credentials by updating the deployment's secret-injected environment and restarting/redeploying Studio. Every Studio instance eligible to provision or reattach jobs must receive the relevant profiles. Users cannot upload, edit, or rotate SSH secrets through the API or UI in this initial scope.                                                                       |
-| Host key verification           | Pin the server host key on first successful preflight (TOFU), store it with the record, and verify it (fail-closed) on every later connect. A mismatch blocks the job/preflight with a clear error.                                                                                                                                                    |
-| Command safety                  | All remote commands run as argument arrays (no shell string interpolation). Image names, container names, labels, and device arguments come from trusted application constants or validated identifiers, not arbitrary user input.                                                                                                                     |
-| Trainer distribution            | Publish dedicated `physicalai-trainer-cuda` and `physicalai-trainer-xpu` OCI images. Do not reuse the full Studio application images as trainer images.                                                                                                                                                                                                |
-| Trainer launch                  | Prefer the device-specific image tagged with the local Git SHA; use `latest` only when that SHA-tagged image cannot be resolved. Resolve and record the selected image's immutable digest, then run `physicalai-trainer` in a job-scoped Docker container bound only to remote loopback.                                                               |
-| Trainer lifecycle               | One container per job. Persist the container id/name, image digest, remote published port, local tunnel port, and non-secret credential-profile identifier so orphans can be swept and recoverable jobs reattached after a crash.                                                                                                                     |
-| Concurrency                     | Reuse the existing **per-execution-target** serialization in `TrainingWorker.run_loop`: one job at a time per target, jobs on distinct targets run concurrently. SSH jobs need their own target key (next row). Throttle status/preflight SSH connections per server with short timeouts so UI polling cannot disrupt a running job.                   |
-| Execution target key            | An SSH job's target key must be `ssh:<remote_server_id>`. Reusing the existing `remote:<remote_trainer_id>` branch is **not** acceptable: SSH jobs carry no `remote_trainer_id`, so every SSH job on every server would collapse onto the single key `remote:None`. `TrainingWorker._target_key` must be extended explicitly.                          |
-| Job target discriminator        | Add a third `TrainingTarget.SSH` member rather than overloading `REMOTE` with an optional `remote_server_id`. Overloading `REMOTE` breaks `get_training_backend` (raises when `remote_trainer_url is None`) and the worker's `reattaching` check.                                                                                                      |
-| Backend restart behavior        | **Reattach.** On startup, for each non-terminal job with a `JobProvisioningDB` row, resolve its persisted credential-profile identifier from the environment, re-open the SSH tunnel to the persisted `remote_port`/`container_id`, re-verify `/health` and image digest, and resume streaming. Only genuinely orphaned containers are swept. See [Restart and Reattach](#restart-and-reattach). |
-| Tunnel drop mid-training        | **Reconnect and resume.** A dropped tunnel does not fail the job. Use SSH keepalives, re-open the forward against the still-running container, and resume streaming. Consistent with the reattach decision above.                                                                                                                                      |
-| Bastion / `ProxyJump`           | **Out of scope.** All target servers are directly reachable from where Studio runs. Document the limitation; do not add a hop config field.                                                                                                                                                                                                            |
-| Build revision source           | Read the Studio build revision from a baked-in OCI label / build arg / `../../../VERSION`, **not** `git rev-parse HEAD`. The backend ships inside a container with no `.git`, so a git-only lookup would silently make `latest` the permanent production path. Git is a developer-mode fallback only.                                               |
-| Dataset transfer                | Keep the HTTP `http` transfer, streamed through an SSH tunnel.                                                                                                                                                                                                                                                                                         |
-| Device type                     | User provides GPU/XPU device type when configuring the server.                                                                                                                                                                                                                                                                                         |
-| Image selection                 | Resolve the build revision, then resolve the corresponding device-specific image tag. Fall back to `latest` only if the revision or its image cannot be resolved. Persist the selected ref, fallback reason, and immutable digest with the job.                                                                                                        |
-| Trainer protocol compatibility  | **Grandfather the direct-URL registry, strict for SSH.** A direct-URL trainer reporting no protocol version is allowed (a human registered and owns it). An SSH-provisioned image must report compatible metadata or the job fails before dataset upload (Studio selected that image itself).                                                          |
-| Registry access                 | Pull public trainer images from GHCR. Registry credentials and private registries are outside the initial scope.                                                                                                                                                                                                                                       |
-| First-job cost                  | The first image pull can be large; later jobs reuse Docker's cached layers.                                                                                                                                                                                                                                                                            |
-| Driver check                    | CUDA: `nvidia-smi` plus an in-container `torch.cuda.is_available()` probe. XPU: host render-node/driver probes plus an in-container `torch.xpu.is_available()` probe.                                                                                                                                                                                  |
-| Preflight                       | Two tiers. Tier 1 (cheap) gates save: reachability/auth, host key, Docker access, disk, driver. Tier 2 (expensive) runs as an explicit async action: registry/image pull, signature policy, in-container device probe, protocol compatibility. See Step 2.                                                                                             |
-| Supply chain                    | Publish an SBOM, scan and sign trainer images, and verify the expected image identity before launch. Always launch the selected image by its resolved digest.                                                                                                                                                                                          |
-| Management UI                   | **One global "Training targets" screen**, outside the project subtree, listing local, direct-URL trainers, and SSH servers with a type badge and status. The train dialog uses a single unified target picker backed by the same concept — not two parallel dropdowns. See Steps 6 and 7.                                                              |
-| User-facing naming              | **Unify.** Users pick a "training target"; the direct-URL vs SSH distinction is a type badge, not a separate product concept. Internally the models stay `RemoteTrainerDB` (direct URL) and `RemoteServerDB` (SSH).                                                                                                                                    |
-| GPU availability                | Before launching training, check the server GPU is free. CUDA: reliable via `nvidia-smi` compute-apps + memory. XPU: best-effort via `xpu-smi stats` / memory heuristic. If occupied, the job **stays pending with backoff** in a visible "waiting for GPU" state and a give-up timeout — it is not failed immediately. See Step 4.                    |
-| Backend authorization           | **None today — single trusted local user.** Anyone who can reach the API can register a server and submit a job, which grants root-equivalent execution on that host. Therefore remote SSH training ships **feature-flagged off by default**, and the trust assumption is stated plainly in the docs. See Step 8.                                      |
-| Progress reporting              | Phase-windowed 0–100 bar plus a structured `phase` descriptor in `extra_info` so the UI shows a stepper (connect → image pull → verify → start → upload → train → download). Indeterminate setup phases stream sanitized command output + heartbeats. **One phase table for all targets** — the ~1–2% shift for local and direct-URL jobs is accepted. |
+| Topic                          | Decision                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deployment model               | **Studio runs on the user's own workstation.** The container images are a secondary target that mounts the same `~/.ssh`. There is no deployment operator and no secret-injection contract. See [Deployment model](#deployment-model-the-users-own-workstation).                                                                      |
+| SSH login credentials          | **The user's existing `~/.ssh/config`.** `asyncssh` is given the user's SSH config and resolves the selected `Host` alias for hostname, port, user, and identity. Studio never receives, reads, stores, encrypts, or transports a private key, password, or passphrase.                                                                |
+| Credential persistence         | `RemoteServerDB` stores one non-secret `ssh_host_alias` string. No secret material exists anywhere in Studio's database, payload JSON, logs, API responses, UI state, or trainer images — because Studio never has it in the first place.                                                                                             |
+| No encryption layer            | **No Fernet, no `core/secret_encryption.py`, no `cryptography` dependency, no `REMOTE_SERVER_SECRET_KEY`, no key fingerprint column, no key-rotation recovery path.** There is nothing at rest to encrypt. This removes an entire subsystem and its whole failure surface.                                                            |
+| Passphrase-protected keys      | Handled by the **SSH agent** (`SSH_AUTH_SOCK`), never by Studio. A passphrase-protected key with no agent available fails preflight with an actionable message telling the user to add the key to their agent. Studio never prompts for or holds a passphrase.                                                                        |
+| Host key verification          | **`~/.ssh/known_hosts`**, via `asyncssh`'s default verification. No `host_key` column, no bespoke TOFU pin/verify logic. An unknown host fails closed with an actionable "run `ssh <alias>` once to accept its fingerprint" message; a changed host key surfaces as `asyncssh`'s verification failure.                                |
+| Missing/invalid alias          | A `ssh_host_alias` that is absent from the SSH config, or matches only a wildcard stanza, is a distinct actionable state ("SSH host alias not found in your SSH config"), never a 500. Validated on save and re-checked on every preflight.                                                                                          |
+| SSH library                    | **`asyncssh`.** Native asyncio, native `~/.ssh/config` parsing, native `known_hosts` verification, and a local-forward API that supports the reconnect-and-resume requirement without a thread bridge.                                                                                                                               |
+| Command safety                 | All remote commands run as argument arrays (no shell string interpolation). Image names, container names, labels, and device arguments come from trusted application constants or validated identifiers, not arbitrary user input.                                                                                                    |
+| Trainer distribution           | **Already shipped.** `physicalai-trainer-cuda` / `physicalai-trainer-xpu` targets exist in `../../../trainer/Dockerfile`; `.github/workflows/trainer-images.yml` publishes them to GHCR with SBOM, provenance, Trivy scan, and cosign signing.                                                                                        |
+| Trainer launch                 | Prefer the device-specific image tagged with the Studio build revision; use `latest` only when that tag cannot be resolved. Resolve and record the selected image's immutable digest, then run `physicalai-trainer` in a job-scoped Docker container bound only to remote loopback.                                                   |
+| Trainer lifecycle              | One container per job. Persist the container id/name, image digest, remote published port, local tunnel port, and the non-secret `ssh_host_alias` so orphans can be swept and recoverable jobs reattached after a crash.                                                                                                              |
+| Concurrency                    | Reuse the existing **per-execution-target** serialization in `TrainingWorker.run_loop`: one job at a time per target, jobs on distinct targets run concurrently. SSH jobs need their own target key (next row). Throttle status/preflight SSH connections per server with short timeouts so UI polling cannot disrupt a running job.   |
+| Execution target key           | An SSH job's target key must be `ssh:<remote_server_id>`. Reusing the existing `remote:<remote_trainer_id>` branch is **not** acceptable: SSH jobs carry no `remote_trainer_id`, so every SSH job on every server would collapse onto the single key `remote:None`. `TrainingWorker._target_key` must be extended explicitly.         |
+| Job target discriminator       | Add a third `TrainingTarget.SSH` member rather than overloading `REMOTE` with an optional `remote_server_id`. Overloading `REMOTE` breaks `get_training_backend` (raises when `remote_trainer_url is None`) and the worker's `reattaching` check.                                                                                      |
+| Backend restart behavior       | **Reattach.** On startup, for each non-terminal job with a `JobProvisioningDB` row, re-open the SSH tunnel to the persisted `remote_port`/`container_id`, re-verify `/health` and image digest, and resume streaming. Only genuinely orphaned containers are swept. See [Restart and Reattach](#restart-and-reattach).                 |
+| Tunnel drop mid-training       | **Reconnect and resume.** A dropped tunnel does not fail the job. Use SSH keepalives, re-open the forward against the still-running container, and resume streaming. Consistent with the reattach decision above.                                                                                                                    |
+| Bastion / `ProxyJump`          | **Out of scope as a Studio feature** — but note that because credentials come from `~/.ssh/config`, a user who already has `ProxyJump` configured for a host may get it for free via `asyncssh`'s config support. Do not add a hop config field; do not hard-code a single-hop assumption where avoiding it is cheap.                 |
+| Dataset transfer               | Keep the HTTP `http` transfer, streamed through an SSH tunnel.                                                                                                                                                                                                                                                                      |
+| Device type                    | User provides GPU/XPU device type when configuring the server.                                                                                                                                                                                                                                                                      |
+| Build revision source          | **The `org.opencontainers.image.revision` OCI label only**, with `git rev-parse HEAD` as a developer-checkout fallback. **Not `../../../VERSION`** — it contains `0.1.0`, a semver string, not a Git SHA, so resolving an image tag from it can never hit a SHA-tagged image and silently makes `latest` the permanent path.          |
+| Image selection                | Resolve the build revision, then resolve the corresponding device-specific image tag. Fall back to `latest` only if the revision or its image cannot be resolved. Persist the selected ref, fallback reason, and immutable digest with the job.                                                                                       |
+| Trainer protocol compatibility | **Grandfather the direct-URL registry, strict for SSH.** A direct-URL trainer reporting no protocol version is allowed (a human registered and owns it). An SSH-provisioned image must report compatible metadata or the job fails before dataset upload (Studio selected that image itself).                                         |
+| Registry access                | Pull public trainer images from GHCR. Registry credentials and private registries are outside the initial scope.                                                                                                                                                                                                                     |
+| First-job cost                 | The first image pull can be large; later jobs reuse Docker's cached layers.                                                                                                                                                                                                                                                         |
+| Driver check                   | CUDA: `nvidia-smi` plus an in-container `torch.cuda.is_available()` probe. XPU: `xpu-smi` or an Intel render-node check on the host, plus an in-container `torch.xpu.is_available()` probe.                                                                                                                                           |
+| Preflight                      | Two tiers. Tier 1 (cheap) gates save: alias resolution, reachability/auth, host key, Docker access, disk, driver, registry reachability. Tier 2 (expensive) runs as an explicit async action: image resolve/pull, signature policy, in-container device probe, protocol compatibility. GPU occupancy is reported by Tier 1 but never blocks save. See Step 2.                                                                                                                                                                                        |
+| Supply chain                   | Already published: SBOM, Trivy scan, and cosign signature per trainer image. Provisioning verifies the expected image identity before launch and always launches by resolved digest.                                                                                                                                                 |
+| GPU availability               | Before launching training, check the server GPU is free. CUDA: reliable via `nvidia-smi` compute-apps + memory. XPU: best-effort via `xpu-smi stats` / memory heuristic. If occupied, the job **stays `pending`** with backoff and a visible waiting phase, plus a give-up timeout — it is not failed immediately. See Step 4.        |
+| GPU-busy job state             | **No new `JobStatus` member.** `JobStatus` is `pending\|running\|completed\|failed\|canceled`, generated into `openapi-spec.d.ts` and consumed across the UI; adding a member forces every consumer to change. The wait is expressed in the existing `extra_info["phase"]` channel the UI already needs. See the UI plan.              |
+| Progress phase table           | **Per-target phase table**, selected once at backend construction. Do **not** retune the shared `SNAPSHOT_UPLOAD_PROGRESS` / `TRAINING_PROGRESS_END` constants: shifting local and direct-URL progress curves (and rewriting their assertions) buys nothing, and a per-target table is equally non-branching at the call sites.        |
+| Backend authorization          | **None today — single trusted local user.** Anyone who can reach the API can register a server and submit a job, which grants root-equivalent execution on that host. A backend-side enablement switch is required, but it is **sequenced last** (Step 8) rather than first: on a workstation-only deployment the API is not exposed. |
 
 ## Architecture Context
 
@@ -98,67 +123,75 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
   `/jobs`, `/jobs/{id}/dataset`, `/jobs/{id}/events` (SSE), `/jobs/{id}/artifact`,
   `/jobs/{id}/cancel`, `/devices`, and `/health`. It has no built-in auth and is
   intended for a trusted private network.
+- `/health` **already returns** `status`, `protocol_version`, and `device_type`
+  (`../../../trainer/src/trainer/schemas.py`, `HealthInfo`), sourced from the
+  environment and baked into the published images. The protocol-metadata work
+  described in earlier revisions of this plan is done.
 - The existing `http` dataset transfer streams a validated ZIP via
   `PUT /jobs/{id}/dataset` with progress mirroring and archive-safety checks.
 - Persistence uses SQLAlchemy models in `db/schema.py`, repositories under
   `repositories/`, Pydantic schemas under `schemas/`, and Alembic migrations.
-- The existing `../../../docker/Dockerfile` produces full Studio CPU/XPU/CUDA
-  images whose runtime installs the backend environment and starts `run.sh`.
-  Add minimal trainer-specific image targets instead of using those images as-is.
 
 ## Implementation Steps
 
-### 1. Persist servers with credential-profile references
+### 1. Persist servers by SSH host alias
 
-The prior persisted-secret shape on `albert/ssh-server-persistence` is
-superseded by this temporary environment-backed login design and requires a
-migration before this feature ships.
+The persisted-secret shape prototyped on `albert/ssh-server-persistence`
+(`ssh_secret_encrypted`, `ssh_key_passphrase_encrypted`, `host_key`,
+`core/secret_encryption.py`, `REMOTE_SERVER_SECRET_KEY`) is **superseded and
+deleted**, not migrated.
 
-- `RemoteServerDB` in `../../src/db/schema.py` with `id`, `name`, `host`,
-  `port`, non-secret `credential_profile`, `device_type` (`DeviceType`),
-  `created_at`, and `updated_at`, plus:
-  - `credential_profile` must be a stable, allowlisted identifier resolvable by
-    the backend's environment-backed profile resolver. It must not contain a
-    username, private key, password, passphrase, or other secret value.
-  - **Plaintext but never serialized:** `host_key` (pinned public host key for
-    TOFU verification — integrity data, not a secret, so no encryption needed).
+**Rewrite migration `d4f8a1c9b3e6_add_remote_servers.py` in place.** It exists
+only on that unused branch — `main` carries only `e4b2f1c8a907`
+(`remote_trainers`) — so no deployed database has ever contained an encrypted
+SSH secret. There is no legacy data to migrate and no follow-up migration to
+schedule.
+
+- `RemoteServerDB` in `../../src/db/schema.py` with:
+  - `id`, `name`, `device_type` (`DeviceType`, restricted to CUDA/XPU),
+    `created_at`, `updated_at`;
+  - `ssh_host_alias` — the `Host` stanza name from the user's SSH config.
+    Non-secret. **Unique**; a second record for the same alias is meaningless;
   - **Last-check summary:** `last_check_status`, `last_check_at`,
     `last_check_latency_ms`, `last_check_reason_code`. These exist so a
     transient preflight failure updates status instead of destroying the record.
-  - A uniqueness constraint over host, port, and credential profile prevents
-    duplicate registrations of the same endpoint.
+- **Deleted relative to the prototype:** `username`, `auth_type`,
+  `ssh_secret_encrypted`, `ssh_key_passphrase_encrypted`, `host_key`, and the
+  `uq_remote_servers_host_port_username` constraint. Also `host` and `port` —
+  the alias is the single source of truth for the endpoint, so persisting them
+  would create a second one that can silently disagree with the SSH config.
+  The table drops from 14 columns to 8.
+- **Host and port for display** are resolved from the SSH config at read time
+  and returned as derived, non-persisted fields. If the alias has disappeared,
+  the record renders in the "alias not found" state instead of showing stale
+  values.
 - `JobProvisioningDB` (separate table keyed by `job_id`, **not** the job payload
   JSON) holds per-job provisioning state so a crashed backend can sweep or
   reclaim an orphaned container from durable, queryable columns: `image_ref`,
   `image_fallback_reason`, `image_digest`, `container_id`, `container_name`,
-  `remote_port`, `local_tunnel_port`, `credential_profile`, `trainer_build_version`,
-  `trainer_protocol_version`.
-- Alembic migration `d4f8a1c9b3e6_add_remote_servers.py`.
+  `remote_port`, `local_tunnel_port`, `ssh_host_alias`,
+  `trainer_build_version`, `trainer_protocol_version`.
 - `repositories/remote_server_repo.py`, `repositories/job_provisioning_repo.py`,
   and mappers under `repositories/mappers/`.
-- `schemas/remote_server.py`, `schemas/job_provisioning.py` — no schema accepts
-  or returns SSH credential values; `host_key` is never serialized; asserted by
-  `tests/schemas/test_remote_server.py`.
-- `services/remote_server_service.py` and the CRUD router `api/remote_servers.py`.
-- A credential-profile resolver reads the environment-injected profile map and
-  fails closed with an actionable `RemoteServerCredentialProfileMissingError`
-  (or equivalent) when the selected profile is absent or malformed.
+- `schemas/remote_server.py`, `schemas/job_provisioning.py`. There is no
+  internal-vs-public schema split to maintain and no `to_public()` sanitizer,
+  because no field is secret. `tests/schemas/test_remote_server.py` asserts the
+  schema has no key/password/passphrase field at all.
+- `services/remote_server_service.py` and the CRUD router `api/remote_servers.py`
+  — **note this router is not yet wired**; `main.py` and `api/dependencies.py`
+  register only `remote_trainers_router` today.
+- An **SSH config reader** that lists selectable aliases (parsing `Host` stanzas,
+  excluding wildcard patterns) for the create/edit form, and resolves one alias
+  to its effective hostname/port/user for display. Read-only; never returns
+  `IdentityFile` contents.
 
-**Remaining follow-ups on this step:**
-
-- Migrate/remove legacy `ssh_secret_encrypted`,
-  `ssh_key_passphrase_encrypted`, and related authentication columns. Existing
-  records require an administrator-selected credential-profile assignment.
-- Define the "credential profile unavailable" UX: a missing or invalid profile
-  must surface as an actionable deployment-configuration message on the
-  training-targets screen, not a 500. Never include profile contents in errors.
-- The status endpoint (e.g. `POST /api/remote-servers/{id}:check` and/or
-  `GET /api/remote-servers/{id}/status`) still needs to run the Step 2 preflight
-  and return a structured result the UI can render (credential profile available,
-  reachable, authenticated,
-  Docker usable, registry reachable, driver present/version, container device
-  probe result, image/protocol version, last-checked timestamp, and whether the
-  server is currently in use by a running job or waiting on a busy GPU).
+**Status endpoint** (e.g. `POST /api/remote-servers/{id}:check` and/or
+`GET /api/remote-servers/{id}/status`) runs the Step 2 preflight and returns a
+structured result the UI can render: alias resolvable, reachable, authenticated,
+host key verified, Docker usable, registry reachable, driver present/version,
+container device probe result, image/protocol version, last-checked timestamp,
+and whether the server is currently in use by a running job or waiting on a
+busy GPU.
 
 ### 2. Verify-on-save SSH preflight
 
@@ -167,24 +200,37 @@ container must not run inside a create/update request handler.
 
 **Tier 1 — cheap checks, gate the save (seconds, bounded timeout):**
 
-- resolve the selected credential profile from the environment; reject an
-  unknown or malformed profile without persisting resolved credential values,
-- reachability and authentication using the resolved profile,
-- **host key**: on the first successful preflight, pin (store) the presented
-  host key on the record (TOFU); on later connects, verify it and fail-closed
-  on mismatch,
-- `docker version` succeeds for the configured SSH user without privilege
-  escalation,
+- resolve `ssh_host_alias` in the user's SSH config; reject an alias that is
+  absent or wildcard-only with an actionable message,
+- reachability and authentication using the resolved config (agent or
+  `IdentityFile` — `asyncssh` decides, Studio does not),
+- **host key**: verified against `~/.ssh/known_hosts` by `asyncssh`. An unknown
+  host fails closed with "run `ssh <alias>` once to accept its fingerprint"; a
+  mismatch surfaces as a verification failure. Studio neither pins nor writes
+  host keys,
+- `docker version` succeeds for the SSH user without privilege escalation,
 - enough free disk space for the image and a nominal job (per-job dataset size
   is re-checked at provisioning time — see Step 4),
 - device driver matching the configured type:
   - **CUDA** — `nvidia-smi`.
-  - **XPU** — try `xpu-smi` first. It is not always installed, so fall back
-    to lightweight, no-install probes when it is missing: check for Intel
-    render nodes and vendor id (`/dev/dri/renderD*` plus
-    `/sys/class/drm/*/device/vendor` == `0x8086`), or `lspci`/`clinfo`/
-    `sycl-ls` if available. These confirm an Intel GPU is present and the
-    kernel driver is bound.
+  - **XPU** — `xpu-smi` if installed; otherwise check for Intel render nodes
+    (`/dev/dri/renderD*` plus `/sys/class/drm/*/device/vendor` == `0x8086`).
+    Two probes, not four — `lspci`/`clinfo`/`sycl-ls` are dropped. Tier 2's
+    in-container `torch.xpu.is_available()` is the authoritative check; Tier 1
+    only needs enough signal to reject an obviously wrong host.
+- **registry reachable** — an unauthenticated manifest `HEAD` against the public
+  GHCR trainer repository. This is Tier 1 because it is one sub-second request
+  and it separates "this host cannot reach the registry at all" (a real
+  misconfiguration, worth catching at save time) from "the pull failed midway"
+  (Tier 2's job). It does **not** resolve or pull the image.
+- **GPU free** — reuse the `nvidia-smi` / `xpu-smi` invocation already made for
+  the driver check and report occupancy in the same pass.
+
+**GPU-busy must not gate save.** It is the one Tier 1 result that is reported but
+not blocking: a busy GPU is a transient state, not a misconfiguration, and a user
+must be able to register or edit a target while a job is running on it. Blocking
+here would also contradict the decision that a busy target stays selectable in
+the train dialog. Distinguish *reported* Tier 1 results from *blocking* ones.
 
 **Tier 2 — expensive verification, explicit async action with progress:**
 
@@ -203,33 +249,42 @@ through the same phase/progress channel as a job so the UI can show activity:
 **Cross-cutting requirements:**
 
 - Report which detection method succeeded so the UI/status can show it.
-- Return a clear pass/fail result to the UI and block save on Tier 1 failure.
+- Return a clear pass/fail result to the UI and block save on a **blocking**
+  Tier 1 failure. GPU occupancy is reported, never blocking (see above).
 - Record outcomes in the existing `last_check_*` columns. A **transient** Tier 1
-  failure (server rebooting, network blip) must mark the record unhealthy, never
-  delete or invalidate it, and must never re-pin a changed host key.
+  failure (server rebooting, network blip) must mark the record unhealthy and
+  never delete or invalidate it.
 - Every preflight must have an overall timeout budget and be cancellable.
+- Per-server throttling shared with the status endpoint, so UI polling cannot
+  disrupt a running job.
 
-### 3. Build and resolve trainer images
+### 3. Resolve trainer images
 
-- Add minimal, non-root `physicalai-trainer-cuda` and
-  `physicalai-trainer-xpu` image targets built from `../../../trainer` and
-  the local `../../../../library` package. Bake the matching PyTorch extra and required
-  user-space GPU libraries into each image.
-- Set `physicalai-trainer` as the image entry point. Do not include the backend,
-  UI, SSH credentials, datasets, model caches, or generated artifacts.
-- Publish the images to GHCR with an immutable Git SHA tag and a moving `latest`
-  tag. Include OCI labels for source repository, Git revision, application
-  version, trainer API protocol version, and build date.
-- Publish an SBOM, scan the image, and sign it in CI. Provisioning verifies the
-  expected repository/signature identity before launch.
-- Resolve the Studio build revision from a **baked-in** source: an OCI label on
-  the running Studio image, a build arg exposed as a setting, or
-  `../../../VERSION`. **Do not rely on `git rev-parse HEAD`** — the backend
-  ships inside `physical-ai-studio-{cpu,xpu,cuda}` with no `.git` directory, so
-  a git-only lookup always fails in production and silently makes `latest` the
-  permanent path, defeating SHA pinning entirely. Git may be used only as a
-  developer-checkout fallback. Add a test asserting revision resolution succeeds
-  when `.git` is absent.
+The images and their supply chain already exist. What remains is backend-side
+resolution.
+
+**Already shipped — do not rebuild:**
+
+- Non-root `physicalai-trainer-cuda` / `physicalai-trainer-xpu` targets in
+  `../../../trainer/Dockerfile`, entry point `physicalai-trainer`, no backend or
+  UI content.
+- `.github/workflows/trainer-images.yml` publishes immutable `${{ github.sha }}`
+  tags plus a moving `latest`, with `sbom: true`, `provenance: mode=max`, a
+  Trivy scan, cosign signing, and a metadata-verification step. Labels include
+  `org.opencontainers.image.source`, `.revision`, `.version`, `.created`, and
+  `org.open-edge-platform.physicalai.trainer.api-protocol`.
+- `/health` returns `protocol_version` and `device_type`.
+
+**Remaining work:**
+
+- Resolve the Studio build revision from the **`org.opencontainers.image.revision`
+  label** baked into the running Studio image, exposed as a setting at build
+  time. `git rev-parse HEAD` is a developer-checkout fallback only.
+  **Do not use `../../../VERSION`**: it contains `0.1.0`. A semver string can
+  never match a SHA-tagged image, so treating it as a revision source guarantees
+  a permanent silent fall back to `latest` — the exact trap this decision exists
+  to avoid. Add a test asserting revision resolution succeeds when `.git` is
+  absent, and a test asserting a semver-shaped value is rejected as a revision.
 - If the revision resolves, resolve the corresponding device-specific
   `<git-sha>` image tag through the registry. If the revision is unavailable or
   that tag does not exist, resolve the device-specific `latest` tag instead and
@@ -240,29 +295,23 @@ through the same phase/progress channel as a job so the UI can show activity:
   and pull the image by digest on the remote server. If neither the SHA-tagged
   image nor `latest` can be resolved, fail the job clearly; do not clone or
   install trainer source on the remote server.
-- Extend `/health` with trainer build and protocol metadata, and reject
-  incompatible images before uploading a dataset. **This is a trainer API
-  change that also affects the existing direct-URL registry:** today
-  `../../../trainer/src/trainer/main.py` returns only
-  `{"status": "healthy"}`. **Decision: grandfather the direct-URL registry,
-  strict for SSH.** A direct-URL trainer that reports no protocol version is
-  accepted (a human registered it and owns that deployment); log at info level
-  and show "protocol unknown" in its status. An SSH-provisioned image must report
-  compatible metadata or the job fails before dataset upload, because Studio
-  selected that image itself and can guarantee it is current. Add tests for both
-  branches so the grandfather path cannot silently widen to SSH.
+- Enforce protocol compatibility before uploading a dataset, with the
+  **grandfather rule**: a direct-URL trainer reporting no protocol version is
+  accepted (log at info, show "protocol unknown" in status); an SSH-provisioned
+  image reporting no or incompatible metadata fails the job before dataset
+  upload. Add tests for both branches so the grandfather path cannot silently
+  widen to SSH.
 
 ### 4. SSH container provisioning service
 
 Per job, on the selected server:
 
 - **Safety invariants for every remote command** — run commands as argument
-  arrays (never interpolate config fields into a shell string), verify the
-  pinned host key on connect, resolve the validated credential profile only in
-  memory immediately before connecting, derive image names from the configured
-  device type, validate job ids used in names/labels, and never pass
-  user-controlled strings as Docker options. Do not persist, log, or include
-  resolved credential values in commands, progress, errors, or telemetry.
+  arrays (never interpolate config fields into a shell string), let `asyncssh`
+  verify the host key against `known_hosts`, derive image names from the
+  configured device type, validate job ids used in names/labels, and never pass
+  user-controlled strings as Docker options. Studio holds no credential to leak
+  into commands, progress, errors, or telemetry.
 - **Pre-launch GPU availability check** — before pulling/launching, verify the
   server's GPU is not already occupied by another task (foreign training,
   inference server, notebook, etc.):
@@ -274,20 +323,19 @@ Per job, on the selected server:
   - **XPU** — best-effort via `xpu-smi stats` (utilization/memory); when
     `xpu-smi` is absent, fall back to a memory-usage heuristic. Per-process
     attribution is limited on XPU.
-  - If the GPU is occupied, **leave the job pending with backoff** rather than
-    failing it or launching into an OOM. This requires: a visible
-    `waiting_for_gpu` job state with a user-facing message, exponential backoff
-    on the re-check (`run_loop` polls every 0.5 s, so a naive implementation
-    would SSH-probe a busy server twice a second), a per-server throttle shared
-    with the status endpoint, and a give-up timeout after which the job fails
-    with a clear message. Surface this state in the server status/selector so
-    users see it upfront.
+  - If the GPU is occupied, **leave the job `pending` with backoff** rather than
+    failing it or launching into an OOM. This requires: a visible waiting state
+    expressed through `extra_info["phase"]` with a user-facing message (**not** a
+    new `JobStatus` member), exponential backoff on the re-check (`run_loop`
+    polls every 0.5 s, so a naive implementation would SSH-probe a busy server
+    twice a second), a per-server throttle shared with the status endpoint, and
+    a give-up timeout after which the job fails with a clear message.
 - **Re-check free disk at provisioning time** against the actual snapshot size
   for this job plus expected artifact size. The Step 2 save-time check used a
   nominal size and cannot know the dataset.
-- Resolve the SHA-tagged image first and use `latest` only when that image cannot
-  be resolved. Pull the selected image by its immutable repo digest. Stream
-  sanitized pull output and emit heartbeats while it runs.
+- Resolve the revision-tagged image first and use `latest` only when that image
+  cannot be resolved. Pull the selected image by its immutable repo digest.
+  Stream sanitized pull output and emit heartbeats while it runs.
 - Verify the image identity/signature and trainer protocol metadata before
   launch, then launch the container by the resolved digest rather than the
   mutable tag.
@@ -317,12 +365,9 @@ Per job, on the selected server:
   fail only once it is exhausted or the container is confirmed gone. The existing
   `trainer_stream_reconnect_*` settings cover HTTP-level retries only and do not
   help once the forward itself is dead.
-- **Bastion / `ProxyJump` is out of scope.** All target servers are assumed
-  directly reachable from where Studio runs. Document the limitation; do not add
-  a hop configuration field.
 - Persist the container id/name, resolved image digest, remote port, local
-  tunnel port, and non-secret credential-profile identifier for the job (Step 1,
-  `JobProvisioningDB`) so startup reattach and the orphan sweep can find it.
+  tunnel port, and `ssh_host_alias` for the job (Step 1, `JobProvisioningDB`)
+  so startup reattach and the orphan sweep can find it.
 - Poll `/health` with a bounded timeout and verify the reported image/protocol
   metadata matches the inspected image before dataset upload.
 - Report progress for each stage via the phase-windowed model (see
@@ -381,9 +426,9 @@ Per job, on the selected server:
   existing direct-URL path already injects `payload.remote_trainer_url`; keep
   the direct-URL path working unchanged.
 - Wrap `train()` with provision-before / teardown-after (in `finally`).
-- Generalize the existing progress window constants into the ordered phase table
-  - `report_phase` helper (see
-    [Progress Reporting](#progress-reporting-for-ssh-train-jobs)).
+- Introduce the ordered phase table + `report_phase` helper as a **per-target**
+  table (see [Progress Reporting](#progress-reporting-for-ssh-train-jobs)),
+  leaving the local and direct-URL curves untouched.
 - Keep the `http` dataset transfer streaming through the tunnel; avoid the `hf`
   transfer for this flow.
 - Implement the [Restart and Reattach](#restart-and-reattach) decision.
@@ -408,8 +453,8 @@ would discard hours of completed GPU work on every restart or redeploy.
 **Startup recovery procedure.** For each `JobProvisioningDB` row whose job is in
 a non-terminal state:
 
-1. Resolve the persisted credential-profile identifier from the current backend
-   environment, then connect to the server and verify the pinned host key
+1. Resolve the persisted `ssh_host_alias` in the current SSH config, then
+   connect, letting `asyncssh` verify the host key against `known_hosts`
    (fail-closed as usual).
 2. Inspect the persisted `container_id` / `container_name`. Confirm it exists, is
    running, and carries this deployment's management labels including
@@ -428,12 +473,12 @@ a non-terminal state:
 - Container exists but `/health` never becomes ready within the bounded timeout
   → tear down and fail the job.
 - Digest mismatch → treat as untrusted; tear down and fail.
-- Host key mismatch → fail-closed, and do **not** tear down (we cannot prove the
-  host is the one we provisioned on).
-- Credential profile unavailable or invalid → mark the job failed with an
-  actionable deployment-configuration message. Do not attempt an unauthenticated
-  fallback or expose profile contents; do not tear down when host identity and
-  container ownership cannot be established.
+- Host key verification fails → fail-closed, and do **not** tear down (we cannot
+  prove the host is the one we provisioned on).
+- `ssh_host_alias` no longer present in the SSH config → mark the job failed with
+  an actionable "restore this Host entry to recover" message. Do not attempt an
+  unauthenticated fallback, do not substitute a different alias, and do not tear
+  down when host identity and container ownership cannot be established.
 - The remote port is no longer bound / reachable → tear down and fail.
 
 **Interaction with the orphan sweep (Step 4).** Reattach runs _before_ the sweep.
@@ -446,14 +491,14 @@ Because tunnel drops are also reconnected rather than fatal (see the decisions
 table), reattach and mid-run reconnect should share one "re-establish the
 forward and resume streaming" code path.
 
-### 6. Thread `remote_server_id` through jobs + train dialog
+### 6. Thread `remote_server_id` through jobs
 
 - Add `remote_server_id` to `TrainJobPayload` in
   `../../src/schemas/job.py`, alongside the existing
   `remote_trainer_id`/`remote_trainer_url` fields for the direct-URL registry,
   and add the `TrainingTarget.SSH` member plus validator rules from Step 5.
 - Validate it in `JobService.submit_train_job` (reject if the server is unknown,
-  its credential profile is unavailable, or its last preflight failed).
+  its `ssh_host_alias` no longer resolves, or its last preflight failed).
 - Resolve the server in `../../src/workers/training_worker.py` and
   pass it into the backend factory (Step 5). Update `_target_key` (Step 5).
 - Serve the server's **configured** `device_type` from the DB record via the
@@ -461,183 +506,143 @@ forward and resume streaming" code path.
   already only reports the Studio host's local devices (`mode="local"`) and is
   not extended for this path; the trainer is not running at dialog time, so the
   SSH path never probes a live `/devices` endpoint.
-- **Unify the training-target selector** in
-  `../../../ui/src/routes/models/train-model-dialog.tsx`. That dialog
-  **already has a remote-trainer picker** (it queries `/api/remote-trainers`,
-  health-checks the choice, and sets `training_target` + `remote_trainer_id`).
-  Adding a second, separate "remote server" dropdown would leave users with two
-  similarly-named pickers and no indication of which wins. Instead, present one
-  **"training target"** control listing local, registered direct-URL trainers,
-  and registered SSH servers as entries of a single list, each with a type badge
-  and status, and derive `training_target` from the selected entry. Show status
-  inline and disable submit when the selection is unhealthy. A target whose GPU
-  is busy stays selectable — the job simply waits (see Step 4) — but the wait
-  must be stated in the dialog before submit.
 - Regenerate OpenAPI types
   (`npm run build:api:download && npm run build:api`).
 
-### 7. Training targets management screen (UI) — **Partial**
+The train-dialog target selector is UI work — see
+[`remote-ssh-trainer-ui-plan.md`](remote-ssh-trainer-ui-plan.md).
 
-One **global** screen for managing everywhere training can run — local,
-direct-URL trainers, and SSH servers — presented as a single "training targets"
-list with a type badge per entry. It mirrors the existing list/detail pattern
-used by robots and cameras (`routes/robots/layout.tsx` + `robot.tsx`).
+### 7. UI
 
-**Already present** on `albert/ssh-server-persistence`:
+Moved to [`remote-ssh-trainer-ui-plan.md`](remote-ssh-trainer-ui-plan.md):
+the global training-targets management screen, the unified target selector in
+the train dialog, and the progress stepper.
 
-- A `remoteTrainers` build-time feature flag in
-  `application/ui/src/config/feature-flags.ts` (default off,
-  `PUBLIC_ENABLE_REMOTE_TRAINERS`, with a `localStorage` dev override).
-- A flag-gated route in `../../../ui/src/router.tsx` and
-  `application/ui/src/routes/remote-servers/index.tsx`, a thin wrapper that
-  renders `features/remote-trainers/remote-trainers-page.tsx`.
+### 8. Backend enablement switch, threat model, docs, tests
 
-**Decided corrections:**
+**Sequenced last, deliberately.** Because Studio runs on the user's own
+workstation and does not expose its API, the gate is a hardening step for the
+secondary containerized deployment rather than a precondition for the
+workstation case. It must still land before the feature is documented as
+deployable beyond localhost.
 
-- **Promote the route to global.** `router.tsx` currently defines
-  `const remoteServers = project.path('/remote-servers')` under
-  `paths.project.*`, yielding `/projects/:project_id/remote-servers`. Neither
-  `RemoteServerDB` nor `RemoteTrainerDB` has a project FK, so move the route out
-  of the `project` subtree to a top-level path (e.g. `/training-targets`) with
-  its own primary-navigation entry, outside `ProjectLayout`.
-- **Unify the naming.** Users see one concept, "training target"; the direct-URL
-  vs SSH distinction is a type badge, not a separate product noun. Rename the
-  route folder and component accordingly (the current
-  `routes/remote-servers/` → `features/remote-trainers/RemoteTrainersPage`
-  split uses both nouns for the same screen), and pick one of `routes/` or
-  `features/` per `../../../ui/AGENTS.md`. Internal model names
-  (`RemoteTrainerDB`, `RemoteServerDB`) stay as they are.
+#### Backend enablement switch
 
-**Remaining work:**
+- Add a **backend-side** enablement setting so a disabled deployment _rejects
+  SSH job submission and remote-server writes_, rather than merely hiding the UI
+  from a browser that could still call the API directly. The existing
+  `remoteTrainers` UI flag in `application/ui/src/config/feature-flags.ts` only
+  hides the screen and is not sufficient on its own.
+- Test that SSH job submission and remote-server writes are rejected when the
+  switch is off.
 
-- Build out the list/detail split: list of targets (name, type badge, host,
-  device type, status badge) with a "New" action; create/edit form for SSH
-  entries covering name, host, port, non-secret credential-profile selection,
-  and device type (CUDA/XPU); and a detail/status view. The UI must not provide
-  key, password, or passphrase fields in this initial scope.
-- **Status view** — driven by the status endpoint (Step 1): reachable,
-  authenticated, Docker usable, registry reachable, driver present + version,
-  container device probe, compatible image version (or "protocol unknown" for a
-  grandfathered direct-URL trainer), last-checked time, and an "in use by job" /
-  "waiting for GPU" indicator. Add a "Test connection" button that runs the
-  Tier 2 verification (Step 2) with progress, and reflect live state with a
-  status badge (Healthy / Unreachable / Misconfigured / Busy / Checking).
-- Surface a distinct, actionable "Credential profile unavailable" state when
-  the selected profile is missing or invalid in the backend environment.
-- **Data layer** — use the generated `$api` hooks (`$api.useQuery` /
-  `$api.useMutation`) against the new endpoints, following existing route
-  patterns; never render secret material returned from the API (it never is).
-- **Empty/error states** — reuse the shared `EmptySelection` / illustrated
-  message pattern from `router.tsx` for "no target selected" and connection
-  errors.
+#### Threat model
 
-### 8. Threat model, docs, security review, tests
+Granting the SSH account access to the Docker daemon is **effectively root on
+that host**. Combined with per-job container launch: _anyone who can reach the
+Studio API and register a remote server gains root-equivalent code execution on
+that machine._
 
-#### Threat model (do this first, not last)
+On a workstation deployment this is close to a non-finding — the user already
+has that access, which is why the SSH config entry exists. The risk is
+concentrated in two places:
 
-Granting the configured SSH account access to the Docker daemon is
-**effectively root on that host**. Combined with per-job container launch, this
-means: _anyone who can register a remote server and submit a training job gains
-root-equivalent code execution on that machine._
+- **Network exposure.** Studio has no auth model. If a Studio instance is ever
+  reachable beyond localhost, every registered server is remotely rootable. This
+  is the re-review trigger.
+- **Blast radius of a compromised Studio process.** It can use every identity
+  reachable through the user's SSH agent and config — which is broader than just
+  the registered servers. Note this explicitly; it is a consequence of reusing
+  the user's SSH setup and is the one real cost of that choice versus a
+  narrowly-scoped injected credential. Mitigate by recommending a dedicated
+  unprivileged account and a per-host `IdentityFile` for GPU servers rather than
+  a single agent-loaded key with broad reach.
+- Database exfiltration reveals no usable credential — the database contains only
+  an alias string.
 
-**The Studio backend has no authentication or user model today** — it assumes a
-single trusted local user. That is the decisive fact for this feature, and it
-forces the following:
-
-- **Remote SSH training ships feature-flagged off by default** and stays off
-  until an authorization story exists. The existing `remoteTrainers` UI flag is
-  not sufficient on its own — it only hides the screen. Add a **backend-side**
-  enablement switch so a disabled deployment _rejects SSH job submission and
-  remote-server writes_, rather than merely hiding the UI from a browser that
-  could still call the API directly.
-- **Document the trust assumption plainly** in the user-facing docs: enabling
-  this feature means anyone who can reach the Studio API can execute code as
-  root on every registered server. Do not enable it on a network-exposed Studio
-  instance.
-- **Blast radius of a compromised backend/runtime:** it can use every SSH
-  credential profile injected into its environment. A single compromise can
-  compromise the corresponding GPU fleet. Database exfiltration alone must not
-  reveal usable SSH credentials; restrict environment access and inject only the
-  least-privilege profiles required by this deployment.
-
-Record in the threat model at minimum:
-
-- who is authorized to create/edit `RemoteServerDB` records (today: anyone who
-  can reach the API) and what the backend enforces;
-- what a job submitter effectively gains on the remote host;
-- the mitigations: a dedicated unprivileged SSH account used only for this,
-  rootless Docker where possible, never mounting the Docker socket into the
-  trainer container, and non-root + dropped-capability containers;
-- the re-review trigger: this model must be revisited before the feature is
-  enabled by default or before Studio is exposed beyond localhost.
+Record in the threat model at minimum: who can create/edit `RemoteServerDB`
+records (today: anyone who can reach the API) and what the backend enforces;
+what a job submitter effectively gains on the remote host; the mitigations (a
+dedicated unprivileged SSH account, rootless Docker where possible, never
+mounting the Docker socket into the trainer container, non-root + dropped-
+capability containers); and the re-review trigger above.
 
 #### Docs
 
-- Extend `../../../trainer/README.md` and backend docs with the credential-profile
-  environment contract, secure deployment injection, profile naming and
-  selection, rotation by redeploy, multi-instance reattach requirements, missing
-  profile recovery, the fact that Studio stores no SSH credentials in its
-  database, host setup for CUDA/XPU, XPU limitations, image verification, and
-  cleanup/recovery procedures.
+- Extend `../../../trainer/README.md` and backend docs with: the `~/.ssh/config`
+  contract (what a usable `Host` entry looks like), the agent requirement for
+  passphrase-protected keys, accepting a host fingerprint before first use,
+  recovery when an alias is removed or renamed, the fact that Studio stores no
+  SSH credentials whatsoever, host setup for CUDA/XPU, XPU limitations, image
+  verification, cleanup/recovery procedures, and the direct-reachability
+  assumption.
+- For the containerized deployment, document mounting `~/.ssh` and/or exposing
+  `SSH_AUTH_SOCK`, and that every instance eligible to reattach a job needs the
+  same alias resolvable.
 
 #### Tests
 
-- Add unit/integration tests mirroring
-  `../../tests/services/test_remote_training_backend.py`, covering
-  provisioning, preflight, teardown-on-failure, and cached-image reuse. Add tests
-  for:
-  - host-key mismatch fails-closed,
-  - config fields with shell metacharacters are rejected / cannot inject
-    commands,
-  - no server or provisioning schema accepts or serializes private keys,
-    passwords, passphrases, or `host_key`; only non-secret credential-profile
-    identifiers may be returned,
-  - unknown or malformed credential profiles fail preflight, provisioning, and
-    reattach closed without exposing profile contents,
-  - registry/image pull failures return a clear error,
-  - an incompatible or incorrectly signed image is rejected before upload,
-  - a resolvable SHA-tagged image is selected instead of `latest`,
-  - `latest` is selected only when the build revision or SHA-tagged image cannot
-    be resolved, with the fallback reason persisted,
-  - build-revision resolution succeeds when `.git` is absent (containerized
-    backend),
-  - the selected ref and resolved digest are persisted and the job container
-    launches by that digest rather than a mutable tag,
-  - Docker publishes the trainer only on remote loopback,
-  - CUDA/XPU container device-probe failures block save and provisioning,
-  - orphan-sweep reclaims a persisted labeled container/port after a simulated
-    crash, leaves unrelated containers untouched, **and leaves containers owned
-    by a different `backend_instance_id` untouched**,
-  - `_target_key` returns distinct keys for two different SSH servers and never
-    embeds `None`,
-  - two SSH jobs on two different servers run concurrently; two on the same
-    server serialize,
-  - **reattach**: after a simulated backend restart with the same credential
-    profile available, a still-running container is reclaimed, the tunnel is
-    re-opened on a fresh local port, and streaming resumes; and each failure
-    branch (container gone, `/health` never ready, digest mismatch, host-key
-    mismatch, profile unavailable, port unreachable) behaves as specified,
-  - **sweep ordering**: reattach runs before the sweep, so a recoverable
-    container is never removed,
-  - a dropped SSH tunnel mid-training reconnects and resumes rather than failing
-    the job, and fails only once the retry budget is exhausted,
-  - a busy GPU leaves the job pending with backoff (not failed), the wait is
-    visible, and the give-up timeout eventually fails it,
-  - a direct-URL trainer reporting no protocol version is accepted
-    (grandfathered) while an SSH image reporting no protocol version is rejected
-    before dataset upload,
-  - credential values never appear in logs, exceptions, streamed command output,
-    job messages, telemetry, or persisted provisioning rows,
-  - SSH job submission is rejected when the backend-side feature switch is off,
-  - streamed remote command output is sanitized/capped before becoming a
-    `message`.
-- Add at least one **integration test against a containerized `sshd`** with
-  credentials injected through the test process environment/profile resolver.
-  Every test listed above is otherwise mock-level, which cannot catch host-key,
-  tunnel, or auth-negotiation regressions.
-- Add UI tests for the remote server management screen (list/detail render,
-  create/edit form validation, status badge states, and the "Test connection"
-  flow) following existing route test patterns.
+Add unit/integration tests mirroring
+`../../tests/services/test_remote_training_backend.py`, covering provisioning,
+preflight, teardown-on-failure, and cached-image reuse. Add tests for:
+
+- an unknown or wildcard-only `ssh_host_alias` fails preflight, provisioning, and
+  reattach closed with the actionable message,
+- host-key verification failure fails closed, and reattach does not tear down,
+- config fields with shell metacharacters are rejected / cannot inject commands,
+- no server or provisioning schema has any private-key, password, or passphrase
+  field, and no API response contains one,
+- registry/image pull failures return a clear error,
+- an incompatible or incorrectly signed image is rejected before upload,
+- a resolvable revision-tagged image is selected instead of `latest`,
+- `latest` is selected only when the revision or its image cannot be resolved,
+  with the fallback reason persisted,
+- build-revision resolution succeeds when `.git` is absent (containerized
+  backend), **and a semver-shaped value such as `0.1.0` is rejected as a
+  revision** rather than silently producing a `latest` fallback,
+- the selected ref and resolved digest are persisted and the job container
+  launches by that digest rather than a mutable tag,
+- Docker publishes the trainer only on remote loopback,
+- CUDA/XPU container device-probe failures block **provisioning** and fail the
+  Tier 2 verification action — but do **not** block save, since the probe is
+  Tier 2 and save runs Tier 1 only,
+- a save succeeds while the target's GPU is busy (occupancy is reported, not
+  blocking) and still fails on a blocking Tier 1 error such as a missing alias
+  or an unverified host key,
+- an unreachable registry fails Tier 1 without pulling or resolving an image,
+- orphan-sweep reclaims a persisted labeled container/port after a simulated
+  crash, leaves unrelated containers untouched, **and leaves containers owned
+  by a different `backend_instance_id` untouched**,
+- `_target_key` returns distinct keys for two different SSH servers and never
+  embeds `None`,
+- two SSH jobs on two different servers run concurrently; two on the same
+  server serialize,
+- **reattach**: after a simulated backend restart, a still-running container is
+  reclaimed, the tunnel is re-opened on a fresh local port, and streaming
+  resumes; and each failure branch (container gone, `/health` never ready,
+  digest mismatch, host-key failure, alias missing, port unreachable) behaves as
+  specified,
+- **sweep ordering**: reattach runs before the sweep, so a recoverable
+  container is never removed,
+- a dropped SSH tunnel mid-training reconnects and resumes rather than failing
+  the job, and fails only once the retry budget is exhausted,
+- a busy GPU leaves the job `pending` with backoff (not failed), the wait is
+  visible in `extra_info["phase"]`, and the give-up timeout eventually fails it,
+- **`JobStatus` gains no new member** — assert the enum's members explicitly so a
+  future change cannot silently break generated UI consumers,
+- **local and direct-URL progress curves are unchanged** by the introduction of
+  the per-target phase table,
+- a direct-URL trainer reporting no protocol version is accepted
+  (grandfathered) while an SSH image reporting no protocol version is rejected
+  before dataset upload,
+- streamed remote command output is sanitized/capped before becoming a
+  `message`,
+- SSH job submission is rejected when the backend-side switch is off.
+
+Add at least one **integration test against a containerized `sshd`**, with a
+generated key and a purpose-built SSH config pointed at it via the config-path
+setting. Every test listed above is otherwise mock-level, which cannot catch
+host-key, tunnel, or auth-negotiation regressions.
 
 ## Progress Reporting for SSH Train Jobs
 
@@ -651,33 +656,34 @@ contract.
 
 ### Model: phase-windowed bar + structured phase descriptor
 
-- **Ordered phases**, each owning a slice of the 0–100 bar (single place to
-  retune, mirroring today's `SNAPSHOT_UPLOAD_PROGRESS` / `TRAINING_PROGRESS_END`
-  constants). Suggested windows:
+- **Ordered phases**, each owning a slice of the 0–100 bar. The SSH table:
 
   | Phase               | Key             | Window | Notes                                                                                        |
   | ------------------- | --------------- | ------ | -------------------------------------------------------------------------------------------- |
   | Connect & preflight | `connect`       | 0–2    | SSH, Docker, driver, disk, registry, and GPU-free checks.                                    |
-  | Image pull          | `image_pull`    | 2–5    | Resolve SHA tag or fallback `latest`, then pull by digest; cached layers can make this fast. |
+  | Image pull          | `image_pull`    | 2–5    | Resolve revision tag or fallback `latest`, then pull by digest; cached layers can be fast.    |
   | Image verification  | `image_verify`  | 5–7    | Resolve digest, verify identity/signature and protocol metadata.                             |
   | Trainer start       | `trainer_start` | 7–9    | Launch container, inspect port, open tunnel, poll `/health`.                                 |
   | Dataset upload      | `upload`        | 9–17   | Existing snapshot ZIP stream (real byte %).                                                  |
   | Training            | `train`         | 17–96  | Existing remote training progress (dominant slice).                                          |
   | Model download      | `download`      | 96–100 | Existing artifact stream (real byte %).                                                      |
 
+- **Per-target table, selected once at backend construction.** Local and
+  direct-URL backends keep their existing windows
+  (`SNAPSHOT_UPLOAD_PROGRESS = 10`, `TRAINING_PROGRESS_END = 95`) and their
+  existing progress assertions. Retuning the shared constants would shift those
+  curves by ~1–2% and force assertion rewrites for no gain; a table chosen at
+  construction is equally non-branching at every call site.
 - **Overall percent** is the phase's byte/step progress mapped into its window
   (reuse the existing `_upload_progress` / `_download_progress` / `_to_local_progress`
   helpers, generalized to `(window_start, window_end)`).
-- **One phase table for all targets** (decided). Retuning
-  `SNAPSHOT_UPLOAD_PROGRESS = 10` / `TRAINING_PROGRESS_END = 95` in
-  `services/training_backends/remote.py` to the windows above also shifts the
-  progress curve for local and direct-URL remote jobs by roughly 1–2%. That
-  shift is accepted in exchange for a single, non-branching implementation.
-  Update any existing progress assertions accordingly rather than special-casing
-  non-SSH targets.
 - **Structured phase descriptor** in `extra_info["phase"]` so the UI can render a
-  stepper: `{ key, label, index, total, state: "active"|"done"|"skipped", indeterminate: bool }`.
+  stepper: `{ key, label, index, total, state: "active"|"done"|"skipped"|"waiting"|"failed", indeterminate: bool }`.
   This is additive; the plain `progress`/`message` still drive the basic bar.
+- **The GPU-busy wait is a phase state, not a job status.** A job waiting on a
+  busy GPU stays `pending` and reports `connect` with `state: "waiting"` plus a
+  message and the give-up deadline. This keeps `JobStatus` at its existing five
+  members and avoids a breaking change to every generated UI consumer.
 - **Phase keys must be a shared, versioned constant** consumed by both the
   backend and the UI, so the two cannot drift silently. Note that `phase` shares
   the existing 16 KB `extra_info` cap with remote telemetry — budget for it.
@@ -701,7 +707,7 @@ percentage, so:
 - If all image layers are already cached or image verification finishes
   immediately, advance to that window's end and mark the step `done` so the jump
   is explained rather than looking stuck. Pull the resolved digest for every job;
-  query the moving `latest` tag only when SHA resolution falls back to it.
+  query the moving `latest` tag only when revision resolution falls back to it.
 
 ### Trust boundary
 
@@ -718,25 +724,18 @@ percentage, so:
 
 ### Backend changes
 
-- Generalize the window constants in
-  `services/training_backends/remote.py` into an ordered phase table and a
-  `report_phase(...)` helper that maps sub-progress into the active window and
-  attaches the `phase` descriptor.
+- Add the per-target phase table and a `report_phase(...)` helper in
+  `services/training_backends/remote.py` that maps sub-progress into the active
+  window and attaches the `phase` descriptor.
 - The provisioning service (Step 4) calls `report_phase` at each stage and pumps
   streamed command output through as `message` updates, **sanitized and length-
   capped** (strip control chars) since remote command output is not trusted text.
 - `ProgressReporter`, the dispatcher, and the job schema are unchanged (`phase`
   rides inside the existing `extra_info` dict).
+- **`JobStatus` is unchanged.**
 
-### UI changes
-
-- Extend the training progress view (`train-model-dialog.tsx` / the model
-  training status component) to render a **phase stepper** from
-  `extra_info.phase` (pending/active/done/skipped, spinner for indeterminate),
-  above the existing overall bar + message line.
-- During `train`, keep the existing step-loss telemetry rendering.
-- Degrade gracefully when `phase` is absent (local jobs): show only the bar +
-  message, exactly as today.
+The UI side of the stepper is in
+[`remote-ssh-trainer-ui-plan.md`](remote-ssh-trainer-ui-plan.md).
 
 ### Error attribution
 
@@ -772,19 +771,17 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
   key off the job id (via `TrainingWorker.job_interrupt_flags`), never a single
   shared interrupt signal, or cancelling one job could incorrectly interrupt
   another job running concurrently.
-- **GPU-busy jobs stay pending with backoff** (decided). Because `run_loop` polls
-  every 0.5 s and reserves the target before running, a naive implementation
-  would SSH-probe a busy server twice a second. Required: a distinct
-  `waiting_for_gpu` job state surfaced in the UI, exponential backoff on the
-  re-check, a per-server connection throttle shared with the status endpoint, and
-  a give-up timeout after which the job fails with a clear message.
+- **GPU-busy jobs stay `pending` with backoff** (decided). Because `run_loop`
+  polls every 0.5 s and reserves the target before running, a naive
+  implementation would SSH-probe a busy server twice a second. Required: the
+  `waiting` phase state surfaced in the UI, exponential backoff on the re-check,
+  a per-server connection throttle shared with the status endpoint, and a
+  give-up timeout after which the job fails with a clear message.
 - **Status/preflight SSH is out-of-band:** the status endpoint and device
   resolution open SSH connections from API request handlers, which can run while
   a job trains on the same server. Throttle these per server (short timeouts,
   limited concurrency) so UI polling cannot disrupt provisioning or pile up
-  connections, resolve credentials only through the selected non-secret profile
-  identifier, and give the UI explicit "Checking" loading states. Do not cache
-  or persist resolved credential values beyond the active connection.
+  connections, and give the UI explicit "Checking" loading states.
 - Optional future safety net: a per-server "busy" flag so a job whose selected
   server is occupied is left pending rather than double-provisioned.
 - Per-server parallelism (two different servers at once) already falls out of
@@ -793,11 +790,7 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
 
 ## Open Risks / Follow-ups
 
-All ten previously-open decisions are now resolved in
-[Confirmed Decisions](#confirmed-decisions). What remains are execution risks,
-not open questions.
-
-1. **Reattach correctness** — reattach is now the required behaviour, which makes
+1. **Reattach correctness** — reattach is required behaviour, which makes
    startup recovery a correctness-critical path rather than a cleanup path. Every
    failure branch in [Restart and Reattach](#restart-and-reattach) must be
    implemented and tested; a bug here either kills recoverable jobs or resurrects
@@ -814,12 +807,12 @@ not open questions.
    container-side watchdog) so a stale container does not hold the GPU.
 5. **Pending-job starvation** — with GPU-busy jobs waiting rather than failing, a
    permanently occupied server accumulates waiting jobs. The give-up timeout and
-   a visible queue state are what keep this from looking like a hang.
-6. **Fallback-tag reproducibility** — SHA-tagged images are preferred, but
+   a visible waiting phase are what keep this from looking like a hang.
+6. **Fallback-tag reproducibility** — revision-tagged images are preferred, but
    `latest` intentionally advances when used as the fallback. Persist the
    selected ref, fallback reason, resolved digest, and trainer build metadata
-   with each job, and watch for the containerized-backend revision-resolution
-   trap in Step 3.
+   with each job, and keep the revision source on the OCI label rather than
+   `VERSION`.
 7. **Grandfathered trainers** — allowing direct-URL trainers without protocol
    metadata means a genuinely incompatible old trainer can still be selected.
    Bound this: log it, show "protocol unknown" in status, and revisit once the
@@ -837,14 +830,18 @@ not open questions.
     as a best-effort guard, prefer allocated-memory + process presence over
     spiky utilization%, and keep OOM-at-startup handling as the final backstop.
 11. **No backend authorization** — the feature grants root-equivalent execution
-    on registered hosts to anyone who can reach the API. It must stay
-    feature-flagged off by default, with a backend-side switch, until Studio has
-    an auth model. Re-review before default-on or any network exposure.
-12. **No bastion support** — declared out of scope. If a future target sits
-    behind a jump host, the SSH transport will need a hop configuration; keep the
-    transport abstraction from hard-coding a single-hop assumption where cheap.
-13. **Credential-profile availability** — a restart or multi-instance deployment
-    without the profile required by a running job cannot reattach. Inject the
-    same relevant profile map into every instance eligible to run or recover SSH
-    jobs, fail closed when a profile is unavailable, and never fall back to a
-    different profile implicitly.
+    on registered hosts to anyone who can reach the API. Acceptable on a
+    localhost-only workstation deployment; the backend switch (Step 8) plus a
+    re-review are required before any network exposure.
+12. **SSH agent reach exceeds the registered servers** — reusing the user's SSH
+    setup means a compromised Studio process can reach every identity the agent
+    holds, not just the GPU boxes. This is the one security cost of the
+    ssh_config design versus a narrowly-scoped injected credential. Mitigate by
+    documenting a dedicated per-host `IdentityFile`.
+13. **SSH config drift** — a renamed or deleted `Host` entry breaks a saved
+    server and can block reattach of a running job. Surface the missing-alias
+    state prominently, fail closed, and never substitute a different alias.
+14. **No bastion support as a feature** — declared out of scope. A user with
+    `ProxyJump` already in their config may get it via `asyncssh`; do not rely on
+    it, and keep the transport abstraction from hard-coding a single-hop
+    assumption where that is cheap.
