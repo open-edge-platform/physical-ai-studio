@@ -34,6 +34,7 @@ class RobotClientFactory:
             robot=robot_driver,
             robot_type=robot.type,
             robot_role=definition.role,
+            display_name=robot.name,
             config=PhysicalAIRobotAdapterConfig(
                 include_velocities=adapter_options.include_velocities,
                 goal_time_scale=adapter_options.goal_time_scale,

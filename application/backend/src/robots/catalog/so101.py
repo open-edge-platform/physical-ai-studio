@@ -5,9 +5,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from physicalai.robot import SharedRobot
+from physicalai.config import to_config
+from physicalai.robot import SO101, SharedRobot
 from physicalai.robot.so101 import SO101Calibration, SO101JointCalibration
-from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
+from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition, shared_robot_name
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from schemas import SerialPortInfo
@@ -94,24 +95,19 @@ async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: C
         resource_key = robot.payload.serial_number or robot.payload.connection_string
         raise ValueError(f"Could not resolve a serial port for {resource_key}")
 
-    # SharedRobot takes a nested ComponentConfig; calibration must be JSON-serializable.
-    calibration: dict[str, dict[str, int]] | None = None
-    if robot.payload.calibration is not None:
-        calibration = SO101Calibration(joints=robot.payload.calibration).to_dict()
-
     role = "follower" if robot.type == "SO101_Follower" else "leader"
-    return SharedRobot(
-        name=robot.name,
-        robot={
-            "class_path": "physicalai.robot.SO101",
-            "init_args": {
-                "port": port,
-                "calibration": calibration,
-                "role": role,
-                "unit": "normalized",
-            },
-        },
+    if robot.payload.calibration is None:
+        raise ValueError("SO101 calibration is required to build a SharedRobot driver")
+    # Construct the driver so its own validation runs here (clear, early errors),
+    # then hand SharedRobot only the recipe: the owner process builds the real
+    # driver, this process would immediately discard it.
+    so101 = SO101(
+        port=port,
+        calibration=SO101Calibration(joints=robot.payload.calibration),
+        role=role,
+        unit="normalized",
     )
+    return SharedRobot.from_config(to_config(so101), name=shared_robot_name(robot.id))
 
 
 def serial_port_from_so101(robot: SO101Robot) -> SerialPortInfo:

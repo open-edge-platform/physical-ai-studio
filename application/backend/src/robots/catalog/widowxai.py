@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from physicalai.robot import SharedRobot
-from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
+from physicalai.config import to_config
+from physicalai.robot import BimanualWidowXAI, SharedRobot, WidowXAI
+from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition, shared_robot_name
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.robot_type import BaseRobot
@@ -110,13 +111,10 @@ async def _build_trossen_single_arm_driver(
     if not isinstance(robot, TrossenSingleArmRobot):
         raise TypeError("Expected TrossenSingleArmRobot")
     role = "follower" if robot.type == "Trossen_WidowXAI_Follower" else "leader"
-    return SharedRobot(
-        name=robot.name,
-        robot={
-            "class_path": "physicalai.robot.WidowXAI",
-            "init_args": {"ip": robot.payload.connection_string, "role": role},
-        },
-    )
+    # Construct the driver so its own validation runs here, then hand SharedRobot
+    # only the recipe: the owner process builds the real driver.
+    widowx = WidowXAI(ip=robot.payload.connection_string, role=role)
+    return SharedRobot.from_config(to_config(widowx), name=shared_robot_name(robot.id))
 
 
 async def _build_trossen_bimanual_driver(
@@ -125,24 +123,12 @@ async def _build_trossen_bimanual_driver(
     if not isinstance(robot, TrossenBimanualRobot):
         raise TypeError("Expected TrossenBimanualRobot")
     mode = "follower" if robot.type == "Trossen_Bimanual_WidowXAI_Follower" else "leader"
-    # Component config lets SharedRobot own the whole bimanual robot (one owner),
-    # instead of wrapping each arm as its own SharedRobot.
-    return SharedRobot(
-        name=robot.name,
-        robot={
-            "class_path": "physicalai.robot.BimanualWidowXAI",
-            "init_args": {
-                "left": {
-                    "class_path": "physicalai.robot.WidowXAI",
-                    "init_args": {"ip": robot.payload.connection_string_left, "role": mode},
-                },
-                "right": {
-                    "class_path": "physicalai.robot.WidowXAI",
-                    "init_args": {"ip": robot.payload.connection_string_right, "role": mode},
-                },
-            },
-        },
+    # One SharedRobot owns the whole bimanual robot (not per-arm wrappers).
+    bimanual = BimanualWidowXAI(
+        left=WidowXAI(ip=robot.payload.connection_string_left, role=mode),
+        right=WidowXAI(ip=robot.payload.connection_string_right, role=mode),
     )
+    return SharedRobot.from_config(to_config(bimanual), name=shared_robot_name(robot.id))
 
 
 async def _ping(ip: str, ping_timeout: float = 1.0) -> bool:

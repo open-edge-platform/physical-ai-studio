@@ -220,16 +220,14 @@ class RobotNameConflictError(BaseException):
     """Raised when a SharedRobot name is claimed for different devices."""
 
     def __init__(self, *, robot_name: str | None = None) -> None:
-        if robot_name:
-            message = (
-                f"A robot session named {robot_name!r} is already running for a different device. "
-                "Rename the robot or stop the conflicting session, then try again."
-            )
-        else:
-            message = (
-                "A robot session with this name is already running for a different device. "
-                "Rename the robot or stop the conflicting session, then try again."
-            )
+        # The transport name is the robot's id, not its display name, so a
+        # conflict means this robot already has a session bound to different
+        # hardware than the one it now resolves to.
+        subject = f"Robot {robot_name!r} is" if robot_name else "This robot is"
+        message = (
+            f"{subject} already running in another session that is bound to a different device. "
+            "Stop that session, or check that this robot still points at the right hardware, then try again."
+        )
         super().__init__(
             message=message,
             error_code="robot_name_conflict",

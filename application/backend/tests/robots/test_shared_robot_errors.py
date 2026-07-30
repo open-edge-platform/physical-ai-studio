@@ -62,7 +62,7 @@ class TestTranslateRobotError:
     def test_name_conflict_uses_default_without_robot_name(self):
         result = translate_robot_error(RobotNameConflict("name taken"))
         assert isinstance(result, RobotNameConflictError)
-        assert "this name" in result.message.lower()
+        assert "this robot is" in result.message.lower()
 
     def test_protocol_mismatch_uses_default_message(self):
         # physicalai does not expose protocol versions as structured fields.
