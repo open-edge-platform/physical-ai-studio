@@ -163,11 +163,13 @@ jobs:
             ghcr1production.blob.core.windows.net:443
             github.com:443
             keyserver.ubuntu.com:443
+            mirror.gcr.io:443
             pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
             pypi.org:443
+            raw.githubusercontent.com:443
             registry-1.docker.io:443
             rekor.sigstore.dev:443
             release-assets.githubusercontent.com:443
@@ -264,6 +266,7 @@ jobs:
       - name: Scan immutable trainer image
         uses: open-edge-platform/geti-ci/actions/trivy@7e686c1248b3939f8ee8e04e2612da727e379d91
         with:
+          artifact-name: trivy-trainer-${{ matrix.device }}
           scan_type: image
           scan_target: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
           scan-scope: all
