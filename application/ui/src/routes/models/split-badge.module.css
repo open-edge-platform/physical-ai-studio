@@ -1,25 +1,52 @@
 .badge {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 200px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    vertical-align: middle;
     border-radius: 4px;
     background-color: rgb(0, 199, 253);
     height: 20px;
-    padding: 2px;
+    line-height: normal;
+    padding: 2px 6px;
     color: white;
     text-transform: capitalize;
 }
 .badgeLeft {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 4px 0px 0px 4px;
     background-color: rgb(0, 199, 253);
     height: 20px;
-    padding: 2px;
+    line-height: normal;
+    padding: 2px 6px;
     text-transform: capitalize;
     color: black;
 }
 
 .badgeRight {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     text-transform: capitalize;
     border-radius: 0px 4px 4px 0px;
     background-color: rgb(0, 83, 116);
     height: 20px;
-    padding: 2px;
+    line-height: normal;
+    padding: 2px 6px;
     color: white;
+}
+
+.badgeWrapper {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    vertical-align: middle;
 }

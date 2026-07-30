@@ -211,6 +211,22 @@ class TestTorchAdapter:
         assert adapter.input_names == []
         assert adapter.output_names == []
 
+    def test_compile_model_passed_to_load_from_checkpoint(self, tmp_path: Path) -> None:
+        """Test compile_model flag is forwarded to load_from_checkpoint()."""
+        model_path = self._write_policy_manifest(tmp_path)
+
+        mock_model = MagicMock()
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
+
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model) as mock_load:
+            adapter = TorchAdapter(device="cpu", compile_model=True)
+            assert adapter.compile_model is True
+
+            adapter.load(model_path)
+            assert mock_load.call_args.kwargs["compile_model"] is True
+
 
 class TestExecuTorchAdapter:
     """Test ExecuTorch inference adapter."""

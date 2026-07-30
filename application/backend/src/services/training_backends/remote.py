@@ -75,11 +75,9 @@ class RemoteTrainingBackend:
 
     _last_progress_log: str | None = None
 
-    def __init__(self) -> None:
+    def __init__(self, base_url: str) -> None:
         settings = get_settings()
-        if not settings.trainer_url:
-            raise RemoteTrainingError("Remote training requires TRAINER_URL")
-        self._base_url = settings.trainer_url.rstrip("/")
+        self._base_url = base_url.rstrip("/")
         self._timeout = settings.trainer_request_timeout_s
         # Resolved once by _resolve_trust_env(): True honors proxy env vars,
         # False bypasses them. None means "not yet probed".
@@ -199,6 +197,7 @@ class RemoteTrainingBackend:
         await self._wait_for_completion(context, remote_job_id)
         context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
         await self._download_and_extract(context, remote_job_id)
+        await self._delete_remote_job(remote_job_id)
         context.progress(100, message="Model downloaded")
 
     async def upload_snapshot_http(
@@ -657,6 +656,14 @@ class RemoteTrainingBackend:
                 await client.post(f"{self._base_url}/jobs/{remote_job_id}/cancel")
         except httpx.HTTPError as exc:
             logger.warning("Failed to cancel remote job: {}", exc)
+
+    async def _delete_remote_job(self, remote_job_id: uuid.UUID) -> None:
+        """Ask the trainer to remove its copy of a job's artifacts; best effort."""
+        try:
+            async with await self._client() as client:
+                await client.delete(f"{self._base_url}/jobs/{remote_job_id}")
+        except httpx.HTTPError as exc:
+            logger.warning("Failed to clean up remote job artifacts: {}", exc)
 
     @staticmethod
     def _coerce_progress(value: object) -> int:

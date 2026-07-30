@@ -36,7 +36,6 @@ describe('buildRobotBody', () => {
                 payload: {
                     connection_string_left: '192.168.1.2',
                     connection_string_right: '192.168.1.3',
-                    serial_number: '',
                 },
             },
             'Trossen_Bimanual_WidowXAI_Follower',
@@ -47,7 +46,6 @@ describe('buildRobotBody', () => {
         expect(body?.payload).toEqual({
             connection_string_left: '192.168.1.2',
             connection_string_right: '192.168.1.3',
-            serial_number: '',
         });
     });
 });

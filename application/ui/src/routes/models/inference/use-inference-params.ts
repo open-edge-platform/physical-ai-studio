@@ -1,5 +1,4 @@
-import { useParams } from 'react-router';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router';
 
 import { defaultBackend } from '../../../features/models/backend-selection';
 
