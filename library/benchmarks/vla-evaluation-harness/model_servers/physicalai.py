@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+# needed to resolve launch directory
 if __name__ == "__main__" and Path(sys.path[0]).resolve() == Path(__file__).resolve().parent:
     sys.path.pop(0)
 
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# constants used to find batched dimension in images and actions
 _BATCHED_IMAGE_NDIM = 3
 _BATCHED_ACTION_NDIM = 3
 
@@ -70,6 +72,15 @@ def _instantiate_policy(declaration: dict[str, Any]) -> Policy | InferenceModel:
     config = parser.parse_object({"policy": declaration})
     instantiated = parser.instantiate_classes(config)
     return cast("Policy | InferenceModel", instantiated["policy"])
+
+
+def _configure_logging() -> None:
+    """Enable INFO-level logs for script execution."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        force=True,
+    )
 
 
 class PhysicalAIModelServer(PredictModelServer):
@@ -114,6 +125,7 @@ class PhysicalAIModelServer(PredictModelServer):
 
         self._expected_image_keys = list(getattr(self._policy, "image_keys", None) or [])
         logger.info("PhysicalAI model server is ready")
+        print("PhysicalAI model server is ready", flush=True)  # noqa: T201
 
     def _resolve_image_map(self, images: dict[str, np.ndarray]) -> dict[str, str]:
         """Resolve benchmark camera names to policy image feature keys.
@@ -145,12 +157,14 @@ class PhysicalAIModelServer(PredictModelServer):
         Returns:
             The batched observation expected by the policy.
         """
+        # find images
         source_images = obs.get("images", {}) or {}
         images: dict[str, np.ndarray] = {}
         for camera, feature_key in self._resolve_image_map(source_images).items():
             image = np.asarray(source_images[camera])
             images[feature_key] = _reshape_camera_image(image, for_inference=self._is_inference_model)
 
+        # find state
         state = None
         if self.state_key:
             raw_state = obs.get("states")
@@ -161,9 +175,10 @@ class PhysicalAIModelServer(PredictModelServer):
                 if state.ndim == 1:
                     state = state[None, :]
 
+        # find task
         task_description = obs.get("task_description")
         task = task_description if isinstance(task_description, str) else None
-        # physicalai Observation typing for task/images is currently broader/narrower than runtime usage here.
+        # Observation is used in vla-eval, type to distinguish
         return PhysicalAIObservation(images=images or None, state=state, task=task)  # pyright: ignore[reportArgumentType]
 
     def _policy_device(self) -> str:
@@ -183,33 +198,18 @@ class PhysicalAIModelServer(PredictModelServer):
 
         Returns:
             A float32 NumPy action array under the ``actions`` key.
-
-        Raises:
-            ValueError: If a dictionary policy output has no action value.
         """
         del ctx
         policy_observation = self._build_policy_observation(obs)
 
         if self._is_inference_model:
-            inputs = {
-                key: value
-                for key, value in {
-                    "images": policy_observation.images,
-                    "state": policy_observation.state,
-                    "task": policy_observation.task,
-                }.items()
-                if value is not None
-            }
+            inputs = policy_observation.to_numpy().to_dict(flatten=True)
             result = self._policy.predict_action_chunk(inputs)  # type: ignore[union-attr]
         else:
             policy_observation = policy_observation.to_torch(device=self._policy_device())
             result = self._policy.predict_action_chunk(policy_observation)  # type: ignore[union-attr]
 
-        if isinstance(result, dict):
-            result = result.get("actions", result.get("action"))
-            if result is None:
-                msg = "Policy output dictionary must contain `actions` or `action`."
-                raise ValueError(msg)
+        # detach for torch policies possibly on device
         if hasattr(result, "detach"):
             result = cast("Any", result).detach().to("cpu").numpy()
 
@@ -257,4 +257,7 @@ class PhysicalAIModelServer(PredictModelServer):
 
 
 if __name__ == "__main__":
+    _configure_logging()
+    logger.info("Starting PhysicalAI model server")
+    print("Starting PhysicalAI model server", flush=True)  # noqa: T201
     run_server(PhysicalAIModelServer)

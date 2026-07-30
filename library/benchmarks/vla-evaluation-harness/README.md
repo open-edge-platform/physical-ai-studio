@@ -168,9 +168,9 @@ Set `device` to `cuda`, `xpu`, or `cpu` to select a specific Torch device.
 uv run --no-sync vla-eval run --config configs/benchmarks/libero/10.yaml
 ```
 
-### OpenVINO LIBERO with Episode Sharding
+### LIBERO with Episode Sharding
 
-Start the OpenVINO model server as described above. In a second terminal,
+Start the model server as described above. In a second terminal,
 launch four evaluation shards from
 `library/benchmarks/vla-evaluation-harness`:
 
@@ -178,9 +178,12 @@ launch four evaluation shards from
 ./shard_libero_10.sh 4
 ```
 
-Episodes are assigned to shards round-robin. All shards connect to the same
-OpenVINO model server and write to one evaluation recording; the final command
+Episodes are assigned to shards round-robin. All shards connect to the same model server and write to one evaluation recording; the final command
 materializes the merged per-episode and aggregate results. The optional
 argument sets the number of shards and defaults to `4`. Increase it only after
 confirming the model server and benchmark host can sustain the additional
 concurrent requests.
+
+## Future Development
+
+We aim to introduce the batchified model prediction for actions.
