@@ -111,7 +111,7 @@ Group blockers by root cause and affected models.
 
 ## Leadership Decisions
 
-- Name an ecosystem DRI.
+- Name an ecosystem owner.
 - Allocate maintained Intel CI for priority external projects.
 - Establish recurring XPU and OpenVINO blocker triage.
 - Include robot learning in platform workload planning.

@@ -16,13 +16,13 @@ Intel needs three coordinated work areas:
 | --------- | ---------------------------------------------------------------------- | -------------------------------------------------------- |
 | Product   | Supported Studio workflows and performant Runtime/OpenVINO deployment  | Studio and Runtime                                       |
 | Platform  | Reusable XPU, oneAPI, OpenVINO, and quantization capabilities          | Platform component teams                                 |
-| Ecosystem | Intel support in priority frameworks and standalone model repositories | Named ecosystem DRI with product and partnership support |
+| Ecosystem | Intel support in priority frameworks and standalone model repositories | Named ecosystem owner with product and partnership support |
 
 LeRobot is currently a high-leverage framework because it hosts many relevant policies. It is not a required destination or the only collaboration target. Future frameworks and high-value standalone model repositories use the same selection criteria and engagement model.
 
 This proposal asks leadership to establish:
 
-- A named DRI for framework and model-repository engagement.
+- A named owner for framework and model-repository engagement.
 - CI capacity for priority external projects on Intel hardware.
 - A recurring triage with PyTorch XPU, OpenVINO, and related component owners.
 - Robot learning as a recognized workload in platform planning.
@@ -128,7 +128,7 @@ Studio retains its product contract for training integration, export metadata, p
 
 | Decision             | Accountable group                                   | Required outcome                                                                        |
 | -------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Ecosystem DRI        | Product leadership with partnership or DevRel       | Named owner for framework and standalone-repository relationships                       |
+| Ecosystem owner      | Product leadership with partnership or DevRel       | Named owner for framework and standalone-repository relationships                       |
 | CI allocation        | Infrastructure leadership                           | Capacity and maintenance owner for priority-project XPU and export tests                |
 | Platform triage      | PyTorch XPU, OpenVINO, and relevant component leads | Recurring review and disposition of ranked shared blockers                              |
 | Workload recognition | Platform roadmap owners                             | Robot-learning evidence included in operator, kernel, export, and quantization planning |
