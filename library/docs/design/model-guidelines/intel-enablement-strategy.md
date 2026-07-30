@@ -1,8 +1,8 @@
 # Intel Hardware Enablement for Robot Learning
 
-**Status**: Draft for team review
-**Audience**: Physical AI Studio, Runtime, PyTorch XPU, oneAPI, OpenVINO, infrastructure, and ecosystem teams
-**Scope**: Cross-team ownership and investment needed to scale robot-learning support on Intel hardware
+**Status**: Draft for team review \
+**Audience**: Physical AI Studio, Runtime, PyTorch XPU, oneAPI, OpenVINO, infrastructure, and ecosystem teams \
+**Scope**: Cross-team ownership and investment needed to scale robot-learning support on Intel hardware \
 
 The Studio and Runtime model process is defined in [Model Enablement Guidelines](./model-implementation-guidelines.md).
 
