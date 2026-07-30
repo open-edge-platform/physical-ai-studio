@@ -1,6 +1,6 @@
 # Model Enablement Reference
 
-**Status**: Draft for team review
+**Status**: Draft for team review \
 **Scope**: Engineering records and validation checklists for [Model Enablement Guidelines](./model-implementation-guidelines.md)
 
 The guideline defines policy and support claims. This reference defines the minimum implementation evidence.

@@ -1,9 +1,7 @@
 # Model Enablement Guidelines
 
-**Status**: Draft for team review
-
-**Audience**: Physical AI Studio and Runtime teams
-
+**Status**: Draft for team review \
+**Audience**: Physical AI Studio and Runtime teams \
 **Scope**: How Studio selects, integrates, validates, optimizes, and maintains robot-learning policies
 
 Implementation checklists are in [Model Enablement Reference](./model-implementation-guidelines-reference.md). Cross-team platform and ecosystem work is covered in [Intel Hardware Enablement for Robot Learning](./intel-enablement-strategy.md).
