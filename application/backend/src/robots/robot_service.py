@@ -1,32 +1,42 @@
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from db import get_async_db_session_ctx
 from exceptions import ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories.project_environment_repo import ProjectEnvironmentRepository
 from repositories.project_robot_repo import ProjectRobotRepository
-from robots.discovery.manager import DiscoveryManager
+from robots.catalog.registry import RobotCatalogRegistry
 from schemas.robot import Robot, RobotWithConnectionState, RobotWithConnectionStateAdapter
+from utils.serial_robot_tools import RobotConnectionManager
 
 
 class RobotService:
-    @staticmethod
-    async def get_robot_list(project_id: UUID) -> list[Robot]:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRobotRepository(session, project_id)
-            return await repo.get_all()
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
 
-    @staticmethod
-    async def find_online_robots(project_id: UUID) -> list[RobotWithConnectionState]:
-        robots = await RobotService.get_robot_list(project_id)
-        discovery = DiscoveryManager()
-        await discovery.refresh_hardware_ports()
+    def _repo(self, project_id: UUID) -> ProjectRobotRepository:
+        return ProjectRobotRepository(self.session, project_id)
+
+    async def get_robot_list(self, project_id: UUID) -> list[Robot]:
+        return await self._repo(project_id).get_all()
+
+    async def find_online_robots(self, project_id: UUID) -> list[RobotWithConnectionState]:
+        robots = await self.get_robot_list(project_id)
+
+        # Single serial port scan shared across all probes
+        manager = RobotConnectionManager()
+        await manager.find_robots()
+
+        registry = RobotCatalogRegistry()
 
         results: list[RobotWithConnectionState] = []
 
         for robot in robots:
-            is_online = await discovery.is_robot_online(robot)
+            definition = registry.get_definition(robot.type)
+            is_online = False
+            if definition is not None and definition.probe is not None:
+                is_online = await definition.probe.is_online(robot.payload, manager)
 
             results.append(
                 RobotWithConnectionStateAdapter.validate_python(
@@ -39,51 +49,40 @@ class RobotService:
 
         return results
 
-    @staticmethod
-    async def get_robot_by_id(project_id: UUID, robot_id: UUID) -> Robot:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRobotRepository(session, project_id)
-            robot = await repo.get_by_id(robot_id)
+    async def get_robot_by_id(self, project_id: UUID, robot_id: UUID) -> Robot:
+        robot = await self._repo(project_id).get_by_id(robot_id)
 
-            if robot is None:
-                raise ResourceNotFoundError(ResourceType.ROBOT, robot_id)
+        if robot is None:
+            raise ResourceNotFoundError(ResourceType.ROBOT, robot_id)
 
-            return robot
+        return robot
 
-    @staticmethod
-    async def create_robot(project_id: UUID, robot: Robot) -> Robot:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRobotRepository(session, project_id)
-            return await repo.save(robot)
+    async def create_robot(self, project_id: UUID, robot: Robot) -> Robot:
+        return await self._repo(project_id).save(robot)
 
-    @staticmethod
-    async def update_robot(project_id: UUID, robot: Robot) -> Robot:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRobotRepository(session, project_id)
-            return await repo.update(robot, partial_update=robot.model_dump(exclude={"id"}))
+    async def update_robot(self, project_id: UUID, robot: Robot) -> Robot:
+        return await self._repo(project_id).update(robot, partial_update=robot.model_dump(exclude={"id"}))
 
-    @staticmethod
-    async def delete_robot(project_id: UUID, robot_id: UUID) -> None:
-        async with get_async_db_session_ctx() as session:
-            repo = ProjectRobotRepository(session, project_id)
+    async def delete_robot(self, project_id: UUID, robot_id: UUID) -> None:
+        repo = self._repo(project_id)
 
-            robot = await repo.get_by_id(robot_id)
-            if robot is None:
-                raise ResourceNotFoundError(ResourceType.ROBOT, str(robot_id))
+        robot = await repo.get_by_id(robot_id)
+        if robot is None:
+            raise ResourceNotFoundError(ResourceType.ROBOT, str(robot_id))
 
-            try:
-                await repo.delete_by_id(robot_id)
-            except IntegrityError as e:
-                await session.rollback()  # just in case the session is in a bad state after the IntegrityError
-                env_repo = ProjectEnvironmentRepository(session, project_id)
-                environment_names = await env_repo.find_environment_names_using_robot(robot_id)
-                if environment_names:
-                    raise ResourceInUseError(
-                        ResourceType.ROBOT,
-                        str(robot_id),
-                        message=(
-                            f"Robot '{robot.name}' cannot be deleted because it is used in environment(s): "
-                            f"{', '.join(environment_names)}. Remove it from those environments first."
-                        ),
-                    )
-                raise e
+        try:
+            await repo.delete_by_id(robot_id)
+        except IntegrityError as e:
+            await self.session.rollback()
+            env_repo = ProjectEnvironmentRepository(self.session, project_id)
+            environment_names = await env_repo.find_environment_names_using_robot(robot_id)
+            if environment_names:
+                raise ResourceInUseError(
+                    ResourceType.ROBOT,
+                    str(robot_id),
+                    message=(
+                        f"Robot '{robot.name}' cannot be deleted because it is used in environment(s): "
+                        f"{', '.join(environment_names)}. Remove it from those environments first."
+                    ),
+                ) from e
+            raise

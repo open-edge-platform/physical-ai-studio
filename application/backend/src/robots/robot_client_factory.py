@@ -1,28 +1,21 @@
-from uuid import UUID
-
-from exceptions import ResourceNotFoundError, ResourceType
 from robots.catalog.registry import RobotCatalogRegistry
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
 from robots.robot_client import RobotClient
-from schemas.calibration import Calibration
-from schemas.robot import Robot, SO101Robot
-from services.robot_calibration_service import RobotCalibrationService
-from utils.serial_robot_tools import RobotConnectionManager, find_so101_port, serial_port_from_so101
+from schemas import SerialPortInfo
+from schemas.robot import Robot
+from utils.serial_robot_tools import RobotConnectionManager
 
 
 class RobotClientFactory:
-    calibration_service: RobotCalibrationService
     robot_manager: RobotConnectionManager
     catalog_registry: RobotCatalogRegistry
 
     def __init__(
         self,
         robot_manager: RobotConnectionManager,
-        calibration_service: RobotCalibrationService,
         catalog_registry: RobotCatalogRegistry | None = None,
     ) -> None:
         self.robot_manager = robot_manager
-        self.calibration_service = calibration_service
         self.catalog_registry = catalog_registry or RobotCatalogRegistry()
 
     async def build(self, robot: Robot) -> RobotClient:
@@ -32,6 +25,8 @@ class RobotClientFactory:
             raise ValueError(f"Robot type is not part of the catalog: {robot.type}")
 
         builder = definition.robot_builder
+        if builder is None:
+            raise ValueError(f"Robot type {robot.type} has no robot builder")
 
         robot_driver = await builder(robot, self)
         adapter_options = definition.adapter_options
@@ -46,27 +41,23 @@ class RobotClientFactory:
             ),
         )
 
-    async def find_so101_port(self, robot: SO101Robot) -> str:
-        port = await find_so101_port(self.robot_manager, serial_port_from_so101(robot))
-        if port is None:
-            resource_key = robot.payload.serial_number or robot.payload.connection_string
-            raise ResourceNotFoundError(ResourceType.ROBOT, resource_key)
-        return port
+    async def find_port(self, port_info: SerialPortInfo) -> str | None:
+        port = self._resolve_port(self.robot_manager.robots, port_info)
+        if port is not None:
+            return port
 
-    # NOTE: this is a bit awkward due to how SO101 is implemented,
-    # perhaps we can add the Calibration into the SO101RobotPayload
-    async def get_robot_calibration(self, robot: SO101Robot) -> Calibration | None:
-        if robot.active_calibration_id is None:
+        await self.robot_manager.find_robots()
+        return self._resolve_port(self.robot_manager.robots, port_info)
+
+    @staticmethod
+    def _resolve_port(discovered: list[SerialPortInfo], target: SerialPortInfo) -> str | None:
+        if target.serial_number:
+            for serial_port in discovered:
+                if serial_port.serial_number == target.serial_number:
+                    return serial_port.connection_string
             return None
-        return await self.calibration_service.get_calibration(robot.active_calibration_id)
 
-    async def find_port_by_serial(self, serial_number: str) -> str | None:
-        for managed_robot in self.robot_manager.robots:
-            if managed_robot.serial_number == serial_number:
-                return managed_robot.connection_string
+        for serial_port in discovered:
+            if serial_port.connection_string == target.connection_string:
+                return serial_port.connection_string
         return None
-
-    async def get_calibration_by_id(self, calibration_id: UUID | None) -> Calibration | None:
-        if calibration_id is None:
-            return None
-        return await self.calibration_service.get_calibration(calibration_id)

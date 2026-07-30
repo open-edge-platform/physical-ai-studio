@@ -1,13 +1,15 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Training backends.
+"""Training backends selected by each submitted training job.
 
 `TrainingBackend` abstracts where training runs. `LocalTrainingBackend` trains
 in-process with torch/Lightning; `RemoteTrainingBackend` offloads to a trainer
-service. The active backend is selected from settings by the training worker.
+service. The active backend is selected per job from its persisted execution
+target.
 """
 
+from schemas.job import TrainJobPayload
 from services.training_backends.base import (
     ProgressReporter,
     TrainingBackend,
@@ -17,19 +19,16 @@ from services.training_backends.base import (
 )
 
 
-def get_training_backend() -> TrainingBackend:
-    """Return the training backend selected by application settings.
+def get_training_backend(payload: TrainJobPayload) -> TrainingBackend:
+    """Return the backend selected by a job's persisted execution target."""
+    from schemas.job import TrainingTarget
 
-    Heavy imports are deferred to the chosen backend so a recording-only
-    install (TRAINING_MODE=remote) never imports torch.
-    """
-    from settings import get_settings
-
-    settings = get_settings()
-    if settings.training_mode == "remote":
+    if payload.training_target is TrainingTarget.REMOTE:
         from services.training_backends.remote import RemoteTrainingBackend
 
-        return RemoteTrainingBackend()
+        if payload.remote_trainer_url is None:
+            raise ValueError("Remote training job is missing its pinned trainer URL")
+        return RemoteTrainingBackend(payload.remote_trainer_url)
 
     from services.training_backends.local import LocalTrainingBackend
 

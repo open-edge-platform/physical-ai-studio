@@ -21,8 +21,9 @@ from lerobot.motors.feetech.feetech import FeetechMotorsBus
 from lerobot.motors.motors_bus import Motor, MotorCalibration, MotorNormMode
 from loguru import logger
 
+from robots.catalog.so101 import find_so101_port
 from schemas import SerialPortInfo
-from utils.serial_robot_tools import RobotConnectionManager, find_so101_port
+from utils.serial_robot_tools import RobotConnectionManager
 from workers.transport.worker_transport import WorkerTransport
 from workers.transport_worker import TransportWorker, WorkerState
 

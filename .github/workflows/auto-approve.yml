@@ -12,7 +12,7 @@ jobs:
   pre-approve:
     # Only run in the upstream repository, not in forks
     name: Pre-Approve
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       commit_sha: ${{ steps.capture_sha.outputs.sha }}
     if: ${{
@@ -57,7 +57,7 @@ jobs:
     environment:
       name: auto-approve
       deployment: false
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - *harden-runner
 

@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import multiprocessing as mp
 import queue
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -15,7 +17,7 @@ import pytest
 import core.scheduler  # noqa: F401
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Snapshot
-from schemas.job import TrainingPrecision, TrainJobPayload
+from schemas.job import TrainingPrecision, TrainingTarget, TrainJobPayload
 from schemas.model import Model
 
 if TYPE_CHECKING:
@@ -104,23 +106,34 @@ def stop_event():
 
 
 @pytest.fixture
-def interrupt_event():
-    return mp.Event()
+def job_interrupt_flags():
+    """A plain dict stands in for the Manager dict shared across processes."""
+    return {}
 
 
 @pytest.fixture
-def worker(stop_event, interrupt_event, event_queue):
+def worker(stop_event, job_interrupt_flags, event_queue):
     """Build a minimal TrainingWorker without triggering circular imports from scheduler."""
     from workers.training_worker import TrainingWorker
 
     w = object.__new__(TrainingWorker)
     # Mirror BaseProcessWorker/TrainingWorker wiring: should_stop() reads the
-    # private events; _should_interrupt() also reads the public interrupt_event.
+    # private stop event; _should_interrupt() also reads the per-job flags.
     w._stop_event = stop_event
-    w._interrupt_event = interrupt_event
-    w.interrupt_event = interrupt_event
+    w._interrupt_event = mp.Event()
+    w.job_interrupt_flags = job_interrupt_flags
     w.queue = event_queue
     return w
+
+
+@pytest.fixture(autouse=True)
+def session_scope():
+    @asynccontextmanager
+    async def _scope():
+        yield MagicMock()
+
+    with patch(f"{MODULE}.get_async_db_session_ctx", new=_scope):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -156,14 +169,15 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService"),
         ):
-            MockJobService.update_job_status = AsyncMock(return_value=failed_job)
-            MockJobService.update_job = AsyncMock(return_value=MagicMock())
+            job_service = MockJobService.return_value
+            job_service.update_job_status = AsyncMock(return_value=failed_job)
+            job_service.update_job = AsyncMock(return_value=MagicMock())
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
             backend.train.assert_awaited_once()
-            MockJobService.update_job.assert_called_once()
-            failed_call = MockJobService.update_job_status.call_args_list[0]
+            job_service.update_job.assert_called_once()
+            failed_call = job_service.update_job_status.call_args_list[0]
             assert failed_call.kwargs["status"] == JobStatus.FAILED
 
     @pytest.mark.anyio
@@ -193,25 +207,27 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
-            MockJobService.update_job_status = AsyncMock(return_value=canceled_job)
-            MockJobService.update_job = AsyncMock(return_value=MagicMock())
-            MockModelService.create_model = AsyncMock()
+            job_service = MockJobService.return_value
+            model_service = MockModelService.return_value
+            job_service.update_job_status = AsyncMock(return_value=canceled_job)
+            job_service.update_job = AsyncMock(return_value=MagicMock())
+            model_service.create_model = AsyncMock()
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
-            MockModelService.create_model.assert_not_called()
-            canceled_call = MockJobService.update_job_status.call_args_list[0]
+            model_service.create_model.assert_not_called()
+            canceled_call = job_service.update_job_status.call_args_list[0]
             assert canceled_call.kwargs["status"] == JobStatus.CANCELED
 
     @pytest.mark.anyio
-    async def test_interrupt_after_silent_stop_marks_canceled(self, worker, interrupt_event, tmp_path):
+    async def test_interrupt_after_silent_stop_marks_canceled(self, worker, job_interrupt_flags, tmp_path):
         """A backend that stops cooperatively (no raise) while interrupted ends CANCELED."""
         payload = _make_payload(compile_model=False)
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
         job = _make_job(payload)
 
-        interrupt_event.set()
+        job_interrupt_flags[str(job.id)] = True
 
         backend = MagicMock()
         backend.train = AsyncMock()
@@ -230,14 +246,16 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
-            MockJobService.update_job_status = AsyncMock(return_value=canceled_job)
-            MockJobService.update_job = AsyncMock(return_value=MagicMock())
-            MockModelService.create_model = AsyncMock()
+            job_service = MockJobService.return_value
+            model_service = MockModelService.return_value
+            job_service.update_job_status = AsyncMock(return_value=canceled_job)
+            job_service.update_job = AsyncMock(return_value=MagicMock())
+            model_service.create_model = AsyncMock()
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
-            MockModelService.create_model.assert_not_called()
-            assert MockJobService.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.CANCELED
+            model_service.create_model.assert_not_called()
+            assert job_service.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.CANCELED
 
     @pytest.mark.anyio
     async def test_successful_training_creates_model(self, worker, event_queue, tmp_path):
@@ -264,15 +282,17 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
-            MockJobService.update_job_status = AsyncMock(return_value=completed_job)
-            MockJobService.update_job = AsyncMock(return_value=MagicMock())
-            MockModelService.create_model = AsyncMock(return_value=model)
+            job_service = MockJobService.return_value
+            model_service = MockModelService.return_value
+            job_service.update_job_status = AsyncMock(return_value=completed_job)
+            job_service.update_job = AsyncMock(return_value=MagicMock())
+            model_service.create_model = AsyncMock(return_value=model)
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
             backend.train.assert_awaited_once()
-            MockModelService.create_model.assert_awaited_once_with(model)
-            assert MockJobService.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.COMPLETED
+            model_service.create_model.assert_awaited_once_with(model)
+            assert job_service.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.COMPLETED
 
     @pytest.mark.anyio
     async def test_context_passes_output_and_cache_dirs(self, worker, tmp_path):
@@ -300,9 +320,11 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
-            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
-            MockJobService.update_job = AsyncMock(return_value=MagicMock())
-            MockModelService.create_model = AsyncMock(return_value=model)
+            job_service = MockJobService.return_value
+            model_service = MockModelService.return_value
+            job_service.update_job_status = AsyncMock(return_value=MagicMock())
+            job_service.update_job = AsyncMock(return_value=MagicMock())
+            model_service.create_model = AsyncMock(return_value=model)
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
@@ -338,16 +360,18 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
-            MockJobService.update_job_status = AsyncMock(return_value=pending_job)
-            MockJobService.update_job = AsyncMock(return_value=MagicMock())
-            MockModelService.create_model = AsyncMock()
+            job_service = MockJobService.return_value
+            model_service = MockModelService.return_value
+            job_service.update_job_status = AsyncMock(return_value=pending_job)
+            job_service.update_job = AsyncMock(return_value=MagicMock())
+            model_service.create_model = AsyncMock()
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
             # The job is requeued (PENDING) so the next start reattaches; no model,
             # and it is never marked FAILED or CANCELED.
-            MockModelService.create_model.assert_not_called()
-            statuses = [c.kwargs["status"] for c in MockJobService.update_job_status.call_args_list]
+            model_service.create_model.assert_not_called()
+            statuses = [c.kwargs["status"] for c in job_service.update_job_status.call_args_list]
             assert statuses == [JobStatus.PENDING]
 
     @pytest.mark.anyio
@@ -381,9 +405,11 @@ class TestTraining:
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
         ):
-            MockJobService.update_job_status = AsyncMock(return_value=MagicMock())
-            MockJobService.update_job = AsyncMock(return_value=MagicMock())
-            MockModelService.create_model = AsyncMock(return_value=model)
+            job_service = MockJobService.return_value
+            model_service = MockModelService.return_value
+            job_service.update_job_status = AsyncMock(return_value=MagicMock())
+            job_service.update_job = AsyncMock(return_value=MagicMock())
+            model_service.create_model = AsyncMock(return_value=model)
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
@@ -404,14 +430,63 @@ class TestTraining:
         job = _make_job(payload)
 
         with patch(f"{MODULE}.JobService") as MockJobService:
-            MockJobService.update_job_payload = AsyncMock(return_value=MagicMock())
+            job_service = MockJobService.return_value
+            job_service.update_job_payload = AsyncMock(return_value=MagicMock())
 
             remote_job_id = uuid4()
             await worker._persist_remote_job_id(job, payload, remote_job_id)
 
             assert payload.remote_job_id == remote_job_id
-            MockJobService.update_job_payload.assert_awaited_once()
-            args, _ = MockJobService.update_job_payload.call_args
+            job_service.update_job_payload.assert_awaited_once()
+            args, _ = job_service.update_job_payload.call_args
             assert args[0] == job.id
             assert args[1].remote_job_id == remote_job_id
             assert args[1].snapshot_id == snapshot_id
+
+
+class TestTrainingScheduling:
+    @pytest.mark.anyio
+    async def test_jobs_on_distinct_targets_start_without_waiting(self, worker) -> None:
+        """A local job and jobs on separate remote trainers run concurrently."""
+        remote_payload = _make_payload()
+        remote_payload.training_target = TrainingTarget.REMOTE
+        remote_payload.remote_trainer_id = uuid4()
+        other_remote_payload = remote_payload.model_copy(update={"remote_trainer_id": uuid4()})
+        jobs = [_make_job(_make_payload()), _make_job(remote_payload), _make_job(other_remote_payload)]
+        worker._active_training_tasks = {}
+        worker.should_stop = MagicMock(side_effect=[False, True])
+        worker.stop_aware_sleep = MagicMock()
+
+        with (
+            patch(f"{MODULE}.JobService.get_pending_train_jobs", AsyncMock(return_value=jobs)),
+            patch.object(worker, "_run_training_job", AsyncMock()) as run_job,
+        ):
+            await worker.run_loop()
+            await asyncio.gather(*worker._active_training_tasks.values())
+
+        assert run_job.await_count == 3
+
+    @pytest.mark.anyio
+    async def test_second_job_on_same_target_remains_pending(self, worker) -> None:
+        """Only the oldest job for an occupied local or remote target starts."""
+        remote_payload = _make_payload()
+        remote_payload.training_target = TrainingTarget.REMOTE
+        remote_payload.remote_trainer_id = uuid4()
+        jobs = [
+            _make_job(_make_payload()),
+            _make_job(_make_payload()),
+            _make_job(remote_payload),
+            _make_job(remote_payload),
+        ]
+        worker._active_training_tasks = {}
+        worker.should_stop = MagicMock(side_effect=[False, True])
+        worker.stop_aware_sleep = MagicMock()
+
+        with (
+            patch(f"{MODULE}.JobService.get_pending_train_jobs", AsyncMock(return_value=jobs)),
+            patch.object(worker, "_run_training_job", AsyncMock()) as run_job,
+        ):
+            await worker.run_loop()
+            await asyncio.gather(*worker._active_training_tasks.values())
+
+        assert run_job.await_count == 2

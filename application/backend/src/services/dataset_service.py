@@ -2,53 +2,43 @@ import shutil
 from pathlib import Path
 from uuid import UUID
 
-from db import get_async_db_session_ctx
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories import DatasetRepository
 from schemas import Dataset
 
 
 class DatasetService:
-    @staticmethod
-    async def get_dataset_list() -> list[Dataset]:
-        async with get_async_db_session_ctx() as session:
-            repo = DatasetRepository(session)
-            return await repo.get_all()
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repo = DatasetRepository(session)
 
-    @staticmethod
-    async def get_dataset_by_id(dataset_id: UUID) -> Dataset:
-        async with get_async_db_session_ctx() as session:
-            repo = DatasetRepository(session)
-            dataset = await repo.get_by_id(dataset_id)
-            if dataset is None:
-                raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
-            return dataset
+    async def get_dataset_list(self) -> list[Dataset]:
+        return await self.repo.get_all()
 
-    @staticmethod
-    async def create_dataset(dataset: Dataset) -> Dataset:
-        async with get_async_db_session_ctx() as session:
-            repo = DatasetRepository(session)
-            return await repo.save(dataset)
+    async def get_dataset_by_id(self, dataset_id: UUID) -> Dataset:
+        dataset = await self.repo.get_by_id(dataset_id)
+        if dataset is None:
+            raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
+        return dataset
 
-    @staticmethod
-    async def update_dataset_name(dataset_id: UUID, name: str) -> Dataset:
-        async with get_async_db_session_ctx() as session:
-            repo = DatasetRepository(session)
-            dataset = await repo.get_by_id(dataset_id)
-            if dataset is None:
-                raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
+    async def create_dataset(self, dataset: Dataset) -> Dataset:
+        return await self.repo.save(dataset)
 
-            return await repo.update(dataset, {"name": name})
+    async def update_dataset_name(self, dataset_id: UUID, name: str) -> Dataset:
+        dataset = await self.repo.get_by_id(dataset_id)
+        if dataset is None:
+            raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
 
-    @staticmethod
-    async def delete_dataset(dataset_id: UUID, remove_files: bool = False) -> None:
-        async with get_async_db_session_ctx() as session:
-            repo = DatasetRepository(session)
-            dataset = await repo.get_by_id(dataset_id)
-            if dataset is None:
-                raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
+        return await self.repo.update(dataset, {"name": name})
 
-            await repo.delete_by_id(dataset_id)
+    async def delete_dataset(self, dataset_id: UUID, remove_files: bool = False) -> None:
+        dataset = await self.repo.get_by_id(dataset_id)
+        if dataset is None:
+            raise ResourceNotFoundError(ResourceType.DATASET, str(dataset_id))
 
-            if remove_files:
-                shutil.rmtree(Path(dataset.path).expanduser())
+        await self.repo.delete_by_id(dataset_id)
+
+        if remove_files:
+            shutil.rmtree(Path(dataset.path).expanduser())

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shutil
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID, uuid4
@@ -10,9 +11,6 @@ from schemas import Model, TrainJob
 from schemas.base_job import JobStatus
 from schemas.dataset import Dataset
 from schemas.job import TrainJobPayload
-from services.dataset_service import DatasetService
-from services.job_service import JobService
-from services.model_service import ModelService
 from settings import get_settings
 
 # We assume the directory/zip is taken directly from Physical AI Studio, either
@@ -62,6 +60,14 @@ class DirectoryModelReader:
 
 
 class ModelImportService:
+    def __init__(
+        self,
+        get_dataset: Callable[[UUID], Awaitable[Dataset]],
+        persist_import: Callable[[TrainJob, Model], Awaitable[Model]],
+    ) -> None:
+        self._get_dataset = get_dataset
+        self._persist_import = persist_import
+
     async def import_model_directory(
         self,
         *,
@@ -78,7 +84,7 @@ class ModelImportService:
             raise InvalidArchiveError(f"Model directory does not exist: {source_dir}")
 
         settings = get_settings()
-        dataset = await DatasetService.get_dataset_by_id(dataset_id)
+        dataset = await self._get_dataset(dataset_id)
         if dataset.project_id != project_id:
             raise InvalidArchiveError("Dataset does not belong to the specified project")
 
@@ -136,8 +142,6 @@ class ModelImportService:
             status=JobStatus.COMPLETED,
             message="Model import completed",
         )
-        job = await JobService.create_job(job)
-
         model = Model(
             id=UUID(model_dir.name),
             project_id=project_id,
@@ -154,7 +158,7 @@ class ModelImportService:
             version=version,
             created_at=None,
         )
-        return await ModelService.create_model(model)
+        return await self._persist_import(job, model)
 
     def _inspect_model(self, reader: ModelReader) -> str:
         """Validate model structure and infer policy."""
