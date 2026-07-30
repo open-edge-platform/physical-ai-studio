@@ -65,7 +65,7 @@ Ecosystem work reduces downstream maintenance by improving projects where models
 - Standalone repositories containing important models.
 - Common dependencies used across multiple frameworks or models.
 
-Do not require a standalone model to join a framework before Intel engages with it. Select projects based on product impact and reuse, not repository structure.
+Intel can engage directly with an important standalone model; the model does not need to move into a shared framework first. Prioritize projects based on customer and product impact, expected reuse, and Intel deployment value, whether the project is part of a framework or maintained in its own repository.
 
 ## 2. Ecosystem Prioritization
 
