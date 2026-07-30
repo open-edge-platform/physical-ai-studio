@@ -1,7 +1,7 @@
 # Intel Hardware Enablement for Robot Learning
 
 **Status**: Draft for team review \
-**Audience**: Physical AI Studio, Runtime, PyTorch XPU, oneAPI, OpenVINO, infrastructure, and ecosystem teams \
+**Audience**: Physical AI Studio, Runtime, PyTorch XPU, OpenVINO, infrastructure, and ecosystem teams \
 **Scope**: Cross-team ownership and investment needed to scale robot-learning support on Intel hardware \
 
 The Studio and Runtime model process is defined in [Model Enablement Guidelines](./model-implementation-guidelines.md).
@@ -15,7 +15,7 @@ This proposal recommends three coordinated work areas:
 | Work area | Accountable outcome                                                    | Proposed owner                                           |
 | --------- | ---------------------------------------------------------------------- | -------------------------------------------------------- |
 | Product   | Supported Studio workflows and performant Runtime/OpenVINO deployment  | Studio and Runtime                                       |
-| Platform  | Reusable XPU, oneAPI, OpenVINO, and quantization capabilities          | Platform component teams                                 |
+| Platform  | Reusable XPU, OpenVINO, and quantization capabilities                 | Platform component teams                                 |
 | Ecosystem | Intel support in priority frameworks and standalone model repositories | Named ecosystem owner with product and partnership support |
 
 LeRobot is currently a high-leverage framework because it hosts many relevant policies. It is not a required destination or the only collaboration target. Future frameworks and high-value standalone model repositories use the same selection criteria and engagement model.
@@ -34,7 +34,7 @@ Product work would generate complete-workload evidence and identify shared block
 
 ### Platform
 
-Under this proposal, platform teams would own reusable capabilities that should not be solved separately for each model. These could include PyTorch XPU operations and kernels, oneAPI capabilities for robot-learning workloads, supported alternatives to common CUDA-only dependencies, OpenVINO conversion and runtime support, and quantization tooling and performance.
+Under this proposal, platform teams would own reusable capabilities that should not be solved separately for each model. These could include PyTorch XPU operations and kernels, supported alternatives to common CUDA-only dependencies, OpenVINO conversion and runtime support, and quantization tooling and performance.
 
 Studio would supply a minimal reproducer, affected models and workflows, target hardware, measured impact, and any downstream workaround. Component teams would provide triage, disposition, and a supported fix or documented limitation.
 
@@ -60,7 +60,7 @@ LeRobot is a current candidate for strategic collaboration. Other frameworks suc
 
 ## 3. Shared Blockers
 
-The proposed approach would treat a common XPU, oneAPI, OpenVINO, or dependency limitation as a shared blocker rather than as separate problems for each affected model. It should be prioritized and reported according to its total product impact and reuse potential.
+The proposed approach would treat a common XPU, OpenVINO, or dependency limitation as a shared blocker rather than as separate problems for each affected model. It should be prioritized and reported according to its total product impact and reuse potential.
 
 Downstream workarounds may be necessary to meet product commitments, but durable fixes should be pursued with the responsible platform team or upstream project. This would allow model-specific enablement to contribute to reusable platform and ecosystem capabilities.
 
