@@ -68,6 +68,49 @@ class TestQueueMixer:
         assert queue_mixer.pop() == approx(7.0)
         # Initial queue is empty.
 
+    def test_offset_is_applied_when_queue_is_empty(self):
+        """An offset must skip stale actions even when there is no queue to blend with.
+
+        This is the common case in synchronous mode: the queue is drained before the next
+        chunk is requested, so the empty-queue path is the hot path. Ignoring the offset
+        there makes the robot replay actions that inference latency already consumed.
+        """
+        queue_mixer = QueueMixer()
+        queue_mixer.add(np.array([0, 1, 2, 3, 4, 5]), 2)
+        assert queue_mixer.queue.tolist() == [2, 3, 4, 5]
+        assert queue_mixer.pop() == 2
+
+    def test_offset_is_applied_when_queue_is_exhausted(self):
+        """Same as above, via the `len(queue) <= index` branch rather than `queue is None`."""
+        queue_mixer = QueueMixer()
+        queue_mixer.add(np.array([0, 1]), 0)
+        queue_mixer.pop()
+        queue_mixer.pop()
+        assert queue_mixer.empty()
+        queue_mixer.add(np.array([0, 1, 2, 3]), 1)
+        assert queue_mixer.queue.tolist() == [1, 2, 3]
+
+    def test_offset_beyond_chunk_holds_last_action(self):
+        """If inference outlasted the whole chunk, hold the final action.
+
+        Slicing past the end would leave an empty queue and make pop() raise.
+        """
+        queue_mixer = QueueMixer()
+        queue_mixer.add(np.array([1, 2, 3]), 5)
+        assert queue_mixer.queue.tolist() == [3]
+        assert queue_mixer.pop() == 3
+
+    def test_offset_equal_to_chunk_length_holds_last_action(self):
+        queue_mixer = QueueMixer()
+        queue_mixer.add(np.array([1, 2, 3]), 3)
+        assert queue_mixer.queue.tolist() == [3]
+
+    def test_offset_on_empty_queue_with_multidimensional_actions(self):
+        queue_mixer = QueueMixer()
+        queue_mixer.add(np.array([[1, 1], [2, 2], [3, 3]]), 1)
+        assert queue_mixer.queue.tolist() == [[2, 2], [3, 3]]
+        assert queue_mixer.pop().tolist() == [2, 2]
+
     def test_short_remaining_queue_larger_than_lerp(self):
         """When remaining queue is shorter than lerp duration then only lerp over remaining queue"""
         queue_mixer = QueueMixer(lerp_duration=5)
