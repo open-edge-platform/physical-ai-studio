@@ -36,15 +36,14 @@ Set environment variables (or an `.env` file):
 
 > The backend honors `HTTP_PROXY` and `HTTPS_PROXY`. A configured proxy receives all trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
 
-| Variable                     | Required | Description                                  |
-| ---------------------------- | -------- | -------------------------------------------- |
-| `HF_TOKEN`                   | yes, if training a policy that downloads gated/private model weights | **Read** access to any gated/private model weights selected for training. |
-| `STORAGE_DIR`                | no       | Working directory for jobs and artifacts.    |
-| `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
-| `TRAINER_MAX_UNCOMPRESSED_BYTES` | no   | Cap on an uploaded dataset's uncompressed size. |
-| `TRAINER_MIN_FREE_BYTES`     | no       | Disk headroom kept free after extraction.    |
-| `PORT`                       | no       | Listen port (default 8001).                  |
-
+| Variable                         | Required                                                             | Description                                                               |
+| -------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `HF_TOKEN`                       | yes, if training a policy that downloads gated/private model weights | **Read** access to any gated/private model weights selected for training. |
+| `STORAGE_DIR`                    | no                                                                   | Working directory for jobs and artifacts.                                 |
+| `TRAINER_MAX_CONCURRENT_JOBS`    | no                                                                   | Queue concurrency (default 1).                                            |
+| `TRAINER_MAX_UNCOMPRESSED_BYTES` | no                                                                   | Cap on an uploaded dataset's uncompressed size.                           |
+| `TRAINER_MIN_FREE_BYTES`         | no                                                                   | Disk headroom kept free after extraction.                                 |
+| `PORT`                           | no                                                                   | Listen port (default 8001).                                               |
 
 ## Run
 
@@ -94,8 +93,20 @@ rule when it is provisioned remotely.
 
 CI publishes a full Git-SHA tag, then attaches an SBOM and provenance
 attestations, scans the immutable digest, signs it with keyless Sigstore, and
-only then advances the moving `latest` tag. Use a SHA tag or resolved digest for
-reproducible deployments; `latest` is a compatibility fallback only.
+only then advances any moving tag. Use a SHA tag or resolved digest for
+reproducible deployments; moving tags are a compatibility fallback only.
+
+Moving tags follow the release channel:
+
+| Tag      | Advanced by                     | Points at                     |
+| -------- | ------------------------------- | ----------------------------- |
+| `<sha>`  | every push to `main`            | that exact commit (immutable) |
+| `main`   | every push to `main`            | newest `main` build           |
+| `X.Y.Z`  | publishing a release            | that release                  |
+| `latest` | publishing a **stable** release | newest stable release         |
+
+`latest` never points at a development build. Pre-releases publish their
+`X.Y.Z` tag but do not move `latest`.
 
 `GET /health` returns the image attributes that the Studio backend verifies
 before work is accepted:
@@ -135,7 +146,8 @@ docker compose -f docker-compose.trainer.yaml --profile cuda down   # add -v to 
 
 Set `TRAINER_IMAGE_TAG` in `.env.trainer` to an immutable Git-SHA tag or
 resolved digest before using this in anything but a throwaway environment;
-`latest` is a compatibility fallback only. The XPU profile also needs
+moving tags are a compatibility fallback only (see
+[Container images](#container-images) for what each tag tracks). The XPU profile also needs
 `RENDER_NODE` and `RENDER_GID` set to the host's Intel GPU render node (see
 `.env.trainer.example`).
 
@@ -247,15 +259,15 @@ docker volume rm physicalai-trainer-data
 
 ## API
 
-| Method | Path                   | Purpose                          |
-| ------ | ---------------------- | -------------------------------- |
-| POST   | `/jobs`                | Enqueue a training job.          |
-| PUT    | `/jobs/{id}/dataset`   | Upload the dataset ZIP.          |
-| GET    | `/jobs/{id}`           | Current job state.               |
-| GET    | `/jobs/{id}/events`    | SSE stream of state changes.     |
-| GET    | `/jobs/{id}/artifact`  | Download the model archive.      |
-| POST   | `/jobs/{id}/cancel`    | Cancel a queued or running job.  |
-| GET    | `/health`              | Liveness and image/protocol metadata. |
+| Method | Path                  | Purpose                               |
+| ------ | --------------------- | ------------------------------------- |
+| POST   | `/jobs`               | Enqueue a training job.               |
+| PUT    | `/jobs/{id}/dataset`  | Upload the dataset ZIP.               |
+| GET    | `/jobs/{id}`          | Current job state.                    |
+| GET    | `/jobs/{id}/events`   | SSE stream of state changes.          |
+| GET    | `/jobs/{id}/artifact` | Download the model archive.           |
+| POST   | `/jobs/{id}/cancel`   | Cancel a queued or running job.       |
+| GET    | `/health`             | Liveness and image/protocol metadata. |
 
 ## Security
 
