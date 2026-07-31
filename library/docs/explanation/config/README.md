@@ -1,6 +1,6 @@
 # Config System
 
-Reference docs for `physicalai.config`.
+Reference docs for `physicalai.training_config`.
 
 ## Pages
 
@@ -30,6 +30,6 @@ Everything else is sugar on top of that:
 
 ## Related Files
 
-- Code: `library/src/physicalai/config/`
+- Code: `library/src/physicalai/training_config/`
 - Tests: `library/tests/unit/config/`
 - Walkthrough script: `library/docs/explanation/config/from_config_walkthrough.py`

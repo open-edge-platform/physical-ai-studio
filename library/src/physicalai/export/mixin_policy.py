@@ -4,6 +4,7 @@
 """Mixin classes for exporting Policies."""
 
 import inspect
+import logging
 import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -38,6 +39,35 @@ from physicalai.export.backends import (
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
 DATASET_STATS_KEY = "dataset_stats"
+
+# The ONNX exporter's optimizer and IR passes log one INFO record per graph node
+# (constant folding, slice collapsing, initializer dedup, ...). For a VLA policy
+# that is tens of thousands of lines per export, which drowns out the job log.
+# Their warnings and errors still matter, so only INFO and below is suppressed.
+_VERBOSE_ONNX_EXPORT_LOGGERS = ("onnxscript", "onnx_ir")
+
+
+@contextmanager
+def _quiet_onnx_export_logs() -> Generator[None, None, None]:
+    """Raise the ONNX exporter loggers to WARNING for the duration of the block.
+
+    Usable as either a context manager or a decorator. Loggers that already sit
+    at WARNING or above (for example because the caller configured them
+    explicitly) are left untouched, and every level is restored on exit even if
+    the export raises.
+    """
+    restore: list[tuple[logging.Logger, int]] = []
+    for name in _VERBOSE_ONNX_EXPORT_LOGGERS:
+        onnx_logger = logging.getLogger(name)
+        if onnx_logger.getEffectiveLevel() >= logging.WARNING:
+            continue
+        restore.append((onnx_logger, onnx_logger.level))
+        onnx_logger.setLevel(logging.WARNING)
+    try:
+        yield
+    finally:
+        for onnx_logger, level in restore:
+            onnx_logger.setLevel(level)
 
 
 class ExportablePolicyMixin:
@@ -661,6 +691,7 @@ class ExportablePolicyMixin:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
 
+    @_quiet_onnx_export_logs()
     def _onnx_core_export_step(
         self,
         model_path: Path,

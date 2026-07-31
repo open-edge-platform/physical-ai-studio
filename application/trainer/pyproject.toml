@@ -63,7 +63,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9881601325f724a0f00b1bf43f134d7f34fdef55" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "f2fc7eb23b00d4d389ce4e09cfe3e26491addd66" }
 torch = [
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cu128", extra = "cuda" },

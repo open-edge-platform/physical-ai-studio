@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, Self
 
-from physicalai.config.serializable import dataclass_to_dict, dict_to_dataclass
+from physicalai.training_config.serializable import dataclass_to_dict, dict_to_dataclass
 
 __all__ = ["Config"]
 
@@ -34,7 +34,7 @@ class Config:
     Example:
         ```python
         from dataclasses import dataclass
-        from physicalai.config import Config
+        from physicalai.training_config import Config
 
         @dataclass
         class MyPolicyConfig(Config):
@@ -118,7 +118,7 @@ class Config:
             # }
 
             # Can be instantiated dynamically:
-            from physicalai.config import instantiate_obj
+            from physicalai.training_config import instantiate_obj
             restored = instantiate_obj(jp_dict)
             ```
         """

@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
-from physicalai.config.mixin import FromConfig
+from physicalai.training_config.mixin import FromConfig
 
 if TYPE_CHECKING:
     from lerobot.configs.policies import PreTrainedConfig
