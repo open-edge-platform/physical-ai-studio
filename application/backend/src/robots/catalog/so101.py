@@ -5,10 +5,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from physicalai.config import to_config
-from physicalai.robot import SO101, SharedRobot
+from physicalai.robot import SO101
 from physicalai.robot.so101 import SO101Calibration, SO101JointCalibration
-from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition, shared_robot_name
+from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from schemas import SerialPortInfo
@@ -91,7 +90,7 @@ _SO101_ASSET = RobotAsset(
 )
 
 
-async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: CatalogRobotFactory) -> SharedRobot:
+async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: CatalogRobotFactory) -> SO101:
     # Studio generates the robot model per registered type (``SO101_LeaderRobot``),
     # so match on the payload; the model is never an ``SO101Robot`` instance.
     payload = robot.payload
@@ -112,13 +111,12 @@ async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: C
     # Construct the driver so its own validation runs here (clear, early errors),
     # then hand SharedRobot only the recipe: the owner process builds the real
     # driver, this process would immediately discard it.
-    so101 = SO101(
+    return SO101(
         port=port,
         calibration=SO101Calibration(joints=payload.calibration),
         role=role,
         unit="normalized",
     )
-    return SharedRobot.from_config(to_config(so101), name=shared_robot_name(robot.id))
 
 
 def serial_port_from_so101(robot: SO101Robot) -> SerialPortInfo:

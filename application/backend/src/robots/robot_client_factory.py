@@ -1,3 +1,7 @@
+from physicalai.config import to_config
+from physicalai.robot import SharedRobot
+from physicalai_studio_plugin import shared_robot_name
+
 from robots.catalog.registry import RobotCatalogRegistry
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
 from robots.robot_client import RobotClient
@@ -29,9 +33,11 @@ class RobotClientFactory:
             raise ValueError(f"Robot type {robot.type} has no robot builder")
 
         robot_driver = await builder(robot, self)
+        # Use SharedRobot because it manages multiprocessing for us
+        shared_robot = SharedRobot.from_config(to_config(robot_driver), name=shared_robot_name(robot.id))
         adapter_options = definition.adapter_options
         return PhysicalAIRobotAdapter(
-            robot=robot_driver,
+            robot=shared_robot,
             robot_type=robot.type,
             robot_role=definition.role,
             display_name=robot.name,

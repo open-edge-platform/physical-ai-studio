@@ -5,9 +5,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from physicalai.config import to_config
-from physicalai.robot import BimanualWidowXAI, SharedRobot, WidowXAI
-from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition, shared_robot_name
+from physicalai.robot import BimanualWidowXAI, WidowXAI
+from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.robot_type import BaseRobot
@@ -119,7 +118,7 @@ _TROSSEN_BIMANUAL_ASSET = RobotAsset(
 
 async def _build_trossen_single_arm_driver(
     robot: CatalogRobot[TrossenSingleArmPayload], _factory: CatalogRobotFactory
-) -> SharedRobot:
+) -> WidowXAI:
     # Studio generates the robot model per registered type, so match on the
     # payload; the model is never a ``TrossenSingleArmRobot`` instance.
     payload = robot.payload
@@ -128,23 +127,21 @@ async def _build_trossen_single_arm_driver(
     role = "follower" if robot.type == "Trossen_WidowXAI_Follower" else "leader"
     # Construct the driver so its own validation runs here, then hand SharedRobot
     # only the recipe: the owner process builds the real driver.
-    widowx = WidowXAI(ip=payload.connection_string, role=role)
-    return SharedRobot.from_config(to_config(widowx), name=shared_robot_name(robot.id))
+    return WidowXAI(ip=payload.connection_string, role=role)
 
 
 async def _build_trossen_bimanual_driver(
     robot: CatalogRobot[TrossenBimanualPayload], _factory: CatalogRobotFactory
-) -> SharedRobot:
+) -> BimanualWidowXAI:
     payload = robot.payload
     if not isinstance(payload, TrossenBimanualPayload):
         raise TypeError(f"Expected TrossenBimanualPayload, got {type(payload).__name__}")
     mode = "follower" if robot.type == "Trossen_Bimanual_WidowXAI_Follower" else "leader"
     # One SharedRobot owns the whole bimanual robot (not per-arm wrappers).
-    bimanual = BimanualWidowXAI(
+    return BimanualWidowXAI(
         left=WidowXAI(ip=payload.connection_string_left, role=mode),
         right=WidowXAI(ip=payload.connection_string_right, role=mode),
     )
-    return SharedRobot.from_config(to_config(bimanual), name=shared_robot_name(robot.id))
 
 
 async def _ping(ip: str, ping_timeout: float = 1.0) -> bool:
@@ -277,7 +274,9 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             robot_builder=_build_trossen_single_arm_driver,
             robot_payload=TrossenSingleArmPayload,
             asset=_TROSSEN_SINGLE_ARM_ASSET,
-            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
+            adapter_options=RobotAdapterOptions(
+                include_velocities=False, goal_time_scale=1.0, external_effort_gain=0.1
+            ),
             probe=_SINGLE_ARM_PROBE,
         ),
         RobotCatalogDefinition(
@@ -287,7 +286,9 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             robot_builder=_build_trossen_single_arm_driver,
             robot_payload=TrossenSingleArmPayload,
             asset=_TROSSEN_SINGLE_ARM_ASSET,
-            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
+            adapter_options=RobotAdapterOptions(
+                include_velocities=False, goal_time_scale=1.0, external_effort_gain=0.1
+            ),
             probe=_SINGLE_ARM_PROBE,
         ),
         RobotCatalogDefinition(
