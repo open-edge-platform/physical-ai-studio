@@ -107,9 +107,25 @@ class TestSO101Builder:
 
         assert to_config(driver)["init_args"]["role"] == "leader"
 
-    async def test_missing_calibration_is_rejected(self) -> None:
-        with pytest.raises(ValueError, match="calibration is required"):
-            await _build_so101_driver(_so101_robot(calibrated=False), _StubFactory())
+    async def test_uncalibrated_builds_in_ticks_mode(self) -> None:
+        """Without calibration the driver must report raw ticks.
+
+        physicalai rejects ``unit="normalized"`` when calibration is absent, so
+        the builder cannot simply pass its usual unit through.
+        """
+        driver = await _build_so101_driver(_so101_robot(calibrated=False), _StubFactory())
+
+        assert driver.unit == "ticks"
+        recipe = to_config(driver)
+        assert recipe["init_args"]["calibration"] is None
+        assert recipe["init_args"]["unit"] == "ticks"
+        # The owner process must be able to rebuild it.
+        assert instantiate(recipe).joint_names == list(JOINT_NAMES)
+
+    async def test_calibrated_builds_in_normalized_mode(self) -> None:
+        driver = await _build_so101_driver(_so101_robot(), _StubFactory())
+
+        assert driver.unit == "normalized"
 
     async def test_unresolvable_port_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="Could not resolve a serial port"):

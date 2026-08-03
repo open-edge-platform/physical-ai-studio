@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
+from loguru import logger
 from physicalai.robot import SO101
 from physicalai.robot.so101 import SO101Calibration, SO101JointCalibration
 from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
@@ -106,12 +107,21 @@ async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: C
         raise ValueError(f"Could not resolve a serial port for {resource_key}")
 
     role = "follower" if robot.type == "SO101_Follower" else "leader"
+    if payload.calibration is None:
+        # the uncalibrated driver reports raw servo ticks (0-4095) rather
+        # than the normalized range, so this is not comparable to calibrated data.
+        logger.warning(
+            "SO101 {} has no calibration; building in raw-ticks mode. "
+            "Positions are not normalized and must not be used for policy inference.",
+            robot.type,
+        )
+        return SO101.uncalibrated(port=port, role=role)
+
     return SO101(
         port=port,
-        calibration=SO101Calibration(joints=payload.calibration) if payload.calibration else None,
+        calibration=SO101Calibration(joints=payload.calibration),
         role=role,
         unit="normalized",
-        allow_uncalibrated=True,  # enables creation when calibration is None
     )
 
 
