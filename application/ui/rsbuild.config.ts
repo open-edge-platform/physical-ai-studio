@@ -54,7 +54,6 @@ export default defineConfig({
         },
     },
     server: {
-        host: process.env.DEV_SERVER_HOST ?? 'localhost',
         proxy: {
             '/api': {
                 target: 'http://localhost:7860',
