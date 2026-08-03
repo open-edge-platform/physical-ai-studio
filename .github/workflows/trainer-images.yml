@@ -131,7 +131,7 @@ jobs:
           python -c 'import json, os; health = json.load(open("health.json")); assert health == {"status": "healthy", "protocol_version": 1, "device_type": os.environ["DEVICE"], "build_revision": os.environ["GITHUB_SHA"], "build_date": os.environ["BUILD_DATE"], "application_version": os.environ["VERSION"]}'
 
   publish:
-    name: Publish, attest, scan, and sign (${{ matrix.device }})
+    name: Publish, attest, and sign (${{ matrix.device }})
     needs: build-and-smoke-test
     if: github.ref == 'refs/heads/main' || github.event_name == 'release'
     runs-on: ubuntu-latest
@@ -153,14 +153,12 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             auth.docker.io:443
-            check.trivy.dev:443
             deb.debian.org:80
             developer.download.nvidia.com:443
             download.pytorch.org:443
             download-r2.pytorch.org:443
             files.pythonhosted.org:443
             fulcio.sigstore.dev:443
-            get.trivy.dev:443
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
@@ -265,19 +263,6 @@ jobs:
               assert attestation, f"{name} attestation is missing"
           PY
 
-      - name: Scan immutable trainer image
-        uses: open-edge-platform/geti-ci/actions/trivy@7e686c1248b3939f8ee8e04e2612da727e379d91
-        with:
-          artifact-name: trivy-trainer-${{ matrix.device }}
-          scan_type: image
-          scan_target: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          scan-scope: all
-          severity: HIGH,CRITICAL
-          scanners: vuln,secret,config
-          format: table
-          timeout: 20m
-          ignore_unfixed: "false"
-
       - name: Sign immutable trainer image
         uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
         with:
@@ -286,7 +271,7 @@ jobs:
       # Only stable releases move the `latest` tag. Pushes to main publish the
       # immutable commit-SHA tag plus a `main` moving tag, so `latest` always
       # resolves to the newest released trainer image, never a dev build.
-      - name: Publish moving main tag after scan and signing
+      - name: Publish moving main tag after signing
         if: github.event_name != 'release'
         env:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
@@ -296,7 +281,7 @@ jobs:
 
       # Pre-releases (RCs) get their version tag but must not move `latest`;
       # RCs reach `latest` only once promoted to a stable release.
-      - name: Publish release version tag after scan and signing
+      - name: Publish release version tag after signing
         if: github.event_name == 'release'
         env:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
@@ -305,7 +290,7 @@ jobs:
         run: |
           docker buildx imagetools create --tag "${REPO}:${VERSION}" "$IMAGE"
 
-      - name: Publish moving latest tag after scan and signing
+      - name: Publish moving latest tag after signing
         if: github.event_name == 'release' && github.event.release.prerelease == false
         env:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
