@@ -8,39 +8,12 @@ Dependency-ordered, independently reviewable pull requests for
 
 - **PR 1 — landed on `main`.** Trainer image targets, GHCR publishing with SBOM /
   provenance / Trivy scan / cosign signing, OCI labels, and `/health` protocol
-  metadata all exist (`../../../trainer/Dockerfile`,
-  `.github/workflows/trainer-images.yml`,
-  `../../../trainer/src/trainer/schemas.py`).
-- **PR 2 — superseded, not merged.** The persistence work on
-  `albert/ssh-server-persistence` was built against an encrypted-secret design
-  that has since been replaced by SSH-config host aliases. That branch is
-  abandoned and unused; PR 2 is rewritten below. Its migration
-  `d4f8a1c9b3e6_add_remote_servers.py` never reached `main` (which carries only
-  `e4b2f1c8a907_add_remote_trainers.py`), so **no deployed database has ever held
-  an encrypted SSH secret and there is no data migration to write.**
-- **PR 5 — partially landed on that same branch, needs correction.** A
-  flag-gated route and page exist, but the route is project-scoped and reuses the
-  remote-_trainers_ page. See PR 5.
+  metadata all exist (`../../trainer/Dockerfile`,
+  `../../../.github/workflows/trainer-images.yml`,
+  `../../trainer/src/trainer/schemas.py`).
+- **PR 5 — partially landed.** A flag-gated route and page exist, but the route is
+  project-scoped and reuses the remote-_trainers_ page. See PR 5.
 - All other PRs are not started. `asyncssh` is not yet a dependency.
-
-## What changed from the previous revision of this plan
-
-The credential design was replaced. Consequences for sequencing:
-
-- **Deleted entirely:** Fernet encryption, `core/secret_encryption.py`, the
-  `cryptography` dependency, `REMOTE_SERVER_SECRET_KEY`, the key-fingerprint
-  column follow-up, key-rotation/loss recovery, and every error path and test for
-  those. Studio never receives SSH secrets, so there is nothing at rest to
-  protect.
-- **PR 0 shrinks** — several decisions it existed to record are now moot.
-- **PR 2 shrinks** — the table drops from 14 columns to 8, and the
-  internal-vs-public schema split disappears with no secret fields to hide.
-- **PR 3 shrinks** — no TOFU implementation; `asyncssh` verifies against
-  `known_hosts`.
-- **PR 10's enablement switch moved earlier in importance but stays last in
-  order** — Studio runs on the user's own workstation and does not expose its
-  API, so the gate hardens the secondary containerized deployment rather than
-  gating the primary one.
 
 ## Dependency overview
 
@@ -87,7 +60,7 @@ Record as ADRs / an implementation design record, from
 - **Tunnel drop: reconnect and resume**, one code path with reattach, bounded
   retry budget.
 - **Build revision source: the `org.opencontainers.image.revision` OCI label**,
-  git as a dev-only fallback. Explicitly **not `../../../VERSION`** — it holds
+  git as a dev-only fallback. Explicitly **not `../../VERSION`** — it holds
   `0.1.0`, and a semver string can never match a SHA-tagged image, so using it
   guarantees a permanent silent `latest` fallback.
 - Trainer protocol contract: **direct-URL trainers grandfathered** when they
@@ -128,9 +101,9 @@ registered servers.
 ### Delivered
 
 - Non-root `physicalai-trainer-cuda` / `physicalai-trainer-xpu` targets in
-  `../../../trainer/Dockerfile`, entry point `physicalai-trainer`, containing no
+  `../../trainer/Dockerfile`, entry point `physicalai-trainer`, containing no
   backend or UI code.
-- `.github/workflows/trainer-images.yml`: immutable `${{ github.sha }}` tags plus
+- `../../../.github/workflows/trainer-images.yml`: immutable `${{ github.sha }}` tags plus
   a moving `latest`, `sbom: true`, `provenance: mode=max`, a metadata
   verification step, a Trivy scan at HIGH/CRITICAL, and cosign signing.
 - OCI labels `org.opencontainers.image.source`, `.revision`, `.version`,
@@ -308,7 +281,7 @@ Full detail in [`remote-ssh-trainer-ui-plan.md`](remote-ssh-trainer-ui-plan.md).
 ### Already present
 
 - The `remoteTrainers` build-time flag in
-  `application/ui/src/config/feature-flags.ts`.
+  `../../ui/src/config/feature-flags.ts`.
 - A flag-gated route in `router.tsx` and `routes/remote-servers/index.tsx`
   rendering `features/remote-trainers/remote-trainers-page.tsx`.
 
@@ -318,7 +291,7 @@ Full detail in [`remote-ssh-trainer-ui-plan.md`](remote-ssh-trainer-ui-plan.md).
   primary-nav entry, outside `ProjectLayout`. It is currently
   `project.path('/remote-servers')`, but neither model has a project FK.
 - **Resolve the naming split** — `routes/training-targets/` (thin shell) +
-  `features/training-targets/` (logic), per `../../../ui/AGENTS.md`.
+  `features/training-targets/` (logic), per `../../ui/AGENTS.md`.
 
 ### Remaining scope
 
@@ -581,10 +554,6 @@ provisioning tests.
 
 ### Scope
 
-- Add a **backend-side enablement switch** so a disabled deployment rejects SSH
-  job submission and remote-server writes, rather than only hiding the UI from a
-  browser that could still call the API. The `remoteTrainers` UI flag is not a
-  security control.
 - Document the `~/.ssh/config` contract: what a usable `Host` entry looks like,
   the SSH agent requirement for passphrase-protected keys, accepting a host
   fingerprint before first use, recovery when an alias is removed or renamed, and
@@ -609,8 +578,6 @@ provisioning tests.
 - Complete the PR 0 threat model review before any network exposure. The feature
   is safe-by-default on a localhost workstation; it must not be enabled on a
   network-exposed instance without an auth model.
-- The enablement switch is proven to reject both SSH job submission and
-  remote-server writes when off.
 
 ### Dependencies
 
@@ -630,7 +597,7 @@ provisioning tests.
 2. Merge PR 7 and validate against disposable CUDA and XPU hosts.
 3. Merge PR 8 with the UI selector feature-flagged.
 4. Merge PRs 9–10.
-5. Keep the backend switch off for any deployment that is not a single-user
+5. Do not enable this feature for any deployment that is not a single-user
    localhost workstation, pending an auth model.
 
 This order ensures the SSH trust boundary, image identity, and Docker lifecycle

@@ -11,7 +11,7 @@ Three deliverables:
 2. A **unified target selector** in the train dialog.
 3. A **phase stepper** in the training progress view.
 
-Interactive mockup: `../../../ui/mockups/remote-server-ui.html` (untracked
+Interactive mockup: `../../ui/mockups/remote-server-ui.html` (untracked
 design artifact).
 
 ## Naming and concepts
@@ -32,13 +32,13 @@ section of the backend plan for why.
 One **global** screen, mirroring the existing list/detail pattern used by robots
 and cameras (`routes/robots/layout.tsx` + `robot.tsx`).
 
-### Already present on `albert/ssh-server-persistence`
+### Already present
 
 - A `remoteTrainers` build-time feature flag in
-  `application/ui/src/config/feature-flags.ts` (default off,
+  `../../ui/src/config/feature-flags.ts` (default off,
   `PUBLIC_ENABLE_REMOTE_TRAINERS`, with a `localStorage` dev override).
-- A flag-gated route in `../../../ui/src/router.tsx` and
-  `application/ui/src/routes/remote-servers/index.tsx`, a thin wrapper that
+- A flag-gated route in `../../ui/src/router.tsx` and
+  `../../ui/src/routes/remote-servers/index.tsx`, a thin wrapper that
   renders `features/remote-trainers/remote-trainers-page.tsx`.
 
 ### Corrections required
@@ -51,7 +51,7 @@ and cameras (`routes/robots/layout.tsx` + `robot.tsx`).
 - **Resolve the naming split.** The same screen is currently
   `routes/remote-servers/` rendering `RemoteTrainersPage` from
   `features/remote-trainers/` — two nouns, neither of them "training target".
-  Per `../../../ui/AGENTS.md`, `routes/` holds thin shells and `features/` owns
+  Per `../../ui/AGENTS.md`, `routes/` holds thin shells and `features/` owns
   the logic, so: `routes/training-targets/` (shell) +
   `features/training-targets/` (implementation).
 
@@ -109,7 +109,7 @@ in practice.
 
 ## 2. Unified target selector in the train dialog
 
-`../../../ui/src/routes/models/train-model-dialog.tsx` **already has a
+`../../ui/src/routes/models/train-model-dialog.tsx` **already has a
 remote-trainer picker**: it queries `/api/remote-trainers`, health-checks the
 choice, and sets `training_target` + `remote_trainer_id`.
 
@@ -167,5 +167,4 @@ unchanged; a `waiting` phase shows the wait without implying failure.
   render — but do not echo submitted form values into client logs or
   notifications regardless.
 - The `remoteTrainers` feature flag only hides the screen. It is **not** a
-  security control; the backend-side enablement switch is what rejects API
-  calls. See Step 8 of the backend plan.
+  security control.
