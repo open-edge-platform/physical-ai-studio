@@ -17,6 +17,7 @@ import {
 import { Manifest } from '@geti-ui/ui/icons';
 import { Outlet, useLocation } from 'react-router';
 
+import { featureFlags } from '../../config/feature-flags';
 import { JobStatus } from '../../features/jobs/footer/job-status';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
@@ -25,6 +26,7 @@ import { paths } from '../../router';
 import { ReactComponent as DatasetIcon } from './../../assets/icons/dataset-icon.svg';
 import { ReactComponent as ModelsIcon } from './../../assets/icons/models-icon.svg';
 import { ReactComponent as RobotIcon } from './../../assets/icons/robot-icon.svg';
+import { getMainPageInProjectUrl } from './project-navigation';
 
 const Header = ({ project_id }: { project_id: string }) => {
     return (
@@ -44,28 +46,41 @@ const Header = ({ project_id }: { project_id: string }) => {
                         '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
-                    <Item
-                        textValue='Robot configuration'
-                        key={'robots'}
-                        href={paths.project.robots.index({ project_id })}
-                    >
-                        <Flex alignItems='center' gap='size-100'>
-                            <RobotIcon />
-                            Robots
-                        </Flex>
-                    </Item>
-                    <Item textValue='Datasets' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
-                        <Flex alignItems='center' gap='size-100'>
-                            <DatasetIcon />
-                            Datasets
-                        </Flex>
-                    </Item>
-                    <Item textValue='Models' key={'models'} href={paths.project.models.index({ project_id })}>
-                        <Flex alignItems='center' gap='size-100'>
-                            <ModelsIcon />
-                            Models
-                        </Flex>
-                    </Item>
+                    {[
+                        <Item
+                            textValue='Robot configuration'
+                            key={'robots'}
+                            href={paths.project.robots.index({ project_id })}
+                        >
+                            <Flex alignItems='center' gap='size-100'>
+                                <RobotIcon />
+                                Robots
+                            </Flex>
+                        </Item>,
+                        <Item textValue='Datasets' key={'datasets'} href={paths.project.datasets.index({ project_id })}>
+                            <Flex alignItems='center' gap='size-100'>
+                                <DatasetIcon />
+                                Datasets
+                            </Flex>
+                        </Item>,
+                        <Item textValue='Models' key={'models'} href={paths.project.models.index({ project_id })}>
+                            <Flex alignItems='center' gap='size-100'>
+                                <ModelsIcon />
+                                Models
+                            </Flex>
+                        </Item>,
+                        ...(featureFlags.remoteTrainers
+                            ? [
+                                  <Item
+                                      textValue='Remote Trainers'
+                                      key={'remote-servers'}
+                                      href={paths.project.remoteServers.index({ project_id })}
+                                  >
+                                      Remote Trainers
+                                  </Item>,
+                              ]
+                            : []),
+                    ]}
                 </TabList>
                 <Flex alignItems={'center'} height={'100%'} marginStart='auto' gap='size-100'>
                     <ProjectsListPanel />
@@ -73,20 +88,6 @@ const Header = ({ project_id }: { project_id: string }) => {
             </Flex>
         </View>
     );
-};
-
-const getMainPageInProjectUrl = (pathname: string) => {
-    const regexp = /\/projects\/[\w-]*\/([\w-]*)/g;
-    const found = [...pathname.matchAll(regexp)];
-    if (found.length) {
-        const [, main] = found[0];
-        if (main === 'cameras' || main === 'environments') {
-            return 'robots';
-        }
-        return main;
-    } else {
-        return 'datasets';
-    }
 };
 
 const Footer = () => {

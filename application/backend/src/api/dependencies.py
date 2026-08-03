@@ -19,6 +19,7 @@ from services import (
     ModelService,
     ProjectCameraService,
     ProjectService,
+    RemoteTrainerService,
     RobotService,
 )
 from services.dataset_import.service import DatasetImportService
@@ -65,6 +66,14 @@ def get_project_service(session: AsyncSessionDep) -> ProjectService:
 
 
 ProjectServiceDep = Annotated[ProjectService, Depends(get_project_service)]
+
+
+def get_remote_trainer_service(session: AsyncSessionDep) -> RemoteTrainerService:
+    """Provide a request-scoped service for configured remote trainers."""
+    return RemoteTrainerService(session)
+
+
+RemoteTrainerServiceDep = Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)]
 
 
 def get_robot_service(session: AsyncSessionDep) -> RobotService:
@@ -182,7 +191,7 @@ ModelDownloadServiceDep = Annotated[ModelDownloadService, Depends(get_model_down
 
 def get_job_service(session: AsyncSessionDep) -> JobService:
     """Provides a JobService instance for managing jobs."""
-    return JobService(session)
+    return JobService(session, RemoteTrainerService(session))
 
 
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]

@@ -15,14 +15,16 @@ from exceptions import (
 from repositories import JobRepository
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import JobPayload, TrainJob, TrainJobPayload
+from schemas.job import JobPayload, TrainingTarget, TrainJob, TrainJobPayload
+from services.remote_trainer_service import RemoteTrainerService
 from services.system_service import SystemService
 
 
 class JobService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, remote_trainer_service: RemoteTrainerService | None = None) -> None:
         self.session = session
         self.repo = JobRepository(session)
+        self.remote_trainer_service = remote_trainer_service
 
     async def create_job(self, job: Job) -> Job:
         return await self.repo.save(job)
@@ -44,8 +46,22 @@ class JobService:
         return await self.repo.get_all(expressions=[JobDB.id.in_([str(job_id) for job_id in job_ids])])
 
     async def submit_train_job(self, payload: TrainJobPayload) -> Job:
-        # Validate the requested training device before persisting the job
-        if payload.device is not None and not SystemService.is_device_supported_for_training(payload.device.type):
+        """Validate and persist a training job with its execution target pinned."""
+        if payload.training_target is TrainingTarget.REMOTE:
+            if payload.remote_trainer_id is None:
+                raise ValueError("Remote training requires a selected remote trainer")
+            remote_trainer_service = self.remote_trainer_service or RemoteTrainerService(self.session)
+            remote_trainer = await remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
+            payload = TrainJobPayload.model_validate(
+                payload.model_dump() | {"remote_trainer_url": str(remote_trainer.url)}
+            )
+
+        # A remote trainer validates its own devices. Validate only local device choices here.
+        if (
+            payload.training_target is TrainingTarget.LOCAL
+            and payload.device is not None
+            and not SystemService.is_device_supported_for_training(payload.device.type)
+        ):
             raise UnsupportedDeviceError(
                 device_type=payload.device.type,
                 supported=SystemService.supported_training_device_types(),
@@ -66,6 +82,10 @@ class JobService:
 
     async def get_pending_train_job(self) -> Job | None:
         return await self.repo.get_pending_job_by_type(JobType.TRAINING)
+
+    async def get_pending_train_jobs(self) -> list[Job]:
+        """Return pending training jobs in submission order."""
+        return await self.repo.get_pending_jobs_by_type(JobType.TRAINING)
 
     async def update_job_payload(
         self,

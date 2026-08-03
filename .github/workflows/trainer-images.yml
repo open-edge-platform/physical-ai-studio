@@ -226,12 +226,40 @@ jobs:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
           VERSION: ${{ steps.build-metadata.outputs.version }}
         run: |
-          docker buildx imagetools inspect "$IMAGE" --format '{{json .}}' > image.json
-          grep -Fq '"org.opencontainers.image.revision":"'"$GITHUB_SHA"'"' image.json
-          grep -Fq '"org.opencontainers.image.version":"'"$VERSION"'"' image.json
-          grep -Fq '"org.open-edge-platform.physicalai.trainer.api-protocol":"1"' image.json
-          docker buildx imagetools inspect "$IMAGE" --format '{{json .Provenance}}' | grep -q .
-          docker buildx imagetools inspect "$IMAGE" --format '{{json .SBOM}}' | grep -q .
+          docker buildx imagetools inspect "$IMAGE" --format '{{json .Image}}' > image.json
+          docker buildx imagetools inspect "$IMAGE" --format '{{json .Provenance}}' > provenance.json
+          docker buildx imagetools inspect "$IMAGE" --format '{{json .SBOM}}' > sbom.json
+          python - <<'PY'
+          import json, os
+
+          def load(path):
+              with open(path) as handle:
+                  return json.load(handle)
+
+          # `imagetools inspect` returns the image config directly for a single
+          # platform and a {"os/arch": config} mapping for a multi-platform index.
+          image = load("image.json")
+          configs = [image] if "config" in image else list(image.values())
+          assert configs, "no image config returned by imagetools inspect"
+
+          expected = {
+              "org.opencontainers.image.revision": os.environ["GITHUB_SHA"],
+              "org.opencontainers.image.version": os.environ["VERSION"],
+              "org.open-edge-platform.physicalai.trainer.api-protocol": os.environ[
+                  "TRAINER_API_PROTOCOL_VERSION"
+              ],
+          }
+          for config in configs:
+              labels = config.get("config", {}).get("Labels") or {}
+              for label, value in expected.items():
+                  assert labels.get(label) == value, (
+                      f"label {label}: expected {value!r}, got {labels.get(label)!r}"
+                  )
+
+          for name, path in (("provenance", "provenance.json"), ("SBOM", "sbom.json")):
+              attestation = load(path)
+              assert attestation, f"{name} attestation is missing"
+          PY
 
       - name: Scan immutable trainer image
         uses: open-edge-platform/geti-ci/actions/trivy@7e686c1248b3939f8ee8e04e2612da727e379d91

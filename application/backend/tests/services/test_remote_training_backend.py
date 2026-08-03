@@ -106,6 +106,7 @@ class _Controller:
         self.posted_bodies: list[dict | None] = []
         self.put_urls: list[str] = []
         self.cancelled = False
+        self.deleted_urls: list[str] = []
         self.event_stream_opens = 0
         # Payload served by GET /devices; tests override as needed.
         self.devices_response: dict | list = [{"type": "cpu", "name": "CPU", "memory": None, "index": None}]
@@ -161,6 +162,10 @@ class _FakeClient:
 
     async def head(self, url: str) -> _FakeResponse:
         return _FakeResponse(headers={"upload-offset": str(self._c.upload_offset)})
+
+    async def delete(self, url: str) -> _FakeResponse:
+        self._c.deleted_urls.append(url)
+        return _FakeResponse(json_data={})
 
     async def get(self, url: str) -> _FakeResponse:
         # /health is the proxy probe; /devices reports trainer hardware; job state
@@ -241,7 +246,7 @@ def _backend(settings: MagicMock):
     from services.training_backends.remote import RemoteTrainingBackend
 
     with patch(f"{REMOTE}.get_settings", return_value=settings):
-        return RemoteTrainingBackend()
+        return RemoteTrainingBackend("https://trainer.test")
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +287,24 @@ class TestRemoteTrainingBackend:
         assert SNAPSHOT_UPLOAD_PROGRESS + round(50 * span / 100) in reported
         # Progress reached 100% before the worker marks completion.
         assert max(reported) == 100
+
+    @pytest.mark.anyio
+    async def test_completion_deletes_remote_job_artifacts(self, tmp_path):
+        """After a successful download, the trainer's copy of the job is cleaned up."""
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+        ):
+            backend = _backend(settings)
+            await backend.train(context)
+
+        assert controller.deleted_urls == [f"https://trainer.test/jobs/{controller.remote_job_id}"]
 
     @pytest.mark.anyio
     async def test_cancellation_requests_remote_cancel(self, tmp_path):
@@ -551,17 +574,6 @@ class TestRemoteTrainingBackend:
             backend = _backend(settings)
             with pytest.raises(RemoteTrainingError):
                 await backend.get_training_devices()
-
-    @pytest.mark.anyio
-    async def test_missing_config_raises_on_construction(self):
-        settings = _settings()
-        settings.trainer_url = None
-        from services.training_backends.remote import RemoteTrainingError
-
-        with patch(f"{REMOTE}.get_settings", return_value=settings), pytest.raises(RemoteTrainingError):
-            from services.training_backends.remote import RemoteTrainingBackend
-
-            RemoteTrainingBackend()
 
 
 class TestHttpDatasetTransfer:

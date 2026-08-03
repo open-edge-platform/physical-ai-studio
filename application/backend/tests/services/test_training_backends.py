@@ -9,33 +9,43 @@ import multiprocessing as mp
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+from schemas.job import TrainingTarget, TrainJobPayload
 from services.training_backends import get_training_backend
 from services.training_backends.local import LocalTrainingBackend
 from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END, RemoteTrainingBackend
 from services.training_service import TrainingTrackingDispatcher
 
 
-def _settings(mode: str) -> MagicMock:
+def _settings() -> MagicMock:
     settings = MagicMock()
-    settings.training_mode = mode
-    settings.trainer_url = "https://trainer.test"
     settings.trainer_request_timeout_s = 5.0
     return settings
 
 
-def test_get_training_backend_returns_local_in_local_mode() -> None:
-    with patch("settings.get_settings", return_value=_settings("local")):
-        backend = get_training_backend()
+def _payload(target: TrainingTarget) -> TrainJobPayload:
+    return TrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="model",
+        training_target=target,
+        remote_trainer_id=uuid4() if target is TrainingTarget.REMOTE else None,
+        remote_trainer_url="https://trainer.test" if target is TrainingTarget.REMOTE else None,
+    )
+
+
+def test_get_training_backend_returns_local_for_local_job() -> None:
+    backend = get_training_backend(_payload(TrainingTarget.LOCAL))
     assert isinstance(backend, LocalTrainingBackend)
 
 
-def test_get_training_backend_returns_remote_in_remote_mode() -> None:
-    settings = _settings("remote")
+def test_get_training_backend_returns_remote_for_remote_job() -> None:
+    settings = _settings()
     with (
         patch("settings.get_settings", return_value=settings),
         patch("services.training_backends.remote.get_settings", return_value=settings),
     ):
-        backend = get_training_backend()
+        backend = get_training_backend(_payload(TrainingTarget.REMOTE))
     assert isinstance(backend, RemoteTrainingBackend)
 
 

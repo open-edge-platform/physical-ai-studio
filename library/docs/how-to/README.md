@@ -4,11 +4,12 @@ Goal-oriented guides for specific tasks. Each guide assumes you've completed the
 
 ## Training
 
-| Guide                           | Description                                |
-| ------------------------------- | ------------------------------------------ |
-| [CLI Training](training/cli.md) | Train policies from the command line       |
-| Custom Datasets                 | TBA - Train on your own demonstration data |
-| Distributed Training            | TBA - Multi-GPU and multi-node training    |
+| Guide                                                  | Description                                |
+| ------------------------------------------------------ | ------------------------------------------ |
+| [CLI Training](training/cli.md)                        | Train policies from the command line       |
+| [Image Augmentations](training/image_augmentations.md) | Configure image transforms for training    |
+| Custom Datasets                                        | TBA - Train on your own demonstration data |
+| Distributed Training                                   | TBA - Multi-GPU and multi-node training    |
 
 ## Benchmark
 

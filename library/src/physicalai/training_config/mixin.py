@@ -4,8 +4,8 @@
 """Configuration mixins for adding from_config functionality to any class.
 
 This module provides a thin sugar layer on top of the generic instantiation
-utilities in :mod:`physicalai.config.instantiate` and the dataclass conversion
-utilities in :mod:`physicalai.config.serializable`. The mixin and decorator
+utilities in :mod:`physicalai.training_config.instantiate` and the dataclass conversion
+utilities in :mod:`physicalai.training_config.serializable`. The mixin and decorator
 both delegate to those utilities so there is a single source of truth for
 recursion, ``class_path`` dispatch, and dataclass/Pydantic conversion.
 """
@@ -17,8 +17,8 @@ from typing import Any, Self, cast
 import yaml
 from pydantic import BaseModel
 
-from physicalai.config.instantiate import instantiate_obj_from_dict
-from physicalai.config.serializable import dataclass_to_dict
+from physicalai.training_config.instantiate import instantiate_obj_from_dict
+from physicalai.training_config.serializable import dataclass_to_dict
 
 
 class FromConfig:

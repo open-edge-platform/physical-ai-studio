@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import multiprocessing as mp
 import queue
 from contextlib import asynccontextmanager
@@ -16,7 +17,7 @@ import pytest
 import core.scheduler  # noqa: F401
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Snapshot
-from schemas.job import TrainingPrecision, TrainJobPayload
+from schemas.job import TrainingPrecision, TrainingTarget, TrainJobPayload
 from schemas.model import Model
 
 if TYPE_CHECKING:
@@ -105,21 +106,22 @@ def stop_event():
 
 
 @pytest.fixture
-def interrupt_event():
-    return mp.Event()
+def job_interrupt_flags():
+    """A plain dict stands in for the Manager dict shared across processes."""
+    return {}
 
 
 @pytest.fixture
-def worker(stop_event, interrupt_event, event_queue):
+def worker(stop_event, job_interrupt_flags, event_queue):
     """Build a minimal TrainingWorker without triggering circular imports from scheduler."""
     from workers.training_worker import TrainingWorker
 
     w = object.__new__(TrainingWorker)
     # Mirror BaseProcessWorker/TrainingWorker wiring: should_stop() reads the
-    # private events; _should_interrupt() also reads the public interrupt_event.
+    # private stop event; _should_interrupt() also reads the per-job flags.
     w._stop_event = stop_event
-    w._interrupt_event = interrupt_event
-    w.interrupt_event = interrupt_event
+    w._interrupt_event = mp.Event()
+    w.job_interrupt_flags = job_interrupt_flags
     w.queue = event_queue
     return w
 
@@ -218,14 +220,14 @@ class TestTraining:
             assert canceled_call.kwargs["status"] == JobStatus.CANCELED
 
     @pytest.mark.anyio
-    async def test_interrupt_after_silent_stop_marks_canceled(self, worker, interrupt_event, tmp_path):
+    async def test_interrupt_after_silent_stop_marks_canceled(self, worker, job_interrupt_flags, tmp_path):
         """A backend that stops cooperatively (no raise) while interrupted ends CANCELED."""
         payload = _make_payload(compile_model=False)
         model = _make_model(tmp_path)
         snapshot = _make_snapshot(tmp_path)
         job = _make_job(payload)
 
-        interrupt_event.set()
+        job_interrupt_flags[str(job.id)] = True
 
         backend = MagicMock()
         backend.train = AsyncMock()
@@ -440,3 +442,51 @@ class TestTraining:
             assert args[0] == job.id
             assert args[1].remote_job_id == remote_job_id
             assert args[1].snapshot_id == snapshot_id
+
+
+class TestTrainingScheduling:
+    @pytest.mark.anyio
+    async def test_jobs_on_distinct_targets_start_without_waiting(self, worker) -> None:
+        """A local job and jobs on separate remote trainers run concurrently."""
+        remote_payload = _make_payload()
+        remote_payload.training_target = TrainingTarget.REMOTE
+        remote_payload.remote_trainer_id = uuid4()
+        other_remote_payload = remote_payload.model_copy(update={"remote_trainer_id": uuid4()})
+        jobs = [_make_job(_make_payload()), _make_job(remote_payload), _make_job(other_remote_payload)]
+        worker._active_training_tasks = {}
+        worker.should_stop = MagicMock(side_effect=[False, True])
+        worker.stop_aware_sleep = MagicMock()
+
+        with (
+            patch(f"{MODULE}.JobService.get_pending_train_jobs", AsyncMock(return_value=jobs)),
+            patch.object(worker, "_run_training_job", AsyncMock()) as run_job,
+        ):
+            await worker.run_loop()
+            await asyncio.gather(*worker._active_training_tasks.values())
+
+        assert run_job.await_count == 3
+
+    @pytest.mark.anyio
+    async def test_second_job_on_same_target_remains_pending(self, worker) -> None:
+        """Only the oldest job for an occupied local or remote target starts."""
+        remote_payload = _make_payload()
+        remote_payload.training_target = TrainingTarget.REMOTE
+        remote_payload.remote_trainer_id = uuid4()
+        jobs = [
+            _make_job(_make_payload()),
+            _make_job(_make_payload()),
+            _make_job(remote_payload),
+            _make_job(remote_payload),
+        ]
+        worker._active_training_tasks = {}
+        worker.should_stop = MagicMock(side_effect=[False, True])
+        worker.stop_aware_sleep = MagicMock()
+
+        with (
+            patch(f"{MODULE}.JobService.get_pending_train_jobs", AsyncMock(return_value=jobs)),
+            patch.object(worker, "_run_training_job", AsyncMock()) as run_job,
+        ):
+            await worker.run_loop()
+            await asyncio.gather(*worker._active_training_tasks.values())
+
+        assert run_job.await_count == 2

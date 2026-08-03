@@ -1782,8 +1782,8 @@
       "path": "src/physicalai/policies/lerobot/policy.py",
       "code": -2,
       "name": "bad-argument-type",
-      "description": "Argument `None` is not assignable to parameter `cls` with type `type[@_]` in function `physicalai.config.serializable.dict_to_dataclass`",
-      "concise_description": "Argument `None` is not assignable to parameter `cls` with type `type[@_]` in function `physicalai.config.serializable.dict_to_dataclass`",
+      "description": "Argument `None` is not assignable to parameter `cls` with type `type[@_]` in function `physicalai.training_config.serializable.dict_to_dataclass`",
+      "concise_description": "Argument `None` is not assignable to parameter `cls` with type `type[@_]` in function `physicalai.training_config.serializable.dict_to_dataclass`",
       "severity": "error"
     },
     {

@@ -6,10 +6,10 @@ per-driver kwargs so that only constructor-safe parameters reach the camera.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
-from physicalai.capture import CameraType, ColorMode, SharedCamera
+from physicalai.capture import CameraType, ColorMode, SharedCamera, create_camera
 
 if TYPE_CHECKING:
     from schemas.project_camera import Camera
@@ -100,11 +100,15 @@ def build_shared_camera(
     camera_type, camera_kwargs = _camera_type_and_kwargs(config)
     logger.debug(f"camera kwargs for {config.name}: {camera_kwargs}")
 
-    return SharedCamera(
-        camera_type,
-        color_mode=ColorMode.RGB,
-        validate_on_connect=validate_on_connect,
-        overwrite_settings=overwrite_settings,
-        idle_timeout=idle_timeout,
-        **camera_kwargs,
+    return cast(
+        "SharedCamera",
+        create_camera(
+            camera_type.value,
+            shared=True,
+            color_mode=ColorMode.RGB,
+            validate_on_connect=validate_on_connect,
+            overwrite_settings=overwrite_settings,
+            idle_timeout=idle_timeout,
+            **camera_kwargs,
+        ),
     )
