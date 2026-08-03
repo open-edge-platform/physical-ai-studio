@@ -104,13 +104,10 @@ async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: C
     if port is None:
         resource_key = payload.serial_number or payload.connection_string
         raise ValueError(f"Could not resolve a serial port for {resource_key}")
-
-    role = "follower" if robot.type == "SO101_Follower" else "leader"
     if payload.calibration is None:
         raise ValueError("SO101 calibration is required to build a SharedRobot driver")
-    # Construct the driver so its own validation runs here (clear, early errors),
-    # then hand SharedRobot only the recipe: the owner process builds the real
-    # driver, this process would immediately discard it.
+
+    role = "follower" if robot.type == "SO101_Follower" else "leader"
     return SO101(
         port=port,
         calibration=SO101Calibration(joints=payload.calibration),

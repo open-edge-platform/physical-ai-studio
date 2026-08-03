@@ -125,8 +125,6 @@ async def _build_trossen_single_arm_driver(
     if not isinstance(payload, TrossenSingleArmPayload):
         raise TypeError(f"Expected TrossenSingleArmPayload, got {type(payload).__name__}")
     role = "follower" if robot.type == "Trossen_WidowXAI_Follower" else "leader"
-    # Construct the driver so its own validation runs here, then hand SharedRobot
-    # only the recipe: the owner process builds the real driver.
     return WidowXAI(ip=payload.connection_string, role=role)
 
 
@@ -137,7 +135,6 @@ async def _build_trossen_bimanual_driver(
     if not isinstance(payload, TrossenBimanualPayload):
         raise TypeError(f"Expected TrossenBimanualPayload, got {type(payload).__name__}")
     mode = "follower" if robot.type == "Trossen_Bimanual_WidowXAI_Follower" else "leader"
-    # One SharedRobot owns the whole bimanual robot (not per-arm wrappers).
     return BimanualWidowXAI(
         left=WidowXAI(ip=payload.connection_string_left, role=mode),
         right=WidowXAI(ip=payload.connection_string_right, role=mode),
