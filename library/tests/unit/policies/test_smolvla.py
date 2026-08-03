@@ -8,6 +8,8 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 from physicalai.training_config import Config
@@ -161,6 +163,49 @@ class TestSmolVLAPolicy:
         inferred = SmolVLA._infer_image_features(hf_config, dataset_stats=None)
 
         assert inferred == ["camera0", "camera1"]
+
+    def test_on_load_checkpoint_inserts_missing_target_time_params(self) -> None:
+        """Legacy checkpoints missing target-time MLP params are migrated."""
+        policy = SmolVLA()
+        policy.model = SimpleNamespace(
+            _model=SimpleNamespace(
+                target_time_mlp_in=SimpleNamespace(
+                    weight=torch.randn(8, 8),
+                    bias=torch.randn(8),
+                ),
+                target_time_mlp_out=SimpleNamespace(
+                    weight=torch.randn(8, 8),
+                    bias=torch.randn(8),
+                ),
+            ),
+        )
+
+        checkpoint = {"state_dict": {"some.weight": torch.randn(2, 2)}}
+
+        policy.on_load_checkpoint(checkpoint)
+
+        state_dict = checkpoint["state_dict"]
+        assert "model._model.target_time_mlp_in.weight" in state_dict
+        assert "model._model.target_time_mlp_in.bias" in state_dict
+        assert "model._model.target_time_mlp_out.weight" in state_dict
+        assert "model._model.target_time_mlp_out.bias" in state_dict
+
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_in.weight"],
+            policy.model._model.target_time_mlp_in.weight,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_in.bias"],
+            policy.model._model.target_time_mlp_in.bias,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_out.weight"],
+            policy.model._model.target_time_mlp_out.weight,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_out.bias"],
+            policy.model._model.target_time_mlp_out.bias,  # type: ignore[union-attr]
+        )
 
 
 # ============================================================================ #

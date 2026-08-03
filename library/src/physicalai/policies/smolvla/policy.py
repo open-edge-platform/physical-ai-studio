@@ -560,6 +560,39 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         reformat_dataset_to_match_policy(self, datamodule)
 
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Migrate legacy checkpoints missing target-time MLP parameters.
+
+        Older SmolVLA checkpoints were created before target-time conditioning
+        layers were introduced. Keep strict checkpoint loading enabled by
+        populating any missing target-time parameters from the current model
+        initialization.
+        """
+        state_dict = checkpoint.get("state_dict")
+        if not isinstance(state_dict, dict) or self.model is None:
+            return
+
+        defaults = {
+            "model._model.target_time_mlp_in.weight": self.model._model.target_time_mlp_in.weight,  # noqa: SLF001
+            "model._model.target_time_mlp_in.bias": self.model._model.target_time_mlp_in.bias,  # noqa: SLF001
+            "model._model.target_time_mlp_out.weight": self.model._model.target_time_mlp_out.weight,  # noqa: SLF001
+            "model._model.target_time_mlp_out.bias": self.model._model.target_time_mlp_out.bias,  # noqa: SLF001
+        }
+
+        inserted: list[str] = []
+        for key, value in defaults.items():
+            if key in state_dict:
+                continue
+            state_dict[key] = value.detach().clone()
+            inserted.append(key)
+
+        if inserted:
+            logger.warning(
+                "Loaded legacy SmolVLA checkpoint missing %d target-time parameter(s): %s",
+                len(inserted),
+                ", ".join(inserted),
+            )
+
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
         """Forward pass through the model.
 
