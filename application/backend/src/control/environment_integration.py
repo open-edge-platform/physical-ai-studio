@@ -1,6 +1,6 @@
 import asyncio
 import base64
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
@@ -142,7 +142,7 @@ class EnvironmentIntegration:
             "timestamp": timestamp,
         }
 
-    def format_model_input_observation(self, raw_observation: dict, task: str | None = None) -> Observation:
+    def format_model_input_observation(self, raw_observation: dict, task: str | None = None) -> Observation:  # noqa: ARG002
         observation = self._remap_camera_observations(raw_observation)
         state = np.array([[observation[k] for k in self.action_keys]], dtype=np.float32)
         images: dict = {}
@@ -156,11 +156,7 @@ class EnvironmentIntegration:
         return Observation(
             state=state,
             images=images,
-            # Preprocessors expect one prompt string per batch element; state is built with
-            # batch size 1. ``Observation.task`` is annotated for tensors only, so the prompt
-            # list needs the same cast the library uses for it (see physicalai's
-            # data/lerobot/converters.py ``to_observation``).
-            task=cast("Any", [task or ""]),
+            # task=task, # TODO: Implement tasks.
         )
 
     def format_observation_for_dataset(self, raw_observation: dict) -> dict:

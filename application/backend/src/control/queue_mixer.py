@@ -28,10 +28,8 @@ class QueueMixer:
 
         """
         if self.queue is None or len(self.queue) <= self.index:
-            # No existing queue, but still drop the frames that elapsed during inference so we
-            # do not replay stale actions. If inference outlasted the whole chunk, hold the
-            # final action rather than leaving an empty queue for pop() to raise on.
-            self.queue = row[offset:] if offset < len(row) else row[-1:]
+            # No existing queue? Set queue without offset
+            self.queue = row
         else:
             # Take remaining part of existing queue.
             remaining_queue = self.queue[self.index :]

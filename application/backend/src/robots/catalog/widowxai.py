@@ -298,9 +298,7 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             robot_builder=_build_trossen_bimanual_driver,
             robot_payload=TrossenBimanualPayload,
             asset=_TROSSEN_BIMANUAL_ASSET,
-            adapter_options=RobotAdapterOptions(
-                include_velocities=False, goal_time_scale=1.0, external_effort_gain=0.1
-            ),
+            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
             probe=_BIMANUAL_PROBE,
         ),
         RobotCatalogDefinition(
@@ -310,9 +308,7 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             robot_builder=_build_trossen_bimanual_driver,
             robot_payload=TrossenBimanualPayload,
             asset=_TROSSEN_BIMANUAL_ASSET,
-            adapter_options=RobotAdapterOptions(
-                include_velocities=False, goal_time_scale=1.0, external_effort_gain=0.1
-            ),
+            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
             probe=_BIMANUAL_PROBE,
         ),
     ]
