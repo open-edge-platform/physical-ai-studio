@@ -20,6 +20,7 @@ Handles:
 from __future__ import annotations
 
 import logging
+from operator import itemgetter
 from typing import Any, cast
 
 import torch
@@ -183,7 +184,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
             keyed_images.append((camera_key, img, mask))
 
-        keyed_images.sort(key=lambda x: x[0])
+        keyed_images.sort(key=itemgetter(0))
         for _, img, mask in keyed_images:
             images.append(img)
             img_masks.append(mask)
@@ -224,8 +225,14 @@ class SmolVLAPreprocessor(torch.nn.Module):
         Supports both full-key and suffix mappings:
         - "observation.images.overview" -> "camera0"
         - "overview" -> "camera0"
+
+        Args:
+            key: Flattened image key.
+
+        Returns:
+            Normalized camera name used for deterministic ordering.
         """
-        suffix = key[len(f"{IMAGES}.") :] if key.startswith(f"{IMAGES}.") else key
+        suffix = key.removeprefix(f"{IMAGES}.")
         mapped = (
             self.image_key_rename_map.get(key)
             or self.image_key_rename_map.get(f"observation.{IMAGES}.{suffix}")
@@ -237,7 +244,14 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
     @staticmethod
     def _normalize_camera_name(name: str) -> str:
-        """Normalize full image keys to camera suffix names."""
+        """Normalize full image keys to camera suffix names.
+
+        Args:
+            name: Image key or camera name.
+
+        Returns:
+            Camera name with any leading image-key prefix removed.
+        """
         if name.startswith(f"{IMAGES}."):
             return name[len(f"{IMAGES}.") :]
         return name

@@ -347,7 +347,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301, PLR0913
+    def _from_hf(  # noqa: PLR0913, PLR0915
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -456,7 +456,14 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
     @staticmethod
     def _normalize_image_feature_name(name: str) -> str:
-        """Normalize flattened image feature names to camera suffixes."""
+        """Normalize flattened image feature names to camera suffixes.
+
+        Args:
+            name: Image feature name, possibly prefixed.
+
+        Returns:
+            The feature name with any known image prefix removed.
+        """
         for prefix in ("observation.images.", "images.", f"{IMAGES}."):
             if name.startswith(prefix):
                 return name[len(prefix) :]
@@ -468,7 +475,15 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         hf_config: dict[str, Any],
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None,
     ) -> list[str]:
-        """Infer expected image feature slots from pretrained metadata."""
+        """Infer expected image feature slots from pretrained metadata.
+
+        Args:
+            hf_config: Pretrained model configuration dictionary.
+            dataset_stats: Optional dataset statistics used as a fallback source.
+
+        Returns:
+            Ordered, de-duplicated camera suffix names for the expected image slots.
+        """
         configured = hf_config.get("image_features")
         if isinstance(configured, list) and configured:
             return [cls._normalize_image_feature_name(str(name)) for name in configured]
@@ -766,7 +781,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         dataset_stats = self._dataset_stats
         visual_stats: list[dict[str, Any]] = []
         visual_shape: tuple | None = None
-        for feature_id, feature in dataset_stats.items():
+        for feature in dataset_stats.values():
             if str(FeatureType.VISUAL) not in feature.get("type", ""):
                 continue
             visual_stats.append(feature)
