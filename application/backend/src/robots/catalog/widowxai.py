@@ -274,9 +274,7 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             robot_builder=_build_trossen_single_arm_driver,
             robot_payload=TrossenSingleArmPayload,
             asset=_TROSSEN_SINGLE_ARM_ASSET,
-            adapter_options=RobotAdapterOptions(
-                include_velocities=False, goal_time_scale=1.0, external_effort_gain=0.1
-            ),
+            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
             probe=_SINGLE_ARM_PROBE,
         ),
         RobotCatalogDefinition(
@@ -286,9 +284,7 @@ def get_definitions() -> list[RobotCatalogDefinition]:
             robot_builder=_build_trossen_single_arm_driver,
             robot_payload=TrossenSingleArmPayload,
             asset=_TROSSEN_SINGLE_ARM_ASSET,
-            adapter_options=RobotAdapterOptions(
-                include_velocities=False, goal_time_scale=1.0, external_effort_gain=0.1
-            ),
+            adapter_options=RobotAdapterOptions(include_velocities=True, goal_time_scale=1.0, external_effort_gain=0.1),
             probe=_SINGLE_ARM_PROBE,
         ),
         RobotCatalogDefinition(
