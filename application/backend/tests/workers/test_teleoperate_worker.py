@@ -404,6 +404,64 @@ class TestTeleoperateWorkerRunLoop:
         # follower should have set_joints_state called with leader values
         follower_client.set_joints_state.assert_called()
 
+    async def test_setup_failure_does_not_propagate(self):
+        """The API caller is still waiting, so the reason is stored, not raised."""
+        stop_event = mp.Event()
+        factory = MagicMock(spec=RobotClientFactory)
+        factory.build = AsyncMock(side_effect=RuntimeError("Build failed"))
+
+        worker = TeleoperateWorker(
+            robot_client_factory=factory,
+            follower=_make_robot_schema("follower-1"),
+            leader=None,
+            frequency=30.0,
+            stop_event=stop_event,
+        )
+
+        with patch("workers.teleoperate_worker.run_at_frequency", _noop_frequency):
+            await worker.run_loop()
+
+        assert isinstance(worker.setup_error, RuntimeError)
+        assert not worker.loaded_event.is_set()
+
+    async def test_failure_after_load_propagates_and_still_disconnects(self):
+        """Once loaded, a fault is a runtime error for BaseThreadWorker.run to log."""
+        stop_event = mp.Event()
+        follower_client = _make_client()
+        leader_client = _make_client()
+        factory, _, _ = await _make_factory(follower_client, leader_client)
+
+        call_count = 0
+
+        def fail_on_second_read():
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                raise RuntimeError("Robot read failed mid-loop")
+            return {"state": {k: float(i) for i, k in enumerate(FEATURES)}}
+
+        follower_client.read_state.side_effect = fail_on_second_read
+
+        worker = TeleoperateWorker(
+            robot_client_factory=factory,
+            follower=_make_robot_schema("follower-1"),
+            leader=_make_robot_schema("leader-1", "SO101_Leader"),
+            frequency=30.0,
+            stop_event=stop_event,
+        )
+
+        with (
+            patch("workers.teleoperate_worker.run_at_frequency", _noop_frequency),
+            pytest.raises(RuntimeError, match="mid-loop"),
+        ):
+            await worker.run_loop()
+
+        # A loop fault must not be mistaken for a setup failure.
+        assert worker.loaded_event.is_set()
+        assert worker.setup_error is None
+        follower_client.disconnect.assert_called_once()
+        leader_client.disconnect.assert_called_once()
+
 
 class TestWaitUntilLoaded:
     """Test the failure-aware readiness wait method."""

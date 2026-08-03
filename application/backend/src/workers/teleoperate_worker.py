@@ -114,33 +114,36 @@ class TeleoperateWorker(BaseThreadWorker):
                 raise RuntimeError("Teleoperation worker stopped before loading")
             await asyncio.sleep(poll_interval)
 
+    def _record_setup_failure(self, exc: Exception) -> None:
+        """Store a setup failure for :meth:`wait_until_loaded` to re-raise."""
+        self.setup_error = exc
+        if isinstance(exc, AppBaseException):
+            logger.warning("Failed to set up teleoperation worker: {} ({})", exc.message, exc.error_code)
+        else:
+            logger.exception("Failed to set up teleoperation worker")
+
+    def _disconnect_robots(self) -> None:
+        logger.info("Teleoperating stopped, disconnecting robots.")
+        if self.leader is not None:
+            self.leader.disconnect()
+        if self.follower is not None:
+            self.follower.disconnect()
+
     async def run_loop(self) -> None:
         try:
-            try:
-                self.follower = await self.robot_client_factory.build(self._follower_robot)
-                if self._leader_robot is not None:
-                    self.leader = await self.robot_client_factory.build(self._leader_robot)
+            # Setup: build and connect, then publish the first observation.
+            self.follower = await self.robot_client_factory.build(self._follower_robot)
+            if self._leader_robot is not None:
+                self.leader = await self.robot_client_factory.build(self._leader_robot)
 
-                if self.leader is not None:
-                    self.leader.connect()
-                self.follower.connect()
+            if self.leader is not None:
+                self.leader.connect()
+            self.follower.connect()
 
-                self.features = self.follower.features()
-                state = self.follower.read_state()["state"]
-                aligned_state = self._align_feature_values(state)
-                self._set_state(aligned_state)
-                self.loaded_event.set()
-            except Exception as exc:
-                self.setup_error = exc
-                if isinstance(exc, AppBaseException):
-                    logger.warning(
-                        "Failed to set up teleoperation worker: {} ({})",
-                        exc.message,
-                        exc.error_code,
-                    )
-                else:
-                    logger.exception("Failed to set up teleoperation worker")
-                return
+            self.features = self.follower.features()
+            state = self.follower.read_state()["state"]
+            self._set_state(self._align_feature_values(state))
+            self.loaded_event.set()
 
             # Teleoperate loop until unload is requested
             goal_time = 1 / self.frequency
@@ -152,9 +155,12 @@ class TeleoperateWorker(BaseThreadWorker):
                         actions = (self.leader.read_state())["state"]
                         filtered = self._align_feature_values(actions, follower_state=state)
                         self.follower.set_joints_state(dict(zip(self.features, filtered)), goal_time * 2)
+        except Exception as exc:
+            # loaded_event marks the end of setup: before it, the API caller is
+            # still waiting and needs the reason; after it, this is a runtime
+            # fault and BaseThreadWorker.run logs it.
+            if self.loaded_event.is_set():
+                raise
+            self._record_setup_failure(exc)
         finally:
-            logger.info("Teleoperating stopped, disconnecting robots.")
-            if self.leader is not None:
-                self.leader.disconnect()
-            if self.follower is not None:
-                self.follower.disconnect()
+            self._disconnect_robots()
