@@ -64,12 +64,25 @@ class LocalTrainingBackend:
         strategy = get_lightning_strategy(device_type)
         devices = [device_index] if device_index is not None else 1
 
+        # Step-based checkpoints. The previous val/loss-monitored callback never
+        # fired on short runs: one epoch is ~11k steps at batch 8 on the current
+        # dataset, so a sub-epoch run completed no validation and saved nothing
+        # until the explicit save below. Saving on a step interval instead means
+        # an unattended run always has a recent state on disk.
         checkpoint_callback = ModelCheckpoint(
             dirpath=cache_path,
-            filename="model",
-            save_top_k=1,
-            monitor="val/loss",
-            mode="min",
+            filename="step{step:06d}",
+            # Keep this a divisor of the max_steps values actually used (1000 /
+            # 3000 / 5000 / 12000), so the *final* step always lands on an
+            # interval and gets a checkpoint from this callback. A coarser
+            # interval like 3000 would miss step 5000 entirely and leave the
+            # run depending on the explicit save below, which is the step that
+            # OOMed a completed 5000-step run on 2026-07-26.
+            every_n_train_steps=1000,
+            # save_top_k=-1 keeps every checkpoint. With monitor=None Lightning
+            # only accepts -1, 0 or 1, since there is no metric to rank by.
+            save_top_k=-1,
+            monitor=None,
         )
         csv_logger = CSVLogger(cache_path.parent, name=cache_path.stem)
 
@@ -85,6 +98,12 @@ class LocalTrainingBackend:
             max_steps=payload.max_steps,
             auto_scale_batch_size=payload.auto_scale_batch_size,
             precision=precision,
+            # Guards against the loss divergence seen on a 4k-step bf16 run,
+            # where training went to NaN mid-run and kept going.
+            gradient_clip_val=1.0,
+            # Validate on a step interval as well, so sub-epoch runs report
+            # val/loss instead of only a single value at the very end.
+            val_check_interval=1000,
             check_val_every_n_epoch=1,
         )
 
@@ -95,6 +114,15 @@ class LocalTrainingBackend:
 
         output_dir.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(cache_path), str(output_dir))
+
+        # Release the training-side memory before exporting. A completed
+        # 5000-step run (`9200784f`, 2026-07-26) was OOM-killed here: the host
+        # has 30 GB, the process held ~26 GB of trainer/dataloader state, and
+        # ONNX/OpenVINO conversion needs several GB more on top. An OOM kill is
+        # SIGKILL, so no try/except downstream can rescue it — the only fix is
+        # to hand the memory back first.
+        del trainer, l_dm
+        self._release_memory(accelerator)
 
         export_policy = policy
         if payload.compile_model and context.model.policy in ("act", "smolvla"):
@@ -128,17 +156,56 @@ class LocalTrainingBackend:
 
         return ProgressReportingCallback(report=report, should_stop=context.should_stop)
 
+    def _release_memory(self, accelerator: str | None = None) -> None:
+        """Drop cached host and device memory between training and export."""
+        import gc
+
+        gc.collect()
+        try:
+            import torch
+
+            if accelerator == "xpu" and torch.xpu.is_available():
+                torch.xpu.empty_cache()
+                torch.xpu.synchronize()
+            elif torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+            logger.warning("Could not release device cache: {}", exc)
+
     def _export_policy(self, *, policy: object, output_dir: Path, context: TrainingContext) -> None:
         """Export the trained policy to every backend the policy supports."""
+        import os
+
         from physicalai.export import ExportablePolicyMixin
 
         if not isinstance(policy, ExportablePolicyMixin):
             logger.info("Skipping export: policy does not support export backends")
             return
 
-        logger.info("Starting model export for trained policy")
+        # OpenVINO conversion is the most memory-hungry backend and the one that
+        # has actually killed runs here: `ec4c4cef` (2000 steps, 2026-07-25) died
+        # part-way through OpenVINO's ONNX initializer pass with the trained
+        # weights on disk but no model registered. Torch export alone is enough
+        # to load a model in the GUI, so OpenVINO is opt-in via
+        # PHYSICALAI_EXPORT_BACKENDS (comma-separated, e.g. "torch,openvino").
+        # Default keeps the cheap, proven backend only.
+        requested = os.environ.get("PHYSICALAI_EXPORT_BACKENDS", "torch")
+        wanted = {b.strip().lower() for b in requested.split(",") if b.strip()}
+
+        logger.info("Starting model export for trained policy (backends requested: {})", requested)
         for backend in policy.get_supported_export_backends():
             backend_name = backend.value if hasattr(backend, "value") else str(backend)
+            if backend_name.lower() not in wanted:
+                logger.info(
+                    "Skipping {} export: not in PHYSICALAI_EXPORT_BACKENDS ({}). "
+                    "Export it later with local-changes/export-rescued-model.py",
+                    backend_name,
+                    requested,
+                )
+                continue
+            # Conversion peaks well above the model's resident size; hand back
+            # whatever the previous backend cached before starting the next one.
+            self._release_memory()
             try:
                 logger.info("Exporting model to {} format", backend_name)
                 context.progress(99, message=f"Exporting to {backend_name} format")

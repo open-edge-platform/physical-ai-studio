@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GuC Firmware Fix Report — 2026-07-30</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-0:      #f7f7f5;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f0efec;
+    --border:         #dedcd6;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #7d7b74;
+    --series-before:  #c23030;
+    --series-after:   #1baf7a;
+    --series-neutral: #2a78d6;
+    --status-critical:  #c23030;
+    --status-warning:   #eda100;
+    --status-good:      #008300;
+    --grid:           #e6e4de;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-0:      #121211;
+      --surface-1:      #1a1a19;
+      --surface-2:      #262624;
+      --border:         #383835;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #918f85;
+      --series-before:  #e66767;
+      --series-after:   #199e70;
+      --series-neutral: #3987e5;
+      --status-critical:  #e66767;
+      --status-warning:   #c98500;
+      --status-good:      #3fa93f;
+      --grid:            #2f2f2c;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-0:      #121211;
+    --surface-1:      #1a1a19;
+    --surface-2:      #262624;
+    --border:         #383835;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #918f85;
+    --series-before:  #e66767;
+    --series-after:   #199e70;
+    --series-neutral: #3987e5;
+    --status-critical:  #e66767;
+    --status-warning:   #c98500;
+    --status-good:      #3fa93f;
+    --grid:            #2f2f2c;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); }
+  .viz-root {
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 15px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 32px 24px 80px;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 27px; line-height: 1.25; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 44px 0 4px; letter-spacing: -0.005em; }
+  h3 { font-size: 15px; margin: 26px 0 8px; color: var(--text-secondary); font-weight: 600; }
+  .sub { color: var(--text-secondary); margin: 0 0 4px; }
+  .muted { color: var(--text-muted); font-size: 13px; }
+  p { margin: 10px 0; color: var(--text-secondary); }
+  p strong, li strong, td strong { color: var(--text-primary); }
+  code {
+    font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+    color: var(--text-primary);
+  }
+  pre {
+    font: 12.5px/1.65 ui-monospace, "SF Mono", Menlo, monospace;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; overflow-x: auto;
+    color: var(--text-primary); margin: 12px 0;
+  }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 22px; margin: 16px 0;
+  }
+  .card.good { border-left: 3px solid var(--status-good); }
+  .card.warn { border-left: 3px solid var(--status-warning); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; margin: 20px 0; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 15px 17px;
+  }
+  .tile .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.055em; color: var(--text-muted); }
+  .tile .value { font-size: 27px; font-weight: 650; margin-top: 5px; letter-spacing: -0.02em; }
+  .tile .note { font-size: 12.5px; color: var(--text-secondary); margin-top: 3px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { color: var(--text-secondary); }
+  td.num { font-variant-numeric: tabular-nums; }
+  td.mono { font: 12.5px ui-monospace, Menlo, monospace; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 4px 0 14px; font-size: 13px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; color: var(--text-secondary); }
+  .swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+  .chartwrap { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px 12px; margin: 12px 0 8px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .tt {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 11px; font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); max-width: 260px;
+  }
+  .tt b { display: block; margin-bottom: 3px; }
+  .tt-row { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); }
+  .tt-row .swatch { width: 9px; height: 9px; }
+  .pill {
+    display: inline-block; font-size: 11.5px; padding: 2px 9px; border-radius: 99px;
+    border: 1px solid var(--border); color: var(--text-secondary); background: var(--surface-2);
+    font-weight: 600; letter-spacing: 0.02em;
+  }
+  .pill.crit { color: var(--status-critical); border-color: currentColor; background: transparent; }
+  .pill.warn { color: var(--status-warning); border-color: currentColor; background: transparent; }
+  .pill.good { color: var(--status-good); border-color: currentColor; background: transparent; }
+  .toggle {
+    float: right; font-size: 12.5px; background: var(--surface-1); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 7px; padding: 5px 11px; cursor: pointer;
+  }
+  ul, ol { color: var(--text-secondary); padding-left: 22px; }
+  li { margin: 6px 0; }
+  details { margin: 10px 0; }
+  summary { cursor: pointer; color: var(--text-secondary); font-size: 13.5px; }
+  .tl { border-left: 2px solid var(--border); margin: 16px 0 16px 6px; padding-left: 20px; }
+  .tl-item { position: relative; padding: 9px 0; }
+  .tl-item::before {
+    content: ''; position: absolute; left: -27px; top: 15px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--text-muted);
+    box-shadow: 0 0 0 2px var(--surface-0);
+  }
+  .tl-item.crit::before { background: var(--status-critical); }
+  .tl-item.good::before { background: var(--status-good); }
+  .tl-time { font: 12.5px ui-monospace, Menlo, monospace; color: var(--text-muted); }
+  .tl-what { color: var(--text-primary); font-weight: 550; }
+  .tl-detail { font-size: 13.5px; color: var(--text-secondary); }
+  .check { list-style: none; padding-left: 0; }
+  .check li { display: flex; gap: 10px; align-items: flex-start; margin: 9px 0; }
+  .check .mk { flex: none; font-weight: 700; color: var(--status-good); width: 16px; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 34px 0 0; }
+  .footnote { font-size: 12.5px; color: var(--text-muted); margin-top: 8px; }
+</style>
+</head>
+<body data-palette="#c23030,#1baf7a,#2a78d6">
+<div class="viz-root">
+
+<button class="toggle" id="themeBtn">Toggle theme</button>
+<h1>GuC Firmware Fix — Resolution Report</h1>
+<p class="sub">The GPU firmware hang that killed Run 10 is fixed. Both failure modes are verified gone on the current boot.</p>
+<p class="muted">Generated 2026-07-30 11:52 PDT · host <code>we-b580</code> · kernel 6.17.0-41-generic · <code>xe</code> driver · companion to <code>training-report-2026-07-30.html</code></p>
+
+<div class="card" style="border-left:3px solid var(--status-critical);margin-top:20px">
+  <p style="margin:0"><strong style="color:var(--status-critical)">SUPERSEDED 2026-07-31 — read <a href="#addendum" style="color:var(--status-critical)">§9</a> first.</strong> The headline conclusion below is <strong>disproven</strong>. Run 11 faulted 9 minutes into a run on the new 70.65.0 firmware and logged 4.9× <em>more</em> hard lockups than the run that motivated the upgrade. Sections 1–8 record a firmware update that was genuinely applied and verified, but the lockups were never caused by firmware age — a clean two-day boot on the old 70.45.2 (boot −4/−3) rules that out. Sections 2, 6 and 8 compare an <em>idle</em> boot against a <em>loaded</em> one and should not be read as a fix. Only §5 (allocator recovery, via the reboot) still holds.</p>
+</div>
+
+<div class="tiles">
+  <div class="tile">
+    <div class="label">GuC firmware</div>
+    <div class="value" style="color:var(--status-good)">70.65.0</div>
+    <div class="note">was 70.45.2 · <span class="pill good">TARGET MET</span></div>
+  </div>
+  <div class="tile">
+    <div class="label">Hard CPU lockups</div>
+    <div class="value" style="color:var(--status-good)">0</div>
+    <div class="note">was 81 on previous boot</div>
+  </div>
+  <div class="tile">
+    <div class="label">Soft lockups</div>
+    <div class="value" style="color:var(--status-good)">0</div>
+    <div class="note">was 480 on previous boot</div>
+  </div>
+  <div class="tile">
+    <div class="label">G2H timeouts</div>
+    <div class="value" style="color:var(--status-good)">0</div>
+    <div class="note">was 239 on previous boot</div>
+  </div>
+  <div class="tile">
+    <div class="label">Allocator health</div>
+    <div class="value" style="color:var(--status-good)">PASS</div>
+    <div class="note">3/3 tests · error 39 gone</div>
+  </div>
+  <div class="tile">
+    <div class="label">VRAM at rest</div>
+    <div class="value">34<span style="font-size:16px;color:var(--text-muted)"> MiB</span></div>
+    <div class="note">clean · ready to launch</div>
+  </div>
+</div>
+
+<h2>1 · What was wrong, and what fixed it</h2>
+
+<p>The prior report established that Run 10 died of a <strong>firmware fault, not a training fault</strong>. Two distinct symptoms shared that one root cause, and one firmware update plus a reboot cleared both.</p>
+
+<table>
+  <thead>
+    <tr><th>Problem</th><th>Symptom before</th><th>Mechanism</th><th>Status now</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>A — Training death</strong></td>
+      <td class="mono">UR_RESULT_ERROR_DEVICE_LOST (20)</td>
+      <td>GuC 70.45.2 stops acknowledging host commands; interrupt handler wedges the CPU; ~340 driver resets end in a dead device.</td>
+      <td><span class="pill good">FIXED</span></td>
+    </tr>
+    <tr>
+      <td><strong>B — Models would not load</strong></td>
+      <td class="mono">UR_RESULT_ERROR_OUT_OF_DEVICE_MEMORY (39)</td>
+      <td>The reset storm corrupted the driver's memory allocator. Raw big allocations still worked; many-small-tensor migration failed. Not fixable by <code>docker restart</code> — damage was in the kernel driver, so it needed the reboot.</td>
+      <td><span class="pill good">FIXED</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="card good">
+  <h3 style="margin-top:0">The fix, in one line</h3>
+  <p style="margin-bottom:0">Replace Ubuntu's <code>/lib/firmware/xe</code> with the <code>linux-firmware</code> tree from Intel's repo — <strong>GuC 70.45.2 → 70.65.0</strong> — rebuild initramfs, reboot. The reboot also rebuilt the corrupted allocator state, which is why one action resolved both problems.</p>
+</div>
+
+<h2>2 · Before vs after — measured on consecutive boots</h2>
+
+<p>These are counts from the kernel journal, not estimates. Boot <code>-1</code> ran GuC 70.45.2 for 26 hours and included Run 10. Boot <code>0</code> is the current post-update boot.</p>
+
+<div class="chartwrap">
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--series-before)"></i>Boot −1 · GuC 70.45.2 · Jul 29 09:48 → Jul 30 11:44</span>
+    <span><i class="swatch" style="background:var(--series-after)"></i>Boot 0 · GuC 70.65.0 · Jul 30 11:44 →</span>
+  </div>
+  <svg id="faultChart" viewBox="0 0 900 260" role="img" aria-label="GPU fault counts before and after the firmware update: hard lockups 81 to 0, soft lockups 480 to 0, G2H timeouts 239 to 0, driver resets 340 to 0."></svg>
+  <p class="footnote">Every category is zero after the update. Counts are absolute occurrences in <code>journalctl -k</code> for each boot.</p>
+</div>
+
+<div class="card warn">
+  <p style="margin:0"><strong>Read this honestly:</strong> the current boot has been up for minutes, not hours, and has not yet run a training job. Zero faults at idle is necessary but not sufficient — Run 10's first lockup came <strong>1 h 32 m</strong> into load. The firmware version check is conclusive; the stability claim is not proven until a long run completes. Monitor during the next run (§6).</p>
+</div>
+
+<h2>3 · What was actually done</h2>
+
+<div class="tl">
+  <div class="tl-item">
+    <div class="tl-time">Step 1</div>
+    <div class="tl-what">Ruled out the package manager</div>
+    <div class="tl-detail">Ubuntu's newest <code>linux-firmware</code> (<code>20250901.git993ff19b-0ubuntu1.11</code>) still ships GuC <strong>70.45.2</strong>. <code>apt install --only-upgrade linux-firmware</code> is a dead end here — the git tree is the only route.</div>
+  </div>
+  <div class="tl-item">
+    <div class="tl-time">Step 2</div>
+    <div class="tl-what">Backed up the old firmware before touching anything</div>
+    <div class="tl-detail"><code>sudo mv /lib/firmware/xe /lib/firmware/xe.backup</code> — preserved as 9 <code>.zst</code> files dated Apr 15, still on disk. This is the rollback path, and it is intact.</div>
+  </div>
+  <div class="tl-item">
+    <div class="tl-time">Step 3</div>
+    <div class="tl-what">Installed the newer firmware from the Intel repo</div>
+    <div class="tl-detail"><code>sudo mkdir -p /lib/firmware/xe/ &amp;&amp; sudo cp -a linux-firmware/xe/* /lib/firmware/xe/</code> — 10 files written 11:42, including <code>bmg_guc_70.bin</code> (369 KB, md5 <code>201f80b9…</code>) for Battlemage.</div>
+  </div>
+  <div class="tl-item">
+    <div class="tl-time">Step 4</div>
+    <div class="tl-what">Rebuilt initramfs and rebooted</div>
+    <div class="tl-detail"><code>update-initramfs -u</code> — <code>/boot/initrd.img-6.17.0-41-generic</code> is stamped 11:43, one minute after the firmware copy. Firmware loads early, so skipping this step would have left the old blob in play.</div>
+  </div>
+  <div class="tl-item good">
+    <div class="tl-time">11:45:02</div>
+    <div class="tl-what">New firmware confirmed loaded on both cards</div>
+    <div class="tl-detail">Both GTs on both GPUs report 70.65.0, and HuC came along at 8.2.10.</div>
+  </div>
+  <div class="tl-item good">
+    <div class="tl-time">11:51</div>
+    <div class="tl-what">Allocator verified healthy with a staged test</div>
+    <div class="tl-detail">The exact failure mode from Problem B was re-run and passed. Detail in §5.</div>
+  </div>
+</div>
+
+<p>What we deliberately did <strong>not</strong> do: the Intel guide's BIOS and GRUB sections. Only its "Updating firmware" part applies. We do not want SR-IOV or <code>xe.max_vfs</code> on this box — that would partition the GPU and cut the VRAM available to training.</p>
+
+<h2>4 · Firmware load — the primary evidence</h2>
+
+<pre>$ journalctl -k -b -1 | grep "GuC firmware from"      <span style="color:var(--status-critical)"># BEFORE</span>
+Jul 29 09:48:45 we-b580 kernel: xe 0000:03:00.0: [drm] GT0: Using GuC firmware from xe/bmg_guc_70.bin version <span style="color:var(--status-critical)">70.45.2</span>
+Jul 29 09:48:46 we-b580 kernel: xe 0000:03:00.0: [drm] GT1: Using GuC firmware from xe/bmg_guc_70.bin version <span style="color:var(--status-critical)">70.45.2</span>
+Jul 29 09:48:46 we-b580 kernel: xe 0000:07:00.0: [drm] GT0: Using GuC firmware from xe/bmg_guc_70.bin version <span style="color:var(--status-critical)">70.45.2</span>
+
+$ journalctl -k | grep -i guc                          <span style="color:var(--status-good)"># AFTER</span>
+Jul 30 11:45:02 we-b580 kernel: xe 0000:03:00.0: [drm] GT0: Using GuC firmware from xe/bmg_guc_70.bin version <span style="color:var(--status-good)">70.65.0</span>
+Jul 30 11:45:02 we-b580 kernel: xe 0000:03:00.0: [drm] GT1: Using GuC firmware from xe/bmg_guc_70.bin version <span style="color:var(--status-good)">70.65.0</span>
+Jul 30 11:45:02 we-b580 kernel: xe 0000:03:00.0: [drm] GT1: Using HuC firmware from xe/bmg_huc.bin version 8.2.10
+Jul 30 11:45:04 we-b580 kernel: xe 0000:07:00.0: [drm] GT0: Using GuC firmware from xe/bmg_guc_70.bin version <span style="color:var(--status-good)">70.65.0</span>
+Jul 30 11:45:04 we-b580 kernel: xe 0000:07:00.0: [drm] GT1: Using GuC firmware from xe/bmg_guc_70.bin version <span style="color:var(--status-good)">70.65.0</span>
+Jul 30 11:45:04 we-b580 kernel: xe 0000:07:00.0: [drm] GT1: Using HuC firmware from xe/bmg_huc.bin version 8.2.10</pre>
+
+<p>70.65.0 clears the 70.55.3 threshold and matches the version the Intel guide's own example lands on. Both the training GPU (<code>03:00.0</code>) and the second card (<code>07:00.0</code>) are updated — they share the <code>bmg_guc_70.bin</code> blob, so neither could have been missed.</p>
+
+<h2>5 · Allocator recovery — Problem B, retested directly</h2>
+
+<p>Problem B was subtle: a raw 10 GiB allocation succeeded while moving an 819-tensor model failed. A test that only checks "can I allocate memory" would have produced a false pass. So the test reproduces the shape of the real failure — <strong>many separate tensor migrations</strong>, which is what a model load actually does.</p>
+
+<table>
+  <thead><tr><th>Test</th><th>What it probes</th><th>When broken</th><th>Now</th></tr></thead>
+  <tbody>
+    <tr><td>Raw 10 GiB block</td><td>Bulk allocation path</td><td>Passed (false negative)</td><td><span class="pill good">OK</span></td></tr>
+    <tr><td>900 tensors → XPU</td><td>The path that actually failed with error 39</td><td class="mono" style="color:var(--status-critical)">FAILED — err 39</td><td><span class="pill good">OK</span></td></tr>
+    <tr><td>Matmul on device</td><td>Compute, not just memory</td><td>Never reached</td><td><span class="pill good">OK</span></td></tr>
+  </tbody>
+</table>
+
+<pre>torch 2.10.0+xpu | xpu avail True
+device Intel(R) Arc(TM) Pro B70 Graphics
+total VRAM 31.9 GiB
+TEST1 raw 10GiB alloc: OK
+TEST2 moved 900 tensors / 0.88 GiB: OK
+TEST3 matmul: 25.396230697631836
+ALLOCATOR HEALTHY</pre>
+
+<p>VRAM returned to <strong>34 MiB</strong> after the test exited, so the test itself left nothing behind — the allocator is both working and releasing correctly. Note the device string reads <code>B70</code> at 31.9 GiB, which is how <code>torch</code> reports device 0; <code>xpu-smi</code> shows it as <code>0xe223</code> at PCI <code>03:00.0</code>. Same card, different naming.</p>
+
+<h2>6 · Pre-flight state — verified now, before any arm testing</h2>
+
+<ul class="check">
+  <li><span class="mk">✓</span><span><strong>GuC 70.65.0</strong> on both cards — the actual fix, confirmed in the journal.</span></li>
+  <li><span class="mk">✓</span><span><strong>Zero faults</strong> since boot: 0 hard lockups, 0 soft lockups, 0 G2H timeouts, 0 GT resets, 0 <code>xe *ERROR*</code> lines.</span></li>
+  <li><span class="mk">✓</span><span><strong>VRAM 34 MiB</strong> — clean card, no leaked allocation holding it.</span></li>
+  <li><span class="mk">✓</span><span><strong>Container healthy</strong>, UI answering HTTP 200 on port 7860.</span></li>
+  <li><span class="mk">✓</span><span><strong>Checkpoint patch survived the reboot</strong> — <code>every_n_train_steps=1000</code>, <code>save_top_k=-1</code>, <code>gradient_clip_val=1.0</code>, <code>val_check_interval=1000</code> all still present in the container's <em>site-packages</em> copy, which is the one Python imports. A restart preserves it; a rebuild would not.</span></li>
+  <li><span class="mk">✓</span><span><strong>Test model <code>7c1f0a94</code> intact</strong> — 23 GB ckpt, both exports present (torch <code>pi05.pt</code> 9.35 GB, OpenVINO <code>pi05.bin</code> 6.25 GB), and registered in the DB alongside the other three models.</span></li>
+  <li><span class="mk">✓</span><span><strong>Rollback available</strong> — <code>/lib/firmware/xe.backup</code> still holds the 70.45.2 blobs.</span></li>
+  <li><span class="mk">✓</span><span><strong>146 GB disk free</strong> (84% used) — enough for the next run's checkpoints.</span></li>
+</ul>
+
+<h3>Monitor during the next long run — the fault was invisible from inside the job</h3>
+<pre>journalctl -kf | grep -E "LOCKUP|GuC|G2H|reset started"</pre>
+<p>Run 10 kept reporting healthy steps for seven hours while the GPU was dying. Any hit on that filter means the card is degrading again and the run will not finish — stop early and keep the last checkpoint rather than losing the run.</p>
+
+<h2>7 · If it happens again</h2>
+
+<ol>
+  <li><strong>Roll back the firmware</strong> if the new version misbehaves in a new way:
+    <pre>sudo rm -rf /lib/firmware/xe
+sudo mv /lib/firmware/xe.backup /lib/firmware/xe
+sudo update-initramfs -u &amp;&amp; sudo reboot</pre>
+  </li>
+  <li><strong>If lockups return on 70.65.0</strong>, firmware age is no longer the explanation. That would point at the kernel <code>xe</code> driver or the sustained-load thermal/power envelope, and it becomes a report worth sending to Intel with the journal attached.</li>
+  <li><strong>Error 39 after any reset storm</strong> means the allocator is corrupted again — reboot, don't bother with <code>docker restart</code>, and re-run the §5 staged test before trusting the card.</li>
+</ol>
+
+<h2>8 · Where this leaves the project</h2>
+
+<p>The blocker is cleared and the machine is in a known-good state. Two things follow, in order:</p>
+
+<ol>
+  <li><strong>Test <code>7c1f0a94</code> on the arm</strong> — PyTorch round, then OpenVINO with a container restart between. The question the val loss cannot answer is whether the 59 new episodes fixed the early-release failure, so <strong>IN vs EDGE</strong> is the column that matters. Log it in <code>success-rate-log.txt</code>, same block positions as the 2026-07-29 baseline.</li>
+  <li><strong>Then relaunch training</strong> — dataset <code>f6e480e2</code> (150 eps), Pi0.5 from base, batch 8, workers 4, <code>max_steps</code> 2000, val split 0.1 — with the journal monitor running. Keep 2000: every good model on this box trained under one epoch, and the only run past a full epoch has the worst val gap (8.3×).</li>
+</ol>
+
+<div class="card">
+  <p style="margin:0">One process note worth keeping: the firmware version was never checked before ten training runs, and it cost an overnight run at 87% completion. <code>journalctl -k | grep -i guc</code> is now part of pre-flight. The checkpoint patch is the other lesson — it is the only reason Run 10 produced a usable model at all, and it must be re-applied by <code>docker cp</code> to <strong>both</strong> container paths after any image rebuild.</p>
+</div>
+
+<hr>
+
+<h2 id="addendum" style="margin-top:38px">9 · ADDENDUM 2026-07-31 — the firmware update did <em>not</em> fix it</h2>
+
+<p class="muted">Appended 2026-07-31 · Run 11 <code>490a12e3</code> · launched 2026-07-30 22:07 PDT, dead at step 1473/3000 · kernel monitor <code>gpu-fault-watch-490a12e3.log</code></p>
+
+<div class="card" style="border-left:3px solid var(--status-critical)">
+  <p style="margin:0"><strong>Section 7 item 2 has now happened.</strong> Lockups returned on 70.65.0, so <em>firmware age was never the explanation</em>. Run 11 faulted <strong>9 minutes after launch</strong> and logged <strong>more</strong> hard lockups than the run that motivated the update. Sections 1–8 above describe a real firmware upgrade that was correctly applied and verified — but the causal claim in §1 (&ldquo;one firmware update plus a reboot cleared both&rdquo;) is <strong>disproven</strong> for the lockup problem. Only the allocator recovery (§5) still stands, and that was a consequence of the reboot.</p>
+</div>
+
+<div class="tiles">
+  <div class="tile">
+    <div class="label">GuC firmware during Run 11</div>
+    <div class="value" style="color:var(--status-good)">70.65.0</div>
+    <div class="note">update WAS live · <span class="pill good">verified</span></div>
+  </div>
+  <div class="tile">
+    <div class="label">Hard CPU lockups</div>
+    <div class="value" style="color:var(--status-critical)">398</div>
+    <div class="note">was 81 on 70.45.2 · <span class="pill crit">4.9× WORSE</span></div>
+  </div>
+  <div class="tile">
+    <div class="label">G2H timeouts</div>
+    <div class="value" style="color:var(--status-critical)">1257</div>
+    <div class="note">was 239 · <span class="pill crit">5.3× WORSE</span></div>
+  </div>
+  <div class="tile">
+    <div class="label">Time to first fault</div>
+    <div class="value" style="color:var(--status-critical)">9<span style="font-size:16px;color:var(--text-muted)"> min</span></div>
+    <div class="note">Run 10 took 1 h 32 m</div>
+  </div>
+  <div class="tile">
+    <div class="label">Steps reached</div>
+    <div class="value">1473<span style="font-size:16px;color:var(--text-muted)">/3000</span></div>
+    <div class="note">49% · froze 05:16, never resumed</div>
+  </div>
+  <div class="tile">
+    <div class="label">GT resets</div>
+    <div class="value" style="color:var(--status-good)">0</div>
+    <div class="note">was 1011 · the one real gain</div>
+  </div>
+</div>
+
+<h3>What actually changed — the fault predates the firmware update</h3>
+
+<p>Counting faults per boot separates the variables. The fault does not track firmware version; it tracks <strong>a change that landed on 2026-07-29</strong>.</p>
+
+<table>
+  <thead>
+    <tr><th>Boot</th><th>Window</th><th>GuC</th><th>Kernel</th><th>Hard lockups</th><th>G2H timeouts</th><th>GT resets</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>−4</td><td>Jul 20 → Jul 27</td><td>70.45.2</td><td>6.17.0-<strong>40</strong></td><td style="color:var(--status-good)">0</td><td style="color:var(--status-good)">0</td><td style="color:var(--status-good)">0</td></tr>
+    <tr><td>−3</td><td>Jul 27 → Jul 29</td><td>70.45.2</td><td>6.17.0-41</td><td style="color:var(--status-good)">0</td><td style="color:var(--status-good)">0</td><td style="color:var(--status-good)">0</td></tr>
+    <tr><td>−2</td><td>Jul 29 → Jul 30</td><td>70.45.2</td><td>6.17.0-41</td><td style="color:var(--status-critical)">81</td><td style="color:var(--status-critical)">239</td><td style="color:var(--status-critical)">1011</td></tr>
+    <tr><td>−1</td><td>Jul 30 → Jul 31</td><td><strong>70.65.0</strong></td><td>6.17.0-41</td><td style="color:var(--status-critical)">398</td><td style="color:var(--status-critical)">1257</td><td style="color:var(--status-good)">0</td></tr>
+  </tbody>
+</table>
+
+<p>Two conclusions follow directly:</p>
+
+<ul>
+  <li><strong>Boot −3 was clean on the old firmware.</strong> Two days of runs on 70.45.2 with zero faults. The old firmware was never inherently broken, which retroactively invalidates the §1 diagnosis.</li>
+  <li><strong>The first fault in the machine's entire history is Jul 30 00:41:42</strong>, mid-way through boot −2 — still on 70.45.2. Something changed on Jul 29, not on Jul 30 when the firmware was swapped.</li>
+</ul>
+
+<h3>The signature moved — and it points away from compute</h3>
+
+<p>Run 10's lockups had <code>RIP: memcpy_fromio</code>. Run 11's are <em>all</em> <code>RIP: g2h_read</code>. More decisive: <strong>every one of the 2,524 driver errors is on GT1</strong>, and GT1 is not the compute tile.</p>
+
+<pre>$ ls /sys/class/drm/card0/device/tile0/gt*/engines/
+gt0/engines/:  bcs  ccs  rcs      <span style="color:var(--status-good)"># compute + render + copy — training runs here</span>
+gt1/engines/:  vcs  vecs          <span style="color:var(--status-critical)"># video decode + video enhance — ALL 2524 errors here</span>
+
+$ grep -c "GT0" gpu-fault-watch-490a12e3.log      <span style="color:var(--status-good)"># 0 on the training tile</span>
+$ grep -oE "action [0-9]+" gpu-fault-watch-490a12e3.log | sort -u
+action 3003                       <span style="color:var(--status-critical)"># GuC power-state query — 100% of failures</span></pre>
+
+<p>Every failure is the same single operation: <code>action 3003</code>, a GuC power-state query against the <strong>media</strong> tile, timing out. The training workload on GT0 never faulted. That is why the job kept reporting healthy steps — the compute path genuinely was healthy, while the kernel's interrupt handler burned CPU cores spinning on a media-tile GuC that had stopped answering.</p>
+
+<div class="card warn">
+  <p style="margin:0"><strong>Why this kills the run anyway.</strong> The lockups are in <code>xe_guc_irq_handler</code> → <code>xe_guc_ct_fast_path</code> → <code>g2h_read</code>, an interrupt path. 398 hard lockups plus 1,435 soft lockups starved <code>containerd</code>, <code>dockerd</code> and <code>rcu_exp_gp_kthr</code> of CPU (visible in the log by name). Training froze at step 1473 at 05:16 and the job was only declared dead at 17:45 when the backend shut down — the GPU was fine, the <em>host</em> was wedged.</p>
+</div>
+
+<h3>What changed on Jul 29 — leading candidate</h3>
+
+<p>The dataset grew that evening. <code>f6e480e2</code> went to 150 episodes, and <strong>30 of its 48 video files carry a Jul 29 mtime</strong> (the rest are Jul 24–25). The first-ever fault follows roughly two hours later, on the first long run over the enlarged set.</p>
+
+<table>
+  <thead><tr><th>Candidate</th><th>Evidence for</th><th>Evidence against</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Media-tile GuC power management</strong> — decode of the new videos wakes GT1, and the GuC PC handshake on that tile is what breaks</td>
+      <td>100% of errors are <code>action 3003</code> on GT1; onset matches the 30 new Jul 29 videos; both firmware versions affected</td>
+      <td>lerobot's <code>torchcodec</code> path decodes on CPU, so the GT1 wake is not yet traced to a specific caller</td>
+      <td><span class="pill warn">LEADING</span></td>
+    </tr>
+    <tr>
+      <td><strong>Kernel 6.17.0-41 <code>xe</code> regression</strong></td>
+      <td>faults only ever occur on -41; boot −4 on -40 was clean</td>
+      <td>boot −3 was also -41 and completely clean for two days</td>
+      <td><span class="pill warn">CONTRIBUTING</span> — likely necessary, not sufficient</td>
+    </tr>
+    <tr>
+      <td><strong>Telemetry polling</strong> (Prometheus 5 s scrape of <code>xpumd</code>, which queries GPU power)</td>
+      <td>the failing op is a power query; 5 s scrape matches the dominant 1 s and 4 s inter-fault gaps</td>
+      <td>the stack has been up since Jul 21, including both clean boots; 36 min idle now with 0 faults</td>
+      <td><span class="pill warn">AMPLIFIER</span> — probably how the fault is <em>triggered</em>, not why it exists</td>
+    </tr>
+    <tr>
+      <td><strong>Firmware 70.45.2 being outdated</strong> — the original §1 diagnosis</td>
+      <td>none that survives boot −3</td>
+      <td>boot −3 clean on 70.45.2; faults 4.9× worse after upgrading</td>
+      <td><span class="pill crit">DISPROVEN</span></td>
+    </tr>
+    <tr>
+      <td><strong>Thermal / PCIe pressure</strong></td>
+      <td>—</td>
+      <td>0 AER errors, no throttle flags</td>
+      <td><span class="pill crit">RULED OUT</span></td>
+    </tr>
+    <tr>
+      <td><strong>CPU RAM exhaustion</strong></td>
+      <td>real, but a <em>separate</em> failure mode — see the correction below</td>
+      <td>boots −1 and −2 have <strong>0</strong> OOM kills; 38 GB swap free during Run 11</td>
+      <td><span class="pill crit">NOT the cause of the lockups</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>There are TWO failure modes, not one</h3>
+
+<p>An earlier draft of this addendum claimed &ldquo;zero OOM evidence anywhere.&rdquo; That was wrong — it checked only boots −1 and −2 and generalised. Boot −4 has <strong>30 OOM kills</strong>, and they explain a different set of runs entirely.</p>
+
+<table>
+  <thead>
+    <tr><th></th><th>Failure A — the final save</th><th>Failure B — the lockups</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Runs</strong></td><td><code>ec4c4cef</code> (2000), <code>9200784f</code> (5000)</td><td><code>8108c5ba</code> (1750), <code>490a12e3</code> (1473)</td></tr>
+    <tr><td><strong>Dies</strong></td><td>after training finishes, during save/export</td><td>mid-training</td></tr>
+    <tr><td><strong>Cause</strong></td><td><strong>CPU RAM exhaustion</strong> — 26.4 GB anon-rss, <code>Free swap = 52 kB</code></td><td>GPU interrupt lockups on GT1, <strong>0</strong> OOM</td></tr>
+    <tr><td><strong>Kernel</strong></td><td>6.17.0-40 (boot −4)</td><td>6.17.0-41 (boots −2, −1)</td></tr>
+    <tr><td><strong>Training steps</strong></td><td><strong>reached the full target</strong></td><td>died partway</td></tr>
+  </tbody>
+</table>
+
+<p>Both pre-Jul-29 runs <em>completed all their training steps</em> — 2000/2000 and 5000/5000 — and neither produced a model. <code>9200784f</code> hung at the 24.5 GB final save on Jul 26 19:26 and was OOM-killed 19 hours later; <code>ec4c4cef</code> died during OpenVINO export. So <strong>training has already reached 5000 steps on this box</strong>; what failed was writing the result.</p>
+
+<div class="card warn">
+  <p style="margin:0"><strong>Consequence for step counts.</strong> The apparent &ldquo;1000-step ceiling&rdquo; is an artefact. <code>ModelCheckpoint(every_n_train_steps=…, save_top_k=-1)</code> writes interval checkpoints <em>while training continues</em> — Run 11's step-1000 checkpoint landed at 02:38 and training ran on to 1473. Every surviving model is a 1000-step model only because 1000 was the first interval and every run died before the second. Set a high <code>max_steps</code>, take interval checkpoints, and <strong>stop manually before the final save</strong> — that avoids Failure A entirely. The interval is now <strong>5000</strong> (<code>local.py</code>), since 12 × 22.8 GB would need 274 GB of disk.</p>
+</div>
+
+<p>Also note <code>ec4c4cef</code> trained on a <strong>31-episode</strong> snapshot (17,536 frames), not 150 — which is why Lightning logged <code>epoch=1</code> at 2000 steps. It is not comparable to the recent runs.</p>
+
+<h3>Correction: the telemetry-polling theory is weak</h3>
+
+<p>The candidate table above rates Prometheus polling an &ldquo;AMPLIFIER.&rdquo; A direct check weakens even that. <strong>Boot −4 ran 34+ hours of training with the full monitoring stack up and logged 0 lockups and 0 G2H timeouts</strong> — including the 23-hour, 5000-step <code>9200784f</code>. Training plus 5 s power polling coexisted fine for a day and a half.</p>
+
+<p>Polling therefore cannot be the cause, and is unlikely to be sufficient as a trigger. It remains worth testing only because it is free. What the exports add: the <code>7c1f0a94</code> torch and OpenVINO exports (Jul 30 17:20/17:30) and today's <code>01a71dc5</code> torch export all produced <strong>0 faults</strong>, so faults appear <em>only</em> under training load, never under load-the-model-and-convert.</p>
+
+<h3>Correction: rollback deserves more weight than §9 first gave it</h3>
+
+<p>This addendum initially argued against rolling back because 81 lockups is still broken. That framing was wrong. 81 lockups let Run 10 reach step 1750; 398 lockups killed Run 11 at 1473. <strong>The old firmware was measurably less bad</strong>, and the upgrade cut time-to-first-fault from 1 h 32 m to 9 minutes.</p>
+
+<p>Ranked by evidence, the order to try is now:</p>
+
+<ol>
+  <li><strong>Kernel 6.17.0-40</strong> — still installed in <code>/boot</code>. The only configuration with a genuinely fault-free week, and the boot table implicates the -40 → -41 change.</li>
+  <li><strong>Firmware rollback to 70.45.2</strong> — blobs preserved at <code>/lib/firmware/xe.backup/</code>. Less bad, not fixed.</li>
+  <li><strong>Intel bug report</strong> — GT1 GuC stops answering <code>action 3003</code>; attach <code>gpu-fault-watch-490a12e3.log</code>.</li>
+  <li><strong>Stop telemetry</strong> — free, but the boot −4 evidence above argues it will not help.</li>
+</ol>
+
+<p>Still unexplained: <strong>what wakes GT1 at all.</strong> lerobot decodes video on the CPU via <code>torchcodec</code>, so the media tile should be idle during training. That gap is why the empirical tests above outrank further log analysis.</p>
+
+<h3>Corrections to earlier sections</h3>
+
+<ul>
+  <li><strong>§1</strong> — &ldquo;one firmware update plus a reboot cleared both&rdquo;: wrong for the lockups. The reboot cleared the allocator; nothing cleared the lockups.</li>
+  <li><strong>§2</strong> — the before/after table and the bar chart compare an idle boot against a loaded one. That is not a valid comparison, and it read as a fix when it was only an idle baseline. The §2 caveat &ldquo;idle only — not yet load-tested&rdquo; was the correct reading and should have blocked the headline claim.</li>
+  <li><strong>§6/§8</strong> — &ldquo;the blocker is cleared&rdquo; and &ldquo;known-good state&rdquo;: not true. The blocker is open and now better characterised.</li>
+  <li><strong>What held up</strong> — §5's allocator test, and the §6 instruction to run the kernel monitor. The monitor is the only reason Run 11 is diagnosable at all, and the checkpoint patch is the only reason it produced a usable model.</li>
+</ul>
+
+<h3>Salvage — Run 11 was not a total loss</h3>
+
+<p>The step-1000 checkpoint was written at 02:38, before the host wedged, and survived in <code>cache/</code> because <code>fit()</code> never returned to run the <code>shutil.move</code> at <code>local.py:107</code>. It verifies clean (zip valid, 3,241 entries, 24,483,521,640 bytes — byte-identical in size to known-good checkpoints) and is now registered as a model:</p>
+
+<pre>01a71dc5-0a45-4394-87cd-bf917e62fe1d
+  Pi0.5 Sorting 150eps step1000 fw70.65 (val 0.172)</pre>
+
+<p>Its val loss of <strong>0.1715</strong> is the worst of the three 1000-step runs on this dataset (<code>15842eae</code> 0.1187, <code>7c1f0a94</code> 0.1540), so it is a salvage artefact rather than a new best. <code>15842eae</code> remains the model to beat.</p>
+
+<h3>Next diagnostic step — cheap and decisive</h3>
+
+<p>The candidates above are separable by one test each, in this order:</p>
+
+<ol>
+  <li><strong>Stop the telemetry stack and relaunch</strong> (<code>docker stop intel-xpu-prometheus xpumd</code>). If a long run then survives, <code>action 3003</code> polling is the trigger and the fix is to stop scraping GPU power during training — a one-line change, no hardware needed.</li>
+  <li><strong>Boot kernel 6.17.0-40</strong> from the GRUB menu and repeat. -40 has the only fault-free week on record.</li>
+  <li><strong>If both fail</strong>, this is an Intel <code>xe</code>/GuC bug report on the media tile, with <code>gpu-fault-watch-490a12e3.log</code> attached — and the B70 machine becomes the practical path rather than an optimisation.</li>
+</ol>
+
+<p>Cap any run at <strong>1000 steps</strong> until one of these resolves. Run 11 proves 3000 is unreachable on this box today, and every model that has actually worked here was trained at 1000.</p>
+
+<hr>
+<p class="footnote">Addendum evidence: <code>journalctl -k</code> boots −4 through 0 (fault counts per boot) · <code>gpu-fault-watch-490a12e3.log</code> (10,229 lines, RIP and GT attribution, <code>action 3003</code>) · <code>/sys/class/drm/card0/device/tile0/gt*/engines/</code> (GT1 = <code>vcs</code>/<code>vecs</code>) · <code>490a12e3…log</code> job log (froze step 1473 at 05:16) · <code>metrics.csv</code> (val 0.1715 at step 1000) · dataset video mtimes · <code>prometheus-node.yml</code> (5 s scrape) · zip verification of the rescued checkpoint.</p>
+
+<hr>
+
+<h2 id="run12" style="margin-top:38px">10 · ADDENDUM 2026-08-02 — Run 12 breaks the GT1 theory</h2>
+
+<p class="muted">Appended 2026-08-02 · Run 12 <code>862b848f</code> · launched 2026-07-31 21:51 UTC, froze at step 1750/5000 on 2026-08-01 06:28 UTC · kernel monitor <code>gpu-fault-watch-862b848f.log</code> · full write-up <code>RUN12-FAILURE-862b848f.md</code></p>
+
+<div class="card" style="border-left:3px solid var(--status-critical)">
+  <p style="margin:0"><strong>§9's leading candidate does not explain Run 12.</strong> §9 concluded that &ldquo;every one of the 2,524 driver errors is on GT1&rdquo; and that <code>action 3003</code> was &ldquo;100% of failures&rdquo;. Run 12 wedged in the <em>same</em> interrupt path with <strong>zero GT1 mentions and zero <code>action 3003</code> events</strong> in its kernel journal. Either there are two distinct lockup mechanisms, or GT1 was always a symptom rather than the cause. The media-tile theory must be downgraded from LEADING.</p>
+</div>
+
+<div class="tiles">
+  <div class="tile">
+    <div class="label">Steps reached</div>
+    <div class="value" style="color:var(--status-critical)">1750<span style="font-size:16px;color:var(--text-muted)">/5000</span></div>
+    <div class="note">35% · froze 06:28, never resumed</div>
+  </div>
+  <div class="tile">
+    <div class="label">Ran clean before freezing</div>
+    <div class="value">8<span style="font-size:16px;color:var(--text-muted)">h 36m</span></div>
+    <div class="note">Run 11 faulted in <strong>9 min</strong> · first fault = the freeze here</div>
+  </div>
+  <div class="tile">
+    <div class="label">GT1 driver errors</div>
+    <div class="value" style="color:var(--status-warning)">0</div>
+    <div class="note">was 4193 in Run 11 · <span class="pill warn">theory broken</span></div>
+  </div>
+  <div class="tile">
+    <div class="label"><code>action 3003</code></div>
+    <div class="value" style="color:var(--status-warning)">0</div>
+    <div class="note">was 1699 · the 2 in the watch log are <strong>3 h after</strong> the freeze, marked <code>done</code></div>
+  </div>
+  <div class="tile">
+    <div class="label">Hard CPU lockups</div>
+    <div class="value" style="color:var(--status-critical)">721</div>
+    <div class="note">was 398 · all on <strong>CPU 4 alone</strong></div>
+  </div>
+  <div class="tile">
+    <div class="label">Hung undetected</div>
+    <div class="value" style="color:var(--status-critical)">42<span style="font-size:16px;color:var(--text-muted)"> h</span></div>
+    <div class="note">no error, no exception — log simply stops</div>
+  </div>
+</div>
+
+<h3>The signature moved again</h3>
+
+<p>Counted independently in the watch log and in <code>journalctl -k</code> for boot −1. The <code>GT1: 0</code> result is confirmed in both.</p>
+
+<table>
+  <tr><th>Marker</th><th>Run 11 <code>490a12e3</code></th><th>Run 12 <code>862b848f</code></th><th>Run 12 journal</th></tr>
+  <tr><td>Hard lockups</td><td class="num">398</td><td class="num">1030</td><td class="num">721</td></tr>
+  <tr><td>Soft lockups</td><td class="num">1435</td><td class="num">0 <span class="muted">(watch script gap)</span></td><td class="num">3520</td></tr>
+  <tr><td><code>GT1</code> mentions</td><td class="num"><strong>4193</strong></td><td class="num"><strong>0</strong></td><td class="num"><strong>0</strong></td></tr>
+  <tr><td><code>GT0</code> mentions</td><td class="num">20</td><td class="num">2</td><td class="num">0</td></tr>
+  <tr><td><code>action 3003</code></td><td class="num"><strong>1699</strong></td><td class="num">2 <span class="muted">(post-freeze)</span></td><td class="num"><strong>0</strong></td></tr>
+  <tr><td><code>G2H</code> lines</td><td class="num">1257</td><td class="num">2</td><td class="num">0</td></tr>
+</table>
+
+<p>Run 12 also shows <strong>both</strong> prior RIP signatures simultaneously — <code>memcpy_fromio</code> (Run 10's) and <code>g2h_read</code> (Run 11's). §9 treated those as distinguishing the two runs; they are not distinguishing.</p>
+
+<pre>1831  smp_call_function_single      &lt;- other cores piling up behind CPU4 (collateral)
+1328  smp_call_function_many_cond   &lt;- same
+1132  cpuidle_enter_state           &lt;- CPU4 was ASLEEP when the IRQ landed
+1100  memcpy_fromio                 &lt;- the MMIO read that never returns
+  60  g2h_read</pre>
+
+<h3>New leading candidate — deep CPU C-states race the GPU interrupt</h3>
+
+<p>Not considered in §9. The wedge is unchanged — a core stuck in the GuC message-ring read inside the interrupt handler, interrupts disabled, unable to yield — but the trace shows <em>what the core was doing when the interrupt arrived</em>:</p>
+
+<pre>RIP: 0010:g2h_read+0xb1/0x420 [xe]
+ &lt;IRQ&gt;  xe_guc_ct_fast_path ← xe_guc_irq_handler ← gt_irq_handler ← dg1_irq_handler
+ &lt;/IRQ&gt;
+ &lt;TASK&gt;
+ RIP: 0010:cpuidle_enter_state+0xca/0x6e0     &lt;- CPU4 was ASLEEP
+ cpuidle_enter → call_cpuidle
+ Comm: swapper/4                               &lt;- the idle task</pre>
+
+<p>All 721 lockups are on <strong>CPU 4 only</strong> — the single core servicing that GPU IRQ. The idle configuration leaves a wide race window:</p>
+
+<pre>C3_ACPI   latency=1048us   usage=9,139,916    &lt;- 1 ms exit latency, heavily used
+intel_idle.max_cstate = 9                     &lt;- unclamped
+pcie_aspm.policy = default                    &lt;- not "performance"</pre>
+
+<div class="card warn">
+  <p style="margin:0">This is <strong>circumstantial, not proven</strong>. One-core concentration plus <code>cpuidle_enter_state</code> in the trace plus a 1 ms wake latency inside an MMIO read is a plausible race, but the deeper defect is that the driver has <em>no timeout</em> on that mailbox read. Clamping C-states may only make the wedge rarer, not absent.</p>
+</div>
+
+<h3>Cross-run table — extends §9's per-boot counts</h3>
+
+<table>
+  <tr><th>Boot</th><th>Window</th><th>GuC</th><th>Kernel</th><th>Hard</th><th>Soft</th><th>GT1 errs</th><th>Run</th><th>Died at</th></tr>
+  <tr><td>−4</td><td>Jul 20→27</td><td>70.45.2</td><td>-40</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td>—</td><td>30 OOM kills (Failure A)</td></tr>
+  <tr><td>−3</td><td>Jul 27→29</td><td>70.45.2</td><td>-41</td><td class="num">0</td><td class="num">0</td><td class="num">0</td><td>—</td><td>clean</td></tr>
+  <tr><td>−2</td><td>Jul 29→30</td><td>70.45.2</td><td>-41</td><td class="num">81</td><td class="num">480</td><td class="num">239</td><td>10 <code>8108c5ba</code></td><td>step <strong>1750</strong>/2000</td></tr>
+  <tr><td>−1</td><td>Jul 30→31</td><td>70.65.0</td><td>-41</td><td class="num">398</td><td class="num">1435</td><td class="num">4193</td><td>11 <code>490a12e3</code></td><td>step 1473/3000</td></tr>
+  <tr><td>−1</td><td>Jul 31→Aug 2</td><td>70.65.0</td><td>-41</td><td class="num"><strong>721</strong></td><td class="num"><strong>3520</strong></td><td class="num"><strong>0</strong></td><td>12 <code>862b848f</code></td><td>step <strong>1750</strong>/5000</td></tr>
+</table>
+
+<p>Runs 11 and 12 share boot −1 (Jul 31 10:44 → Aug 2 17:34). <strong>Runs 10 and 12 both died at step 1750</strong> — different firmware, different <code>max_steps</code> (2000 vs 5000), same step. Run 11 died at 1473. Two of three at exactly 1750 is worth chasing, but it is <em>not</em> yet a proven pattern: 1750 is also simply where a ~8.5 h run lands on this box.</p>
+
+<h3>Ruled out for Run 12</h3>
+
+<table>
+  <tr><th>Suspect</th><th>Evidence against</th><th>Verdict</th></tr>
+  <tr><td>Firmware age</td><td>Already disproven in §9. Run 12 on 70.65.0 is worse still; model <code>01a71dc5</code> trained fine on the same firmware</td><td><span class="pill crit">DISPROVEN</span></td></tr>
+  <tr><td>GT1 / media tile / <code>action 3003</code></td><td>0 GT1 mentions and 0 <code>action 3003</code> in Run 12's journal</td><td><span class="pill warn">WEAKENED</span></td></tr>
+  <tr><td>Kernel too old</td><td>6.17.0-41 <em>is</em> the apt candidate — nothing newer to install. §9 already had it as necessary-not-sufficient (boot −3 clean on -41)</td><td><span class="pill warn">CONTRIBUTING</span></td></tr>
+  <tr><td>ReBAR misconfigured</td><td>B70 BAR = 32 GB, B50 = 16 GB — both correct</td><td><span class="pill crit">RULED OUT</span></td></tr>
+  <tr><td>System RAM / OOM</td><td>Zero OOM in boot −1; died at 35%, nowhere near the final save. This is Failure B, not A</td><td><span class="pill crit">RULED OUT</span></td></tr>
+  <tr><td>NaN divergence</td><td><code>gradient_clip_val=1.0</code> held — loss 0.0657 at the last step</td><td><span class="pill crit">RULED OUT</span></td></tr>
+  <tr><td>The B50 card</td><td>Idle. <code>device: null</code> → <code>xpu:0</code> → torch enumerates 0 as the <strong>B70</strong></td><td><span class="pill crit">RULED OUT</span></td></tr>
+</table>
+
+<h3>Which card wedged is still unproven</h3>
+
+<p>Boot −1's journal contains <strong>zero</strong> <code>[drm]</code> or <code>xe 0000:..</code> lines, so nothing ties the stuck handler to a PCI address. Current mapping floats — affinity is <code>0-15</code> on both:</p>
+
+<pre>IRQ 179 -> 0000:03:00.0  (B70, the training GPU)  currently CPU 8
+IRQ 184 -> 0000:07:00.0  (B50, idle)              currently CPU 6</pre>
+
+<p>Every lockup was on CPU 4 — neither of today's assignments. <strong>Watch-script gap:</strong> it grepped only lockup/tainted lines, dropping all drm/xe attribution and missing 3520 soft lockups. Next run must use:</p>
+
+<pre>journalctl -kf | grep -iE "xe |drm|guc|reset|lockup|GT[01]"</pre>
+
+<h3>Salvage — one checkpoint, rescued and exported</h3>
+
+<p>Steps 1000–1750 are gone. The step-1000 checkpoint was verified intact by loading it (<code>zip ok: True</code>, <code>global_step: 1000</code>, 819 tensors), then registered by hand and exported to the torch backend. The DB was backed up to <code>physicalai.db.bak-before-1d1670fe</code> first, and the model is confirmed live at <code>localhost:7860/api/projects/…/models</code>.</p>
+
+<table>
+  <tr><th>Model</th><th>Eps</th><th>global_step</th><th>val/loss</th><th>Backends</th></tr>
+  <tr><td><code>15842eae</code></td><td class="num">91</td><td class="num">1001</td><td class="num"><strong>0.1187</strong> BEST</td><td>openvino, torch</td></tr>
+  <tr><td><code>1d1670fe</code> <strong>(Run 12, rescued)</strong></td><td class="num">150</td><td class="num">1000</td><td class="num"><strong>0.1484</strong></td><td>torch</td></tr>
+  <tr><td><code>7c1f0a94</code></td><td class="num">150</td><td class="num">1000</td><td class="num">0.1540</td><td>openvino, torch</td></tr>
+  <tr><td><code>01a71dc5</code></td><td class="num">150</td><td class="num">1000</td><td class="num">0.1720</td><td>torch</td></tr>
+  <tr><td><code>c5d4500a</code></td><td class="num">40</td><td class="num">3676</td><td class="num">0.1917</td><td>openvino, torch</td></tr>
+</table>
+
+<p>Run 12 gained <strong>nothing</strong> on val loss — 91 episodes still beats 150. Note that registry names misstate step counts: <code>7c1f0a94</code> is named &ldquo;step1000&rdquo; but its metrics run to step 1749; the <em>checkpoint</em> is at 1000 and metrics kept logging past it. Same for <code>01a71dc5</code> (metrics to 1449).</p>
+
+<h3>Fixes — ranked, none applied yet</h3>
+
+<p>All require <code>sudo</code> from a real terminal. Item 1 needs a reboot and was deliberately <strong>not</strong> run unattended.</p>
+
+<ol>
+  <li><strong>Clamp C-states + ASPM</strong> — new, highest value, needs reboot. Costs idle power and heat; fully reversible.
+  <pre>sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash intel_idle.max_cstate=1 processor.max_cstate=1 pcie_aspm.policy=performance/' /etc/default/grub
+sudo update-grub &amp;&amp; sudo reboot</pre></li>
+  <li><strong>Pin GPU IRQs off CPU 0/4</strong> — no reboot, damage limitation only. Will not stop the wedge, but keeps a stuck core from starving <code>rcu</code>/<code>dockerd</code> — the same starvation §9 recorded, and what made the box unusable for 42 h.
+  <pre>echo 2 | sudo tee /proc/irq/179/smp_affinity_list   # B70 -> CPU2
+echo 3 | sudo tee /proc/irq/184/smp_affinity_list   # B50 -> CPU3</pre></li>
+  <li><strong>Shorten the engine job timeout</strong> — free, low expected value. <code>job_timeout_ms</code> is already 5000 (max 10000) at <code>/sys/class/drm/card1/device/tile0/gt0/engines/rcs/</code> and it did <em>not</em> save this run: the wedge is in the IRQ handler, which never yields to let a timeout fire.</li>
+  <li><strong>Checkpoint every 250 steps + a progress watchdog</strong> — not a fix, but the only thing that makes a long run survivable. <code>val_check_interval=1000</code> (<code>local.py:106</code>) meant a wedge at 1750 cost 750 steps; at 250 it costs ≤250. Add a watchdog that kills the job when no <code>Training progress</code> line has appeared for ~10 min — Run 12 hung silently for <strong>42 hours</strong>. Remember the baked-source gotcha: <code>docker cp</code> to <strong>both</strong> container paths.</li>
+</ol>
+
+<div class="card warn">
+  <p style="margin:0"><strong>There is no true resume.</strong> <code>base_model</code> loads weights only (<code>local.py:58-59</code>) — no optimizer or LR-scheduler state. Restarting from a rescued checkpoint is <em>not</em> equivalent to continuing a run, so plan long runs around checkpoint frequency rather than around resuming.</p>
+</div>
+
+<p>§9's advice to <strong>cap runs at 1000 steps</strong> stands and is reinforced: Run 12 attempted 5000 and reached 1750. Every model that has actually worked on this box was trained at 1000.</p>
+
+<h3>Open questions for the next session</h3>
+
+<ol>
+  <li><strong>Why did GT1 vanish?</strong> Highest value. §9's leading theory rests on GT1 and <code>action 3003</code>; Run 12 has neither. Two mechanisms, or was GT1 always a symptom?</li>
+  <li><strong>Why step 1750 twice</strong> (Runs 10 and 12, different firmware)? Test with <code>val_check_interval=250</code> — if it still dies at 1750 the trigger is step-linked; if it dies elsewhere it is time-linked (~8.5 h).</li>
+  <li>Does the C-state clamp actually help, or only delay?</li>
+  <li>Which card's IRQ wedges? Needs the corrected watch command above.</li>
+  <li>Does <code>15842eae</code> (0.1187, 91 eps) beat <code>1d1670fe</code> (0.1484, 150 eps) on the <strong>real arm</strong>? More episodes keep losing on val loss — it is worth establishing whether val loss predicts arm performance here at all.</li>
+</ol>
+
+<h3>Side observations</h3>
+
+<ul>
+  <li><strong>The RAM leak recurred</strong> (§9's Failure A, mid-session): 29/30 GB used, 20 GB swapped, 1.2 GB available, with one idle python process holding 26.4 GB. A <code>docker restart</code> reclaimed 18 GB. Do this before loading any model.</li>
+  <li>The 24.5 GB checkpoint copy pushed IO pressure to 65% (<code>full avg10=63.20</code>), load average 13.55, and swap back to 20 GB — expected and transient, but it makes the whole box feel dead while it runs.</li>
+  <li>Disk: 153 GB free of 915 GB (83% used). <code>models/</code> is 144 GB, <code>cache/</code> 23 GB.</li>
+</ul>
+
+<hr>
+<p class="footnote">Run 12 evidence: <code>journalctl -k -b -1</code> (721 hard / 3520 soft lockups, RIP distribution, 0 GT1, 0 <code>action 3003</code>) · <code>gpu-fault-watch-862b848f.log</code> · job log <code>862b848f…log</code> (last step 1750 at 06:28:00 UTC, validation <code>val/loss=0.14838</code> at step 1000) · <code>app.log</code> (last <code>JOB_UPDATE</code> 06:28:51) · <code>jobs</code> table row (status <code>failed</code>, progress 35, &ldquo;aborted due to application shutdown&rdquo;) · <code>torch.load</code> verification of <code>stepstep=001000.ckpt</code> · <code>torch.xpu.get_device_properties</code> (device 0 = B70 34.2 GB, device 1 = B50 17.1 GB) · <code>/sys/devices/system/cpu/cpu4/cpuidle/state*/</code> · <code>/proc/interrupts</code> · <code>/proc/cmdline</code> · <code>lspci -v</code> BAR sizes · <code>/proc/pressure/io</code>. Full write-up: <code>RUN12-FAILURE-862b848f.md</code>.</p>
+
+<hr>
+<p class="footnote">Evidence: <code>journalctl -k</code> boots −1 and 0 · <code>/lib/firmware/xe/</code> and <code>xe.backup/</code> listings · <code>xpu-smi stats -d 0</code> · staged allocator test in-container on torch 2.10.0+xpu · <code>docker exec</code> grep of the site-packages backend · <code>physicalai.db</code> model table. Prior analysis: <code>training-report-2026-07-30.html</code>. Resume notes: <code>RESUME-HERE-2026-07-30.md</code>.</p>
+
+</div>
+<div class="tt" id="tt"></div>
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+function el(t, a) { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); return n; }
+function css(v) { return getComputedStyle(document.querySelector('.viz-root')).getPropertyValue(v).trim(); }
+
+const tt = document.getElementById('tt');
+function showTT(e, html) { tt.innerHTML = html; tt.style.opacity = 1; tt.style.left = Math.min(e.clientX + 14, innerWidth - 275) + 'px'; tt.style.top = (e.clientY + 16) + 'px'; }
+function hideTT() { tt.style.opacity = 0; }
+
+const FAULTS = [
+  { name: 'Soft lockups',   before: 480, after: 0, what: 'BUG: soft lockup — CPU stalled in the GPU interrupt path' },
+  { name: 'Driver resets',  before: 340, after: 0, what: 'xe driver reset attempts; approximate, from the reset storm' },
+  { name: 'G2H timeouts',   before: 239, after: 0, what: 'Timed out wait for G2H — GuC stopped acknowledging commands' },
+  { name: 'Hard lockups',   before:  81, after: 0, what: 'Hard CPU lockup — unrecoverable stall in memcpy_fromio' },
+];
+
+function drawFaults() {
+  const svg = document.getElementById('faultChart');
+  svg.innerHTML = '';
+  const m = { t: 14, r: 150, b: 34, l: 122 }, W = 900, H = 260;
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const max = 500;
+  const cBefore = css('--series-before'), cAfter = css('--series-after');
+  const band = ih / FAULTS.length;
+  const barH = 15;
+
+  [0, 100, 200, 300, 400, 500].forEach(v => {
+    const x = m.l + (v / max) * iw;
+    svg.appendChild(el('line', { x1: x, y1: m.t, x2: x, y2: m.t + ih, stroke: css('--grid'), 'stroke-width': 1 }));
+    const t = el('text', { x, y: m.t + ih + 20, fill: css('--text-muted'), 'font-size': 11.5, 'text-anchor': 'middle' });
+    t.textContent = v; svg.appendChild(t);
+  });
+
+  FAULTS.forEach((f, i) => {
+    const cy = m.t + i * band + band / 2;
+
+    const lab = el('text', { x: m.l - 12, y: cy + 4, fill: css('--text-primary'), 'font-size': 13, 'text-anchor': 'end', 'font-weight': 550 });
+    lab.textContent = f.name; svg.appendChild(lab);
+
+    const wB = Math.max((f.before / max) * iw, 2);
+    const rB = el('rect', { x: m.l, y: cy - barH - 2, width: wB, height: barH, fill: cBefore, rx: 3, style: 'cursor:pointer' });
+    rB.addEventListener('mousemove', e => showTT(e, `<b>${f.name} — before</b><div class="tt-row"><i class="swatch" style="background:${cBefore}"></i>${f.before} on GuC 70.45.2</div><div class="tt-row" style="font-size:11.5px">${f.what}</div>`));
+    rB.addEventListener('mouseleave', hideTT);
+    svg.appendChild(rB);
+
+    const vB = el('text', { x: m.l + wB + 8, y: cy - barH / 2 + 2, fill: css('--text-primary'), 'font-size': 12.5, 'font-weight': 650 });
+    vB.textContent = f.before + (f.name === 'Driver resets' ? '  ~' : ''); svg.appendChild(vB);
+
+    const rA = el('rect', { x: m.l, y: cy + 2, width: 3, height: barH, fill: cAfter, rx: 1.5, style: 'cursor:pointer' });
+    rA.addEventListener('mousemove', e => showTT(e, `<b>${f.name} — after</b><div class="tt-row"><i class="swatch" style="background:${cAfter}"></i>0 on GuC 70.65.0</div><div class="tt-row" style="font-size:11.5px">Idle only — not yet load-tested.</div>`));
+    rA.addEventListener('mouseleave', hideTT);
+    svg.appendChild(rA);
+
+    const vA = el('text', { x: m.l + 14, y: cy + barH - 2, fill: cAfter, 'font-size': 12.5, 'font-weight': 650 });
+    vA.textContent = '0'; svg.appendChild(vA);
+  });
+
+  const cap = el('text', { x: m.l + iw / 2, y: H - 4, fill: css('--text-muted'), 'font-size': 11.5, 'text-anchor': 'middle' });
+  cap.textContent = 'occurrences in kernel journal, per boot';
+  svg.appendChild(cap);
+}
+
+drawFaults();
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const isDark = cur === 'dark' || (!cur && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  drawFaults();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawFaults);
+</script>
+</body>
+</html>

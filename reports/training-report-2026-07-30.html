@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SO-ARM101 · Pi0.5 Training Report — 2026-07-30</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-0:      #f7f7f5;
+    --surface-1:      #fcfcfb;
+    --surface-2:      #f0efec;
+    --border:         #dedcd6;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #7d7b74;
+    --series-sorting:   #2a78d6;
+    --series-pickplace: #eb6834;
+    --series-contrast:  #1baf7a;
+    --status-critical:  #c23030;
+    --status-warning:   #eda100;
+    --status-good:      #008300;
+    --grid:           #e6e4de;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-0:      #121211;
+      --surface-1:      #1a1a19;
+      --surface-2:      #262624;
+      --border:         #383835;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #918f85;
+      --series-sorting:   #3987e5;
+      --series-pickplace: #d95926;
+      --series-contrast:  #199e70;
+      --status-critical:  #e66767;
+      --status-warning:   #c98500;
+      --status-good:      #3fa93f;
+      --grid:            #2f2f2c;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-0:      #121211;
+    --surface-1:      #1a1a19;
+    --surface-2:      #262624;
+    --border:         #383835;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #918f85;
+    --series-sorting:   #3987e5;
+    --series-pickplace: #d95926;
+    --series-contrast:  #199e70;
+    --status-critical:  #e66767;
+    --status-warning:   #c98500;
+    --status-good:      #3fa93f;
+    --grid:            #2f2f2c;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface-0); }
+  .viz-root {
+    background: var(--surface-0);
+    color: var(--text-primary);
+    font: 15px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 32px 24px 80px;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 27px; line-height: 1.25; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 44px 0 4px; letter-spacing: -0.005em; }
+  h3 { font-size: 15px; margin: 26px 0 8px; color: var(--text-secondary); font-weight: 600; }
+  .sub { color: var(--text-secondary); margin: 0 0 4px; }
+  .muted { color: var(--text-muted); font-size: 13px; }
+  p { margin: 10px 0; color: var(--text-secondary); }
+  p strong, li strong, td strong { color: var(--text-primary); }
+  code {
+    font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+    color: var(--text-primary);
+  }
+  pre {
+    font: 12.5px/1.65 ui-monospace, "SF Mono", Menlo, monospace;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; overflow-x: auto;
+    color: var(--text-primary); margin: 12px 0;
+  }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 22px; margin: 16px 0;
+  }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 12px; margin: 20px 0; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 15px 17px;
+  }
+  .tile .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.055em; color: var(--text-muted); }
+  .tile .value { font-size: 27px; font-weight: 650; margin-top: 5px; letter-spacing: -0.02em; }
+  .tile .note { font-size: 12.5px; color: var(--text-secondary); margin-top: 3px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { color: var(--text-secondary); }
+  td.num { font-variant-numeric: tabular-nums; }
+  tr.best td { color: var(--text-primary); font-weight: 600; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 4px 0 14px; font-size: 13px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; color: var(--text-secondary); }
+  .swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+  .key-line { width: 16px; height: 2px; border-radius: 1px; flex: none; }
+  .chartwrap { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px 12px; margin: 12px 0 8px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .tt {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 11px; font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); max-width: 260px;
+  }
+  .tt b { display: block; margin-bottom: 3px; }
+  .tt-row { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); }
+  .tt-row .swatch { width: 9px; height: 9px; }
+  .pill {
+    display: inline-block; font-size: 11.5px; padding: 2px 9px; border-radius: 99px;
+    border: 1px solid var(--border); color: var(--text-secondary); background: var(--surface-2);
+    font-weight: 600; letter-spacing: 0.02em;
+  }
+  .pill.crit { color: var(--status-critical); border-color: currentColor; background: transparent; }
+  .pill.warn { color: var(--status-warning); border-color: currentColor; background: transparent; }
+  .pill.good { color: var(--status-good); border-color: currentColor; background: transparent; }
+  .toggle {
+    float: right; font-size: 12.5px; background: var(--surface-1); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 7px; padding: 5px 11px; cursor: pointer;
+  }
+  ul, ol { color: var(--text-secondary); padding-left: 22px; }
+  li { margin: 6px 0; }
+  details { margin: 10px 0; }
+  summary { cursor: pointer; color: var(--text-secondary); font-size: 13.5px; }
+  .tl { border-left: 2px solid var(--border); margin: 16px 0 16px 6px; padding-left: 20px; }
+  .tl-item { position: relative; padding: 9px 0; }
+  .tl-item::before {
+    content: ''; position: absolute; left: -27px; top: 15px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--text-muted);
+    box-shadow: 0 0 0 2px var(--surface-0);
+  }
+  .tl-item.crit::before { background: var(--status-critical); }
+  .tl-item.good::before { background: var(--status-good); }
+  .tl-time { font: 12.5px ui-monospace, Menlo, monospace; color: var(--text-muted); }
+  .tl-what { color: var(--text-primary); font-weight: 550; }
+  .tl-detail { font-size: 13.5px; color: var(--text-secondary); }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 34px 0 0; }
+  .footnote { font-size: 12.5px; color: var(--text-muted); margin-top: 8px; }
+</style>
+</head>
+<body data-palette="#2a78d6,#eb6834,#1baf7a">
+<div class="viz-root">
+
+<button class="toggle" id="themeBtn">Toggle theme</button>
+<h1>Pi0.5 / SO-ARM101 — Training Report</h1>
+<p class="sub">Run 10 (<code>8108c5ba</code>) failed at step 1750 of 2000. Root cause: Intel Arc GPU firmware hang, not training configuration.</p>
+<p class="muted">Generated 2026-07-30 · dataset <code>f6e480e2</code> (150 episodes) · host <code>we-b580</code> · kernel 6.17.0-41 · <code>xe</code> driver</p>
+
+<div class="card" style="border-left:3px solid var(--status-critical);margin-top:20px">
+  <p style="margin:0 0 8px"><strong style="color:var(--status-critical)">UPDATED 2026-07-31 — Run 11 added to the charts.</strong> <code>490a12e3</code> (3000 steps requested, <strong>FAILED @1473</strong>, val 0.1715 at step 1000) now appears alongside the other runs. It was the first run on the upgraded GuC firmware 70.65.0 and it faulted <strong>9 minutes after launch</strong> — so the firmware fix described in the companion report did not hold.</p>
+  <p style="margin:0">The subtitle's &ldquo;root cause: GPU firmware hang&rdquo; is <strong>no longer supported</strong>. Fault counts per boot show a clean two-day boot on the <em>old</em> firmware and the first-ever fault arriving 2026-07-29, a day before the firmware was swapped. See §9 of <code>firmware-fix-report-2026-07-30.html</code> for the corrected analysis. Charts and loss curves below remain valid; only the firmware attribution changed.</p>
+</div>
+
+<div class="tiles">
+  <div class="tile">
+    <div class="label">Run 10 outcome</div>
+    <div class="value" style="color:var(--status-critical)">1750<span style="font-size:16px;color:var(--text-muted)"> / 2000</span></div>
+    <div class="note">87% complete · <span class="pill crit">DEVICE_LOST</span></div>
+  </div>
+  <div class="tile">
+    <div class="label">Checkpoint recovered</div>
+    <div class="value" style="color:var(--status-good)">step 1000</div>
+    <div class="note">24.5 GB · 0 NaN in 819 tensors</div>
+  </div>
+  <div class="tile">
+    <div class="label">Best val loss to date</div>
+    <div class="value">0.1187</div>
+    <div class="note"><code>15842eae</code> · 91 episodes</div>
+  </div>
+  <div class="tile">
+    <div class="label">Run 10 val @ step 1000</div>
+    <div class="value">0.1540</div>
+    <div class="note">150 episodes · higher than best</div>
+  </div>
+  <div class="tile">
+    <div class="label">GPU hard lockups</div>
+    <div class="value" style="color:var(--status-critical)">81</div>
+    <div class="note">+480 soft lockups, from 00:42</div>
+  </div>
+  <div class="tile">
+    <div class="label">GuC firmware</div>
+    <div class="value" style="color:var(--status-warning)">70.45.2</div>
+    <div class="note">kernel recommends 70.49.4</div>
+  </div>
+</div>
+
+<h2>1 · Why the training failed</h2>
+
+<p>The failure was <strong>not</strong> caused by the training configuration, the dataset, the checkpoint patch, or loss divergence. The kernel log shows a hardware/firmware fault on the Battlemage GPU at PCI <code>03:00.0</code> that began <strong>7 hours before</strong> training reported an error.</p>
+
+<h3>The actual sequence</h3>
+<div class="tl">
+  <div class="tl-item good">
+    <div class="tl-time">Jul 29 23:10</div>
+    <div class="tl-what">Run launched — healthy</div>
+    <div class="tl-detail">3.6 steps/min, loss 0.399 descending, VRAM 32.6 GB, from base weights.</div>
+  </div>
+  <div class="tl-item crit">
+    <div class="tl-time">Jul 30 00:42:13</div>
+    <div class="tl-what">FIRST FAULT — hard CPU lockup inside the GPU interrupt handler</div>
+    <div class="tl-detail">
+      <code>watchdog: CPU9: Watchdog detected hard LOCKUP</code><br>
+      <code>RIP: memcpy_fromio+0x7d</code> ← MMIO read to the GPU never returned<br>
+      Call trace: <code>g2h_read</code> → <code>xe_guc_ct_fast_path</code> → <code>xe_guc_irq_handler</code> → <code>gt_irq_handler</code>
+      <br><span class="muted">A CPU core froze while reading a GuC response register. This is the true origin.</span>
+    </div>
+  </div>
+  <div class="tl-item crit">
+    <div class="tl-time">00:41–00:42</div>
+    <div class="tl-what">GuC command transport begins timing out</div>
+    <div class="tl-detail"><code>GT1: Timed out wait for G2H, fence 19142, action 3003, done no</code> — the GPU's microcontroller stopped acknowledging host commands.</div>
+  </div>
+  <div class="tl-item">
+    <div class="tl-time">00:42 → 07:41</div>
+    <div class="tl-what">Training continues anyway — 81 hard + 480 soft lockups accumulate</div>
+    <div class="tl-detail">Steps kept advancing at roughly normal speed. Lockups recur every 1–15 min for 7 hours. The training process had no visibility into this.</div>
+  </div>
+  <div class="tl-item good">
+    <div class="tl-time">03:41 → 04:10</div>
+    <div class="tl-what">Step-1000 checkpoint written successfully</div>
+    <div class="tl-detail">24.5 GB saved, then validation ran (val/loss 0.1540). 29-minute gap accounts for both. <strong>This is the artifact that survived.</strong></div>
+  </div>
+  <div class="tl-item">
+    <div class="tl-time">07:41:34</div>
+    <div class="tl-what">Last successful step — 1750</div>
+    <div class="tl-detail">train/loss 0.0644, healthy. No NaN anywhere in the run.</div>
+  </div>
+  <div class="tl-item crit">
+    <div class="tl-time">08:15 → 08:21</div>
+    <div class="tl-what">GuC firmware fully dies; driver reset storm</div>
+    <div class="tl-detail">
+      <code>GT0: GuC PC query task state failed: -EPIPE</code> repeating every 5 s<br>
+      <code>GT0: Kernel-submitted job timed out</code> → <code>reset queued</code> → <code>reset started</code> → <code>reset done</code><br>
+      ~340 reset attempts. <code>WARNING at drivers/gpu/drm/xe/xe_guc_submit.c:1309</code>
+    </div>
+  </div>
+  <div class="tl-item crit">
+    <div class="tl-time">10:06 / 10:12</div>
+    <div class="tl-what">Final reset attempts fail</div>
+    <div class="tl-detail">Level Zero runtime surfaces <code>UR_RESULT_ERROR_DEVICE_LOST (20)</code> to PyTorch. Training cannot continue — its device is gone.</div>
+  </div>
+  <div class="tl-item">
+    <div class="tl-time">15:20:27</div>
+    <div class="tl-what">Job marked <code>failed</code></div>
+    <div class="tl-detail">Wedged ~7.5 h between device loss and status update, holding 32.6 GB VRAM. Cleared later by <code>docker restart</code> (process was <code>Sl</code>, not <code>D</code> — no reboot needed).</div>
+  </div>
+</div>
+
+<h3>Root cause</h3>
+<div class="card">
+  <p style="margin-top:0"><strong>GuC firmware 70.45.2 is installed; the kernel explicitly recommends 70.49.4.</strong> At boot the driver logs:</p>
+  <pre>xe 0000:03:00.0: [drm] GT0: Using GuC firmware from xe/bmg_guc_70.bin version 70.45.2
+xe 0000:03:00.0: [drm] GuC firmware (70.49.4) is recommended, but only (70.45.2) was found
+xe 0000:03:00.0: [drm] Consider updating your linux-firmware pkg</pre>
+  <p>The GuC (Graphics microController) schedules all GPU work. When its command transport stalls, the host CPU blocks in an MMIO read inside an interrupt handler — which is exactly the <code>memcpy_fromio</code> hard lockup at 00:42. Under a sustained multi-hour compute load this degraded until the firmware stopped responding entirely.</p>
+  <p class="footnote">Evidence this is firmware/driver and not thermal or OOM: zero thermal-throttle entries, zero OOM-killer entries, and 22 GB RAM free at failure. The fault signature is entirely in the GuC command-transport path.</p>
+</div>
+
+<h3>What was ruled out</h3>
+<table>
+  <thead><tr><th>Hypothesis</th><th>Verdict</th><th>Evidence</th></tr></thead>
+  <tbody>
+    <tr><td>Loss divergence / NaN</td><td><span class="pill good">RULED OUT</span></td><td>0 NaN in 1750 steps; <code>gradient_clip_val=1.0</code> held. Final train/loss 0.0644.</td></tr>
+    <tr><td>Out of memory</td><td><span class="pill good">RULED OUT</span></td><td>No OOM-killer entries; 22 GB RAM available at time of failure.</td></tr>
+    <tr><td>Disk full</td><td><span class="pill good">RULED OUT</span></td><td>173 GB free after cleanup; checkpoint wrote successfully at 03:46.</td></tr>
+    <tr><td>Thermal throttling</td><td><span class="pill good">RULED OUT</span></td><td>No thermal entries in kernel log across the entire run.</td></tr>
+    <tr><td>The checkpoint patch</td><td><span class="pill good">RULED OUT</span></td><td>Save at step 1000 completed cleanly; training continued 750 more steps after it.</td></tr>
+    <tr><td>System suspend</td><td><span class="pill good">RULED OUT</span></td><td>No <code>PM: suspend entry</code> events during the run.</td></tr>
+    <tr><td><strong>GuC firmware hang</strong></td><td><span class="pill crit">CONFIRMED</span></td><td>81 hard lockups in <code>g2h_read</code>/<code>xe_guc_irq_handler</code>; 5,640 <code>GT0 *ERROR*</code> lines; firmware 4 minor versions behind.</td></tr>
+  </tbody>
+</table>
+
+<h2>2 · Loss vs. steps, all runs</h2>
+<p>Train loss per logged step, colored by dataset family. Point size is not encoded; the vertical dashed rule marks where Run 10's GPU died. Hover for values.</p>
+
+<div class="legend" id="legend"></div>
+<div class="chartwrap">
+  <svg id="lossChart" viewBox="0 0 980 430" role="img" aria-label="Train loss versus step for seven training runs, grouped by dataset family"></svg>
+</div>
+<p class="footnote">Sorting = blue · Pick-and-place = orange · Contrast = aqua. Run 10 (150 episodes) is drawn at full opacity; earlier runs are lightened so the failed run reads first.</p>
+
+<h2>3 · Episodes vs. resulting val loss</h2>
+<p>Each bar is one completed run. This is the chart that answers <em>"did more episodes help?"</em> — and the honest answer so far is <strong>no, not yet</strong>. Lower is better.</p>
+
+<div class="chartwrap">
+  <svg id="valChart" viewBox="0 0 980 330" role="img" aria-label="Validation loss by run, with episode count labeled on each bar"></svg>
+</div>
+<p class="footnote">Val loss is measured on each run's own held-out split, so numbers are not strictly comparable across runs with different episode counts. Run 10's 0.1540 came from a 15-episode split of the 150; <code>15842eae</code>'s 0.1187 from a 91-episode dataset's split.</p>
+
+<h2>4 · Dataset inventory</h2>
+<table>
+  <thead><tr><th>Dataset</th><th>ID</th><th class="num">Episodes</th><th class="num">Frames</th><th>Family</th></tr></thead>
+  <tbody>
+    <tr class="best"><td>so101_sorting_colored_marks</td><td><code>f6e480e2</code></td><td class="num">150</td><td class="num">100,309</td><td>sorting</td></tr>
+    <tr><td>so101_pick_place_phase1</td><td><code>dcc9b226</code></td><td class="num">90</td><td class="num">51,155</td><td>pick-place</td></tr>
+    <tr><td>so101_pick_and_place_contrast</td><td><code>010a5bfa</code></td><td class="num">40</td><td class="num">29,359</td><td>contrast</td></tr>
+    <tr><td>test_000_block_2</td><td><code>b82d3dbf</code></td><td class="num">2</td><td class="num">1,802</td><td>test</td></tr>
+  </tbody>
+</table>
+<p>All 150 sorting episodes are 30 fps, ~670 frames each. One epoch at batch 8 is <strong>~11,285 steps</strong>, so Run 10's 1750 steps is <strong>0.16 epochs</strong> — well short of a full pass, by design.</p>
+
+<h2>5 · Run history</h2>
+<table>
+  <thead><tr><th>Run</th><th>Model</th><th class="num">Eps</th><th class="num">Steps</th><th class="num">Train loss</th><th class="num">Val loss</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>d2082a5f</code> PickPlace v1</td><td class="num">30</td><td class="num">1003</td><td class="num">0.044</td><td class="num">0.1276</td><td class="muted">deleted</td></tr>
+    <tr><td>2</td><td><code>d827663e</code> PickPlace v2</td><td class="num">60</td><td class="num">1003</td><td class="num">0.129</td><td class="num">0.1987</td><td class="muted">deleted</td></tr>
+    <tr><td>3</td><td><code>28c2e9ca</code> PickPlace v3</td><td class="num">90</td><td class="num">3385</td><td class="num">0.077</td><td class="num">0.1327</td><td><span class="pill">kept</span></td></tr>
+    <tr><td>4</td><td><code>c5d4500a</code> Contrast v4</td><td class="num">40</td><td class="num">3675</td><td class="num">0.023</td><td class="num">0.1917</td><td><span class="pill">kept</span></td></tr>
+    <tr><td>6</td><td><code>6a87fb33</code> Sorting</td><td class="num">91</td><td class="num">1999</td><td class="num">0.045</td><td class="num">0.2060</td><td class="muted">deleted</td></tr>
+    <tr><td>8</td><td><code>cd465140</code> Sorting</td><td class="num">91</td><td class="num">3954</td><td class="num">NaN</td><td class="num">NaN</td><td><span class="pill crit">diverged</span></td></tr>
+    <tr class="best"><td>9</td><td><code>15842eae</code> Sorting</td><td class="num">91</td><td class="num">1001</td><td class="num">0.079</td><td class="num">0.1187</td><td><span class="pill good">BEST</span></td></tr>
+    <tr><td>10</td><td><code>7c1f0a94</code> Sorting</td><td class="num">150</td><td class="num">1750</td><td class="num">0.064</td><td class="num">0.1540</td><td><span class="pill crit">GPU lost</span></td></tr>
+  </tbody>
+</table>
+
+<h3>The overfitting pattern</h3>
+<p>Run 4 (<code>c5d4500a</code>) has the <strong>best</strong> train loss of any run (0.023) and one of the <strong>worst</strong> val losses (0.1917) — a 8.3× gap. It is also the only run to exceed one full epoch (1.19). Every good model on this box trained well under one epoch. That is why 2000 steps was chosen over 3000, and the choice still looks correct.</p>
+
+<h2>6 · What survived, and what to do next</h2>
+
+<h3>Recovered artifact</h3>
+<div class="card">
+  <p style="margin-top:0"><strong><code>7c1f0a94</code> — "Pi0.5 Sorting 150eps step1000"</strong> · registered in the GUI, ready to test.</p>
+  <ul>
+    <li>All 819 float tensors verified: <strong>0 NaN, 0 Inf</strong>, mean magnitude 0.59</li>
+    <li><code>exports/torch/pi05.pt</code> — 9,354,284,578 bytes (byte-identical size to the known-good <code>15842eae</code>)</li>
+    <li><code>exports/openvino/</code> — <code>pi05.xml</code> + <code>pi05.bin</code> (5.9 GB), tokenizer included</li>
+    <li>Promoted from <code>cache/8108c5ba…/stepstep=001000.ckpt</code>, DB row inserted manually (canceled/failed jobs never get one)</li>
+  </ul>
+  <p class="footnote">The checkpoint patch applied the night before is the sole reason this run produced anything. Under the previous configuration, <code>monitor="val/loss"</code> only fired on epoch boundaries — and one epoch is ~11,285 steps — so nothing would have been saved before the GPU died.</p>
+</div>
+
+<h3>Fix the GPU before the next long run</h3>
+<ol>
+  <li><strong>Update GuC firmware to 70.49.4.</strong> This is the direct fix for the confirmed root cause:
+    <pre>sudo apt update &amp;&amp; sudo apt install --only-upgrade linux-firmware
+# then verify after reboot:
+sudo dmesg | grep -i "GuC firmware"</pre>
+    If the packaged version is still 70.45.2, pull <code>bmg_guc_70.bin</code> from
+    <code>git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git</code> into <code>/lib/firmware/xe/</code>.</li>
+  <li><strong>Watch for lockups during the next run</strong> — they were invisible from inside the training job:
+    <pre>journalctl -kf | grep -E "LOCKUP|GuC|G2H|reset started"</pre>
+    Any hit means the GPU is degrading and the run will not finish.</li>
+  <li><strong>Keep the checkpoint patch.</strong> It is the only reason Run 10 wasn't a total loss. Consider dropping the interval to 500 steps for finer-grained insurance.</li>
+  <li><strong>Consider capping runs at ~1000–1500 steps</strong> until firmware is updated. The first lockup came at 1h32m; the card survived ~8.5 h before total loss. Shorter runs finish inside that envelope.</li>
+</ol>
+
+<h3>On the model itself</h3>
+<p>Val loss 0.1540 for 150 episodes is <em>worse</em> than 0.1187 for 91 episodes — but the two numbers come from different held-out splits, so this is suggestive, not conclusive. More importantly, val loss barely captures what the 59 new episodes were recorded to fix: full-travel-to-bin-center releases and single-block scenes. <strong>The arm is the real test.</strong> Run the same ~10 scenarios on <code>7c1f0a94</code> and <code>15842eae</code>, restarting the container between models (each unload leaks ~9.1 GB VRAM).</p>
+
+<hr>
+<p class="footnote">Sources: <code>physicalai.db</code> jobs/models tables · <code>metrics.csv</code> per run · <code>logs/jobs/8108c5ba….log</code> · <code>journalctl -k</code> 2026-07-29 23:00 → 2026-07-30 17:00 · <code>xpu-smi</code> · dataset <code>meta/info.json</code>. Palette validated with the dataviz validator in both light and dark modes (worst adjacent CVD ΔE 9.2 light / 9.4 dark).</p>
+
+<div class="tt" id="tt"></div>
+</div>
+
+<script>
+const RUNS = {"490a12e3":{"name":"Sorting 150ep run11","episodes":150,"family":"sorting","maxSteps":3000,"status":"FAILED @1473","train":[[49,0.28947],[99,0.15938],[149,0.13629],[199,0.12074],[249,0.11611],[299,0.0836],[349,0.15428],[399,0.11336],[449,0.07561],[499,0.09434],[549,0.11431],[599,0.20693],[649,0.09305],[699,0.06916],[749,0.09861],[799,0.1072],[849,0.06002],[899,0.0505],[949,0.11098],[999,0.08768],[1049,0.09534],[1099,0.14694],[1149,0.06535],[1199,0.08465],[1249,0.09763],[1299,0.09692],[1349,0.06176],[1399,0.06399],[1449,0.06647]],"val":[[999,0.17153]]},"8108c5ba":{"name":"Sorting 150ep","episodes":150,"family":"sorting","maxSteps":2000,"status":"FAILED @1750","train":[[49,0.16223],[99,0.1313],[149,0.13759],[199,0.08741],[249,0.13398],[299,0.06938],[349,0.13193],[399,0.12075],[449,0.06331],[499,0.06605],[549,0.04875],[599,0.07776],[649,0.09613],[699,0.07788],[749,0.08168],[799,0.10968],[849,0.06444],[899,0.05195],[949,0.10947],[999,0.05936],[1049,0.09917],[1099,0.03674],[1149,0.05448],[1199,0.09485],[1249,0.09387],[1299,0.08606],[1349,0.04976],[1399,0.06621],[1449,0.08241],[1499,0.10933],[1549,0.09992],[1599,0.06762],[1649,0.05838],[1699,0.0748],[1749,0.06437]],"val":[[999,0.15404]]},"15842eae":{"name":"Sorting 91ep","episodes":91,"family":"sorting","maxSteps":1000,"status":"OK","train":[[49,0.13375],[99,0.07294],[149,0.06735],[199,0.07925],[249,0.17036],[299,0.08594],[349,0.1258],[399,0.06258],[449,0.08569],[499,0.07596],[549,0.03995],[599,0.10416],[649,0.12023],[699,0.06256],[749,0.06504],[799,0.12547],[849,0.06702],[899,0.05468],[949,0.05186],[999,0.12162],[1000,0.07857]],"val":[[1000,0.11869]]},"28c2e9ca":{"name":"PickPlace 90ep","episodes":90,"family":"pickplace","maxSteps":3385,"status":"OK","train":[[49,0.36011],[99,0.17827],[149,0.21929],[199,0.15262],[249,0.19212],[299,0.12304],[349,0.10029],[399,0.13245],[449,0.15746],[499,0.11216],[549,0.08467],[599,0.13177],[649,0.08595],[699,0.12929],[749,0.1072],[799,0.11797],[849,0.13304],[899,0.07297],[949,0.05884],[999,0.10547],[1049,0.12897],[1099,0.12187],[1149,0.09345],[1199,0.12952],[1249,0.11968],[1299,0.09624],[1349,0.12976],[1399,0.12662],[1449,0.09907],[1499,0.0782],[1549,0.07203],[1599,0.08181],[1649,0.0531],[1699,0.05052],[1749,0.07885],[1799,0.0966],[1849,0.08672],[1899,0.08986],[1949,0.06589],[1999,0.05467],[2049,0.04638],[2099,0.05131],[2149,0.05932],[2199,0.04798],[2249,0.04814],[2299,0.06169],[2349,0.0486],[2399,0.10259],[2449,0.07663],[2499,0.03913],[2549,0.06655],[2599,0.08402],[2649,0.07848],[2699,0.09626],[2749,0.08642],[2799,0.05392],[2849,0.06839],[2899,0.05372],[2949,0.07222],[2999,0.08591],[3049,0.06942],[3099,0.04368],[3149,0.06101],[3199,0.04539],[3249,0.08438],[3299,0.02996],[3349,0.06846],[3385,0.07691]],"val":[[3385,0.13267]]},"c5d4500a":{"name":"Contrast 40ep","episodes":40,"family":"contrast","maxSteps":3675,"status":"OK","train":[[49,0.22458],[99,0.15647],[149,0.20989],[199,0.11615],[249,0.09389],[299,0.0925],[349,0.07788],[399,0.05141],[449,0.09986],[499,0.06996],[549,0.11215],[599,0.10171],[649,0.05656],[699,0.04692],[749,0.09503],[799,0.09952],[849,0.04458],[899,0.07485],[949,0.03848],[999,0.047],[1049,0.06029],[1099,0.06468],[1149,0.04544],[1199,0.09089],[1249,0.05678],[1299,0.07161],[1349,0.08223],[1399,0.06861],[1449,0.06453],[1499,0.0469],[1549,0.0393],[1599,0.07887],[1649,0.03566],[1699,0.05138],[1749,0.07937],[1799,0.0999],[1849,0.06352],[1899,0.04324],[1949,0.05054],[1999,0.0776],[2049,0.07085],[2099,0.06432],[2149,0.04766],[2199,0.07514],[2249,0.04429],[2299,0.03661],[2349,0.04795],[2399,0.01742],[2449,0.05494],[2499,0.06935],[2549,0.05218],[2599,0.07454],[2649,0.03444],[2699,0.06245],[2749,0.03523],[2799,0.01934],[2849,0.03388],[2899,0.0897],[2949,0.04417],[2999,0.03468],[3049,0.04966],[3099,0.03698],[3149,0.03794],[3199,0.03105],[3249,0.02709],[3299,0.04596],[3349,0.0409],[3399,0.03963],[3449,0.06659],[3499,0.04347],[3549,0.04093],[3599,0.04432],[3649,0.04478],[3675,0.02316]],"val":[[3223,0.18451],[3675,0.19172]]},"6a87fb33":{"name":"Sorting 91ep v2","episodes":91,"family":"sorting","maxSteps":1999,"status":"OK","train":[[49,0.23892],[99,0.10449],[149,0.12111],[199,0.0814],[249,0.11026],[299,0.13619],[349,0.10029],[399,0.10191],[449,0.106],[499,0.03439],[549,0.10787],[599,0.04553],[649,0.09884],[699,0.04626],[749,0.07922],[799,0.1224],[849,0.0596],[899,0.05119],[949,0.08455],[999,0.05961],[1049,0.05606],[1099,0.02255],[1149,0.03604],[1199,0.05609],[1249,0.04316],[1299,0.03762],[1349,0.05146],[1399,0.03532],[1449,0.04637],[1499,0.0498],[1549,0.02473],[1599,0.0442],[1649,0.03934],[1699,0.06423],[1749,0.03617],[1799,0.0512],[1849,0.03317],[1899,0.03899],[1949,0.0478],[1999,0.04533]],"val":[[1962,0.20601]]},"d827663e":{"name":"PickPlace 60ep","episodes":60,"family":"pickplace","maxSteps":1003,"status":"OK","train":[[49,0.32866],[99,0.18004],[149,0.16671],[199,0.14534],[249,0.14474],[299,0.14559],[349,0.12821],[399,0.10871],[449,0.06561],[499,0.12701],[549,0.10499],[599,0.08523],[649,0.16404],[699,0.08434],[749,0.16897],[799,0.05692],[849,0.0872],[899,0.05503],[949,0.06323],[999,0.05684],[1003,0.12948]],"val":[[1003,0.19865]]},"d2082a5f":{"name":"PickPlace v1","episodes":30,"family":"pickplace","maxSteps":1003,"status":"OK","train":[[49,0.20863],[99,0.18113],[149,0.12334],[199,0.19793],[249,0.13425],[299,0.12324],[349,0.09725],[399,0.15964],[449,0.1552],[499,0.0954],[549,0.11532],[599,0.09013],[649,0.06162],[699,0.05288],[749,0.09341],[799,0.06306],[849,0.09063],[899,0.0626],[949,0.04376],[999,0.07565],[1003,0.04445]],"val":[[1003,0.12764]]}} ;
+
+const FAM = {
+  sorting:   { label: 'Sorting',        varName: '--series-sorting' },
+  pickplace: { label: 'Pick-and-place', varName: '--series-pickplace' },
+  contrast:  { label: 'Contrast',       varName: '--series-contrast' },
+};
+const css = (v) => getComputedStyle(document.querySelector('.viz-root')).getPropertyValue(v).trim();
+const SVGNS = 'http://www.w3.org/2000/svg';
+const el = (n, a = {}) => { const e = document.createElementNS(SVGNS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const tt = document.getElementById('tt');
+function showTT(evt, html) {
+  tt.innerHTML = html; tt.style.opacity = '1';
+  const r = tt.getBoundingClientRect();
+  let x = evt.clientX + 14, y = evt.clientY - r.height / 2;
+  if (x + r.width > innerWidth - 8) x = evt.clientX - r.width - 14;
+  y = Math.max(8, Math.min(y, innerHeight - r.height - 8));
+  tt.style.left = x + 'px'; tt.style.top = y + 'px';
+}
+const hideTT = () => { tt.style.opacity = '0'; };
+
+/* ---------- Legend ---------- */
+function buildLegend() {
+  const L = document.getElementById('legend');
+  L.innerHTML = '';
+  for (const k in FAM) {
+    const s = document.createElement('span');
+    s.innerHTML = `<i class="key-line" style="background:${css(FAM[k].varName)}"></i>${FAM[k].label}`;
+    L.appendChild(s);
+  }
+  const f = document.createElement('span');
+  f.innerHTML = `<i class="key-line" style="background:${css('--status-critical')};height:0;border-top:2px dashed ${css('--status-critical')}"></i>GPU lost (step 1750)`;
+  L.appendChild(f);
+}
+
+/* ---------- Chart 1: loss vs step ---------- */
+function drawLoss() {
+  const svg = document.getElementById('lossChart');
+  svg.innerHTML = '';
+  const W = 980, H = 430, m = { t: 14, r: 118, b: 44, l: 56 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const maxStep = 3700, maxLoss = 0.38;
+  const x = s => m.l + (s / maxStep) * iw;
+  const y = v => m.t + ih - (v / maxLoss) * ih;
+
+  // gridlines + y ticks
+  [0, 0.1, 0.2, 0.3].forEach(v => {
+    svg.appendChild(el('line', { x1: m.l, y1: y(v), x2: m.l + iw, y2: y(v), stroke: css('--grid'), 'stroke-width': 1 }));
+    const t = el('text', { x: m.l - 10, y: y(v) + 4, 'text-anchor': 'end', fill: css('--text-muted'), 'font-size': 11.5 });
+    t.textContent = v.toFixed(1); svg.appendChild(t);
+  });
+  // x ticks
+  [0, 1000, 2000, 3000].forEach(s => {
+    const t = el('text', { x: x(s), y: m.t + ih + 22, 'text-anchor': 'middle', fill: css('--text-muted'), 'font-size': 11.5 });
+    t.textContent = s.toLocaleString(); svg.appendChild(t);
+  });
+  const ax = el('text', { x: m.l + iw / 2, y: H - 4, 'text-anchor': 'middle', fill: css('--text-secondary'), 'font-size': 12 });
+  ax.textContent = 'training step'; svg.appendChild(ax);
+  const ay = el('text', { x: 14, y: m.t + ih / 2, 'text-anchor': 'middle', fill: css('--text-secondary'), 'font-size': 12, transform: `rotate(-90 14 ${m.t + ih / 2})` });
+  ay.textContent = 'train loss'; svg.appendChild(ay);
+
+  // failure rule
+  svg.appendChild(el('line', { x1: x(1750), y1: m.t, x2: x(1750), y2: m.t + ih, stroke: css('--status-critical'), 'stroke-width': 2, 'stroke-dasharray': '5 4', opacity: 0.85 }));
+  const fl = el('text', { x: x(1750) + 7, y: m.t + 13, fill: css('--status-critical'), 'font-size': 11.5, 'font-weight': 600 });
+  fl.textContent = 'GPU lost'; svg.appendChild(fl);
+
+  const order = ['d2082a5f', 'd827663e', '6a87fb33', '28c2e9ca', 'c5d4500a', '15842eae', '8108c5ba'];
+  for (const key of order) {
+    const r = RUNS[key]; if (!r) continue;
+    const col = css(FAM[r.family].varName);
+    const isFocus = key === '8108c5ba';
+    const op = isFocus ? 1 : 0.34;
+    const d = r.train.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(Math.min(p[1], maxLoss)).toFixed(1)}`).join('');
+    svg.appendChild(el('path', { d, fill: 'none', stroke: col, 'stroke-width': isFocus ? 2 : 2, opacity: op, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+
+    // end marker + direct label
+    const last = r.train[r.train.length - 1];
+    const cx = x(last[0]), cy = y(Math.min(last[1], maxLoss));
+    svg.appendChild(el('circle', { cx, cy, r: isFocus ? 5 : 4, fill: col, opacity: op, stroke: css('--surface-1'), 'stroke-width': 2 }));
+    const lb = el('text', { x: cx + 10, y: cy + 4, fill: isFocus ? css('--text-primary') : css('--text-secondary'), 'font-size': 11.5, 'font-weight': isFocus ? 650 : 400 });
+    lb.textContent = `${r.episodes}ep`;
+    svg.appendChild(lb);
+
+    // hover targets
+    r.train.forEach(p => {
+      const hit = el('circle', { cx: x(p[0]), cy: y(Math.min(p[1], maxLoss)), r: 9, fill: 'transparent', style: 'cursor:crosshair' });
+      hit.addEventListener('mousemove', e => showTT(e,
+        `<b>${r.name}</b><div class="tt-row"><i class="swatch" style="background:${col}"></i>step ${p[0].toLocaleString()} · loss ${p[1].toFixed(4)}</div>
+         <div class="tt-row" style="font-size:11.5px">${r.episodes} episodes · ${r.status}</div>`));
+      hit.addEventListener('mouseleave', hideTT);
+      svg.appendChild(hit);
+    });
+  }
+}
+
+/* ---------- Chart 2: episodes vs val loss ---------- */
+function drawVal() {
+  const svg = document.getElementById('valChart');
+  svg.innerHTML = '';
+  const rows = [
+    { id: '15842eae', name: 'Sorting',       eps: 91,  val: 0.1187, fam: 'sorting',   best: true },
+    { id: 'd2082a5f', name: 'PickPlace v1',  eps: 30,  val: 0.1276, fam: 'pickplace' },
+    { id: '28c2e9ca', name: 'PickPlace v3',  eps: 90,  val: 0.1327, fam: 'pickplace' },
+    { id: '7c1f0a94', name: 'Sorting (run 10)', eps: 150, val: 0.1540, fam: 'sorting', focus: true },
+    { id: 'c5d4500a', name: 'Contrast v4',   eps: 40,  val: 0.1917, fam: 'contrast' },
+    { id: 'd827663e', name: 'PickPlace v2',  eps: 60,  val: 0.1987, fam: 'pickplace' },
+    { id: '6a87fb33', name: 'Sorting v2',    eps: 91,  val: 0.2060, fam: 'sorting' },
+  ];
+  const W = 980, H = 330, m = { t: 12, r: 150, b: 42, l: 176 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const maxV = 0.22;
+  const band = ih / rows.length;
+  const bh = Math.min(24, band - 10);
+  const x = v => (v / maxV) * iw;
+
+  [0, 0.05, 0.1, 0.15, 0.2].forEach(v => {
+    svg.appendChild(el('line', { x1: m.l + x(v), y1: m.t, x2: m.l + x(v), y2: m.t + ih, stroke: css('--grid'), 'stroke-width': 1 }));
+    const t = el('text', { x: m.l + x(v), y: m.t + ih + 20, 'text-anchor': 'middle', fill: css('--text-muted'), 'font-size': 11.5 });
+    t.textContent = v.toFixed(2); svg.appendChild(t);
+  });
+  const ax = el('text', { x: m.l + iw / 2, y: H - 5, 'text-anchor': 'middle', fill: css('--text-secondary'), 'font-size': 12 });
+  ax.textContent = 'validation loss  (lower is better)'; svg.appendChild(ax);
+
+  rows.forEach((r, i) => {
+    const cy = m.t + i * band + band / 2;
+    const col = css(FAM[r.fam].varName);
+    const op = r.focus ? 1 : (r.best ? 1 : 0.62);
+
+    const lab = el('text', { x: m.l - 12, y: cy + 4, 'text-anchor': 'end', fill: r.focus || r.best ? css('--text-primary') : css('--text-secondary'), 'font-size': 12.5, 'font-weight': r.focus || r.best ? 650 : 400 });
+    lab.textContent = `${r.name} · ${r.eps}ep`; svg.appendChild(lab);
+
+    const w = x(r.val);
+    const g = el('path', {
+      d: `M${m.l},${cy - bh / 2} H${m.l + w - 4} a4,4 0 0 1 4,4 V${cy + bh / 2 - 4} a4,4 0 0 1 -4,4 H${m.l} Z`,
+      fill: col, opacity: op
+    });
+    svg.appendChild(g);
+
+    const vlab = el('text', { x: m.l + w + 10, y: cy + 4, fill: css('--text-primary'), 'font-size': 12.5, 'font-weight': r.focus || r.best ? 650 : 500 });
+    vlab.textContent = r.val.toFixed(4) + (r.best ? '  ← best' : r.focus ? '  ← run 10' : '');
+    svg.appendChild(vlab);
+
+    const hit = el('rect', { x: m.l, y: cy - band / 2, width: iw, height: band, fill: 'transparent', style: 'cursor:pointer' });
+    hit.addEventListener('mousemove', e => showTT(e,
+      `<b>${r.name}</b><div class="tt-row"><i class="swatch" style="background:${col}"></i>val loss ${r.val.toFixed(4)}</div>
+       <div class="tt-row" style="font-size:11.5px">${r.eps} episodes · ${r.id}</div>`));
+    hit.addEventListener('mouseleave', hideTT);
+    svg.appendChild(hit);
+  });
+}
+
+function renderAll() { buildLegend(); drawLoss(); drawVal(); }
+renderAll();
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const isDark = cur === 'dark' || (!cur && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  renderAll();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderAll);
+</script>
+</body>
+</html>

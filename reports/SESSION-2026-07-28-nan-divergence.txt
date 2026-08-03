@@ -1,0 +1,316 @@
+============================================================
+SESSION NOTES — 2026-07-28
+Run 8 (10k steps) diverged to NaN · VRAM unload leak found
+============================================================
+
+SUMMARY
+-------
+The 17-hour run launched after the 2026-07-27 reboot produced a
+complete, saveable 24.5 GB checkpoint — but its weights are NaN.
+Training loss diverged at step ~2775 and never recovered. The
+model loads and reaches the arm, then dies with
+"cannot convert nan to integer".
+
+Everything in the pipeline works. Only the numbers are bad.
+
+============================================================
+1. THE RUN
+============================================================
+  job id      8e351e69-43c4-46bc-9acf-d6bea9614aae
+  model id    cd465140-5445-44a0-914c-fa91f0e5d178
+  dataset     f6e480e2 (91 eps, color sorting)
+  config      batch 8, workers 4, max_steps 10000, val_split 0.1
+  started     2026-07-27 23:12:15 UTC
+  ended       2026-07-28 17:03:01 UTC  (manual GUI stop)
+  reached     3954 / 10000 steps  (progress 39%)
+  job status  canceled
+  extra_info  {"train/loss_step": NaN}
+
+SPEED WAS FINE. 3954 steps in ~17.8 h. The reboot fixed the
+slowness problem from 2026-07-27. That part worked.
+
+============================================================
+2. NaN DIVERGENCE — THE REAL FAILURE
+============================================================
+From metrics.csv
+(/app/storage/cache/<JOB>/version_0/metrics.csv):
+
+    step   49   0.20298   <- start
+    step  499   0.07261
+    step  999   0.06981
+    step 1999   0.06975
+    step 2699   0.06667
+    step 2749   0.06160   <- LAST GOOD VALUE
+    step 2799   nan       <- DIVERGED HERE
+    step 3949   nan
+    step 3953   nan       val/loss = nan
+
+Steps 49-2749 were healthy and stable in the 0.04-0.20 band.
+Divergence happened between step 2749 and 2799.
+Then 1,200 more steps ran on NaN weights = ~12 hours wasted.
+
+Validation "completed" (all 855 batches, 674.2s) and returned
+val/loss=nan. A completed validation does NOT mean a good model.
+
+CONSEQUENCE AT INFERENCE
+  Model loads fine, arm connects fine, then:
+     "cannot convert nan to integer"
+  The policy emits NaN action values; converting them to integer
+  SO-101 servo positions throws. Hardware was never the problem —
+  both cameras initialized and both arms connected on
+  /dev/ttyACM0 (leader) and /dev/ttyACM1 (follower).
+
+LIKELY CAUSE (not yet fixed)
+  bf16-mixed AMP with no gradient clipping. Divergence at
+  step ~2775 with an otherwise stable loss curve is the classic
+  signature.
+
+FIXES TO APPLY BEFORE THE NEXT LONG RUN
+  1. gradient_clip_val: 1.0
+  2. Consider a lower LR
+  3. Enable intermediate checkpointing — 17 h with zero saved
+     states is why one divergence cost the entire run
+  4. Add a NaN abort (early-stopping check on train/loss).
+     Would have killed this at step 2800 instead of 3954,
+     saving ~12 hours.
+
+============================================================
+3. CHECKPOINT SAVE WORKED — WITH A GOTCHA
+============================================================
+The save succeeded on a manual GUI stop, as always:
+
+  17:03  manual stop from GUI
+  17:19  model.ckpt fully written in cache/ (24,483,521,640 B)
+  17:34  MOVED to models/ under a NEW UUID (cd465140...)
+         final size 24,483,487,656 B — exact match to the
+         known-good Jul 24 checkpoint
+  17:40  exports/torch/pi05.pt written (9,354,284,578 B
+         + manifest.json) — also byte-identical to Jul 24
+  ~17:40 OpenVINO export started, never finished (dir stayed
+         empty; killed by container restart)
+
+GOTCHA 1 — NEW UUID ON PROMOTION
+  The checkpoint is promoted from
+    /app/storage/cache/<JOB-ID>/model.ckpt
+  to
+    /app/storage/models/<NEW-MODEL-UUID>/model.ckpt
+  The model UUID is NOT the job UUID. Looking for the job id
+  under models/ will make you think the save failed.
+
+GOTCHA 2 — CANCELED JOBS NEVER GET A DB ROW
+  The GUI lists models from the `models` table in
+  /app/storage/data/physicalai.db, NOT from the directory.
+  The row is INSERTed LAST, after all exports finish. Because
+  this job was status=canceled, that step never ran:
+  files on disk, no DB row, invisible in the GUI.
+
+  On the Jul 24 good run, ckpt was written 17:44 and the DB row
+  created 17:56 — a 12-minute gap. Do not panic during it.
+
+  MANUAL REGISTRATION (this worked):
+    docker exec physical-ai-studio-xpu sh -c \
+      'cp /app/storage/data/physicalai.db \
+          /app/storage/data/physicalai.db.bak'
+
+    docker exec physical-ai-studio-xpu python3 -c "
+    import sqlite3
+    c=sqlite3.connect('/app/storage/data/physicalai.db')
+    c.execute('''INSERT INTO models
+     (id,name,path,policy,properties,created_at,updated_at,
+      dataset_id,project_id,snapshot_id,train_job_id,
+      parent_model_id,version)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''',(
+     '<MODEL-UUID>','<NAME>',
+     '/app/storage/models/<MODEL-UUID>',
+     'pi05','{}','<ISO-TS>','<ISO-TS>',
+     '<DATASET-ID>','<PROJECT-ID>',None,'<JOB-ID>',None,'1'))
+    c.commit()"
+
+  Get dataset_id / project_id from the job payload:
+    select payload from jobs where id like '<JOB-ID-PREFIX>%';
+
+  Verify (models are listed PER PROJECT):
+    curl -s http://localhost:7860/api/projects/<PROJECT-ID>/models
+
+  project_id on this box: b40d289d-536f-4411-88dc-8c4af490b597
+
+============================================================
+4. NEW BUG — VRAM LEAK ON MODEL UNLOAD
+============================================================
+Every inference unload leaks ~9,152 MiB on Device 0.
+
+  "Inference stopped, unloading model."  -> 9152 MiB stays pinned
+
+Reproduced 3+ times. After a container restart VRAM reads 34 MiB;
+after one load+unload cycle it reads 9153 MiB and stays there.
+
+CONSEQUENCE
+  The next load cannot fit the ~9 GB model in the remaining VRAM,
+  spills to host RAM (RSS balloons to ~27 GB on a 30 GB box),
+  drops available RAM to ~500 MB, and thrashes into swap
+  (saw swap go 1 GB -> 19 GB -> 32 GB). Loads that take ~2 min
+  on a clean card take 10+ min or hang in D state.
+
+  This is what "it was never so slow" was. Not the model size,
+  not the machine — accumulated leaked VRAM.
+
+SECONDARY SYMPTOM — "no idle model workers available"
+                  / "all 1 workers are busy"
+  Same root cause seen from the pool's side. The worker holding
+  the leaked allocation is never returned to the pool. Clicking
+  Load again stacks another ~27 GB attempt onto a starved box
+  and makes it strictly worse. Two identical "Loading model"
+  lines in inference.log = two stacked requests.
+
+RULE
+  Restart the container before EVERY model load, and verify:
+    docker restart physical-ai-studio-xpu
+    sleep 20
+    xpu-smi stats -d 0 | grep -i "Memory Used"     # want ~34 MiB
+  Then click Load EXACTLY ONCE and wait 2-3 min.
+  Never re-click. Do not load twice in one container lifetime.
+
+============================================================
+5. CORRECTION TO REBOOT-RESUME-2026-07-27.txt
+============================================================
+That file says:
+
+  "Container restart does NOT fix this — the wedged process is
+   on the HOST, outside the container."
+
+THIS IS WRONG. Verified today:
+
+  cat /proc/9849/cgroup
+    0::/system.slice/docker-bed7749f....scope    <- IN CONTAINER
+  PID 9849 -> parent 9614 -> container main PID 9400
+
+The process was inside the container's cgroup all along.
+`docker restart physical-ai-studio-xpu` released 32,624 MiB in
+18.8 seconds. A second restart later released the 9 GB leak in
+34 seconds. No reboot was needed at any point today.
+
+THE REAL DISTINCTION IS PROCESS STATE:
+
+  ps -p <PID> -o stat
+
+  R (running)              -> docker restart WILL clear it
+  D (uninterruptible)      -> restart hangs; reboot is the only fix
+                              (blocked in driver code, SIGKILL
+                               cannot touch it)
+
+On 2026-07-27 the process was in D state, so the 5+ restarts
+hung — the conclusion drawn ("it's on the host") was wrong even
+though the observation (restarts didn't help) was right.
+
+ALWAYS CHECK STATE FIRST. Try `docker restart` (20-35 s) before
+reaching for a reboot (several minutes).
+
+============================================================
+6. DIAGNOSTIC COMMANDS THAT EARNED THEIR KEEP
+============================================================
+WHO HOLDS VRAM — the single most useful command, names the PID:
+    xpu-smi ps
+  (`xpu-smi stats -d 0` only gives a total; `ps` attributes it)
+
+IS A SAVE ACTUALLY RUNNING, OR IS IT SWAP THRASHING?
+    ls -l /proc/<PID>/fd | grep ckpt      # open write fd = real save
+    grep -E "read_bytes|write_bytes" /proc/<PID>/io
+  Roughly equal read and write volume = swap thrashing.
+  Write-only growth = a real checkpoint write.
+  A live save also shows a growing file:
+    docker exec physical-ai-studio-xpu \
+      stat -c %s /app/storage/cache/<JOB>/model.ckpt
+  Observed write rate: ~7-10 GB/min.
+
+IS THE GUI SPINNER REAL, OR STALE?
+    docker exec physical-ai-studio-xpu \
+      ls -l --time-style=+%H:%M:%S /app/storage/logs/inference.log
+  Compare mtime to `date -u`. Silent for minutes + zero change in
+  /proc/<PID>/io read_bytes = nothing is happening; the frontend
+  is out of sync with the backend. Hard-refresh the browser.
+
+READ THE JSON LOGS WITHOUT DROWNING:
+    docker exec physical-ai-studio-xpu sh -c \
+      "tail -6 /app/storage/logs/inference.log \
+       | grep -oE '\"message\": \"[^\"]{0,200}'"
+
+APP PORT IS 7860, NOT 8000/3000
+  Port 3000 is Grafana on this box. Port 8000 is container-internal
+  only. API paths: /api/projects/{project_id}/models,
+  /api/models/{model_id}. Full list: /openapi.json
+
+============================================================
+7. MODELS ON DISK (as of 2026-07-28 18:15)
+============================================================
+  c5d4500a  Pi0.5 Contrast v4 (40eps, 3670 steps)
+            train 0.023 / val 0.192 — BEST. torch + openvino ready
+  6a87fb33  Pi0.5 (91eps, 1999 steps)
+            train 0.045 / val 0.206. torch + openvino ready
+  28c2e9ca  Pi0.5 Pick-Place v3 (90eps, 3380 steps)
+  d827663e  Pi0.5 Pick-Place v2 (60eps, 1000 steps)
+  d2082a5f  Pi0.5 Pick-Place v1 (1000 steps)
+  cd465140  Pi0.5 NaN-DIVERGED do-not-use (91eps, 3954 steps)
+            <- TODAY. NaN weights. DELETE to reclaim 24.5 GB.
+  a1b2c3d4-90ep-3380-step-77f63091cafe
+            <- empty dir, Run 7 OOM casualty. Safe to rmdir.
+
+USE c5d4500a FOR ANY DEMO OR ARM TEST. Lowest val loss,
+both exports present, no NaN.
+
+Disk: 915 G total, 88% used, ~105 G free. Each ckpt is 24.5 GB.
+
+============================================================
+8. NEXT RUN — 1500 STEPS
+============================================================
+Rationale: NaN appeared at step ~2775. A 1500-step run stops well
+short of it, so a usable model needs no root-cause fix first.
+Everything below step 2749 was healthy.
+
+  docker restart physical-ai-studio-xpu
+  sleep 20
+  xpu-smi stats -d 0 | grep -i "Memory Used"    # want ~34 MiB
+  pkill firefox                                 # holds renderD128
+  free -h                                       # swap near 0
+  cat /proc/sys/vm/swappiness                   # want 10
+
+GUI: dataset f6e480e2, Pi0.5, batch 8, workers 4, max_steps 1500
+
+  ~5 MIN HEALTH CHECK (where past runs collapsed):
+    HEALTHY  2 steps / 30-45 s, RSS ~19.8 GB, swap ~0
+    BROKEN   2 steps / 6 min, RSS collapses to ~5 MB
+    If broken: relaunch with 2 workers. One change at a time.
+    Next lever after that is batch 4.
+
+  HOURLY LOSS CHECK (new, and the whole point):
+    docker exec physical-ai-studio-xpu sh -c \
+      "tail -5 /app/storage/cache/<JOB>/version_0/metrics.csv"
+    Expect 0.06-0.20. IF nan -> STOP IMMEDIATELY.
+
+  STOP MANUALLY FROM THE GUI AT ~1000 STEPS.
+  Never let it complete naturally — natural completion OOM'd
+  Run 7 during the 24.5 GB save and lost the checkpoint. Every
+  checkpoint successfully kept, including today's, came from a
+  manual stop.
+
+  ETA: ~1000 steps at 3.3-4 steps/min = 4.2-5 hours.
+
+  AFTER THE STOP: ckpt write ~5 min, then torch export, then
+  OpenVINO, then the DB row LAST. If the job ends up
+  status=canceled, register the row manually (section 3).
+
+============================================================
+9. CONFIG VERIFIED PERSISTENT (checked 2026-07-28)
+============================================================
+  vm.swappiness = 10
+  /etc/sysctl.d/99-training.conf -> vm.swappiness=10   (survives reboot)
+  /etc/fstab -> /swap.img (8 G) + /swapfile2 (32 G) = 40 G total
+  swapon --show confirms both active
+  container restart policy = unless-stopped (auto-starts on boot)
+
+  Storage lives in NAMED DOCKER VOLUMES, so it survives
+  `docker restart` and `docker stop`:
+    docker_physical-ai-studio-storage -> /app/storage
+    docker_physical-ai-studio-data    -> /app/data
+  Only `docker volume rm` / `compose down -v` would destroy it.
+  Verified: model.ckpt, exports and the DB row all survived two
+  container restarts today.

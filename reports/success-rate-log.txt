@@ -1,0 +1,321 @@
+============================================================
+SUCCESS RATE LOG — COLOR SORTING
+============================================================
+Model:   15842eae  (Pi0.5, 91 eps, 1001 steps, val 0.1187)
+Date:    2026-07-29
+Backend: PyTorch on XPU (Device 0)
+Prompt:  "Sort this item into the correct bin"
+
+SETUP STATE THIS SESSION
+  base clamp     re-tightened, hardware reported FIXED   [x]
+  wrist camera   re-secured, hardware reported FIXED     [x]
+  bins + mat     secured                                 [x]
+
+  NOTE: the base clamp AND wrist camera both moved earlier today
+  and were fixed before this round. Geometry now differs slightly
+  from what this model trained on, so a consistent offset below is
+  expected to be setup drift, not a model defect.
+
+BEFORE LOADING
+  docker restart physical-ai-studio-xpu && sleep 20
+  xpu-smi stats -d 0 | grep -i "Memory Used"    # want ~34 MiB
+  pkill firefox                                 # holds renderD128
+  Click Load EXACTLY ONCE, wait 2-3 min. Never re-click.
+  Do ALL trials below in ONE load session — each unload leaks ~9 GB.
+
+============================================================
+COLUMN MEANINGS
+============================================================
+  POS      block start position
+             C = center      L = left        R = right
+             FL/FR/BL/BR = front/back left/right
+  PICK     did it grasp and lift the block?               Y/N
+  BIN      did it go to the CORRECT bin for that color?   Y/N/-
+  LAND     where the block ended up
+             IN   = inside bin
+             EDGE = on the rim / edge
+             OUT  = outside bin entirely
+             DROP = released early, never reached bin
+  HIT      did the arm contact the bin?                   Y/N
+           (if Y, stop and check rim clearance vs carry height)
+
+============================================================
+TRIALS
+============================================================
+
+ROUND 1 — 10 scenarios, 2026-07-29, after hardware fix
+Recorded as a summary rather than per-trial (tested at pace).
+
+ # | NOTES
+---+--------------------------------------------------------
+   | SINGLE BLOCK (majority of the 10 trials)
+   |   PICK      mostly SUCCEEDS — grasping is not the problem
+   |   LAND      MISSES the bin, both left and right
+   |   FAILURE   releases the block BEFORE reaching bin center
+   |
+   | TWO BLOCKS PRESENT (distractor in frame)
+   |   Noticeably BETTER than the single-block case
+   |
+   | Tester note: earlier today the wrist camera and base clamp
+   | had both moved; both fixed before this round.
+
+TALLY (round 1, approximate)
+  Pick success        MOSTLY YES  (~8-9/10 by observation)
+  Landed IN bin       LOW — misses on both left and right
+  Dominant failure    EARLY RELEASE, short of bin center
+
+============================================================
+ROUND 2 — model 7c1f0a94, 2026-07-30, AFTER firmware fix
+============================================================
+Model:   7c1f0a94 (Pi0.5, 150 eps, step-1000 ckpt, val 0.1540)
+         Recovered from the failed Run 10. Includes the 59 new
+         episodes recorded to fix the early-release failure.
+Host:    GuC firmware 70.65.0 (was 70.45.2). Card clean at load.
+Backend: PyTorch on XPU (Device 0)
+
+TEST STRUCTURE — 5 scenarios by block count: 4, 3, 3, 1
+  All 5 scenarios PASSED at the scenario level (the arm picked and
+  sorted). Per-block, the picture is more mixed — see below.
+
+ SCENARIO        | BLOCKS | SORTED CORRECTLY | NOTE
+ ----------------+--------+------------------+---------------------
+ 4-block         |   4    |  3 of 4          | last block NOT sorted
+ 3-block (a)     |   3    |  2 of 3          | last block NOT sorted
+ 3-block (b)     |   3    |  2 of 3          | last block NOT sorted
+ 1-block         |   1    |  1 of 1  PASSED  | bare block, no problem
+
+BEHAVIOURAL OBSERVATIONS (PyTorch) — hesitation, but self-correcting
+  - Sometimes takes noticeably LONGER to pick a block, even an easy
+    one in a clear position. Not a failure, just slow.
+  - Sometimes HOVERS over the correct bin twice, then places the
+    block in the correct bin on the final pass.
+
+  Read this as LOW ACTION CONFIDENCE, not a wrong policy. It picks
+  the right bin — it just needs more than one attempt to commit.
+  Pi0.5 emits action CHUNKS; hovering twice looks like consecutive
+  chunks each ending short of the release condition, so the policy
+  re-plans and approaches again. Encouragingly, it does eventually
+  release in the right place: the bin CHOICE (colour conditioning)
+  is solid, and the release-position fix from the 59 new episodes
+  is holding. What is soft is the commit/termination timing.
+  More demonstrations with a crisp, decisive release would sharpen
+  this; it is not a correctness bug.
+
+============================================================
+HARDWARE FAULT — WRIST CAMERA SCREWS LOOSEN ON BIN CONTACT
+============================================================
+Whenever the wrist camera HITS THE BIN, its mounting screws work
+loose and have to be re-tightened by hand. Observed repeatedly
+during Round 2.
+
+THIS CONTAMINATES EVERY MEASUREMENT AND MUST BE FIXED FIRST.
+
+Why it is worse than an inconvenience:
+  - The wrist camera is a POLICY INPUT. If it shifts mid-session,
+    the observation the policy receives no longer matches what it
+    trained on. Accuracy then drifts DURING a test round, so
+    later trials are not comparable to earlier ones.
+  - It moves GRADUALLY. Between "tight" and "obviously loose"
+    there is a window where the camera is subtly off and nothing
+    looks wrong — that silently degrades results and invents
+    failures that are not the model's fault.
+  - It already bit us once: the 2026-07-29 log records the wrist
+    camera and base clamp having moved, forcing a re-fix before
+    Round 1. Same fault, recurring.
+  - It makes the 59 new episodes suspect. If the camera shifted
+    while they were being RECORDED, some of that data was captured
+    with a different camera pose than the rest.
+
+SO: some of Round 2's "last block failed" cases may be nothing but
+a loosened camera by the end of a long multi-block run. That fits
+the evidence uncomfortably well — the failure appears at the END of
+long scenes, and bin contact accumulates over a scene. A drifting
+camera and "cumulative state drift" predict the SAME pattern.
+Round 2's per-block numbers should be treated as a LOWER BOUND on
+the model's real ability until the mount is solid.
+
+FIX THE MOUNT BEFORE ANY MORE TESTING OR RECORDING:
+  - Threadlocker on the camera screws (medium/blue, removable —
+    NOT permanent red). This is the actual fix for vibration
+    loosening.
+  - Nylon-insert lock nuts or lock/spring washers if the mount
+    accepts them.
+  - Re-tighten, then photograph the mount so drift is detectable
+    later (local-changes/setup-capture-guide.md; pictures/ now has
+    baseline frames).
+  - THEN address the root cause: the arm should not be hitting the
+    bin at all. Bin contact is also what loosens the mount, so
+    stopping the collision fixes both problems. Either lower the
+    bins, move them further out, or record episodes with a higher
+    carry path. The trial log's HIT column exists for this.
+
+RECOMMENDATION: re-run a short PyTorch round with FRESHLY TIGHTENED
+screws and check whether the last-block failure survives. If it
+disappears, the "cumulative drift" hypothesis above was really this
+hardware fault all along.
+
+============================================================
+OPENVINO ROUND — FAILED OUTRIGHT, do not use this export
+============================================================
+Same model 7c1f0a94, OpenVINO backend: THE ARM CANNOT PICK AT ALL.
+It fails at the very first stage — it does not even get the head /
+gripper to the block. This is not a degraded version of the PyTorch
+behaviour, it is a different and much worse failure.
+
+VERDICT: the OpenVINO export is NOT numerically equivalent to the
+torch export. The same weights work in PyTorch, so the checkpoint
+is fine — the conversion is what is broken. Treat the OpenVINO
+artifact as unusable until it passes a parity check.
+
+Do NOT read this as "the model got worse". Round 2 PyTorch (73%
+per-block, right bins) is the real capability of 7c1f0a94.
+
+TALLY
+  Scenario-level pass     5 / 5   (PyTorch)
+  Per-block success       8 of 11  = 73%   (PyTorch)
+  OpenVINO                0 — cannot pick; export defect
+  Dominant failure        EXACTLY ONE failure per multi-block scene,
+                          and it is always THE LAST BLOCK.
+
+  Note the shape of this: 4->3, 3->2, 3->2. Every multi-block scene
+  loses precisely one block, never two. The failure count does not
+  scale with the number of blocks — it is tied to the END of the
+  sequence, not to a per-block error rate. A 73% average understates
+  what is happening: blocks 1..n-1 are near 100%, block n is near 0%.
+
+============================================================
+READING OF ROUND 2 — the failure mode MOVED
+============================================================
+THE EARLY-RELEASE PROBLEM IS FIXED. Round 1's dominant failure
+("releases the block BEFORE reaching bin center", missing on both
+sides) is NOT the failure now. The 59 new episodes did their job.
+
+THE NEW FAILURE IS POSITIONAL IN THE SEQUENCE, NOT SPATIAL:
+the arm sorts the first blocks correctly and then fails on the
+LAST remaining block. That is a different class of problem — it
+correlates with how many blocks are left on the mat, not with
+where they are or what colour they are.
+
+RULED OUT IMMEDIATELY — "bare mat is out-of-distribution".
+The obvious guess is that one-block-left looks like an empty mat,
+which the distractor-rich training data never showed. THE 1-BLOCK
+SCENARIO DISPROVES THIS: a single bare block, presented on its own,
+sorted successfully. Bare-single-block is fine. So being the only
+block is not what breaks it.
+
+(This also revises Round 1's distractor hypothesis, which was
+explicitly flagged as unconfirmed. A fresh single block works.)
+
+WHAT ACTUALLY DIFFERS about the last block: it is not the block
+that changed, it is EVERYTHING ELSE.
+  - The bins are no longer empty. By the final block, both bins
+    contain blocks the arm put there. The scene the policy sees is
+    visually different from any training frame if the training
+    episodes started with empty bins.
+  - The run is LONG by then. A 4-block scene is roughly 4x the
+    duration of a single pick-place. If the 150 training episodes
+    are one-block-each, then by block 4 the policy is operating
+    well beyond the time horizon it ever saw.
+
+LEADING HYPOTHESIS — EPISODE-LENGTH / CUMULATIVE-STATE DRIFT, not
+perception of the block itself. Consistent with all five scenarios:
+a fresh 1-block run is short and starts from a clean state, so it
+works; the tail of a multi-block run is long and starts from an
+accumulated state, so it fails. The failure tracks ELAPSED SEQUENCE,
+which is why it is exactly one per scene regardless of block count.
+
+CRITICAL AMBIGUITY TO RESOLVE FIRST — one question decides
+everything, and it is a 2-minute test:
+
+  Present the FAILED last block as a FRESH single block.
+  (Clear the mat, reset, place just that block, run.)
+
+    If it now SORTS      -> the block and its colour are fine.
+                            The problem is accumulated state /
+                            run length. Fix = record multi-block
+                            episodes that run the mat down to empty
+                            in ONE episode, with bins already
+                            partly filled.
+
+    If it still FAILS    -> the problem is that specific block or
+                            its colour/position, and "last" was a
+                            coincidence of ordering. Fix = balanced
+                            colour->bin episodes for that colour.
+
+ALSO CHEAP AND WORTH KNOWING:
+  - Does the last block fail to be PICKED, or picked and then
+    mis-binned / dropped? Round 1 split pick from place cleanly;
+    do the same here. Perception vs placement.
+  - Is it the same COLOUR failing each time, or genuinely whichever
+    block happens to be left? Vary which colour remains last.
+  - Try emptying the bins between blocks. If that rescues the last
+    block, the non-empty-bin appearance is the cause and the fix is
+    to record episodes with pre-filled bins.
+
+============================================================
+READING OF ROUND 1
+============================================================
+PICK WORKS, PLACE DOES NOT. That splits the problem cleanly:
+perception and grasping are fine; the release TIMING is wrong.
+
+"Drops before locating bin center" is a TRAJECTORY-LENGTH problem,
+not a color or reach problem. The policy is ending its place
+motion too early — the learned motion terminates short of the
+actual bin center. Misses on BOTH bins rules out a one-sided
+geometry offset.
+
+WHY TWO BLOCKS DID BETTER — hypothesis, not confirmed:
+  The 91 training episodes were recorded WITH distractor blocks
+  present (per sorting-episodes-detailed.txt: "Place 1-2
+  DISTRACTOR blocks nearby"). A single bare block is therefore
+  OUT OF DISTRIBUTION — the model never saw an empty table.
+  This is a strong, actionable finding: it means the demo should
+  always include a distractor, and new episodes should cover BOTH
+  cases.
+
+=> FIX IS IN THE DEMONSTRATIONS, not in more training steps:
+   record place motions that travel FULLY to bin center, hold a
+   visible pause there, and only then release.
+
+============================================================
+WHAT THE PATTERN MEANS -> WHAT TO RECORD
+============================================================
+  Fails mostly on RIGHT positions
+    -> record more right-side reaches
+  Lands EDGE consistently
+    -> record exaggerated moves to bin CENTER, pause, then release
+  Goes to the same bin regardless of color
+    -> color conditioning weak; record balanced color->bin
+       examples in both directions
+  Random failures across all positions
+    -> suspect wrist camera or lighting, NOT the dataset
+  Consistent offset in one direction
+    -> base pose differs from training; geometry, not model
+
+============================================================
+KNOWN LIMITS (carried over from 2026-07-23, re-verify)
+============================================================
+  - Earlier model went to LEFT bin regardless of prompt
+    (language conditioning weak)
+  - Block must be within trained reach zone (center of table)
+  - Colored marks must be on ALL faces; one-side marks fail
+    randomly when the mark faces away from the camera
+  - Bins must stay weighted/secured
+  - Bin rims must be clear of carry height
+
+============================================================
+BASELINE FOR COMPARISON
+============================================================
+  Before this log existed: roughly 1 full success in 5-6 trials
+  (~17%), and the successful one came AFTER the re-clamp.
+  Any post-retrain result must beat the tally above, not that
+  rough estimate.
+
+============================================================
+AFTER TESTING — FEEDS INTO TONIGHT'S RUN
+============================================================
+  The 40 new episodes should target whatever the pattern section
+  above points at. Record them in the CURRENT fixed setup, and
+  photograph the rig first (local-changes/setup-capture-guide.md)
+  — pictures/ is still empty, so today's geometry is otherwise
+  unrecoverable.
