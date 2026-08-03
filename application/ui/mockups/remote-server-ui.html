@@ -63,7 +63,11 @@
                 gap: 4px;
                 margin-left: 12px;
             }
-            .nav a {
+            .nav button {
+                appearance: none;
+                background: none;
+                border: none;
+                font: inherit;
                 color: var(--gray-700);
                 text-decoration: none;
                 padding: 6px 12px;
@@ -71,11 +75,11 @@
                 font-size: 13px;
                 cursor: pointer;
             }
-            .nav a.active {
+            .nav button.active {
                 color: var(--gray-900);
                 background: var(--gray-200);
             }
-            .nav a.new-badge::after {
+            .nav button.new-badge::after {
                 content: 'NEW';
                 font-size: 9px;
                 font-weight: 700;
@@ -645,11 +649,11 @@
         <div class="app-bar">
             <div class="brand">Physical AI <span>Studio</span></div>
             <nav class="nav">
-                <a>Projects</a>
-                <a>Datasets</a>
-                <a>Robots</a>
-                <a>Models</a>
-                <a class="active new-badge">Training Targets</a>
+                <button type="button">Projects</button>
+                <button type="button">Datasets</button>
+                <button type="button">Robots</button>
+                <button type="button">Models</button>
+                <button type="button" class="active new-badge">Training Targets</button>
             </nav>
         </div>
 

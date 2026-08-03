@@ -11,8 +11,7 @@ Three deliverables:
 2. A **unified target selector** in the train dialog.
 3. A **phase stepper** in the training progress view.
 
-Interactive mockup: `../../ui/mockups/remote-server-ui.html` (untracked
-design artifact).
+Interactive mockup: `../../ui/mockups/remote-server-ui.html`.
 
 ## Naming and concepts
 
