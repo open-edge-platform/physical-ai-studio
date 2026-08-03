@@ -37,8 +37,8 @@ export const ProjectList = () => {
             >
                 <NewProjectLink />
 
-                {projects.map((item, index) => (
-                    <ProjectCard key={item.id} item={item} isActive={index === 0} />
+                {projects.map((item) => (
+                    <ProjectCard key={item.id} item={item} isActive={false} />
                 ))}
             </Grid>
         </View>
