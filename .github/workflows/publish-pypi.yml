@@ -95,7 +95,7 @@ jobs:
           python - <<'PY'
           import importlib.metadata as metadata
 
-          import physicalai.config
+          import physicalai.training_config
           import physicalai.data
           import physicalai.policies
           import physicalai.train
