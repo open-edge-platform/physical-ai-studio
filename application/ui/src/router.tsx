@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Content, Grid, Heading, IllustratedMessage, Loading, View } from '@geti-ui/ui';
+import { Content, Grid, Heading, IllustratedMessage, Loading, minmax, View } from '@geti-ui/ui';
 import { createBrowserRouter, Outlet, redirect } from 'react-router';
 import { path } from 'static-path';
 
@@ -11,7 +11,6 @@ import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { New as CamerasNew } from './routes/cameras/new';
-import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
 import { Index as RecordingPage } from './routes/datasets/record/index';
 import { Edit as EnvironmentEdit } from './routes/environments/edit';
@@ -67,7 +66,6 @@ export const paths = {
         },
         cameras: {
             index: cameras,
-            webcam: cameras.path('/webcam'),
             new: cameras.path('/new'),
             edit: cameras.path(':camera_id/edit'),
             show: cameras.path(':camera_id'),
@@ -195,7 +193,7 @@ export const router = createBrowserRouter([
                             <Grid
                                 areas={['header', 'content']}
                                 UNSAFE_style={{
-                                    gridTemplateRows: 'min-content auto',
+                                    gridTemplateRows: `min-content ${minmax(0, '1fr')}`,
                                 }}
                                 minHeight={0}
                                 height={'100%'}
@@ -270,10 +268,6 @@ export const router = createBrowserRouter([
                                     {
                                         path: paths.project.cameras.show.pattern,
                                         element: <Camera />,
-                                    },
-                                    {
-                                        path: paths.project.cameras.webcam.pattern,
-                                        element: <CameraWebcam />,
                                     },
                                 ],
                             },
