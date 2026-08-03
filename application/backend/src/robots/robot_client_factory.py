@@ -33,7 +33,11 @@ class RobotClientFactory:
             raise ValueError(f"Robot type {robot.type} has no robot builder")
 
         robot_driver = await builder(robot, self)
-        # Use SharedRobot because it manages multiprocessing for us
+        # Builders return a plain driver; wrapping happens here so every robot
+        # type (including third-party plugins) gets one owner process holding
+        # the hardware. The driver itself is discarded — only its recipe is sent,
+        # and the owner rebuilds it. The name keys the owner's Zenoh topics, so
+        # it must come from the id, never the free-form display name.
         shared_robot = SharedRobot.from_config(to_config(robot_driver), name=shared_robot_name(robot.id))
         adapter_options = definition.adapter_options
         return PhysicalAIRobotAdapter(
