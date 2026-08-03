@@ -51,26 +51,14 @@ class TrossenBimanualPayload(BaseModel):
 
 
 class TrossenSingleArmRobot(BaseRobot):
-    """Trossen WidowX AI follower or leader robot using an IP connection.
-
-    Note:
-        Local convenience model for probe/identify helpers. Robots that reach a
-        builder come from ``RobotCatalogRegistry``, which generates a separate
-        model per type deriving straight from ``BaseRobot``, so an
-        ``isinstance`` check against this class in a builder never matches.
-        Match on the payload type instead.
-    """
+    """Trossen WidowX AI follower or leader robot using an IP connection."""
 
     type: TrossenTypes = Field(..., description="Type of robot configuration")
     payload: TrossenSingleArmPayload = Field(..., description="Trossen single-arm connection configuration")
 
 
 class TrossenBimanualRobot(BaseRobot):
-    """Trossen Bimanual WidowX AI robot using two IP connections (left + right).
-
-    Note:
-        Local convenience model; see :class:`TrossenSingleArmRobot`.
-    """
+    """Trossen Bimanual WidowX AI robot using two IP connections (left + right)."""
 
     type: TrossenBimanualTypes = Field(..., description="Type of robot configuration")
     payload: TrossenBimanualPayload = Field(..., description="Trossen bimanual connection configuration")
