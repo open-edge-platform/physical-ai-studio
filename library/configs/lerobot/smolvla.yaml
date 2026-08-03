@@ -21,8 +21,6 @@ model:
 
     # Image preprocessing
     resize_imgs_with_padding: [512, 512]
-    image_key_rename_map: {}
-    image_features: []
 
     # Aloha specific parameters
     empty_cameras: 0
