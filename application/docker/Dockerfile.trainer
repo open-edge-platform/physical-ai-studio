@@ -80,8 +80,8 @@ ENV PATH="/opt/venv/bin:${PATH}" \
 
 # Only the trainer and training packages, never the rest of the backend: no
 # studio API, robots, database, or UI assets reach this image.
-COPY --link --chown=trainer:trainer application/backend/src/trainer /app/src/trainer
-COPY --link --chown=trainer:trainer application/backend/src/training /app/src/training
+COPY --link --chown=${TRAINER_UID}:${TRAINER_GID} application/backend/src/trainer /app/src/trainer
+COPY --link --chown=${TRAINER_UID}:${TRAINER_GID} application/backend/src/training /app/src/training
 
 # The venv holds dependencies only (--no-install-project above), so the
 # documented `physicalai-trainer` command is provided here instead of by a
