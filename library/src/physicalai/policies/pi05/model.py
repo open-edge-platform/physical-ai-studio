@@ -14,12 +14,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 import torch.nn.functional as F  # noqa: N812
-from torch import Tensor, nn
-from transformers.cache_utils import DynamicCache
-
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES
 from physicalai.policies.base import Model
+from torch import Tensor, nn
+from transformers.cache_utils import DynamicCache
 
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
@@ -788,7 +787,7 @@ class Pi05Model(Model):
         time = time_beta * self._time_sampling_scale + self._time_sampling_offset
         return time.to(dtype=torch.float32, device=device)
 
-    def embed_prefix(
+    def embed_prefix(  # noqa: PLR0914
         self,
         images: Tensor,
         img_masks: Tensor,
@@ -797,49 +796,63 @@ class Pi05Model(Model):
     ) -> tuple[Tensor, Tensor, Tensor]:
         """Embed images with SigLIP and language tokens with embedding layer.
 
-        During inference or tracing (ONNX/OV export), batches all camera images
-        into a single encoder call for efficiency. During training, uses per-image
-        calls with gradient checkpointing support.
-
-        Args:
-            images: ``(num_cameras, batch, C, H, W)`` stacked image tensor.
-            img_masks: ``(num_cameras, batch)`` boolean camera masks.
-            tokens: ``(batch, seq_len)`` tokenized prompt.
-            masks: ``(batch, seq_len)`` prompt attention mask.
-
         Returns:
             Tuple of (embeddings, padding masks, attention masks).
         """
         use_batched = not self.training
 
-        num_cameras = images.shape[0]
-        bsize = images.shape[1]
+        # Batched vision encoding: stack all cameras into a single batch=N pass
+        # through the SigLIP vision tower instead of a per-camera Python loop.
+        # This is numerically equivalent (each image is encoded independently,
+        # no cross-image attention in the vision tower) but issues one larger
+        # GEMM per layer instead of N small batch=1 GEMMs, improving GPU
+        # occupancy/latency. Camera-major token order is preserved to match the
+        # original sequential concatenation.
+        if isinstance(images, (list, tuple)):
+            images = torch.stack(list(images), dim=0)
+        if isinstance(img_masks, (list, tuple)):
+            img_masks = torch.stack(list(img_masks), dim=0)
 
+        num_cam = images.shape[0]
+        bsize = images.shape[1]
         embs = []
         pad_masks = []
         att_masks: list[int] = []
 
+        def image_embed_func(imgs: Tensor) -> Tensor:
+            return self.paligemma_with_expert.embed_image(imgs)
+
         if use_batched:
-            # Single batched encoder call: [N*B, C, H, W]
-            imgs_flat = images.reshape(num_cameras * bsize, *images.shape[2:])
-            all_img_embs = self.paligemma_with_expert.embed_image(imgs_flat)
-            num_img_embs = all_img_embs.shape[1]
-            all_img_embs = all_img_embs.reshape(num_cameras, bsize, num_img_embs, -1)
+            imgs_flat = images.reshape(num_cam * bsize, *images.shape[2:])
+            img_emb_flat = self._apply_checkpoint(image_embed_func, imgs_flat)
+            num_img_embs = img_emb_flat.shape[1]
+            emb_dim = img_emb_flat.shape[2]
 
-        for cam_idx in range(num_cameras):
-            if use_batched:
-                img_emb = all_img_embs[cam_idx]  # pyrefly: ignore[unbound-name]
-            else:
+            # [num_cam*bsize, T, d] -> [num_cam, bsize, T, d] -> [bsize, num_cam, T, d]
+            # -> [bsize, num_cam*T, d]  (camera-major, matches sequential concat)
+            img_emb = (
+                img_emb_flat.reshape(num_cam, bsize, num_img_embs, emb_dim)
+                .permute(1, 0, 2, 3)
+                .reshape(bsize, num_cam * num_img_embs, emb_dim)
+            )
 
-                def image_embed_func(img: Tensor) -> Tensor:
-                    return self.paligemma_with_expert.embed_image(img)
-
-                img_emb = self._apply_checkpoint(image_embed_func, images[cam_idx])
-
-            num_img_embs = img_emb.shape[1]
+            # Padding masks per camera in the same camera-major order:
+            # img_masks: [num_cam, bsize] -> [bsize, num_cam, 1] -> [bsize, num_cam*T]
+            cam_pad = (
+                img_masks.transpose(0, 1)[:, :, None]
+                .expand(bsize, num_cam, num_img_embs)
+                .reshape(bsize, num_cam * num_img_embs)
+            )
             embs.append(img_emb)
-            pad_masks.append(img_masks[cam_idx][:, None].expand(bsize, num_img_embs))
-            att_masks += [0] * num_img_embs
+            pad_masks.append(cam_pad)
+            att_masks += [0] * (num_cam * num_img_embs)
+        else:
+            for cam_idx in range(num_cam):
+                img_emb = self._apply_checkpoint(image_embed_func, images[cam_idx])
+                num_img_embs = img_emb.shape[1]
+                embs.append(img_emb)
+                pad_masks.append(img_masks[cam_idx][:, None].expand(bsize, num_img_embs))
+                att_masks += [0] * num_img_embs
 
         def lang_embed_func(tokens: Tensor) -> Tensor:
             return self.paligemma_with_expert.embed_language_tokens(tokens)
