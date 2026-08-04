@@ -91,8 +91,6 @@ class RemoteTrainingBackend:
         # Prefix every log line from this backend with its trainer, so a job's
         # log (and the shared "training" worker log) identify which remote
         # server produced each line when several trainers run concurrently.
-        # Falls back to the base URL when no name was pinned (e.g. older
-        # persisted jobs from before this field existed).
         label = trainer_name or self._base_url
 
         def _prefix_with_trainer(record: Record, label: str = label) -> None:

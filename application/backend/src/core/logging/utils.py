@@ -16,6 +16,7 @@ import sys
 import threading
 from collections.abc import Generator
 from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 from uuid import UUID
@@ -37,15 +38,9 @@ _state_lock = threading.Lock()
 # the count only keeps accidental re-entry from unbalancing the bookkeeping.
 _active_jobs: dict[str, int] = {}
 
-# The single active job id, or None when zero or several jobs are active. Read
-# without the lock by sink filters on the hot logging path; a plain read of a
-# `str | None` is atomic in CPython.
+# The single active job id, or None when zero or several jobs are active.
 _sole_active_job: str | None = None
 
-# Redirecting stdout/stderr and the stdlib root logger is process-wide, so it is
-# installed by the first context to open and undone by the last one to close.
-# Saving the originals per-context would make a second job restore the *first*
-# job's replacements instead of the real streams.
 _redirect_depth = 0
 _saved_stdout: IO[str] | None = None
 _saved_stderr: IO[str] | None = None
@@ -211,7 +206,7 @@ def job_logging_ctx(job_id: str | UUID) -> Generator[str]:
             rotation=global_log_config.rotation,
             retention=global_log_config.retention,
             level=global_log_config.level,
-            filter=lambda record, job_key=job_key: _job_sink_filter(record, job_key),
+            filter=partial(_job_sink_filter, job_id=job_key),
             serialize=global_log_config.serialize,
             enqueue=True,
         )
@@ -219,8 +214,8 @@ def job_logging_ctx(job_id: str | UUID) -> Generator[str]:
         _unregister_job(job_key)
         raise RuntimeError(f"Failed to add log sink for job {job_key}: {e}") from e
 
-    _install_redirects()
     try:
+        _install_redirects()
         # Tag every record emitted in this block -- and in the asyncio tasks and
         # threads it spawns -- so the sink above claims exactly its own records.
         with logger.contextualize(job_id=job_key):
