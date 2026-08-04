@@ -31,6 +31,7 @@ import { NewRobotLayout } from './routes/robots/new-layout';
 import { Robot } from './routes/robots/robot';
 import { SO101Setup } from './routes/robots/so101-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
+import { Settings } from './routes/settings';
 
 const root = path('/');
 const settings = root.path('/settings');
@@ -48,7 +49,12 @@ const environment = environments.path(':environment_id');
 
 export const paths = {
     root,
-    settings,
+    settings: {
+        index: settings,
+        compute: settings.path('/compute'),
+        storage: settings.path('/storage'),
+        about: settings.path('/about'),
+    },
     openapi: root.path('/openapi'),
     projects: {
         index: projects,
@@ -102,14 +108,6 @@ const EmptySelection = ({ heading, content }: { heading: string; content: string
     );
 };
 
-const Settings = () => {
-    return (
-        <View>
-            <Heading>Settings</Heading>
-        </View>
-    );
-};
-
 export const router = createBrowserRouter([
     {
         path: paths.root.pattern,
@@ -134,8 +132,17 @@ export const router = createBrowserRouter([
                         element: <Projects />,
                     },
                     {
-                        path: paths.settings.pattern,
-                        element: <Settings />,
+                        path: paths.settings.index.pattern,
+                        children: [
+                            {
+                                index: true,
+                                element: <Settings />,
+                            },
+                            {
+                                path: paths.settings.compute.pattern,
+                                element: <Settings />,
+                            },
+                        ],
                     },
                 ],
             },
