@@ -7,6 +7,7 @@ import { path } from 'static-path';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
 import { featureFlags } from './config/feature-flags';
+import { AppLayout } from './routes/app/app.layout';
 import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
@@ -32,6 +33,7 @@ import { SO101Setup } from './routes/robots/so101-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
 
 const root = path('/');
+const settings = root.path('/settings');
 const projects = root.path('/projects');
 const project = root.path('/projects/:project_id');
 const robots = project.path('robots');
@@ -46,6 +48,7 @@ const environment = environments.path(':environment_id');
 
 export const paths = {
     root,
+    settings,
     openapi: root.path('/openapi'),
     projects: {
         index: projects,
@@ -99,6 +102,14 @@ const EmptySelection = ({ heading, content }: { heading: string; content: string
     );
 };
 
+const Settings = () => {
+    return (
+        <View>
+            <Heading>Settings</Heading>
+        </View>
+    );
+};
+
 export const router = createBrowserRouter([
     {
         path: paths.root.pattern,
@@ -116,11 +127,15 @@ export const router = createBrowserRouter([
                 },
             },
             {
-                path: paths.projects.index.pattern,
+                element: <AppLayout />,
                 children: [
                     {
-                        index: true,
+                        path: paths.projects.index.pattern,
                         element: <Projects />,
+                    },
+                    {
+                        path: paths.settings.pattern,
+                        element: <Settings />,
                     },
                 ],
             },
