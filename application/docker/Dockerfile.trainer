@@ -2,11 +2,6 @@
 
 ARG PYTHON_VERSION=3.13
 
-# Build the trainer service from the studio backend project, which owns
-# src/trainer and src/training: local and remote training share one training
-# call (training.run_training_job). Only those two packages and the
-# physicalai-train dependency reach the runtime image: no studio API, robot,
-# or UI code.
 FROM python:${PYTHON_VERSION}-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -186,7 +181,7 @@ FROM runtime-cuda AS physicalai-trainer-cuda
 ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
 ARG APPLICATION_VERSION=unknown
-ARG TRAINER_API_PROTOCOL_VERSION=2
+ARG TRAINER_API_PROTOCOL_VERSION=1
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio remote CUDA training service" \
       org.opencontainers.image.revision="${GIT_SHA}" \
@@ -207,7 +202,7 @@ FROM runtime-xpu AS physicalai-trainer-xpu
 ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
 ARG APPLICATION_VERSION=unknown
-ARG TRAINER_API_PROTOCOL_VERSION=2
+ARG TRAINER_API_PROTOCOL_VERSION=1
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio remote Intel XPU training service" \
       org.opencontainers.image.revision="${GIT_SHA}" \
