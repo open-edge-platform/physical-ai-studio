@@ -104,6 +104,10 @@ class TrainJobPayload(BaseModel):
         default=None,
         description="Resolved remote trainer URL pinned when the job is submitted for restart recovery",
     )
+    remote_trainer_name: str | None = Field(
+        default=None,
+        description="Resolved remote trainer name pinned when the job is submitted, for display in job logs",
+    )
 
     remote_job_id: UUID | None = Field(
         default=None, description="Remote trainer job id, set when a remote run is in flight (for restart reattach)"
@@ -116,7 +120,11 @@ class TrainJobPayload(BaseModel):
     def validate_training_target(self) -> "TrainJobPayload":
         """Keep local jobs and pinned remote endpoints mutually consistent."""
         if self.training_target is TrainingTarget.LOCAL:
-            if self.remote_trainer_id is not None or self.remote_trainer_url is not None:
+            if (
+                self.remote_trainer_id is not None
+                or self.remote_trainer_url is not None
+                or self.remote_trainer_name is not None
+            ):
                 raise ValueError("Local training cannot specify a remote trainer")
             return self
         if self.remote_trainer_id is None:

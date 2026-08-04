@@ -38,6 +38,8 @@ from settings import get_settings
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from loguru import Logger, Record
+
     from services.training_backends._training_methods import TrainingMethod
     from services.training_backends.base import TrainingContext
 
@@ -75,7 +77,7 @@ class RemoteTrainingBackend:
 
     _last_progress_log: str | None = None
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, *, trainer_name: str | None = None) -> None:
         settings = get_settings()
         self._base_url = base_url.rstrip("/")
         self._timeout = settings.trainer_request_timeout_s
@@ -86,6 +88,15 @@ class RemoteTrainingBackend:
         # Suppress duplicate consecutive progress lines (e.g. the trainer
         # re-emitting the final training state while it optimizes/exports).
         self._last_progress_log: str | None = None
+        # Prefix every log line from this backend with its trainer, so a job's
+        # log (and the shared "training" worker log) identify which remote
+        # server produced each line when several trainers run concurrently.
+        label = trainer_name or self._base_url
+
+        def _prefix_with_trainer(record: Record, label: str = label) -> None:
+            record["message"] = f"[{label}] {record['message']}"
+
+        self._log: Logger = logger.patch(_prefix_with_trainer)
 
     async def _resolve_trust_env(self) -> bool:
         """Decide once whether proxy env vars should be honored for trainer calls.
@@ -114,9 +125,9 @@ class RemoteTrainingBackend:
                 response = await client.get(f"{self._base_url}/health")
                 response.raise_for_status()
         except httpx.HTTPError:
-            logger.debug("Trainer not reachable via proxy; bypassing proxy for trainer calls")
+            self._log.debug("Trainer not reachable via proxy; bypassing proxy for trainer calls")
             return False
-        logger.debug("Trainer reachable via proxy; honoring proxy settings for trainer calls")
+        self._log.debug("Trainer reachable via proxy; honoring proxy settings for trainer calls")
         return True
 
     async def _client(self, client_timeout: httpx.Timeout | float | None = None) -> httpx.AsyncClient:
@@ -158,7 +169,7 @@ class RemoteTrainingBackend:
         model rather than submitting a new job.
         """
         if context.remote_job_id:
-            logger.info("Reattaching to in-flight remote training job")
+            self._log.info("Reattaching to in-flight remote training job")
             await self._resume_pending_http_upload(context, context.remote_job_id)
             await self.await_and_ingest(context, context.remote_job_id)
             return
@@ -207,7 +218,7 @@ class RemoteTrainingBackend:
         total = archive_path.stat().st_size
         report = context.progress
         to_percent = self._upload_progress
-        logger.info(
+        self._log.info(
             "Uploading dataset snapshot to trainer: {} ({}) -> job {}",
             archive_path.name,
             format_bytes(total),
@@ -218,7 +229,7 @@ class RemoteTrainingBackend:
         async def _read_chunks(offset: int) -> AsyncIterator[bytes]:
             sent = offset
             last_percent = -1
-            heartbeat = TransferProgressLogger("Dataset upload", total)
+            heartbeat = TransferProgressLogger("Dataset upload", total, logger_=self._log)
             with archive_path.open("rb") as fobj:
                 fobj.seek(offset)
                 while chunk := await asyncio.to_thread(fobj.read, _UPLOAD_CHUNK_SIZE):
@@ -261,12 +272,12 @@ class RemoteTrainingBackend:
             except (httpx.HTTPError, ValueError) as exc:
                 if attempt == _TRANSFER_RETRY_LIMIT:
                     raise RemoteTrainingError("Dataset upload could not be resumed") from exc
-                logger.warning("Dataset upload interrupted; resuming from trainer offset")
+                self._log.warning("Dataset upload interrupted; resuming from trainer offset")
                 offset = await self._get_upload_offset(remote_job_id, total, stream_timeout)
         if offset != total:
             raise RemoteTrainingError(f"Trainer accepted an incomplete dataset upload ({offset} of {total} bytes)")
         elapsed = time.monotonic() - started
-        logger.info(
+        self._log.info(
             "Snapshot uploaded to trainer: {} in {:.1f}s ({})",
             format_bytes(total),
             elapsed,
@@ -319,7 +330,7 @@ class RemoteTrainingBackend:
             remote_job_uuid = uuid.UUID(remote_job_id)
         except ValueError as exc:
             raise RemoteTrainingError("Trainer did not return a valid remote_job_id") from exc
-        logger.info("Remote training job submitted")
+        self._log.info("Remote training job submitted")
         return remote_job_uuid
 
     async def _wait_for_completion(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
@@ -344,7 +355,7 @@ class RemoteTrainingBackend:
                 completed, received_event = await self._consume_event_stream(context, remote_job_id)
             except httpx.HTTPError as exc:
                 # Connection-level failure while opening or reading the stream.
-                logger.warning("Trainer event stream connection failed, reconnecting: {}", exc)
+                self._log.warning("Trainer event stream connection failed, reconnecting: {}", exc)
                 completed, received_event = False, False
 
             if completed:
@@ -423,7 +434,7 @@ class RemoteTrainingBackend:
                         continue
                     if kind == "error":
                         # Transient read error: surface to the reconnect loop.
-                        logger.warning("Trainer event stream read error: {}", payload)
+                        self._log.warning("Trainer event stream read error: {}", payload)
                         result = False, received_event
                         continue
 
@@ -485,7 +496,7 @@ class RemoteTrainingBackend:
         if extra_info is not None:
             line = render_progress_log(extra_info)
             if line is not None and line != self._last_progress_log:
-                logger.info(line)
+                self._log.info(line)
                 self._last_progress_log = line
 
         if status in _TERMINAL_STATES:
@@ -496,8 +507,7 @@ class RemoteTrainingBackend:
             raise RemoteTrainingError(f"Remote training {status}: {state.get('message')}")
         return False
 
-    @staticmethod
-    def _sanitize_extra_info(raw_extra: object) -> dict[str, Any] | None:
+    def _sanitize_extra_info(self, raw_extra: object) -> dict[str, Any] | None:
         """Return the trainer's telemetry dict, or None if absent or too large.
 
         extra_info is untrusted and persisted verbatim, so reject any blob whose
@@ -508,10 +518,10 @@ class RemoteTrainingBackend:
         try:
             size = len(json.dumps(raw_extra).encode())
         except (TypeError, ValueError, RecursionError, OverflowError):
-            logger.warning("Dropping non-serializable extra_info from trainer state")
+            self._log.warning("Dropping non-serializable extra_info from trainer state")
             return None
         if size > _MAX_EXTRA_INFO_BYTES:
-            logger.warning("Dropping oversized extra_info from trainer state ({} bytes)", size)
+            self._log.warning("Dropping oversized extra_info from trainer state ({} bytes)", size)
             return None
         return raw_extra
 
@@ -533,19 +543,19 @@ class RemoteTrainingBackend:
         settings = get_settings()
         tmp_archive = Path(tempfile.gettempdir()) / f"remote-model-{uuid.uuid4().hex}.zip"
         stream_timeout = httpx.Timeout(self._timeout, read=settings.trainer_download_read_timeout_s)
-        logger.info("Downloading trained model artifact from trainer job {}", remote_job_id)
+        self._log.info("Downloading trained model artifact from trainer job {}", remote_job_id)
         started = time.monotonic()
         try:
             received = await self._stream_archive(context, remote_job_id, tmp_archive, stream_timeout)
             elapsed = time.monotonic() - started
-            logger.info(
+            self._log.info(
                 "Downloaded model artifact: {} in {:.1f}s ({})",
                 format_bytes(received),
                 elapsed,
                 format_throughput(received, elapsed),
             )
 
-            logger.info("Extracting model artifact into {}", context.output_dir)
+            self._log.info("Extracting model artifact into {}", context.output_dir)
             await asyncio.to_thread(
                 self._extract_archive,
                 tmp_archive,
@@ -553,7 +563,7 @@ class RemoteTrainingBackend:
                 settings.data_import_max_uncompressed_bytes,
                 settings.data_import_min_free_bytes,
             )
-            logger.info("Model artifact extracted into {}", context.output_dir)
+            self._log.info("Model artifact extracted into {}", context.output_dir)
         finally:
             tmp_archive.unlink(missing_ok=True)
 
@@ -586,7 +596,7 @@ class RemoteTrainingBackend:
                     response.raise_for_status()
                     expected_bytes = self._artifact_total_bytes(response.headers, received)
                     if heartbeat is None:
-                        heartbeat = TransferProgressLogger("Model download", expected_bytes)
+                        heartbeat = TransferProgressLogger("Model download", expected_bytes, logger_=self._log)
                     with tmp_archive.open("ab") as fobj:
                         async for chunk in response.aiter_bytes(chunk_size=_DOWNLOAD_CHUNK_SIZE):
                             if context.should_stop():
@@ -605,7 +615,7 @@ class RemoteTrainingBackend:
             except (httpx.HTTPError, RemoteTrainingError) as exc:
                 if attempt == _TRANSFER_RETRY_LIMIT:
                     raise RemoteTrainingError(str(exc) or "Model download could not be resumed") from exc
-                logger.warning("Model download interrupted; resuming from {} bytes", received)
+                self._log.warning("Model download interrupted; resuming from {} bytes", received)
         raise RemoteTrainingError("Model download could not be resumed")
 
     @staticmethod
@@ -655,7 +665,7 @@ class RemoteTrainingBackend:
             async with await self._client() as client:
                 await client.post(f"{self._base_url}/jobs/{remote_job_id}/cancel")
         except httpx.HTTPError as exc:
-            logger.warning("Failed to cancel remote job: {}", exc)
+            self._log.warning("Failed to cancel remote job: {}", exc)
 
     async def _delete_remote_job(self, remote_job_id: uuid.UUID) -> None:
         """Ask the trainer to remove its copy of a job's artifacts; best effort."""
@@ -663,7 +673,7 @@ class RemoteTrainingBackend:
             async with await self._client() as client:
                 await client.delete(f"{self._base_url}/jobs/{remote_job_id}")
         except httpx.HTTPError as exc:
-            logger.warning("Failed to clean up remote job artifacts: {}", exc)
+            self._log.warning("Failed to clean up remote job artifacts: {}", exc)
 
     @staticmethod
     def _coerce_progress(value: object) -> int:

@@ -53,7 +53,8 @@ class JobService:
             remote_trainer_service = self.remote_trainer_service or RemoteTrainerService(self.session)
             remote_trainer = await remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
             payload = TrainJobPayload.model_validate(
-                payload.model_dump() | {"remote_trainer_url": str(remote_trainer.url)}
+                payload.model_dump()
+                | {"remote_trainer_url": str(remote_trainer.url), "remote_trainer_name": remote_trainer.name}
             )
 
         # A remote trainer validates its own devices. Validate only local device choices here.

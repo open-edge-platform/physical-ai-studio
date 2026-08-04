@@ -9,6 +9,8 @@ import multiprocessing as mp
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+from loguru import logger
+
 from schemas.job import TrainingTarget, TrainJobPayload
 from services.training_backends import get_training_backend
 from services.training_backends.local import LocalTrainingBackend
@@ -31,6 +33,7 @@ def _payload(target: TrainingTarget) -> TrainJobPayload:
         training_target=target,
         remote_trainer_id=uuid4() if target is TrainingTarget.REMOTE else None,
         remote_trainer_url="https://trainer.test" if target is TrainingTarget.REMOTE else None,
+        remote_trainer_name="gpu-box-1" if target is TrainingTarget.REMOTE else None,
     )
 
 
@@ -47,6 +50,15 @@ def test_get_training_backend_returns_remote_for_remote_job() -> None:
     ):
         backend = get_training_backend(_payload(TrainingTarget.REMOTE))
     assert isinstance(backend, RemoteTrainingBackend)
+
+    # The pinned trainer name reaches the backend, so its job logs are attributable.
+    messages: list[str] = []
+    sink_id = logger.add(lambda m: messages.append(m.record["message"]), level="INFO")
+    try:
+        backend._log.info("check")
+    finally:
+        logger.remove(sink_id)
+    assert messages == ["[gpu-box-1] check"]
 
 
 def test_dispatcher_report_enqueues_progress_tuple() -> None:

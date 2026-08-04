@@ -12,6 +12,7 @@ from .catalog import (
 from .factory import CatalogRobotFactory
 from .probe import PortScanner, RobotProbe
 from .schemas import SerialPortInfo
+from .transport import shared_robot_name
 
 __all__ = [
     "BuildRobotCallable",
@@ -25,4 +26,5 @@ __all__ = [
     "RobotCatalogRegistry",
     "RobotProbe",
     "SerialPortInfo",
+    "shared_robot_name",
 ]

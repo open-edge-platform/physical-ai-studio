@@ -2737,8 +2737,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.1.2.dev33+gf2fc7eb23"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=f2fc7eb23b00d4d389ce4e09cfe3e26491addd66#f2fc7eb23b00d4d389ce4e09cfe3e26491addd66" }
+version = "0.1.2.dev37+g3e163cfeb"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44#3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2772,6 +2772,11 @@ robots = [
     { name = "feetech-servo-sdk" },
     { name = "trossen-arm" },
 ]
+transport = [
+    { name = "eclipse-zenoh" },
+    { name = "iceoryx2" },
+    { name = "msgpack" },
+]
 
 [[package]]
 name = "physicalai-studio"
@@ -2793,7 +2798,7 @@ dependencies = [
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "opencv-python" },
-    { name = "physicalai", extra = ["capture", "robots"] },
+    { name = "physicalai", extra = ["capture", "robots", "transport"] },
     { name = "physicalai-studio-plugin" },
     { name = "physicalai-train", extra = ["pi0", "smolvla"] },
     { name = "psutil" },
@@ -2824,6 +2829,7 @@ cuda = [
 ]
 tests = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 xpu = [
     { name = "pytorch-triton-xpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
@@ -2867,7 +2873,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["robots", "capture"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=f2fc7eb23b00d4d389ce4e09cfe3e26491addd66" },
+    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44" },
     { name = "physicalai-studio-plugin", editable = "../plugin" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
@@ -2878,6 +2884,7 @@ requires-dist = [
     { name = "pyrealsense2", marker = "sys_platform != 'darwin'" },
     { name = "pyrealsense2-macosx", marker = "sys_platform == 'darwin'" },
     { name = "pytest", marker = "extra == 'tests'" },
+    { name = "pytest-asyncio", marker = "extra == 'tests'" },
     { name = "pytorch-triton-xpu", marker = "(sys_platform == 'linux' and extra == 'xpu') or (sys_platform == 'win32' and extra == 'xpu')", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-studio", extra = "xpu" } },
     { name = "sqlalchemy", specifier = ">=2.0.43" },
     { name = "sse-starlette", specifier = ">=2.0.0" },
@@ -2924,7 +2931,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=f2fc7eb23b00d4d389ce4e09cfe3e26491addd66" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44" },
     { name = "pydantic", specifier = ">=2.12" },
 ]
 
@@ -3012,7 +3019,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.0" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=f2fc7eb23b00d4d389ce4e09cfe3e26491addd66" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
@@ -3618,6 +3625,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl", hash = "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c", size = 386536, upload-time = "2026-06-19T10:58:31.347Z" },
+]
+
+[[package]]
+name = "pytest-asyncio"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13' or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-cuda') or (extra == 'extra-17-physicalai-studio-cpu' and extra == 'extra-17-physicalai-studio-xpu') or (extra == 'extra-17-physicalai-studio-cuda' and extra == 'extra-17-physicalai-studio-xpu')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/7c/d36d04db312ecf4298932ef77e6e4a9e8ad017906e24e34f0b0c361a2473/pytest_asyncio-1.4.0.tar.gz", hash = "sha256:c6c0d2259945122819f171a32ecea2c349ead889ee28176caaf492143424be42", size = 58514, upload-time = "2026-05-26T09:56:04.083Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/03/e2/08a497ef684b88559c9cc5f4ad53a37e7b99e727094a86d6ea32536d5d3c/pytest_asyncio-1.4.0-py3-none-any.whl", hash = "sha256:933ca923a23075a87fb7070c0ec272a6848489824d887c85c812670932835aa1", size = 16930, upload-time = "2026-05-26T09:56:02.576Z" },
 ]
 
 [[package]]

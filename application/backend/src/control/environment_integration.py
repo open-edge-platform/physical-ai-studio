@@ -35,34 +35,42 @@ class EnvironmentIntegration:
         self.frame_captures = {}
 
     async def setup(self) -> None:
-        robot = self.environment.robots[0]  # TODO: Handle multiple robots?
+        try:
+            robot = self.environment.robots[0]  # TODO: Handle multiple robots?
 
-        self.follower = await self.robot_client_factory.build(robot.robot)
-        if isinstance(robot.tele_operator, TeleoperatorRobotWithRobot) and robot.tele_operator.robot is not None:
-            self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
-        self.action_keys = self.follower.features()
+            self.follower = await self.robot_client_factory.build(robot.robot)
+            if isinstance(robot.tele_operator, TeleoperatorRobotWithRobot) and robot.tele_operator.robot is not None:
+                self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
 
-        self.frame_captures = {}
-        loop = asyncio.get_running_loop()
-        for cam_cfg in self.environment.cameras:
-            cam_id = str(cam_cfg.id)
-            cam = build_shared_camera(
-                config=cam_cfg,
-                validate_on_connect=True,
-                overwrite_settings=True,
-            )
-            logger.info(f"Camera {cam_id} initialized: {cam_cfg}")
-            try:
-                await loop.run_in_executor(None, cam.connect)
-            except CaptureError as exc:
-                logger.error(f"Camera {cam_cfg.name}: failed to acquire with requested config: {exc}")
-                raise
-            self.frame_captures[cam_id] = cam
+            # Connect robots before reading features
+            if self.leader:
+                await asyncio.to_thread(self.leader.connect)
+            await asyncio.to_thread(self.follower.connect)
 
-        await asyncio.sleep(1)  # sleep for camera warmup
-        self.follower.connect()
-        if self.leader:
-            self.leader.connect()
+            # Now safe to read features
+            self.action_keys = self.follower.features()
+
+            self.frame_captures = {}
+            loop = asyncio.get_running_loop()
+            for cam_cfg in self.environment.cameras:
+                cam_id = str(cam_cfg.id)
+                cam = build_shared_camera(
+                    config=cam_cfg,
+                    validate_on_connect=True,
+                    overwrite_settings=True,
+                )
+                logger.info(f"Camera {cam_id} initialized: {cam_cfg}")
+                try:
+                    await loop.run_in_executor(None, cam.connect)
+                except CaptureError as exc:
+                    logger.error(f"Camera {cam_cfg.name}: failed to acquire with requested config: {exc}")
+                    raise
+                self.frame_captures[cam_id] = cam
+
+            await asyncio.sleep(1)  # sleep for camera warmup
+        except Exception:
+            await self.teardown()
+            raise
 
     def build_lerobot_dataset_features(self, use_videos: bool = True) -> dict:
         """Build lerobot dataset features."""
@@ -179,10 +187,12 @@ class EnvironmentIntegration:
 
     async def teardown(self) -> None:
         if self.follower:
-            self.follower.disconnect()
+            await asyncio.to_thread(self.follower.disconnect)
+            self.follower = None
 
         if self.leader:
-            self.leader.disconnect()
+            await asyncio.to_thread(self.leader.disconnect)
+            self.leader = None
 
         loop = asyncio.get_running_loop()
         for cam in self.frame_captures.values():
@@ -190,3 +200,4 @@ class EnvironmentIntegration:
                 await loop.run_in_executor(None, cam.disconnect)
             except Exception:
                 logger.info("Failed stopping a camera thread. Ignoring")
+        self.frame_captures.clear()
