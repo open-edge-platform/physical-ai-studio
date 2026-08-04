@@ -17,7 +17,6 @@ import { Manifest } from '@geti-ui/ui/icons';
 import { Outlet, useLocation } from 'react-router';
 
 import { AppLogo } from '../../components/app-logo/app-logo';
-import { featureFlags } from '../../config/feature-flags';
 import { JobStatus } from '../../features/jobs/footer/job-status';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
@@ -59,17 +58,6 @@ const Header = ({ project_id }: { project_id: string }) => {
                                 Models
                             </Flex>
                         </Item>,
-                        ...(featureFlags.remoteTrainers
-                            ? [
-                                  <Item
-                                      textValue='Remote Trainers'
-                                      key={'remote-servers'}
-                                      href={paths.project.remoteServers.index({ project_id })}
-                                  >
-                                      Remote Trainers
-                                  </Item>,
-                              ]
-                            : []),
                     ]}
                 </TabList>
                 <Flex alignItems={'center'} height={'100%'} marginStart='auto' gap='size-100'>
