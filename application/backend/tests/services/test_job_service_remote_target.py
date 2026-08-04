@@ -47,4 +47,6 @@ async def test_submit_remote_job_pins_configured_url_and_ignores_client_url() ->
 
     assert str(job.payload.remote_trainer_url) == "https://configured-trainer.test/"
     assert job.payload.remote_trainer_id == remote_trainer_id
+    # Pinned from the configured trainer's record, for display in job logs.
+    assert job.payload.remote_trainer_name == "trainer"
     repository.save.assert_awaited_once()
