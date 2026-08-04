@@ -183,7 +183,9 @@ class Trainer(lightning.Trainer):
 
         callbacks = [*normalized_callbacks, PolicyDatasetInteraction()]
 
-        if not any(isinstance(callback, LearningRateMonitor) for callback in callbacks):
+        # LearningRateMonitor raises if the trainer has no logger, so skip it when logging is disabled.
+        logging_enabled = logger is not False and not barebones
+        if logging_enabled and not any(isinstance(callback, LearningRateMonitor) for callback in callbacks):
             callbacks.append(LearningRateMonitor(logging_interval="step"))
 
         if auto_scale_batch_size:
