@@ -102,6 +102,25 @@ class UnsupportedDeviceError(BaseException):
         )
 
 
+class RemoteResumeUnsupportedError(BaseException):
+    """Raised when a job would resume from a base model on a remote trainer.
+
+    Resuming needs the base model's checkpoint, and the trainer protocol has no
+    way to send one: the only upload endpoint takes the dataset. Rejecting the
+    submission is better than accepting it and silently training from scratch.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            message=(
+                "Continuing training from an existing model is only supported on this machine. "
+                "Select local training, or start a new model on the remote trainer."
+            ),
+            error_code="remote_resume_unsupported",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
 class InvalidJobStateError(BaseException):
     """Raised when a job action is not valid in the current state."""
 

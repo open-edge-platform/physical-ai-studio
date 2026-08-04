@@ -3,10 +3,13 @@
 
 """Launch command for the Physical AI trainer service.
 
-This command loads the trainer ``.env`` file and starts the trainer service
+This command loads the shared ``.env`` file and starts the trainer service
 in-process. Dependencies (including the hardware-specific torch build) must be
 installed beforehand with ``uv sync --extra <cpu|cuda|xpu>``, so this command is
 meant to be invoked with ``uv run physicalai-trainer``.
+
+This is the *remote* entry point only. Studio's own training never goes through
+here: it calls :func:`training.run_training_job` in-process.
 """
 
 from __future__ import annotations
@@ -17,14 +20,15 @@ from pathlib import Path
 
 import click
 
+_ENV_FILE = ".env"
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # Minimum length for a value to possibly be wrapped in a matching pair of quotes.
 _MIN_QUOTED_LEN = 2
 
 
 def _project_dir() -> Path:
-    """Return the trainer project directory (contains pyproject.toml and .venv)."""
-    # src/trainer/cli.py -> src/trainer -> src -> trainer
+    """Return the project directory (contains pyproject.toml and .venv)."""
+    # src/trainer/cli.py -> src/trainer -> src -> backend
     return Path(__file__).resolve().parents[2]
 
 
@@ -77,7 +81,7 @@ def trainer(host: str | None, port: int | None) -> None:
     Install dependencies first with ``uv sync --extra <cpu|cuda|xpu>``.
     """
     project_dir = _project_dir()
-    load_env_file(project_dir / ".env")
+    load_env_file(project_dir / _ENV_FILE)
 
     os.environ["PYTHONUNBUFFERED"] = "1"
 

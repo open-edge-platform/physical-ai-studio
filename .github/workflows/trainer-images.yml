@@ -4,13 +4,17 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - application/trainer/**
+      - application/backend/**
+      - application/docker/Dockerfile.trainer
+      - application/plugin/**
       - library/**
       - .github/workflows/trainer-images.yml
   push:
     branches: [main]
     paths:
-      - application/trainer/**
+      - application/backend/**
+      - application/docker/Dockerfile.trainer
+      - application/plugin/**
       - library/**
       - .github/workflows/trainer-images.yml
   workflow_dispatch:
@@ -87,9 +91,10 @@ jobs:
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
-          file: application/trainer/Dockerfile
+          file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
+            plugin=application/plugin
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           load: true
@@ -200,9 +205,10 @@ jobs:
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
-          file: application/trainer/Dockerfile
+          file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
+            plugin=application/plugin
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true

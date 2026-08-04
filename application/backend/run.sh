@@ -6,8 +6,9 @@ set -euo pipefail
 # Forwards to the physicalai-studio CLI. With no argument it starts the backend
 # via `serve`, supporting local and remote training at the same time.
 
-# The remote trainer service is launched from the trainer project with its own
-# `physicalai-trainer` command (see application/trainer/README.md).
+# The remote trainer service is a separate entry point in this same project:
+# `uv run physicalai-trainer` (see docs/remote-trainer.md). Local training does
+# not need it; it calls the training code in-process.
 #
 # Usage:
 #   ./run.sh [physicalai-studio arguments]

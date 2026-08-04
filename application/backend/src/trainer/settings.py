@@ -13,17 +13,24 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class TrainerSettings(BaseSettings):
     """Trainer service settings sourced from the environment."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     # Working directory for snapshots, checkpoints, and model archives.
-    storage_dir: Path = Field(default=Path("~/.local/share/physicalai-trainer").expanduser(), alias="STORAGE_DIR")
+    storage_dir: Path = Field(
+        default=Path("~/.local/share/physicalai-trainer").expanduser(), alias="TRAINER_STORAGE_DIR"
+    )
     # Concurrency cap for the queue worker. Defaults to a single GPU job.
     max_concurrent_jobs: int = Field(default=1, ge=1, le=8, alias="TRAINER_MAX_CONCURRENT_JOBS")
 
     # nosec B104 - trainer is intended to be reachable from other machines on a
     # trusted local network.
-    host: str = Field(default="0.0.0.0", alias="HOST")  # nosec B104 # noqa: S104
-    port: int = Field(default=8001, alias="PORT")
+    host: str = Field(default="0.0.0.0", alias="TRAINER_HOST")  # nosec B104 # noqa: S104
+    port: int = Field(default=8001, alias="TRAINER_PORT")
 
     # HTTP-upload safety limits to prevent disk exhaustion.
     max_uncompressed_bytes: int = Field(

@@ -1,175 +1,55 @@
-# Physical AI Studio Backend
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-edge-platform/physical-ai-studio/main/docs/assets/physical_ai_studio.png" alt="Physical AI Studio Application" width="100%">
+</p>
 
-FastAPI server for demonstration data management and VLA model training orchestration.
+# Physical AI Studio Application
 
-## Overview
+Studio application for collecting demonstration data, managing datasets, training VLA model policies, and running trained policies on robot environments.
 
-The backend provides RESTful APIs and services for:
+The application provides a graphical interface to:
 
-- **Camera Management** - Configure and stream from multiple camera sources (RealSense, USB, GenICam)
-- **Dataset Management** - Store and organize demonstration recordings
-- **Training Orchestration** - Launch and monitor policy training jobs
-- **Model Management** - Track trained models and export configurations
-- **WebRTC Streaming** - Real-time video streaming for data collection
+- Set up robot arms and cameras.
+- Create reusable robot-camera environments.
+- Record and review demonstration datasets.
+- Train policies using the PhysicalAI library.
+- Run trained policies in Studio or deploy them with [OpenVINO PhysicalAI](https://github.com/openvinotoolkit/physicalai).
 
-## Architecture
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="https://raw.githubusercontent.com/open-edge-platform/physical-ai-studio/main/docs/assets/application.gif" alt="Application demo" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
 
-```
-backend/src/
-├── api/          # FastAPI route handlers
-├── core/         # Business logic and domain models
-├── db/           # Database models and migrations (SQLAlchemy + Alembic)
-├── repositories/ # Data access layer
-├── schemas/      # Pydantic request/response schemas
-├── services/     # Business logic services
-├── utils/        # Shared utilities
-├── webrtc/       # WebRTC signaling and streaming
-└── workers/      # Background task workers
-```
+## Start Here
 
-## Setup
+| Task                        | Documentation                                                             |
+|-----------------------------|---------------------------------------------------------------------------|
+| Install the application     | [Installation](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/01-installation.md)                                 |
+| Update an existing setup    | [Update Existing Installation](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/02-update-existing-installation.md) |
+| Complete the first workflow | [Getting Started](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/03-getting-started.md)                           |
 
-### Prerequisites
+## Application Guides
 
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) package manager
+| Guide                                                                     | Description                                                                       |
+|---------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| [Installation](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/01-installation.md)                                 | Install with Docker or run backend and UI natively.                               |
+| [Update Existing Installation](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/02-update-existing-installation.md) | Refresh Docker images, dependencies, and services after pulling changes.          |
+| [Getting Started](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/03-getting-started.md)                           | Create a project, set up hardware, record data, train a model, and run inference. |
+| [Environment Setup](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/04-environment-setup.md)                       | Configure robots, cameras, and environments.                                      |
+| [Virtual USB Ports](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/08-virtual-usb-ports.md) (optional)            | Connect to robot serial devices over TCP using `socat` virtual ports.             |
+| [Recording Datasets](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/05-recording-datasets.md)                     | Record, review, import, and export demonstration datasets.                        |
+| [Training Policies](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/06-training-policies.md)                       | Train model policies from recorded datasets.                                      |
+| [Deploying Model Policies](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/07-deploying-model-policies.md)         | Run trained policies in Studio or deploy them externally.                         |
 
-### Install Dependencies
+## Components
 
-```bash
-cd application/backend
-uv sync
-```
-
-This installs all backend dependencies including FastAPI, SQLAlchemy, aiortc, and the physicalai library.
-
-### (Optional) Enable hardware acceleration for video encoding
-Using hardware acceleration for video encoding can improve the speed of recording significantly.
-Please check out [this document](docs/video_hardware_acceleration_intel.md) for more information.
-
-## Usage
-
-### Start Server
-
-```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Run server (backend with in-process training; local by default)
-uv run physicalai-studio serve
-
-# Equivalent thin wrapper
-./run.sh
-```
-
-Server starts at `http://localhost:8000`
-
-### Remote Training
-
-The `serve` process supports local and remote training at the same time. Configure
-remote trainer URLs in the Studio UI, then choose the execution target when you
-submit a training job. `run.sh` is a thin wrapper around the CLI.
-
-To run training on a separate, GPU-enabled machine, deploy and configure a
-Physical AI Trainer service from
-[`application/trainer/README.md`](../trainer/README.md), then register its URL
-as a remote trainer in the Studio UI. The backend sends dataset snapshots to
-the service, monitors the training job, and imports the resulting model.
-
-### Database Migrations
-
-```bash
-# Create new migration
-uv run alembic revision --autogenerate -m "description"
-
-# Apply migrations
-uv run alembic upgrade head
-
-# Rollback migration
-uv run alembic downgrade -1
-```
-
-### CLI Commands
-
-```bash
-# Initialize database
-uv run physicalai-studio db init
-
-# Run migrations
-uv run physicalai-studio db migrate
-```
-
-## API Documentation
-
-Once the server is running:
-
-- **Interactive API Docs** - http://localhost:8000/docs (Swagger UI)
-- **Alternative Docs** - http://localhost:8000/redoc (ReDoc)
-- **OpenAPI Schema** - http://localhost:8000/openapi.json
-
-## Configuration
-
-Configuration via environment variables (see `src/settings.py`):
-
-| Variable      | Description                                                                                                  | Default                                                                                                 |
-|---------------|--------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
-| `STORAGE_DIR` | Root directory for persistent artifacts (`datasets/`, `models/`, `snapshots/`, `robots/`, `cache/`, `logs/`) | Linux: `${XDG_DATA_HOME:-~/.local/share}/physicalai`; macOS: `~/Library/Application Support/physicalai` |
-
-Create `.env` file in backend directory for local overrides.
-
-## Development
-
-### Code Quality
-
-```bash
-# Format code
-uv run ruff format .
-
-# Lint code
-uv run ruff check .
-
-# Type check
-uv run mypy src/
-
-# Type check (Pyrefly)
-uv run pyrefly check -c pyproject.toml
-```
-
-### Project Structure
-
-- **API Layer** (`api/`) - HTTP endpoints, request validation
-- **Service Layer** (`services/`) - Business logic, orchestration
-- **Repository Layer** (`repositories/`) - Database queries
-- **Core** (`core/`) - Domain models and pure business logic
-- **Schemas** (`schemas/`) - Input/output data validation
-
-### Adding New Endpoints
-
-1. Define Pydantic schemas in `schemas/`
-2. Create repository methods in `repositories/`
-3. Implement service logic in `services/`
-4. Add route handlers in `api/`
-5. Register routes in `main.py`
-
-## Troubleshooting
-
-### Data/Storage Migration Behavior
-
-On startup (`./run.sh`), the backend runs migration checks before Alembic:
-
-- Storage migration: old `~/.cache/physicalai` -> `STORAGE_DIR`
-- Database migration: old `data/physicalai.db`, Docker legacy `/app/data/physicalai.db`, or a legacy `$DATA_DIR/physicalai.db` -> `$STORAGE_DIR/data/physicalai.db`
-
-In interactive terminals, users are prompted for confirmation when a migration is needed.
-
-### Camera Not Detected
-
-- **RealSense**: Install [librealsense](https://github.com/IntelRealSense/librealsense)
-- **GenICam**: Install vendor-specific SDKs
-- **USB**: Check permissions (`sudo usermod -a -G video $USER`)
+| Component                 | Description                                                    | Documentation                         |
+|---------------------------|----------------------------------------------------------------|---------------------------------------|
+| **[Backend](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/backend/)** | FastAPI server for data management and training orchestration. | [Backend README](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/backend/README.md) |
+| **[UI](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/ui/)**           | React web application.                                         | [UI README](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/ui/README.md)           |
+| **[Docker](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docker/)**   | Containerized application runtime.                             | [Docker README](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docker/README.md)   |
 
 ## See Also
 
-- **[Application Overview](../README.md)** - Full application architecture
-- **[UI](../ui/README.md)** - React frontend
-- **[Library](../../library/README.md)** - Python SDK for training
+- [Main Repository](https://github.com/open-edge-platform/physical-ai-studio/blob/main/README.md) - Project overview and library quick start.
+- [Library](https://github.com/open-edge-platform/physical-ai-studio/blob/main/library/README.md) - Python SDK for programmatic usage.

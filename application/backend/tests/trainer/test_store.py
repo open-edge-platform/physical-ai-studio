@@ -61,7 +61,7 @@ def test_get_request_round_trips(db_path: Path, sample_request: SubmitJobRequest
     restored = store.get_request(job_id)
 
     assert restored is not None
-    assert restored.policy == sample_request.policy
+    assert restored.spec == sample_request.spec
 
 
 def test_next_queued_is_fifo(db_path: Path, sample_request: SubmitJobRequest) -> None:

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from trainer.schemas import SubmitJobRequest
+from training import TrainingJobSpec
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -19,8 +20,7 @@ if TYPE_CHECKING:
 def sample_request() -> SubmitJobRequest:
     """A valid http-transfer job submission request."""
     return SubmitJobRequest(
-        payload={"max_steps": 100, "batch_size": 8, "precision": "bf16-mixed"},
-        policy="act",
+        spec=TrainingJobSpec(policy="act", max_steps=100, batch_size=8, precision="bf16-mixed"),
     )
 
 
