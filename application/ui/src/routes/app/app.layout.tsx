@@ -7,10 +7,12 @@ import { AppLogo } from '../../components/app-logo/app-logo';
 import { AppSidebar } from './app-sidebar';
 import { disabledNavItemKeys } from './nav-items';
 
+import classes from './app.layout.module.css';
+
 const getSelectedNavKey = (pathname: string) => {
     const [, firstSegment] = pathname.split('/');
 
-    return firstSegment ?? 'projects';
+    return firstSegment || 'projects';
 };
 
 export const AppLayout = () => {
@@ -23,10 +25,8 @@ export const AppLayout = () => {
             aria-label='Main navigation'
             selectedKey={selectedKey}
             disabledKeys={disabledNavItemKeys}
+            UNSAFE_className={classes.layout}
             minHeight={0}
-            UNSAFE_style={{
-                '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
-            }}
             height={'100%'}
             width={'100%'}
         >
