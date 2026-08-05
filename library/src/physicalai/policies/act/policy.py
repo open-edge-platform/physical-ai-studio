@@ -523,16 +523,7 @@ class ACT(ExportablePolicyMixin, Policy):
             msg = "ACT model is not initialized."
             raise RuntimeError(msg)
         loss, loss_dict = self.forward(batch)  # noqa: RUF059
-        self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
-        self.log(
-            "train/loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            logger=True,
-            sync_dist=True,
-        )
+        self.log("train/loss", loss, prog_bar=True)
         return {"loss": loss}
 
     def configure_optimizers(self) -> dict[str, Any]:
