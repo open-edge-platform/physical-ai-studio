@@ -254,7 +254,7 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_state_dim == 32
         assert preprocessor.max_action_dim == 32
         assert preprocessor.image_resolution == (512, 512)
-        assert preprocessor.image_key_rename_map == {}
+        assert preprocessor.image_key_reorder_map == {}
         assert preprocessor.image_features == []
         assert preprocessor.empty_cameras == 0
         assert preprocessor.max_token_len == 48
@@ -269,7 +269,7 @@ class TestSmolVLAPreprocessor:
             max_state_dim=64,
             max_action_dim=16,
             image_resolution=(256, 256),
-            image_key_rename_map={"overview": "camera0"},
+            image_key_reorder_map={"overview": "camera0"},
             image_features=["camera0", "camera1"],
             empty_cameras=2,
             max_token_len=64,
@@ -279,13 +279,13 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_state_dim == 64
         assert preprocessor.max_action_dim == 16
         assert preprocessor.image_resolution == (256, 256)
-        assert preprocessor.image_key_rename_map == {"overview": "camera0"}
+        assert preprocessor.image_key_reorder_map == {"overview": "camera0"}
         assert preprocessor.image_features == ["camera0", "camera1"]
         assert preprocessor.empty_cameras == 2
         assert preprocessor.max_token_len == 64
         assert preprocessor.padding == "max_length"
 
-    def test_image_key_rename_map_applies_and_orders_cameras(self) -> None:
+    def test_image_key_reorder_map_applies_and_orders_cameras(self) -> None:
         """Test image key mapping accepts suffix/full keys and orders by mapped names."""
         from physicalai.data.constants import IMAGE_MASKS
         from physicalai.data.observation import IMAGES, STATE
@@ -293,7 +293,7 @@ class TestSmolVLAPreprocessor:
 
         preprocessor = SmolVLAPreprocessor(
             image_resolution=(2, 2),
-            image_key_rename_map={
+            image_key_reorder_map={
                 "wrist": "camera1",
                 "observation.images.overview": "camera0",
             },
@@ -347,7 +347,7 @@ class TestSmolVLAPreprocessor:
 
         preprocessor = SmolVLAPreprocessor(
             image_resolution=(2, 2),
-            image_key_rename_map={
+            image_key_reorder_map={
                 "overview": "camera0",
                 "gripper": "camera1",
                 "side": "camera2",

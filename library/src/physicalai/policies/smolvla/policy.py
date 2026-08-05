@@ -119,8 +119,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         max_action_dim: int = 32,
         # Image preprocessing
         resize_imgs_with_padding: tuple[int, int] = (512, 512),
-        image_key_rename_map: dict[str, str] | None = None,
-        image_features: list[str] | None = None,
+        image_key_reorder_map: dict[str, int] | None = None,
         empty_cameras: int = 0,
         *,
         # Architecture
@@ -179,8 +178,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 tokenizer_max_length=tokenizer_max_length,
                 pad_language_to=pad_language_to,
                 use_random_input_noise=use_random_input_noise,
-                image_key_rename_map=image_key_rename_map,
-                image_features=image_features,
+                image_key_reorder_map=image_key_reorder_map,
                 empty_cameras=empty_cameras,
                 compile_model=compile_model,
                 snapflow_enabled=snapflow_enabled,
@@ -210,8 +208,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 max_state_dim=max_state_dim,
                 max_action_dim=max_action_dim,
                 resize_imgs_with_padding=resize_imgs_with_padding,
-                image_key_rename_map=image_key_rename_map or {},
-                image_features=image_features or [],
+                image_key_reorder_map=image_key_reorder_map or {},
                 empty_cameras=empty_cameras,
                 tokenizer_max_length=tokenizer_max_length,
                 vlm_model_name=vlm_model_name,
@@ -353,8 +350,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         tokenizer_max_length: int = 48,
         pad_language_to: str = "max_length",
         use_random_input_noise: bool = False,
-        image_key_rename_map: dict[str, str] | None = None,
-        image_features: list[str] | None = None,
+        image_key_reorder_map: dict[str, int] | None = None,
         empty_cameras: int = 0,
         compile_model: bool = False,
         snapflow_enabled: bool = False,
@@ -419,7 +415,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         hf_config["tokenizer_max_length"] = tokenizer_max_length
         hf_config["pad_language_to"] = pad_language_to
         hf_config["use_random_input_noise"] = use_random_input_noise
-        hf_config["image_key_rename_map"] = image_key_rename_map or {}
+        hf_config["image_key_reorder_map"] = image_key_reorder_map or {}
         hf_config["empty_cameras"] = empty_cameras
         hf_config["compile_model"] = compile_model
         hf_config["snapflow_enabled"] = snapflow_enabled
@@ -442,13 +438,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         dataset_stats = extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
 
-        # Keep caller override when provided; otherwise infer from pretrained
-        # metadata so camera slots are configured for missing-camera padding.
-        if image_features is not None:
-            hf_config["image_features"] = image_features
-        else:
-            hf_config["image_features"] = self._infer_image_features(hf_config, dataset_stats)
-
         config = SmolVLAConfig.from_dict(hf_config)
 
         return config, dataset_stats, weights_file
@@ -467,45 +456,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             if name.startswith(prefix):
                 return name[len(prefix) :]
         return name
-
-    @classmethod
-    def _infer_image_features(
-        cls,
-        hf_config: dict[str, Any],
-        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None,
-    ) -> list[str]:
-        """Infer expected image feature slots from pretrained metadata.
-
-        Args:
-            hf_config: Pretrained model configuration dictionary.
-            dataset_stats: Optional dataset statistics used as a fallback source.
-
-        Returns:
-            Ordered, de-duplicated camera suffix names for the expected image slots.
-        """
-        configured = hf_config.get("image_features")
-        if isinstance(configured, list) and configured:
-            return [cls._normalize_image_feature_name(str(name)) for name in configured]
-
-        inferred: list[str] = []
-
-        input_features = hf_config.get("input_features")
-        if isinstance(input_features, dict):
-            for feat_name, feat_info in input_features.items():
-                if not isinstance(feat_info, dict):
-                    continue
-                if feat_info.get("type") == FeatureType.VISUAL.value:
-                    inferred.append(cls._normalize_image_feature_name(str(feat_name)))
-
-        if not inferred and dataset_stats:
-            for feat_name, stat in dataset_stats.items():
-                if stat.get("type") == FeatureType.VISUAL.value:
-                    inferred.append(
-                        cls._normalize_image_feature_name(str(stat.get("name", feat_name))),
-                    )
-
-        # Preserve order, remove duplicates.
-        return list(dict.fromkeys(inferred))
 
     def _update_preprocessor_stats(
         self,
@@ -526,8 +476,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
             image_resolution=self.config.resize_imgs_with_padding,
-            image_key_rename_map=self.config.image_key_rename_map,
-            image_features=self.config.image_features,
+            image_key_reorder_map=self.config.image_key_reorder_map,
             empty_cameras=self.config.empty_cameras,
             max_token_len=self.config.tokenizer_max_length,
             token_pad_type=self.config.pad_language_to,
@@ -799,32 +748,18 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                 )
-        if self.config.image_features:
-            if visual_shape is None:
-                return None
 
-            for image_feature in self.config.image_features:
-                slot_name = self._normalize_image_feature_name(str(image_feature))
-                name = IMAGES if len(self.config.image_features) == 1 else f"{IMAGES}.{slot_name}"
-                schema.append(
-                    InferenceFeature(
-                        ftype=InferenceFeatureType.VISUAL,
-                        shape=visual_shape,
-                        name=name,
-                        dtype=InferenceFeatureDtype.FLOAT32,
-                    ),
-                )
-        else:
-            for feature in visual_stats:
-                name = IMAGES if len(visual_stats) == 1 else f"{IMAGES}.{feature['name']}"
-                schema.append(
-                    InferenceFeature(
-                        ftype=InferenceFeatureType.VISUAL,
-                        shape=cast("tuple", feature["shape"]),
-                        name=name,
-                        dtype=InferenceFeatureDtype.FLOAT32,
-                    ),
-                )
+        for feature in visual_stats:
+            name = IMAGES if len(visual_stats) == 1 else f"{IMAGES}.{feature['name']}"
+            schema.append(
+                InferenceFeature(
+                    ftype=InferenceFeatureType.VISUAL,
+                    shape=cast("tuple", feature["shape"]),
+                    name=name,
+                    dtype=InferenceFeatureDtype.FLOAT32,
+                ),
+            )
+
         schema.append(
             InferenceFeature(
                 ftype=InferenceFeatureType.LANGUAGE,
@@ -882,8 +817,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             ComponentSpec(
                 type="smolvla_resize",
                 image_resolution=self.config.resize_imgs_with_padding,
-                image_key_rename_map=self.config.image_key_rename_map,
-                image_features=self.config.image_features,
+                image_key_reorder_map=self.config.image_key_reorder_map,
                 empty_cameras=self.config.empty_cameras,
             ),
             ComponentSpec(type="new_line"),

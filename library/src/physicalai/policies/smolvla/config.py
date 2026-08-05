@@ -34,7 +34,7 @@ class SmolVLAConfig(Config):
         max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded. Defaults to 32.
         resize_imgs_with_padding: Target size (height, width) for image preprocessing with padding.
             Defaults to (512, 512).
-        image_key_rename_map: Optional mapping from dataset camera names to policy camera names.
+        image_key_reorder_map: Optional mapping from dataset camera keys to policy camera indices.
             This is applied in preprocessing before image stacking. Defaults to {}.
         image_features: Expected image feature names (camera slots) for SmolVLA input ordering.
             Can be provided as suffixes (e.g. "camera0") or flattened keys
@@ -94,8 +94,7 @@ class SmolVLAConfig(Config):
 
     resize_imgs_with_padding: tuple[int, int] = (512, 512)
 
-    image_key_rename_map: dict[str, str] = field(default_factory=dict)
-    image_features: list[str] = field(default_factory=list)
+    image_key_reorder_map: dict[str, int] = field(default_factory=dict)
 
     empty_cameras: int = 0
 
