@@ -14,6 +14,7 @@ module can be imported in environments without the `[train]` extra installed.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -38,7 +39,8 @@ class LocalTrainingBackend:
         if context.snapshot is None:
             raise ValueError("Local training requires a dataset snapshot")
 
-        run_training_job(
+        await asyncio.to_thread(
+            run_training_job,
             build_spec(context),
             dataset_root=context.snapshot.path,
             output_dir=context.output_dir,
