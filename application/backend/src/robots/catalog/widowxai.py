@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from physicalai.robot.trossen import BimanualWidowXAI, WidowXAI
+from physicalai.robot import BimanualWidowXAI, WidowXAI
 from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -107,17 +107,26 @@ _TROSSEN_BIMANUAL_ASSET = RobotAsset(
 async def _build_trossen_single_arm_driver(
     robot: CatalogRobot[TrossenSingleArmPayload], _factory: CatalogRobotFactory
 ) -> WidowXAI:
+    # Studio generates the robot model per registered type, so match on the
+    # payload; the model is never a ``TrossenSingleArmRobot`` instance.
+    payload = robot.payload
+    if not isinstance(payload, TrossenSingleArmPayload):
+        raise TypeError(f"Expected TrossenSingleArmPayload, got {type(payload).__name__}")
     role = "follower" if robot.type == "Trossen_WidowXAI_Follower" else "leader"
-    return WidowXAI(ip=robot.payload.connection_string, role=role)
+    return WidowXAI(ip=payload.connection_string, role=role)
 
 
 async def _build_trossen_bimanual_driver(
     robot: CatalogRobot[TrossenBimanualPayload], _factory: CatalogRobotFactory
 ) -> BimanualWidowXAI:
+    payload = robot.payload
+    if not isinstance(payload, TrossenBimanualPayload):
+        raise TypeError(f"Expected TrossenBimanualPayload, got {type(payload).__name__}")
     mode = "follower" if robot.type == "Trossen_Bimanual_WidowXAI_Follower" else "leader"
-    left_driver = WidowXAI(ip=robot.payload.connection_string_left, role=mode)
-    right_driver = WidowXAI(ip=robot.payload.connection_string_right, role=mode)
-    return BimanualWidowXAI(left=left_driver, right=right_driver)
+    return BimanualWidowXAI(
+        left=WidowXAI(ip=payload.connection_string_left, role=mode),
+        right=WidowXAI(ip=payload.connection_string_right, role=mode),
+    )
 
 
 async def _ping(ip: str, ping_timeout: float = 1.0) -> bool:

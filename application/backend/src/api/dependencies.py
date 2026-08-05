@@ -19,6 +19,7 @@ from services import (
     ModelService,
     ProjectCameraService,
     ProjectService,
+    ProjectThumbnailService,
     RemoteTrainerService,
     RobotService,
 )
@@ -158,6 +159,16 @@ def get_episode_thumbnail_service() -> EpisodeThumbnailService:
 
 
 EpisodeThumbnailServiceDep = Annotated[EpisodeThumbnailService, Depends(get_episode_thumbnail_service)]
+
+
+def get_project_thumbnail_service(
+    episode_thumbnail_service: EpisodeThumbnailServiceDep,
+) -> ProjectThumbnailService:
+    """Provides a service for building project thumbnails."""
+    return ProjectThumbnailService(episode_thumbnail_service=episode_thumbnail_service)
+
+
+ProjectThumbnailServiceDep = Annotated[ProjectThumbnailService, Depends(get_project_thumbnail_service)]
 
 
 def get_model_service(session: AsyncSessionDep) -> ModelService:

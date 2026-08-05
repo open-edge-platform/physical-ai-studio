@@ -485,3 +485,157 @@ class TestSampleInput:
         assert f"{IMAGES}.front_cam" in sample_input
         assert f"{IMAGES}.wrist_cam" in sample_input
         assert IMAGES not in sample_input
+
+
+# ============================================================================ #
+# Action Padding Mask                                                          #
+# ============================================================================ #
+
+
+class TestActionPaddingMask:
+    """Regression tests for end-of-episode action padding in the training loss.
+
+    LeRobot clamps action-chunk queries at episode boundaries (repeating the
+    final action) and flags the clamped steps as ``action_is_pad``. Those steps
+    must not contribute to the flow-matching loss, and must not count towards
+    its denominator either.
+    """
+
+    @staticmethod
+    def _compute_loss(
+        losses: torch.Tensor,
+        action_is_pad: torch.Tensor | None,
+        key_suffix: str = ".action_is_pad",
+    ) -> float:
+        """Run ``SmolVLAModel.compute_loss`` against a stubbed model.
+
+        Args:
+            losses: Per-element losses the inner flow-matching model should return,
+                shaped ``(batch, chunk, action_dim)``.
+            action_is_pad: Optional ``(batch, chunk)`` bool padding mask.
+            key_suffix: Batch key the mask is stored under, relative to ``EXTRA``.
+                Overridable so a wrong key can be exercised.
+
+        Returns:
+            The scalar loss produced by ``compute_loss``.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+        from physicalai.data.observation import ACTION, EXTRA, IMAGES
+        from physicalai.policies.smolvla.model import SmolVLAModel
+
+        action_dim = losses.shape[-1]
+        batch: dict = {
+            IMAGES: None,
+            IMAGE_MASKS: None,
+            TOKENIZED_PROMPT: None,
+            TOKENIZED_PROMPT_MASK: None,
+        }
+        if action_is_pad is not None:
+            batch[EXTRA + key_suffix] = action_is_pad
+
+        stub = SimpleNamespace(
+            _preprocess_batch=lambda b: b,
+            _prepare_state=lambda b: None,
+            _prepare_action=lambda b: None,
+            _model=SimpleNamespace(forward=lambda *_a, **_kw: losses.clone()),
+            _dataset_stats={ACTION: {"shape": (action_dim,)}},
+        )
+        loss, _ = SmolVLAModel.compute_loss(stub, batch)
+        return float(loss)
+
+    def test_mask_is_read_from_lerobot_key_only(self) -> None:
+        """The mask must be read as ``action_is_pad``, LeRobot's actual key.
+
+        The lookup uses ``.get()``, so a typo'd key silently disables masking with
+        no error. This pins the exact spelling that
+        ``lerobot/datasets/dataset_reader.py`` emits.
+        """
+        losses = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        correct_key = self._compute_loss(losses, action_is_pad)
+        typo_key = self._compute_loss(losses, action_is_pad, key_suffix=".actions_id_pad")
+
+        assert correct_key == pytest.approx(1.0), "mask under the LeRobot key must apply"
+        assert typo_key == pytest.approx(50.0), "a wrong key must not silently half-apply"
+
+    def test_padded_steps_are_excluded_from_the_loss(self) -> None:
+        """Padded steps contribute nothing, regardless of their magnitude."""
+        losses = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        masked = self._compute_loss(losses, action_is_pad)
+        unmasked = self._compute_loss(losses, None)
+
+        assert masked == pytest.approx(1.0), "padded steps must not affect the loss"
+        assert unmasked == pytest.approx(50.0), "without a mask the padding dominates"
+
+    def test_denominator_counts_only_valid_steps(self) -> None:
+        """The loss divides by valid elements, not by the full tensor.
+
+        Chosen so all three behaviours are distinguishable:
+        correct = 2.0, mask-with-plain-mean = 1.0, no-mask = 50.5.
+        A plain ``.mean()`` over the zeroed tensor would scale the loss - and
+        therefore the gradient - down by the padding fraction.
+        """
+        losses = torch.tensor([[[2.0, 2.0], [2.0, 2.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        masked = self._compute_loss(losses, action_is_pad)
+
+        assert masked == pytest.approx(2.0)
+        assert masked != pytest.approx(1.0), "denominator must exclude padded elements"
+        assert masked != pytest.approx(50.5), "mask must be applied at all"
+
+    def test_fully_padded_chunk_does_not_divide_by_zero(self) -> None:
+        """An all-padded chunk clamps the denominator instead of producing NaN."""
+        losses = torch.ones(1, 4, 2)
+        action_is_pad = torch.ones(1, 4, dtype=torch.bool)
+
+        masked = self._compute_loss(losses, action_is_pad)
+
+        assert masked == pytest.approx(0.0)
+
+    def test_no_mask_falls_back_to_plain_mean(self) -> None:
+        """Batches without the key (e.g. non-chunked datasets) keep the old path."""
+        losses = torch.full((2, 3, 2), 4.0)
+        assert self._compute_loss(losses, None) == pytest.approx(4.0)
+
+    def test_masking_is_autograd_safe(self) -> None:
+        """Gradients flow, and padded steps receive exactly zero gradient.
+
+        This masking branch never executed before the key fix, so the autograd
+        behaviour was previously unverified.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+        from physicalai.data.observation import ACTION, EXTRA, IMAGES
+        from physicalai.policies.smolvla.model import SmolVLAModel
+
+        source = torch.ones(1, 4, 2, requires_grad=True)
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        stub = SimpleNamespace(
+            _preprocess_batch=lambda b: b,
+            _prepare_state=lambda b: None,
+            _prepare_action=lambda b: None,
+            _model=SimpleNamespace(forward=lambda *_a, **_kw: source * 2.0),
+            _dataset_stats={ACTION: {"shape": (2,)}},
+        )
+        batch: dict = {
+            IMAGES: None,
+            IMAGE_MASKS: None,
+            TOKENIZED_PROMPT: None,
+            TOKENIZED_PROMPT_MASK: None,
+            EXTRA + ".action_is_pad": action_is_pad,
+        }
+
+        loss, _ = SmolVLAModel.compute_loss(stub, batch)
+        loss.backward()
+
+        assert source.grad is not None
+        assert torch.all(source.grad[0, :2] != 0), "valid steps must receive gradient"
+        assert torch.all(source.grad[0, 2:] == 0), "padded steps must receive zero gradient"

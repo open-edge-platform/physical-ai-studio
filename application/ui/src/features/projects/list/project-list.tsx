@@ -11,7 +11,7 @@ export const ProjectList = () => {
     const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
 
     return (
-        <View padding='size-400' height='100%' maxWidth={'240ch'} marginX='auto'>
+        <View height='100%' maxWidth={'240ch'} marginX='auto'>
             <Heading
                 level={1}
                 marginBottom={'size-250'}
@@ -37,8 +37,8 @@ export const ProjectList = () => {
             >
                 <NewProjectLink />
 
-                {projects.map((item, index) => (
-                    <ProjectCard key={item.id} item={item} isActive={index === 0} />
+                {projects.map((item) => (
+                    <ProjectCard key={item.id} item={item} isActive={false} />
                 ))}
             </Grid>
         </View>

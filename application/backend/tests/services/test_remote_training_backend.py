@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from loguru import logger
 
 from schemas.dataset import Snapshot
 from schemas.job import TrainJobPayload
@@ -865,21 +866,25 @@ class TestSnapshotUploadHeartbeat:
         # Give the archive real bytes so the streaming read loop runs and updates the heartbeat.
         (tmp_path / "snap" / "info.json").write_text("x" * 4096)
         controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
+        messages: list[str] = []
+        sink_id = logger.add(lambda m: messages.append(m.record["message"]), level="INFO")
 
-        with (
-            patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
-            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
-            # A negative interval forces a heartbeat on the first streamed chunk.
-            patch(f"{TRANSFER}._TRANSFER_LOG_INTERVAL_S", -1.0),
-            patch(f"{TRANSFER}.logger") as mock_logger,
-        ):
-            backend = _backend(settings)
-            await backend.train(context)
+        try:
+            with (
+                patch(f"{REMOTE}.get_settings", return_value=settings),
+                patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+                patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+                patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+                # A negative interval forces a heartbeat on the first streamed chunk.
+                patch(f"{TRANSFER}._TRANSFER_LOG_INTERVAL_S", -1.0),
+            ):
+                backend = _backend(settings)
+                await backend.train(context)
+        finally:
+            logger.remove(sink_id)
 
-        templates = [call for call in mock_logger.info.call_args_list if call.args and "progress:" in call.args[0]]
-        assert any(call.args[1] == "Dataset upload" for call in templates)
+        # Heartbeats go through the backend's trainer-prefixed logger, not the bare module logger.
+        assert any("progress:" in message and "Dataset upload" in message for message in messages)
 
 
 class TestModelDownloadProgress:
@@ -943,21 +948,25 @@ class TestModelDownloadProgress:
         controller = _Controller(states=[{"status": "completed", "progress": 100, "message": "Done"}])
         controller.artifact_chunks = [b"a" * 500, b"b" * 500]
         controller.artifact_headers = {"content-length": "1000"}
+        messages: list[str] = []
+        sink_id = logger.add(lambda m: messages.append(m.record["message"]), level="INFO")
 
-        with (
-            patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
-            patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
-            patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
-            # A negative interval makes every update cross the throttle threshold.
-            patch(f"{TRANSFER}._TRANSFER_LOG_INTERVAL_S", -1.0),
-            patch(f"{TRANSFER}.logger") as mock_logger,
-        ):
-            backend = _backend(settings)
-            await backend.train(context)
+        try:
+            with (
+                patch(f"{REMOTE}.get_settings", return_value=settings),
+                patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+                patch(f"{REMOTE}.SafeZipArchive", return_value=MagicMock()),
+                patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
+                # A negative interval makes every update cross the throttle threshold.
+                patch(f"{TRANSFER}._TRANSFER_LOG_INTERVAL_S", -1.0),
+            ):
+                backend = _backend(settings)
+                await backend.train(context)
+        finally:
+            logger.remove(sink_id)
 
-        templates = [call for call in mock_logger.info.call_args_list if call.args and "progress:" in call.args[0]]
-        assert any(call.args[1] == "Model download" for call in templates)
+        # Heartbeats go through the backend's trainer-prefixed logger, not the bare module logger.
+        assert any("progress:" in message and "Model download" in message for message in messages)
 
     @pytest.mark.anyio
     async def test_download_resumes_with_range_after_short_response(self, tmp_path):
@@ -980,6 +989,61 @@ class TestModelDownloadProgress:
             await backend.train(context)
 
         assert controller.artifact_range_headers == [None, "bytes=4-"]
+
+
+class TestTrainerNameLogPrefix:
+    """Every log line from a remote backend identifies which trainer produced it.
+
+    With several remote trainers running concurrently in one worker process,
+    an unprefixed line gives no way to tell which server it came from once
+    it's mixed into the process-wide worker/application log.
+    """
+
+    def _capture(self):
+        messages: list[str] = []
+        sink_id = logger.add(lambda m: messages.append(m.record["message"]), level="DEBUG")
+        return messages, sink_id
+
+    def test_prefixes_log_lines_with_the_pinned_trainer_name(self):
+        from services.training_backends.remote import RemoteTrainingBackend
+
+        messages, sink_id = self._capture()
+        try:
+            backend = RemoteTrainingBackend("https://trainer.test", trainer_name="gpu-box-1")
+            backend._log.info("hello")
+        finally:
+            logger.remove(sink_id)
+
+        assert messages == ["[gpu-box-1] hello"]
+
+    def test_falls_back_to_the_base_url_when_no_name_is_pinned(self):
+        """Older persisted jobs (submitted before this field existed) have no pinned name."""
+        from services.training_backends.remote import RemoteTrainingBackend
+
+        messages, sink_id = self._capture()
+        try:
+            backend = RemoteTrainingBackend("https://trainer.test/")
+            backend._log.info("hello")
+        finally:
+            logger.remove(sink_id)
+
+        assert messages == ["[https://trainer.test] hello"]
+
+    def test_two_concurrent_backends_prefix_independently(self):
+        """Two trainers logging interleaved must stay individually attributable."""
+        from services.training_backends.remote import RemoteTrainingBackend
+
+        messages, sink_id = self._capture()
+        try:
+            backend_a = RemoteTrainingBackend("https://trainer-a.test", trainer_name="trainer-a")
+            backend_b = RemoteTrainingBackend("https://trainer-b.test", trainer_name="trainer-b")
+            backend_a._log.info("from a")
+            backend_b._log.info("from b")
+            backend_a._log.info("from a again")
+        finally:
+            logger.remove(sink_id)
+
+        assert messages == ["[trainer-a] from a", "[trainer-b] from b", "[trainer-a] from a again"]
 
 
 class TestByteFormatting:

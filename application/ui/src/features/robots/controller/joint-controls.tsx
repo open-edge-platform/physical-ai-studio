@@ -4,7 +4,9 @@ import { ActionButton, Flex, Grid, Heading, minmax, repeat, Slider, Switch, View
 import { ChevronDownSmallLight } from '@geti-ui/ui/icons';
 import { radToDeg } from 'three/src/math/MathUtils.js';
 
+import { getRobotConnectionErrorTitle } from '../../../api/errors';
 import { useLoadModelQuery } from '../robot-models-context';
+import { InlineAlert } from '../setup-wizard/shared/inline-alert';
 import { useJointState, useSynchronizeModelJoints } from '../use-joint-state';
 import { useRobot, useRobotId } from '../use-robot';
 
@@ -75,25 +77,39 @@ const useModelJoints = (): JointsState => {
 };
 
 // Combine the joint range of the urdf model with actual joint state from robot
-const useRobotJointsState = (): JointsState => {
+const useRobotJointsState = (): { joints: JointsState; error: string | null; errorCode: string | null } => {
     const robot = useRobot();
     const modelJoints = useModelJoints();
 
     const { project_id, robot_id } = useRobotId();
-    const { joints } = useJointState(project_id, robot_id);
+    const { joints, error, errorCode } = useJointState(project_id, robot_id);
     useSynchronizeModelJoints(joints, robot.type);
 
-    return joints.map((joint) => {
-        const modelJoint = modelJoints.find(({ name }) => name === joint.name);
-        const rangeMax = modelJoint === undefined ? 180 : radToDeg(modelJoint.rangeMax);
-        const rangeMin = modelJoint === undefined ? -180 : radToDeg(modelJoint.rangeMin);
+    return {
+        joints: joints.map((joint) => {
+            const modelJoint = modelJoints.find(({ name }) => name === joint.name);
+            const rangeMax = modelJoint === undefined ? 180 : radToDeg(modelJoint.rangeMax);
+            const rangeMin = modelJoint === undefined ? -180 : radToDeg(modelJoint.rangeMin);
 
-        return { ...joint, rangeMin, rangeMax };
-    });
+            return { ...joint, rangeMin, rangeMax };
+        }),
+        error,
+        errorCode,
+    };
 };
 
 const EnabledJointControls = ({ isExpanded }: { isExpanded: boolean }) => {
-    const joints = useRobotJointsState();
+    const { joints, error, errorCode } = useRobotJointsState();
+
+    if (error) {
+        return (
+            <InlineAlert variant='error'>
+                <strong>{getRobotConnectionErrorTitle(errorCode)}</strong>
+                <br />
+                {error}
+            </InlineAlert>
+        );
+    }
 
     if (isExpanded) {
         return <Joints joints={joints} />;

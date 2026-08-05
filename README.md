@@ -41,7 +41,7 @@ For users who prefer a visual interface for end-to-end workflow:
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
-  <img src="docs/assets/application.gif" alt="Application demo" width="100%">
+  <img src="docs/assets/physical_ai_studio_overview.gif" alt="Application demo" width="100%">
 </p>
 <!-- markdownlint-enable MD033 -->
 
@@ -83,7 +83,7 @@ git clone https://github.com/open-edge-platform/physical-ai-studio.git
 cd physical-ai-studio
 
 # Install and run backend
-cd application/backend 
+cd application/backend
 
 # Start the backend, or use --extra cpu, --extra cuda
 uv run --extra xpu physicalai-studio serve  # or: ./run.sh

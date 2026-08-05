@@ -28,6 +28,39 @@ class TestTrainer:
         callback_types = [type(cb) for cb in trainer.callbacks]
         assert PolicyDatasetInteraction in callback_types
 
+    def test_learning_rate_monitor_callback_injected(self, tmp_path):
+        """Verify LearningRateMonitor callback is automatically added with per-step logging."""
+        from lightning.pytorch.callbacks import LearningRateMonitor
+
+        trainer = Trainer(accelerator="cpu", default_root_dir=str(tmp_path), enable_checkpointing=False)
+
+        monitors = [cb for cb in trainer.callbacks if isinstance(cb, LearningRateMonitor)]
+        assert len(monitors) == 1
+        assert monitors[0].logging_interval == "step"
+
+    def test_learning_rate_monitor_skipped_without_logger(self):
+        """Verify LearningRateMonitor is not injected when logging is disabled."""
+        from lightning.pytorch.callbacks import LearningRateMonitor
+
+        trainer = Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
+
+        assert not any(isinstance(cb, LearningRateMonitor) for cb in trainer.callbacks)
+
+    def test_user_learning_rate_monitor_not_duplicated(self, tmp_path):
+        """Verify a user-provided LearningRateMonitor is used instead of injecting another."""
+        from lightning.pytorch.callbacks import LearningRateMonitor
+
+        user_monitor = LearningRateMonitor(logging_interval="epoch")
+        trainer = Trainer(
+            accelerator="cpu",
+            default_root_dir=str(tmp_path),
+            enable_checkpointing=False,
+            callbacks=[user_monitor],
+        )
+
+        monitors = [cb for cb in trainer.callbacks if isinstance(cb, LearningRateMonitor)]
+        assert monitors == [user_monitor]
+
     def test_user_callbacks_preserved(self):
         """Verify user callbacks are preserved alongside auto-injected callback."""
         from lightning.pytorch.callbacks import EarlyStopping

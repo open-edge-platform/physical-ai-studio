@@ -27,30 +27,21 @@
     --moss-tint-1: #b1d272;
 
     --spectrum-button-primary-text-font-weight: 500;
-    --spectrum-accent-background-color-default: var(--energy-blue);
-    --spectrum-accent-background-color: var(--energy-blue);
-    --spectrum-accent-background-color-disabled: var(--spectrum-global-color-gray-200);
-    --spectrum-accent-border-color: var(--energy-blue);
-    --spectrum-button-text-color: var(--spectrum-global-color-gray-50) !important;
-    --spectrum-accent-background-color-key-focus: var(--energy-blue);
-    --spectrum-global-color-blue-300: rgb(20, 103, 200);
 
-    --spectrum-accent-border-color-hover: var(--energy-blue-shade);
-    --spectrum-button-text-color-hover: var(--spectrum-global-color-gray-50);
-    --spectrum-accent-background-color-hover: var(--spectrum-global-color-blue-300);
-    --spectrum-global-color-blue-200: rgb(13, 90, 188);
+    --steel-blue-hue: 215;
+    --steel-blue-sat: 25%;
 
-    --spectrum-accent-border-color-down: var(--energy-blue-shade-darker);
-    --spectrum-button-text-color-down: var(--spectrum-global-color-gray-50);
-    --spectrum-accent-background-color-down: var(--spectrum-global-color-blue-200);
-
-    --spectrum-button-text-background-color-down: var(--energy-blue-shade-darker);
-    --spectrum-button-text-border-color-down: var(--energy-blue-shade-darker);
-
-    --spectrum-high-contrast-button-face: var(--spectrum-global-color-gray-50);
-    --spectrum-high-contrast-gray-text: var(--spectrum-global-color-gray-500);
-
-    --spectrum-yellow-visual-color: var(--brand-daisy);
+    --spectrum-global-color-gray-50: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 8%) !important;
+    --spectrum-global-color-gray-75: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 11%) !important;
+    --spectrum-global-color-gray-100: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 13%) !important;
+    --spectrum-global-color-gray-200: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 17%) !important;
+    --spectrum-global-color-gray-300: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 22%) !important;
+    --spectrum-global-color-gray-400: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 28%) !important;
+    --spectrum-global-color-gray-500: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 36%) !important;
+    --spectrum-global-color-gray-600: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 48%) !important;
+    --spectrum-global-color-gray-700: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 65%) !important;
+    --spectrum-global-color-gray-800: hsl(var(--steel-blue-hue), var(--steel-blue-sat), 85%) !important;
+    --spectrum-global-color-gray-900: #fff;
 }
 
 body,
@@ -60,7 +51,7 @@ html {
 }
 
 body {
-    background-color: var(--spectrum-global-color-gray-50, rgb(36, 37, 40));
+    background-color: var(--spectrum-global-color-gray-100);
     /*background-image: url('./assets/background.png');*/
     background-blend-mode: luminosity;
     background-position: center;
