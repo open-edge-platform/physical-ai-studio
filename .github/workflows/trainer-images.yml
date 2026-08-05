@@ -13,8 +13,6 @@ on:
       - application/trainer/**
       - library/**
       - .github/workflows/trainer-images.yml
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions: {}
@@ -71,6 +69,7 @@ jobs:
         id: build-metadata
         run: |
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
+          echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -133,7 +132,7 @@ jobs:
   publish:
     name: Publish, attest, and sign (${{ matrix.device }})
     needs: build-and-smoke-test
-    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -185,6 +184,7 @@ jobs:
         id: build-metadata
         run: |
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
+          echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
@@ -208,7 +208,9 @@ jobs:
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
             org.opencontainers.image.revision=${{ github.sha }}
@@ -268,36 +270,6 @@ jobs:
         with:
           image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
 
-      # Only stable releases move the `latest` tag. Pushes to main publish the
-      # immutable commit-SHA tag plus a `main` moving tag, so `latest` always
-      # resolves to the newest released trainer image, never a dev build.
-      - name: Publish moving main tag after signing
-        if: github.event_name != 'release'
-        env:
-          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          MAIN: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:main
-        run: |
-          docker buildx imagetools create --tag "$MAIN" "$IMAGE"
-
-      # Pre-releases (RCs) get their version tag but must not move `latest`;
-      # RCs reach `latest` only once promoted to a stable release.
-      - name: Publish release version tag after signing
-        if: github.event_name == 'release'
-        env:
-          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          REPO: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}
-          VERSION: ${{ steps.build-metadata.outputs.version }}
-        run: |
-          docker buildx imagetools create --tag "${REPO}:${VERSION}" "$IMAGE"
-
-      - name: Publish moving latest tag after signing
-        if: github.event_name == 'release' && github.event.release.prerelease == false
-        env:
-          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          LATEST: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:latest
-        run: |
-          docker buildx imagetools create --tag "$LATEST" "$IMAGE"
-
   required-check:
     name: Required Check trainer-images
     needs: [build-and-smoke-test, publish]
@@ -309,9 +281,8 @@ jobs:
           BUILD_RESULT: ${{ needs.build-and-smoke-test.result }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
           REF: ${{ github.ref }}
-          EVENT: ${{ github.event_name }}
         run: |
           test "$BUILD_RESULT" = success
-          if [ "$REF" = refs/heads/main ] || [ "$EVENT" = release ]; then
+          if [ "$REF" = refs/heads/main ]; then
             test "$PUBLISH_RESULT" = success
           fi
