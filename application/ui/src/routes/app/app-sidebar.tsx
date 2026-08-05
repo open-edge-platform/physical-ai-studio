@@ -20,15 +20,13 @@ export const AppSidebar = () => {
                 aria-label='Main navigation items'
                 UNSAFE_className={classes.sidebarList}
             >
-                {navItems.map((item) => (
-                    // Spread the href conditionally rather than passing `href={undefined}`: react-aria's
-                    // useLinkProps treats an explicit `undefined` value as present (`'href' in props`),
-                    // coercing it to an empty string on the rendered <div> for disabled items and
-                    // triggering React's "empty string passed to href" warning.
-                    <Item key={item.key} textValue={item.label} {...(item.enabled ? { href: item.path } : {})}>
-                        {item.label}
-                    </Item>
-                ))}
+                {navItems
+                    .filter((item) => item.enabled)
+                    .map((item) => (
+                        <Item key={item.key} textValue={item.label} href={item.path}>
+                            {item.label}
+                        </Item>
+                    ))}
             </TabList>
         </View>
     );
