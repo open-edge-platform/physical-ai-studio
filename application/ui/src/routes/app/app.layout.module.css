@@ -3,6 +3,8 @@
 }
 
 .sidebarList {
+    --spectrum-tabs-vertical-rule-width: var(--spectrum-global-dimension-size-50);
+
     border-inline-start-color: transparent;
     padding-right: 0 !important;
 
