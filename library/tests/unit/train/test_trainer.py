@@ -1,3 +1,4 @@
+import pytest
 from lightning.pytorch.callbacks import BatchSizeFinder
 from physicalai.train.trainer import Trainer
 
@@ -103,6 +104,7 @@ class TestTensorBoardLogging:
 
     def test_experiment_name_creates_tensorboard_logger(self, tmp_path):
         """Verify experiment_name auto-creates a TensorBoardLogger rooted at default_root_dir."""
+        pytest.importorskip("tensorboard")
         from lightning.pytorch.loggers import TensorBoardLogger
 
         trainer = Trainer(
