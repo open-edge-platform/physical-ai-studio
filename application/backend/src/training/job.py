@@ -310,7 +310,7 @@ def _release_memory(accelerator: str | None = None) -> None:
             torch.xpu.synchronize()
         elif accelerator == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
-    except Exception as exc
+    except Exception as exc:
         logger.warning("Could not release device cache: %s", exc)
 
 
