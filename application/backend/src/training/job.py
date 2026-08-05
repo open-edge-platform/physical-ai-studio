@@ -11,10 +11,9 @@ in both places.
 
 :func:`run_training_job` executes a spec: it builds the datamodule and policy,
 runs Lightning, saves the final checkpoint into ``output_dir``, and exports the
-policy to the backends enabled by ``PHYSICALAI_EXPORT_BACKENDS`` (default
-``"torch"`` only). Where the data comes from, where the result goes, how
-progress is reported, and how cancellation is signalled are all arguments —
-the runner owns none of that policy.
+policy to every backend it supports. Where the data comes from, where the
+result goes, how progress is reported, and how cancellation is signalled are all
+arguments — the runner owns none of that policy.
 
 Example:
     >>> spec = TrainingJobSpec(policy="act", max_steps=1000, batch_size=8)
@@ -32,7 +31,6 @@ from __future__ import annotations
 
 import gc
 import logging
-import os
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -54,23 +52,10 @@ EXPORTS_DIRNAME = "exports"
 CHECKPOINT_EVERY_N_STEPS = 1000
 """Interval checkpoint cadence.
 
-Sub-epoch runs on this dataset never trigger a ``val/loss``-monitored
-checkpoint (an epoch is ~11k steps at batch 8), so checkpointing is driven by
-step count instead: it fires regardless of validation, so a hang mid-training
-still leaves the most recent interval's weights on disk. 1000 is a divisor of
-the step budgets actually used in practice (1000 / 3000 / 5000 / 12000), so
-the final step always lands on an interval too.
-"""
-
-_EXPORT_BACKENDS_ENV_VAR = "PHYSICALAI_EXPORT_BACKENDS"
-"""Comma-separated list of export backend names to run after training."""
-
-_DEFAULT_EXPORT_BACKENDS = frozenset({"torch"})
-"""Backends exported when :data:`_EXPORT_BACKENDS_ENV_VAR` is unset.
-
-Torch export alone is enough to load a model in the GUI. Other backends
-(OpenVINO in particular) convert well above the model's resident memory
-footprint and have OOM-killed completed runs; they are opt-in.
+A ``val/loss``-monitored checkpoint never fires on a sub-epoch run (one whose
+``max_steps`` is smaller than one epoch's batch count), so checkpointing is
+driven by step count instead: it fires regardless of validation, so a hang
+mid-training still leaves the most recent interval's weights on disk.
 """
 
 _DATASET_REPO_ID = "snapshot"
@@ -230,8 +215,7 @@ def run_training_job(
         val_check_interval=min(CHECKPOINT_EVERY_N_STEPS, spec.max_steps),
         # None tells Lightning val_check_interval counts global steps rather than
         # batches within one epoch, so it still applies once max_steps is below
-        # one epoch's batch count (an epoch is ~11k steps at batch 8 on the
-        # dataset this cadence was tuned for; shorter runs are common in tests).
+        # one epoch's batch count.
         check_val_every_n_epoch=None,
         gradient_clip_val=1.0,
     )
@@ -308,20 +292,6 @@ def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> P
         return policy
 
 
-def _enabled_export_backends() -> frozenset[str]:
-    """Return the export backend names enabled for this process.
-
-    Controlled by :data:`_EXPORT_BACKENDS_ENV_VAR`; defaults to
-    :data:`_DEFAULT_EXPORT_BACKENDS` when unset. OpenVINO conversion peaks
-    well above the model's resident memory and has OOM-killed completed runs,
-    so it (like any non-default backend) must be opted into explicitly.
-    """
-    raw = os.environ.get(_EXPORT_BACKENDS_ENV_VAR)
-    if raw is None:
-        return frozenset(_DEFAULT_EXPORT_BACKENDS)
-    return frozenset(name.strip().lower() for name in raw.split(",") if name.strip())
-
-
 def _release_memory(accelerator: str | None = None) -> None:
     """Return held host and device memory to the OS/allocator before the next stage.
 
@@ -345,19 +315,15 @@ def _release_memory(accelerator: str | None = None) -> None:
 
 
 def _export(policy: Policy, output_dir: Path, report: ReportFn, *, accelerator: str | None = None) -> None:
-    """Export the policy to every enabled backend it declares support for."""
+    """Export the policy to every backend it declares support for."""
     from physicalai.export import ExportablePolicyMixin
 
     if not isinstance(policy, ExportablePolicyMixin):
         logger.info("Skipping export: policy does not support export backends")
         return
 
-    enabled = _enabled_export_backends()
     for backend in policy.get_supported_export_backends():
         name = backend.value if hasattr(backend, "value") else str(backend)
-        if name.lower() not in enabled:
-            logger.info("Skipping %s export: not in %s", name, _EXPORT_BACKENDS_ENV_VAR)
-            continue
         # Conversion peaks well above the model's resident size; hand back
         # whatever the previous backend cached before starting the next one.
         _release_memory(accelerator)

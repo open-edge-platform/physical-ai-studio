@@ -12,7 +12,6 @@ is mocked out; it is not under test.
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -244,34 +243,18 @@ class TestRunTrainingJob:
 
         assert report.call_args_list[0].args == (0, "Training model", {})
 
-    def test_only_the_default_backend_is_exported_by_default(self, tmp_path: Path) -> None:
-        """Torch alone is enough to load a model in the GUI; other backends are opt-in.
-
-        OpenVINO conversion has OOM-killed completed runs, so it must not run
-        unless ``PHYSICALAI_EXPORT_BACKENDS`` explicitly enables it.
-        """
+    def test_policy_is_exported_to_every_supported_backend(self, tmp_path: Path) -> None:
         policy = _ExportablePolicy([ExportBackend.TORCH, ExportBackend.OPENVINO])
         report = MagicMock()
 
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("PHYSICALAI_EXPORT_BACKENDS", None)
-            _run(TrainingJobSpec(policy="act"), tmp_path, policy=policy, report=report)
-
-        exports = tmp_path / "model" / EXPORTS_DIRNAME
-        assert policy.exported == [(str(exports / "torch"), ExportBackend.TORCH)]
-        assert (99, "Exporting to torch format", {}) in [call.args for call in report.call_args_list]
-
-    def test_export_backends_env_var_opts_into_additional_backends(self, tmp_path: Path) -> None:
-        policy = _ExportablePolicy([ExportBackend.TORCH, ExportBackend.OPENVINO])
-
-        with patch.dict(os.environ, {"PHYSICALAI_EXPORT_BACKENDS": "torch,openvino"}):
-            _run(TrainingJobSpec(policy="act"), tmp_path, policy=policy)
+        _run(TrainingJobSpec(policy="act"), tmp_path, policy=policy, report=report)
 
         exports = tmp_path / "model" / EXPORTS_DIRNAME
         assert policy.exported == [
             (str(exports / "torch"), ExportBackend.TORCH),
             (str(exports / "openvino"), ExportBackend.OPENVINO),
         ]
+        assert (99, "Exporting to torch format", {}) in [call.args for call in report.call_args_list]
 
     def test_a_failing_export_backend_does_not_fail_the_job(self, tmp_path: Path) -> None:
         """Weights are already saved by then; one bad backend must not lose them."""
@@ -280,7 +263,6 @@ class TestRunTrainingJob:
             failing={ExportBackend.TORCH},
         )
 
-        with patch.dict(os.environ, {"PHYSICALAI_EXPORT_BACKENDS": "torch,openvino"}):
-            _run(TrainingJobSpec(policy="act"), tmp_path, policy=policy)
+        _run(TrainingJobSpec(policy="act"), tmp_path, policy=policy)
 
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
