@@ -11,7 +11,7 @@ export const ProjectList = () => {
     const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
 
     return (
-        <View padding={'size-400'} position={'relative'} height={'100%'}>
+        <View height={'100%'}>
             <View
                 position={'absolute'}
                 top={0}

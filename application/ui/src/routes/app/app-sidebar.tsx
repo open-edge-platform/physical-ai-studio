@@ -6,7 +6,14 @@ import classes from './app.layout.module.css';
 
 export const AppSidebar = () => {
     return (
-        <View gridArea='sidebar' backgroundColor={'gray-50'} height='100%' paddingTop={'size-500'}>
+        <View
+            gridArea='sidebar'
+            backgroundColor={'gray-100'}
+            height='100%'
+            paddingTop={'size-500'}
+            borderEndWidth={'thin'}
+            borderEndColor={'gray-50'}
+        >
             <TabList
                 height='100%'
                 width='100%'
