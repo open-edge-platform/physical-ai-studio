@@ -172,7 +172,11 @@ class SmolVLAPreprocessor(torch.nn.Module):
             )
             raise ValueError(msg)
 
-        ordered_batch_img_keys = sorted(batch_img_keys, key=lambda k: self.image_key_reorder_map[k])
+        ordered_batch_img_keys = (
+            sorted(batch_img_keys, key=lambda k: self.image_key_reorder_map[k])
+            if self.image_key_reorder_map
+            else batch_img_keys
+        )
 
         max_image_dim = 5
         for key in ordered_batch_img_keys:

@@ -140,30 +140,6 @@ class TestSmolVLAPolicy:
         with pytest.raises(ValueError, match="not initialized"):
             getattr(policy, method)(dummy_obs)
 
-    def test_infer_image_features_prefers_explicit_config(self) -> None:
-        """Explicit image_features from pretrained config should be normalized and used."""
-        hf_config = {"image_features": ["observation.images.camera0", "camera1"]}
-
-        inferred = SmolVLA._infer_image_features(hf_config, dataset_stats=None)
-
-        assert inferred == ["camera0", "camera1"]
-
-    def test_infer_image_features_from_input_features(self) -> None:
-        """Infer image_features from HF input_features visual entries."""
-        from physicalai.data.observation import FeatureType
-
-        hf_config = {
-            "input_features": {
-                "observation.images.camera0": {"type": FeatureType.VISUAL.value},
-                "observation.images.camera1": {"type": FeatureType.VISUAL.value},
-                "observation.state": {"type": FeatureType.STATE.value},
-            },
-        }
-
-        inferred = SmolVLA._infer_image_features(hf_config, dataset_stats=None)
-
-        assert inferred == ["camera0", "camera1"]
-
     def test_on_load_checkpoint_inserts_missing_target_time_params(self) -> None:
         """Legacy checkpoints missing target-time MLP params are migrated."""
         policy = SmolVLA()
@@ -255,7 +231,6 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_action_dim == 32
         assert preprocessor.image_resolution == (512, 512)
         assert preprocessor.image_key_reorder_map == {}
-        assert preprocessor.image_features == []
         assert preprocessor.empty_cameras == 0
         assert preprocessor.max_token_len == 48
         assert preprocessor.tokenizer_name == "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
@@ -263,14 +238,14 @@ class TestSmolVLAPreprocessor:
 
     def test_preprocessor_custom_values(self) -> None:
         """Test preprocessor with custom configuration values."""
+        from physicalai.data.observation import IMAGES
         from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         preprocessor = SmolVLAPreprocessor(
             max_state_dim=64,
             max_action_dim=16,
             image_resolution=(256, 256),
-            image_key_reorder_map={"overview": "camera0"},
-            image_features=["camera0", "camera1"],
+            image_key_reorder_map={"overview": 0},
             empty_cameras=2,
             max_token_len=64,
             padding="max_length",
@@ -279,14 +254,13 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_state_dim == 64
         assert preprocessor.max_action_dim == 16
         assert preprocessor.image_resolution == (256, 256)
-        assert preprocessor.image_key_reorder_map == {"overview": "camera0"}
-        assert preprocessor.image_features == ["camera0", "camera1"]
+        assert preprocessor.image_key_reorder_map == {f"{IMAGES}.overview": 0}
         assert preprocessor.empty_cameras == 2
         assert preprocessor.max_token_len == 64
         assert preprocessor.padding == "max_length"
 
     def test_image_key_reorder_map_applies_and_orders_cameras(self) -> None:
-        """Test image key mapping accepts suffix/full keys and orders by mapped names."""
+        """Test reorder map accepts prefixed/unprefixed keys and orders by mapped index."""
         from physicalai.data.constants import IMAGE_MASKS
         from physicalai.data.observation import IMAGES, STATE
         from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
@@ -294,8 +268,8 @@ class TestSmolVLAPreprocessor:
         preprocessor = SmolVLAPreprocessor(
             image_resolution=(2, 2),
             image_key_reorder_map={
-                "wrist": "camera1",
-                "observation.images.overview": "camera0",
+                "wrist": 1,
+                f"{IMAGES}.overview": 0,
             },
         )
 
@@ -307,12 +281,30 @@ class TestSmolVLAPreprocessor:
 
         result = preprocessor._preprocess_images(batch)
 
-        # Camera order should follow mapped keys: camera0 (overview), then camera1 (wrist)
+        # Camera order should follow mapped indices: overview (0), then wrist (1)
         assert result[IMAGES].shape[0] == 2
         # Values are normalized from [0, 1] -> [-1, 1]
         torch.testing.assert_close(result[IMAGES][0], torch.full((1, 3, 2, 2), 1.0))
         torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), 0.0))
         assert result[IMAGE_MASKS].shape == (2, 1)
+
+    def test_image_key_reorder_map_rejects_mismatched_keys(self) -> None:
+        """Test a reorder map that does not cover the batch image keys exactly is rejected."""
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={"overview": 0, "gripper": 1},
+        )
+
+        batch = {
+            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        with pytest.raises(ValueError, match="must match the batch image keys exactly"):
+            preprocessor._preprocess_images(batch)
 
     def test_empty_cameras_are_appended_as_masked_dummy_images(self) -> None:
         """Test empty camera slots append masked dummy images to image stack."""
@@ -336,60 +328,6 @@ class TestSmolVLAPreprocessor:
         assert result[IMAGE_MASKS].shape == (3, 1)
         torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), -1.0))
         torch.testing.assert_close(result[IMAGES][2], torch.full((1, 3, 2, 2), -1.0))
-        torch.testing.assert_close(result[IMAGE_MASKS][1], torch.zeros((1,), dtype=torch.bool))
-        torch.testing.assert_close(result[IMAGE_MASKS][2], torch.zeros((1,), dtype=torch.bool))
-
-    def test_empty_cameras_only_pad_missing_expected_targets(self) -> None:
-        """Test empty camera padding follows missing mapped targets when rename map is provided."""
-        from physicalai.data.constants import IMAGE_MASKS
-        from physicalai.data.observation import IMAGES, STATE
-        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
-
-        preprocessor = SmolVLAPreprocessor(
-            image_resolution=(2, 2),
-            image_key_reorder_map={
-                "overview": "camera0",
-                "gripper": "camera1",
-                "side": "camera2",
-            },
-            empty_cameras=5,
-        )
-
-        batch = {
-            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
-            STATE: torch.randn(1, 4),
-        }
-
-        result = preprocessor._preprocess_images(batch)
-
-        # 1 present + 2 missing expected targets (camera1/camera2)
-        assert result[IMAGES].shape[0] == 3
-        assert result[IMAGE_MASKS].shape == (3, 1)
-        torch.testing.assert_close(result[IMAGE_MASKS][1], torch.zeros((1,), dtype=torch.bool))
-        torch.testing.assert_close(result[IMAGE_MASKS][2], torch.zeros((1,), dtype=torch.bool))
-
-    def test_empty_cameras_use_image_features_as_expected_slots(self) -> None:
-        """Test image_features drive missing-slot padding even without rename map targets."""
-        from physicalai.data.constants import IMAGE_MASKS
-        from physicalai.data.observation import IMAGES, STATE
-        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
-
-        preprocessor = SmolVLAPreprocessor(
-            image_resolution=(2, 2),
-            image_features=["camera0", "camera1", "camera2"],
-            empty_cameras=5,
-        )
-
-        batch = {
-            f"{IMAGES}.camera0": torch.full((1, 3, 2, 2), 1.0),
-            STATE: torch.randn(1, 4),
-        }
-
-        result = preprocessor._preprocess_images(batch)
-
-        # 1 present + 2 missing expected targets
-        assert result[IMAGES].shape[0] == 3
-        assert result[IMAGE_MASKS].shape == (3, 1)
         torch.testing.assert_close(result[IMAGE_MASKS][1], torch.zeros((1,), dtype=torch.bool))
         torch.testing.assert_close(result[IMAGE_MASKS][2], torch.zeros((1,), dtype=torch.bool))
 
