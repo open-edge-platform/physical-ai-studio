@@ -13,7 +13,7 @@ import lightning
 import torch
 from lightning.pytorch.callbacks import BatchSizeFinder
 from lightning.pytorch.strategies import DDPStrategy
-from physicalai.config.instantiate import instantiate_obj_from_dict
+from physicalai.config.loading import instantiate_obj_from_dict
 
 from physicalai.train.callbacks import PolicyDatasetInteraction
 
