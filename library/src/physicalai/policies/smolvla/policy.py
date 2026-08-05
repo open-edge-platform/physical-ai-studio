@@ -738,6 +738,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         schema: list[InferenceFeature] = []
 
+        num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
+
         for feature_id, feature in dataset_stats.items():
             if STATE in feature_id:
                 schema.append(
@@ -748,17 +750,16 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                 )
-
-        for feature in visual_stats:
-            name = IMAGES if len(visual_stats) == 1 else f"{IMAGES}.{feature['name']}"
-            schema.append(
-                InferenceFeature(
-                    ftype=InferenceFeatureType.VISUAL,
-                    shape=cast("tuple", feature["shape"]),
-                    name=name,
-                    dtype=InferenceFeatureDtype.FLOAT32,
-                ),
-            )
+            elif str(FeatureType.VISUAL) in feature["type"]:
+                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature['name']}"
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=cast("tuple", feature["shape"]),
+                        name=name,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
 
         schema.append(
             InferenceFeature(
