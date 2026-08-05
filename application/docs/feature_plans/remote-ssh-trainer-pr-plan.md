@@ -164,6 +164,11 @@ connections.
 - Tests prove the schema has no secret field and the DB holds only an alias.
 - The config reader handles a missing config, an empty config, wildcard-only
   stanzas, and an alias that resolves through `Include`.
+- **An explicit test asserts the SSH config reader's response never includes
+  `IdentityFile`, `IdentityAgent`, `CertificateFile`, or any `Password` field**,
+  using a fixture config where each of these directives is present on the
+  resolved `Host` stanza — not just an absence-by-omission check on a config
+  that never had them.
 - Existing jobs and local/direct-URL behavior are unaffected.
 
 ---
@@ -262,6 +267,10 @@ independently from training execution.
 ### Acceptance criteria
 
 - API tests cover healthy create/check/edit/delete paths.
+- **An explicit test asserts the SSH alias-listing endpoint's response never
+  includes `IdentityFile`, `IdentityAgent`, `CertificateFile`, or any
+  `Password` field**, using a fixture config where each directive is present on
+  the resolved `Host` stanza.
 - A blocking preflight failure cannot create a usable server.
 - **A save request never performs an image pull** — assert on the transport, not
   just on timing, so the guarantee cannot regress silently.
@@ -389,7 +398,17 @@ container behind a dedicated service boundary.
   required, and persist + log the fallback reason. Not `git rev-parse HEAD`
   (fails in a container), **not `VERSION`** (`0.1.0` can never match a SHA tag).
 - Resolve an immutable digest and verify image identity/signature policy before
-  use.
+  use. Verify with `cosign verify`, pinning the certificate identity to the
+  Studio release workflow and the Sigstore OIDC issuer, e.g.:
+
+  ```sh
+  cosign verify open-edge-platform/physicalai-trainer-<device>:<version> \
+    --certificate-identity-regexp 'https://github\.com/open-edge-platform/physical-ai-studio/\.github/workflows/.+' \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+  ```
+
+  Fail closed (do not launch the container) if verification fails or cosign is
+  unavailable.
 - Check GPU availability before launch; when busy, leave the job `pending` with
   exponential backoff and a `waiting` phase state, a per-server probe throttle,
   and a give-up timeout.
@@ -569,6 +588,18 @@ provisioning tests.
   every registered server. Also document that a compromised Studio process can
   reach every identity in the user's SSH agent, not just the registered servers —
   recommend a dedicated per-host `IdentityFile`.
+- **Enforce loopback-only binding at startup when the SSH feature is enabled.**
+  At backend startup, when the SSH remote-trainer feature flag is on, inspect the
+  configured bind host/interface (not just the documented default) and verify it
+  resolves only to a loopback address (`127.0.0.1` / `::1`). If a non-loopback
+  bind is detected: log a clear warning (and surface it in the UI, e.g. a banner
+  on the training-targets page) stating that the instance is network-exposed
+  with no auth model and every registered server is at risk; **refuse to start
+  the SSH feature** (fail closed — disable SSH routes/registration, or exit,
+  whichever is technically feasible given the ASGI server's binding model)
+  rather than merely warning, if the check can be performed reliably. Treat this
+  as defense-in-depth on top of, not a replacement for, the documentation and the
+  "not enabled without an auth model" policy.
 - Add an integration-test matrix and hardware-validation checklist for CUDA, XPU,
   host-key failure, missing alias, cache reuse, cancellation, tunnel
   drop/reconnect, GPU-busy waiting, and backend restart/reattach.
@@ -578,6 +609,12 @@ provisioning tests.
 - Complete the PR 0 threat model review before any network exposure. The feature
   is safe-by-default on a localhost workstation; it must not be enabled on a
   network-exposed instance without an auth model.
+- **The loopback-binding check runs whenever the SSH feature flag is enabled**
+  and cannot be bypassed by a UI-only toggle — it inspects the actual bind
+  configuration at process startup, not a config value that merely claims
+  loopback.
+- The warning/refusal path itself must not leak SSH host aliases, container
+  names, or other registered-server details into logs reachable pre-auth.
 
 ### Dependencies
 
@@ -588,6 +625,11 @@ provisioning tests.
 - Users can configure, test, diagnose, and decommission servers using the
   documentation.
 - The feature can be disabled without impacting local or direct-URL training.
+- **A test binds the backend to a non-loopback interface with the SSH feature
+  enabled and asserts** the warning is logged, the UI is informed (or the
+  startup refuses/disables the SSH feature, per whichever behavior is
+  implemented), and the same startup bound to `127.0.0.1`/`::1` produces neither
+  the warning nor the refusal.
 
 ---
 

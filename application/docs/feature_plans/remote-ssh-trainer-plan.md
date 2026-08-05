@@ -650,7 +650,18 @@ percentage, so:
   environment-influenced content, not trusted text. Before forwarding it as a
   `message`, strip control characters and cap line/message length (reuse the
   sanitize helper). Do **not** treat streamed command output as trusted just
-  because the phase is studio-driven.
+  because the phase is studio-driven. "Control characters" for this sanitize
+  step means, precisely:
+  - all Unicode `Cc` category characters (`U+0000`–`U+001F`, `U+007F`–`U+009F`)
+    except `\n`, which is preserved as a line separator and re-split before the
+    per-line cap is applied;
+  - all Unicode `Cf` category bidi-override characters (`U+200F`,
+    `U+202A`–`U+202E`, `U+2066`–`U+2069`, `U+FEFF`), which can otherwise reorder
+    or hide rendered text in the UI;
+  - every ESC-introduced sequence, from `\x1b` through its terminator — this
+    covers ANSI SGR (color/style), OSC hyperlinks, OSC clipboard writes, and CSI
+    cursor-movement/screen-clear sequences, all of which a hostile or noisy
+    remote process could otherwise use to manipulate what the operator sees.
 - Only the `train` phase's `extra_info` originates from the remote trainer; keep
   the existing sanitize + 16 KB cap for that untrusted telemetry.
 
