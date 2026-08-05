@@ -293,7 +293,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             chunk_size=self.config.chunk_size,
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
-            image_features=self.config.image_features,
             adapt_to_pi_aloha=self.config.adapt_to_pi_aloha,
             num_steps=self.config.num_steps,
             use_cache=self.config.use_cache,

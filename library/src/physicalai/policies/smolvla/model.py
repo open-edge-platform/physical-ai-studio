@@ -63,7 +63,6 @@ class SmolVLAModel(Model):
         chunk_size: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
-        image_features: list[str] | None = None,
         adapt_to_pi_aloha: bool = False,
         num_steps: int = 10,
         use_cache: bool = True,
@@ -98,7 +97,6 @@ class SmolVLAModel(Model):
             chunk_size: Size of action chunks for prediction.
             max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
             max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
-            image_features: Canonical image slot names expected by the model.
             adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space
                 to pi internal runtime space.
             num_steps: Number of decoding steps for flow matching.
@@ -132,7 +130,6 @@ class SmolVLAModel(Model):
         self._chunk_size = chunk_size
         self._max_state_dim = max_state_dim
         self._max_action_dim = max_action_dim
-        self._image_features = list(image_features or [])
         self._adapt_to_pi_aloha = adapt_to_pi_aloha
         self._vlm_model_name = vlm_model_name
         self._tokenizer_max_length = tokenizer_max_length
@@ -341,26 +338,7 @@ class SmolVLAModel(Model):
             batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
             if ACTION in batch:
                 batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
-
-        all_keys = self._expected_image_features()
-
-        if len(all_keys) != batch[IMAGES].shape[0]:
-            msg = f"Some of the image features are missing from the batch. \
-                    (batch: {batch.keys()}) (image_features:{all_keys})"
-            raise ValueError(msg)
         return batch
-
-    def _expected_image_features(self) -> list[str]:
-        """Return canonical image slot names expected by the model.
-
-        Prefer the policy config's explicit image_features, which describe the
-        renamed camera slots used by the preprocessing pipeline. Fall back to
-        dataset stats only when no explicit slots were configured.
-        """
-        if self._image_features:
-            return [str(name) for name in self._image_features]
-
-        return [key for key in self._dataset_stats if self._dataset_stats[key]["type"] == FeatureType.VISUAL.value]
 
     @staticmethod
     def _pi_aloha_decode_state(state: torch.Tensor) -> torch.Tensor:
