@@ -51,13 +51,15 @@ CHECKPOINT_NAME = "model.ckpt"
 EXPORTS_DIRNAME = "exports"
 """Subdirectory of ``output_dir`` holding one directory per export backend."""
 
-CHECKPOINT_EVERY_N_STEPS = 500
+CHECKPOINT_EVERY_N_STEPS = 1000
 """Interval checkpoint cadence.
 
 Sub-epoch runs on this dataset never trigger a ``val/loss``-monitored
 checkpoint (an epoch is ~11k steps at batch 8), so checkpointing is driven by
 step count instead: it fires regardless of validation, so a hang mid-training
-still leaves the most recent interval's weights on disk.
+still leaves the most recent interval's weights on disk. 1000 is a divisor of
+the step budgets actually used in practice (1000 / 3000 / 5000 / 12000), so
+the final step always lands on an interval too.
 """
 
 _EXPORT_BACKENDS_ENV_VAR = "PHYSICALAI_EXPORT_BACKENDS"
@@ -194,6 +196,7 @@ def run_training_job(
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
 
+    accelerator = resolve_accelerator(spec.device_type)
     output_dir, cache_dir = Path(output_dir), Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -211,14 +214,14 @@ def run_training_job(
         callbacks=[
             ModelCheckpoint(
                 dirpath=cache_dir,
-                filename="model-{step}",
+                filename="step{step:06d}",
                 every_n_train_steps=min(CHECKPOINT_EVERY_N_STEPS, spec.max_steps),
                 save_top_k=-1,
                 monitor=None,
             ),
             ProgressReportingCallback(report=report, should_stop=should_stop),
         ],
-        accelerator=resolve_accelerator(spec.device_type),
+        accelerator=accelerator,
         strategy=resolve_strategy(spec.device_type),
         devices=resolve_devices(spec.device_index),
         max_steps=spec.max_steps,
@@ -239,8 +242,8 @@ def run_training_job(
 
     export_policy = _export_policy(spec, policy, output_dir)
     del trainer, datamodule, policy
-    _release_memory()
-    _export(export_policy, output_dir, report)
+    _release_memory(accelerator)
+    _export(export_policy, output_dir, report, accelerator=accelerator)
 
 
 def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Policy:
@@ -314,25 +317,29 @@ def _enabled_export_backends() -> frozenset[str]:
     return frozenset(name.strip().lower() for name in raw.split(",") if name.strip())
 
 
-def _release_memory() -> None:
+def _release_memory(accelerator: str | None = None) -> None:
     """Return held host and device memory to the OS/allocator before the next stage.
 
     Export conversion (OpenVINO in particular) allocates several GB above the
     model's resident size, on top of whatever the just-finished trainer and
-    dataloaders still hold. A garbage-collection pass plus clearing the device
-    allocator's cache prevents that peak from stacking on top of memory this
-    process no longer needs.
+    dataloaders still hold. A garbage-collection pass plus clearing the active
+    accelerator's cache prevents that peak from stacking on top of memory this
+    process no longer needs. Best-effort: a failure here must not abort the job.
     """
-    import torch
-
     gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    if torch.xpu.is_available():
-        torch.xpu.empty_cache()
+    try:
+        import torch
+
+        if accelerator == "xpu" and torch.xpu.is_available():
+            torch.xpu.empty_cache()
+            torch.xpu.synchronize()
+        elif torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception as exc:
+        logger.warning("Could not release device cache: %s", exc)
 
 
-def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
+def _export(policy: Policy, output_dir: Path, report: ReportFn, *, accelerator: str | None = None) -> None:
     """Export the policy to every enabled backend it declares support for."""
     from physicalai.export import ExportablePolicyMixin
 
@@ -346,6 +353,9 @@ def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
         if name.lower() not in enabled:
             logger.info("Skipping %s export: not in %s", name, _EXPORT_BACKENDS_ENV_VAR)
             continue
+        # Conversion peaks well above the model's resident size; hand back
+        # whatever the previous backend cached before starting the next one.
+        _release_memory(accelerator)
         try:
             logger.info("Exporting model to %s format", name)
             report(99, f"Exporting to {name} format", {})
@@ -358,7 +368,3 @@ def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
         except Exception:
             # Export is best-effort: one failing backend must not abort the job.
             logger.exception("Failed exporting model to %s format", name)
-        finally:
-            # Conversion peaks well above the model's resident size; release it
-            # before the next backend allocates its own peak.
-            _release_memory()
