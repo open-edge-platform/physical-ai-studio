@@ -33,7 +33,7 @@ describe('AppSidebar', () => {
         expect(screen.getByRole('tab', { name: 'Projects' })).toHaveAttribute('aria-selected', 'true');
     });
 
-    it('marks the enabled items as links and the disabled items without a navigable href', () => {
+    it('marks the enabled items as links, disabled are not visible', () => {
         renderSidebar();
 
         const projectsTab = screen.getByRole('tab', { name: 'Projects' });
@@ -42,9 +42,7 @@ describe('AppSidebar', () => {
         navItems
             .filter((item) => !item.enabled)
             .forEach((item) => {
-                const tab = screen.getByRole('tab', { name: item.label });
-                expect(tab).not.toHaveAttribute('href', item.path);
-                expect(tab).toHaveAttribute('aria-disabled', 'true');
+                expect(screen.queryByRole('tab', { name: item.label })).not.toBeInTheDocument();
             });
     });
 });
