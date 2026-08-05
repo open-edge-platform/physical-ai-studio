@@ -41,9 +41,7 @@ For users who prefer a visual interface for end-to-end workflow:
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
-  <video src="docs/assets/physical_ai_studio_overview.mp4" controls width="100%">
-    Your browser does not support the video tag. See <a href="docs/assets/physical_ai_studio_overview.mp4">the video file</a>.
-  </video>
+  <img src="docs/assets/physical_ai_studio_overview.gif" alt="Application demo" width="100%">
 </p>
 <!-- markdownlint-enable MD033 -->
 
