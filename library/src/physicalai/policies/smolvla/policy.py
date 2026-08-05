@@ -343,8 +343,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR0913, PLR0915
-        self,
+    @staticmethod
+    def _from_hf(  # noqa: PLR0913
         pretrained_name_or_path: str | Path,
         *,
         tokenizer_max_length: int = 48,

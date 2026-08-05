@@ -18,7 +18,7 @@ import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, FeatureType
+from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:

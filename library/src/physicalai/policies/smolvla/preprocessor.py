@@ -20,7 +20,6 @@ Handles:
 from __future__ import annotations
 
 import logging
-from operator import itemgetter
 from typing import Any, cast
 
 import torch
@@ -155,6 +154,10 @@ class SmolVLAPreprocessor(torch.nn.Module):
         Returns:
             A dictionary containing the processed batch with added 'images'
             and 'image_masks' tensors, after applying image preprocessing.
+
+        Raises:
+            ValueError: If ``image_key_reorder_map`` is set and its keys do not match
+                the batch image keys exactly.
         """
         images = []
         img_masks = []
@@ -162,13 +165,12 @@ class SmolVLAPreprocessor(torch.nn.Module):
         batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
         batch_img_keys = [key for key in batch_img_keys if "is_pad" not in key]
 
-        if self.image_key_reorder_map:
-            if set(self.image_key_reorder_map.keys()) != set(batch_img_keys):
-                msg = (
-                    "image_key_reorder_map keys must match the batch image keys exactly. "
-                    f"Expected {sorted(self.image_key_reorder_map.keys())}, got {sorted(batch_img_keys)}."
-                )
-                raise ValueError(msg)
+        if self.image_key_reorder_map and set(self.image_key_reorder_map.keys()) != set(batch_img_keys):
+            msg = (
+                "image_key_reorder_map keys must match the batch image keys exactly. "
+                f"Expected {sorted(self.image_key_reorder_map.keys())}, got {sorted(batch_img_keys)}."
+            )
+            raise ValueError(msg)
 
         ordered_batch_img_keys = sorted(batch_img_keys, key=lambda k: self.image_key_reorder_map[k])
 
@@ -208,29 +210,6 @@ class SmolVLAPreprocessor(torch.nn.Module):
         batch[IMAGE_MASKS] = img_masks
 
         return batch
-
-    def _map_image_key(self, key: str) -> str:
-        """Map a flattened image key to a canonical camera key for ordering.
-
-        Supports both full-key and suffix mappings:
-        - "observation.images.overview" -> "camera0"
-        - "overview" -> "camera0"
-
-        Args:
-            key: Flattened image key.
-
-        Returns:
-            Normalized camera name used for deterministic ordering.
-        """
-        suffix = key.removeprefix(f"{IMAGES}.")
-        mapped = (
-            self.image_key_reorder_map.get(key)
-            or self.image_key_reorder_map.get(f"observation.{IMAGES}.{suffix}")
-            or self.image_key_reorder_map.get(f"{IMAGES}.{suffix}")
-            or self.image_key_reorder_map.get(suffix)
-            or suffix
-        )
-        return self._normalize_camera_name(mapped)
 
     @staticmethod
     def _normalize_camera_name(name: str) -> str:
