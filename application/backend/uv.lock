@@ -3040,6 +3040,7 @@ requires-dist = [
     { name = "safetensors", marker = "extra == 'pi0'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
     { name = "sentencepiece", marker = "extra == 'pi0'", specifier = "<=0.2.1" },
+    { name = "tensorboard", marker = "extra == 'loggers'", specifier = ">=2.20" },
     { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
     { name = "torch", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
@@ -3050,8 +3051,9 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.5.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.5.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "executorch", "executorch-openvino", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "executorch", "executorch-openvino", "all"]
 
 [package.metadata.requires-dev]
 dev = [

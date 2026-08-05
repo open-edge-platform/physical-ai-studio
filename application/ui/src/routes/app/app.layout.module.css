@@ -1,0 +1,21 @@
+.layout {
+    --spectrum-tabs-selection-indicator-color: var(--energy-blue);
+}
+
+.sidebarList {
+    border-inline-start-color: transparent;
+    padding-right: 0 !important;
+
+    & a[class*='spectrum-Tabs-item'] {
+        margin-left: 0;
+        padding-left: var(--spectrum-global-dimension-size-200);
+
+        &:hover {
+            background-color: var(--spectrum-global-color-gray-200);
+        }
+
+        &[class*='is-selected'] {
+            background-color: var(--spectrum-global-color-gray-300);
+        }
+    }
+}

@@ -4,7 +4,7 @@ ARG PYTHON_VERSION=3.13
 
 # Build the trainer and its local physicalai-train dependency without copying
 # Studio backend or UI sources into either builder or runtime images.
-FROM python:${PYTHON_VERSION}-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:99569264a52f7665899b7bc0fb48e72a2712b850b129f63c4733af1e939accfb AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 # UV_PROJECT_ENVIRONMENT must match the runtime COPY destination (/opt/venv).
@@ -44,7 +44,7 @@ FROM builder-base AS builder-xpu
 RUN --mount=type=cache,id=uv-trainer-xpu,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --extra xpu
 
-FROM python:${PYTHON_VERSION}-slim@sha256:eb43ff125d8d58d7449dcba7d336c23bcac412f526d861db493b9994d8010280 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:99569264a52f7665899b7bc0fb48e72a2712b850b129f63c4733af1e939accfb AS runtime-base
 
 ARG TRAINER_UID=10001
 ARG TRAINER_GID=10001
