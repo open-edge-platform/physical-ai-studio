@@ -2556,7 +2556,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.5.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.5.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
-    { name = "wandb", marker = "extra == 'loggers'", specifier = ">0.22" },
+    { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
 provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "executorch", "executorch-openvino", "all"]
 
