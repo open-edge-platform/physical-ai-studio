@@ -228,6 +228,11 @@ def run_training_job(
         auto_scale_batch_size=spec.auto_scale_batch_size,
         precision=spec.precision,
         val_check_interval=min(CHECKPOINT_EVERY_N_STEPS, spec.max_steps),
+        # None tells Lightning val_check_interval counts global steps rather than
+        # batches within one epoch, so it still applies once max_steps is below
+        # one epoch's batch count (an epoch is ~11k steps at batch 8 on the
+        # dataset this cadence was tuned for; shorter runs are common in tests).
+        check_val_every_n_epoch=None,
         gradient_clip_val=1.0,
     )
 

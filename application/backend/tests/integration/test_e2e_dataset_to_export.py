@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import io
 import multiprocessing as mp
+import os
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -187,7 +189,10 @@ def test_dataset_upload_train_export_infer_e2e(
     train_job = response.json()
     train_job_id = train_job["id"]
 
-    _run_training_job_step()
+    # ONNX export is opt-in (PHYSICALAI_EXPORT_BACKENDS defaults to torch-only,
+    # see training.job) but this test exercises the ONNX download/inference path.
+    with patch.dict(os.environ, {"PHYSICALAI_EXPORT_BACKENDS": f"torch,{_ONNX_BACKEND}"}):
+        _run_training_job_step()
 
     response = client.get(f"/api/jobs/{train_job_id}")
     assert response.status_code == 200, response.text
