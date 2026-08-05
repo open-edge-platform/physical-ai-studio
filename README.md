@@ -41,7 +41,7 @@ For users who prefer a visual interface for end-to-end workflow:
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
-  <img src="docs/assets/application.gif" alt="Application demo" width="100%">
+  <img src="docs/assets/physical_ai_studio_overview.gif" alt="Application demo" width="100%">
 </p>
 <!-- markdownlint-enable MD033 -->
 
