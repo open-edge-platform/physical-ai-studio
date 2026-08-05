@@ -91,22 +91,22 @@ code, datasets, model artifacts, SSH credentials, or a Docker socket. The
 entrypoint is `physicalai-trainer`; run it with a loopback-only port publishing
 rule when it is provisioned remotely.
 
-CI publishes a full Git-SHA tag, then attaches an SBOM and provenance
-attestations, scans the immutable digest, signs it with keyless Sigstore, and
-only then advances any moving tag. Use a SHA tag or resolved digest for
-reproducible deployments; moving tags are a compatibility fallback only.
+CI publishes an immutable `<version>-dev-<short-sha>` tag, then attaches an SBOM
+and provenance attestations, signs it with keyless Sigstore, and only then
+advances the moving tag. Use the immutable tag or a resolved digest for
+reproducible deployments; the moving tag is a compatibility fallback only.
 
-Moving tags follow the release channel:
+Published tags:
 
-| Tag      | Advanced by                     | Points at                     |
-| -------- | ------------------------------- | ----------------------------- |
-| `<sha>`  | every push to `main`            | that exact commit (immutable) |
-| `main`   | every push to `main`            | newest `main` build           |
-| `X.Y.Z`  | publishing a release            | that release                  |
-| `latest` | publishing a **stable** release | newest stable release         |
+| Tag                         | Advanced by          | Points at                     |
+| --------------------------- | -------------------- | ----------------------------- |
+| `<version>-dev-<short-sha>` | every push to `main` | that exact commit (immutable) |
+| `main`                      | every push to `main` | newest `main` build           |
 
-`latest` never points at a development build. Pre-releases publish their
-`X.Y.Z` tag but do not move `latest`.
+Release channels (`X.Y.Z`, `latest`) are not published yet: `trainer-images.yml`
+has no release trigger, so every published trainer image is a development build.
+Trivy scanning of published trainer images runs on the nightly
+`security-scan.yml` schedule rather than gating publish.
 
 `GET /health` returns the image attributes that the Studio backend verifies
 before work is accepted:
@@ -144,9 +144,9 @@ curl --fail --silent http://127.0.0.1:8001/health
 docker compose -f docker-compose.trainer.yaml --profile cuda down   # add -v to also drop the data volume
 ```
 
-Set `TRAINER_IMAGE_TAG` in `.env.trainer` to an immutable Git-SHA tag or
-resolved digest before using this in anything but a throwaway environment;
-moving tags are a compatibility fallback only (see
+Set `TRAINER_IMAGE_TAG` in `.env.trainer` to an immutable
+`<version>-dev-<short-sha>` tag or resolved digest before using this in
+anything but a throwaway environment; the default `main` tag moves (see
 [Container images](#container-images) for what each tag tracks). The XPU profile also needs
 `RENDER_NODE` and `RENDER_GID` set to the host's Intel GPU render node (see
 `.env.trainer.example`).
@@ -160,8 +160,8 @@ its contents.
 docker volume create physicalai-trainer-data
 ```
 
-Replace `<image-reference>` with an immutable Git-SHA tag or a resolved digest.
-Use `latest` only when explicitly accepting the compatibility fallback.
+Replace `<image-reference>` with an immutable `<version>-dev-<short-sha>` tag
+or a resolved digest. Use `main` only when explicitly accepting a moving tag.
 
 PyTorch data loaders can exhaust Docker's default 64 MB `/dev/shm` allocation
 during larger training jobs. On a trusted single-tenant host, prefer the host's
