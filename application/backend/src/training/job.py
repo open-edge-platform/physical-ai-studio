@@ -11,9 +11,10 @@ in both places.
 
 :func:`run_training_job` executes a spec: it builds the datamodule and policy,
 runs Lightning, saves the final checkpoint into ``output_dir``, and exports the
-policy to every backend it supports. Where the data comes from, where the
-result goes, how progress is reported, and how cancellation is signalled are all
-arguments — the runner owns none of that policy.
+policy to the backends enabled by ``PHYSICALAI_EXPORT_BACKENDS`` (default
+``"torch"`` only). Where the data comes from, where the result goes, how
+progress is reported, and how cancellation is signalled are all arguments —
+the runner owns none of that policy.
 
 Example:
     >>> spec = TrainingJobSpec(policy="act", max_steps=1000, batch_size=8)
@@ -29,7 +30,9 @@ Example:
 
 from __future__ import annotations
 
+import gc
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -47,6 +50,26 @@ CHECKPOINT_NAME = "model.ckpt"
 
 EXPORTS_DIRNAME = "exports"
 """Subdirectory of ``output_dir`` holding one directory per export backend."""
+
+CHECKPOINT_EVERY_N_STEPS = 500
+"""Interval checkpoint cadence.
+
+Sub-epoch runs on this dataset never trigger a ``val/loss``-monitored
+checkpoint (an epoch is ~11k steps at batch 8), so checkpointing is driven by
+step count instead: it fires regardless of validation, so a hang mid-training
+still leaves the most recent interval's weights on disk.
+"""
+
+_EXPORT_BACKENDS_ENV_VAR = "PHYSICALAI_EXPORT_BACKENDS"
+"""Comma-separated list of export backend names to run after training."""
+
+_DEFAULT_EXPORT_BACKENDS = frozenset({"torch"})
+"""Backends exported when :data:`_EXPORT_BACKENDS_ENV_VAR` is unset.
+
+Torch export alone is enough to load a model in the GUI. Other backends
+(OpenVINO in particular) convert well above the model's resident memory
+footprint and have OOM-killed completed runs; they are opt-in.
+"""
 
 _DATASET_REPO_ID = "snapshot"
 """Placeholder repo id: datasets are always loaded from a local root here."""
@@ -186,7 +209,13 @@ def run_training_job(
     trainer = Trainer(
         logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
         callbacks=[
-            ModelCheckpoint(dirpath=cache_dir, filename="model", save_top_k=1, monitor="val/loss", mode="min"),
+            ModelCheckpoint(
+                dirpath=cache_dir,
+                filename="model-{step}",
+                every_n_train_steps=min(CHECKPOINT_EVERY_N_STEPS, spec.max_steps),
+                save_top_k=-1,
+                monitor=None,
+            ),
             ProgressReportingCallback(report=report, should_stop=should_stop),
         ],
         accelerator=resolve_accelerator(spec.device_type),
@@ -195,7 +224,8 @@ def run_training_job(
         max_steps=spec.max_steps,
         auto_scale_batch_size=spec.auto_scale_batch_size,
         precision=spec.precision,
-        check_val_every_n_epoch=1,
+        val_check_interval=min(CHECKPOINT_EVERY_N_STEPS, spec.max_steps),
+        gradient_clip_val=1.0,
     )
 
     report(0, "Training model", {})
@@ -206,7 +236,11 @@ def run_training_job(
 
     trainer.save_checkpoint(cache_dir / CHECKPOINT_NAME)
     _publish(cache_dir, output_dir)
-    _export(_export_policy(spec, policy, output_dir), output_dir, report)
+
+    export_policy = _export_policy(spec, policy, output_dir)
+    del trainer, datamodule, policy
+    _release_memory()
+    _export(export_policy, output_dir, report)
 
 
 def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Policy:
@@ -266,16 +300,52 @@ def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> P
         return policy
 
 
+def _enabled_export_backends() -> frozenset[str]:
+    """Return the export backend names enabled for this process.
+
+    Controlled by :data:`_EXPORT_BACKENDS_ENV_VAR`; defaults to
+    :data:`_DEFAULT_EXPORT_BACKENDS` when unset. OpenVINO conversion peaks
+    well above the model's resident memory and has OOM-killed completed runs,
+    so it (like any non-default backend) must be opted into explicitly.
+    """
+    raw = os.environ.get(_EXPORT_BACKENDS_ENV_VAR)
+    if raw is None:
+        return frozenset(_DEFAULT_EXPORT_BACKENDS)
+    return frozenset(name.strip().lower() for name in raw.split(",") if name.strip())
+
+
+def _release_memory() -> None:
+    """Return held host and device memory to the OS/allocator before the next stage.
+
+    Export conversion (OpenVINO in particular) allocates several GB above the
+    model's resident size, on top of whatever the just-finished trainer and
+    dataloaders still hold. A garbage-collection pass plus clearing the device
+    allocator's cache prevents that peak from stacking on top of memory this
+    process no longer needs.
+    """
+    import torch
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if torch.xpu.is_available():
+        torch.xpu.empty_cache()
+
+
 def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
-    """Export the policy to every backend it declares support for."""
+    """Export the policy to every enabled backend it declares support for."""
     from physicalai.export import ExportablePolicyMixin
 
     if not isinstance(policy, ExportablePolicyMixin):
         logger.info("Skipping export: policy does not support export backends")
         return
 
+    enabled = _enabled_export_backends()
     for backend in policy.get_supported_export_backends():
         name = backend.value if hasattr(backend, "value") else str(backend)
+        if name.lower() not in enabled:
+            logger.info("Skipping %s export: not in %s", name, _EXPORT_BACKENDS_ENV_VAR)
+            continue
         try:
             logger.info("Exporting model to %s format", name)
             report(99, f"Exporting to {name} format", {})
@@ -288,3 +358,7 @@ def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
         except Exception:
             # Export is best-effort: one failing backend must not abort the job.
             logger.exception("Failed exporting model to %s format", name)
+        finally:
+            # Conversion peaks well above the model's resident size; release it
+            # before the next backend allocates its own peak.
+            _release_memory()
