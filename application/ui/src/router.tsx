@@ -6,7 +6,7 @@ import { path } from 'static-path';
 
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
-import { featureFlags } from './config/feature-flags';
+import { AppLayout } from './routes/app/app.layout';
 import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
@@ -22,7 +22,6 @@ import { Index as Inference } from './routes/models/inference/index';
 import { OpenApi } from './routes/openapi';
 import { Index as Projects } from './routes/projects/index';
 import { ProjectLayout } from './routes/projects/project.layout';
-import { Index as RemoteServers } from './routes/remote-servers/index';
 import { Edit as RobotEdit } from './routes/robots/edit';
 import { Layout as RobotsLayout } from './routes/robots/layout';
 import { New as RobotsNew } from './routes/robots/new';
@@ -30,8 +29,10 @@ import { NewRobotLayout } from './routes/robots/new-layout';
 import { Robot } from './routes/robots/robot';
 import { SO101Setup } from './routes/robots/so101-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
+import { Settings } from './routes/settings';
 
 const root = path('/');
+const settings = root.path('/settings');
 const projects = root.path('/projects');
 const project = root.path('/projects/:project_id');
 const robots = project.path('robots');
@@ -46,6 +47,12 @@ const environment = environments.path(':environment_id');
 
 export const paths = {
     root,
+    settings: {
+        index: settings,
+        compute: settings.path('/compute'),
+        storage: settings.path('/storage'),
+        about: settings.path('/about'),
+    },
     openapi: root.path('/openapi'),
     projects: {
         index: projects,
@@ -116,11 +123,24 @@ export const router = createBrowserRouter([
                 },
             },
             {
-                path: paths.projects.index.pattern,
+                element: <AppLayout />,
                 children: [
                     {
-                        index: true,
+                        path: paths.projects.index.pattern,
                         element: <Projects />,
+                    },
+                    {
+                        path: paths.settings.index.pattern,
+                        children: [
+                            {
+                                index: true,
+                                element: <Settings />,
+                            },
+                            {
+                                path: paths.settings.compute.pattern,
+                                element: <Settings />,
+                            },
+                        ],
                     },
                 ],
             },
@@ -171,21 +191,6 @@ export const router = createBrowserRouter([
                                 element: <Inference />,
                             },
                         ],
-                    },
-                    {
-                        path: paths.project.remoteServers.index.pattern,
-                        element: <RemoteServers />,
-                        loader: ({ params }) => {
-                            if (!featureFlags.remoteTrainers) {
-                                if (params.project_id === undefined) {
-                                    return redirect(paths.projects.index({}));
-                                }
-
-                                return redirect(paths.project.robots.index({ project_id: params.project_id }));
-                            }
-
-                            return null;
-                        },
                     },
                     {
                         // robots

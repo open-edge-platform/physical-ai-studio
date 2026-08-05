@@ -8,7 +8,6 @@ import {
     Grid,
     Icon,
     Item,
-    Link,
     Loading,
     TabList,
     Tabs,
@@ -17,27 +16,19 @@ import {
 import { Manifest } from '@geti-ui/ui/icons';
 import { Outlet, useLocation } from 'react-router';
 
-import { featureFlags } from '../../config/feature-flags';
+import { AppLogo } from '../../components/app-logo/app-logo';
 import { JobStatus } from '../../features/jobs/footer/job-status';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
-import { ReactComponent as PhysicalAIStudioLogo } from './../../assets/icons/physicalai-studio-logo.svg';
 import { getMainPageInProjectUrl } from './project-navigation';
 
 const Header = ({ project_id }: { project_id: string }) => {
     return (
         <View backgroundColor={'gray-300'} gridArea={'header'}>
             <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
-                <Link href='/' isQuiet variant='overBackground' marginEnd='size-200'>
-                    <Flex gap='size-200' alignItems={'center'}>
-                        <PhysicalAIStudioLogo />
-                        <span style={{ whiteSpace: 'nowrap', fontWeight: 'bold', textDecoration: 'none' }}>
-                            Physical AI Studio
-                        </span>
-                    </Flex>
-                </Link>
+                <AppLogo />
 
                 <TabList
                     height={'100%'}
@@ -67,17 +58,6 @@ const Header = ({ project_id }: { project_id: string }) => {
                                 Models
                             </Flex>
                         </Item>,
-                        ...(featureFlags.remoteTrainers
-                            ? [
-                                  <Item
-                                      textValue='Remote Trainers'
-                                      key={'remote-servers'}
-                                      href={paths.project.remoteServers.index({ project_id })}
-                                  >
-                                      Remote Trainers
-                                  </Item>,
-                              ]
-                            : []),
                     ]}
                 </TabList>
                 <Flex alignItems={'center'} height={'100%'} marginStart='auto' gap='size-100'>
@@ -134,6 +114,7 @@ export const ProjectLayout = () => {
             <Grid
                 areas={['header', 'subheader', 'content', 'footer']}
                 UNSAFE_style={{
+                    gridTemplateColumns: 'minmax(0, 1fr)',
                     gridTemplateRows:
                         // eslint-disable-next-line max-len
                         'var(--spectrum-global-dimension-size-800, 4rem) min-content minmax(0, 1fr) var(--spectrum-global-dimension-size-400)',
@@ -142,7 +123,7 @@ export const ProjectLayout = () => {
                 height={'100%'}
             >
                 <Header project_id={project_id} />
-                <View gridArea={'content'} maxHeight={'100vh'} minHeight={0} height='100%'>
+                <View gridArea={'content'} maxHeight={'100vh'} minWidth={0} minHeight={0} height='100%'>
                     <Suspense fallback={<Loading mode='overlay' />}>
                         <Outlet />
                     </Suspense>
