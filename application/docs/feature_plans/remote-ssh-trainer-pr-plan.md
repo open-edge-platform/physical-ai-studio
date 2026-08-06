@@ -59,10 +59,17 @@ Record as ADRs / an implementation design record, from
 - **Backend restart: reattach**, before the orphan sweep.
 - **Tunnel drop: reconnect and resume**, one code path with reattach, bounded
   retry budget.
-- **Build revision source: the `org.opencontainers.image.revision` OCI label**,
-  git as a dev-only fallback. Explicitly **not `../../VERSION`** — it holds
-  `0.1.0`, and a semver string can never match a SHA-tagged image, so using it
-  guarantees a permanent silent `latest` fallback.
+- **Trainer image resolution key: Studio's compiled-in trainer protocol
+  version, resolved via the `protocol-<N>` moving tag** — not the Studio build
+  revision (git SHA) and not `../../VERSION`. `trainer-images.yml` only
+  rebuilds the trainer image on commits touching trainer-relevant paths, so
+  most Studio commits never produce a matching revision-tagged trainer image;
+  resolving by exact SHA (or the `0.1.0`-shaped `VERSION` semver, which can
+  never match a SHA tag either) would guarantee an almost-permanent silent
+  `latest` fallback. `protocol-<N>` tracks wire compatibility instead of the
+  commit that happened to build it, so it stays resolvable across the commits
+  that don't touch the trainer. `latest` is the fallback only when the
+  protocol tag itself cannot be resolved.
 - Trainer protocol contract: **direct-URL trainers grandfathered** when they
   report no version, **SSH-provisioned images held strictly**.
 - Managed-container labels, `backend_instance_id` ownership, and orphan-sweep
@@ -113,7 +120,12 @@ registered servers.
 
 ### Remaining
 
-Nothing. Backend-side **resolution** of these images is PR 7.
+Add a `protocol-<N>` moving tag alongside `latest` in `trainer-images.yml`,
+stamped onto the same signed digest (see
+[Resolve trainer images](remote-ssh-trainer-plan.md#3-resolve-trainer-images)
+for why: `git-sha`/`latest` matching alone can't reliably resolve a trainer
+image for a Studio commit that doesn't itself rebuild the trainer). Backend-side
+**resolution** of these images is PR 7.
 
 ---
 
@@ -393,12 +405,15 @@ container behind a dedicated service boundary.
 
 ### Scope
 
-- Resolve the Studio build revision from the **`org.opencontainers.image.revision`
-  label**, prefer its trainer image tag, fall back to `latest` only when
-  required, and persist + log the fallback reason. Not `git rev-parse HEAD`
-  (fails in a container), **not `VERSION`** (`0.1.0` can never match a SHA tag).
+- Resolve Studio's own compiled-in trainer protocol version, prefer the
+  device-specific `protocol-<N>` trainer image tag, fall back to `latest` only
+  when that tag cannot be resolved, and persist + log the fallback reason. Not
+  the Studio build revision/git SHA (the trainer only rebuilds on
+  trainer-relevant path changes, so it rarely matches) and not `VERSION`
+  (`0.1.0` can never match a SHA or protocol tag either).
 - Resolve an immutable digest and verify image identity/signature policy before
-  use. Verify with `cosign verify`, pinning the certificate identity to the
+  use, for whichever tag (`protocol-<N>` or `latest`) was selected. Verify with
+  `cosign verify`, pinning the certificate identity to the
   Studio release workflow and the Sigstore OIDC issuer, e.g.:
 
   ```sh
@@ -447,8 +462,8 @@ container behind a dedicated service boundary.
 
 ### Acceptance criteria
 
-- Tests cover revision-tag preference, revision resolution without `.git`,
-  **rejection of a semver-shaped revision value**, fallback persistence, pull
+- Tests cover `protocol-<N>` tag preference over `latest`, protocol-version
+  resolution with no `.git` present, fallback persistence, pull
   failures, digest persistence, loopback binding, protocol mismatch (strict for
   SSH), cleanup at every failure point, cached images, output handling,
   tunnel-drop reconnect, GPU-busy pending/backoff/give-up, and non-destructive
