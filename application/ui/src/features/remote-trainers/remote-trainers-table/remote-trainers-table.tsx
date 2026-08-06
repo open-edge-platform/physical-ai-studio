@@ -34,19 +34,13 @@ const DEVICE_BADGE_CLASSES: Record<string, string> = {
 };
 
 export const RemoteTrainersTableHeader = () => (
-    <Grid
-        columns={REMOTE_TRAINERS_GRID_COLUMNS}
-        alignItems='center'
-        width='100%'
-        gap={'size-100'}
-        UNSAFE_className={classes.tableHeader}
-    >
+    <div className={classes.tableHeader}>
         <div />
         <Text>Name</Text>
         <Text>Status</Text>
         <Text>Compute</Text>
         <div />
-    </Grid>
+    </div>
 );
 
 const REMOTE_TRAINERS_MENU_ACTION_ITEMS = {
@@ -125,57 +119,52 @@ const RemoteTrainerRow = ({
         <div
             data-testid={`remote-trainer-row-${remoteTrainer.id}`}
             onClick={onToggleExpanded}
-            className={classes.trainerRow}
+            className={`${classes.trainerRow} ${isExpanded ? classes.rowExpanded : ''}`}
         >
-            <Grid
-                columns={REMOTE_TRAINERS_GRID_COLUMNS}
-                alignItems='center'
-                width='100%'
-                UNSAFE_className={`${classes.row} ${isExpanded ? classes.rowExpanded : ''}`}
+            <ActionButton
+                isQuiet
+                aria-expanded={isExpanded}
+                aria-controls={contentId}
+                aria-label={`Show details for ${remoteTrainer.name}`}
+                onPress={onToggleExpanded}
+                UNSAFE_className={classes.disclosureButton}
             >
-                <ActionButton
-                    isQuiet
-                    aria-expanded={isExpanded}
-                    aria-controls={contentId}
-                    aria-label={`Show details for ${remoteTrainer.name}`}
-                    onPress={onToggleExpanded}
-                    UNSAFE_className={classes.disclosureButton}
-                >
-                    <Icon>{isExpanded ? <ChevronDownSmallLight /> : <ChevronRightSmallLight />}</Icon>
-                </ActionButton>
+                <Icon>{isExpanded ? <ChevronDownSmallLight /> : <ChevronRightSmallLight />}</Icon>
+            </ActionButton>
 
-                <Flex gap='size-100' alignItems='center' wrap>
-                    <Text UNSAFE_className={classes.trainerName}>{remoteTrainer.name}</Text>
-                </Flex>
+            <Flex gap='size-100' alignItems='center' wrap>
+                <Text UNSAFE_className={classes.trainerName}>{remoteTrainer.name}</Text>
+            </Flex>
 
-                <StatusLight variant={healthVariant(health, isChecking)}>{healthLabel(health, isChecking)}</StatusLight>
+            <StatusLight variant={healthVariant(health, isChecking)} UNSAFE_className={classes.healthStatus}>
+                {healthLabel(health, isChecking)}
+            </StatusLight>
 
-                <Flex gap='size-100' alignItems='center' wrap>
-                    {types.map((type) => (
-                        <Badge key={type} variant='neutral' UNSAFE_className={DEVICE_BADGE_CLASSES[type]}>
-                            {type}
-                        </Badge>
-                    ))}
-                    <Text UNSAFE_className={classes.cardMetaText}>
-                        {health?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported')}
-                    </Text>
-                </Flex>
+            <Flex gap='size-100' alignItems='center' wrap>
+                {types.map((type) => (
+                    <Badge key={type} variant='neutral' UNSAFE_className={DEVICE_BADGE_CLASSES[type]}>
+                        {type}
+                    </Badge>
+                ))}
+                <Text UNSAFE_className={classes.cardMetaText}>
+                    {health?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported')}
+                </Text>
+            </Flex>
 
-                <Flex gap='size-100' wrap UNSAFE_className={classes.actionsCell}>
-                    <RemoteTrainersMenuActions
-                        remoteTrainerName={remoteTrainer.name}
-                        onCheck={onCheck}
-                        onEdit={onEdit}
-                        onDelete={onDelete}
-                        isChecking={isChecking}
-                    />
-                </Flex>
-            </Grid>
+            <Flex gap='size-100' wrap UNSAFE_className={classes.actionsCell}>
+                <RemoteTrainersMenuActions
+                    remoteTrainerName={remoteTrainer.name}
+                    onCheck={onCheck}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    isChecking={isChecking}
+                />
+            </Flex>
 
             {isExpanded && (
-                <View id={contentId}>
+                <Grid id={contentId} gridColumn={'1/-1'}>
                     <RemoteTrainerDetail remoteTrainer={remoteTrainer} health={health} isChecking={isChecking} />
-                </View>
+                </Grid>
             )}
         </div>
     );
@@ -200,29 +189,31 @@ export const RemoteTrainersTable = ({ remoteTrainers, setAction, action }: Remot
 
     return (
         <>
-            <RemoteTrainersTableHeader />
-            {remoteTrainers.map((remoteTrainer) => {
-                const entry = health.get(remoteTrainer.id);
-                const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
+            <Grid columns={REMOTE_TRAINERS_GRID_COLUMNS} columnGap='size-100' width='100%'>
+                <RemoteTrainersTableHeader />
+                {remoteTrainers.map((remoteTrainer) => {
+                    const entry = health.get(remoteTrainer.id);
+                    const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
 
-                return (
-                    <RemoteTrainerRow
-                        key={remoteTrainer.id}
-                        remoteTrainer={remoteTrainer}
-                        health={displayHealth}
-                        isChecking={entry?.isChecking ?? false}
-                        isExpanded={expandedRemoteTrainerId === remoteTrainer.id}
-                        onToggleExpanded={() =>
-                            setExpandedRemoteTrainerId((current) =>
-                                current === remoteTrainer.id ? undefined : remoteTrainer.id
-                            )
-                        }
-                        onCheck={() => void entry?.checkHealth()}
-                        onEdit={() => setAction({ type: 'edit', remoteTrainer })}
-                        onDelete={() => setAction({ type: 'delete', remoteTrainer })}
-                    />
-                );
-            })}
+                    return (
+                        <RemoteTrainerRow
+                            key={remoteTrainer.id}
+                            remoteTrainer={remoteTrainer}
+                            health={displayHealth}
+                            isChecking={entry?.isChecking ?? false}
+                            isExpanded={expandedRemoteTrainerId === remoteTrainer.id}
+                            onToggleExpanded={() =>
+                                setExpandedRemoteTrainerId((current) =>
+                                    current === remoteTrainer.id ? undefined : remoteTrainer.id
+                                )
+                            }
+                            onCheck={() => void entry?.checkHealth()}
+                            onEdit={() => setAction({ type: 'edit', remoteTrainer })}
+                            onDelete={() => setAction({ type: 'delete', remoteTrainer })}
+                        />
+                    );
+                })}
+            </Grid>
             <DialogContainer onDismiss={() => setAction(undefined)}>
                 {(action?.type === 'create' || action?.type === 'edit') && (
                     <RemoteTrainerForm

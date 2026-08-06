@@ -68,15 +68,13 @@
 }
 
 .checkList {
+    display: grid;
+    grid-template-columns: 1.375rem minmax(0, 1fr) max-content;
+    column-gap: var(--spectrum-global-dimension-size-100);
     margin-top: var(--spectrum-global-dimension-size-100);
 }
 
 .checkRow {
-    display: grid;
-    grid-template-columns: 1.375rem minmax(0, 1fr) max-content;
-    align-items: center;
-    gap: var(--spectrum-global-dimension-size-100);
-    min-height: 2.75rem;
     border-bottom: 1px solid var(--spectrum-global-color-gray-200);
 }
 

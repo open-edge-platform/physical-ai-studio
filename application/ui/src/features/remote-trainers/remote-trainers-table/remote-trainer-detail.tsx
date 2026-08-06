@@ -1,4 +1,4 @@
-import { Flex, Heading, StatusLight, Text, View } from '@geti-ui/ui';
+import { Flex, Grid, Heading, StatusLight, Text, View } from '@geti-ui/ui';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
 import {
@@ -24,7 +24,13 @@ type HealthCheckRowProps = {
 };
 
 export const HealthCheckRow = ({ label, detail, state, status }: HealthCheckRowProps) => (
-    <div className={classes.checkRow}>
+    <Grid
+        columns={'subgrid'}
+        gridColumn={'1/-1'}
+        alignItems={'center'}
+        minHeight={'2.75rem'}
+        UNSAFE_className={classes.checkRow}
+    >
         <span className={`${classes.checkIcon} ${classes[state]}`} aria-hidden='true'>
             {state === 'positive' ? '✓' : state === 'negative' ? '×' : state === 'yellow' ? '!' : '–'}
         </span>
@@ -32,8 +38,10 @@ export const HealthCheckRow = ({ label, detail, state, status }: HealthCheckRowP
             <Text UNSAFE_className={classes.checkLabel}>{label}</Text>
             <Text UNSAFE_className={classes.checkDetail}>{detail}</Text>
         </span>
-        <StatusLight variant={state}>{status}</StatusLight>
-    </div>
+        <StatusLight variant={state} justifySelf={'start'}>
+            {status}
+        </StatusLight>
+    </Grid>
 );
 
 type RemoteTrainerDetailProps = {
