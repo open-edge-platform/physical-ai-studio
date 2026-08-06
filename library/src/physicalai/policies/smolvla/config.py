@@ -36,9 +36,6 @@ class SmolVLAConfig(Config):
             Defaults to (512, 512).
         image_key_reorder_map: Optional mapping from dataset camera keys to policy camera indices.
             This is applied in preprocessing before image stacking. Defaults to {}.
-        image_features: Expected image feature names (camera slots) for SmolVLA input ordering.
-            Can be provided as suffixes (e.g. "camera0") or flattened keys
-            (e.g. "observation.images.camera0"). Defaults to [].
         num_cameras: Total number of camera slots expected by the policy. Slots not covered by the batch
             image keys (or by ``image_key_reorder_map``) are filled with masked empty cameras. Values <= 0
             keep only the batch cameras. Defaults to 0.
