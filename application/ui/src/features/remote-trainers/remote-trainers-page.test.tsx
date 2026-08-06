@@ -46,7 +46,7 @@ describe('RemoteTrainersPage', () => {
 
         expect(await screen.findByRole('heading', { name: 'Remote Trainers' })).toBeInTheDocument();
         expect(await screen.findAllByText('managed-trainer')).not.toHaveLength(0);
-        expect(await screen.findByRole('heading', { name: 'managed-trainer' })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
         expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);
         expect(screen.getByText(/ready for training requests/)).toBeInTheDocument();
         expect(screen.getByText('Trainer health endpoint')).toBeInTheDocument();
@@ -108,8 +108,8 @@ describe('RemoteTrainersPage', () => {
 
         render(<RemoteTrainersPage />);
 
-        const unavailableCard = await screen.findByRole('button', { name: /unavailable-trainer/i });
-        expect(await within(unavailableCard).findByText('Check failed')).toBeInTheDocument();
+        const unavailableRow = await screen.findByTestId(`remote-trainer-row-${unavailableTrainer.id}`);
+        expect(await within(unavailableRow).findByText('Check failed')).toBeInTheDocument();
     });
 
     it('creates a configured remote trainer URL', async () => {
@@ -134,7 +134,7 @@ describe('RemoteTrainersPage', () => {
         await user.type(inputs[1], remoteTrainer.url);
         await user.click(screen.getByRole('button', { name: 'Add trainer' }));
 
-        expect(await screen.findByRole('heading', { name: remoteTrainer.name })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     });
 
@@ -159,7 +159,7 @@ describe('RemoteTrainersPage', () => {
         await user.type(nameInput, 'renamed-trainer');
         await user.click(screen.getByRole('button', { name: 'Save changes' }));
 
-        expect(await screen.findByRole('heading', { name: 'renamed-trainer' })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: /show details for renamed-trainer/i })).toBeInTheDocument();
     });
 
     it('deletes a configured remote trainer', async () => {
@@ -177,5 +177,31 @@ describe('RemoteTrainersPage', () => {
 
         await user.click(await screen.findByRole('button', { name: `Delete ${remoteTrainer.name}` }));
         await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    });
+
+    it('expands a single row at a time and shows health for collapsed rows', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer, unavailableTrainer])),
+            http.get(REMOTE_TRAINER_HEALTH_PATH, ({ params }) =>
+                params.remote_trainer_id === unavailableTrainer.id
+                    ? HttpResponse.json({ detail: [] }, { status: 503 })
+                    : HttpResponse.json(healthyTrainer)
+            )
+        );
+
+        render(<RemoteTrainersPage />);
+
+        const firstToggle = await screen.findByRole('button', { name: /show details for managed-trainer/i });
+        expect(firstToggle).toHaveAttribute('aria-expanded', 'true');
+
+        const secondToggle = await screen.findByRole('button', { name: /show details for unavailable-trainer/i });
+        const unavailableRow = await screen.findByTestId(`remote-trainer-row-${unavailableTrainer.id}`);
+        expect(await within(unavailableRow).findByText('Check failed')).toBeInTheDocument();
+
+        await user.click(secondToggle);
+
+        expect(firstToggle).toHaveAttribute('aria-expanded', 'false');
+        expect(secondToggle).toHaveAttribute('aria-expanded', 'true');
     });
 });
