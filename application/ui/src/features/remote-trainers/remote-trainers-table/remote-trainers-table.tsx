@@ -10,7 +10,7 @@ import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 
 import classes from './remote-trainers-table.module.css';
 
-export const REMOTE_TRAINERS_GRID_COLUMNS = 'max-content 1fr 1fr 1fr auto';
+export const REMOTE_TRAINERS_GRID_COLUMNS = 'max-content 1fr 1fr 1fr 1fr auto';
 
 const DEVICE_BADGE_CLASSES: Record<string, string> = {
     CUDA: classes.cudaBadge,
@@ -21,6 +21,7 @@ export const RemoteTrainersTableHeader = () => (
     <div className={classes.tableHeader}>
         <div />
         <Text>Name</Text>
+        <Text>Trainer URL</Text>
         <Text>Status</Text>
         <Text>Compute</Text>
         <div />
@@ -67,9 +68,9 @@ const RemoteTrainersMenuActions = ({
                 onAction={handleAction}
                 disabledKeys={isChecking ? [REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATE] : undefined}
             >
-                <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATE}>Check state</Item>
                 <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.EDIT}>Edit</Item>
                 <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.DELETE}>Delete</Item>
+                <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATE}>Check state</Item>
             </Menu>
         </MenuTrigger>
     );
@@ -118,9 +119,9 @@ const RemoteTrainerRow = ({
                 </Icon>
             </ActionButton>
 
-            <Flex gap='size-100' alignItems='center' wrap>
-                <Text UNSAFE_className={classes.trainerName}>{remoteTrainer.name}</Text>
-            </Flex>
+            <Text UNSAFE_className={classes.trainerName}>{remoteTrainer.name}</Text>
+
+            <Text>{remoteTrainer.url}</Text>
 
             <StatusLight variant={healthVariant(health, isChecking)} UNSAFE_className={classes.healthStatus}>
                 {healthLabel(health, isChecking)}

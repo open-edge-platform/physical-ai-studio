@@ -62,6 +62,7 @@ describe('RemoteTrainersTable', () => {
         expect(screen.getAllByText(/NVIDIA A100/)).not.toHaveLength(0);
         expect(screen.getByText('Storage capacity')).toBeInTheDocument();
         expect(screen.getAllByText(/558\.8 GB free of 931\.3 GB/)).not.toHaveLength(0);
+        expect(screen.getAllByText(remoteTrainer.url)).not.toHaveLength(0);
     });
 
     it('attributes an invalid device report to compute capability', async () => {

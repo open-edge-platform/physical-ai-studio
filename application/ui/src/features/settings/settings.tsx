@@ -58,7 +58,7 @@ export const SettingsView = () => {
                     </Item>
                 )}
             </TabList>
-            <TabPanels minHeight={0} UNSAFE_style={{ overflowY: 'auto' }}>
+            <TabPanels minHeight={0} UNSAFE_style={{ overflowY: 'auto', scrollbarGutter: 'stable' }}>
                 {(tabItem: TabItem) => <Item key={tabItem.key}>{tabItem.content}</Item>}
             </TabPanels>
         </Tabs>
