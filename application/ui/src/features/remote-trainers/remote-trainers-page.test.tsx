@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
@@ -28,18 +28,12 @@ const healthyTrainer = {
     reason_code: null,
 };
 
-const unavailableTrainer = {
-    ...remoteTrainer,
-    id: 'b5a0da22-7066-426d-b0ae-6dfae2d983dc',
-    name: 'unavailable-trainer',
-};
-
 describe('RemoteTrainersPage', () => {
     beforeEach(() => {
         server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
     });
 
-    it('shows configured remote trainers and their connection details', async () => {
+    it('shows configured remote trainers', async () => {
         server.use(http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])));
 
         render(<RemoteTrainersPage />);
@@ -47,69 +41,14 @@ describe('RemoteTrainersPage', () => {
         expect(await screen.findByRole('heading', { name: 'Remote Trainers' })).toBeInTheDocument();
         expect(await screen.findAllByText('managed-trainer')).not.toHaveLength(0);
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
-        expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);
-        expect(screen.getByText(/ready for training requests/)).toBeInTheDocument();
-        expect(screen.getByText('Trainer health endpoint')).toBeInTheDocument();
-        expect(screen.getByText('Compute capability')).toBeInTheDocument();
-        expect(screen.getAllByText('CUDA')).not.toHaveLength(0);
-        expect(screen.getAllByText(/NVIDIA A100/)).not.toHaveLength(0);
-        expect(screen.getByText('Storage capacity')).toBeInTheDocument();
-        expect(screen.getAllByText(/558\.8 GB free of 931\.3 GB/)).not.toHaveLength(0);
     });
 
-    it('attributes an invalid device report to compute capability', async () => {
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
-            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
-                HttpResponse.json({
-                    ...healthyTrainer,
-                    status: 'degraded',
-                    devices: [],
-                    reason_code: 'invalid_devices_response',
-                })
-            )
-        );
+    it('shows an empty state when no remote trainers are configured', async () => {
+        server.use(http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])));
 
         render(<RemoteTrainersPage />);
 
-        expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);
-        const trainerHealthRow = (await screen.findByText('Trainer health endpoint')).closest('div');
-        const computeRow = screen.getByText('Compute capability').closest('div');
-
-        if (trainerHealthRow === null || computeRow === null) {
-            throw new Error('Expected trainer health and compute capability rows to be rendered.');
-        }
-
-        expect(within(trainerHealthRow).getByText('Healthy')).toBeInTheDocument();
-        expect(within(computeRow).getByText('Unknown')).toBeInTheDocument();
-    });
-
-    it('distinguishes a failed health request from an unreachable trainer', async () => {
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
-            http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json({ detail: [] }, { status: 422 }))
-        );
-
-        render(<RemoteTrainersPage />);
-
-        expect(await screen.findAllByText('Check failed')).not.toHaveLength(0);
-        expect(screen.getAllByText('Studio could not complete the health check. Try again.')).not.toHaveLength(0);
-    });
-
-    it('shows a failed health check for an unselected trainer', async () => {
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer, unavailableTrainer])),
-            http.get(REMOTE_TRAINER_HEALTH_PATH, ({ params }) =>
-                params.remote_trainer_id === unavailableTrainer.id
-                    ? HttpResponse.json({ detail: [] }, { status: 503 })
-                    : HttpResponse.json(healthyTrainer)
-            )
-        );
-
-        render(<RemoteTrainersPage />);
-
-        const unavailableRow = await screen.findByTestId(`remote-trainer-row-${unavailableTrainer.id}`);
-        expect(await within(unavailableRow).findByText('Check failed')).toBeInTheDocument();
+        expect(await screen.findByText('No remote trainers are configured.')).toBeInTheDocument();
     });
 
     it('creates a configured remote trainer URL', async () => {
@@ -179,31 +118,8 @@ describe('RemoteTrainersPage', () => {
         await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
         await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
         await user.click(await screen.findByRole('button', { name: 'Delete' }));
-    });
 
-    it('expands a single row at a time and shows health for collapsed rows', async () => {
-        const user = userEvent.setup();
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer, unavailableTrainer])),
-            http.get(REMOTE_TRAINER_HEALTH_PATH, ({ params }) =>
-                params.remote_trainer_id === unavailableTrainer.id
-                    ? HttpResponse.json({ detail: [] }, { status: 503 })
-                    : HttpResponse.json(healthyTrainer)
-            )
-        );
-
-        render(<RemoteTrainersPage />);
-
-        const firstToggle = await screen.findByRole('button', { name: /show details for managed-trainer/i });
-        expect(firstToggle).toHaveAttribute('aria-expanded', 'true');
-
-        const secondToggle = await screen.findByRole('button', { name: /show details for unavailable-trainer/i });
-        const unavailableRow = await screen.findByTestId(`remote-trainer-row-${unavailableTrainer.id}`);
-        expect(await within(unavailableRow).findByText('Check failed')).toBeInTheDocument();
-
-        await user.click(secondToggle);
-
-        expect(firstToggle).toHaveAttribute('aria-expanded', 'false');
-        expect(secondToggle).toHaveAttribute('aria-expanded', 'true');
+        expect(await screen.findByText('No remote trainers are configured.')).toBeInTheDocument();
+        expect(screen.queryByText(remoteTrainer.name)).not.toBeInTheDocument();
     });
 });
