@@ -1,3 +1,4 @@
+import pytest
 from lightning.pytorch.callbacks import BatchSizeFinder
 from physicalai.train.trainer import Trainer
 
@@ -96,6 +97,26 @@ class TestTrainer:
         )
 
         assert any(isinstance(cb, EarlyStopping) for cb in trainer.callbacks)
+
+
+class TestTensorBoardLogging:
+    """Tests that TensorBoard logging works end to end."""
+
+    def test_experiment_name_creates_tensorboard_logger(self, tmp_path):
+        """Verify experiment_name auto-creates a TensorBoardLogger rooted at default_root_dir."""
+        pytest.importorskip("tensorboard")
+        from lightning.pytorch.loggers import TensorBoardLogger
+
+        trainer = Trainer(
+            accelerator="cpu",
+            default_root_dir=str(tmp_path),
+            experiment_name="pusht_act",
+            enable_checkpointing=False,
+        )
+
+        assert isinstance(trainer.logger, TensorBoardLogger)
+        assert trainer.logger.name == "pusht_act"
+        assert trainer.logger.save_dir == str(tmp_path)
 
 
 class TestAutoScaleBatchSize:

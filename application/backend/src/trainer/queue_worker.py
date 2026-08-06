@@ -110,7 +110,7 @@ class QueueManager:
         except JobCanceledError:
             logger.info("Training job canceled")
             self.store.update(job_id, status=TrainerJobStatus.CANCELED, message="Canceled")
-        except Exception as exc:  # noqa: BLE001  # surface any training failure as a FAILED job, never crash the loop
+        except Exception as exc:  # surface any training failure as a FAILED job, never crash the loop
             logger.exception("Training job failed: {}", exc)
             status = TrainerJobStatus.CANCELED if job_id in self._cancel_requested else TrainerJobStatus.FAILED
             self.store.update(job_id, status=status, message=f"Training failed: {exc}")

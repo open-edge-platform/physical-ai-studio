@@ -3,27 +3,30 @@
 
 """In-process training backend using torch/Lightning.
 
+This is an adapter, not a training implementation: it maps a `TrainingContext`
+onto a `training.TrainingJobSpec` and hands it to `training.run_training_job`,
+the same runner the trainer service uses. Keeping the training logic in one
+place is what stops the local and remote paths from drifting apart.
+
 Imports of `physicalai`, torch, and Lightning are deferred to call time so this
 module can be imported in environments without the `[train]` extra installed.
 """
 
 from __future__ import annotations
 
-import shutil
+import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from models.utils import load_policy, setup_policy
 from services.training_backends._log_format import render_progress_log
-from utils.device import get_lightning_strategy, get_torch_device
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
-    from lightning.pytorch.callbacks import Callback
+    from physicalai.train.callbacks import ReportFn
 
     from services.training_backends.base import TrainingContext
+    from training import TrainingJobSpec
 
 
 class LocalTrainingBackend:
@@ -31,124 +34,76 @@ class LocalTrainingBackend:
 
     async def train(self, context: TrainingContext) -> None:
         """Run Lightning training, save, and export into the model directory."""
-        from lightning.pytorch.callbacks import ModelCheckpoint
-        from lightning.pytorch.loggers import CSVLogger
-        from physicalai.data import LeRobotDataModule
-        from physicalai.train import Trainer
-
-        payload = context.payload
-        output_dir = context.output_dir
-        cache_path = context.cache_dir
+        from training import run_training_job
 
         if context.snapshot is None:
             raise ValueError("Local training requires a dataset snapshot")
 
-        device_type = payload.device.type if payload.device else None
-        device_index = payload.device.index if payload.device else None
-        accelerator = get_torch_device(device_type)
-
-        l_dm = LeRobotDataModule(
-            repo_id="snapshot",  # irrelevant for loading from a local root
-            root=context.snapshot.path,
-            train_batch_size=payload.batch_size,
-            num_workers=payload.num_workers,
-            val_split=payload.val_split,
+        await asyncio.to_thread(
+            run_training_job,
+            build_spec(context),
+            dataset_root=context.snapshot.path,
+            output_dir=context.output_dir,
+            cache_dir=context.cache_dir,
+            report=self._reporter(context),
+            should_stop=context.should_stop,
+            resume_from=_resume_checkpoint(context),
         )
 
-        if context.base_model is not None:
-            policy = load_policy(context.base_model, compile_model=payload.compile_model)
-        else:
-            policy = setup_policy(context.model, compile_model=payload.compile_model)
+    @staticmethod
+    def _reporter(context: TrainingContext) -> ReportFn:
+        """Wrap the job reporter for `run_training_job`'s telemetry sink.
 
-        precision = str(payload.precision)
-        strategy = get_lightning_strategy(device_type)
-        devices = [device_index] if device_index is not None else 1
-
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=cache_path,
-            filename="model",
-            save_top_k=1,
-            monitor="val/loss",
-            mode="min",
-        )
-        csv_logger = CSVLogger(cache_path.parent, name=cache_path.stem)
-
-        trainer = Trainer(
-            logger=csv_logger,
-            callbacks=[
-                checkpoint_callback,
-                self._progress_callback(context),
-            ],
-            accelerator=accelerator,
-            strategy=strategy,
-            devices=devices,
-            max_steps=payload.max_steps,
-            auto_scale_batch_size=payload.auto_scale_batch_size,
-            precision=precision,
-            check_val_every_n_epoch=1,
-        )
-
-        trainer.fit(model=policy, datamodule=l_dm)
-
-        final_checkpoint = cache_path / "model.ckpt"
-        trainer.save_checkpoint(final_checkpoint)
-
-        output_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(cache_path), str(output_dir))
-
-        export_policy = policy
-        if payload.compile_model and context.model.policy in ("act", "smolvla"):
-            try:
-                logger.info("Reloading non-compiled policy for export")
-                export_policy = load_policy(context.model, compile_model=False)
-            except Exception as exc:
-                logger.warning("Failed to reload non-compiled policy for export; using trained policy")
-                logger.exception(exc)
-
-        self._export_policy(policy=export_policy, output_dir=output_dir, context=context)
-
-    def _progress_callback(self, context: TrainingContext) -> Callback:
-        """Build the shared progress callback wired to this job's reporter.
-
-        Reuses `physicalai.train.ProgressReportingCallback` so local runs emit
-        the same telemetry as remote ones. The reporter both mirrors loggable
-        telemetry to the job log (via the shared renderer) and updates job
-        progress, reserving 100% for the terminal completion update.
+        Mirrors loggable telemetry to the job log using the shared renderer, so
+        local runs produce the same log lines as remote ones, and caps running
+        progress at 99 because the worker writes 100 on completion.
         """
-        from physicalai.train import ProgressReportingCallback
-
         reporter = context.progress
 
         def report(progress: int, message: str | None, extra_info: dict) -> None:
             line = render_progress_log(extra_info)
             if line is not None:
                 logger.info(line)
-            # Cap running progress at 99; the worker writes 100 on completion.
             reporter(min(99, progress), message=message, extra_info=extra_info)
 
-        return ProgressReportingCallback(report=report, should_stop=context.should_stop)
+        return report
 
-    def _export_policy(self, *, policy: object, output_dir: Path, context: TrainingContext) -> None:
-        """Export the trained policy to every backend the policy supports."""
-        from physicalai.export import ExportablePolicyMixin
 
-        if not isinstance(policy, ExportablePolicyMixin):
-            logger.info("Skipping export: policy does not support export backends")
-            return
+def build_spec(context: TrainingContext) -> TrainingJobSpec:
+    """Translate a job's payload into the shared training spec.
 
-        logger.info("Starting model export for trained policy")
-        for backend in policy.get_supported_export_backends():
-            backend_name = backend.value if hasattr(backend, "value") else str(backend)
-            try:
-                logger.info("Exporting model to {} format", backend_name)
-                context.progress(99, message=f"Exporting to {backend_name} format")
-                export_dir = output_dir / "exports" / backend_name
-                policy.export(export_dir, backend=backend)
-                logger.info("Model export to {} completed", backend_name)
-            except ImportError as exc:
-                # Optional backend dependency not installed; skip without a
-                # traceback so the run isn't mistaken for a failure.
-                logger.warning("Skipping {} export: optional dependency missing ({})", backend_name, exc)
-            except Exception as exc:
-                logger.error("Failed exporting model to {} format", backend_name)
-                logger.exception(exc)
+    Shared with the remote backend, which sends the same spec over the wire, so
+    both paths train from one set of defaults instead of two.
+
+    Args:
+        context: The training job to describe.
+
+    Returns:
+        The spec describing what to train.
+    """
+    from training import TrainingJobSpec
+
+    payload = context.payload
+    device = payload.device
+    return TrainingJobSpec(
+        # A resumed run's architecture is dictated by the base model's checkpoint.
+        policy=(context.base_model or context.model).policy,
+        max_steps=payload.max_steps,
+        batch_size=payload.batch_size,
+        num_workers=payload.num_workers,
+        val_split=payload.val_split,
+        precision=str(payload.precision),
+        compile_model=payload.compile_model,
+        auto_scale_batch_size=payload.auto_scale_batch_size,
+        device_type=str(device.type) if device else None,
+        device_index=device.index if device else None,
+    )
+
+
+def _resume_checkpoint(context: TrainingContext) -> Path | None:
+    """Return the base model's checkpoint to resume from, if the job has one."""
+    from training.job import CHECKPOINT_NAME
+
+    if context.base_model is None:
+        return None
+    return Path(context.base_model.path) / CHECKPOINT_NAME

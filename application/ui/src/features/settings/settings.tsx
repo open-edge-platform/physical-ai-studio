@@ -50,7 +50,7 @@ export const SettingsView = () => {
     ];
 
     return (
-        <Tabs items={tabs} selectedKey={activeTab}>
+        <Tabs items={tabs} selectedKey={activeTab} height={'100%'} minHeight={0}>
             <TabList aria-label={'Settings tabs'}>
                 {(tabItem: TabItem) => (
                     <Item key={tabItem.key} href={tabItem.href}>
@@ -58,7 +58,9 @@ export const SettingsView = () => {
                     </Item>
                 )}
             </TabList>
-            <TabPanels>{(tabItem: TabItem) => <Item key={tabItem.key}>{tabItem.content}</Item>}</TabPanels>
+            <TabPanels minHeight={0} UNSAFE_style={{ overflowY: 'auto' }}>
+                {(tabItem: TabItem) => <Item key={tabItem.key}>{tabItem.content}</Item>}
+            </TabPanels>
         </Tabs>
     );
 };

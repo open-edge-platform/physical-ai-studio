@@ -11,36 +11,47 @@ export const ProjectList = () => {
     const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
 
     return (
-        <View height='100%' maxWidth={'240ch'} marginX='auto'>
-            <Heading
-                level={1}
-                marginBottom={'size-250'}
-                UNSAFE_style={{
-                    textAlign: 'center',
-                    fontSize: 'var(--spectrum-global-dimension-font-size-700)',
-                }}
-            >
-                Projects
-            </Heading>
+        <View height={'100%'}>
+            <View
+                position={'absolute'}
+                top={0}
+                left={0}
+                right={0}
+                bottom={0}
+                UNSAFE_className={classes.container}
+                zIndex={0}
+            ></View>
+            <View height='100%' maxWidth={'240ch'} marginX='auto' zIndex={1} position={'relative'}>
+                <Heading
+                    level={1}
+                    marginBottom={'size-250'}
+                    UNSAFE_style={{
+                        textAlign: 'center',
+                        fontSize: 'var(--spectrum-global-dimension-font-size-700)',
+                    }}
+                >
+                    Projects
+                </Heading>
 
-            <Text UNSAFE_className={classes.description}>
-                To create a project, start by defining your objectives. Then, design the data flow to ensure proper
-                processing at each stage. Implement the required tools and technologies for automation, and finally,
-                test the project to confirm it runs smoothly and meets your goals.
-            </Text>
+                <Text UNSAFE_className={classes.description}>
+                    To create a project, start by defining your objectives. Then, design the data flow to ensure proper
+                    processing at each stage. Implement the required tools and technologies for automation, and finally,
+                    test the project to confirm it runs smoothly and meets your goals.
+                </Text>
 
-            <Grid
-                gap={'size-300'}
-                marginX={'auto'}
-                justifyContent={'center'}
-                columns={isEmpty(projects) ? ['size-3600'] : ['1fr', '1fr']}
-            >
-                <NewProjectLink />
+                <Grid
+                    gap={'size-300'}
+                    marginX={'auto'}
+                    justifyContent={'center'}
+                    columns={isEmpty(projects) ? ['size-3600'] : ['1fr', '1fr']}
+                >
+                    <NewProjectLink />
 
-                {projects.map((item) => (
-                    <ProjectCard key={item.id} item={item} isActive={false} />
-                ))}
-            </Grid>
+                    {projects.map((item) => (
+                        <ProjectCard key={item.id} item={item} isActive={false} />
+                    ))}
+                </Grid>
+            </View>
         </View>
     );
 };

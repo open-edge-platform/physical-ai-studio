@@ -312,10 +312,17 @@ class RemoteTrainingBackend:
         )
 
     async def submit_job(self, context: TrainingContext) -> uuid.UUID:
-        """Submit the training job and return the remote job id."""
+        """Submit the training job and return the remote job id.
+
+        Sends the same spec a local run would execute, so both paths train from
+        one set of defaults. The trainer selects its own device, so the studio's
+        device choice is left out: it names hardware on this host.
+        """
+        from services.training_backends.local import build_spec
+
+        spec = build_spec(context).model_copy(update={"device_type": None, "device_index": None})
         body: dict[str, Any] = {
-            "payload": context.payload.model_dump(mode="json"),
-            "policy": context.model.policy,
+            "spec": spec.model_dump(mode="json"),
             "dataset_transfer": "http",
         }
         async with await self._client() as client:

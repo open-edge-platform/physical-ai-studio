@@ -35,32 +35,44 @@ const baseModel = {
     policy: 'act',
 } as SchemaModel;
 
+const mockProjectWithRemoteTrainer = () => {
+    server.use(
+        http.get('/api/projects/{project_id}', () =>
+            HttpResponse.json({
+                id: projectId,
+                name: 'Test project',
+                datasets: [
+                    {
+                        id: datasetId,
+                        name: 'Test dataset',
+                        default_task: 'test',
+                        project_id: projectId,
+                        environment_id: 'ad5c311d-bdd7-4a1c-ad27-26c2775901e9',
+                    },
+                ],
+            })
+        ),
+        http.get('/api/system/devices/training', () =>
+            HttpResponse.json({ mode: 'local', remote_available: true, devices: [] })
+        ),
+        http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer]))
+    );
+};
+
+const renderDialog = (props: { baseModel?: SchemaModel } = {}) =>
+    render(<TrainModelDialog {...props} close={() => undefined} />, {
+        route: `/projects/${projectId}/models`,
+        path: '/projects/:project_id/models',
+    });
+
 describe('TrainModelDialog', () => {
     it('does not submit a remote job when the final health check fails', async () => {
         const user = userEvent.setup();
         let healthCheckCount = 0;
         let jobSubmitted = false;
 
+        mockProjectWithRemoteTrainer();
         server.use(
-            http.get('/api/projects/{project_id}', () =>
-                HttpResponse.json({
-                    id: projectId,
-                    name: 'Test project',
-                    datasets: [
-                        {
-                            id: datasetId,
-                            name: 'Test dataset',
-                            default_task: 'test',
-                            project_id: projectId,
-                            environment_id: 'ad5c311d-bdd7-4a1c-ad27-26c2775901e9',
-                        },
-                    ],
-                })
-            ),
-            http.get('/api/system/devices/training', () =>
-                HttpResponse.json({ mode: 'local', remote_available: true, devices: [] })
-            ),
-            http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])),
             http.get('/api/remote-trainers/{remote_trainer_id}/health', () => {
                 healthCheckCount += 1;
                 return healthCheckCount === 1
@@ -73,11 +85,11 @@ describe('TrainModelDialog', () => {
             })
         );
 
-        render(<TrainModelDialog baseModel={baseModel} close={() => undefined} />, {
-            route: `/projects/${projectId}/models`,
-            path: '/projects/:project_id/models',
-        });
+        renderDialog();
 
+        // A new model starts with no dataset selected, and Train is a no-op without one.
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
         await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
         await screen.findByText('Remote trainer selected');
@@ -85,5 +97,30 @@ describe('TrainModelDialog', () => {
 
         await waitFor(() => expect(healthCheckCount).toBeGreaterThan(1));
         expect(jobSubmitted).toBe(false);
+    });
+
+    it('offers remote trainers when training a new model', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+
+        expect(await screen.findByRole('option', { name: remoteTrainer.name })).toBeInTheDocument();
+    });
+
+    it('offers local training only when continuing an existing model', async () => {
+        // The trainer protocol can receive a dataset but not a base checkpoint, so
+        // the backend rejects a remote resume; don't offer what can't be submitted.
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog({ baseModel });
+
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+
+        expect(await screen.findByRole('option', { name: /this machine \(local\)/i })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: remoteTrainer.name })).not.toBeInTheDocument();
     });
 });

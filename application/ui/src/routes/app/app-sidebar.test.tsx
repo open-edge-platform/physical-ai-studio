@@ -19,12 +19,14 @@ const renderSidebar = (selectedKey = 'projects') =>
     );
 
 describe('AppSidebar', () => {
-    it('renders all nav item labels', () => {
+    it('renders all enabled nav item labels', () => {
         renderSidebar();
 
-        navItems.forEach((item) => {
-            expect(screen.getByText(item.label)).toBeInTheDocument();
-        });
+        navItems
+            .filter((item) => item.enabled)
+            .forEach((item) => {
+                expect(screen.getByText(item.label)).toBeInTheDocument();
+            });
     });
 
     it('selects Projects when the route is /projects', () => {
@@ -33,18 +35,20 @@ describe('AppSidebar', () => {
         expect(screen.getByRole('tab', { name: 'Projects' })).toHaveAttribute('aria-selected', 'true');
     });
 
-    it('marks the enabled items as links and the disabled items without a navigable href', () => {
+    it('marks the enabled items as links, disabled are not visible', () => {
         renderSidebar();
 
-        const projectsTab = screen.getByRole('tab', { name: 'Projects' });
-        expect(projectsTab).toHaveAttribute('href', '/projects');
+        navItems
+            .filter((item) => item.enabled)
+            .forEach((item) => {
+                const tab = screen.getByRole('tab', { name: item.label });
+                expect(tab).toHaveAttribute('href', item.path);
+            });
 
         navItems
             .filter((item) => !item.enabled)
             .forEach((item) => {
-                const tab = screen.getByRole('tab', { name: item.label });
-                expect(tab).not.toHaveAttribute('href', item.path);
-                expect(tab).toHaveAttribute('aria-disabled', 'true');
+                expect(screen.queryByRole('tab', { name: item.label })).not.toBeInTheDocument();
             });
     });
 });

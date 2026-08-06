@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -15,6 +14,8 @@ import pytest
 from trainer.schemas import TrainerJobStatus
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from trainer.schemas import SubmitJobRequest
 
 QUEUE = "trainer.queue_worker"

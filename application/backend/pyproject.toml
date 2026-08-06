@@ -39,6 +39,8 @@ dependencies = [
 
 [project.scripts]
 physicalai-studio = "cli:cli"
+# Serves only the remote training service (src/trainer).
+physicalai-trainer = "trainer.cli:trainer"
 
 [build-system]
 requires = ["hatchling"]
@@ -77,6 +79,8 @@ xpu = [
 tests = [
     "pytest",
     "pytest-asyncio",
+    "pytest-mock",
+    "httpx",
 ]
 
 

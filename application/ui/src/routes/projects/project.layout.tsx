@@ -114,6 +114,7 @@ export const ProjectLayout = () => {
             <Grid
                 areas={['header', 'subheader', 'content', 'footer']}
                 UNSAFE_style={{
+                    gridTemplateColumns: 'minmax(0, 1fr)',
                     gridTemplateRows:
                         // eslint-disable-next-line max-len
                         'var(--spectrum-global-dimension-size-800, 4rem) min-content minmax(0, 1fr) var(--spectrum-global-dimension-size-400)',
@@ -122,7 +123,7 @@ export const ProjectLayout = () => {
                 height={'100%'}
             >
                 <Header project_id={project_id} />
-                <View gridArea={'content'} maxHeight={'100vh'} minHeight={0} height='100%'>
+                <View gridArea={'content'} maxHeight={'100vh'} minWidth={0} minHeight={0} height='100%'>
                     <Suspense fallback={<Loading mode='overlay' />}>
                         <Outlet />
                     </Suspense>

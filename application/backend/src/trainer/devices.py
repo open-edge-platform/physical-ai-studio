@@ -21,7 +21,7 @@ def get_training_devices() -> list[DeviceInfo]:
 
     try:
         import torch
-    except Exception as exc:  # noqa: BLE001 - torch may be absent in lightweight installs
+    except Exception as exc:
         logger.warning("torch unavailable; no accelerator devices reported: {}", exc)
         return devices
 
@@ -37,7 +37,7 @@ def get_training_devices() -> list[DeviceInfo]:
                         index=device_idx,
                     ),
                 )
-    except Exception as exc:  # noqa: BLE001 - best-effort probe
+    except Exception as exc:
         logger.warning("Failed to enumerate XPU devices: {}", exc)
 
     try:
@@ -52,7 +52,7 @@ def get_training_devices() -> list[DeviceInfo]:
                         index=device_idx,
                     ),
                 )
-    except Exception as exc:  # noqa: BLE001 - best-effort probe
+    except Exception as exc:
         logger.warning("Failed to enumerate CUDA devices: {}", exc)
 
     return devices

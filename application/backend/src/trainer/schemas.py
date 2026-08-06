@@ -13,6 +13,8 @@ from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from training import TrainingJobSpec
+
 _SUPPORTED_POLICIES = frozenset({"act", "pi0", "pi05", "smolvla"})
 _DEFAULT_PROTOCOL_VERSION = 1
 
@@ -116,22 +118,31 @@ class StorageInfo(BaseModel):
 
 
 class SubmitJobRequest(BaseModel):
-    """Job submission payload sent by the studio backend."""
+    """Job submission payload sent by the studio backend.
 
-    # Full TrainJobPayload as serialized by the client. Only training-relevant
-    # fields are read server-side; the client device selection is ignored.
-    payload: dict[str, Any]
-    policy: str = Field(..., description="Policy name to train")
+    ``spec`` is the same :class:`~training.TrainingJobSpec` the studio builds
+    for an in-process run, so a remote job trains from an identical
+    configuration instead of from a re-parsed dict of loosely typed fields.
+    """
+
+    spec: TrainingJobSpec = Field(..., description="What to train (policy, steps, batch size, precision, device)")
     dataset_transfer: DatasetTransfer = Field(
         default=DatasetTransfer.HTTP,
         description="How the dataset reaches the trainer (http upload)",
     )
 
-    @field_validator("policy")
+    @field_validator("spec")
     @classmethod
-    def _validate_policy(cls, value: str) -> str:
-        if value not in _SUPPORTED_POLICIES:
-            msg = f"Unsupported policy {value!r}"
+    def _validate_policy(cls, value: TrainingJobSpec) -> TrainingJobSpec:
+        """Reject an unsupported policy at submission time.
+
+        ``TrainingJobSpec.policy`` is a free-form string so new policies can be
+        added without a schema change. Checking it here turns an unknown
+        policy into a 422 on POST /jobs rather than a job that fails minutes
+        later when the policy class is constructed.
+        """
+        if value.policy not in _SUPPORTED_POLICIES:
+            msg = f"Unsupported policy {value.policy!r}"
             raise ValueError(msg)
         return value
 

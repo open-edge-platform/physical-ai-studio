@@ -75,6 +75,6 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host=settings.host,
-        port=int(os.environ.get("PORT", settings.port)),
+        port=int(os.environ.get("TRAINER_PORT", settings.port)),
         log_config=None,
     )
