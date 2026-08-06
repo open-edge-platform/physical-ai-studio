@@ -119,6 +119,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         max_action_dim: int = 32,
         # Image preprocessing
         resize_imgs_with_padding: tuple[int, int] = (512, 512),
+        image_key_reorder_map: dict[str, int] | None = None,
+        num_cameras: int = 0,
         *,
         # Architecture
         tokenizer_max_length: int = 48,
@@ -176,6 +178,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 tokenizer_max_length=tokenizer_max_length,
                 pad_language_to=pad_language_to,
                 use_random_input_noise=use_random_input_noise,
+                image_key_reorder_map=image_key_reorder_map,
+                num_cameras=num_cameras,
                 compile_model=compile_model,
                 snapflow_enabled=snapflow_enabled,
                 snapflow_alpha=snapflow_alpha,
@@ -204,6 +208,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 max_state_dim=max_state_dim,
                 max_action_dim=max_action_dim,
                 resize_imgs_with_padding=resize_imgs_with_padding,
+                image_key_reorder_map=image_key_reorder_map or {},
+                num_cameras=num_cameras,
                 tokenizer_max_length=tokenizer_max_length,
                 vlm_model_name=vlm_model_name,
                 load_vlm_weights=load_vlm_weights,
@@ -337,13 +343,15 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301, PLR0913
-        self,
+    @staticmethod
+    def _from_hf(  # noqa: PLR0913
         pretrained_name_or_path: str | Path,
         *,
         tokenizer_max_length: int = 48,
         pad_language_to: str = "max_length",
         use_random_input_noise: bool = False,
+        image_key_reorder_map: dict[str, int] | None = None,
+        num_cameras: int = 0,
         compile_model: bool = False,
         snapflow_enabled: bool = False,
         snapflow_alpha: float = 0.5,
@@ -407,6 +415,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         hf_config["tokenizer_max_length"] = tokenizer_max_length
         hf_config["pad_language_to"] = pad_language_to
         hf_config["use_random_input_noise"] = use_random_input_noise
+        hf_config["image_key_reorder_map"] = image_key_reorder_map or {}
+        hf_config["num_cameras"] = num_cameras
         hf_config["compile_model"] = compile_model
         hf_config["snapflow_enabled"] = snapflow_enabled
         hf_config["snapflow_alpha"] = snapflow_alpha
@@ -426,11 +436,26 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         hf_config["scheduler_decay_steps"] = scheduler_decay_steps
         hf_config["scheduler_decay_lr"] = scheduler_decay_lr
 
-        config = SmolVLAConfig.from_dict(hf_config)
-
         dataset_stats = extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
 
+        config = SmolVLAConfig.from_dict(hf_config)
+
         return config, dataset_stats, weights_file
+
+    @staticmethod
+    def _normalize_image_feature_name(name: str) -> str:
+        """Normalize flattened image feature names to camera suffixes.
+
+        Args:
+            name: Image feature name, possibly prefixed.
+
+        Returns:
+            The feature name with any known image prefix removed.
+        """
+        for prefix in ("observation.images.", "images.", f"{IMAGES}."):
+            if name.startswith(prefix):
+                return name[len(prefix) :]
+        return name
 
     def _update_preprocessor_stats(
         self,
@@ -451,6 +476,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
             image_resolution=self.config.resize_imgs_with_padding,
+            image_key_reorder_map=self.config.image_key_reorder_map,
+            num_cameras=self.config.num_cameras,
             max_token_len=self.config.tokenizer_max_length,
             token_pad_type=self.config.pad_language_to,
             tokenizer_name=self.config.vlm_model_name,
@@ -495,6 +522,39 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         self._initialize_model(stats_dict)
 
         reformat_dataset_to_match_policy(self, datamodule)
+
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Migrate legacy checkpoints missing target-time MLP parameters.
+
+        Older SmolVLA checkpoints were created before target-time conditioning
+        layers were introduced. Keep strict checkpoint loading enabled by
+        populating any missing target-time parameters from the current model
+        initialization.
+        """
+        state_dict = checkpoint.get("state_dict")
+        if not isinstance(state_dict, dict) or self.model is None:
+            return
+
+        defaults = {
+            "model._model.target_time_mlp_in.weight": self.model._model.target_time_mlp_in.weight,  # noqa: SLF001
+            "model._model.target_time_mlp_in.bias": self.model._model.target_time_mlp_in.bias,  # noqa: SLF001
+            "model._model.target_time_mlp_out.weight": self.model._model.target_time_mlp_out.weight,  # noqa: SLF001
+            "model._model.target_time_mlp_out.bias": self.model._model.target_time_mlp_out.bias,  # noqa: SLF001
+        }
+
+        inserted: list[str] = []
+        for key, value in defaults.items():
+            if key in state_dict:
+                continue
+            state_dict[key] = value.detach().clone()
+            inserted.append(key)
+
+        if inserted:
+            logger.warning(
+                "Loaded legacy SmolVLA checkpoint missing %d target-time parameter(s): %s",
+                len(inserted),
+                ", ".join(inserted),
+            )
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Forward pass through the model.
@@ -667,7 +727,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             return None
 
         dataset_stats = self._dataset_stats
-
         schema: list[InferenceFeature] = []
 
         num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
@@ -747,7 +806,12 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             raise ValueError(msg)
 
         base_preproc_specs = [
-            ComponentSpec(type="smolvla_resize", image_resolution=self.config.resize_imgs_with_padding),
+            ComponentSpec(
+                type="smolvla_resize",
+                image_resolution=self.config.resize_imgs_with_padding,
+                image_key_reorder_map=self.config.image_key_reorder_map,
+                num_cameras=self.config.num_cameras,
+            ),
             ComponentSpec(type="new_line"),
             ComponentSpec(
                 type="normalize",

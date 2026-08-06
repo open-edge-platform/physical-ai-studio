@@ -8,6 +8,8 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 from physicalai.training_config import Config
@@ -138,6 +140,49 @@ class TestSmolVLAPolicy:
         with pytest.raises(ValueError, match="not initialized"):
             getattr(policy, method)(dummy_obs)
 
+    def test_on_load_checkpoint_inserts_missing_target_time_params(self) -> None:
+        """Legacy checkpoints missing target-time MLP params are migrated."""
+        policy = SmolVLA()
+        policy.model = SimpleNamespace(
+            _model=SimpleNamespace(
+                target_time_mlp_in=SimpleNamespace(
+                    weight=torch.randn(8, 8),
+                    bias=torch.randn(8),
+                ),
+                target_time_mlp_out=SimpleNamespace(
+                    weight=torch.randn(8, 8),
+                    bias=torch.randn(8),
+                ),
+            ),
+        )
+
+        checkpoint = {"state_dict": {"some.weight": torch.randn(2, 2)}}
+
+        policy.on_load_checkpoint(checkpoint)
+
+        state_dict = checkpoint["state_dict"]
+        assert "model._model.target_time_mlp_in.weight" in state_dict
+        assert "model._model.target_time_mlp_in.bias" in state_dict
+        assert "model._model.target_time_mlp_out.weight" in state_dict
+        assert "model._model.target_time_mlp_out.bias" in state_dict
+
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_in.weight"],
+            policy.model._model.target_time_mlp_in.weight,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_in.bias"],
+            policy.model._model.target_time_mlp_in.bias,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_out.weight"],
+            policy.model._model.target_time_mlp_out.weight,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_out.bias"],
+            policy.model._model.target_time_mlp_out.bias,  # type: ignore[union-attr]
+        )
+
 
 # ============================================================================ #
 # Preprocessor Tests                                                           #
@@ -185,18 +230,23 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_state_dim == 32
         assert preprocessor.max_action_dim == 32
         assert preprocessor.image_resolution == (512, 512)
+        assert preprocessor.image_key_reorder_map == {}
+        assert preprocessor.num_cameras == 0
         assert preprocessor.max_token_len == 48
         assert preprocessor.tokenizer_name == "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
         assert preprocessor.padding == "max_length"
 
     def test_preprocessor_custom_values(self) -> None:
         """Test preprocessor with custom configuration values."""
+        from physicalai.data.observation import IMAGES
         from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         preprocessor = SmolVLAPreprocessor(
             max_state_dim=64,
             max_action_dim=16,
             image_resolution=(256, 256),
+            image_key_reorder_map={"overview": 0},
+            num_cameras=2,
             max_token_len=64,
             padding="max_length",
         )
@@ -204,8 +254,127 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_state_dim == 64
         assert preprocessor.max_action_dim == 16
         assert preprocessor.image_resolution == (256, 256)
+        assert preprocessor.image_key_reorder_map == {f"{IMAGES}.overview": 0}
+        assert preprocessor.num_cameras == 2
         assert preprocessor.max_token_len == 64
         assert preprocessor.padding == "max_length"
+
+    def test_image_key_reorder_map_applies_and_orders_cameras(self) -> None:
+        """Test reorder map accepts prefixed/unprefixed keys and orders by mapped index."""
+        from physicalai.data.constants import IMAGE_MASKS
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={
+                "wrist": 1,
+                f"{IMAGES}.overview": 0,
+            },
+        )
+
+        batch = {
+            f"{IMAGES}.wrist": torch.full((1, 3, 2, 2), 0.5),
+            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        result = preprocessor._preprocess_images(batch)
+
+        # Camera order should follow mapped indices: overview (0), then wrist (1)
+        assert result[IMAGES].shape[0] == 2
+        # Values are normalized from [0, 1] -> [-1, 1]
+        torch.testing.assert_close(result[IMAGES][0], torch.full((1, 3, 2, 2), 1.0))
+        torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), 0.0))
+        assert result[IMAGE_MASKS].shape == (2, 1)
+
+    def test_image_key_reorder_map_rejects_mismatched_keys(self) -> None:
+        """Test a reorder map that does not cover the batch image keys exactly is rejected."""
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={"overview": 0, "gripper": 1},
+        )
+
+        batch = {
+            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        with pytest.raises(ValueError, match="must match the batch image keys exactly"):
+            preprocessor._preprocess_images(batch)
+
+    def test_empty_cameras_are_appended_as_masked_dummy_images(self) -> None:
+        """Test unused camera slots are filled with masked dummy images."""
+        from physicalai.data.constants import IMAGE_MASKS
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            num_cameras=3,
+        )
+
+        batch = {
+            f"{IMAGES}.camera0": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        result = preprocessor._preprocess_images(batch)
+
+        assert result[IMAGES].shape[0] == 3
+        assert result[IMAGE_MASKS].shape == (3, 1)
+        torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), -1.0))
+        torch.testing.assert_close(result[IMAGES][2], torch.full((1, 3, 2, 2), -1.0))
+        torch.testing.assert_close(result[IMAGE_MASKS][1], torch.zeros((1,), dtype=torch.bool))
+        torch.testing.assert_close(result[IMAGE_MASKS][2], torch.zeros((1,), dtype=torch.bool))
+
+    def test_num_cameras_places_reordered_keys_in_their_slots(self) -> None:
+        """Test reorder map indices select slots, leaving the remaining ones empty."""
+        from physicalai.data.constants import IMAGE_MASKS
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={"overview": 0, "wrist": 2},
+            num_cameras=3,
+        )
+
+        batch = {
+            f"{IMAGES}.wrist": torch.full((1, 3, 2, 2), 0.5),
+            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        result = preprocessor._preprocess_images(batch)
+
+        assert result[IMAGES].shape[0] == 3
+        torch.testing.assert_close(result[IMAGES][0], torch.full((1, 3, 2, 2), 1.0))
+        torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), -1.0))
+        torch.testing.assert_close(result[IMAGES][2], torch.full((1, 3, 2, 2), 0.0))
+        torch.testing.assert_close(
+            result[IMAGE_MASKS],
+            torch.tensor([[True], [False], [True]]),
+        )
+
+    def test_num_cameras_too_small_is_rejected(self) -> None:
+        """Test a num_cameras value that cannot hold the resolved slots is rejected."""
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(image_resolution=(2, 2), num_cameras=1)
+
+        batch = {
+            f"{IMAGES}.camera0": torch.full((1, 3, 2, 2), 1.0),
+            f"{IMAGES}.camera1": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        with pytest.raises(ValueError, match="is too small for the resolved camera slots"):
+            preprocessor._preprocess_images(batch)
 
     def test_newline_processor_adds_newline(self) -> None:
         """Test newline processor adds newline to task strings."""

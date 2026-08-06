@@ -18,7 +18,7 @@ import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, FeatureType
+from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE
 from physicalai.policies.base import Model
 
 if TYPE_CHECKING:
@@ -342,13 +342,6 @@ class SmolVLAModel(Model):
             batch[STATE] = self._pi_aloha_decode_state(batch[STATE])
             if ACTION in batch:
                 batch[ACTION] = self._pi_aloha_encode_actions_inv(batch[ACTION])
-
-        all_keys = [key for key in self._dataset_stats if self._dataset_stats[key]["type"] == FeatureType.VISUAL.value]
-
-        if len(all_keys) != batch[IMAGES].shape[0]:
-            msg = f"Some of the image features are missing from the batch. \
-                    (batch: {batch.keys()}) (image_features:{all_keys})"
-            raise ValueError(msg)
         return batch
 
     @staticmethod
