@@ -2,14 +2,16 @@ import { Flex, Heading, StatusLight, Text, View } from '@geti-ui/ui';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
 import {
+    capabilityDetail,
     CheckState,
     deviceTypes,
     formatStorage,
     getCapabilityState,
     getStorageState,
-    healthDescription,
     healthLabel,
     healthVariant,
+    storageDetail,
+    trainerHealthDetail,
 } from '../remote-trainer-health-utils';
 
 import classes from '../remote-trainers-page.module.css';
@@ -41,7 +43,6 @@ type RemoteTrainerDetailProps = {
 };
 
 export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: RemoteTrainerDetailProps) => {
-    const devices = health?.devices ?? [];
     const types = deviceTypes(health);
     const state = healthVariant(health, isChecking);
     const deviceReportIsInvalid = health?.reason_code === 'invalid_devices_response';
@@ -49,6 +50,7 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
     const capabilityState = getCapabilityState(health, isChecking);
     const storageState = getStorageState(health, isChecking);
     const lastChecked = health ? new Date(health.checked_at).toLocaleString() : 'Not checked';
+    const devicesReported = (health?.devices?.length ?? 0) > 0;
 
     return (
         <View backgroundColor={'gray-75'} padding={'size-300'} borderColor={'gray-300'} borderWidth={'thin'}>
@@ -60,40 +62,19 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
                     <div className={classes.checkList}>
                         <HealthCheckRow
                             label='Trainer health endpoint'
-                            detail={
-                                isChecking
-                                    ? 'connection check in progress'
-                                    : health?.status === 'healthy' || deviceReportIsInvalid
-                                      ? health?.latency_ms != null
-                                          ? `responded in ${health.latency_ms} ms and is ready for training requests`
-                                          : 'ready for training requests'
-                                      : health?.status === 'degraded'
-                                        ? 'responded with a degraded status'
-                                        : healthDescription(health)
-                            }
+                            detail={trainerHealthDetail(health, isChecking, deviceReportIsInvalid)}
                             state={trainerHealthState}
                             status={deviceReportIsInvalid ? 'Healthy' : healthLabel(health, isChecking)}
                         />
                         <HealthCheckRow
                             label='Compute capability'
-                            detail={
-                                devices.length > 0
-                                    ? devices
-                                          .map((device) => `${device.type.toUpperCase()} · ${device.name}`)
-                                          .join(', ')
-                                    : health === undefined || isChecking
-                                      ? 'awaiting device report'
-                                      : 'no compute device reported'
-                            }
+                            detail={capabilityDetail(health, isChecking)}
                             state={capabilityState}
-                            status={devices.length > 0 ? 'Available' : 'Unknown'}
+                            status={devicesReported ? 'Available' : 'Unknown'}
                         />
                         <HealthCheckRow
                             label='Storage capacity'
-                            detail={
-                                formatStorage(health?.storage) ??
-                                (health === undefined || isChecking ? 'awaiting storage report' : 'no storage reported')
-                            }
+                            detail={storageDetail(health, isChecking)}
                             state={storageState}
                             status={health?.storage ? 'Available' : 'Unknown'}
                         />

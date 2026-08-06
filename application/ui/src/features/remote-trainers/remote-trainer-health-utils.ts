@@ -65,6 +65,33 @@ export const getStorageState = (health: SchemaRemoteTrainerHealth | undefined, i
     return health.storage ? 'positive' : 'yellow';
 };
 
+export const trainerHealthDetail = (
+    health: SchemaRemoteTrainerHealth | undefined,
+    isChecking: boolean,
+    deviceReportIsInvalid: boolean
+) => {
+    if (isChecking) return 'connection check in progress';
+    if (health?.status === 'healthy' || deviceReportIsInvalid) {
+        return health?.latency_ms != null
+            ? `responded in ${health.latency_ms} ms and is ready for training requests`
+            : 'ready for training requests';
+    }
+    if (health?.status === 'degraded') return 'responded with a degraded status';
+    return healthDescription(health);
+};
+
+export const capabilityDetail = (health: SchemaRemoteTrainerHealth | undefined, isChecking: boolean) => {
+    const devices = health?.devices ?? [];
+    if (devices.length > 0) {
+        return devices.map((device) => `${device.type.toUpperCase()} · ${device.name}`).join(', ');
+    }
+    return health === undefined || isChecking ? 'awaiting device report' : 'no compute device reported';
+};
+
+export const storageDetail = (health: SchemaRemoteTrainerHealth | undefined, isChecking: boolean) =>
+    formatStorage(health?.storage) ??
+    (health === undefined || isChecking ? 'awaiting storage report' : 'no storage reported');
+
 export const getDisplayHealth = (
     remoteTrainerId: string,
     health: SchemaRemoteTrainerHealth | undefined,
