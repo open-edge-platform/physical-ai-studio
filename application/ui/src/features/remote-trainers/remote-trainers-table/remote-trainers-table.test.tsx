@@ -160,7 +160,7 @@ describe('RemoteTrainersTable', () => {
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
         await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
-        await user.click(await screen.findByRole('menuitem', { name: 'Check state' }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Check status' }));
 
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
         expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);

@@ -29,7 +29,7 @@ export const RemoteTrainersTableHeader = () => (
 );
 
 const REMOTE_TRAINERS_MENU_ACTION_ITEMS = {
-    CHECK_STATE: 'check_state',
+    CHECK_STATUS: 'check_status',
     EDIT: 'Edit',
     DELETE: 'Delete',
 };
@@ -50,7 +50,7 @@ const RemoteTrainersMenuActions = ({
     isChecking,
 }: RemoteTrainersMenuActionsProps) => {
     const handleAction = (action: Key) => {
-        if (action === REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATE) {
+        if (action === REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATUS) {
             onCheck();
         } else if (action === REMOTE_TRAINERS_MENU_ACTION_ITEMS.EDIT) {
             onEdit();
@@ -66,11 +66,11 @@ const RemoteTrainersMenuActions = ({
             </ActionButton>
             <Menu
                 onAction={handleAction}
-                disabledKeys={isChecking ? [REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATE] : undefined}
+                disabledKeys={isChecking ? [REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATUS] : undefined}
             >
                 <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.EDIT}>Edit</Item>
                 <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.DELETE}>Delete</Item>
-                <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATE}>Check state</Item>
+                <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATUS}>Check status</Item>
             </Menu>
         </MenuTrigger>
     );
