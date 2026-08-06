@@ -119,7 +119,7 @@ const RemoteTrainerRow = ({
                 </Icon>
             </ActionButton>
 
-            <Text UNSAFE_className={classes.trainerName}>{remoteTrainer.name}</Text>
+            <Text>{remoteTrainer.name}</Text>
 
             <Text>{remoteTrainer.url}</Text>
 

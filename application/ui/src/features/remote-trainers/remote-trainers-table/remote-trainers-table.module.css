@@ -22,11 +22,6 @@
     }
 }
 
-.trainerName {
-    font-weight: 700;
-    font-size: var(--spectrum-global-dimension-font-size-200);
-}
-
 .cardMetaText {
     color: var(--spectrum-global-color-gray-600);
     font-size: var(--spectrum-global-dimension-font-size-50);
