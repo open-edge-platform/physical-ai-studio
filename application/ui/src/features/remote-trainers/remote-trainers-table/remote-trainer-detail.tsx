@@ -62,7 +62,7 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
 
     return (
         <View backgroundColor={'gray-75'} padding={'size-300'} borderColor={'gray-300'} borderWidth={'thin'}>
-            <Flex gap={'size-300'}>
+            <Flex gap={'size-300'} wrap>
                 <View UNSAFE_className={classes.detailSection}>
                     <Heading level={3} UNSAFE_className={classes.sectionHeading}>
                         Health &amp; capability

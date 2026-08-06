@@ -13,9 +13,8 @@ import {
     MenuTrigger,
     StatusLight,
     Text,
-    View,
 } from '@geti-ui/ui';
-import { ChevronDownSmallLight, ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
+import { ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
 import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
@@ -129,7 +128,9 @@ const RemoteTrainerRow = ({
                 onPress={onToggleExpanded}
                 UNSAFE_className={classes.disclosureButton}
             >
-                <Icon>{isExpanded ? <ChevronDownSmallLight /> : <ChevronRightSmallLight />}</Icon>
+                <Icon>
+                    <ChevronRightSmallLight />
+                </Icon>
             </ActionButton>
 
             <Flex gap='size-100' alignItems='center' wrap>
@@ -162,7 +163,7 @@ const RemoteTrainerRow = ({
             </Flex>
 
             {isExpanded && (
-                <Grid id={contentId} gridColumn={'1/-1'}>
+                <Grid id={contentId} gridColumn={'1/-1'} marginTop={'size-150'}>
                     <RemoteTrainerDetail remoteTrainer={remoteTrainer} health={health} isChecking={isChecking} />
                 </Grid>
             )}

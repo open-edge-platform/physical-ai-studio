@@ -15,7 +15,11 @@
 }
 
 .disclosureButton {
-    justify-self: start;
+    transition: transform 0.2s ease;
+
+    &[aria-expanded='true'] {
+        transform: rotate(90deg);
+    }
 }
 
 .trainerName {
@@ -28,10 +32,6 @@
     font-size: var(--spectrum-global-dimension-font-size-50);
 }
 
-.actionsCell {
-    justify-self: end;
-}
-
 .trainerRow {
     grid-column: 1 / -1;
     display: grid;
@@ -41,6 +41,8 @@
     border-top: 1px solid var(--spectrum-global-color-gray-300);
     cursor: pointer;
     background: var(--spectrum-global-color-gray-100);
+
+    transition: box-shadow 0.2s ease;
 
     &:hover {
         background: var(--spectrum-global-color-gray-200);
