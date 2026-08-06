@@ -275,7 +275,7 @@ async def job_events(job_id: ResolvedJob, request: Request) -> EventSourceRespon
     """Stream job state changes until the job reaches a terminal state."""
     manager = job_id.manager
 
-    async def _event_stream():  # noqa: ANN202
+    async def _event_stream():
         last: str | None = None
         while True:
             if await request.is_disconnected():

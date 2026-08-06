@@ -1,8 +1,15 @@
 # Physical AI Trainer
 
-Standalone remote training service for Physical AI Studio. Runs the heavy
+Remote training service for Physical AI Studio. Runs the heavy
 torch/`physicalai` training stack on a GPU server so recording nodes stay
 lightweight.
+
+It lives in this project (`src/trainer/`) but is a separate entry point:
+`physicalai-trainer` serves training jobs over HTTP, while `physicalai-studio`
+serves the studio itself. Both call the same training code
+(`training.run_training_job`), so a policy trains identically whether it
+runs locally or here. Studio's own local training does not start this service —
+it trains in-process.
 
 ## How it fits together
 
@@ -19,7 +26,7 @@ Then:
 ## Install
 
 ```bash
-cd application/trainer
+cd application/backend
 uv sync --extra cuda   # or --extra cpu / --extra xpu
 ```
 
@@ -29,7 +36,13 @@ torch build, so ExecuTorch export is skipped on xpu installs.
 
 ## Configure
 
-Set environment variables (or an `.env` file):
+Set environment variables, or copy `.env.example` to `.env` in
+`application/backend/` and fill it in — the same file the studio backend
+reads. The trainer's own settings use `TRAINER_`-prefixed names
+(`TRAINER_HOST`, `TRAINER_PORT`, `TRAINER_STORAGE_DIR`) rather than the
+studio's `HOST`/`PORT`/`STORAGE_DIR`, so one file configures both without the
+trainer binding the studio's port or writing into the studio's storage
+directory.
 
 > [!WARNING]
 > The trainer has no built-in authentication. Anyone who can reach its port can submit or cancel jobs and download model artifacts. Keep it on a private network that only the Physical AI Studio backend IP address can reach—never expose it to the internet.
@@ -39,11 +52,11 @@ Set environment variables (or an `.env` file):
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |
 | `HF_TOKEN`                   | yes, if training a policy that downloads gated/private model weights | **Read** access to any gated/private model weights selected for training. |
-| `STORAGE_DIR`                | no       | Working directory for jobs and artifacts.    |
+| `TRAINER_STORAGE_DIR`        | no       | Working directory for jobs and artifacts.    |
 | `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
 | `TRAINER_MAX_UNCOMPRESSED_BYTES` | no   | Cap on an uploaded dataset's uncompressed size. |
 | `TRAINER_MIN_FREE_BYTES`     | no       | Disk headroom kept free after extraction.    |
-| `PORT`                       | no       | Listen port (default 8001).                  |
+| `TRAINER_PORT`               | no       | Listen port (default 8001).                  |
 
 
 ## Run
@@ -52,7 +65,7 @@ Set environment variables (or an `.env` file):
 uv run --no-sync physicalai-trainer   # loads .env, starts the service
 ```
 
-`physicalai-trainer` loads the trainer `.env` and starts the service. It does
+`physicalai-trainer` loads `.env` and starts the service. It does
 not install dependencies itself, so run `uv sync --extra <cpu|cuda|xpu>` first
 (see [Install](#install)) to pull in the matching torch build.
 
@@ -86,11 +99,17 @@ the Studio application images:
 - `ghcr.io/open-edge-platform/physicalai-trainer-cuda:<git-sha>`
 - `ghcr.io/open-edge-platform/physicalai-trainer-xpu:<git-sha>`
 
-Each image contains only the trainer service, `physicalai-train`, and the
-device-specific runtime dependencies. It does not include Studio backend or UI
-code, datasets, model artifacts, SSH credentials, or a Docker socket. The
-entrypoint is `physicalai-trainer`; run it with a loopback-only port publishing
-rule when it is provisioned remotely.
+Each image contains only the `trainer` package, `physicalai-train`, and the
+device-specific runtime dependencies. Although the trainer is built from this
+project, the image copies `src/trainer/` alone: no Studio API, robot, database,
+or UI code, and no datasets, model artifacts, SSH credentials, or Docker socket.
+The entrypoint is `physicalai-trainer`; run it with a loopback-only port
+publishing rule when it is provisioned remotely.
+
+The image is built from
+[`application/docker/Dockerfile.trainer`](../../docker/Dockerfile.trainer),
+separately from the Studio application images in
+`application/docker/Dockerfile`.
 
 CI publishes a full Git-SHA tag, then attaches an SBOM and provenance
 attestations, scans the immutable digest, signs it with keyless Sigstore, and
@@ -119,7 +138,7 @@ container, loopback port, and SSH tunnel automatically when that feature is
 enabled. Do not expose the trainer port publicly: the service has no built-in
 authentication.
 
-[`application/docker/docker-compose.trainer.yaml`](../docker/docker-compose.trainer.yaml)
+[`application/docker/docker-compose.trainer.yaml`](../../docker/docker-compose.trainer.yaml)
 wraps the `docker run` invocations below in a Docker Compose file with `cuda`
 and `xpu` profiles, for administrators who prefer Compose over raw `docker
 run`. It is standalone: it does not start the Studio backend/UI images from

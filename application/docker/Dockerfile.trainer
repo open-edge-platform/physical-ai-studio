@@ -2,8 +2,6 @@
 
 ARG PYTHON_VERSION=3.13
 
-# Build the trainer and its local physicalai-train dependency without copying
-# Studio backend or UI sources into either builder or runtime images.
 FROM python:${PYTHON_VERSION}-slim@sha256:99569264a52f7665899b7bc0fb48e72a2712b850b129f63c4733af1e939accfb AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -23,13 +21,23 @@ RUN apt-get update \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app/application/trainer
+# Manifests and local path dependencies only: enough for `uv sync` to resolve,
+# without pulling studio source into the builder cache layers.
+COPY --link pyproject.toml uv.lock /app/
+COPY --link application/backend/pyproject.toml application/backend/uv.lock \
+    /app/application/backend/
 COPY --link --from=libs / /app/library
-COPY --link application/trainer /app/application/trainer
+COPY --link --from=plugin / /app/application/plugin
+
+WORKDIR /app/application/backend
 
 FROM builder-base AS builder-cuda
+# --no-install-project installs the dependencies (including physicalai-train)
+# but not the studio package itself: its wheel build requires the compiled UI
+# and robot assets, and the trainer runs from the `trainer`/`training`
+# packages alone.
 RUN --mount=type=cache,id=uv-trainer-cuda,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
 
 # Remove test-only packages that executorch ships as unconditional runtime
 # dependencies (the cuda extra pulls in physicalai-train[executorch]).
@@ -42,7 +50,7 @@ RUN uv pip uninstall --python /opt/venv/bin/python \
 
 FROM builder-base AS builder-xpu
 RUN --mount=type=cache,id=uv-trainer-xpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
 
 FROM python:${PYTHON_VERSION}-slim@sha256:99569264a52f7665899b7bc0fb48e72a2712b850b129f63c4733af1e939accfb AS runtime-base
 
@@ -64,10 +72,23 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1 \
-    STORAGE_DIR=/var/lib/physicalai-trainer \
+    PYTHONPATH=/app/src \
+    TRAINER_STORAGE_DIR=/var/lib/physicalai-trainer \
     HF_HOME=/var/lib/physicalai-trainer/huggingface \
     TORCH_HOME=/var/lib/physicalai-trainer/torch \
     XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache
+
+# Only the trainer and training packages, never the rest of the backend: no
+# studio API, robots, database, or UI assets reach this image.
+COPY --link --chown=${TRAINER_UID}:${TRAINER_GID} application/backend/src/trainer /app/src/trainer
+COPY --link --chown=${TRAINER_UID}:${TRAINER_GID} application/backend/src/training /app/src/training
+
+# The venv holds dependencies only (--no-install-project above), so the
+# documented `physicalai-trainer` command is provided here instead of by a
+# console script. Installing the studio package would additionally require its
+# compiled UI and robot assets, which this image deliberately excludes.
+RUN printf '#!/bin/sh\nexec python -m trainer.cli "$@"\n' > /usr/local/bin/physicalai-trainer \
+    && chmod 755 /usr/local/bin/physicalai-trainer
 
 EXPOSE 8001
 USER trainer

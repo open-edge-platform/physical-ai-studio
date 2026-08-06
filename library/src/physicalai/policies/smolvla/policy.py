@@ -556,7 +556,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 ", ".join(inserted),
             )
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Forward pass through the model.
 
         Processes the input batch and either trains the model or predicts actions
@@ -621,7 +621,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         return loss
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss on a batch.
 
         Delegates to the model's ``compute_val_loss`` without toggling

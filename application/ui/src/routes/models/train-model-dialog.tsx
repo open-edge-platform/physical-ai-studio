@@ -402,12 +402,18 @@ const TrainingParameters = ({
 export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+    // Continuing an existing model needs its checkpoint, which only this machine
+    // has: the trainer protocol can receive a dataset but not a base checkpoint.
+    // So a resumed run offers local training only.
+    const canTrainRemotely = baseModel === undefined;
     const trainingTargetOptions: TrainingTargetOption[] = [
         { id: 'local', label: 'This machine (local)' },
-        ...remoteTrainers.map((remoteTrainer) => ({
-            id: remoteTrainer.id,
-            label: remoteTrainer.name,
-        })),
+        ...(canTrainRemotely
+            ? remoteTrainers.map((remoteTrainer) => ({
+                  id: remoteTrainer.id,
+                  label: remoteTrainer.name,
+              }))
+            : []),
     ];
 
     const defaultDatasetId = baseModel?.dataset_id ?? null;

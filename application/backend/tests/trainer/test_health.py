@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 
 from trainer.main import health
+from trainer.schemas import _DEFAULT_PROTOCOL_VERSION
 
 
 def test_health_reports_image_compatibility_metadata(monkeypatch) -> None:
@@ -36,7 +37,7 @@ def test_health_falls_back_on_invalid_protocol_version(monkeypatch) -> None:
 
     result = asyncio.run(health())
 
-    assert result.protocol_version == 1
+    assert result.protocol_version == _DEFAULT_PROTOCOL_VERSION
 
 
 def test_health_endpoint_serializes_by_field_name_not_env_alias(monkeypatch) -> None:

@@ -7,7 +7,7 @@ import { RemoteTrainersPage } from '../remote-trainers/remote-trainers-page';
 
 export const Compute = () => {
     return (
-        <View>
+        <View height={'100%'} minHeight={0}>
             {featureFlags.remoteTrainers && (
                 <Suspense fallback={<Loading />}>
                     <RemoteTrainersPage />

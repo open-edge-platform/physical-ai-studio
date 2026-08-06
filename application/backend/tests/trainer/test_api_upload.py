@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import io
 import zipfile
-from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
@@ -18,6 +18,9 @@ from fastapi.testclient import TestClient
 
 from trainer import api as api_module
 from trainer.schemas import DatasetTransfer, JobState, TrainerJobStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:

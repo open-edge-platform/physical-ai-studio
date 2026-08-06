@@ -292,7 +292,7 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
 
         reformat_dataset_to_match_policy(self, datamodule)
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Forward pass through the model.
 
         Processes the input batch and either trains the model or predicts actions

@@ -32,7 +32,7 @@ class Model(nn.Module, ABC):
     """
 
     @abstractmethod
-    def compute_loss(self, batch: dict[str, Any]) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_loss(self, batch: dict[str, Any]) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute the training loss for this model.
 
         Args:
@@ -40,10 +40,17 @@ class Model(nn.Module, ABC):
 
         Returns:
             Tuple of (loss tensor with grad, dict with at least a ``"loss"`` key).
+            Values in the dict should generally be left as (detached) tensors
+            rather than converted to Python scalars via ``.item()``: when the
+            model's ``forward`` is wrapped with ``torch.compile``, calling
+            ``.item()`` inside this method forces a host sync and breaks the
+            compiled graph. The enclosing ``Policy`` (a ``LightningModule``)
+            logs these values via ``self.log(...)``, which accepts tensors
+            directly.
         """
 
     @torch.no_grad()
-    def compute_val_loss(self, batch: dict[str, Any]) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: dict[str, Any]) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute the validation loss for this model.
 
         Override in subclasses to use a different metric from the training

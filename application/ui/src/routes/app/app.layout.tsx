@@ -38,13 +38,25 @@ export const AppLayout = () => {
                 height='100%'
                 width={'100%'}
             >
-                <View gridArea='header' backgroundColor='gray-300'>
+                <View
+                    gridArea='header'
+                    backgroundColor='gray-200'
+                    borderBottomColor={'gray-50'}
+                    borderBottomWidth={'thin'}
+                >
                     <Flex height='100%' alignItems={'center'} marginX='1rem'>
                         <AppLogo />
                     </Flex>
                 </View>
                 <AppSidebar />
-                <View gridArea='content' minHeight={0} height='100%' backgroundColor={'gray-100'} padding='size-400'>
+                <View
+                    gridArea='content'
+                    minHeight={0}
+                    height='100%'
+                    backgroundColor={'gray-50'}
+                    position={'relative'}
+                    padding={'size-300'}
+                >
                     <Suspense fallback={<Loading mode='overlay' />}>
                         <Outlet />
                     </Suspense>

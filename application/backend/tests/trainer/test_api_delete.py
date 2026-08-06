@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -16,6 +16,9 @@ from fastapi.testclient import TestClient
 
 from trainer import api as api_module
 from trainer.schemas import JobState, TrainerJobStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 _JOB_UUID = uuid4()
 _JOB_ID = str(_JOB_UUID)

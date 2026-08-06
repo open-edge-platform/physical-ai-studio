@@ -41,9 +41,13 @@ For users who prefer a visual interface for end-to-end workflow:
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
-  <img src="docs/assets/physical_ai_studio_overview.gif" alt="Application demo" width="100%">
+  <a href="docs/assets/physical_ai_studio_full_overview.mp4">
+    <img src="docs/assets/physical_ai_studio_overview.gif" alt="Application demo" width="100%">
+  </a>
 </p>
 <!-- markdownlint-enable MD033 -->
+
+[Download the full demo video →](docs/assets/physical_ai_studio_full_overview.mp4)
 
 [Application Documentation →](./application/README.md)
 

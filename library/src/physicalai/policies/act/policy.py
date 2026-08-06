@@ -456,7 +456,7 @@ class ACT(ExportablePolicyMixin, Policy):
 
     # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Perform forward pass of the ACT policy.
 
         The return value depends on the model's training mode:
@@ -467,7 +467,7 @@ class ACT(ExportablePolicyMixin, Policy):
             batch (Observation): Input batch of observations
 
         Returns:
-            torch.Tensor | tuple[torch.Tensor, dict[str, float]]: In training mode, returns
+            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]: In training mode, returns
                 tuple of (loss, loss_dict). In eval mode, returns action chunk tensor.
 
         Raises:
@@ -484,7 +484,7 @@ class ACT(ExportablePolicyMixin, Policy):
         # During evaluation, return action chunk predictions
         return self.predict_action_chunk(batch)
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss on a batch.
 
         Delegates to the model's ``compute_val_loss`` without toggling

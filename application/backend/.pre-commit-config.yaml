@@ -5,7 +5,7 @@
 # This config applies only to files in application/backend/
 #
 # This is the canonical Python app setup for this repo. Keep
-# application/trainer/.pre-commit-config.yaml in sync with this file
+# application/plugin/.pre-commit-config.yaml in sync with this file
 # (the Alembic migration check below is the one intentional exception,
 # since it is specific to the backend's database schema).
 

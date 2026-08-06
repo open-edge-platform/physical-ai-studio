@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import re
 from typing import Any
 
 import numpy as np
@@ -17,6 +18,17 @@ from schemas.environment import EnvironmentWithRelations, TeleoperatorRobotWithR
 from schemas.project_camera import Camera
 from utils.camera_factory import build_shared_camera
 from utils.jpeg import encode_jpeg_rgb
+
+
+def sanitize_camera_name(name: str) -> str:
+    """Turn a camera name into a safe video feature key.
+
+    Preserve lowercase letters, spaces, ``_``, and ``-`` for compatibility;
+    replace other characters because feature keys become dataset paths and
+    single-quoted ffconcat entries during recording, where they can invalidate
+    ffmpeg parsing.
+    """
+    return re.sub(r"[^a-z0-9 _-]+", "_", name.lower())
 
 
 class EnvironmentIntegration:
@@ -85,7 +97,7 @@ class EnvironmentIntegration:
             observation_features[feature] = float
 
         for camera in self.environment.cameras:
-            observation_features[camera.name.lower()] = self._get_camera_features(camera)
+            observation_features[sanitize_camera_name(camera.name)] = self._get_camera_features(camera)
 
         return combine_feature_dicts(
             aggregate_pipeline_dataset_features(
@@ -147,7 +159,7 @@ class EnvironmentIntegration:
         state = np.array([[observation[k] for k in self.action_keys]], dtype=np.float32)
         images: dict = {}
         for camera in self.environment.cameras:
-            camera_name = camera.name.lower()
+            camera_name = sanitize_camera_name(camera.name)
             # SWAP HWC, RGB2BGR and in float 0..1 range.
             images[camera_name] = np.ascontiguousarray(
                 observation[camera_name][..., ::-1].transpose(2, 0, 1).astype(np.float32)[np.newaxis] / 255
@@ -169,10 +181,10 @@ class EnvironmentIntegration:
         return base64.b64encode(encode_jpeg_rgb(observation)).decode()
 
     def _remap_camera_observations(self, observations: dict) -> dict:
-        """Remap camera observations from camera ID keys to lowercase camera name keys."""
+        """Remap camera observations from camera ID keys to sanitized camera name keys."""
         lerobot_observations = dict(observations)
         for camera in self.environment.cameras:
-            lerobot_observations[camera.name.lower()] = lerobot_observations.pop(str(camera.id))
+            lerobot_observations[sanitize_camera_name(camera.name)] = lerobot_observations.pop(str(camera.id))
         return lerobot_observations
 
     @staticmethod
