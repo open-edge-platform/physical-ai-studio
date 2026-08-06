@@ -197,6 +197,7 @@ def run_training_job(
         max_steps=spec.max_steps,
         auto_scale_batch_size=spec.auto_scale_batch_size,
         precision=spec.precision,
+        check_val_every_n_epoch=1,
         gradient_clip_val=1.0,
     )
 
