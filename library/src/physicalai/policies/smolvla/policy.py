@@ -727,15 +727,6 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             return None
 
         dataset_stats = self._dataset_stats
-        visual_stats: list[dict[str, Any]] = []
-        visual_shape: tuple | None = None
-        for feature in dataset_stats.values():
-            if str(FeatureType.VISUAL) not in feature.get("type", ""):
-                continue
-            visual_stats.append(feature)
-            if visual_shape is None:
-                visual_shape = cast("tuple", feature["shape"])
-
         schema: list[InferenceFeature] = []
 
         num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
