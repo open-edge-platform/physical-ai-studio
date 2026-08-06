@@ -173,35 +173,3 @@
 .errorMessage {
     color: var(--spectrum-global-color-static-red-600);
 }
-
-@media (max-width: 48rem) {
-    .tableHeader,
-    .row {
-        grid-template-columns: auto 2fr 1fr auto !important;
-    }
-
-    .tableHeader > :nth-child(4),
-    .tableHeader > :nth-child(5),
-    .tableHeader > :nth-child(6),
-    .row > :nth-child(4),
-    .row > :nth-child(5),
-    .row > :nth-child(6) {
-        display: none;
-    }
-
-    .checkRow {
-        grid-template-columns: 1.375rem minmax(0, 1fr);
-    }
-
-    .checkRow > :last-child {
-        grid-column: 2;
-    }
-
-    .definitionList {
-        grid-template-columns: 1fr;
-    }
-
-    .definitionList dd + dt {
-        margin-top: var(--spectrum-global-dimension-size-75);
-    }
-}

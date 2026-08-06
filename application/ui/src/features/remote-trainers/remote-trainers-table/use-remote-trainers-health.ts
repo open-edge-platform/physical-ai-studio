@@ -39,7 +39,7 @@ export const useRemoteTrainersHealth = (remoteTrainerIds: string[]): Map<string,
                 remoteTrainerId,
                 {
                     health: query.data,
-                    isChecking: query.isFetching,
+                    isChecking: query.isPending,
                     hasError: query.isError,
                     checkHealth: async () => {
                         const result = await query.refetch();

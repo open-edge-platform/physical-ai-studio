@@ -12,6 +12,7 @@ import {
     MenuTrigger,
     StatusLight,
     Text,
+    View,
 } from '@geti-ui/ui';
 import { ChevronDownSmallLight, ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
 
@@ -30,15 +31,17 @@ import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 
 import classes from './remote-trainers-table.module.css';
 
-export const REMOTE_TRAINERS_GRID_COLUMNS = '1fr 1fr 1fr auto';
+export const REMOTE_TRAINERS_GRID_COLUMNS = 'max-content 1fr 1fr 1fr auto';
 
 export const RemoteTrainersTableHeader = () => (
     <Grid
         columns={REMOTE_TRAINERS_GRID_COLUMNS}
         alignItems='center'
         width='100%'
+        gap={'size-100'}
         UNSAFE_className={classes.tableHeader}
     >
+        <div />
         <Text>Name</Text>
         <Text>Status</Text>
         <Text>Compute</Text>
@@ -130,17 +133,18 @@ const RemoteTrainerRow = ({
                 width='100%'
                 UNSAFE_className={`${classes.row} ${isExpanded ? classes.rowExpanded : ''}`}
             >
+                <ActionButton
+                    isQuiet
+                    aria-expanded={isExpanded}
+                    aria-controls={contentId}
+                    aria-label={`Show details for ${remoteTrainer.name}`}
+                    onPress={onToggleExpanded}
+                    UNSAFE_className={classes.disclosureButton}
+                >
+                    <Icon>{isExpanded ? <ChevronDownSmallLight /> : <ChevronRightSmallLight />}</Icon>
+                </ActionButton>
+
                 <Flex gap='size-100' alignItems='center' wrap>
-                    <ActionButton
-                        isQuiet
-                        aria-expanded={isExpanded}
-                        aria-controls={contentId}
-                        aria-label={`Show details for ${remoteTrainer.name}`}
-                        onPress={onToggleExpanded}
-                        UNSAFE_className={classes.disclosureButton}
-                    >
-                        <Icon>{isExpanded ? <ChevronDownSmallLight /> : <ChevronRightSmallLight />}</Icon>
-                    </ActionButton>
                     <Text UNSAFE_className={classes.trainerName}>{remoteTrainer.name}</Text>
                 </Flex>
 
@@ -169,9 +173,9 @@ const RemoteTrainerRow = ({
             </Grid>
 
             {isExpanded && (
-                <div id={contentId}>
+                <View id={contentId}>
                     <RemoteTrainerDetail remoteTrainer={remoteTrainer} health={health} isChecking={isChecking} />
-                </div>
+                </View>
             )}
         </div>
     );
