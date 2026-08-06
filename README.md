@@ -45,6 +45,8 @@ For users who prefer a visual interface for end-to-end workflow:
 </p>
 <!-- markdownlint-enable MD033 -->
 
+[Watch the full demo video →](docs/assets/physical_ai_studio_full_overview.mp4)
+
 [Application Documentation →](./application/README.md)
 
 #### Docker
