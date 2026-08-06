@@ -187,7 +187,10 @@ export const RemoteTrainersTable = ({ remoteTrainers, onEdit, onDelete }: Remote
                                 current === remoteTrainer.id ? undefined : remoteTrainer.id
                             )
                         }
-                        onCheck={() => void entry?.checkHealth()}
+                        onCheck={() => {
+                            void entry?.checkHealth();
+                            setExpandedRemoteTrainerId(remoteTrainer.id);
+                        }}
                         onEdit={() => onEdit(remoteTrainer)}
                         onDelete={() => onDelete(remoteTrainer)}
                     />
