@@ -39,8 +39,9 @@ class SmolVLAConfig(Config):
         image_features: Expected image feature names (camera slots) for SmolVLA input ordering.
             Can be provided as suffixes (e.g. "camera0") or flattened keys
             (e.g. "observation.images.camera0"). Defaults to [].
-        empty_cameras: Number of empty camera images to add. Used by smolvla_aloha_sim for adding empty wrist cameras.
-            Defaults to 0.
+        num_cameras: Total number of camera slots expected by the policy. Slots not covered by the batch
+            image keys (or by ``image_key_reorder_map``) are filled with masked empty cameras. Values <= 0
+            keep only the batch cameras. Defaults to 0.
         adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space to pi internal
             runtime space. Defaults to False.
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 48.
@@ -96,7 +97,7 @@ class SmolVLAConfig(Config):
 
     image_key_reorder_map: dict[str, int] = field(default_factory=dict)
 
-    empty_cameras: int = 0
+    num_cameras: int = 0
 
     adapt_to_pi_aloha: bool = False
 

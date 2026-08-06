@@ -231,7 +231,7 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_action_dim == 32
         assert preprocessor.image_resolution == (512, 512)
         assert preprocessor.image_key_reorder_map == {}
-        assert preprocessor.empty_cameras == 0
+        assert preprocessor.num_cameras == 0
         assert preprocessor.max_token_len == 48
         assert preprocessor.tokenizer_name == "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
         assert preprocessor.padding == "max_length"
@@ -246,7 +246,7 @@ class TestSmolVLAPreprocessor:
             max_action_dim=16,
             image_resolution=(256, 256),
             image_key_reorder_map={"overview": 0},
-            empty_cameras=2,
+            num_cameras=2,
             max_token_len=64,
             padding="max_length",
         )
@@ -255,7 +255,7 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_action_dim == 16
         assert preprocessor.image_resolution == (256, 256)
         assert preprocessor.image_key_reorder_map == {f"{IMAGES}.overview": 0}
-        assert preprocessor.empty_cameras == 2
+        assert preprocessor.num_cameras == 2
         assert preprocessor.max_token_len == 64
         assert preprocessor.padding == "max_length"
 
@@ -307,14 +307,14 @@ class TestSmolVLAPreprocessor:
             preprocessor._preprocess_images(batch)
 
     def test_empty_cameras_are_appended_as_masked_dummy_images(self) -> None:
-        """Test empty camera slots append masked dummy images to image stack."""
+        """Test unused camera slots are filled with masked dummy images."""
         from physicalai.data.constants import IMAGE_MASKS
         from physicalai.data.observation import IMAGES, STATE
         from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         preprocessor = SmolVLAPreprocessor(
             image_resolution=(2, 2),
-            empty_cameras=2,
+            num_cameras=3,
         )
 
         batch = {
@@ -330,6 +330,51 @@ class TestSmolVLAPreprocessor:
         torch.testing.assert_close(result[IMAGES][2], torch.full((1, 3, 2, 2), -1.0))
         torch.testing.assert_close(result[IMAGE_MASKS][1], torch.zeros((1,), dtype=torch.bool))
         torch.testing.assert_close(result[IMAGE_MASKS][2], torch.zeros((1,), dtype=torch.bool))
+
+    def test_num_cameras_places_reordered_keys_in_their_slots(self) -> None:
+        """Test reorder map indices select slots, leaving the remaining ones empty."""
+        from physicalai.data.constants import IMAGE_MASKS
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={"overview": 0, "wrist": 2},
+            num_cameras=3,
+        )
+
+        batch = {
+            f"{IMAGES}.wrist": torch.full((1, 3, 2, 2), 0.5),
+            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        result = preprocessor._preprocess_images(batch)
+
+        assert result[IMAGES].shape[0] == 3
+        torch.testing.assert_close(result[IMAGES][0], torch.full((1, 3, 2, 2), 1.0))
+        torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), -1.0))
+        torch.testing.assert_close(result[IMAGES][2], torch.full((1, 3, 2, 2), 0.0))
+        torch.testing.assert_close(
+            result[IMAGE_MASKS],
+            torch.tensor([[True], [False], [True]]),
+        )
+
+    def test_num_cameras_too_small_is_rejected(self) -> None:
+        """Test a num_cameras value that cannot hold the resolved slots is rejected."""
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(image_resolution=(2, 2), num_cameras=1)
+
+        batch = {
+            f"{IMAGES}.camera0": torch.full((1, 3, 2, 2), 1.0),
+            f"{IMAGES}.camera1": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        with pytest.raises(ValueError, match="is too small for the resolved camera slots"):
+            preprocessor._preprocess_images(batch)
 
     def test_newline_processor_adds_newline(self) -> None:
         """Test newline processor adds newline to task strings."""

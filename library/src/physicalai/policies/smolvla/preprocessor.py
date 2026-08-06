@@ -74,7 +74,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
         max_action_dim: int = 32,
         image_resolution: tuple[int, int] = (512, 512),
         image_key_reorder_map: dict[str, int] | None = None,
-        empty_cameras: int = 0,
+        num_cameras: int = 0,
         features: dict[str, Feature] | None = None,
         max_token_len: int = 48,
         tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
@@ -89,7 +89,9 @@ class SmolVLAPreprocessor(torch.nn.Module):
                 Defaults to (512, 512).
             image_key_reorder_map: Optional mapping from source image keys to target
                 camera indices used for deterministic ordering.
-            empty_cameras: Number of empty camera slots to append as masked dummy images.
+            num_cameras: Total number of camera slots expected by the model. Slots left
+                unfilled by the batch image keys are filled with masked dummy images.
+                Values <= 0 keep only the batch cameras, without any dummy images.
             features: Dictionary mapping feature names to Feature objects for
                 normalization. If None, no normalization is applied. Defaults to None.
             max_token_len: Maximum length of tokenized text sequences. Defaults to 48.
@@ -106,7 +108,7 @@ class SmolVLAPreprocessor(torch.nn.Module):
             key if key.startswith(f"{IMAGES}.") else f"{IMAGES}.{key}": order
             for key, order in (image_key_reorder_map or {}).items()
         }
-        self.empty_cameras = empty_cameras
+        self.num_cameras = num_cameras
         self.max_token_len = max_token_len
         self.tokenizer_name = tokenizer_name
         self.padding = padding
@@ -138,6 +140,48 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
         return self._state_action_normalizer(batch)
 
+    def _camera_slot_layout(self, batch_img_keys: list[str]) -> list[str | None]:
+        """Resolve the camera slot layout for a batch.
+
+        Args:
+            batch_img_keys: Flattened image keys present in the batch.
+
+        Returns:
+            List of camera slots, where each entry is either a batch image key or
+            ``None`` for a slot that must be filled with an empty camera.
+
+        Raises:
+            ValueError: If ``image_key_reorder_map`` is set and its keys do not match
+                the batch image keys exactly, or if the resolved slots do not fit into
+                ``num_cameras``.
+        """
+        if self.image_key_reorder_map:
+            if set(self.image_key_reorder_map.keys()) != set(batch_img_keys):
+                msg = (
+                    "image_key_reorder_map keys must match the batch image keys exactly. "
+                    f"Expected {sorted(self.image_key_reorder_map.keys())}, got {sorted(batch_img_keys)}."
+                )
+                raise ValueError(msg)
+            slot_by_key = {key: self.image_key_reorder_map[key] for key in batch_img_keys}
+        else:
+            slot_by_key = {key: index for index, key in enumerate(batch_img_keys)}
+
+        if self.num_cameras <= 0:
+            ordered_keys = sorted(batch_img_keys, key=lambda key: slot_by_key[key])
+            return list(ordered_keys)
+
+        if any(slot >= self.num_cameras for slot in slot_by_key.values()):
+            msg = (
+                f"num_cameras={self.num_cameras} is too small for the resolved camera slots "
+                f"{sorted(slot_by_key.values())} of image keys {sorted(batch_img_keys)}."
+            )
+            raise ValueError(msg)
+
+        layout: list[str | None] = [None] * self.num_cameras
+        for key, slot in slot_by_key.items():
+            layout[slot] = key
+        return layout
+
     def _preprocess_images(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         """Apply SmolVLA preprocessing to the images.
 
@@ -146,6 +190,8 @@ class SmolVLAPreprocessor(torch.nn.Module):
         2. Optionally resizing images with padding to maintain aspect ratio
         3. Converting pixel values from [0.0, 1.0] range to [-1.0, 1.0] range as required by SigLIP
         4. Extracting or creating padding masks for each image
+        5. Filling camera slots left unused by the batch with masked dummy images
+
         Args:
             batch: A dictionary containing image tensors and optional padding masks.
                 Image tensors should be 4D (B, C, H, W) or 5D (B, T, C, H, W).
@@ -154,32 +200,20 @@ class SmolVLAPreprocessor(torch.nn.Module):
         Returns:
             A dictionary containing the processed batch with added 'images'
             and 'image_masks' tensors, after applying image preprocessing.
-
-        Raises:
-            ValueError: If ``image_key_reorder_map`` is set and its keys do not match
-                the batch image keys exactly.
         """
-        images = []
-        img_masks = []
+        images: list[torch.Tensor | None] = []
+        img_masks: list[torch.Tensor | None] = []
 
         batch_img_keys = Observation.get_flattened_keys(batch, IMAGES)
         batch_img_keys = [key for key in batch_img_keys if "is_pad" not in key]
 
-        if self.image_key_reorder_map and set(self.image_key_reorder_map.keys()) != set(batch_img_keys):
-            msg = (
-                "image_key_reorder_map keys must match the batch image keys exactly. "
-                f"Expected {sorted(self.image_key_reorder_map.keys())}, got {sorted(batch_img_keys)}."
-            )
-            raise ValueError(msg)
-
-        ordered_batch_img_keys = (
-            sorted(batch_img_keys, key=lambda k: self.image_key_reorder_map[k])
-            if self.image_key_reorder_map
-            else batch_img_keys
-        )
-
         max_image_dim = 5
-        for key in ordered_batch_img_keys:
+        for key in self._camera_slot_layout(batch_img_keys):
+            if key is None:
+                images.append(None)
+                img_masks.append(None)
+                continue
+
             img = batch[key][:, -1, :, :, :] if batch[key].ndim == max_image_dim else batch[key]
             batch.pop(key)
             if self.image_resolution is not None:
@@ -198,20 +232,21 @@ class SmolVLAPreprocessor(torch.nn.Module):
             images.append(img)
             img_masks.append(mask)
 
-        if self.empty_cameras > 0 and len(images) > 0:
-            for _ in range(self.empty_cameras):
-                images.append(torch.ones_like(images[-1]) * -1)
-                img_masks.append(torch.zeros_like(img_masks[-1]))
+        reference_img = next((img for img in images if img is not None), None)
+        if reference_img is None:
+            batch[IMAGES] = torch.empty(0, device=batch[STATE].device)
+            batch[IMAGE_MASKS] = torch.empty(0, device=batch[STATE].device)
+            return batch
 
-        if images:
-            images = torch.stack(images, dim=0)
-            img_masks = torch.stack(img_masks, dim=0)
-        else:
-            images = torch.empty(0, device=batch[STATE].device)
-            img_masks = torch.empty(0, device=batch[STATE].device)
-
-        batch[IMAGES] = images
-        batch[IMAGE_MASKS] = img_masks
+        reference_mask = next(mask for mask in img_masks if mask is not None)
+        batch[IMAGES] = torch.stack(
+            [torch.full_like(reference_img, -1.0) if img is None else img for img in images],
+            dim=0,
+        )
+        batch[IMAGE_MASKS] = torch.stack(
+            [torch.zeros_like(reference_mask) if mask is None else mask for mask in img_masks],
+            dim=0,
+        )
 
         return batch
 
@@ -390,7 +425,7 @@ def make_smolvla_preprocessors(
     *,
     image_resolution: tuple[int, int] = (512, 512),
     image_key_reorder_map: dict[str, int] | None = None,
-    empty_cameras: int = 0,
+    num_cameras: int = 0,
     max_token_len: int = 48,
     token_pad_type: str = "longest",  # noqa: S107
     tokenizer_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
@@ -404,7 +439,7 @@ def make_smolvla_preprocessors(
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
         image_key_reorder_map: Optional mapping from source image keys to policy camera indices.
-        empty_cameras: Number of empty camera slots to append as masked dummy images.
+        num_cameras: Total number of camera slots; unused slots are filled with masked dummy images.
         max_token_len: Maximum token length.
         token_pad_type: Padding strategy for tokenization ("longest" or "max_length").\
         tokenizer_name: HuggingFace tokenizer name.
@@ -436,7 +471,7 @@ def make_smolvla_preprocessors(
         max_action_dim=max_action_dim,
         image_resolution=image_resolution,
         image_key_reorder_map=image_key_reorder_map,
-        empty_cameras=empty_cameras,
+        num_cameras=num_cameras,
         features=features,
         max_token_len=max_token_len,
         padding=token_pad_type,

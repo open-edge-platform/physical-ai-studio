@@ -120,7 +120,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         # Image preprocessing
         resize_imgs_with_padding: tuple[int, int] = (512, 512),
         image_key_reorder_map: dict[str, int] | None = None,
-        empty_cameras: int = 0,
+        num_cameras: int = 0,
         *,
         # Architecture
         tokenizer_max_length: int = 48,
@@ -179,7 +179,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 pad_language_to=pad_language_to,
                 use_random_input_noise=use_random_input_noise,
                 image_key_reorder_map=image_key_reorder_map,
-                empty_cameras=empty_cameras,
+                num_cameras=num_cameras,
                 compile_model=compile_model,
                 snapflow_enabled=snapflow_enabled,
                 snapflow_alpha=snapflow_alpha,
@@ -209,7 +209,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 max_action_dim=max_action_dim,
                 resize_imgs_with_padding=resize_imgs_with_padding,
                 image_key_reorder_map=image_key_reorder_map or {},
-                empty_cameras=empty_cameras,
+                num_cameras=num_cameras,
                 tokenizer_max_length=tokenizer_max_length,
                 vlm_model_name=vlm_model_name,
                 load_vlm_weights=load_vlm_weights,
@@ -351,7 +351,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         pad_language_to: str = "max_length",
         use_random_input_noise: bool = False,
         image_key_reorder_map: dict[str, int] | None = None,
-        empty_cameras: int = 0,
+        num_cameras: int = 0,
         compile_model: bool = False,
         snapflow_enabled: bool = False,
         snapflow_alpha: float = 0.5,
@@ -416,7 +416,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
         hf_config["pad_language_to"] = pad_language_to
         hf_config["use_random_input_noise"] = use_random_input_noise
         hf_config["image_key_reorder_map"] = image_key_reorder_map or {}
-        hf_config["empty_cameras"] = empty_cameras
+        hf_config["num_cameras"] = num_cameras
         hf_config["compile_model"] = compile_model
         hf_config["snapflow_enabled"] = snapflow_enabled
         hf_config["snapflow_alpha"] = snapflow_alpha
@@ -477,7 +477,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
             stats=dataset_stats,
             image_resolution=self.config.resize_imgs_with_padding,
             image_key_reorder_map=self.config.image_key_reorder_map,
-            empty_cameras=self.config.empty_cameras,
+            num_cameras=self.config.num_cameras,
             max_token_len=self.config.tokenizer_max_length,
             token_pad_type=self.config.pad_language_to,
             tokenizer_name=self.config.vlm_model_name,
@@ -819,7 +819,7 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 type="smolvla_resize",
                 image_resolution=self.config.resize_imgs_with_padding,
                 image_key_reorder_map=self.config.image_key_reorder_map,
-                empty_cameras=self.config.empty_cameras,
+                num_cameras=self.config.num_cameras,
             ),
             ComponentSpec(type="new_line"),
             ComponentSpec(
