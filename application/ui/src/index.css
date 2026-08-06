@@ -52,11 +52,6 @@ html {
 
 body {
     background-color: var(--spectrum-global-color-gray-100);
-    /*background-image: url('./assets/background.png');*/
-    background-blend-mode: luminosity;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-size: cover;
     min-height: 100vh;
 }
 

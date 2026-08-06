@@ -23,20 +23,20 @@
 
 .card {
     border-width: var(--spectrum-global-dimension-size-25);
-    border-color: var(--spectrum-global-color-gray-200);
+    border-color: var(--spectrum-global-color-gray-100);
     border-style: solid;
     border-radius: var(--spectrum-global-dimension-size-50);
-    background-color: var(--spectrum-global-color-gray-50);
+    background-color: var(--spectrum-global-color-gray-300);
     overflow: hidden;
 
     transition:
-        background-color 100ms ease-in-out 150ms,
-        border 100ms ease-in-out 150ms;
+        background-color 100ms ease-in-out 100ms,
+        border 100ms ease-in-out 100ms;
 }
 
 .card:hover {
     transition-delay: 0ms, 0ms;
-    background-color: var(--spectrum-global-color-gray-100);
+    background-color: var(--spectrum-global-color-gray-200);
     border-color: var(--energy-blue);
 }
 
@@ -89,7 +89,6 @@
 
 .tag {
     width: fit-content;
-    color: var(--spectrum-gray-50);
     background: rgba(255, 255, 255, 0.06);
     color: var(--spectrum-global-color-gray-800);
     padding: var(--spectrum-global-dimension-size-25);
@@ -124,4 +123,13 @@
     transition-delay: 0ms, 0ms;
     background-color: var(--spectrum-global-color-gray-100);
     border: var(--spectrum-global-dimension-size-25) dashed var(--energy-blue) !important;
+}
+
+.container {
+    background-image: url('../../../assets/background.png');
+    background-blend-mode: luminosity;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    filter: grayscale(75%) brightness(105%) contrast(1.3);
 }
