@@ -134,8 +134,6 @@ image for a Studio commit that doesn't itself rebuild the trainer). Backend-side
 **Purpose:** Establish the durable domain model without making network
 connections.
 
-**Supersedes** the abandoned `albert/ssh-server-persistence` implementation.
-
 ### Scope
 
 - `RemoteServerDB` + a **rewritten** `d4f8a1c9b3e6_add_remote_servers.py`
