@@ -1,6 +1,6 @@
 import { Flex, Grid, Heading, StatusLight, Text, View } from '@geti-ui/ui';
 
-import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
+import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../../api/openapi-spec';
 import {
     capabilityDetail,
     CheckState,
@@ -12,9 +12,9 @@ import {
     healthVariant,
     storageDetail,
     trainerHealthDetail,
-} from '../remote-trainer-health-utils';
+} from '../../remote-trainer-health-utils';
 
-import classes from '../remote-trainers-page.module.css';
+import classes from './remote-trainer-detail.module.css';
 
 type HealthCheckRowProps = {
     label: string;

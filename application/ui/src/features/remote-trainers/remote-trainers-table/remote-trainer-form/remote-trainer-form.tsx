@@ -2,11 +2,11 @@ import { useState } from 'react';
 
 import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Form, Heading, Text, TextField } from '@geti-ui/ui';
 
-import { $api } from '../../../api/client';
-import { getApiErrorMessage } from '../../../api/errors';
-import { SchemaRemoteTrainer } from '../../../api/openapi-spec';
+import { $api } from '../../../../api/client';
+import { getApiErrorMessage } from '../../../../api/errors';
+import { SchemaRemoteTrainer } from '../../../../api/openapi-spec';
 
-import classes from '../remote-trainers-page.module.css';
+import classes from './remote-trainer-form.module.css';
 
 type RemoteTrainerFormProps = {
     remoteTrainer?: SchemaRemoteTrainer;

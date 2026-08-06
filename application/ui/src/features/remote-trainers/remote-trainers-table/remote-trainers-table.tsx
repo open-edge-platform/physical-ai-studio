@@ -19,8 +19,8 @@ import { ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
 import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
 import { DeleteRemoteTrainerDialog } from './delete-remote-trainer-dialog';
-import { RemoteTrainerDetail } from './remote-trainer-detail';
-import { RemoteTrainerForm } from './remote-trainer-form';
+import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
+import { RemoteTrainerForm } from './remote-trainer-form/remote-trainer-form';
 import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 
 import classes from './remote-trainers-table.module.css';

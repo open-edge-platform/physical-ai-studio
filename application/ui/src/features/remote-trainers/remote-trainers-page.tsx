@@ -30,7 +30,7 @@ export const RemoteTrainersPage = () => {
                 </Button>
             </Flex>
 
-            <View UNSAFE_className={classes.table}>
+            <View UNSAFE_className={classes.container}>
                 {remoteTrainers.length === 0 ? (
                     <Text UNSAFE_className={classes.emptyList}>No remote trainers are configured.</Text>
                 ) : (
