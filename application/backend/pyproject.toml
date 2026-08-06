@@ -35,6 +35,7 @@ dependencies = [
   "huggingface-hub>=0.27",
   "psutil~=7.2",
   "physicalai-studio-plugin",
+  "asyncssh>=2.14",
 ]
 
 [project.scripts]

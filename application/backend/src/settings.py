@@ -123,6 +123,51 @@ class Settings(BaseSettings):
     # Upper bound on the exponential backoff between event-stream reconnect attempts.
     trainer_stream_reconnect_backoff_max_s: float = Field(default=30.0, alias="TRAINER_STREAM_RECONNECT_BACKOFF_MAX_S")
 
+    # SSH-provisioned remote training
+    # Path to the user's SSH client config. asyncssh parses it to resolve a saved
+    # `ssh_host_alias` into a hostname, port, user, and identity; Studio never
+    # reads key material out of it.
+    ssh_config_path: Path = Field(default=Path("~/.ssh/config"), alias="SSH_CONFIG_PATH")
+    # Path to the user's known_hosts. Host keys are verified against this file by
+    # asyncssh, which fails closed on an unknown or changed key.
+    ssh_known_hosts_path: Path = Field(default=Path("~/.ssh/known_hosts"), alias="SSH_KNOWN_HOSTS_PATH")
+    # Overall budget for one SSH connect + auth. Bounds a save request.
+    ssh_connect_timeout_s: float = Field(default=10.0, alias="SSH_CONNECT_TIMEOUT_S")
+    # Per-command budget for the cheap Tier 1 probes (docker version, nvidia-smi).
+    ssh_command_timeout_s: float = Field(default=15.0, alias="SSH_COMMAND_TIMEOUT_S")
+    # Overall budget for a full Tier 1 preflight, so a save can never hang.
+    ssh_preflight_timeout_s: float = Field(default=30.0, alias="SSH_PREFLIGHT_TIMEOUT_S")
+    # Minimum time between preflight/status SSH connections to one server. Shared
+    # by the status endpoint and the GPU-busy re-check so UI polling cannot
+    # disrupt a running job or pile up connections.
+    ssh_preflight_throttle_s: float = Field(default=5.0, alias="SSH_PREFLIGHT_THROTTLE_S")
+    # Concurrent SSH connections allowed per server, across preflight and status.
+    ssh_max_connections_per_server: int = Field(default=2, alias="SSH_MAX_CONNECTIONS_PER_SERVER")
+    # SSH keepalive interval, so a dead tunnel is detected rather than hanging.
+    ssh_keepalive_interval_s: float = Field(default=15.0, alias="SSH_KEEPALIVE_INTERVAL_S")
+    ssh_keepalive_count_max: int = Field(default=3, alias="SSH_KEEPALIVE_COUNT_MAX")
+    # Free disk a server must have at save time for the image plus a nominal job.
+    # The actual dataset size is re-checked at provisioning time.
+    ssh_min_free_disk_bytes: int = Field(
+        default=60 * 1024 * 1024 * 1024,
+        alias="SSH_MIN_FREE_DISK_BYTES",
+    )
+    # Maximum characters of streamed remote command output forwarded per line and
+    # per message. Remote output is environment-influenced, not trusted text.
+    ssh_output_max_line_chars: int = Field(default=512, alias="SSH_OUTPUT_MAX_LINE_CHARS")
+    ssh_output_max_total_chars: int = Field(default=4096, alias="SSH_OUTPUT_MAX_TOTAL_CHARS")
+    # Container registry hosting the trainer images resolved for SSH jobs.
+    trainer_image_registry: str = Field(
+        default="ghcr.io/open-edge-platform",
+        alias="TRAINER_IMAGE_REGISTRY",
+    )
+
+    @field_validator("ssh_config_path", "ssh_known_hosts_path", mode="before")
+    @classmethod
+    def expand_ssh_path(cls, value: Path | str) -> Path:
+        """Expand `~` so the default resolves to the running user's SSH config."""
+        return Path(value).expanduser()
+
     # Server
     host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104
     port: int = Field(default=7860, alias="PORT")
