@@ -49,15 +49,6 @@ CHECKPOINT_NAME = "model.ckpt"
 EXPORTS_DIRNAME = "exports"
 """Subdirectory of ``output_dir`` holding one directory per export backend."""
 
-CHECKPOINT_EVERY_N_STEPS = 1000
-"""Interval checkpoint cadence.
-
-A ``val/loss``-monitored checkpoint never fires on a sub-epoch run (one whose
-``max_steps`` is smaller than one epoch's batch count), so checkpointing is
-driven by step count instead: it fires regardless of validation, so a hang
-mid-training still leaves the most recent interval's weights on disk.
-"""
-
 _DATASET_REPO_ID = "snapshot"
 """Placeholder repo id: datasets are always loaded from a local root here."""
 
@@ -197,13 +188,7 @@ def run_training_job(
     trainer = Trainer(
         logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
         callbacks=[
-            ModelCheckpoint(
-                dirpath=cache_dir,
-                filename="step{step:06d}",
-                every_n_train_steps=min(CHECKPOINT_EVERY_N_STEPS, spec.max_steps),
-                save_top_k=-1,
-                monitor=None,
-            ),
+            ModelCheckpoint(dirpath=cache_dir, filename="model", save_top_k=1, monitor="val/loss", mode="min"),
             ProgressReportingCallback(report=report, should_stop=should_stop),
         ],
         accelerator=accelerator,
@@ -212,11 +197,6 @@ def run_training_job(
         max_steps=spec.max_steps,
         auto_scale_batch_size=spec.auto_scale_batch_size,
         precision=spec.precision,
-        val_check_interval=min(CHECKPOINT_EVERY_N_STEPS, spec.max_steps),
-        # None tells Lightning val_check_interval counts global steps rather than
-        # batches within one epoch, so it still applies once max_steps is below
-        # one epoch's batch count.
-        check_val_every_n_epoch=None,
         gradient_clip_val=1.0,
     )
 
@@ -324,8 +304,6 @@ def _export(policy: Policy, output_dir: Path, report: ReportFn, *, accelerator: 
 
     for backend in policy.get_supported_export_backends():
         name = backend.value if hasattr(backend, "value") else str(backend)
-        # Conversion peaks well above the model's resident size; hand back
-        # whatever the previous backend cached before starting the next one.
         _release_memory(accelerator)
         try:
             logger.info("Exporting model to %s format", name)
