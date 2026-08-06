@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import {
     ActionButton,
+    Badge,
     DialogContainer,
     Flex,
     Grid,
@@ -17,13 +18,7 @@ import {
 import { ChevronDownSmallLight, ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
-import {
-    deviceTagClass,
-    deviceTypes,
-    getDisplayHealth,
-    healthLabel,
-    healthVariant,
-} from '../remote-trainer-health-utils';
+import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
 import { DeleteRemoteTrainerDialog } from './delete-remote-trainer-dialog';
 import { RemoteTrainerDetail } from './remote-trainer-detail';
 import { RemoteTrainerForm } from './remote-trainer-form';
@@ -32,6 +27,11 @@ import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 import classes from './remote-trainers-table.module.css';
 
 export const REMOTE_TRAINERS_GRID_COLUMNS = 'max-content 1fr 1fr 1fr auto';
+
+const DEVICE_BADGE_CLASSES: Record<string, string> = {
+    CUDA: classes.cudaBadge,
+    XPU: classes.xpuBadge,
+};
 
 export const RemoteTrainersTableHeader = () => (
     <Grid
@@ -152,9 +152,9 @@ const RemoteTrainerRow = ({
 
                 <Flex gap='size-100' alignItems='center' wrap>
                     {types.map((type) => (
-                        <Text key={type} UNSAFE_className={deviceTagClass(type)}>
+                        <Badge key={type} variant='neutral' UNSAFE_className={DEVICE_BADGE_CLASSES[type]}>
                             {type}
-                        </Text>
+                        </Badge>
                     ))}
                     <Text UNSAFE_className={classes.cardMetaText}>
                         {health?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported')}

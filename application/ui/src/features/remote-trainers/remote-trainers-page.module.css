@@ -43,26 +43,6 @@
     color: var(--spectrum-global-color-gray-700);
 }
 
-.deviceTag {
-    padding: 0.125rem 0.4375rem;
-    color: var(--spectrum-global-color-gray-800);
-    background: var(--spectrum-global-color-gray-300);
-    border-radius: var(--spectrum-global-dimension-size-50);
-    font-size: var(--spectrum-global-dimension-font-size-50);
-    font-weight: 700;
-    letter-spacing: 0.04em;
-}
-
-.cudaTag {
-    color: var(--spectrum-global-color-static-green-500);
-    background: color-mix(in srgb, var(--spectrum-global-color-static-green-500) 16%, transparent);
-}
-
-.xpuTag {
-    color: var(--energy-blue);
-    background: color-mix(in srgb, var(--energy-blue) 16%, transparent);
-}
-
 .cardMeta {
     margin-top: var(--spectrum-global-dimension-size-75);
 }

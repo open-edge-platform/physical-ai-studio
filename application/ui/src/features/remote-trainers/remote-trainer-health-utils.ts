@@ -1,7 +1,5 @@
 import { SchemaRemoteTrainerHealth } from '../../api/openapi-spec';
 
-import classes from './remote-trainers-page.module.css';
-
 export type CheckState = 'positive' | 'yellow' | 'negative' | 'neutral';
 
 export const healthLabel = (health?: SchemaRemoteTrainerHealth, isChecking = false) => {
@@ -42,9 +40,6 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
 export const deviceTypes = (health?: SchemaRemoteTrainerHealth) => [
     ...new Set((health?.devices ?? []).map((device) => device.type.toUpperCase())),
 ];
-
-export const deviceTagClass = (type: string) =>
-    `${classes.deviceTag} ${type === 'CUDA' ? classes.cudaTag : type === 'XPU' ? classes.xpuTag : ''}`;
 
 export const formatBytes = (bytes: number): string => {
     if (bytes <= 0) return '0 GB';
