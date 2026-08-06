@@ -8,9 +8,9 @@ Dependency-ordered, independently reviewable pull requests for
 
 - **PR 1 — landed on `main`.** Trainer image targets, GHCR publishing with SBOM /
   provenance / Trivy scan / cosign signing, OCI labels, and `/health` protocol
-  metadata all exist (`../../trainer/Dockerfile`,
+  metadata all exist (`../../docker/Dockerfile.trainer`,
   `../../../.github/workflows/trainer-images.yml`,
-  `../../trainer/src/trainer/schemas.py`).
+  `../../backend/src/trainer/schemas.py`).
 - **PR 5 — partially landed.** A flag-gated route and page exist, but the route is
   project-scoped and reuses the remote-_trainers_ page. See PR 5.
 - All other PRs are not started. `asyncssh` is not yet a dependency.
@@ -100,16 +100,16 @@ registered servers.
 
 ### Delivered
 
-- Non-root `physicalai-trainer-cuda` / `physicalai-trainer-xpu` targets in
-  `../../trainer/Dockerfile`, entry point `physicalai-trainer`, containing no
+- Non-root `physicalai-trainer-cuda` / `physicalai-trainer-xpu` build targets in
+  `../../docker/Dockerfile.trainer`, entry point `physicalai-trainer`, containing no
   backend or UI code.
 - `../../../.github/workflows/trainer-images.yml`: immutable `${{ github.sha }}` tags plus
   a moving `latest`, `sbom: true`, `provenance: mode=max`, a metadata
   verification step, a Trivy scan at HIGH/CRITICAL, and cosign signing.
 - OCI labels `org.opencontainers.image.source`, `.revision`, `.version`,
   `.created`, and `org.open-edge-platform.physicalai.trainer.api-protocol`.
-- `/health` returns `status`, `protocol_version`, and `device_type` via
-  `HealthInfo`.
+- `/health` returns `status`, `protocol_version`, `device_type`,
+  `build_revision`, `build_date`, and `application_version` via `HealthInfo`.
 
 ### Remaining
 

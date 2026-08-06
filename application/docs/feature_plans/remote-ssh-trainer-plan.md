@@ -79,7 +79,7 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
 | Missing/invalid alias          | A `ssh_host_alias` that is absent from the SSH config, or matches only a wildcard stanza, is a distinct actionable state ("SSH host alias not found in your SSH config"), never a 500. Validated on save and re-checked on every preflight.                                                                                                                   |
 | SSH library                    | **`asyncssh`.** Native asyncio, native `~/.ssh/config` parsing, native `known_hosts` verification, and a local-forward API that supports the reconnect-and-resume requirement without a thread bridge.                                                                                                                                                        |
 | Command safety                 | All remote commands run as argument arrays (no shell string interpolation). Image names, container names, labels, and device arguments come from trusted application constants or validated identifiers, not arbitrary user input.                                                                                                                            |
-| Trainer distribution           | **Already shipped.** `physicalai-trainer-cuda` / `physicalai-trainer-xpu` targets exist in `../../trainer/Dockerfile`; `../../../.github/workflows/trainer-images.yml` publishes them to GHCR with SBOM, provenance, Trivy scan, and cosign signing.                                                                                                                |
+| Trainer distribution           | **Already shipped.** `physicalai-trainer-cuda` / `physicalai-trainer-xpu` build targets exist in `../../docker/Dockerfile.trainer`; `../../../.github/workflows/trainer-images.yml` publishes them to GHCR with SBOM, provenance, Trivy scan, and cosign signing.                                                                                                                |
 | Trainer launch                 | Prefer the device-specific image tagged with the Studio build revision; use `latest` only when that tag cannot be resolved. Resolve and record the selected image's immutable digest, then run `physicalai-trainer` in a job-scoped Docker container bound only to remote loopback.                                                                           |
 | Trainer lifecycle              | One container per job. Persist the container id/name, image digest, remote published port, local tunnel port, and the non-secret `ssh_host_alias` so orphans can be swept and recoverable jobs reattached after a crash.                                                                                                                                      |
 | Concurrency                    | Reuse the existing **per-execution-target** serialization in `TrainingWorker.run_loop`: one job at a time per target, jobs on distinct targets run concurrently. SSH jobs need their own target key (next row). Throttle status/preflight SSH connections per server with short timeouts so UI polling cannot disrupt a running job.                          |
@@ -104,24 +104,50 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
 ## Architecture Context
 
 - Training runs through the `TrainingBackend` abstraction
-  (`services/training_backends/`). `LocalTrainingBackend` trains in-process;
-  `RemoteTrainingBackend` offloads to a trainer service over HTTP at a URL
-  pinned per job (`TrainJobPayload.remote_trainer_url`), resolved from the
-  `RemoteTrainer` registry at submission time.
+  (`application/backend/src/services/training_backends/`).
+  `LocalTrainingBackend` trains in-process; `RemoteTrainingBackend` offloads
+  to a trainer service over HTTP at a URL pinned per job
+  (`TrainJobPayload.remote_trainer_url`), resolved from the `RemoteTrainer`
+  registry at submission time. Backend selection is
+  `get_training_backend(payload)` in
+  `services/training_backends/__init__.py`, which today branches only on
+  `payload.training_target is TrainingTarget.REMOTE` vs. else-local.
+- Both backends build the same `training.TrainingJobSpec` (via the shared
+  `build_spec(context)` helper in `services/training_backends/local.py`) and,
+  for in-process runs, hand it to the shared
+  `application/backend/src/training/job.py:run_training_job(...)` — the single
+  place Lightning fit/checkpoint/export logic lives, used identically by
+  `LocalTrainingBackend.train()` and by the trainer service's
+  `trainer/runner.py:TrainerRunner._train()`. This plan's SSH work sits
+  entirely above this layer: it never touches `training/`, it only decides
+  *where* a `RemoteTrainingBackend` instance points its `base_url`.
+- The remote backend's dataset-transfer strategy is pluggable
+  (`services/training_backends/_training_methods.py`: an abstract
+  `TrainingMethod` with one concrete `HttpTrainingMethod`), and
+  `RemoteTrainingBackend._training_method()` always returns
+  `HttpTrainingMethod(self)` — there is no `hf` transfer to accidentally pick
+  up, which is why the [Data Transfer](#data-transfer-ssh-vs-http) decision
+  below reuses that same path rather than adding a new one.
 - The backend `TrainingWorker.run_loop` reserves one job per **execution
   target** (`local`, or `remote:<remote_trainer_id>`) and runs jobs on distinct
   targets concurrently as asyncio tasks; only jobs competing for the same
   target are serialized. Each running job gets its own per-job interrupt flag
   (keyed by job id in a shared dict) so cancelling one job cannot affect
   another running concurrently on a different target.
-- The trainer service (`../../trainer`) is a FastAPI app exposing
-  `/jobs`, `/jobs/{id}/dataset`, `/jobs/{id}/events` (SSE), `/jobs/{id}/artifact`,
-  `/jobs/{id}/cancel`, `/devices`, and `/health`. It has no built-in auth and is
-  intended for a trusted private network.
-- `/health` **already returns** `status`, `protocol_version`, and `device_type`
-  (`../../trainer/src/trainer/schemas.py`, `HealthInfo`), sourced from the
-  environment and baked into the published images. The protocol-metadata work
-  described in earlier revisions of this plan is done.
+- The trainer service (`application/backend/src/trainer/`) is a FastAPI app
+  exposing `/jobs`, `/jobs/{id}/dataset`, `/jobs/{id}/events` (SSE),
+  `/jobs/{id}/artifact`, `/jobs/{id}/cancel`, `/devices`, `/storage`, and
+  `/health`. It has no built-in auth and is intended for a trusted private
+  network.
+- `/health` **already returns** `status`, `protocol_version`, `device_type`,
+  `build_revision`, `build_date`, and `application_version`
+  (`application/backend/src/trainer/schemas.py`, `HealthInfo`), each sourced
+  from `TRAINER_API_PROTOCOL_VERSION`/`TRAINER_DEVICE_TYPE`/
+  `TRAINER_BUILD_REVISION`/`TRAINER_BUILD_DATE`/`TRAINER_APPLICATION_VERSION`
+  env vars baked into the published images at build time. That covers the
+  trainer image's side of "what revision am I" — the Studio backend's own
+  side (resolving *its own* build revision so it can pick a matching trainer
+  tag) is what Step 3 below still has to build.
 - The existing `http` dataset transfer streams a validated ZIP via
   `PUT /jobs/{id}/dataset` with progress mirroring and archive-safety checks.
 - Persistence uses SQLAlchemy models in `db/schema.py`, repositories under
@@ -244,15 +270,18 @@ resolution.
 
 **Already shipped — do not rebuild:**
 
-- Non-root `physicalai-trainer-cuda` / `physicalai-trainer-xpu` targets in
-  `../../trainer/Dockerfile`, entry point `physicalai-trainer`, no backend or
-  UI content.
+- Non-root `physicalai-trainer-cuda` / `physicalai-trainer-xpu` build targets in
+  `../../docker/Dockerfile.trainer`, entry point `physicalai-trainer`, no
+  backend or UI content baked in (the image build asserts neither
+  `/app/application/backend` nor `/app/application/ui` exist, and no Docker
+  socket).
 - `../../../.github/workflows/trainer-images.yml` publishes immutable `${{ github.sha }}`
   tags plus a moving `latest`, with `sbom: true`, `provenance: mode=max`, a
   Trivy scan, cosign signing, and a metadata-verification step. Labels include
   `org.opencontainers.image.source`, `.revision`, `.version`, `.created`, and
   `org.open-edge-platform.physicalai.trainer.api-protocol`.
-- `/health` returns `protocol_version` and `device_type`.
+- `/health` returns `protocol_version`, `device_type`, `build_revision`,
+  `build_date`, and `application_version`.
 
 **Remaining work:**
 
@@ -531,13 +560,13 @@ the train dialog, and the progress stepper.
 
 #### Docs
 
-- Extend `../../trainer/README.md` and backend docs with: the `~/.ssh/config`
-  contract (what a usable `Host` entry looks like), the agent requirement for
-  passphrase-protected keys, accepting a host fingerprint before first use,
-  recovery when an alias is removed or renamed, the fact that Studio stores no
-  SSH credentials whatsoever, host setup for CUDA/XPU, XPU limitations, image
-  verification, cleanup/recovery procedures, and the direct-reachability
-  assumption.
+- Extend `../../backend/docs/remote-trainer.md` and backend docs with: the
+  `~/.ssh/config` contract (what a usable `Host` entry looks like), the agent
+  requirement for passphrase-protected keys, accepting a host fingerprint
+  before first use, recovery when an alias is removed or renamed, the fact
+  that Studio stores no SSH credentials whatsoever, host setup for CUDA/XPU,
+  XPU limitations, image verification, cleanup/recovery procedures, and the
+  direct-reachability assumption.
 - For the containerized deployment, document mounting `~/.ssh` and/or exposing
   `SSH_AUTH_SOCK`, and that every instance eligible to reattach a job needs the
   same alias resolvable.
