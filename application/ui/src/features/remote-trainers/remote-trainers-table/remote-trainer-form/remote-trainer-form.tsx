@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { FormEvent, useState } from 'react';
 
 import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Form, Heading, Text, TextField } from '@geti-ui/ui';
 
@@ -31,7 +31,7 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
     });
     const isPending = createMutation.isPending || updateMutation.isPending;
 
-    const save = async (event: React.FormEvent<HTMLFormElement>) => {
+    const save = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         setError(undefined);
         const normalizedName = name.trim();

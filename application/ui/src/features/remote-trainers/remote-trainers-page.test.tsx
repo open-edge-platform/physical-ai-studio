@@ -152,7 +152,8 @@ describe('RemoteTrainersPage', () => {
 
         render(<RemoteTrainersPage />);
 
-        await user.click(await screen.findByRole('button', { name: `Edit ${remoteTrainer.name}` }));
+        await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
         const dialog = await screen.findByRole('dialog');
         const nameInput = dialog.querySelectorAll('input')[0];
         await user.clear(nameInput);
@@ -175,7 +176,8 @@ describe('RemoteTrainersPage', () => {
 
         render(<RemoteTrainersPage />);
 
-        await user.click(await screen.findByRole('button', { name: `Delete ${remoteTrainer.name}` }));
+        await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
         await user.click(await screen.findByRole('button', { name: 'Delete' }));
     });
 

@@ -1,12 +1,21 @@
 import { useState } from 'react';
 
-import { Button, Flex, Heading, Text, View } from '@geti-ui/ui';
+import { Button, DialogContainer, Flex, Heading, Text, View } from '@geti-ui/ui';
 import { Add } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
-import { RemoteTrainerAction, RemoteTrainersTable } from './remote-trainers-table/remote-trainers-table';
+import { SchemaRemoteTrainer } from '../../api/openapi-spec';
+import { DeleteRemoteTrainerDialog } from './remote-trainers-table/delete-remote-trainer-dialog';
+import { RemoteTrainerForm } from './remote-trainers-table/remote-trainer-form/remote-trainer-form';
+import { RemoteTrainersTable } from './remote-trainers-table/remote-trainers-table';
 
 import classes from './remote-trainers-page.module.css';
+
+type RemoteTrainerAction =
+    | { type: 'create' }
+    | { type: 'edit'; remoteTrainer: SchemaRemoteTrainer }
+    | { type: 'delete'; remoteTrainer: SchemaRemoteTrainer }
+    | undefined;
 
 export const RemoteTrainersPage = () => {
     const { data: remoteTrainers } = $api.useSuspenseQuery('get', '/api/remote-trainers');
@@ -34,9 +43,29 @@ export const RemoteTrainersPage = () => {
                 {remoteTrainers.length === 0 ? (
                     <Text UNSAFE_className={classes.emptyList}>No remote trainers are configured.</Text>
                 ) : (
-                    <RemoteTrainersTable action={action} setAction={setAction} remoteTrainers={remoteTrainers} />
+                    <RemoteTrainersTable
+                        remoteTrainers={remoteTrainers}
+                        onEdit={(remoteTrainer) => setAction({ type: 'edit', remoteTrainer })}
+                        onDelete={(remoteTrainer) => setAction({ type: 'delete', remoteTrainer })}
+                    />
                 )}
             </View>
+
+            <DialogContainer onDismiss={() => setAction(undefined)}>
+                {(action?.type === 'create' || action?.type === 'edit') && (
+                    <RemoteTrainerForm
+                        remoteTrainer={action.type === 'edit' ? action.remoteTrainer : undefined}
+                        close={() => setAction(undefined)}
+                    />
+                )}
+                {action?.type === 'delete' && (
+                    <DeleteRemoteTrainerDialog
+                        remoteTrainer={action.remoteTrainer}
+                        onCancel={() => setAction(undefined)}
+                        onDeleted={() => setAction(undefined)}
+                    />
+                )}
+            </DialogContainer>
         </View>
     );
 };

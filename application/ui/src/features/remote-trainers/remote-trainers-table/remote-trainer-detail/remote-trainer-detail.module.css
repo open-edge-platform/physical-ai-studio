@@ -6,6 +6,13 @@
     text-transform: uppercase;
 }
 
+.detailSection {
+    padding: var(--spectrum-global-dimension-size-200);
+    background: var(--spectrum-global-color-gray-100);
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+}
+
 .definitionList {
     display: grid;
     grid-template-columns: minmax(9rem, max-content) minmax(0, 1fr);

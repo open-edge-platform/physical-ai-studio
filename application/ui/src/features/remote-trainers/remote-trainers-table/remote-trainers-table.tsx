@@ -1,26 +1,11 @@
 import { useState } from 'react';
 
-import {
-    ActionButton,
-    Badge,
-    DialogContainer,
-    Flex,
-    Grid,
-    Icon,
-    Item,
-    Key,
-    Menu,
-    MenuTrigger,
-    StatusLight,
-    Text,
-} from '@geti-ui/ui';
+import { ActionButton, Badge, Flex, Grid, Icon, Item, Key, Menu, MenuTrigger, StatusLight, Text } from '@geti-ui/ui';
 import { ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
 import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
-import { DeleteRemoteTrainerDialog } from './delete-remote-trainer-dialog';
 import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
-import { RemoteTrainerForm } from './remote-trainer-form/remote-trainer-form';
 import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 
 import classes from './remote-trainers-table.module.css';
@@ -171,68 +156,42 @@ const RemoteTrainerRow = ({
     );
 };
 
-export type RemoteTrainerAction =
-    | { type: 'create' }
-    | { type: 'edit'; remoteTrainer: SchemaRemoteTrainer }
-    | { type: 'delete'; remoteTrainer: SchemaRemoteTrainer }
-    | undefined;
-
 type RemoteTrainersTableProps = {
     remoteTrainers: SchemaRemoteTrainer[];
-    setAction: (action: RemoteTrainerAction) => void;
-    action: RemoteTrainerAction;
+    onEdit: (remoteTrainer: SchemaRemoteTrainer) => void;
+    onDelete: (remoteTrainer: SchemaRemoteTrainer) => void;
 };
 
-export const RemoteTrainersTable = ({ remoteTrainers, setAction, action }: RemoteTrainersTableProps) => {
+export const RemoteTrainersTable = ({ remoteTrainers, onEdit, onDelete }: RemoteTrainersTableProps) => {
     const [expandedRemoteTrainerId, setExpandedRemoteTrainerId] = useState<string | undefined>(remoteTrainers[0]?.id);
 
     const health = useRemoteTrainersHealth(remoteTrainers.map((remoteTrainer) => remoteTrainer.id));
 
     return (
-        <>
-            <Grid columns={REMOTE_TRAINERS_GRID_COLUMNS} columnGap='size-100' width='100%'>
-                <RemoteTrainersTableHeader />
-                {remoteTrainers.map((remoteTrainer) => {
-                    const entry = health.get(remoteTrainer.id);
-                    const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
+        <Grid columns={REMOTE_TRAINERS_GRID_COLUMNS} columnGap='size-100' width='100%'>
+            <RemoteTrainersTableHeader />
+            {remoteTrainers.map((remoteTrainer) => {
+                const entry = health.get(remoteTrainer.id);
+                const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
 
-                    return (
-                        <RemoteTrainerRow
-                            key={remoteTrainer.id}
-                            remoteTrainer={remoteTrainer}
-                            health={displayHealth}
-                            isChecking={entry?.isChecking ?? false}
-                            isExpanded={expandedRemoteTrainerId === remoteTrainer.id}
-                            onToggleExpanded={() =>
-                                setExpandedRemoteTrainerId((current) =>
-                                    current === remoteTrainer.id ? undefined : remoteTrainer.id
-                                )
-                            }
-                            onCheck={() => void entry?.checkHealth()}
-                            onEdit={() => setAction({ type: 'edit', remoteTrainer })}
-                            onDelete={() => setAction({ type: 'delete', remoteTrainer })}
-                        />
-                    );
-                })}
-            </Grid>
-            <DialogContainer onDismiss={() => setAction(undefined)}>
-                {(action?.type === 'create' || action?.type === 'edit') && (
-                    <RemoteTrainerForm
-                        remoteTrainer={action.type === 'edit' ? action.remoteTrainer : undefined}
-                        close={() => setAction(undefined)}
+                return (
+                    <RemoteTrainerRow
+                        key={remoteTrainer.id}
+                        remoteTrainer={remoteTrainer}
+                        health={displayHealth}
+                        isChecking={entry?.isChecking ?? false}
+                        isExpanded={expandedRemoteTrainerId === remoteTrainer.id}
+                        onToggleExpanded={() =>
+                            setExpandedRemoteTrainerId((current) =>
+                                current === remoteTrainer.id ? undefined : remoteTrainer.id
+                            )
+                        }
+                        onCheck={() => void entry?.checkHealth()}
+                        onEdit={() => onEdit(remoteTrainer)}
+                        onDelete={() => onDelete(remoteTrainer)}
                     />
-                )}
-                {action?.type === 'delete' && (
-                    <DeleteRemoteTrainerDialog
-                        remoteTrainer={action.remoteTrainer}
-                        onCancel={() => setAction(undefined)}
-                        onDeleted={() => {
-                            setAction(undefined);
-                            setExpandedRemoteTrainerId(undefined);
-                        }}
-                    />
-                )}
-            </DialogContainer>
-        </>
+                );
+            })}
+        </Grid>
     );
 };
