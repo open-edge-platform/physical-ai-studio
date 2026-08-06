@@ -28,6 +28,7 @@ from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
 from services.job_service import JobService
 from services.log_service import LogService
+from services.remote_server_service import RemoteServerService
 from services.robot_catalog_service import RobotCatalogService
 from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
@@ -75,6 +76,14 @@ def get_remote_trainer_service(session: AsyncSessionDep) -> RemoteTrainerService
 
 
 RemoteTrainerServiceDep = Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)]
+
+
+def get_remote_server_service(session: AsyncSessionDep) -> RemoteServerService:
+    """Provide a request-scoped service for SSH-provisioned training servers."""
+    return RemoteServerService(session)
+
+
+RemoteServerServiceDep = Annotated[RemoteServerService, Depends(get_remote_server_service)]
 
 
 def get_robot_service(session: AsyncSessionDep) -> RobotService:
@@ -279,6 +288,13 @@ def get_environment_id(environment_id: str) -> UUID:
     if not is_valid_uuid(environment_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid environment ID")
     return UUID(environment_id)
+
+
+def get_remote_server_id(remote_server_id: str) -> UUID:
+    """Initialize and validates a remote server ID."""
+    if not is_valid_uuid(remote_server_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid remote server ID")
+    return UUID(remote_server_id)
 
 
 def get_scheduler(request: HTTPConnection) -> Scheduler:
