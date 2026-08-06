@@ -360,7 +360,16 @@ Per job, on the selected server:
   destroy a concurrent Studio instance's running job on a shared server; sweeping
   before reattach would destroy this instance's own recoverable jobs. If trusted
   identity cannot be established, log and leave the container alone.
-- Stop/remove the container and close the tunnel in a `finally` block.
+- **Teardown is conditional, not an unconditional `finally`.** Stop/remove the
+  container and close the tunnel on normal completion, cancellation, and
+  unrecoverable failure — but **not** when `train()` exits via
+  `TrainingSuspendedError` (the existing backend-shutdown/restart path in
+  `TrainingWorker._train_model`). An unconditional `finally` would tear the
+  container down on every graceful-restart suspend, which destroys the exact
+  container the reattach procedure exists to recover; the job would then have
+  nothing left to reattach to on the next startup. See
+  [Restart and Reattach](#restart-and-reattach) for the corresponding startup
+  side of this.
 
 ### 5. Server-aware remote backend
 
@@ -404,7 +413,12 @@ Per job, on the selected server:
   SSH path can inject the tunnel URL and chosen device the same way the
   existing direct-URL path already injects `payload.remote_trainer_url`; keep
   the direct-URL path working unchanged.
-- Wrap `train()` with provision-before / teardown-after (in `finally`).
+- Wrap `train()` with provision-before / teardown-after (in `finally`), **but
+  make teardown conditional on outcome**: skip it when `train()` exits via
+  `TrainingSuspendedError` so a graceful restart leaves the container running
+  for reattach, matching the existing `suspended` branch in
+  `TrainingWorker._train_model`. Only tear down on completion, cancellation, or
+  an unrecoverable error.
 - Introduce the ordered phase table + `report_phase` helper as a **per-target**
   table (see [Progress Reporting](#progress-reporting-for-ssh-train-jobs)),
   leaving the local and direct-URL curves untouched.
@@ -428,6 +442,22 @@ For an SSH job it is not: the trainer is reachable only through an **ephemeral
 local tunnel port owned by the backend process**. If the backend restarts, the
 tunnel is gone, but the remote container is still training. Simply sweeping it
 would discard hours of completed GPU work on every restart or redeploy.
+
+**Prerequisite: `abort_orphan_jobs` must not fail the job before reattach runs.**
+`TrainingWorker.setup()` calls `TrainingService.abort_orphan_jobs` **before**
+`run_loop` starts, i.e. before any container-level reattach can happen.
+Today `TrainingService._reattachable_remote_job_id` only recognizes
+`TrainingTarget.REMOTE` with a `remote_job_id`; every other RUNNING job —
+including every SSH job — falls through to `FAILED`. Left as-is, this would
+fail every in-flight SSH job on startup, before the startup recovery procedure
+below ever gets a chance to run, making the reattach design unreachable for SSH.
+`_reattachable_remote_job_id` must gain an SSH branch: a RUNNING job with
+`training_target is TrainingTarget.SSH` and a `JobProvisioningDB` row is
+requeued to `PENDING` (like REMOTE today), not failed. The actual container
+inspection, tunnel re-open, and health/digest checks happen afterward, when
+`run_loop` picks the requeued job back up and the SSH backend's `train()` runs
+the steps below — `abort_orphan_jobs` only decides "is this worth trying to
+reattach," it does not itself talk to the remote host.
 
 **Startup recovery procedure.** For each `JobProvisioningDB` row whose job is in
 a non-terminal state:
@@ -558,6 +588,13 @@ preflight, teardown-on-failure, and cached-image reuse. Add tests for:
   container is never removed,
 - a dropped SSH tunnel mid-training reconnects and resumes rather than failing
   the job, and fails only once the retry budget is exhausted,
+- **teardown is conditional**: a job ending via `TrainingSuspendedError` leaves
+  the container and tunnel intact (no teardown call), while completion,
+  cancellation, and unrecoverable failure all trigger stop/remove,
+- `TrainingService.abort_orphan_jobs` requeues a RUNNING SSH job with a
+  `JobProvisioningDB` row to `PENDING` instead of marking it `FAILED`, and this
+  runs (in `TrainingWorker.setup()`) before the container-level reattach
+  procedure gets a chance to run on the next pickup,
 - a busy GPU leaves the job `pending` with backoff (not failed), the wait is
   visible in `extra_info["phase"]`, and the give-up timeout eventually fails it,
 - **`JobStatus` gains no new member** — assert the enum's members explicitly so a
@@ -784,3 +821,15 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
 13. **SSH config drift** — a renamed or deleted `Host` entry breaks a saved
     server and can block reattach of a running job. Surface the missing-alias
     state prominently, fail closed, and never substitute a different alias.
+14. **`abort_orphan_jobs` runs before container-level reattach** —
+    `TrainingWorker.setup()` calls `TrainingService.abort_orphan_jobs` ahead of
+    `run_loop`. Its `_reattachable_remote_job_id` check must be extended to
+    treat a RUNNING SSH job backed by a `JobProvisioningDB` row as reattachable
+    (requeue to `PENDING`), or every in-flight SSH job is marked `FAILED` on
+    startup before the startup recovery procedure ever runs, silently defeating
+    the reattach feature this plan is built around.
+15. **Teardown must not fire on graceful suspend** — the provisioning
+    teardown described in Step 4/5 is wrapped in `finally`, but must skip
+    stop/remove when `train()` exits via `TrainingSuspendedError`; otherwise a
+    normal backend restart tears down the very container reattach is meant to
+    recover.
