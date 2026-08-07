@@ -456,7 +456,7 @@ class ACT(ExportablePolicyMixin, Policy):
 
     # select_action() is inherited from Policy base class - uses queue with predict_action_chunk()
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Perform forward pass of the ACT policy.
 
         The return value depends on the model's training mode:
@@ -467,7 +467,7 @@ class ACT(ExportablePolicyMixin, Policy):
             batch (Observation): Input batch of observations
 
         Returns:
-            torch.Tensor | tuple[torch.Tensor, dict[str, float]]: In training mode, returns
+            torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]: In training mode, returns
                 tuple of (loss, loss_dict). In eval mode, returns action chunk tensor.
 
         Raises:
@@ -484,7 +484,7 @@ class ACT(ExportablePolicyMixin, Policy):
         # During evaluation, return action chunk predictions
         return self.predict_action_chunk(batch)
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss on a batch.
 
         Delegates to the model's ``compute_val_loss`` without toggling
@@ -523,16 +523,7 @@ class ACT(ExportablePolicyMixin, Policy):
             msg = "ACT model is not initialized."
             raise RuntimeError(msg)
         loss, loss_dict = self.forward(batch)  # noqa: RUF059
-        self.log("train/loss_step", loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
-        self.log(
-            "train/loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,
-            logger=True,
-            sync_dist=True,
-        )
+        self.log("train/loss", loss, prog_bar=True)
         return {"loss": loss}
 
     def configure_optimizers(self) -> dict[str, Any]:

@@ -102,6 +102,25 @@ class UnsupportedDeviceError(BaseException):
         )
 
 
+class RemoteResumeUnsupportedError(BaseException):
+    """Raised when a job would resume from a base model on a remote trainer.
+
+    Resuming needs the base model's checkpoint, and the trainer protocol has no
+    way to send one: the only upload endpoint takes the dataset. Rejecting the
+    submission is better than accepting it and silently training from scratch.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            message=(
+                "Continuing training from an existing model is only supported on this machine. "
+                "Select local training, or start a new model on the remote trainer."
+            ),
+            error_code="remote_resume_unsupported",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
 class InvalidJobStateError(BaseException):
     """Raised when a job action is not valid in the current state."""
 
@@ -191,4 +210,75 @@ class RecordingLockError(BaseException):
             message=message,
             error_code="recording_locked",
             http_status=423,
+        )
+
+
+class RobotDeviceAlreadyOwnedError(BaseException):
+    """Raised when a SharedRobot device is already locked under another session name."""
+
+    def __init__(self, *, device_ids: tuple[str, ...] | None = None) -> None:
+        if device_ids:
+            devices = ", ".join(device_ids)
+            message = (
+                f"Device {devices} is already in use by another session. "
+                "Stop the other session or wait for it to disconnect, then try again."
+            )
+        else:
+            message = (
+                "This robot device is already in use by another session. "
+                "Stop the other session or wait for it to disconnect, then try again."
+            )
+        super().__init__(
+            message=message,
+            error_code="robot_device_already_owned",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotNameConflictError(BaseException):
+    """Raised when a SharedRobot name is claimed for different devices."""
+
+    def __init__(self, *, robot_name: str | None = None) -> None:
+        # The transport name is the robot's id, not its display name, so a
+        # conflict means this robot already has a session bound to different
+        # hardware than the one it now resolves to.
+        subject = f"Robot {robot_name!r} is" if robot_name else "This robot is"
+        message = (
+            f"{subject} already running in another session that is bound to a different device. "
+            "Stop that session, or check that this robot still points at the right hardware, then try again."
+        )
+        super().__init__(
+            message=message,
+            error_code="robot_name_conflict",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotProtocolMismatchError(BaseException):
+    """Raised when an existing SharedRobot owner speaks an unsupported protocol version."""
+
+    def __init__(
+        self,
+        message: str = (
+            "An existing robot session uses an incompatible software version. Restart all robot sessions and try again."
+        ),
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_protocol_mismatch",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class SharedRobotTransportError(BaseException):
+    """Raised when SharedRobot transport fails (spawn, handshake, or wire)."""
+
+    def __init__(
+        self,
+        message: str = "Could not connect to the robot. Check the connection and try again.",
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_transport_error",
+            http_status=http.HTTPStatus.BAD_REQUEST,
         )

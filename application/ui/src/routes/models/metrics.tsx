@@ -9,16 +9,19 @@ import { MetricGraph } from './metrics-graph.component';
 interface MetricsEntry {
     epoch: number;
     step: number;
-    train_loss: number | null;
-    train_loss_step: number | null;
+    train_loss: number | null | undefined;
+    train_loss_step: number | null | undefined;
 }
 
 const filterLossStepMetrics = (data?: MetricsEntry[]) => {
     if (!data) return [];
-    const stepRows = data.filter((entry): entry is MetricsEntry => {
-        return entry.train_loss !== null;
+    return data.flatMap((entry) => {
+        // Prefer the per-step train/loss. Fall back to train/loss_step, which ACT
+        // logged per-step historically, so jobs still streaming from older runs
+        // keep charting.
+        const y = entry.train_loss ?? entry.train_loss_step;
+        return y == null ? [] : [{ x: entry.step, y }];
     });
-    return stepRows.map((row) => ({ x: row.step, y: row.train_loss! }));
 };
 
 export const JobMetricsContent = ({ jobId }: { jobId: string }) => {

@@ -19,9 +19,9 @@ from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.manifest import Manifest
 
-from physicalai.config import import_class
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
+from physicalai.training_config import import_class
 
 if TYPE_CHECKING:
     from collections.abc import Callable

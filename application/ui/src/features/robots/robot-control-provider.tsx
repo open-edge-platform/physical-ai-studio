@@ -41,7 +41,9 @@ const createRobotControlState = (): RobotControlState => {
 
 interface RobotControlApiJsonResponse<T> {
     event: string;
-    data: T;
+    data?: T;
+    message?: string;
+    error_code?: string;
 }
 export interface Observation {
     timestamp: number;
@@ -158,7 +160,13 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         }
 
         if (message['event'] === 'error') {
-            props.onError(message['data'] as string);
+            const errorMessage =
+                typeof message['message'] === 'string'
+                    ? message['message']
+                    : typeof message['data'] === 'string'
+                      ? message['data']
+                      : 'An unexpected error occurred.';
+            props.onError(errorMessage);
         }
     };
 
@@ -167,7 +175,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (datasetConfig: SchemaDatasetOutput) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_dataset', data: { dataset: datasetConfig } },
-                (data) => data['data']['dataset_loaded']
+                (data) => data.data?.dataset_loaded === true
             );
             setDataset(datasetConfig);
             return result;
@@ -179,7 +187,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (env: SchemaEnvironmentWithRelations) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_environment', data: { environment: env } },
-                (data) => data['data']['environment_loaded']
+                (data) => data.data?.environment_loaded === true
             );
             setEnvironment(env);
             return result;
@@ -191,7 +199,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (properties: LoadModelPayload) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_model', data: properties },
-                ({ data }) => data['model_loaded']
+                ({ data }) => data?.model_loaded === true
             );
             setModel(properties.model);
             setInferenceDevice(properties.inference_device);
@@ -204,7 +212,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (task: string) =>
             await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'start_task', data: { task } },
-                ({ data }) => data['follower_source'] === 'model'
+                ({ data }) => data?.follower_source === 'model'
             ),
     });
 
@@ -213,7 +221,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async () =>
             await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'stop_task', data: {} },
-                ({ data }) => data['follower_source'] === null
+                ({ data }) => data?.follower_source === null
             ),
     });
 
@@ -222,7 +230,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (task: string) => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'start_recording', data: { task } },
-                ({ data }) => data['is_recording'] == true
+                ({ data }) => data?.is_recording === true
             );
             return message;
         },
@@ -233,7 +241,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async () => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'save_episode', data: {} },
-                ({ data }) => data['is_recording'] == false
+                ({ data }) => data?.is_recording === false
             );
             return message;
         },
@@ -244,7 +252,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async () => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'discard_episode', data: {} },
-                ({ data }) => data['is_recording'] == false
+                ({ data }) => data?.is_recording === false
             );
             return message;
         },
@@ -255,7 +263,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (follower_source: FollowerSource) => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'set_follower_source', data: { follower_source } },
-                ({ data }) => data['follower_source'] == follower_source
+                ({ data }) => data?.follower_source === follower_source
             );
             return message;
         },

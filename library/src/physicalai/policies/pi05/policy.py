@@ -556,7 +556,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         if self.model is not None:
             self.model.set_dataset_stats(dataset_stats)
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Forward pass through the model.
 
         Training mode: returns flow matching (loss, loss_dict) with gradients.
@@ -576,7 +576,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             return self.model(processed_batch)
         return self.predict_action_chunk(batch)
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute action prediction MSE on a batch (for validation).
 
         Runs the full denoising loop and compares predicted actions to

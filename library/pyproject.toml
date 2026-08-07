@@ -65,6 +65,7 @@ tests = [
     "mypy",
     "diffusers>=0.38.0",
 ]
+loggers = ["wandb>=0.22", "tensorboard>=2.20"]
 libero = ["hf-libero>=0.1.3,<0.2.0"]
 diffusion = ["diffusers>=0.38.0"]
 
@@ -195,7 +196,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "08fcd96389fa9e326946df6affc5c19c4c731633" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

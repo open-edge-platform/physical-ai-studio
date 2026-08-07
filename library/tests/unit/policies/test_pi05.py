@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from physicalai.config import Config
+from physicalai.training_config import Config
 from physicalai.data.observation import IMAGES, STATE
 from physicalai.policies.pi05 import Pi05, Pi05Config, Pi05Model
 from physicalai.policies.pi05.pretrained_utils import (

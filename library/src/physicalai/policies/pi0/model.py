@@ -467,9 +467,11 @@ class Pi0Model(Model):
         loss_per_sample = self._compute_loss(observation, actions)
 
         loss = loss_per_sample.mean()
+        # Detached tensors, not `.item()`/`.tolist()` values: see
+        # Model.compute_loss docstring.
         loss_dict = {
-            "loss": loss.item(),
-            "loss_per_dim": loss_per_sample.mean(dim=(0, 1)).detach().cpu().tolist(),
+            "loss": loss.detach(),
+            "loss_per_dim": loss_per_sample.mean(dim=(0, 1)).detach(),
         }
 
         return loss, loss_dict

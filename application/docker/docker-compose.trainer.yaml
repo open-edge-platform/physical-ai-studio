@@ -1,8 +1,8 @@
 # ================================================================
 # Physical AI Trainer — standalone Docker Compose
 #
-# Runs the remote training service (application/trainer) on its own,
-# independent of the Studio backend/UI images in docker-compose.yaml.
+# Runs the remote training service (application/backend/src/trainer) on its
+# own, independent of the Studio backend/UI images in docker-compose.yaml.
 #
 # Select a hardware profile with COMPOSE_PROFILES in .env.trainer or
 # --profile on the command line:
@@ -10,7 +10,7 @@
 #   docker compose -f docker-compose.trainer.yaml --profile cuda up -d
 #   docker compose -f docker-compose.trainer.yaml --profile xpu up -d
 #
-# See application/trainer/README.md for the full manual-startup guide,
+# See application/backend/docs/remote-trainer.md for the manual-startup guide,
 # including why the loopback-only port binding and --read-only rootfs
 # matter: the trainer has no built-in authentication.
 # ================================================================
@@ -59,9 +59,10 @@ x-common: &common
 
 x-common-build: &common-build
     context: ../../
-    dockerfile: application/trainer/Dockerfile
+    dockerfile: application/docker/Dockerfile.trainer
     additional_contexts:
       libs: ../../library
+      plugin: ../../application/plugin
     args:
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}

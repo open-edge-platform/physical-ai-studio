@@ -8,9 +8,11 @@ Fast, self-contained tests with no external dependencies (no HuggingFace model d
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 import torch
-from physicalai.config import Config
+from physicalai.training_config import Config
 from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
 
 # ============================================================================ #
@@ -138,6 +140,49 @@ class TestSmolVLAPolicy:
         with pytest.raises(ValueError, match="not initialized"):
             getattr(policy, method)(dummy_obs)
 
+    def test_on_load_checkpoint_inserts_missing_target_time_params(self) -> None:
+        """Legacy checkpoints missing target-time MLP params are migrated."""
+        policy = SmolVLA()
+        policy.model = SimpleNamespace(
+            _model=SimpleNamespace(
+                target_time_mlp_in=SimpleNamespace(
+                    weight=torch.randn(8, 8),
+                    bias=torch.randn(8),
+                ),
+                target_time_mlp_out=SimpleNamespace(
+                    weight=torch.randn(8, 8),
+                    bias=torch.randn(8),
+                ),
+            ),
+        )
+
+        checkpoint = {"state_dict": {"some.weight": torch.randn(2, 2)}}
+
+        policy.on_load_checkpoint(checkpoint)
+
+        state_dict = checkpoint["state_dict"]
+        assert "model._model.target_time_mlp_in.weight" in state_dict
+        assert "model._model.target_time_mlp_in.bias" in state_dict
+        assert "model._model.target_time_mlp_out.weight" in state_dict
+        assert "model._model.target_time_mlp_out.bias" in state_dict
+
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_in.weight"],
+            policy.model._model.target_time_mlp_in.weight,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_in.bias"],
+            policy.model._model.target_time_mlp_in.bias,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_out.weight"],
+            policy.model._model.target_time_mlp_out.weight,  # type: ignore[union-attr]
+        )
+        torch.testing.assert_close(
+            state_dict["model._model.target_time_mlp_out.bias"],
+            policy.model._model.target_time_mlp_out.bias,  # type: ignore[union-attr]
+        )
+
 
 # ============================================================================ #
 # Preprocessor Tests                                                           #
@@ -185,18 +230,23 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_state_dim == 32
         assert preprocessor.max_action_dim == 32
         assert preprocessor.image_resolution == (512, 512)
+        assert preprocessor.image_key_reorder_map == {}
+        assert preprocessor.num_cameras == 0
         assert preprocessor.max_token_len == 48
         assert preprocessor.tokenizer_name == "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
         assert preprocessor.padding == "max_length"
 
     def test_preprocessor_custom_values(self) -> None:
         """Test preprocessor with custom configuration values."""
+        from physicalai.data.observation import IMAGES
         from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
 
         preprocessor = SmolVLAPreprocessor(
             max_state_dim=64,
             max_action_dim=16,
             image_resolution=(256, 256),
+            image_key_reorder_map={"overview": 0},
+            num_cameras=2,
             max_token_len=64,
             padding="max_length",
         )
@@ -204,8 +254,127 @@ class TestSmolVLAPreprocessor:
         assert preprocessor.max_state_dim == 64
         assert preprocessor.max_action_dim == 16
         assert preprocessor.image_resolution == (256, 256)
+        assert preprocessor.image_key_reorder_map == {f"{IMAGES}.overview": 0}
+        assert preprocessor.num_cameras == 2
         assert preprocessor.max_token_len == 64
         assert preprocessor.padding == "max_length"
+
+    def test_image_key_reorder_map_applies_and_orders_cameras(self) -> None:
+        """Test reorder map accepts prefixed/unprefixed keys and orders by mapped index."""
+        from physicalai.data.constants import IMAGE_MASKS
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={
+                "wrist": 1,
+                f"{IMAGES}.overview": 0,
+            },
+        )
+
+        batch = {
+            f"{IMAGES}.wrist": torch.full((1, 3, 2, 2), 0.5),
+            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        result = preprocessor._preprocess_images(batch)
+
+        # Camera order should follow mapped indices: overview (0), then wrist (1)
+        assert result[IMAGES].shape[0] == 2
+        # Values are normalized from [0, 1] -> [-1, 1]
+        torch.testing.assert_close(result[IMAGES][0], torch.full((1, 3, 2, 2), 1.0))
+        torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), 0.0))
+        assert result[IMAGE_MASKS].shape == (2, 1)
+
+    def test_image_key_reorder_map_rejects_mismatched_keys(self) -> None:
+        """Test a reorder map that does not cover the batch image keys exactly is rejected."""
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={"overview": 0, "gripper": 1},
+        )
+
+        batch = {
+            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        with pytest.raises(ValueError, match="must match the batch image keys exactly"):
+            preprocessor._preprocess_images(batch)
+
+    def test_empty_cameras_are_appended_as_masked_dummy_images(self) -> None:
+        """Test unused camera slots are filled with masked dummy images."""
+        from physicalai.data.constants import IMAGE_MASKS
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            num_cameras=3,
+        )
+
+        batch = {
+            f"{IMAGES}.camera0": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        result = preprocessor._preprocess_images(batch)
+
+        assert result[IMAGES].shape[0] == 3
+        assert result[IMAGE_MASKS].shape == (3, 1)
+        torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), -1.0))
+        torch.testing.assert_close(result[IMAGES][2], torch.full((1, 3, 2, 2), -1.0))
+        torch.testing.assert_close(result[IMAGE_MASKS][1], torch.zeros((1,), dtype=torch.bool))
+        torch.testing.assert_close(result[IMAGE_MASKS][2], torch.zeros((1,), dtype=torch.bool))
+
+    def test_num_cameras_places_reordered_keys_in_their_slots(self) -> None:
+        """Test reorder map indices select slots, leaving the remaining ones empty."""
+        from physicalai.data.constants import IMAGE_MASKS
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(
+            image_resolution=(2, 2),
+            image_key_reorder_map={"overview": 0, "wrist": 2},
+            num_cameras=3,
+        )
+
+        batch = {
+            f"{IMAGES}.wrist": torch.full((1, 3, 2, 2), 0.5),
+            f"{IMAGES}.overview": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        result = preprocessor._preprocess_images(batch)
+
+        assert result[IMAGES].shape[0] == 3
+        torch.testing.assert_close(result[IMAGES][0], torch.full((1, 3, 2, 2), 1.0))
+        torch.testing.assert_close(result[IMAGES][1], torch.full((1, 3, 2, 2), -1.0))
+        torch.testing.assert_close(result[IMAGES][2], torch.full((1, 3, 2, 2), 0.0))
+        torch.testing.assert_close(
+            result[IMAGE_MASKS],
+            torch.tensor([[True], [False], [True]]),
+        )
+
+    def test_num_cameras_too_small_is_rejected(self) -> None:
+        """Test a num_cameras value that cannot hold the resolved slots is rejected."""
+        from physicalai.data.observation import IMAGES, STATE
+        from physicalai.policies.smolvla.preprocessor import SmolVLAPreprocessor
+
+        preprocessor = SmolVLAPreprocessor(image_resolution=(2, 2), num_cameras=1)
+
+        batch = {
+            f"{IMAGES}.camera0": torch.full((1, 3, 2, 2), 1.0),
+            f"{IMAGES}.camera1": torch.full((1, 3, 2, 2), 1.0),
+            STATE: torch.randn(1, 4),
+        }
+
+        with pytest.raises(ValueError, match="is too small for the resolved camera slots"):
+            preprocessor._preprocess_images(batch)
 
     def test_newline_processor_adds_newline(self) -> None:
         """Test newline processor adds newline to task strings."""
@@ -485,3 +654,157 @@ class TestSampleInput:
         assert f"{IMAGES}.front_cam" in sample_input
         assert f"{IMAGES}.wrist_cam" in sample_input
         assert IMAGES not in sample_input
+
+
+# ============================================================================ #
+# Action Padding Mask                                                          #
+# ============================================================================ #
+
+
+class TestActionPaddingMask:
+    """Regression tests for end-of-episode action padding in the training loss.
+
+    LeRobot clamps action-chunk queries at episode boundaries (repeating the
+    final action) and flags the clamped steps as ``action_is_pad``. Those steps
+    must not contribute to the flow-matching loss, and must not count towards
+    its denominator either.
+    """
+
+    @staticmethod
+    def _compute_loss(
+        losses: torch.Tensor,
+        action_is_pad: torch.Tensor | None,
+        key_suffix: str = ".action_is_pad",
+    ) -> float:
+        """Run ``SmolVLAModel.compute_loss`` against a stubbed model.
+
+        Args:
+            losses: Per-element losses the inner flow-matching model should return,
+                shaped ``(batch, chunk, action_dim)``.
+            action_is_pad: Optional ``(batch, chunk)`` bool padding mask.
+            key_suffix: Batch key the mask is stored under, relative to ``EXTRA``.
+                Overridable so a wrong key can be exercised.
+
+        Returns:
+            The scalar loss produced by ``compute_loss``.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+        from physicalai.data.observation import ACTION, EXTRA, IMAGES
+        from physicalai.policies.smolvla.model import SmolVLAModel
+
+        action_dim = losses.shape[-1]
+        batch: dict = {
+            IMAGES: None,
+            IMAGE_MASKS: None,
+            TOKENIZED_PROMPT: None,
+            TOKENIZED_PROMPT_MASK: None,
+        }
+        if action_is_pad is not None:
+            batch[EXTRA + key_suffix] = action_is_pad
+
+        stub = SimpleNamespace(
+            _preprocess_batch=lambda b: b,
+            _prepare_state=lambda b: None,
+            _prepare_action=lambda b: None,
+            _model=SimpleNamespace(forward=lambda *_a, **_kw: losses.clone()),
+            _dataset_stats={ACTION: {"shape": (action_dim,)}},
+        )
+        loss, _ = SmolVLAModel.compute_loss(stub, batch)
+        return float(loss)
+
+    def test_mask_is_read_from_lerobot_key_only(self) -> None:
+        """The mask must be read as ``action_is_pad``, LeRobot's actual key.
+
+        The lookup uses ``.get()``, so a typo'd key silently disables masking with
+        no error. This pins the exact spelling that
+        ``lerobot/datasets/dataset_reader.py`` emits.
+        """
+        losses = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        correct_key = self._compute_loss(losses, action_is_pad)
+        typo_key = self._compute_loss(losses, action_is_pad, key_suffix=".actions_id_pad")
+
+        assert correct_key == pytest.approx(1.0), "mask under the LeRobot key must apply"
+        assert typo_key == pytest.approx(50.0), "a wrong key must not silently half-apply"
+
+    def test_padded_steps_are_excluded_from_the_loss(self) -> None:
+        """Padded steps contribute nothing, regardless of their magnitude."""
+        losses = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        masked = self._compute_loss(losses, action_is_pad)
+        unmasked = self._compute_loss(losses, None)
+
+        assert masked == pytest.approx(1.0), "padded steps must not affect the loss"
+        assert unmasked == pytest.approx(50.0), "without a mask the padding dominates"
+
+    def test_denominator_counts_only_valid_steps(self) -> None:
+        """The loss divides by valid elements, not by the full tensor.
+
+        Chosen so all three behaviours are distinguishable:
+        correct = 2.0, mask-with-plain-mean = 1.0, no-mask = 50.5.
+        A plain ``.mean()`` over the zeroed tensor would scale the loss - and
+        therefore the gradient - down by the padding fraction.
+        """
+        losses = torch.tensor([[[2.0, 2.0], [2.0, 2.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        masked = self._compute_loss(losses, action_is_pad)
+
+        assert masked == pytest.approx(2.0)
+        assert masked != pytest.approx(1.0), "denominator must exclude padded elements"
+        assert masked != pytest.approx(50.5), "mask must be applied at all"
+
+    def test_fully_padded_chunk_does_not_divide_by_zero(self) -> None:
+        """An all-padded chunk clamps the denominator instead of producing NaN."""
+        losses = torch.ones(1, 4, 2)
+        action_is_pad = torch.ones(1, 4, dtype=torch.bool)
+
+        masked = self._compute_loss(losses, action_is_pad)
+
+        assert masked == pytest.approx(0.0)
+
+    def test_no_mask_falls_back_to_plain_mean(self) -> None:
+        """Batches without the key (e.g. non-chunked datasets) keep the old path."""
+        losses = torch.full((2, 3, 2), 4.0)
+        assert self._compute_loss(losses, None) == pytest.approx(4.0)
+
+    def test_masking_is_autograd_safe(self) -> None:
+        """Gradients flow, and padded steps receive exactly zero gradient.
+
+        This masking branch never executed before the key fix, so the autograd
+        behaviour was previously unverified.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+        from physicalai.data.observation import ACTION, EXTRA, IMAGES
+        from physicalai.policies.smolvla.model import SmolVLAModel
+
+        source = torch.ones(1, 4, 2, requires_grad=True)
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        stub = SimpleNamespace(
+            _preprocess_batch=lambda b: b,
+            _prepare_state=lambda b: None,
+            _prepare_action=lambda b: None,
+            _model=SimpleNamespace(forward=lambda *_a, **_kw: source * 2.0),
+            _dataset_stats={ACTION: {"shape": (2,)}},
+        )
+        batch: dict = {
+            IMAGES: None,
+            IMAGE_MASKS: None,
+            TOKENIZED_PROMPT: None,
+            TOKENIZED_PROMPT_MASK: None,
+            EXTRA + ".action_is_pad": action_is_pad,
+        }
+
+        loss, _ = SmolVLAModel.compute_loss(stub, batch)
+        loss.backward()
+
+        assert source.grad is not None
+        assert torch.all(source.grad[0, :2] != 0), "valid steps must receive gradient"
+        assert torch.all(source.grad[0, 2:] == 0), "padded steps must receive zero gradient"

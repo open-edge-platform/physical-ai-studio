@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from control.environment_integration import EnvironmentIntegration
 from control.sync_mixed_model_integration import SyncMixedModelIntegration
+from exceptions import BaseException as AppBaseException
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
@@ -248,9 +249,14 @@ class RobotControlWorker(BaseThreadWorker):
     async def _handle_setup_environment(self) -> None:
         if self.environment_integration and self.events.new_environment.is_set():
             self.events.new_environment.clear()
-            await self.environment_integration.setup()
-            self.state.environment_loaded = True
-            self._report_state()
+            try:
+                await self.environment_integration.setup()
+                self.state.environment_loaded = True
+                self._report_state()
+            except Exception as e:
+                self.environment_integration = None
+                self.state.environment_loaded = False
+                self._report_error(e)
 
     async def _handle_start_recording(self) -> None:
         if self.ready_for_recording and self.events.start_recording.is_set():
@@ -318,12 +324,21 @@ class RobotControlWorker(BaseThreadWorker):
         self.queue.put(state)
 
     def _report_error(self, error: BaseException):
-        data = {
-            "event": "error",
-            "data": str(error),
-        }
-        logger.error(f"error: {data}")
-        self.queue.put(data)
+        if isinstance(error, AppBaseException):
+            payload = {
+                "event": "error",
+                "message": error.message,
+                "error_code": error.error_code,
+            }
+            logger.warning("Robot control error: {} ({})", error.message, error.error_code)
+        else:
+            payload = {
+                "event": "error",
+                "message": str(error) or "An unexpected error occurred.",
+                "error_code": "robot_control_error",
+            }
+            logger.exception("Robot control error: {}", error)
+        self.queue.put(payload)
 
     def _report_observation(self, data: dict):
         """Report observation to queue."""

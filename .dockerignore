@@ -37,8 +37,6 @@
 application/backend/src/static/robot-assets
 !application/backend/scripts/hatch_build.py
 
-# ---- Application: Trainer ----
-!application/trainer/**
 
 # ---- Application: Docker ----
 # The Dockerfile is referenced via the `file:` parameter in the build

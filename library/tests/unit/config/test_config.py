@@ -13,9 +13,9 @@ import numpy as np
 import pytest
 from pydantic import BaseModel
 
-from physicalai.config import Config, from_config
-from physicalai.config.instantiate import import_class, instantiate_obj
-from physicalai.config.mixin import FromConfig
+from physicalai.training_config import Config, from_config
+from physicalai.training_config.instantiate import import_class, instantiate_obj
+from physicalai.training_config.mixin import FromConfig
 
 # =============================================================================
 # Test Fixtures

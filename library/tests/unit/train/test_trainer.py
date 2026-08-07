@@ -1,3 +1,4 @@
+import pytest
 from lightning.pytorch.callbacks import BatchSizeFinder
 from physicalai.train.trainer import Trainer
 
@@ -27,6 +28,39 @@ class TestTrainer:
         # Check that PolicyDatasetInteraction callback was auto-injected
         callback_types = [type(cb) for cb in trainer.callbacks]
         assert PolicyDatasetInteraction in callback_types
+
+    def test_learning_rate_monitor_callback_injected(self, tmp_path):
+        """Verify LearningRateMonitor callback is automatically added with per-step logging."""
+        from lightning.pytorch.callbacks import LearningRateMonitor
+
+        trainer = Trainer(accelerator="cpu", default_root_dir=str(tmp_path), enable_checkpointing=False)
+
+        monitors = [cb for cb in trainer.callbacks if isinstance(cb, LearningRateMonitor)]
+        assert len(monitors) == 1
+        assert monitors[0].logging_interval == "step"
+
+    def test_learning_rate_monitor_skipped_without_logger(self):
+        """Verify LearningRateMonitor is not injected when logging is disabled."""
+        from lightning.pytorch.callbacks import LearningRateMonitor
+
+        trainer = Trainer(accelerator="cpu", logger=False, enable_checkpointing=False)
+
+        assert not any(isinstance(cb, LearningRateMonitor) for cb in trainer.callbacks)
+
+    def test_user_learning_rate_monitor_not_duplicated(self, tmp_path):
+        """Verify a user-provided LearningRateMonitor is used instead of injecting another."""
+        from lightning.pytorch.callbacks import LearningRateMonitor
+
+        user_monitor = LearningRateMonitor(logging_interval="epoch")
+        trainer = Trainer(
+            accelerator="cpu",
+            default_root_dir=str(tmp_path),
+            enable_checkpointing=False,
+            callbacks=[user_monitor],
+        )
+
+        monitors = [cb for cb in trainer.callbacks if isinstance(cb, LearningRateMonitor)]
+        assert monitors == [user_monitor]
 
     def test_user_callbacks_preserved(self):
         """Verify user callbacks are preserved alongside auto-injected callback."""
@@ -63,6 +97,26 @@ class TestTrainer:
         )
 
         assert any(isinstance(cb, EarlyStopping) for cb in trainer.callbacks)
+
+
+class TestTensorBoardLogging:
+    """Tests that TensorBoard logging works end to end."""
+
+    def test_experiment_name_creates_tensorboard_logger(self, tmp_path):
+        """Verify experiment_name auto-creates a TensorBoardLogger rooted at default_root_dir."""
+        pytest.importorskip("tensorboard")
+        from lightning.pytorch.loggers import TensorBoardLogger
+
+        trainer = Trainer(
+            accelerator="cpu",
+            default_root_dir=str(tmp_path),
+            experiment_name="pusht_act",
+            enable_checkpointing=False,
+        )
+
+        assert isinstance(trainer.logger, TensorBoardLogger)
+        assert trainer.logger.name == "pusht_act"
+        assert trainer.logger.save_dir == str(tmp_path)
 
 
 class TestAutoScaleBatchSize:

@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from physicalai.robot.so101 import SO101, SO101Calibration, SO101JointCalibration
+from loguru import logger
+from physicalai.robot import SO101
+from physicalai.robot.so101 import SO101Calibration, SO101JointCalibration
 from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -59,7 +61,15 @@ class SO101RobotPayload(BaseModel):
 
 
 class SO101Robot(BaseRobot):
-    """SO-101 follower or leader robot using a serial connection."""
+    """SO-101 follower or leader robot using a serial connection.
+
+    Note:
+        This is a local convenience model for probe/identify helpers. Robots
+        that reach a builder come from ``RobotCatalogRegistry``, which generates
+        a separate model per type (``SO101_FollowerRobot``) deriving straight
+        from ``BaseRobot``. Never ``isinstance``-check against this class in a
+        builder — it will never match. Match on the payload type instead.
+    """
 
     type: SO101Types = Field(..., description="Type of robot configuration")
     payload: SO101RobotPayload = Field(..., description="SO-101 connection configuration")
@@ -82,23 +92,37 @@ _SO101_ASSET = RobotAsset(
 
 
 async def _build_so101_driver(robot: CatalogRobot[SO101RobotPayload], factory: CatalogRobotFactory) -> SO101:
-    if not isinstance(robot.payload, SO101RobotPayload):
-        raise TypeError("Expected SO101Robot")
+    # Studio generates the robot model per registered type (``SO101_LeaderRobot``),
+    # so match on the payload; the model is never an ``SO101Robot`` instance.
+    payload = robot.payload
+    if not isinstance(payload, SO101RobotPayload):
+        raise TypeError(f"Expected SO101RobotPayload, got {type(payload).__name__}")
     port_info = SerialPortInfo(
-        connection_string=robot.payload.connection_string or None,
-        serial_number=robot.payload.serial_number or None,
+        connection_string=payload.connection_string or None,
+        serial_number=payload.serial_number or None,
     )
     port = await factory.find_port(port_info)
     if port is None:
-        resource_key = robot.payload.serial_number or robot.payload.connection_string
+        resource_key = payload.serial_number or payload.connection_string
         raise ValueError(f"Could not resolve a serial port for {resource_key}")
 
-    calibration: SO101Calibration | None = None
-    if robot.payload.calibration is not None:
-        calibration = SO101Calibration(joints=robot.payload.calibration)
-
     role = "follower" if robot.type == "SO101_Follower" else "leader"
-    return SO101(port=port, calibration=calibration, role=role, unit="normalized")
+    if payload.calibration is None:
+        # the uncalibrated driver reports raw servo ticks (0-4095) rather
+        # than the normalized range, so this is not comparable to calibrated data.
+        logger.warning(
+            "SO101 {} has no calibration; building in raw-ticks mode. "
+            "Positions are not normalized and must not be used for policy inference.",
+            robot.type,
+        )
+        return SO101.uncalibrated(port=port, role=role)
+
+    return SO101(
+        port=port,
+        calibration=SO101Calibration(joints=payload.calibration),
+        role=role,
+        unit="normalized",
+    )
 
 
 def serial_port_from_so101(robot: SO101Robot) -> SerialPortInfo:
