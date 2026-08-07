@@ -82,7 +82,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [cpu, xpu, cuda]
+        include:
+          # CPU and XPU build on GitHub-hosted runners
+          - device: cpu
+            runner: ubuntu-latest
+          - device: xpu
+            runner: ubuntu-latest
+          # CUDA usually needs more disk space
+          - device: cuda
+            runner: [self-hosted, linux, x64]
 
     steps:
       - *harden-runner
