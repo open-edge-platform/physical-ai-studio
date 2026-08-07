@@ -153,6 +153,13 @@ def run_training_job(
     has no artifact worth keeping. Callers distinguish a canceled run from a
     completed one by consulting ``should_stop`` again after this returns.
 
+    Before export, the trainer, datamodule, and their references back into the
+    policy are dropped and accelerator memory is released (see
+    :func:`_detach_trainer` and :func:`_release_memory`): the trainer's
+    optimizer state and dataloaders would otherwise stay resident throughout
+    export, and export conversion (OpenVINO in particular) can need several GB
+    on top of that.
+
     Args:
         spec: What to train.
         dataset_root: Local root of the LeRobot dataset to train on.
@@ -210,9 +217,10 @@ def run_training_job(
     _publish(cache_dir, output_dir)
 
     export_policy = _export_policy(spec, policy, output_dir)
+    _detach_trainer(export_policy, trainer)
     del trainer, datamodule, policy
-    _release_memory(accelerator)
-    _export(export_policy, output_dir, report, accelerator=accelerator)
+    _release_memory()
+    _export(export_policy, output_dir, report)
 
 
 def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Policy:
@@ -272,29 +280,59 @@ def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> P
         return policy
 
 
-def _release_memory(accelerator: str | None = None) -> None:
+def _detach_trainer(export_policy: Policy, trainer: Any) -> None:
+    """Break the trainer<->policy<->datamodule reference cycle before export.
+
+    Lightning wires ``policy._trainer = trainer``, ``trainer.datamodule =
+    datamodule``, and ``trainer.strategy._lightning_module = policy`` during
+    ``fit``, and never undoes it. When ``export_policy`` is the very policy
+    that was just trained (the common case: no ``torch.compile`` reload), it
+    still holds that ``_trainer`` reference, which keeps the trainer — and
+    everything it holds: optimizer state, dataloaders, the strategy — alive
+    and reachable no matter how many local names ``run_training_job`` deletes.
+    ``gc.collect()`` only reclaims *unreachable* cycles, so without this the
+    memory release below is a no-op on the export object it matters most for.
+
+    Best-effort: a failure here must not abort the job.
+    """
+    try:
+        export_policy._trainer = None
+        if getattr(trainer, "strategy", None) is not None:
+            trainer.strategy._lightning_module = None
+        trainer.datamodule = None
+    except Exception as exc:
+        logger.warning("Could not detach trainer from policy: %s", exc)
+
+
+def _release_memory() -> None:
     """Return held host and device memory to the OS/allocator before the next stage.
 
     Export conversion (OpenVINO in particular) allocates several GB above the
     model's resident size, on top of whatever the just-finished trainer and
-    dataloaders still hold. A garbage-collection pass plus clearing the active
-    accelerator's cache prevents that peak from stacking on top of memory this
-    process no longer needs. Best-effort: a failure here must not abort the job.
+    dataloaders still hold. A garbage-collection pass plus clearing every
+    available accelerator's cache prevents that peak from stacking on top of
+    memory this process no longer needs. Best-effort: a failure here must not
+    abort the job.
     """
     gc.collect()
     try:
         import torch
 
-        if accelerator == "xpu" and torch.xpu.is_available():
-            torch.xpu.empty_cache()
+        if torch.xpu.is_available():
             torch.xpu.synchronize()
-        elif accelerator == "cuda" and torch.cuda.is_available():
+            torch.xpu.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
             torch.cuda.empty_cache()
+        if torch.mps.is_available():
+            torch.mps.empty_cache()
+    except ImportError:
+        pass
     except Exception as exc:
         logger.warning("Could not release device cache: %s", exc)
 
 
-def _export(policy: Policy, output_dir: Path, report: ReportFn, *, accelerator: str | None = None) -> None:
+def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
     """Export the policy to every backend it declares support for."""
     from physicalai.export import ExportablePolicyMixin
 
@@ -304,7 +342,6 @@ def _export(policy: Policy, output_dir: Path, report: ReportFn, *, accelerator: 
 
     for backend in policy.get_supported_export_backends():
         name = backend.value if hasattr(backend, "value") else str(backend)
-        _release_memory(accelerator)
         try:
             logger.info("Exporting model to %s format", name)
             report(99, f"Exporting to {name} format", {})
@@ -317,3 +354,7 @@ def _export(policy: Policy, output_dir: Path, report: ReportFn, *, accelerator: 
         except Exception:
             # Export is best-effort: one failing backend must not abort the job.
             logger.exception("Failed exporting model to %s format", name)
+        finally:
+            # Conversion peaks well above the model's resident size, so release
+            # after every backend — not just before the first one.
+            _release_memory()
