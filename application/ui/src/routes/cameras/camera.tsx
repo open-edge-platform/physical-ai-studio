@@ -7,7 +7,7 @@ export const Camera = () => {
     const projectCamera = useCamera();
 
     return (
-        <View padding='size-400'>
+        <View height='100%' minHeight={0} padding='size-400'>
             <CameraFeed camera={projectCamera} />
         </View>
     );

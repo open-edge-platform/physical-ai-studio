@@ -342,7 +342,7 @@ class GrootModel(Model):
     def forward(
         self,
         batch: Mapping[str, torch.Tensor],
-    ) -> tuple[torch.Tensor, dict[str, float]] | torch.Tensor:
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]] | torch.Tensor:
         """Forward pass dispatching between training and evaluation.
 
         Training mode: computes flow-matching loss (with gradients).
@@ -362,7 +362,7 @@ class GrootModel(Model):
             return self.compute_loss(batch)
         return self.get_action(batch)
 
-    def compute_loss(self, batch: Mapping[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_loss(self, batch: Mapping[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute training loss.
 
         Delegates to :meth:`_forward_backbone` and reformats the return value.
@@ -375,10 +375,14 @@ class GrootModel(Model):
         """
         result = self._forward_backbone(batch)
         loss = result["loss"]
-        return loss, {"loss": loss.item()}
+        # Detached tensor, not `.item()` float: see Model.compute_loss docstring.
+        return loss, {"loss": loss.detach()}
 
     @torch.no_grad()
-    def compute_val_loss(self, batch: Mapping[str, torch.Tensor]) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(
+        self,
+        batch: Mapping[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss: MSE between predicted and ground-truth actions.
 
         Runs the full denoising loop and compares predicted actions with

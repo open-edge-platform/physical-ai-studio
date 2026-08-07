@@ -36,7 +36,12 @@ class PayloadContainer(Protocol[_PayloadT]):
 
 
 class CatalogRobot(PayloadContainer[_PayloadT], Protocol[_PayloadT]):
-    """Typed robot descriptor passed to catalog robot builders."""
+    """Typed robot descriptor passed to catalog robot builders.
+
+    Studio builds the concrete model dynamically per registered robot type, so
+    builders must not narrow on a hand-written model class — match on
+    ``payload`` instead.
+    """
 
     type: str
 
@@ -46,6 +51,16 @@ _FactoryT = TypeVar("_FactoryT", bound=CatalogRobotFactory)
 
 
 BuildRobotCallable = Callable[[_RobotT, _FactoryT], Awaitable[PhysicalAIRobot]]
+"""Builds a physicalai driver for one robot type.
+
+Return the plain driver (for example ``physicalai.robot.SO101``), not a
+``SharedRobot``: Studio wraps it so a single owner process holds the hardware.
+
+The driver's class must therefore be decorated with
+``physicalai.config.export_config``, because Studio exports it with
+``to_config`` to hand the owner a construction recipe. An undecorated class
+fails the build with ``ComponentConfigError``.
+"""
 
 
 @dataclass

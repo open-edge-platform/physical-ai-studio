@@ -44,7 +44,7 @@ export default defineConfig({
     },
     html: {
         title: 'Physical AI Studio',
-        favicon: './src/assets/icons/build-icon.svg',
+        favicon: './src/assets/icons/physicalai-studio-logo.svg',
     },
     tools: {
         rspack: {

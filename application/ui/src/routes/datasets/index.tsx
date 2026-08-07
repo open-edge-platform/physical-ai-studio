@@ -1,11 +1,13 @@
 import { Suspense } from 'react';
 
-import { Content, Flex, Heading, IllustratedMessage, Item, Loading, TabPanels, Tabs, Text } from '@geti-ui/ui';
-import { useParams } from 'react-router';
+import { Content, Flex, Heading, IllustratedMessage, Loading, Text } from '@geti-ui/ui';
+import { TabPanel, Tabs } from 'react-aria-components';
+import { useNavigate, useParams } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { DatasetTabs } from '../../features/datasets/dataset-tabs';
 import { useProject, useProjectId } from '../../features/projects/use-project';
+import { paths } from '../../router';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { DatasetProvider } from './dataset-provider';
 import { DatasetViewer } from './dataset-viewer';
@@ -18,6 +20,7 @@ interface DatasetsProps {
 
 const Datasets = ({ datasets }: DatasetsProps) => {
     const { project_id } = useProjectId();
+    const navigate = useNavigate();
     const params = useParams();
     const dataset_id = params.dataset_id ?? datasets[0]?.id;
 
@@ -39,32 +42,48 @@ const Datasets = ({ datasets }: DatasetsProps) => {
     }
 
     return (
-        <Flex height='100%'>
+        <Flex
+            height='100%'
+            width='100%'
+            minWidth={0}
+            UNSAFE_style={{ padding: 'var(--spectrum-global-dimension-size-200)' }}
+        >
             <Tabs
                 aria-label='Datasets'
                 selectedKey={dataset_id}
-                flex='1'
-                margin={'size-200'}
-                UNSAFE_style={{
-                    '--spectrum-tabs-item-gap': 'var(--spectrum-global-dimension-size-100)',
+                onSelectionChange={(key) => {
+                    navigate(paths.project.datasets.show({ project_id, dataset_id: String(key) }));
+                }}
+                style={{
+                    display: 'flex',
+                    flex: 1,
+                    width: '100%',
+                    minWidth: 0,
+                    flexDirection: 'column',
                 }}
             >
                 <DatasetTabs datasets={datasets} selectedDatasetId={dataset_id} />
-                <TabPanels UNSAFE_style={{ border: 'none' }} marginTop={'size-200'} minHeight={0}>
-                    <Item key={dataset_id}>
-                        <Flex height='100%' flex>
-                            {dataset_id === undefined ? (
-                                <Text>No datasets yet...</Text>
-                            ) : (
-                                <Suspense fallback={<Loading />}>
-                                    <DatasetProvider dataset_id={dataset_id}>
-                                        <DatasetViewer />
-                                    </DatasetProvider>
-                                </Suspense>
-                            )}
-                        </Flex>
-                    </Item>
-                </TabPanels>
+                <TabPanel
+                    id={dataset_id}
+                    style={{
+                        display: 'flex',
+                        minHeight: 0,
+                        flex: 1,
+                        marginTop: 'var(--spectrum-global-dimension-size-200)',
+                    }}
+                >
+                    <Flex height='100%' flex>
+                        {dataset_id === undefined ? (
+                            <Text>No datasets yet...</Text>
+                        ) : (
+                            <Suspense fallback={<Loading />}>
+                                <DatasetProvider dataset_id={dataset_id}>
+                                    <DatasetViewer />
+                                </DatasetProvider>
+                            </Suspense>
+                        )}
+                    </Flex>
+                </TabPanel>
             </Tabs>
         </Flex>
     );

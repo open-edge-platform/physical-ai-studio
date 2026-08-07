@@ -2,14 +2,19 @@
 
 Goal-oriented guides for specific tasks. Each guide assumes you've completed the [Getting Started](../getting-started/) tutorials.
 
+## Data
+
+| Guide                                              | Description                                        |
+| -------------------------------------------------- | -------------------------------------------------- |
+| [Recording a Dataset](data/recording-a-dataset.md) | What to record and why, so it actually trains well |
+
 ## Training
 
-| Guide                                                  | Description                                |
-| ------------------------------------------------------ | ------------------------------------------ |
-| [CLI Training](training/cli.md)                        | Train policies from the command line       |
-| [Image Augmentations](training/image_augmentations.md) | Configure image transforms for training    |
-| Custom Datasets                                        | TBA - Train on your own demonstration data |
-| Distributed Training                                   | TBA - Multi-GPU and multi-node training    |
+| Guide                                                  | Description                             |
+| ------------------------------------------------------ | --------------------------------------- |
+| [CLI Training](training/cli.md)                        | Train policies from the command line    |
+| [Image Augmentations](training/image_augmentations.md) | Configure image transforms for training |
+| Distributed Training                                   | TBA - Multi-GPU and multi-node training |
 
 ## Benchmark
 

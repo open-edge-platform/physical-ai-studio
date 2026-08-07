@@ -4,10 +4,9 @@
 # Plugin SDK-specific pre-commit configuration for prek workspace mode
 # This config applies only to files in application/plugin/
 #
-# Kept in sync with application/backend/.pre-commit-config.yaml and
-# application/trainer/.pre-commit-config.yaml (the canonical setup for
-# Python apps in this repo). The backend's Alembic migration check is not
-# included because this workspace does not own a database schema.
+# Kept in sync with application/backend/.pre-commit-config.yaml (the canonical
+# setup for Python apps in this repo). The backend's Alembic migration check is
+# not included because this workspace does not own a database schema.
 
 repos:
   # ========================================================================== #

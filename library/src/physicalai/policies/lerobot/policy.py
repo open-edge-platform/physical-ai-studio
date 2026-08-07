@@ -531,10 +531,13 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
                 msg = f"Checkpoint missing '{POLICY_NAME_KEY}'. Cannot determine which LeRobot policy to reconstruct."
                 raise KeyError(msg)
 
+        config_dict = dict(config_dict)
+        config_dict.pop("type", None)
+
         # Reconstruct LeRobot config from dict
         policy_cls = get_policy_class(policy_name)
         config_cls = policy_cls.config_class  # type: ignore[attr-defined]
-        config = dict_to_dataclass(config_cls, config_dict)
+        config = dict_to_dataclass(config_cls, config_dict, strict=False)
         dataset_stats = checkpoint.get(DATASET_STATS_KEY)
 
         # All wrappers (LeRobotPolicy and every NamedLeRobotPolicy subclass)

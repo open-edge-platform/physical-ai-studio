@@ -62,7 +62,18 @@ uv run physicalai-studio serve
 ./run.sh
 ```
 
-Server starts at `http://localhost:8000`
+Server starts at `http://localhost:7860` by default.
+
+To change the host/port:
+
+```bash
+# Option A: CLI flags
+uv run physicalai-studio serve --host 127.0.0.1 --port 8000
+
+# Option B: environment variables
+HOST=127.0.0.1
+PORT=8000
+```
 
 ### Remote Training
 
@@ -72,7 +83,7 @@ submit a training job. `run.sh` is a thin wrapper around the CLI.
 
 To run training on a separate, GPU-enabled machine, deploy and configure a
 Physical AI Trainer service from
-[`application/trainer/README.md`](../trainer/README.md), then register its URL
+[`docs/remote-trainer.md`](docs/remote-trainer.md), then register its URL
 as a remote trainer in the Studio UI. The backend sends dataset snapshots to
 the service, monitors the training job, and imports the resulting model.
 
@@ -103,9 +114,9 @@ uv run physicalai-studio db migrate
 
 Once the server is running:
 
-- **Interactive API Docs** - http://localhost:8000/docs (Swagger UI)
-- **Alternative Docs** - http://localhost:8000/redoc (ReDoc)
-- **OpenAPI Schema** - http://localhost:8000/openapi.json
+- **Interactive API Docs** - http://localhost:7860/docs (Swagger UI)
+- **Alternative Docs** - http://localhost:7860/redoc (ReDoc)
+- **OpenAPI Schema** - http://localhost:7860/api/openapi.json
 
 ## Configuration
 
