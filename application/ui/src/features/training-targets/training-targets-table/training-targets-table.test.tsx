@@ -63,6 +63,15 @@ const healthyServerStatus = {
             blocking: false,
             checked_at: '2026-08-07T12:00:00Z',
         },
+        {
+            key: 'driver_present' as const,
+            tier: 1 as const,
+            outcome: 'passed' as const,
+            blocking: true,
+            checked_at: '2026-08-07T12:00:00Z',
+            detail: 'NVIDIA A100-PCIE-40GB, 580.159.03',
+            method: 'nvidia-smi',
+        },
     ],
     checked_at: '2026-08-07T12:00:00Z',
     waiting_for_gpu: false,
@@ -252,6 +261,14 @@ describe('TrainingTargetsTable', () => {
             expect(await screen.findByText(remoteServer.name)).toBeInTheDocument();
             expect(screen.getByText('SSH')).toBeInTheDocument();
             expect(screen.getByText('Direct URL')).toBeInTheDocument();
+        });
+
+        it('shows the reported GPU name in the compute column, not the SSH host alias', async () => {
+            render(<TrainingTargetsTable rows={[sshRow(remoteServer)]} onEdit={vi.fn()} onDelete={vi.fn()} />);
+
+            const row = await screen.findByTestId(`training-target-row-${remoteServer.id}`);
+            expect(await within(row).findAllByText('NVIDIA A100-PCIE-40GB, 580.159.03')).not.toHaveLength(0);
+            expect(within(row).queryByText(`ssh host alias: ${remoteServer.ssh_host_alias}`)).not.toBeInTheDocument();
         });
 
         it('shows a Healthy status badge for a passing SSH target', async () => {

@@ -75,6 +75,15 @@ export const checkLabel: Record<string, string> = {
     protocol_compatible: 'Trainer protocol compatible',
 };
 
+/**
+ * The GPU/XPU name reported by the driver_present check (e.g. "Intel(R) Data
+ * Center GPU Max 1100"), for the table's Compute column - falls back to
+ * undefined when the check hasn't run or reported no detail yet.
+ */
+export const remoteServerComputeDetail = (
+    status: Pick<SchemaRemoteServerStatus, 'checks'> | undefined
+): string | undefined => (status?.checks ?? []).find((check) => check.key === 'driver_present')?.detail ?? undefined;
+
 export const checkStatusLabel = (outcome: SchemaCheckOutcome): string => {
     switch (outcome) {
         case 'passed':

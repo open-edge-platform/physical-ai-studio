@@ -18,7 +18,11 @@ import {
 import { ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteServer, SchemaRemoteTrainer } from '../../../api/openapi-spec';
-import { remoteServerStatusLabel, remoteServerStatusVariant } from '../remote-server-status-utils';
+import {
+    remoteServerComputeDetail,
+    remoteServerStatusLabel,
+    remoteServerStatusVariant,
+} from '../remote-server-status-utils';
 import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
 import { RemoteServerDetail } from './remote-server-detail/remote-server-detail';
 import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
@@ -259,7 +263,7 @@ const SshTargetRow = ({ server, isExpanded, onToggleExpanded, onExpand, onEdit, 
             statusVariant={remoteServerStatusVariant(entry?.status, isChecking)}
             statusLabel={remoteServerStatusLabel(entry?.status, isChecking)}
             deviceTypes={[server.device_type.toUpperCase()]}
-            computeDetail={isChecking ? 'Checking…' : `ssh host alias: ${server.ssh_host_alias}`}
+            computeDetail={isChecking ? 'Checking…' : (remoteServerComputeDetail(entry?.status) ?? 'Not reported')}
             kindBadge='SSH'
             isChecking={isChecking}
             isExpanded={isExpanded}
