@@ -16,6 +16,17 @@ name: Cleanup Old Application Container Images
 # - Among the remaining versions (dev/daily builds and untagged versions) the
 #   most recent `min_versions_to_keep` are kept; older ones are deleted.
 #
+# NOTE (physicalai-trainer-*): these packages publish no release, RC, or
+# `latest` tag today — only the immutable `<version>-dev-<short-sha>` tag and
+# the moving `main` / `protocol-<N>` tags. None of those match the allowlist
+# above, so they are all subject to the `min_versions_to_keep` window. This
+# matters most for `protocol-<N>`: Studio resolves it automatically for
+# SSH-provisioned training and has no fallback tag behind it, so collecting it
+# breaks remote training until the next trainer-relevant commit republishes it.
+# Confirm how the shared `cleanup-images` action treats tagged-but-not-
+# allowlisted versions and, if it can collect them, extend the allowlist to
+# cover `protocol-*` before relying on that tag in production.
+#
 # Supports a dry-run mode (default) that previews deletions without removing
 # anything for dispatched runs.
 

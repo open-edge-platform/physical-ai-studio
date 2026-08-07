@@ -214,10 +214,7 @@ jobs:
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true
-          tags: |
-            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
-            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
-            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:protocol-${{ env.TRAINER_API_PROTOCOL_VERSION }}
+          tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
             org.opencontainers.image.revision=${{ github.sha }}
@@ -276,6 +273,20 @@ jobs:
         uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
         with:
           image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
+
+      # Moving tags are promoted only after the immutable digest is verified and
+      # signed, so a failure in either step leaves them pointing at the previous
+      # good build instead of an unsigned one. `protocol-<N>` is the tag Studio
+      # resolves automatically for SSH-provisioned training, and there is no
+      # `latest` fallback behind it, so it must never advance ahead of signing.
+      - name: Promote moving tags after signing
+        env:
+          IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
+          BRANCH_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
+          PROTOCOL_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:protocol-${{ env.TRAINER_API_PROTOCOL_VERSION }}
+        run: |
+          docker buildx imagetools create --tag "$BRANCH_TAG" "$IMAGE"
+          docker buildx imagetools create --tag "$PROTOCOL_TAG" "$IMAGE"
 
   required-check:
     name: Required Check trainer-images
