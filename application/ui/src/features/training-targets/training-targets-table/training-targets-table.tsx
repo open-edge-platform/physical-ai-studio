@@ -1,6 +1,20 @@
 import { ReactNode, useState } from 'react';
 
-import { ActionButton, Badge, Flex, Grid, Icon, Item, Key, Menu, MenuTrigger, StatusLight, Text } from '@geti-ui/ui';
+import {
+    ActionButton,
+    Badge,
+    Flex,
+    Grid,
+    Icon,
+    Item,
+    Key,
+    Menu,
+    MenuTrigger,
+    StatusLight,
+    Text,
+    Tooltip,
+    TooltipTrigger,
+} from '@geti-ui/ui';
 import { ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteServer, SchemaRemoteTrainer } from '../../../api/openapi-spec';
@@ -135,12 +149,12 @@ const TargetRowShell = ({
 
             <Text>{name}</Text>
 
-            <Flex gap='size-100' alignItems='center'>
+            <TooltipTrigger delay={300}>
                 <Badge variant='neutral' UNSAFE_className={classes.kindBadge}>
                     {kindBadge}
                 </Badge>
-                <Text UNSAFE_className={classes.trainerUrl}>{connectionLabel}</Text>
-            </Flex>
+                <Tooltip>{connectionLabel}</Tooltip>
+            </TooltipTrigger>
 
             <StatusLight variant={statusVariant} UNSAFE_className={classes.healthStatus}>
                 {statusLabel}

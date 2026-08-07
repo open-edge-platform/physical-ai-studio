@@ -7,10 +7,6 @@
     margin-left: 0;
 }
 
-.trainerUrl {
-    color: var(--spectrum-global-color-gray-700);
-}
-
 .cudaBadge {
     color: var(--spectrum-global-color-static-green-500);
     background: color-mix(in srgb, var(--spectrum-global-color-static-green-500) 16%, transparent);
