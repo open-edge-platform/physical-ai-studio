@@ -154,9 +154,11 @@ const TargetRowShell = ({
             <Text>{name}</Text>
 
             <TooltipTrigger delay={300}>
-                <Badge variant='neutral' UNSAFE_className={classes.kindBadge}>
-                    {kindBadge}
-                </Badge>
+                <ActionButton isQuiet UNSAFE_className={classes.kindBadgeTrigger} aria-label={connectionLabel}>
+                    <Badge variant='neutral' UNSAFE_className={classes.kindBadge}>
+                        {kindBadge}
+                    </Badge>
+                </ActionButton>
                 <Tooltip>{connectionLabel}</Tooltip>
             </TooltipTrigger>
 

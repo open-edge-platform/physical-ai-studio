@@ -22,3 +22,14 @@
     background: var(--spectrum-global-color-gray-300);
     flex-shrink: 0;
 }
+
+.kindBadgeTrigger {
+    justify-self: start;
+    width: fit-content;
+    min-width: unset;
+    height: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: default;
+}
