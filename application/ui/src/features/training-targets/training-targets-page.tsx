@@ -1,9 +1,10 @@
 import { useState } from 'react';
 
-import { Button, DialogContainer, Flex, Heading, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
+import { Button, DialogContainer, Flex, Heading, Text, View } from '@geti-ui/ui';
 import { Add } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
+import { TrainingTargetForm } from './training-target-form/training-target-form';
 import { DeleteRemoteServerDialog } from './training-targets-table/delete-remote-server-dialog';
 import { DeleteRemoteTrainerDialog } from './training-targets-table/delete-remote-trainer-dialog';
 import { RemoteServerForm } from './training-targets-table/remote-server-form/remote-server-form';
@@ -14,16 +15,10 @@ import { TrainingTargetsTable } from './training-targets-table/training-targets-
 import classes from './training-targets-page.module.css';
 
 type TrainingTargetAction =
-    | { type: 'create-direct-url' }
-    | { type: 'create-ssh' }
+    | { type: 'create' }
     | { type: 'edit'; row: TrainingTargetRow }
     | { type: 'delete'; row: TrainingTargetRow }
     | undefined;
-
-const NEW_TARGET_MENU_ITEMS = {
-    DIRECT_URL: 'direct-url',
-    SSH: 'ssh',
-};
 
 export const TrainingTargetsPage = () => {
     const { data: remoteTrainers } = $api.useSuspenseQuery('get', '/api/remote-trainers');
@@ -35,14 +30,6 @@ export const TrainingTargetsPage = () => {
         ...remoteServers.map((server): TrainingTargetRow => ({ kind: 'ssh', server })),
     ];
 
-    const handleNewTargetAction = (key: Key) => {
-        if (key === NEW_TARGET_MENU_ITEMS.DIRECT_URL) {
-            setAction({ type: 'create-direct-url' });
-        } else if (key === NEW_TARGET_MENU_ITEMS.SSH) {
-            setAction({ type: 'create-ssh' });
-        }
-    };
-
     return (
         <View padding='size-400' height='100%' maxWidth='240ch' marginX='auto'>
             <Flex marginBottom={'size-250'} justifyContent={'space-between'} alignItems={'center'}>
@@ -51,16 +38,14 @@ export const TrainingTargetsPage = () => {
                     <Text>Configure and monitor where training jobs run.</Text>
                 </View>
 
-                <MenuTrigger>
-                    <Button variant='accent' UNSAFE_className={classes.addButton}>
-                        <Add />
-                        <Text>New training target</Text>
-                    </Button>
-                    <Menu onAction={handleNewTargetAction}>
-                        <Item key={NEW_TARGET_MENU_ITEMS.DIRECT_URL}>Direct URL trainer</Item>
-                        <Item key={NEW_TARGET_MENU_ITEMS.SSH}>SSH server</Item>
-                    </Menu>
-                </MenuTrigger>
+                <Button
+                    variant='accent'
+                    UNSAFE_className={classes.addButton}
+                    onPress={() => setAction({ type: 'create' })}
+                >
+                    <Add />
+                    <Text>New training target</Text>
+                </Button>
             </Flex>
 
             <View UNSAFE_className={classes.container}>
@@ -76,8 +61,7 @@ export const TrainingTargetsPage = () => {
             </View>
 
             <DialogContainer onDismiss={() => setAction(undefined)}>
-                {action?.type === 'create-direct-url' && <RemoteTrainerForm close={() => setAction(undefined)} />}
-                {action?.type === 'create-ssh' && <RemoteServerForm close={() => setAction(undefined)} />}
+                {action?.type === 'create' && <TrainingTargetForm close={() => setAction(undefined)} />}
                 {action?.type === 'edit' && action.row.kind === 'direct-url' && (
                     <RemoteTrainerForm remoteTrainer={action.row.trainer} close={() => setAction(undefined)} />
                 )}

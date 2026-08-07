@@ -107,12 +107,11 @@ describe('TrainingTargetsPage', () => {
 
         expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
         await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        await user.click(await screen.findByRole('menuitem', { name: 'Direct URL trainer' }));
         const dialog = await screen.findByRole('dialog');
-        const inputs = dialog.querySelectorAll('input');
-        await user.type(inputs[0], remoteTrainer.name);
-        await user.type(inputs[1], remoteTrainer.url);
-        await user.click(screen.getByRole('button', { name: 'Add trainer' }));
+        await user.type(within(dialog).getByLabelText(/name/i), remoteTrainer.name);
+        await user.click(within(dialog).getByRole('button', { name: 'Direct trainer URL' }));
+        await user.type(within(dialog).getByLabelText(/trainer url/i), remoteTrainer.url);
+        await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
 
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -184,15 +183,10 @@ describe('TrainingTargetsPage', () => {
 
         expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
         await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        await user.click(await screen.findByRole('menuitem', { name: 'SSH server' }));
 
         const dialog = await screen.findByRole('dialog');
-        const nameInput = dialog.querySelector('input');
-        if (nameInput === null) {
-            throw new Error('Expected a name input to be rendered.');
-        }
-        await user.type(nameInput, remoteServer.name);
-        await user.click(within(dialog).getByRole('button', { name: /ssh host alias/i }));
+        await user.type(within(dialog).getByLabelText(/name/i), remoteServer.name);
+        await user.click(within(dialog).getByRole('button', { name: /ssh host/i }));
         await user.click(await screen.findByRole('option', { name: aliasOption.alias }));
         await user.click(within(dialog).getByRole('button', { name: /device type/i }));
         await user.click(await screen.findByRole('option', { name: 'CUDA' }));
