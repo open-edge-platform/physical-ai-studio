@@ -2,9 +2,9 @@ import { FormEvent, useState } from 'react';
 
 import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Form, Heading, Text, TextField } from '@geti-ui/ui';
 
-import { $api } from '../../../../api/client';
 import { getApiErrorMessage } from '../../../../api/errors';
 import { SchemaRemoteTrainer } from '../../../../api/openapi-spec';
+import { useRemoteTrainerFormMutation } from './use-remote-trainer-form-mutation';
 
 import classes from './remote-trainer-form.module.css';
 
@@ -16,43 +16,21 @@ type RemoteTrainerFormProps = {
 export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormProps) => {
     const [name, setName] = useState(remoteTrainer?.name ?? '');
     const [url, setUrl] = useState(remoteTrainer?.url ?? '');
-    const [error, setError] = useState<string>();
     const isEditing = remoteTrainer !== undefined;
+    const { save, isPending, error } = useRemoteTrainerFormMutation(remoteTrainer);
 
-    const createMutation = $api.useMutation('post', '/api/remote-trainers', {
-        meta: {
-            invalidates: [['get', '/api/remote-trainers']],
-        },
-    });
-    const updateMutation = $api.useMutation('patch', '/api/remote-trainers/{remote_trainer_id}', {
-        meta: {
-            invalidates: [['get', '/api/remote-trainers']],
-        },
-    });
-    const isPending = createMutation.isPending || updateMutation.isPending;
-
-    const save = async (event: FormEvent<HTMLFormElement>) => {
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
-        setError(undefined);
-        const normalizedName = name.trim();
 
-        try {
-            if (isEditing) {
-                await updateMutation.mutateAsync({
-                    params: { path: { remote_trainer_id: remoteTrainer.id } },
-                    body: { name: normalizedName, url },
-                });
-            } else {
-                await createMutation.mutateAsync({ body: { name: normalizedName, url } });
-            }
-            close();
-        } catch (mutationError) {
-            setError(getApiErrorMessage(mutationError) ?? 'The remote trainer could not be saved. Try again.');
-        }
+        save({ name: name.trim(), url }, { onSuccess: close });
     };
 
+    const errorMessage = error
+        ? (getApiErrorMessage(error) ?? 'The remote trainer could not be saved. Try again.')
+        : undefined;
+
     return (
-        <Form onSubmit={save} validationBehavior='native' width='size-6000'>
+        <Form onSubmit={handleSubmit} validationBehavior='native' width='size-6000'>
             <Dialog>
                 <Heading>{isEditing ? 'Edit remote trainer' : 'Add remote trainer'}</Heading>
                 <Divider />
@@ -76,7 +54,9 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                             description='Use the endpoint URL that accepts Physical AI Studio training jobs.'
                             width='100%'
                         />
-                        {error && <Text UNSAFE_className={classes.errorMessage}>{error}</Text>}
+                        {errorMessage !== undefined && (
+                            <Text UNSAFE_className={classes.errorMessage}>{errorMessage}</Text>
+                        )}
                     </Flex>
                 </Content>
                 <ButtonGroup>
