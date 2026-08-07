@@ -79,6 +79,19 @@ _PLENTY_OF_DISK = f"{_DF_HEADER}/dev/sda1 900000000000 100000000000 85899345920 
 # 1 GiB available.
 _ALMOST_NO_DISK = f"{_DF_HEADER}/dev/sda1 900000000000 890000000000 1073741824 99% /var/lib/docker\n"
 
+# Representative `xpu-smi discovery` output: an ASCII box-drawing table, not one
+# plain line. `first_line()` on this would return the top border, not a device
+# name - the regression `_xpu_discovery_detail` guards against.
+_XPU_DISCOVERY_TABLE = (
+    "+-----------+--------------------------------------------------+\n"
+    "| Device ID | Device Information                                |\n"
+    "+-----------+--------------------------------------------------+\n"
+    "| 0         | Device Name: Intel(R) Data Center GPU Max 1100    |\n"
+    "|           | Vendor Name: Intel(R) Corporation                 |\n"
+    "|           | PCI BDF Address: 0000:29:00.0                     |\n"
+    "+-----------+--------------------------------------------------+\n"
+)
+
 
 def _server(device_type: DeviceType = DeviceType.CUDA, alias: str = ALIAS) -> RemoteServer:
     return RemoteServer(
@@ -645,10 +658,13 @@ async def test_tier1_cuda_host_is_never_probed_with_xpu_tools(install_transport)
 
 
 async def test_tier1_xpu_driver_detected_via_xpu_smi(install_transport) -> None:
+    # Real `xpu-smi discovery` output is an ASCII box-drawing table, not one
+    # plain line - `first_line()` would return the top border instead of a
+    # device name (see `_xpu_discovery_detail`).
     script = {
         "docker version": _ok("27.3.1"),
         "df -B1 -P /var/lib/docker": _ok(_PLENTY_OF_DISK),
-        "xpu-smi discovery": _ok("Device 0: Intel(R) Data Center GPU Max 1100"),
+        "xpu-smi discovery": _ok(_XPU_DISCOVERY_TABLE),
         "xpu-smi stats": _ok("GPU Memory Used (MiB), 1024, GPU Memory Total (MiB), 49152"),
         "curl --head": _ok(""),
     }
@@ -660,6 +676,8 @@ async def test_tier1_xpu_driver_detected_via_xpu_smi(install_transport) -> None:
     assert check is not None
     assert check.outcome is CheckOutcome.PASSED
     assert check.method == METHOD_XPU_SMI
+    assert check.detail == "Intel(R) Data Center GPU Max 1100"
+    assert not check.detail.startswith("+")
 
 
 async def test_tier1_xpu_driver_falls_back_to_the_render_node(install_transport) -> None:

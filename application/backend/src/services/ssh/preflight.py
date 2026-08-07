@@ -139,6 +139,27 @@ def _failure_detail(result: CommandResult) -> str | None:
     return _detail(result.stderr or result.stdout)
 
 
+# `xpu-smi discovery` renders an ASCII box-drawing table, e.g.:
+#   +-----------+--------------------------------------------------+
+#   | Device ID | Device Information                                |
+#   +-----------+--------------------------------------------------+
+#   | 0         | Device Name: Intel(R) Data Center GPU Max 1100    |
+#   |           | Vendor Name: Intel(R) Corporation                  |
+#   ...
+# `first_line()` would return the top border, not a device name, so this pulls
+# the "Device Name: ..." cell out of the table instead.
+_XPU_DEVICE_NAME_PATTERN: Final = re.compile(r"Device Name:\s*(.+?)\s*\|?\s*$")
+
+
+def _xpu_discovery_detail(result: CommandResult) -> str:
+    """Return a short device-name summary from `xpu-smi discovery`'s table output."""
+    for line in result.stdout.splitlines():
+        match = _XPU_DEVICE_NAME_PATTERN.search(line)
+        if match:
+            return match.group(1).strip()
+    return result.first_line()
+
+
 class _CheckRecorder:
     """Accumulates one tier's checks, timing each one individually."""
 
@@ -409,7 +430,9 @@ async def _check_driver_xpu(recorder: _CheckRecorder, transport: SshTransport) -
     """
     smi = await transport.run_command(["xpu-smi", "discovery"])
     if smi.ok:
-        recorder.add(CheckKey.DRIVER_PRESENT, CheckOutcome.PASSED, detail=smi.first_line(), method=METHOD_XPU_SMI)
+        recorder.add(
+            CheckKey.DRIVER_PRESENT, CheckOutcome.PASSED, detail=_xpu_discovery_detail(smi), method=METHOD_XPU_SMI
+        )
         return METHOD_XPU_SMI
 
     render = await _probe_intel_render_node(transport)
