@@ -4,7 +4,7 @@ import { $api } from '../../../api/client';
 import { getApiErrorMessage } from '../../../api/errors';
 import { SchemaRemoteTrainer } from '../../../api/openapi-spec';
 
-import classes from '../remote-trainers-page.module.css';
+import classes from './remote-trainer-form/remote-trainer-form.module.css';
 
 type DeleteRemoteTrainerDialogProps = {
     remoteTrainer: SchemaRemoteTrainer;

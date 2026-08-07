@@ -121,7 +121,7 @@ const RemoteTrainerRow = ({
 
             <Text>{remoteTrainer.name}</Text>
 
-            <Text>{remoteTrainer.url}</Text>
+            <Text UNSAFE_className={classes.trainerUrl}>{remoteTrainer.url}</Text>
 
             <StatusLight variant={healthVariant(health, isChecking)} UNSAFE_className={classes.healthStatus}>
                 {healthLabel(health, isChecking)}
