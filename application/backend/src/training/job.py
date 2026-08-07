@@ -198,7 +198,6 @@ def run_training_job(
         auto_scale_batch_size=spec.auto_scale_batch_size,
         precision=spec.precision,
         check_val_every_n_epoch=1,
-        gradient_clip_val=1.0,
     )
 
     report(0, "Training model", {})
