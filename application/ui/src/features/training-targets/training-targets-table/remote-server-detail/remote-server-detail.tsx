@@ -12,6 +12,7 @@ import {
 import { HealthCheckRow } from '../remote-trainer-detail/remote-trainer-detail';
 
 import detailClasses from '../remote-trainer-detail/remote-trainer-detail.module.css';
+import classes from './remote-server-detail.module.css';
 
 type RemoteServerDetailProps = {
     remoteServer: SchemaRemoteServer;
@@ -58,7 +59,9 @@ export const RemoteServerDetail = ({
                             />
                         ))}
                         {tier1Checks.length === 0 && (
-                            <Text UNSAFE_className={detailClasses.checkDetail}>Not checked yet.</Text>
+                            <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyCheckList}`}>
+                                Not checked yet.
+                            </Text>
                         )}
                     </div>
                 </View>
@@ -83,7 +86,7 @@ export const RemoteServerDetail = ({
                             />
                         ))}
                         {tier2Checks.length === 0 && (
-                            <Text UNSAFE_className={detailClasses.checkDetail}>
+                            <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyCheckList}`}>
                                 Not verified yet. Test connection pulls the trainer image and probes the device — it
                                 never runs automatically.
                             </Text>
