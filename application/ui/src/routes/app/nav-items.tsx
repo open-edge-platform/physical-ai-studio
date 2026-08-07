@@ -13,7 +13,6 @@ export type NavItem = {
 export const navItems: NavItem[] = [
     { key: 'projects', label: 'Projects', path: '/projects', enabled: true, icon: <ProjectsIcon /> },
     { key: 'environments', label: 'Environments', path: '/environments', enabled: false },
-    { key: 'training-targets', label: 'Training Targets', path: '/training-targets', enabled: true },
     { key: 'settings', label: 'Settings', path: '/settings', enabled: true, icon: <Gear /> },
     { key: 'plugins', label: 'Plugins', path: '/plugins', enabled: false },
 ];

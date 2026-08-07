@@ -31,7 +31,6 @@ import { Robot } from './routes/robots/robot';
 import { SO101Setup } from './routes/robots/so101-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
 import { Settings } from './routes/settings';
-import { Index as TrainingTargets } from './routes/training-targets';
 
 const root = path('/');
 const settings = root.path('/settings');
@@ -42,7 +41,6 @@ const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
 const dataset = datasets.path(':dataset_id');
 const models = project.path('/models');
-const trainingTargets = root.path('/training-targets');
 const cameras = project.path('cameras');
 const environments = project.path('environments');
 const environment = environments.path(':environment_id');
@@ -58,9 +56,6 @@ export const paths = {
     openapi: root.path('/openapi'),
     projects: {
         index: projects,
-    },
-    trainingTargets: {
-        index: trainingTargets,
     },
     project: {
         index: project,
@@ -130,10 +125,6 @@ export const router = createBrowserRouter([
                     {
                         path: paths.projects.index.pattern,
                         element: <Projects />,
-                    },
-                    {
-                        path: paths.trainingTargets.index.pattern,
-                        element: <TrainingTargets />,
                     },
                     {
                         path: paths.settings.index.pattern,

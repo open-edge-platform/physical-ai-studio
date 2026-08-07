@@ -5,8 +5,6 @@ import { render } from '../../test-utils/render';
 import { AppSidebar } from './app-sidebar';
 import { disabledNavItemKeys, navItems } from './nav-items';
 
-const visibleNavItems = navItems.filter((item) => item.enabled);
-
 const renderSidebar = (selectedKey = 'projects') =>
     render(
         <Tabs
@@ -33,9 +31,11 @@ describe('AppSidebar', () => {
     it('renders all enabled nav item labels', () => {
         renderSidebar();
 
-        visibleNavItems.forEach((item) => {
-            expect(screen.getByText(item.label)).toBeInTheDocument();
-        });
+        navItems
+            .filter((item) => item.enabled)
+            .forEach((item) => {
+                expect(screen.getByText(item.label)).toBeInTheDocument();
+            });
     });
 
     it('selects Projects when the route is /projects', () => {
@@ -47,21 +47,17 @@ describe('AppSidebar', () => {
     it('marks the enabled items as links, disabled are not visible', () => {
         renderSidebar();
 
-        visibleNavItems.forEach((item) => {
-            const tab = screen.getByRole('tab', { name: item.label });
-            expect(tab).toHaveAttribute('href', item.path);
-        });
+        navItems
+            .filter((item) => item.enabled)
+            .forEach((item) => {
+                const tab = screen.getByRole('tab', { name: item.label });
+                expect(tab).toHaveAttribute('href', item.path);
+            });
 
         navItems
             .filter((item) => !item.enabled)
             .forEach((item) => {
                 expect(screen.queryByRole('tab', { name: item.label })).not.toBeInTheDocument();
             });
-    });
-
-    it('shows Training Targets in the sidebar', () => {
-        renderSidebar();
-
-        expect(screen.getByRole('tab', { name: 'Training Targets' })).toHaveAttribute('href', '/training-targets');
     });
 });
