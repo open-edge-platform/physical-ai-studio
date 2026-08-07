@@ -7,7 +7,7 @@ Dependency-ordered, independently reviewable pull requests for
 ## Status
 
 - **PR 1 — landed on `main`.** Trainer image targets, GHCR publishing with SBOM /
-  provenance / Trivy scan / cosign signing, OCI labels, and `/health` protocol
+  provenance / cosign signing, OCI labels, and `/health` protocol
   metadata all exist (`../../docker/Dockerfile.trainer`,
   `../../../.github/workflows/trainer-images.yml`,
   `../../backend/src/trainer/schemas.py`).
@@ -66,12 +66,28 @@ Record as ADRs / an implementation design record, from
   most Studio commits never produce a matching revision-tagged trainer image;
   resolving by exact SHA (or the `0.1.0`-shaped `VERSION` semver, which can
   never match a SHA tag either) would guarantee an almost-permanent silent
-  `latest` fallback. `protocol-<N>` tracks wire compatibility instead of the
+  fallback situation. `protocol-<N>` tracks wire compatibility instead of the
   commit that happened to build it, so it stays resolvable across the commits
-  that don't touch the trainer. `latest` is the fallback only when the
-  protocol tag itself cannot be resolved.
+  that don't touch the trainer. **There is no fallback tag**:
+  `trainer-images.yml` publishes no `latest`, and the only moving alternative
+  (`main`) tracks the newest build regardless of protocol, so it is exactly the
+  stale, wire-incompatible image to avoid — fail the job immediately instead.
 - Trainer protocol contract: **direct-URL trainers grandfathered** when they
-  report no version, **SSH-provisioned images held strictly**.
+  report no version, **SSH-provisioned images held strictly**. This covers
+  wire-schema compatibility only, **not** training-logic parity: since
+  `library/**` is in `trainer-images.yml`'s `paths:` filter, a library-only
+  change republishes under the same `protocol-<N>` with no version bump, so
+  Studio's own build can drift older or newer than what currently resolves.
+  Publish the library version as an OCI label
+  (`org.open-edge-platform.physicalai.trainer.library-version`, from
+  `importlib.metadata`) and range-check it off the registry manifest **before
+  pulling**: older than Studio's → non-fatal warning; a `policy` with a
+  documented minimum → hard fail scoped to that policy. `/health` re-reports it
+  as defense-in-depth. **Rejected:** encoding it in the tag
+  (`protocol-<N>-lib-<X>`) — tags match by equality, library compatibility is a
+  range, and the namespace would become combinatorial. **Also rejected:**
+  exact-SHA image matching (Studio can't know its SHA at runtime, branch
+  commits never publish, retention deletes SHA tags).
 - Managed-container labels, `backend_instance_id` ownership, and orphan-sweep
   criteria (label match alone is insufficient; reattach claims win).
 - **GPU busy: stay `pending` with backoff** and a give-up timeout, expressed as a
@@ -110,22 +126,42 @@ registered servers.
 - Non-root `physicalai-trainer-cuda` / `physicalai-trainer-xpu` build targets in
   `../../docker/Dockerfile.trainer`, entry point `physicalai-trainer`, containing no
   backend or UI code.
-- `../../../.github/workflows/trainer-images.yml`: immutable `${{ github.sha }}` tags plus
-  a moving `latest`, `sbom: true`, `provenance: mode=max`, a metadata
-  verification step, a Trivy scan at HIGH/CRITICAL, and cosign signing.
+- `../../../.github/workflows/trainer-images.yml`: an immutable
+  `<version>-dev-<short-sha>` tag pushed at build time, then moving `main` and
+  `protocol-<N>` tags promoted onto that verified, signed digest **after**
+  signing, plus `sbom: true`, `provenance: mode=max`, a metadata
+  verification step, and cosign signing. **No `latest` tag is published.**
 - OCI labels `org.opencontainers.image.source`, `.revision`, `.version`,
   `.created`, and `org.open-edge-platform.physicalai.trainer.api-protocol`.
 - `/health` returns `status`, `protocol_version`, `device_type`,
   `build_revision`, `build_date`, and `application_version` via `HealthInfo`.
 
+> **Note:** the `protocol-<N>` tag and the post-signing promotion currently sit
+> on `albert/fix-trainer-images-trivy-egress`, not yet on `main`. The same
+> branch moved trainer Trivy scanning out to `security-scan.yml`'s
+> `trivy-trainer-image-scan`, which runs nightly/on-dispatch against `:main`
+> rather than gating publish (plan risk 23).
+
 ### Remaining
 
-Add a `protocol-<N>` moving tag alongside `latest` in `trainer-images.yml`,
-stamped onto the same signed digest (see
-[Resolve trainer images](remote-ssh-trainer-plan.md#3-resolve-trainer-images)
-for why: `git-sha`/`latest` matching alone can't reliably resolve a trainer
-image for a Studio commit that doesn't itself rebuild the trainer). Backend-side
-**resolution** of these images is PR 7.
+The `protocol-<N>` moving tag is **done** (promoted post-signing, so it can
+never point at an unsigned image). Backend-side **resolution** of these images
+is PR 7. Two CI/image changes remain, because PR 7 depends on both:
+
+- **Confirm `protocol-*` survives `cleanup-old-app-images.yml`.** Its retention
+  allowlist is release semver, RC tags, and `latest`. The trainer packages
+  publish none of those, so *no* trainer tag is allowlisted and the weekly job
+  keeps only the 10 most recent versions. If the shared `geti-ci`
+  `cleanup-images` action can collect tagged versions, add `protocol-*` (and
+  `main`) to the allowlist — with no fallback tag, a collected `protocol-<N>`
+  breaks every SSH job.
+- **Add an `org.open-edge-platform.physicalai.trainer.library-version` OCI
+  label** to both trainer targets, from
+  `importlib.metadata.version("physicalai-train")` at build time (not the
+  hand-maintained `library/pyproject.toml` `0.1.0`). Extend the existing
+  metadata-verification step to assert it is present and non-`unknown`, and the
+  smoke test to assert `/health` reports the same value. PR 7's pre-pull
+  library range-check reads this label off the registry manifest.
 
 ---
 
@@ -145,7 +181,7 @@ connections.
   `uq_remote_servers_host_port_username` constraint. Host/port/user are derived
   from the SSH config at read time so they cannot silently disagree with it.
 - `JobProvisioningDB` keyed by `job_id` (not the payload JSON) with
-  `remote_server_id`, `image_ref`, `image_fallback_reason`, `image_digest`,
+  `remote_server_id`, `image_ref`, `image_digest`,
   `container_id`, `container_name`, `remote_port`, `local_tunnel_port`,
   `ssh_host_alias`, `trainer_build_version`, `trainer_protocol_version`.
 - Repositories, mappers, schemas, and `services/remote_server_service.py`.
@@ -403,14 +439,14 @@ container behind a dedicated service boundary.
 
 ### Scope
 
-- Resolve Studio's own compiled-in trainer protocol version, prefer the
-  device-specific `protocol-<N>` trainer image tag, fall back to `latest` only
-  when that tag cannot be resolved, and persist + log the fallback reason. Not
-  the Studio build revision/git SHA (the trainer only rebuilds on
+- Resolve Studio's own compiled-in trainer protocol version, require the
+  device-specific `protocol-<N>` trainer image tag (**no fallback tag**),
+  and fail the job with an actionable message + log if that tag cannot be
+  resolved. Not the Studio build revision/git SHA (the trainer only rebuilds on
   trainer-relevant path changes, so it rarely matches) and not `VERSION`
   (`0.1.0` can never match a SHA or protocol tag either).
 - Resolve an immutable digest and verify image identity/signature policy before
-  use, for whichever tag (`protocol-<N>` or `latest`) was selected. Verify with
+  use for the resolved `protocol-<N>` tag. Verify with
   `cosign verify`, pinning the certificate identity to the
   Studio release workflow and the Sigstore OIDC issuer, e.g.:
 
@@ -438,6 +474,13 @@ container behind a dedicated service boundary.
   retry budget; it does not fail the job.
 - Verify container readiness and `/health` metadata before upload, rejecting an
   SSH image that reports no protocol version.
+- **Before pulling**, read the `library-version` label off the registry
+  manifest (the same `imagetools inspect` call that resolves the digest) and
+  range-check it against Studio's own installed `physicalai-train` version:
+  older → non-fatal warning in job status; equal/newer → proceed; a `policy`
+  with a documented minimum it doesn't meet → fail before the pull, naming the
+  policy and required version. Re-confirm from `/health` after launch as
+  defense-in-depth; a label/`/health` disagreement fails the job.
 - Persist container/tunnel state before accepting work.
 - Tear down containers and tunnels in `finally` on unrecoverable failure and
   cancellation.
@@ -456,14 +499,20 @@ container behind a dedicated service boundary.
 
 ### Dependencies
 
-- PR 3, PR 6
+- PR 3, PR 6, and PR 1's remaining CI work (the `protocol-<N>` tag, its
+  retention protection, and the `library-version` label — PR 7 resolves the
+  first and reads the last).
 
 ### Acceptance criteria
 
-- Tests cover `protocol-<N>` tag preference over `latest`, protocol-version
-  resolution with no `.git` present, fallback persistence, pull
+- Tests cover `protocol-<N>` tag resolution with no fallback tag,
+  protocol-version resolution with no `.git` present, unresolvable-tag
+  failure, pull
   failures, digest persistence, loopback binding, protocol mismatch (strict for
-  SSH), cleanup at every failure point, cached images, output handling,
+  SSH), library-version range-check read from the manifest **before any pull**
+  (older → warning not failure; equal/newer → silent; policy minimum unmet →
+  pre-pull failure; label disagreeing with `/health` → failure), cleanup
+  at every failure point, cached images, output handling,
   tunnel-drop reconnect, GPU-busy pending/backoff/give-up, and non-destructive
   orphan sweeping including a foreign `backend_instance_id`.
 - At least one integration test runs against a containerized `sshd` with a
@@ -550,7 +599,7 @@ provisioning tests.
 - Bounded retry and timeout policies for SSH, Docker, tunnel readiness, tunnel
   keepalive/reconnect, and trainer health.
 - Structured operational logs and metrics for preflight, image
-  resolution/fallback, provisioning duration, cleanup, reattach outcomes, orphan
+  resolution, provisioning duration, cleanup, reattach outcomes, orphan
   recovery, and GPU-busy waits.
 - Improve error attribution in job messages and phase state.
 

@@ -14,8 +14,7 @@ remote GPU/XPU server by picking one of the SSH hosts they **already have
 configured in `~/.ssh/config`**, names it, and declares its device type. When a
 training job is started, the backend SSHes into that server, resolves the
 device-specific trainer image from Studio's own compiled-in trainer protocol
-version (or `latest` when the protocol-tagged image cannot be resolved),
-starts one isolated trainer
+version (no `latest` fallback), starts one isolated trainer
 container for the job, runs the job through the existing HTTP
 `RemoteTrainingBackend`, and removes the container when the job completes.
 
@@ -80,8 +79,8 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
 | Missing/invalid alias          | A `ssh_host_alias` that is absent from the SSH config, or matches only a wildcard stanza, is a distinct actionable state ("SSH host alias not found in your SSH config"), never a 500. Validated on save and re-checked on every preflight.                                                                                                                   |
 | SSH library                    | **`asyncssh`.** Native asyncio, native `~/.ssh/config` parsing, native `known_hosts` verification, and a local-forward API that supports the reconnect-and-resume requirement without a thread bridge.                                                                                                                                                        |
 | Command safety                 | All remote commands run as argument arrays (no shell string interpolation). Image names, container names, labels, and device arguments come from trusted application constants or validated identifiers, not arbitrary user input.                                                                                                                            |
-| Trainer distribution           | **Already shipped.** `physicalai-trainer-cuda` / `physicalai-trainer-xpu` build targets exist in `../../docker/Dockerfile.trainer`; `../../../.github/workflows/trainer-images.yml` publishes them to GHCR with SBOM, provenance, Trivy scan, and cosign signing.                                                                                                                |
-| Trainer launch                 | Prefer the device-specific image tagged with Studio's own compiled-in trainer protocol version (`physicalai-trainer-<device>:protocol-<N>`); use `latest` only when that tag cannot be resolved. Resolve and record the selected image's immutable digest, then run `physicalai-trainer` in a job-scoped Docker container bound only to remote loopback.                                                                           |
+| Trainer distribution           | **Already shipped.** `physicalai-trainer-cuda` / `physicalai-trainer-xpu` build targets exist in `../../docker/Dockerfile.trainer`; `../../../.github/workflows/trainer-images.yml` publishes them to GHCR with SBOM, provenance, and cosign signing. Vulnerability scanning is **not** in this workflow — it runs in `security-scan.yml`'s `trivy-trainer-image-scan` job (see the Supply chain row and risk 23).                                                                                                                |
+| Trainer launch                 | Require the device-specific image tagged with Studio's own compiled-in trainer protocol version (`physicalai-trainer-<device>:protocol-<N>`); there is no fallback tag. Resolve and record the selected image's immutable digest, then run `physicalai-trainer` in a job-scoped Docker container bound only to remote loopback.                                                                           |
 | Trainer lifecycle              | One container per job. Persist the container id/name, image digest, remote published port, local tunnel port, and the non-secret `ssh_host_alias` so orphans can be swept and recoverable jobs reattached after a crash.                                                                                                                                      |
 | Concurrency                    | Reuse the existing **per-execution-target** serialization in `TrainingWorker.run_loop`: one job at a time per target, jobs on distinct targets run concurrently. SSH jobs need their own target key (next row). Throttle status/preflight SSH connections per server with short timeouts so UI polling cannot disrupt a running job.                          |
 | Execution target key           | An SSH job's target key must be `ssh:<remote_server_id>`. Reusing the existing `remote:<remote_trainer_id>` branch is **not** acceptable: SSH jobs carry no `remote_trainer_id`, so every SSH job on every server would collapse onto the single key `remote:None`. `TrainingWorker._target_key` must be extended explicitly.                                 |
@@ -90,13 +89,14 @@ SSH provisioning is a **third kind of per-job target**, not a new global mode:
 | Tunnel drop mid-training       | **Reconnect and resume.** A dropped tunnel does not fail the job. Use SSH keepalives, re-open the forward against the still-running container, and resume streaming. Consistent with the reattach decision above.                                                                                                                                             |
 | Dataset transfer               | Keep the HTTP `http` transfer, streamed through an SSH tunnel.                                                                                                                                                                                                                                                                                                |
 | Device type                    | User provides GPU/XPU device type when configuring the server.                                                                                                                                                                                                                                                                                                |
-| Image selection                | Resolve `physicalai-trainer-<device>:protocol-<N>`, where `N` is Studio's own compiled-in `TRAINER_API_PROTOCOL_VERSION` constant, not the Studio build revision — the trainer image only rebuilds on trainer-relevant path changes (see `trainer-images.yml`'s `paths:` filter), so most Studio commits never produce a matching revision-tagged image at all, which would make revision matching a permanent silent `latest` fallback. Fall back to `latest` only if the `protocol-<N>` tag cannot be resolved. Persist the selected ref, fallback reason, and immutable digest with the job.                                                                               |
+| Image selection                | Resolve `physicalai-trainer-<device>:protocol-<N>`, where `N` is Studio's own compiled-in `TRAINER_API_PROTOCOL_VERSION` constant, not the Studio build revision — the trainer image only rebuilds on trainer-relevant path changes (see `trainer-images.yml`'s `paths:` filter), so most Studio commits never produce a matching revision-tagged image at all. **No fallback tag**: `trainer-images.yml` publishes no `latest` at all, and the only other tags are the immutable `<version>-dev-<short-sha>` and the moving `main`, which tracks the newest build regardless of protocol and is therefore exactly the stale, wire-incompatible image this scheme exists to avoid picking. The strict SSH `/health` check would reject it anyway, just later and after a wasted pull/launch. Fail the job immediately with an actionable message ("no trainer image published yet for protocol `<N>`") and persist the selected ref and immutable digest with the job.                                                                               |
 | Trainer protocol compatibility | **Grandfather the direct-URL registry, strict for SSH.** A direct-URL trainer reporting no protocol version is allowed (a human registered and owns it). An SSH-provisioned image must report compatible metadata or the job fails before dataset upload (Studio selected that image itself).                                                                 |
+| Library/training-logic compatibility | **Protocol version does not cover this — it is a separate, range-based check.** `protocol-<N>` only guarantees wire-schema compatibility; a `physicalai-train`-only change republishes under the same protocol number with no version bump (`library/**` is in `trainer-images.yml`'s `paths:` filter). Publish the library version as the OCI label `org.open-edge-platform.physicalai.trainer.library-version` (from `importlib.metadata`, not the hand-maintained `0.1.0` semver) and read it off the registry manifest **at digest-resolution time, before pulling**: trainer older than Studio's → non-fatal warning; a `policy` with a documented minimum → hard fail, scoped to that policy alone. `/health` re-reports it as defense-in-depth. **Not encoded in the tag** (`protocol-<N>-lib-<X>`): tags match by equality but library compatibility is a range, and a composite tag makes the namespace combinatorial, multiplying both no-fallback outage windows and retention-protection surface. |
 | Registry access                | Pull public trainer images from GHCR. Registry credentials and private registries are outside the initial scope.                                                                                                                                                                                                                                              |
 | First-job cost                 | The first image pull can be large; later jobs reuse Docker's cached layers.                                                                                                                                                                                                                                                                                   |
 | Driver check                   | CUDA: `nvidia-smi` plus an in-container `torch.cuda.is_available()` probe. XPU: `xpu-smi` or an Intel render-node check on the host, plus an in-container `torch.xpu.is_available()` probe.                                                                                                                                                                   |
 | Preflight                      | Two tiers. Tier 1 (cheap) gates save: alias resolution, reachability/auth, host key, Docker access, disk, driver, registry reachability. Tier 2 (expensive) runs as an explicit async action: image resolve/pull, signature policy, in-container device probe, protocol compatibility. GPU occupancy is reported by Tier 1 but never blocks save. See Step 2. |
-| Supply chain                   | Already published: SBOM, Trivy scan, and cosign signature per trainer image. Provisioning verifies the expected image identity before launch and always launches by resolved digest.                                                                                                                                                                          |
+| Supply chain                   | Per trainer image: SBOM, provenance, and a cosign signature, with moving tags (`main`, `protocol-<N>`) promoted onto the digest **only after** signing so they never point at an unsigned build. **Vulnerability scanning is no longer a publish gate** — `trivy-trainer-image-scan` in `security-scan.yml` runs nightly (or on dispatch) against `:main`, *after* images are published and tagged, so `protocol-<N>` can point at a not-yet-scanned image. Provisioning verifies the expected image identity before launch and always launches by resolved digest. See risk 23.                                                                                                                                                                          |
 | GPU availability               | Before launching training, check the server GPU is free. CUDA: reliable via `nvidia-smi` compute-apps + memory. XPU: best-effort via `xpu-smi stats` / memory heuristic. If occupied, the job **stays `pending`** with backoff and a visible waiting phase, plus a give-up timeout — it is not failed immediately. See Step 4.                                |
 | GPU-busy job state             | **No new `JobStatus` member.** `JobStatus` is `pending\|running\|completed\|failed\|canceled`, generated into `openapi-spec.d.ts` and consumed across the UI; adding a member forces every consumer to change. The wait is expressed in the existing `extra_info["phase"]` channel the UI already needs. See the UI plan.                                     |
 | Progress phase table           | **Per-target phase table**, selected once at backend construction. Do **not** retune the shared `SNAPSHOT_UPLOAD_PROGRESS` / `TRAINING_PROGRESS_END` constants: shifting local and direct-URL progress curves (and rewriting their assertions) buys nothing, and a per-target table is equally non-branching at the call sites.                               |
@@ -177,7 +177,7 @@ Add a new migration for `RemoteServerDB` and `JobProvisioningDB`.
 - `JobProvisioningDB` (separate table keyed by `job_id`, **not** the job payload
   JSON) holds per-job provisioning state so a crashed backend can sweep or
   reclaim an orphaned container from durable, queryable columns: `image_ref`,
-  `image_fallback_reason`, `image_digest`, `container_id`, `container_name`,
+  `image_digest`, `container_id`, `container_name`,
   `remote_port`, `local_tunnel_port`, `ssh_host_alias`,
   `trainer_build_version`, `trainer_protocol_version`.
 - `repositories/remote_server_repo.py`, `repositories/job_provisioning_repo.py`,
@@ -279,23 +279,37 @@ resolution.
   `/app/application/backend` nor `/app/application/ui` exist, and no Docker
   socket).
 - `../../../.github/workflows/trainer-images.yml` publishes an immutable
-  `${{ github.sha }}` tag plus a moving `latest` tag onto the same signed
-  digest, with `sbom: true`, `provenance: mode=max`, a Trivy scan, cosign
-  signing, and a metadata-verification step. Labels include
+  `<version>-dev-<short-sha>` tag at build time, then promotes the moving
+  `main` and `protocol-<N>` tags onto that verified, signed digest **after**
+  the signing step, with `sbom: true`, `provenance: mode=max`, cosign signing,
+  and a metadata-verification step. **No `latest` tag is published** (there is
+  no release trigger yet, so every published trainer image is a development
+  build). Vulnerability scanning is not in this workflow — see the Supply
+  chain decision row and risk 23. Labels include
   `org.opencontainers.image.source`, `.revision`, `.version`, `.created`, and
   `org.open-edge-platform.physicalai.trainer.api-protocol`.
 - `/health` returns `protocol_version`, `device_type`, `build_revision`,
   `build_date`, and `application_version`.
+- **The `protocol-<N>` moving tag now exists**, promoted post-signing
+  (`albert/fix-trainer-images-trivy-egress`, not yet on `main`). This was the
+  main blocking prerequisite for Studio-side resolution.
 
 **Remaining work:**
 
-- **Add a `protocol-<N>` moving tag to `trainer-images.yml`**, stamped onto the
-  same signed digest as `latest` (one more
-  `docker buildx imagetools create --tag ... "$IMAGE"` call after the existing
-  `latest` step, keyed on the `TRAINER_API_PROTOCOL_VERSION` build arg already
-  set in the workflow's `env:`). This becomes the tag Studio resolves
-  automatically (see below); `latest` and the immutable SHA tag are unchanged
-  in purpose.
+- Confirm `protocol-*` survives `cleanup-old-app-images.yml`'s retention rules
+  and extend the allowlist if not (risk 20). This is now more urgent than when
+  it was first recorded: with `latest` gone, **no** `physicalai-trainer-*` tag
+  matches the release/RC/`latest` allowlist, so every trainer tag — including
+  the one Studio auto-resolves — falls inside the `min_versions_to_keep`
+  window.
+- **Add an `org.open-edge-platform.physicalai.trainer.library-version` OCI
+  label** to both trainer targets in `Dockerfile.trainer`, alongside the
+  existing `api-protocol` label, populated from
+  `importlib.metadata.version("physicalai-train")` resolved at build time (not
+  the hand-maintained `library/pyproject.toml` semver). Extend the workflow's
+  existing metadata-verification step to assert it is present and non-`unknown`,
+  and the smoke test to assert `/health` reports the same value. This label is
+  what makes the pre-pull library check possible (see below).
 - Resolve Studio's own compiled-in trainer protocol version — the same
   `TRAINER_API_PROTOCOL_VERSION`-shaped constant the trainer bakes in, shared
   as a single source of truth (e.g. exported from `trainer/schemas.py` or a
@@ -313,25 +327,93 @@ resolution.
   resolution succeeds however Studio is deployed (container or dev checkout),
   since it is a plain compiled-in constant with no `.git`/environment
   dependency.
+- **`TRAINER_API_PROTOCOL_VERSION` is a wire-compatibility version. Increment
+  it only in the PR that changes the HTTP wire contract itself: the `trainer/`
+  FastAPI request/response schemas, `/health`'s shape, or `TrainingJobSpec`
+  (`application/backend/src/training/job.py`). Bumping on unrelated merges
+  reintroduces the exact failure mode `protocol-<N>` exists to avoid — a
+  version bump on a commit that doesn't touch trainer-relevant paths produces
+  a tag CI never publishes, and since there is no `latest` fallback, every SSH
+  job fails until a trainer-relevant commit happens to follow and rebuild. It
+  also makes `protocol_version` meaningless as a compatibility signal: if it
+  advances on every PR, two builds one merge apart are flagged incompatible
+  even when the wire contract didn't change.
+- **Protocol version alone does not guarantee training-logic parity.**
+  `protocol-<N>` and `main` are both moving tags repointed to the newest
+  digest on every trainer-relevant rebuild — and `library/**` is in
+  `trainer-images.yml`'s `paths:` filter, so a `physicalai-train`-only change
+  (a new policy, a training-loop fix, a changed default) republishes under the
+  **same** protocol number with no version bump. That keeps the wire contract
+  correctly unaffected, but it also means two images tagged `protocol-<N>` can
+  contain materially different training logic, and Studio's own currently
+  running build can end up older or newer than whatever `protocol-<N>`
+  currently resolves to.
+- **Expose the library version as an OCI label, and check it before pulling —
+  not as part of the tag.** Add
+  `org.open-edge-platform.physicalai.trainer.library-version` to both trainer
+  targets in `Dockerfile.trainer`, populated from
+  `importlib.metadata.version("physicalai-train")` at build time (a
+  code-derived value that changes when library content changes, unlike the
+  hand-maintained `library/pyproject.toml` semver, which is `0.1.0` and would
+  be nearly static). Also report the same value at `/health` alongside
+  `build_revision`. **Do not encode the library version in the image tag**
+  (e.g. `protocol-<N>-lib-<X>`): a tag can only be matched for equality, but
+  library compatibility is a **range** ("trainer library >= what this Studio
+  build needs" — newer is normally fine, older is the risk), so a composite
+  tag forces equality semantics onto a range-shaped question. It would also
+  make the tag namespace combinatorial (protocol × library), multiplying both
+  the unpublished-tag windows that the no-fallback decision turns into hard
+  failures and the number of moving tags needing retention protection
+  (see risk 20).
 - Resolve the device-specific `physicalai-trainer-<device>:protocol-<N>` image
-  tag through the registry. If that tag does not exist (e.g. a protocol bump
-  landed in Studio before CI has published a trainer image advertising it),
-  resolve the device-specific `latest` tag instead and record the fallback
-  reason. Emit a warning-level log on every fallback so a misconfigured build
-  does not silently degrade.
+  tag through the registry. **There is no fallback tag.** If that tag does
+  not exist (e.g. a protocol bump landed in Studio before CI has published a
+  trainer image advertising it), fail the job immediately with an actionable
+  message rather than substituting another tag. `trainer-images.yml` publishes
+  no `latest`; the only alternatives are the moving `main`, which tracks the
+  newest build irrespective of protocol and so is precisely the
+  wire-incompatible image to avoid, and immutable `<version>-dev-<short-sha>`
+  tags that Studio has no reliable way to select (see risk 21). The strict SSH
+  `/health` check below would reject a mismatched image anyway, just after
+  wasting a pull, container launch, and tunnel setup. Emit a warning-level log
+  when resolution fails so a misconfigured or delayed build is visible
+  immediately.
 - Resolve the selected tag to an immutable repo digest before provisioning,
-  persist the selected ref, fallback reason, and digest (`JobProvisioningDB`),
-  and pull the image by digest on the remote server. If neither the
-  protocol-tagged image nor `latest` can be resolved, fail the job clearly; do
-  not clone or install trainer source on the remote server.
+  persist the selected ref and digest (`JobProvisioningDB`), and pull the
+  image by digest on the remote server. If the protocol-tagged image cannot be
+  resolved, fail the job clearly; do not clone or install trainer source on
+  the remote server.
+- **Check the library version at digest-resolution time, before the pull.**
+  The `library-version` label is readable straight off the registry manifest
+  (`docker buildx imagetools inspect`, the same call that resolves the digest),
+  so this costs one metadata read and requires no image pull, container launch,
+  or tunnel. Apply **range** logic against Studio's own installed
+  `physicalai-train` version:
+  - trainer **older** than Studio's → non-fatal warning surfaced in job status
+    ("trainer image reports physicalai-train `<X>`, older than this Studio
+    build's `<Y>` — recent training-logic changes may not be present"). It is
+    not a failure: the protocol check already proves the wire contract holds,
+    and most library differences (unrelated bugfixes, policies this job doesn't
+    use) don't affect this job.
+  - trainer **newer than or equal to** Studio's → proceed silently.
+  - job's `policy`/feature has a **documented minimum** library version that
+    the image doesn't meet → fail before pulling, naming the policy and the
+    required version. This is the only hard gate on this axis, and it is scoped
+    to the feature that needs it so unrelated library bumps never force a
+    failure.
 - Enforce protocol compatibility before uploading a dataset, with the
   **grandfather rule**: a direct-URL trainer reporting no protocol version is
   accepted (log at info, show "protocol unknown" in status); an SSH-provisioned
   image reporting no or incompatible metadata fails the job before dataset
-  upload. This `/health` check is the actual safety net regardless of which tag
-  was resolved — it is what catches a `latest` fallback that turns out to be
-  wire-incompatible. Add tests for both branches so the grandfather path cannot
-  silently widen to SSH.
+  upload. This `/health` check remains a defense-in-depth safety net for the
+  direct-URL grandfather path and for any drift between the resolved digest and
+  what actually runs. Add tests for both branches so the grandfather path
+  cannot silently widen to SSH.
+- Re-confirm the library version from `/health` once the container is up, as
+  defense-in-depth against the manifest label disagreeing with what actually
+  runs. The pre-pull label check is the one that gates; this one only has to
+  catch the mismatch case, and a disagreement between label and `/health` is
+  itself a reason to fail (the image is not what it advertised).
 
 ### 4. SSH container provisioning service
 
@@ -364,10 +446,10 @@ Per job, on the selected server:
 - **Re-check free disk at provisioning time** against the actual snapshot size
   for this job plus expected artifact size. The Step 2 save-time check used a
   nominal size and cannot know the dataset.
-- Resolve the protocol-tagged image (`protocol-<N>`) first and use `latest`
-  only when that image cannot be resolved. Pull the selected image by its
-  immutable repo digest. Stream sanitized pull output and emit heartbeats
-  while it runs.
+- Resolve the protocol-tagged image (`protocol-<N>`); there is no `latest`
+  fallback — fail the job immediately if it cannot be resolved. Pull the
+  selected image by its immutable repo digest. Stream sanitized pull output
+  and emit heartbeats while it runs.
 - Verify the image identity/signature and trainer protocol metadata before
   launch, then launch the container by the resolved digest rather than the
   mutable tag.
@@ -591,13 +673,13 @@ the train dialog, and the progress stepper.
   that Studio stores no SSH credentials whatsoever, host setup for CUDA/XPU,
   XPU limitations, image verification, cleanup/recovery procedures, and the
   direct-reachability assumption.
-- Once the `protocol-<N>` tag lands in `trainer-images.yml` (see
+- Now that the `protocol-<N>` tag exists in `trainer-images.yml` (see
   [Resolve trainer images](#3-resolve-trainer-images)), update the "Container
   images" section of `../../backend/docs/remote-trainer.md` to document the
-  full three-tag scheme (`<git-sha>`, `protocol-<N>`, `latest`), which of them
-  is CI-published vs. resolved automatically by Studio, and why exact-SHA
-  matching was rejected — do this alongside the CI change, not ahead of it, so
-  the docs never describe a tag that doesn't exist yet.
+  full three-tag scheme (immutable `<version>-dev-<short-sha>`, moving `main`,
+  moving `protocol-<N>`), that no `latest` is published, which tags are
+  CI-published vs. resolved automatically by Studio, and why exact-SHA matching
+  was rejected (risk 21).
 - For the containerized deployment, document mounting `~/.ssh` and/or exposing
   `SSH_AUTH_SOCK`, and that every instance eligible to reattach a job needs the
   same alias resolvable.
@@ -616,12 +698,18 @@ preflight, teardown-on-failure, and cached-image reuse. Add tests for:
   field, and no API response contains one,
 - registry/image pull failures return a clear error,
 - an incompatible or incorrectly signed image is rejected before upload,
-- a resolvable `protocol-<N>` image is selected instead of `latest`,
-- `latest` is selected only when the `protocol-<N>` tag or its image cannot be
-  resolved, with the fallback reason persisted,
+- a resolvable `protocol-<N>` image is selected; there is no `latest`
+  fallback, and an unresolvable `protocol-<N>` tag fails the job immediately
+  with an actionable message,
 - protocol-version resolution succeeds regardless of deployment shape
   (container or dev checkout), since it is a plain compiled-in constant with
   no `.git` dependency,
+- the `library-version` label is read from the registry manifest **before any
+  pull**, and: an older trainer library produces a warning without failing the
+  job, an equal/newer one proceeds silently, and a policy with a documented
+  minimum fails before the pull naming that policy and the required version,
+- a `library-version` label that disagrees with what `/health` later reports
+  fails the job (the image did not match what it advertised),
 - the selected ref and resolved digest are persisted and the job container
   launches by that digest rather than a mutable tag,
 - Docker publishes the trainer only on remote loopback,
@@ -690,7 +778,7 @@ contract.
   | Phase               | Key             | Window | Notes                                                                                        |
   | ------------------- | --------------- | ------ | -------------------------------------------------------------------------------------------- |
   | Connect & preflight | `connect`       | 0–2    | SSH, Docker, driver, disk, registry, and GPU-free checks.                                    |
-  | Image pull          | `image_pull`    | 2–5    | Resolve protocol tag or fallback `latest`, then pull by digest; cached layers can be fast.    |
+  | Image pull          | `image_pull`    | 2–5    | Resolve the `protocol-<N>` tag (no `latest` fallback), read the `library-version` label off the manifest and range-check it, then pull by digest; cached layers can be fast. |
   | Image verification  | `image_verify`  | 5–7    | Resolve digest, verify identity/signature and protocol metadata.                             |
   | Trainer start       | `trainer_start` | 7–9    | Launch container, inspect port, open tunnel, poll `/health`.                                 |
   | Dataset upload      | `upload`        | 9–17   | Existing snapshot ZIP stream (real byte %).                                                  |
@@ -735,8 +823,7 @@ percentage, so:
 
 - If all image layers are already cached or image verification finishes
   immediately, advance to that window's end and mark the step `done` so the jump
-  is explained rather than looking stuck. Pull the resolved digest for every job;
-  query the moving `latest` tag only when protocol-tag resolution falls back to it.
+  is explained rather than looking stuck. Pull the resolved digest for every job.
 
 ### Trust boundary
 
@@ -848,54 +935,67 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
 5. **Pending-job starvation** — with GPU-busy jobs waiting rather than failing, a
    permanently occupied server accumulates waiting jobs. The give-up timeout and
    a visible waiting phase are what keep this from looking like a hang.
-6. **Fallback-tag reproducibility** — `protocol-<N>`-tagged images are
-   preferred, but `latest` intentionally advances when used as the fallback.
-   Persist the selected ref, fallback reason, resolved digest, and trainer
-   build metadata with each job, and keep the resolution key on Studio's
-   compiled-in protocol-version constant rather than the Studio build revision
-   (git SHA) or `VERSION` semver — neither axis reliably matches a trainer tag,
-   since the trainer image only rebuilds on trainer-relevant path changes.
+6. **Unresolvable protocol tag** — `protocol-<N>` is the only trainer image tag
+   Studio will use for SSH provisioning; there is no fallback, because no
+   `latest` is published and the only moving alternative (`main`) would be a
+   stale, pre-bump image in the exact window `protocol-<N>` is missing. Fail
+   the job with an actionable message
+   ("no trainer image published yet for protocol `<N>`") and persist the
+   resolved ref, digest, and trainer build metadata with each job. Keep the
+   resolution key on Studio's compiled-in protocol-version constant rather than
+   the Studio build revision (git SHA) or `VERSION` semver — neither axis
+   reliably matches a trainer tag, since the trainer image only rebuilds on
+   trainer-relevant path changes.
 7. **Grandfathered trainers** — allowing direct-URL trainers without protocol
    metadata means a genuinely incompatible old trainer can still be selected.
    Bound this: log it, show "protocol unknown" in status, and revisit once the
    metadata has propagated.
-8. **Host/runtime compatibility** — image contents do not replace host GPU
+8. **Protocol version is not a training-logic guarantee** — `protocol-<N>`
+   only proves wire-schema compatibility. Because `library/**` changes
+   republish under the same protocol number (no version bump required), two
+   images tagged `protocol-<N>` can run materially different training logic,
+   and Studio's own build can drift older or newer than whatever currently
+   resolves. Bound this with the separate library-version freshness check
+   (non-fatal warning on an older trainer, hard gate only for a
+   `policy`/feature with a documented minimum) rather than folding it into the
+   protocol check.
+9. **Host/runtime compatibility** — image contents do not replace host GPU
    drivers, NVIDIA Container Toolkit, XPU device permissions, or enough local
    disk. Keep host and in-container checks in preflight and provisioning, and
    re-check disk against the actual dataset size at provisioning time.
-9. **Image supply chain** — pulling a public image adds registry availability
+10. **Image supply chain** — pulling a public image adds registry availability
    and artifact-trust dependencies. Sign, scan, verify, and pin the resolved
    digest for the running container rather than launching an unresolved tag.
-10. **GPU-busy detection limits** — the pre-launch check has an inherent race
+11. **GPU-busy detection limits** — the pre-launch check has an inherent race
     (a foreign task can claim the GPU between check and launch on a shared
     server) and XPU per-process attribution is weaker than CUDA. Treat the check
     as a best-effort guard, prefer allocated-memory + process presence over
     spiky utilization%, and keep OOM-at-startup handling as the final backstop.
-11. **No backend authorization** — the feature grants root-equivalent execution
+12. **No backend authorization** — the feature grants root-equivalent execution
     on registered hosts to anyone who can reach the API. Acceptable on a
     localhost-only workstation deployment; the backend switch (Step 8) plus a
     re-review are required before any network exposure.
-12. **SSH agent reach exceeds the registered servers** — reusing the user's SSH
+13. **SSH agent reach exceeds the registered servers** — reusing the user's SSH
     setup means a compromised Studio process can reach every identity the agent
     holds, not just the GPU boxes. This is the one security cost of the
     ssh_config design versus a narrowly-scoped injected credential. Mitigate by
     documenting a dedicated per-host `IdentityFile`.
-13. **SSH config drift** — a renamed or deleted `Host` entry breaks a saved
+14. **SSH config drift** — a renamed or deleted `Host` entry breaks a saved
     server and can block reattach of a running job. Surface the missing-alias
     state prominently, fail closed, and never substitute a different alias.
-14. **`abort_orphan_jobs` runs before container-level reattach** —
+15. **`abort_orphan_jobs` runs before container-level reattach** —
     `TrainingWorker.setup()` calls `TrainingService.abort_orphan_jobs` ahead of
     `run_loop`. Its `_reattachable_remote_job_id` check must be extended to
     treat a RUNNING SSH job backed by a `JobProvisioningDB` row as reattachable
     (requeue to `PENDING`), or every in-flight SSH job is marked `FAILED` on
     startup before the startup recovery procedure ever runs, silently defeating
     the reattach feature this plan is built around.
-15. **Teardown must not fire on graceful suspend** — the provisioning
+16. **Teardown must not fire on graceful suspend** — the provisioning
     teardown described in Step 4/5 is wrapped in `finally`, but must skip
     stop/remove when `train()` exits via `TrainingSuspendedError`; otherwise a
     normal backend restart tears down the very container reattach is meant to
     recover.
-16. **CI concurrency can drop a `protocol-<N>`/`latest` promotion under
+17. **CI concurrency can drop a `protocol-<N>` promotion under
     frequent trainer rebuilds** — `trainer-images.yml`'s concurrency group is
     `trainer-images-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}`
     with `cancel-in-progress: true`. For a `push` to `main`,
@@ -906,13 +1006,17 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
     This fails closed (nothing unsigned or unscanned is ever promoted), but
     under high merge velocity to `library/**`/`application/backend/**`/
     `application/plugin/**`/`Dockerfile.trainer` it can silently skip
-    promoting `protocol-<N>`/`latest` for an intermediate commit, and wastes
-    CI minutes re-running the same build repeatedly. **Follow-up:** key the
+    promoting `protocol-<N>` for an intermediate commit, and wastes
+    CI minutes re-running the same build repeatedly. Since there is no
+    `latest` fallback, a skipped promotion now fails SSH training jobs outright
+    (with an actionable message) rather than silently degrading — surfacing
+    this gap sooner, which is the point, but also raising the cost of leaving
+    it unfixed. **Follow-up:** key the
     `push` case on `github.sha` instead of `github.ref` (each merge gets its
     own group and always runs to completion) and only set
     `cancel-in-progress: true` for the `pull_request` case, where cancelling a
     superseded PR run is actually correct.
-17. **Trainer image promotion is not gated on `library.yml`/`backend.yml`
+18. **Trainer image promotion is not gated on `library.yml`/`backend.yml`
     passing for the same commit** — `build-and-smoke-test` in
     `trainer-images.yml` only asserts image metadata (non-root user,
     entrypoint, the `api-protocol` label, no Studio/UI/Docker-socket content)
@@ -920,15 +1024,15 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
     training step. `library.yml` and `backend.yml` run the real unit/
     integration suites as **separate workflows** with no `needs:` dependency
     from `trainer-images.yml`. A `library/**` commit that fails
-    `library.yml`'s own tests can still promote a fresh `protocol-<N>`/
-    `latest` trainer image — the exact tag every SSH job auto-resolves — with
+    `library.yml`'s own tests can still promote a fresh `protocol-<N>`
+    trainer image — the exact tag every SSH job auto-resolves — with
     no real training validation in between. Higher trainer-image update
     frequency raises the odds of this happening before anyone notices.
     **Follow-up:** gate the `publish` job's tag-promotion step on the
     `library.yml`/`backend.yml` conclusion for the same commit SHA (e.g. a
     `workflow_run` check, or restructuring so `trainer-images.yml` depends on
     their result), not just on its own smoke test.
-18. **Layer-cache reuse on remote hosts is weaker than assumed, because of the
+19. **Layer-cache reuse on remote hosts is weaker than assumed, because of the
     editable path dependency** — `physicalai-train` is
     `{ path = "../../library", editable = true }`
     (`application/backend/pyproject.toml`), so `Dockerfile.trainer` must copy
@@ -947,3 +1051,69 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
     (`cache-from`/`cache-to`) for CI build time, and budget/monitor the
     `image_pull` phase window (Step 4/Progress Reporting) against real pull
     times on a representative remote host rather than assuming cache hits.
+20. **GHCR retention may garbage-collect every trainer tag, `protocol-<N>`
+    included** — `cleanup-old-app-images.yml` runs weekly against
+    `physicalai-trainer-cuda` and `physicalai-trainer-xpu` with
+    `min-versions-to-keep: 10`, delegating to the shared `geti-ci`
+    `cleanup-images` action. Its documented retention allowlist is release
+    semver (`X.Y.Z`), release candidates (`X.Y.ZrcN`), and `latest`. Since the
+    trainer packages publish **none** of those — only
+    `<version>-dev-<short-sha>`, `main`, and `protocol-<N>` — *no* trainer tag
+    is allowlisted, so all of them fall inside the `min_versions_to_keep`
+    window. Whether a tagged version is actually collectable depends on how
+    that shared action treats tagged-but-not-allowlisted versions, which this
+    plan must not guess at. If it is collectable, the single tag every SSH job
+    resolves can be deleted by a scheduled job, and — with no fallback tag —
+    that breaks all SSH training until the next trainer-relevant commit
+    republishes it. **Follow-up:** confirm the action's behavior for these tag
+    shapes and, if needed, add `protocol-*` (and `main`) to the retention
+    allowlist. A note recording this is already in
+    `cleanup-old-app-images.yml`.
+21. **Exact-SHA image matching was reconsidered and re-rejected** — building
+    the trainer on every commit and resolving `:<git-sha>` looks like a
+    stronger guarantee, but it fails on four independent axes. (a) Studio
+    cannot reliably know its own SHA at runtime: it ships as a PyPI package
+    and as containers, neither carrying `.git`, and a dev checkout with
+    uncommitted changes maps to no published build. (b) `trainer-images.yml`'s
+    publish job is gated `if: github.ref == 'refs/heads/main'`, so no branch or
+    PR commit ever has an image — every developer running Studio from a branch
+    would be permanently unable to run SSH jobs, with no fallback to soften it.
+    (c) Retention (risk 20) keeps only the 10 most recent non-release versions,
+    so SHA tags are deleted within days of frequent builds, permanently
+    breaking any Studio build older than that window. (d) It requires removing
+    the `paths:` filter, so every docs/UI commit rebuilds two multi-GB
+    scan-and-sign images and produces a new digest that every remote host must
+    re-pull (risk 19). It is also not more correct: per-job reproducibility is
+    already guaranteed by resolving and persisting an immutable digest, so SHA
+    tagging adds cost without adding a guarantee. **If explicit pinning is
+    wanted, add it as an opt-in per-server image ref/digest override**, not as
+    the default resolution mechanism.
+22. **Composite `protocol-<N>-lib-<X>` tags were considered and rejected** —
+    encoding the library version in the tag would make library compatibility a
+    resolution key rather than a post-resolution check, but tags are matched by
+    **equality** while library compatibility is a **range** (newer is normally
+    fine; older is the risk), so the tag cannot express the actual rule. It
+    would also be near-useless in practice today, since `library/pyproject.toml`
+    is a hand-maintained `0.1.0` — the same shape already rejected for
+    `../../VERSION` — and it would make the tag namespace combinatorial,
+    multiplying both the unpublished-tag windows that the no-fallback decision
+    converts into hard failures and the number of moving tags needing retention
+    protection. The OCI-label + registry-inspect approach (Step 3) achieves the
+    same pre-pull check with range semantics and no new tags.
+23. **Vulnerability scanning is no longer a publish gate for trainer images** —
+    the Trivy step was removed from `trainer-images.yml` and now lives in
+    `security-scan.yml` as `trivy-trainer-image-scan`, which runs only on
+    `schedule` (nightly) or `workflow_dispatch`, against
+    `physicalai-trainer-<device>:main`. Publishing and tag promotion therefore
+    complete without any vulnerability scan blocking them, so `protocol-<N>` —
+    the tag Studio auto-resolves for every SSH job, with no fallback behind it
+    — can point at an image that has not been scanned yet, for up to a day.
+    Signing and metadata verification *are* still gates (moving tags are
+    promoted only after signing), so this is a vulnerability-freshness gap, not
+    a provenance gap. The nightly job also scans `:main` rather than
+    `protocol-<N>`; these are the same digest today because both are promoted
+    from the same build, but that is a coincidence of the current scheme rather
+    than something enforced. **Follow-up:** decide whether SSH provisioning
+    requires a scanned image, and if so either restore a blocking scan before
+    tag promotion or have the nightly job scan `protocol-<N>` and gate
+    provisioning on a recorded scan result.
