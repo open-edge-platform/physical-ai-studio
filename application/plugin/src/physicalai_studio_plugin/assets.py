@@ -18,3 +18,4 @@ class RobotAsset:
     packages: dict[str, Path]
     joint_map: dict[str, list[str]]
     root_resolver: Callable[[], Path] | None = None
+    preview_thumbnail: Path | None = None

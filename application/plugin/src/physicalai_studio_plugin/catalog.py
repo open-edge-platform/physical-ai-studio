@@ -70,6 +70,8 @@ class RobotCatalogDefinition(Generic[_PayloadT]):
     type: str
     display_name: str
     role: Literal["follower", "leader"]
+    category: str = "Other"
+    source: Literal["internal", "first_party", "external"] = "external"
     robot_builder: BuildRobotCallable | None = None
     robot_payload: _PayloadModelT | None = None
     asset: RobotAsset | None = None
