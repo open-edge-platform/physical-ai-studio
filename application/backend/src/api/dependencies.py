@@ -294,7 +294,7 @@ def get_environment_id(environment_id: str) -> UUID:
 
 
 def get_remote_server_id(remote_server_id: str) -> UUID:
-    """Initialize and validates a remote server ID."""
+    """Initialize and validate a remote server ID."""
     if not is_valid_uuid(remote_server_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid remote server ID")
     return UUID(remote_server_id)
