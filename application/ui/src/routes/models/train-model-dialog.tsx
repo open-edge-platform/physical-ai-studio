@@ -82,7 +82,7 @@ export const MODELS: ReadonlyArray<{
 interface TrainModelDialogProps {
     baseModel?: SchemaModel;
     close: (job: SchemaJob | undefined) => void;
-    defaultMaxSteps?: number;
+    defaultMaxEpochs?: number;
 }
 
 type TrainingTargetOption = {
@@ -238,8 +238,8 @@ const PRECISION_LABELS: Record<string, string> = {
 };
 
 interface TrainingParametersProps {
-    maxSteps: number;
-    onMaxStepsChange: (value: number) => void;
+    maxEpochs: number;
+    onMaxEpochsChange: (value: number) => void;
     batchSize: number;
     onBatchSizeChange: (value: number) => void;
     numWorkers: Key | null;
@@ -255,8 +255,8 @@ interface TrainingParametersProps {
 }
 
 const TrainingParameters = ({
-    maxSteps,
-    onMaxStepsChange,
+    maxEpochs,
+    onMaxEpochsChange,
     batchSize,
     onBatchSizeChange,
     numWorkers,
@@ -304,20 +304,20 @@ const TrainingParameters = ({
                 </Flex>
             </Flex>
             <NumberField
-                label='Max Steps'
-                value={maxSteps}
-                onChange={onMaxStepsChange}
-                minValue={100}
-                maxValue={100000}
-                step={100}
+                label='Max Epochs'
+                value={maxEpochs}
+                onChange={onMaxEpochsChange}
+                minValue={1}
+                maxValue={1000}
+                step={1}
                 width='100%'
                 contextualHelp={
                     <ContextualHelp variant='info'>
-                        <Heading>Max steps</Heading>
+                        <Heading>Max epochs</Heading>
                         <Content>
                             <Text>
-                                Total number of gradient update steps. Training will stop after this many steps
-                                regardless of epochs.
+                                Total number of training epochs. Training will stop after this many full passes through
+                                the dataset. We recommend training for 5 to 10 epochs
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -399,7 +399,7 @@ const TrainingParameters = ({
     </Flex>
 );
 
-export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
+export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
     // Continuing an existing model needs its checkpoint, which only this machine
@@ -423,7 +423,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const { datasets, id: projectId } = useProject();
 
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
-    const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
+    const [maxEpochs, setMaxEpochs] = useState<number>(defaultMaxEpochs);
     const [batchSize, setBatchSize] = useState<number>(8);
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
@@ -484,7 +484,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             project_id: projectId,
             model_name: name,
             policy: selectedPolicy,
-            max_steps: maxSteps,
+            max_epochs: maxEpochs,
             batch_size: batchSize,
             num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
             auto_scale_batch_size: autoScaleBatchSize,
@@ -562,8 +562,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                         </DisclosureTitle>
                         <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
                             <TrainingParameters
-                                maxSteps={maxSteps}
-                                onMaxStepsChange={setMaxSteps}
+                                maxEpochs={maxEpochs}
+                                onMaxEpochsChange={setMaxEpochs}
                                 batchSize={batchSize}
                                 onBatchSizeChange={setBatchSize}
                                 numWorkers={numWorkers}

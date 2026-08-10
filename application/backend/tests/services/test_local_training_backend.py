@@ -18,7 +18,7 @@ from uuid import uuid4
 import pytest
 
 from schemas.dataset import Snapshot
-from schemas.job import TrainingDevice, TrainingPrecision, TrainJobPayload
+from schemas.job import _DEFAULT_MAX_EPOCHS, TrainingDevice, TrainingPrecision, TrainJobPayload
 from schemas.model import Model
 from services.training_backends.base import TrainingContext
 from services.training_backends.local import LocalTrainingBackend, build_spec
@@ -93,7 +93,7 @@ class TestBuildSpec:
 
         assert spec == TrainingJobSpec(
             policy="act",
-            max_steps=500,
+            max_epochs=_DEFAULT_MAX_EPOCHS,
             batch_size=16,
             num_workers="auto",
             val_split=0.2,

@@ -4,7 +4,7 @@
 """One training run, described by a spec and executed by one function.
 
 :class:`TrainingJobSpec` is the complete configuration of a training run —
-policy, step budget, batch size, precision, device — and nothing else. It holds
+ policy, epoch budget, batch size, precision, device — and nothing else. It holds
 no paths, no job identity, and no transport details, so the same spec can be
 built in-process or sent over HTTP to a remote trainer and mean the same thing
 in both places.
@@ -16,7 +16,7 @@ result goes, how progress is reported, and how cancellation is signalled are all
 arguments — the runner owns none of that policy.
 
 Example:
-    >>> spec = TrainingJobSpec(policy="act", max_steps=1000, batch_size=8)
+    >>> spec = TrainingJobSpec(policy="act", max_epochs=5, batch_size=8)
     >>> run_training_job(  # doctest: +SKIP
     ...     spec,
     ...     dataset_root="/data/snapshot",
@@ -75,7 +75,7 @@ class TrainingJobSpec(BaseModel):
     arguments to :func:`run_training_job`.
 
     Example:
-        >>> spec = TrainingJobSpec(policy="act", max_steps=2000)
+        >>> spec = TrainingJobSpec(policy="act", max_epochs=5)
         >>> spec.precision
         'bf16-mixed'
     """
@@ -87,7 +87,7 @@ class TrainingJobSpec(BaseModel):
         default="physicalai",
         description="Which implementation of the policy to train.",
     )
-    max_steps: int = Field(default=100, ge=1, description="Optimizer step budget.")
+    max_epochs: int = Field(default=5, ge=1, description="Training epoch budget.")
     batch_size: int = Field(default=8, ge=1, description="Training batch size.")
     num_workers: int | Literal["auto"] = Field(default="auto", description="Dataloader worker count.")
     val_split: float = Field(default=0.1, ge=0.0, lt=1.0, description="Fraction of episodes held out for validation.")
@@ -201,7 +201,7 @@ def run_training_job(
         accelerator=accelerator,
         strategy=resolve_strategy(spec.device_type),
         devices=resolve_devices(spec.device_index),
-        max_steps=spec.max_steps,
+        max_epochs=spec.max_epochs,
         auto_scale_batch_size=spec.auto_scale_batch_size,
         precision=spec.precision,
         check_val_every_n_epoch=1,

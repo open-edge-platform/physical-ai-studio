@@ -36,7 +36,7 @@ class TestTrainingJobSpec:
     def test_only_the_policy_is_required(self) -> None:
         spec = TrainingJobSpec(policy="act")
 
-        assert (spec.policy_source, spec.max_steps, spec.batch_size) == ("physicalai", 100, 8)
+        assert (spec.policy_source, spec.max_epochs, spec.batch_size) == ("physicalai", 5, 8)
         assert (spec.num_workers, spec.val_split, spec.precision) == ("auto", 0.1, "bf16-mixed")
         assert (spec.compile_model, spec.auto_scale_batch_size) == (False, False)
         assert (spec.device_type, spec.device_index) == (None, None)
@@ -49,7 +49,7 @@ class TestTrainingJobSpec:
     @pytest.mark.parametrize(
         "invalid",
         [
-            {"max_steps": 0},
+            {"max_epochs": 0},
             {"batch_size": 0},
             {"val_split": 1.0},
             {"val_split": -0.1},
@@ -63,7 +63,7 @@ class TestTrainingJobSpec:
 
     def test_spec_round_trips_through_json(self) -> None:
         """Remote submission sends the spec as JSON; it must survive the trip."""
-        spec = TrainingJobSpec(policy="pi0", max_steps=500, num_workers=4, device_type="xpu", device_index=1)
+        spec = TrainingJobSpec(policy="pi0", max_epochs=5, num_workers=4, device_type="xpu", device_index=1)
 
         assert TrainingJobSpec.model_validate_json(spec.model_dump_json()) == spec
 
@@ -170,7 +170,7 @@ class TestRunTrainingJob:
     def test_trainer_is_configured_from_the_spec(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(
             policy="act",
-            max_steps=500,
+            max_epochs=5,
             precision="32-true",
             auto_scale_batch_size=True,
             device_type="cpu",
@@ -180,7 +180,7 @@ class TestRunTrainingJob:
         trainer_class = _run(spec, tmp_path)
 
         kwargs = trainer_class.call_args.kwargs
-        assert kwargs["max_steps"] == 500
+        assert kwargs["max_epochs"] == 5
         assert kwargs["precision"] == "32-true"
         assert kwargs["auto_scale_batch_size"] is True
         assert (kwargs["accelerator"], kwargs["strategy"], kwargs["devices"]) == ("cpu", "auto", [1])

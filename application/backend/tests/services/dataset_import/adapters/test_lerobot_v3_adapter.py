@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import numpy as np
 import pandas as pd
 from physicalai.data.archive_safety import SafeZipArchive
 
@@ -32,6 +33,15 @@ def _episodes_parquet_bytes(
     df = pd.DataFrame(data)
     buffer = BytesIO()
     df.to_parquet(buffer, index=False)
+    return buffer.getvalue()
+
+
+def _episodes_with_tasks_parquet_bytes(tasks: list[list[str]], *, as_arrays: bool = False) -> bytes:
+    buffer = BytesIO()
+    serialized_tasks = [np.array(task, dtype=object) for task in tasks] if as_arrays else tasks
+    pd.DataFrame(
+        {"episode_index": list(range(len(tasks))), "length": [1] * len(tasks), "tasks": serialized_tasks}
+    ).to_parquet(buffer, index=False)
     return buffer.getvalue()
 
 
@@ -164,6 +174,28 @@ def test_lerobot_v3_parse_manifest_counts_all_episode_parquet_shards(tmp_path: P
 
     assert manifest.statistics.episode_count == 5
     assert manifest.statistics.frame_count == 45
+
+
+def test_lerobot_v3_parse_manifest_collects_unique_episode_tasks(tmp_path: Path) -> None:
+    adapter = LeRobotV3Adapter()
+    archive_path = tmp_path / "v3-default-task.zip"
+    _write_zip(
+        archive_path,
+        {
+            "meta/info.json": json.dumps({"codebase_version": "v3.0"}).encode("utf-8"),
+            "meta/tasks.parquet": b"PAR1",
+            "meta/episodes/chunk-000/file-000.parquet": _episodes_with_tasks_parquet_bytes(
+                [["Fold the Garment", "Place the Garment"], ["Fold the Garment"]], as_arrays=True
+            ),
+            "meta/episodes/chunk-000/file-001.parquet": _episodes_with_tasks_parquet_bytes([["Hang the Garment"]]),
+            "data/chunk-000/file-000.parquet": b"PAR1",
+        },
+    )
+
+    safe_archive = SafeZipArchive(archive_path, max_uncompressed_bytes=5 * 1024 * 1024 * 1024)
+    manifest, _report = adapter.build_draft(safe_archive, payload=MagicMock())
+
+    assert manifest.dataset_schema.tasks == ["Fold the Garment", "Hang the Garment", "Place the Garment"]
 
 
 def test_lerobot_v3_parse_manifest_counts_episode_shards_when_file_000_is_missing(tmp_path: Path) -> None:

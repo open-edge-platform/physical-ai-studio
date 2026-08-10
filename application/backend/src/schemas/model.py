@@ -172,6 +172,7 @@ class BackendExportDetail(BaseModel):
 
 
 class TrainingSummary(BaseModel):
+    max_epochs: int | None = None
     max_steps: int | None = None
     batch_size: int | None = None
     auto_scale_batch_size: bool | None = None

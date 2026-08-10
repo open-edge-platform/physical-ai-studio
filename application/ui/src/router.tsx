@@ -4,6 +4,7 @@ import { Content, Grid, Heading, IllustratedMessage, Loading, minmax, View } fro
 import { createBrowserRouter, Outlet, redirect } from 'react-router';
 import { path } from 'static-path';
 
+import { fetchClient } from './api/client';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
 import { AppLayout } from './routes/app/app.layout';
@@ -171,6 +172,31 @@ export const router = createBrowserRouter([
                         children: [
                             {
                                 index: true,
+                                loader: async ({ params }) => {
+                                    const project_id = params.project_id;
+
+                                    if (project_id === undefined) {
+                                        return redirect(paths.projects.index({}));
+                                    }
+
+                                    const { data: projectData, error } = await fetchClient.GET(
+                                        '/api/projects/{project_id}',
+                                        {
+                                            params: { path: { project_id } },
+                                        }
+                                    );
+
+                                    if (error !== undefined || projectData?.datasets[0]?.id === undefined) {
+                                        return null;
+                                    }
+
+                                    return redirect(
+                                        paths.project.datasets.show({
+                                            project_id,
+                                            dataset_id: projectData.datasets[0].id,
+                                        })
+                                    );
+                                },
                                 element: <Datasets />,
                             },
                             {

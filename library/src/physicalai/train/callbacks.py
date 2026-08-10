@@ -54,7 +54,7 @@ class ProgressReportingCallback(Callback):
         super().__init__()
         self._report = report
         self._should_stop = should_stop
-        # Logging cadence in steps; resolved from the step budget on fit start.
+        # Logging cadence in steps; resolved once Lightning knows the dataloader size.
         self._every_n_steps = 1
         self._val_start_t: float | None = None
 
@@ -92,14 +92,16 @@ class ProgressReportingCallback(Callback):
         return float(value)  # type: ignore[arg-type]
 
     @staticmethod
-    def _max_steps(trainer: L.Trainer) -> int | None:
-        """Return the configured step budget, or None when unset/disabled.
+    def _total_steps(trainer: L.Trainer) -> int | None:
+        """Return the effective step budget, or None when it cannot be determined.
 
-        Lightning uses -1 (or any non-positive value) to signal an unbounded step
-        budget. Surface that as None so consumers do not misread it as a real
-        limit, keeping the value consistent with ``_progress`` returning 0.
+        ``estimated_stepping_batches`` accounts for a configured ``max_epochs``
+        and becomes available after Lightning attaches the dataloader.
         """
-        return trainer.max_steps if trainer.max_steps > 0 else None
+        if trainer.max_steps > 0:
+            return trainer.max_steps
+        estimated_steps = trainer.estimated_stepping_batches
+        return int(estimated_steps) if estimated_steps > 0 else None
 
     @staticmethod
     def _extract_loss(outputs: object) -> float | None:
@@ -119,23 +121,22 @@ class ProgressReportingCallback(Callback):
 
     @staticmethod
     def _progress(trainer: L.Trainer) -> int:
-        """Compute step-based completion.
+        """Compute completion from the effective step budget.
 
         Args:
             trainer: The active Lightning trainer.
 
         Returns:
-            Completion percentage clamped to 0-100. Returns 0 when ``max_steps``
-            is unset (-1) or otherwise non-positive. Emits 100 only once
-            ``global_step >= max_steps`` so partial steps never round up to
-            completion.
+            Completion percentage clamped to 0-100. Returns 0 when the effective
+            step budget is unavailable. Emits 100 only once all estimated steps
+            complete so partial steps never round up to completion.
         """
-        max_steps = trainer.max_steps
-        if max_steps <= 0:
+        total_steps = ProgressReportingCallback._total_steps(trainer)
+        if total_steps is None:
             return 0
-        if trainer.global_step >= max_steps:
+        if trainer.global_step >= total_steps:
             return 100
-        return min(99, int(trainer.global_step / max_steps * 100))
+        return min(99, int(trainer.global_step / total_steps * 100))
 
     def _check_stop(self, trainer: L.Trainer) -> None:
         """Stop the trainer cooperatively when cancellation was requested."""
@@ -144,7 +145,7 @@ class ProgressReportingCallback(Callback):
 
     def on_fit_start(self, trainer: L.Trainer, _pl_module: L.LightningModule) -> None:
         """Resolve the logging cadence and honor a cancel requested before training."""
-        self._every_n_steps = self._auto_every_n_steps(trainer.max_steps)
+        self._every_n_steps = self._auto_every_n_steps(self._total_steps(trainer) or 0)
         self._check_stop(trainer)
 
     def on_train_batch_end(
@@ -161,7 +162,7 @@ class ProgressReportingCallback(Callback):
         # Attach the detailed cadence fields so consumers can throttle logs.
         if global_step <= 1 or global_step % self._every_n_steps == 0:
             extra["global_step"] = global_step
-            extra["max_steps"] = self._max_steps(trainer)
+            extra["max_steps"] = self._total_steps(trainer)
             extra["epoch"] = trainer.current_epoch
         self._report(self._progress(trainer), None, extra)
         self._check_stop(trainer)
@@ -172,7 +173,7 @@ class ProgressReportingCallback(Callback):
         self._report(
             self._progress(trainer),
             None,
-            {"val_event": "start", "global_step": trainer.global_step, "max_steps": self._max_steps(trainer)},
+            {"val_event": "start", "global_step": trainer.global_step, "max_steps": self._total_steps(trainer)},
         )
         self._check_stop(trainer)
 
