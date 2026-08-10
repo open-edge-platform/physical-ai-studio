@@ -438,8 +438,8 @@ class SmolVLA(ExportablePolicyMixin, Policy):
 
         dataset_stats = extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
 
-# strict=False: ignore legacy config.json keys not present in SmolVLAConfig
-config = SmolVLAConfig.from_dict(hf_config, strict=False)
+        # strict=False: ignore legacy config.json keys not present in SmolVLAConfig
+        config = SmolVLAConfig.from_dict(hf_config, strict=False)
 
         return config, dataset_stats, weights_file
 
