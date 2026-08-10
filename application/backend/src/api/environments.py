@@ -66,7 +66,7 @@ async def get_runtime_config(
             leader=relation.tele_operator.robot,
             cameras=environment.cameras,
             fps=30,
-            port_resolver=robot_client_factory,
+            robot_factory=robot_client_factory,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

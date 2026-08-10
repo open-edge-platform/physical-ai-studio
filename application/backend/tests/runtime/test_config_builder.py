@@ -7,24 +7,25 @@ from uuid import uuid4
 from physicalai.config import to_yaml, validate_config
 from physicalai.runtime import RobotRuntime
 
+from robots.robot_client_factory import RobotClientFactory
 from runtime.config_builder import build_runtime_config, runtime_config_change_me
 from schemas import SerialPortInfo
 from schemas.project_camera import CameraAdapter
 from schemas.robot import RobotAdapter
 
 
-class FakePortResolver:
-    def __init__(self, *, stable: bool = True) -> None:
-        self.stable = stable
-
+class FakePortFinder:
     async def find_port(self, port_info: SerialPortInfo) -> str | None:
         return port_info.connection_string
 
-    def resolve_serial_device(self, device: str) -> str:
-        return "/dev/serial/by-id/test-robot" if self.stable else device
 
-    def resolve_camera_device(self, device: str) -> str:
-        return "/dev/v4l/by-id/test-camera" if self.stable else device
+def _robot_factory() -> RobotClientFactory:
+    return RobotClientFactory(robot_manager=FakePortFinder())  # type: ignore[arg-type]
+
+
+def _stub_device_paths(mocker: Any) -> None:
+    mocker.patch("runtime.config_builder.resolve_serial_device", return_value="/dev/serial/by-id/test-robot")
+    mocker.patch("runtime.config_builder.resolve_camera_device", return_value="/dev/v4l/by-id/test-camera")
 
 
 def _calibration() -> dict[str, dict[str, int]]:
@@ -63,13 +64,14 @@ def _camera() -> Any:
     )
 
 
-async def test_builder_emits_valid_runtime_recipe_and_round_trips() -> None:
+async def test_builder_emits_valid_runtime_recipe_and_round_trips(mocker: Any) -> None:
+    _stub_device_paths(mocker)
     document = await build_runtime_config(
         follower=_robot("follower"),
         leader=_robot("leader"),
         cameras=[_camera()],
         fps=30,
-        port_resolver=FakePortResolver(),
+        robot_factory=_robot_factory(),
     )
 
     validate_config(document)
@@ -87,13 +89,15 @@ async def test_builder_emits_valid_runtime_recipe_and_round_trips() -> None:
     assert isinstance(runtime, RobotRuntime)
 
 
-async def test_builder_marks_unstable_device_paths() -> None:
+async def test_builder_marks_unstable_device_paths(mocker: Any) -> None:
+    mocker.patch("runtime.config_builder.resolve_serial_device", side_effect=lambda device: device)
+    mocker.patch("runtime.config_builder.resolve_camera_device", side_effect=lambda device: device)
     document = await build_runtime_config(
         follower=_robot("follower"),
         leader=_robot("leader"),
         cameras=[_camera()],
         fps=30,
-        port_resolver=FakePortResolver(stable=False),
+        robot_factory=_robot_factory(),
     )
 
     assert runtime_config_change_me(document) == ["/dev/ttyACM0", "/dev/video0", "/dev/ttyACM0"]

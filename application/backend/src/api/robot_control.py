@@ -102,7 +102,7 @@ async def robot_websocket(
             leader=leader,
             cameras=[],
             fps=fps,
-            port_resolver=robot_client_factory,
+            robot_factory=robot_client_factory,
         )
         definition = robot_client_factory.catalog_registry.get_definition(follower.type)
         if definition is None:

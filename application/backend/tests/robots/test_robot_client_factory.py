@@ -38,6 +38,12 @@ class _FakeConnectionManager:
     async def find_robots(self) -> list[SerialPortInfo]:
         return self.robots
 
+    async def find_port(self, port_info: SerialPortInfo) -> str | None:
+        for port in self.robots:
+            if port.serial_number == port_info.serial_number:
+                return port.connection_string
+        return None
+
 
 def _calibration() -> dict[str, dict[str, int]]:
     return {

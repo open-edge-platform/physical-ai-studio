@@ -1,50 +1,38 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from physicalai.capture import ColorMode, SharedCamera
 from physicalai.config import Config, to_config, validate_config
-from physicalai_studio_plugin import CatalogRobotFactory, SerialPortInfo, shared_robot_name
+from physicalai_studio_plugin import shared_robot_name
 
+from robots.robot_client_factory import RobotClientFactory
 from runtime.features import sanitize_camera_name
 from utils.camera_factory import build_camera_config, is_migrated
+from utils.device_paths import resolve_camera_device, resolve_serial_device
 
 if TYPE_CHECKING:
+    from physicalai_studio_plugin import CatalogRobotFactory, SerialPortInfo
+
     from schemas.project_camera import Camera
     from schemas.robot import Robot
 
 
-class PortResolver(CatalogRobotFactory, Protocol):
-    def resolve_serial_device(self, device: str) -> str:
-        """Return a stable serial path when one is available."""
+class _StablePortFinder:
+    """Port finder for export: falls back to the stored port and prefers by-id paths."""
 
-    def resolve_camera_device(self, device: str) -> str:
-        """Return a stable camera path when one is available."""
-
-
-class _StableRobotPortResolver:
-    def __init__(self, resolver: PortResolver) -> None:
-        self._resolver = resolver
+    def __init__(self, port_finder: CatalogRobotFactory) -> None:
+        self._port_finder = port_finder
 
     async def find_port(self, port_info: SerialPortInfo) -> str | None:
-        port = await self._resolver.find_port(port_info)
+        port = await self._port_finder.find_port(port_info)
         if port is None:
             port = port_info.connection_string
-        return None if port is None else self._resolver.resolve_serial_device(port)
+        return None if port is None else resolve_serial_device(port)
 
 
-async def _shared_robot_config(robot: Robot, resolver: PortResolver) -> dict[str, Any]:
-    registry = getattr(resolver, "catalog_registry", None)
-    if registry is None:
-        from robots.catalog.registry import RobotCatalogRegistry
-
-        registry = RobotCatalogRegistry()
-    definition = registry.get_definition(robot.type)
-    if definition is None:
-        raise ValueError(f"Robot type is not part of the catalog: {robot.type}")
-    if definition.robot_builder is None:
-        raise ValueError(f"Robot type {robot.type} has no robot builder")
-    driver = await definition.robot_builder(robot, _StableRobotPortResolver(resolver))
+async def _shared_robot_config(robot: Robot, robot_factory: RobotClientFactory) -> dict[str, Any]:
+    driver, _ = await robot_factory.build_robot_driver(robot, _StablePortFinder(robot_factory))
     return Config(
         "physicalai.robot.SharedRobot",
         {
@@ -54,13 +42,13 @@ async def _shared_robot_config(robot: Robot, resolver: PortResolver) -> dict[str
     ).to_dict()
 
 
-def _shared_camera_config(camera: Camera, resolver: PortResolver) -> dict[str, Any]:
+def _shared_camera_config(camera: Camera) -> dict[str, Any]:
     if not is_migrated(camera.driver):
         raise ValueError(f"Camera driver {camera.driver!r} is not supported by the runtime")
     fingerprint = camera.fingerprint
     if fingerprint.startswith("/dev/video") and ":" in fingerprint:
         fingerprint = fingerprint.split(":")[0]
-    device = resolver.resolve_camera_device(fingerprint) if camera.driver == "usb_camera" else None
+    device = resolve_camera_device(fingerprint) if camera.driver == "usb_camera" else None
     shared_camera = SharedCamera(
         camera=build_camera_config(camera, device=device),
         color_mode=ColorMode.RGB,
@@ -74,18 +62,18 @@ async def build_runtime_config(
     leader: Robot | None,
     cameras: list[Camera],
     fps: float,
-    port_resolver: PortResolver,
+    robot_factory: RobotClientFactory,
 ) -> dict[str, Any]:
     """Assemble one physicalai runtime recipe from Studio database rows."""
-    follower_config = await _shared_robot_config(follower, port_resolver)
-    leader_config = None if leader is None else await _shared_robot_config(leader, port_resolver)
+    follower_config = await _shared_robot_config(follower, robot_factory)
+    leader_config = None if leader is None else await _shared_robot_config(leader, robot_factory)
 
     camera_configs: dict[str, dict[str, Any]] = {}
     for camera in cameras:
         key = sanitize_camera_name(camera.name)
         if key in camera_configs:
             raise ValueError(f"Camera names collide after sanitizing: {camera.name!r}")
-        camera_configs[key] = _shared_camera_config(camera, port_resolver)
+        camera_configs[key] = _shared_camera_config(camera)
 
     init_args: dict[str, Any] = {
         "robot": follower_config,
