@@ -70,6 +70,15 @@ def _factory() -> RobotClientFactory:
 
 
 class TestBuild:
+    async def test_build_shared_robot_returns_transport_and_definition(self) -> None:
+        robot = _so101_robot()
+
+        shared, definition = await _factory().build_shared_robot(robot)
+
+        assert isinstance(shared, SharedRobot)
+        assert shared.name == str(robot.id)
+        assert definition.type == "SO101_Follower"
+
     async def test_wraps_the_driver_in_a_shared_robot(self) -> None:
         client = await _factory().build(_so101_robot())
 

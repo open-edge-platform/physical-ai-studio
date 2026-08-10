@@ -1,6 +1,8 @@
+from pathlib import Path
+
 from physicalai.config import to_config
 from physicalai.robot import SharedRobot
-from physicalai_studio_plugin import shared_robot_name
+from physicalai_studio_plugin import RobotCatalogDefinition, shared_robot_name
 
 from exceptions import RobotPluginUnavailableError
 from robots.catalog.registry import RobotCatalogRegistry
@@ -27,6 +29,25 @@ class RobotClientFactory:
         if isinstance(robot, UnavailableRobot):
             raise RobotPluginUnavailableError(robot.name, robot.type)
 
+        shared_robot, definition = await self.build_shared_robot(robot)
+        adapter_options = definition.adapter_options
+        return PhysicalAIRobotAdapter(
+            robot=shared_robot,
+            robot_type=robot.type,
+            robot_role=definition.role,
+            display_name=robot.name,
+            config=PhysicalAIRobotAdapterConfig(
+                include_velocities=adapter_options.include_velocities,
+                goal_time_scale=adapter_options.goal_time_scale,
+                external_effort_gain=adapter_options.external_effort_gain,
+            ),
+        )
+
+    async def build_shared_robot(self, robot: ReadableRobot) -> tuple[SharedRobot, RobotCatalogDefinition]:
+        """Build the shared transport used by runtime and adapter callers."""
+        if isinstance(robot, UnavailableRobot):
+            raise RobotPluginUnavailableError(robot.name, robot.type)
+
         definition = self.catalog_registry.get_definition(robot.type)
 
         if definition is None:
@@ -43,18 +64,7 @@ class RobotClientFactory:
         # and the owner rebuilds it. The name keys the owner's Zenoh topics, so
         # it must come from the id, never the free-form display name.
         shared_robot = SharedRobot.from_config(to_config(robot_driver), name=shared_robot_name(robot.id))
-        adapter_options = definition.adapter_options
-        return PhysicalAIRobotAdapter(
-            robot=shared_robot,
-            robot_type=robot.type,
-            robot_role=definition.role,
-            display_name=robot.name,
-            config=PhysicalAIRobotAdapterConfig(
-                include_velocities=adapter_options.include_velocities,
-                goal_time_scale=adapter_options.goal_time_scale,
-                external_effort_gain=adapter_options.external_effort_gain,
-            ),
-        )
+        return shared_robot, definition
 
     async def find_port(self, port_info: SerialPortInfo) -> str | None:
         port = self._resolve_port(self.robot_manager.robots, port_info)
@@ -63,6 +73,25 @@ class RobotClientFactory:
 
         await self.robot_manager.find_robots()
         return self._resolve_port(self.robot_manager.robots, port_info)
+
+    def resolve_serial_device(self, device: str) -> str:
+        """Prefer the stable serial by-id alias for a robot device."""
+        return self._stable_device_path(device, Path("/dev/serial/by-id"))
+
+    def resolve_camera_device(self, device: str) -> str:
+        """Prefer the stable v4l by-id alias for a camera device."""
+        return self._stable_device_path(device, Path("/dev/v4l/by-id"))
+
+    @staticmethod
+    def _stable_device_path(device: str, directory: Path) -> str:
+        try:
+            target = Path(device).resolve()
+            for candidate in directory.iterdir():
+                if candidate.resolve() == target:
+                    return str(candidate)
+        except OSError:
+            pass
+        return device
 
     @staticmethod
     def _resolve_port(discovered: list[SerialPortInfo], target: SerialPortInfo) -> str | None:

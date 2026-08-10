@@ -7,7 +7,7 @@ import { RobotViewer, UnavailableRobotViewer } from '../../controller/robot-view
 import { RobotModelsProvider } from '../../robot-models-context';
 import { AvailableSchemaRobot, isUnavailableRobot } from '../../robot-types';
 import { InlineAlert } from '../../setup-wizard/shared/inline-alert';
-import { RobotActionReadState, useJointState, useSynchronizeModelJoints } from '../../use-joint-state';
+import { useJointState, useSynchronizeModelJoints } from '../../use-joint-state';
 
 const AvailableRobotCell = ({
     robot,
@@ -19,10 +19,14 @@ const AvailableRobotCell = ({
     leaderId?: string;
 }) => {
     const { project_id } = useProjectId();
-    const { joints, state, error, errorCode, setFollowerSource } = useJointState(project_id, followerId, leaderId);
+    const { joints, state, error, errorCode, warning, setFollowerSource } = useJointState(
+        project_id,
+        followerId,
+        leaderId
+    );
     useSynchronizeModelJoints(joints, robot.type);
 
-    const isTeleoperating = state.follower_source === RobotActionReadState.Teleoperation;
+    const isTeleoperating = state.follower_source === 'teleop';
 
     if (error) {
         return (
@@ -56,14 +60,14 @@ const AvailableRobotCell = ({
             position={'relative'}
         >
             <RobotViewer robot={robot} />
+            {warning && (
+                <View position={'absolute'} left={0} top={0} padding='size-100' maxWidth='size-4600'>
+                    <InlineAlert variant='warning'>{warning}</InlineAlert>
+                </View>
+            )}
             {leaderId !== undefined && (
                 <View position={'absolute'} right={0} top={0}>
-                    <Switch
-                        isSelected={isTeleoperating}
-                        onChange={(b) =>
-                            setFollowerSource(b ? RobotActionReadState.Teleoperation : RobotActionReadState.None)
-                        }
-                    >
+                    <Switch isSelected={isTeleoperating} onChange={(b) => setFollowerSource(b ? 'teleop' : 'hold')}>
                         Teleoperate
                     </Switch>
                 </View>
