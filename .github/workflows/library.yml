@@ -72,8 +72,10 @@ jobs:
           files_yaml: |
             test:
               - library/**
-              - physicalai/**
-              - .github/**
+              - .github/workflows/library.yml
+              - .github/actions/**
+              - '!**/*.md'
+              - '!**/docs/**'
 
   code-quality:
     runs-on: ubuntu-latest

@@ -66,8 +66,13 @@ jobs:
           files_yaml: |
             test:
               - application/ui/**
-              - application/backend/**
-              - .github/**
+              - application/backend/app/**
+              - application/backend/pyproject.toml
+              - application/backend/uv.lock
+              - .github/workflows/ui.yml
+              - .github/actions/**
+              - '!**/*.md'
+              - '!**/docs/**'
 
   generate-openapi-spec:
     name: Generate OpenAPI Spec

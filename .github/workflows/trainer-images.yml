@@ -9,6 +9,8 @@ on:
       - application/plugin/**
       - library/**
       - .github/workflows/trainer-images.yml
+      - "!**/*.md"
+      - "!**/docs/**"
   push:
     branches: [main]
     paths:
@@ -17,6 +19,8 @@ on:
       - application/plugin/**
       - library/**
       - .github/workflows/trainer-images.yml
+      - "!**/*.md"
+      - "!**/docs/**"
   workflow_dispatch:
 
 permissions: {}

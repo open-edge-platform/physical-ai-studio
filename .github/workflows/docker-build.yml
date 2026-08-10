@@ -63,11 +63,15 @@ jobs:
         with:
           files_yaml: |
             test:
-              - library/**
-              - physicalai/**
+              - library/src/**
+              - library/pyproject.toml
+              - library/uv.lock
+              - library/MANIFEST.in
               - application/**
               - .github/actions/docker-build/**
               - .github/workflows/docker-build.yml
+              - '!**/*.md'
+              - '!**/docs/**'
 
   build:
     name: Build (${{ matrix.device }})
