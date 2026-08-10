@@ -8,12 +8,6 @@ Never dials SSH. Detects but never surfaces credential-adjacent directives -
 keyword - so a resolved host can be shown for display without ever risking a
 key path or secret reaching an API response. ``tests/services/test_ssh_config_reader.py``
 asserts this with a fixture where every one of those directives is set.
-
-This is a small hand-rolled reader, not a full ``asyncssh``/OpenSSH-config
-parser: it understands ``Host``, ``Include`` (relative and absolute glob
-patterns, expanded relative to the directory of the file doing the
-including), ``HostName``, ``Port``, and ``User``. That is enough to list and
-resolve aliases, which is all a persistence-only PR needs.
 """
 
 import re

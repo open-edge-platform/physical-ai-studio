@@ -4,10 +4,7 @@
 """Security-gate and validation tests for the remote-server schemas.
 
 The most important assertion here is the absence one: no field on any of
-these models ever names or carries a credential.  PR 2's whole design is that
-Studio never receives a key, password, or passphrase - the SSH client library
-resolves the alias itself - so this test exists to catch a regression, not to
-describe expected behavior.
+these models ever names or carries a credential.
 """
 
 from uuid import uuid4
@@ -36,11 +33,7 @@ _FORBIDDEN_FIELD_WORDS = (
 
 # `ssh_host_alias` is the one deliberate, documented exception: it is the name
 # of an SSH config `Host` stanza, not a hostname, credential, or port, and its
-# presence is the entire point of this schema (see `schemas/remote_server.py`
-# module docstring and PR plan: "Host/port/user are derived from the SSH
-# config at read time" - referring to values this schema never stores, not to
-# the alias name itself). Without this exception, the whole-word match on
-# "host" below would misfire on the one field that must exist.
+# presence is the entire point of this schema
 _KNOWN_SAFE_FIELDS = frozenset({"ssh_host_alias"})
 
 
