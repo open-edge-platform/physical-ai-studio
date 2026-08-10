@@ -1,8 +1,24 @@
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
 
 import numpy as np
+
+_connect_tracker = {"depth": 0, "max_depth": 0}
+_connect_depth_lock = threading.Lock()
+
+
+def reset_connect_tracking() -> None:
+    with _connect_depth_lock:
+        _connect_tracker["depth"] = 0
+        _connect_tracker["max_depth"] = 0
+
+
+def max_concurrent_connects() -> int:
+    with _connect_depth_lock:
+        return int(_connect_tracker["max_depth"])
 
 
 @dataclass
@@ -28,6 +44,8 @@ class FakeRobot:
         joint_names: list[str] | None = None,
         connect_error: str | None = None,
         observation_error: str | None = None,
+        connect_delay: float = 0.0,
+        name: str = "fake_robot",
     ) -> None:
         if observations is None:
             observations = [
@@ -40,13 +58,24 @@ class FakeRobot:
         self._joint_names = joint_names or [f"joint_{index}" for index in range(len(observations[0].joint_positions))]
         self._connect_error = connect_error
         self._observation_error = observation_error
+        self._connect_delay = connect_delay
+        self.name = name
         self.sent_actions: list[np.ndarray] = []
         self.external_efforts: list[tuple[np.ndarray, float]] = []
 
     def connect(self) -> None:
-        if self._connect_error is not None:
-            raise ConnectionError(self._connect_error)
-        self._connected = True
+        with _connect_depth_lock:
+            _connect_tracker["depth"] += 1
+            _connect_tracker["max_depth"] = max(_connect_tracker["max_depth"], _connect_tracker["depth"])
+        try:
+            if self._connect_delay > 0:
+                time.sleep(self._connect_delay)
+            if self._connect_error is not None:
+                raise ConnectionError(self._connect_error)
+            self._connected = True
+        finally:
+            with _connect_depth_lock:
+                _connect_tracker["depth"] -= 1
 
     def disconnect(self) -> None:
         self._connected = False

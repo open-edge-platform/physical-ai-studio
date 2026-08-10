@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
@@ -94,6 +96,7 @@ class RuntimeSession:
     def run(self, stop_signal: StopSignal) -> None:
         runtime = self.build_runtime()
         try:
+            self._preconnect_robots()
             # Do not use ``with runtime``: the session alone owns device teardown.
             runtime.connect()
             runtime.run(stop_event=stop_signal)
@@ -115,3 +118,26 @@ class RuntimeSession:
                 self._follower.disconnect()
             except Exception as exc:
                 logger.warning("Follower disconnect failed: {}", exc)
+
+    def _preconnect_robots(self) -> None:
+        """Connect robots in parallel to reduce session startup time."""
+        if self._follower is None:
+            raise RuntimeError("Follower robot is not set up")
+        robots = [self._follower]
+        if self._leader is not None:
+            robots.append(self._leader)
+        with ThreadPoolExecutor(max_workers=len(robots)) as executor:
+            futures = {executor.submit(robot.connect): robot for robot in robots}
+            try:
+                for future in as_completed(futures):
+                    future.result()
+            except Exception as exc:
+                logger.error("Robot parallel connect failed: {}", exc)
+                for future in futures:
+                    future.cancel()
+                for robot in robots:
+                    if robot.is_connected():
+                        logger.error("Disconnecting robot {} after connect failure", robot)
+                        with contextlib.suppress(Exception):
+                            robot.disconnect()
+                raise
