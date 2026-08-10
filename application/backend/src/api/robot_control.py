@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, WebSocket, status
 from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
+from pydantic import ValidationError
 
 from api.dependencies import RobotClientFactoryDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
 from exceptions import BaseException as AppBaseException
@@ -68,7 +69,12 @@ async def handle_incoming(websocket: WebSocket, session: RuntimeSession) -> None
             if message.get("event") != "set_follower_source":
                 continue
             payload = message.get("data", {})
-            session.apply(SetFollowerSourceCommand.model_validate({"follower_source": payload.get("follower_source")}))
+            try:
+                command = SetFollowerSourceCommand.model_validate({"follower_source": payload.get("follower_source")})
+            except ValidationError as exc:
+                logger.warning("Rejected malformed set_follower_source payload {}: {}", payload, exc)
+                continue
+            session.apply(command)
     except WebSocketDisconnect:
         session.apply(DisconnectCommand())
 
