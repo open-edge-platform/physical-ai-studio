@@ -17,8 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schemas.hardware import DeviceType
 
-# Devices a remote trainer image exists for. CPU/NPU have no trainer image, so a
-# server may not declare them.
+# Devices a remote trainer image exists for.
 SSH_SERVER_DEVICE_TYPES = frozenset({DeviceType.CUDA, DeviceType.XPU})
 
 # Health of the last recorded preflight. ``unknown`` means never checked.
