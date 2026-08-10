@@ -73,7 +73,7 @@ jobs:
     name: Build (${{ matrix.device }})
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read # Checkout code
       packages: write # Push/pull registry build cache on GHCR
@@ -82,7 +82,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [cpu, xpu, cuda]
+        include:
+          # CPU and XPU build on GitHub-hosted runners
+          - device: cpu
+            runner: [ubuntu-latest]
+          - device: xpu
+            runner: [ubuntu-latest]
+          # CUDA needs GPU hardware for the smoke test
+          - device: cuda
+            runner: [self-hosted, linux, x64]
 
     steps:
       - *harden-runner
