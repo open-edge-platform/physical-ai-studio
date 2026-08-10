@@ -278,7 +278,7 @@ def test_update_remote_server_not_found(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_update_remote_server_blocking_failure(monkeypatch: pytest.MonkeyPatch):
-    run_tier1 = AsyncMock(return_value=_failing_tier1_result(CheckKey.REACHABLE, "ssh_connection_failed"))
+    run_tier1 = AsyncMock(return_value=_failing_tier1_result(CheckKey.DISK_SPACE, "insufficient_disk"))
     monkeypatch.setattr("api.remote_servers.run_tier1_preflight", run_tier1)
 
     existing = _make_server()

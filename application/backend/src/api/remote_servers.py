@@ -169,7 +169,10 @@ async def get_remote_server_status(
     always dials out, which is a known simplification.
     """
     server = await remote_server_service.get_remote_server(remote_server_id)
-    result = await asyncio.wait_for(run_tier1_preflight(server), timeout=settings.ssh_preflight_timeout_s)
+    try:
+        result = await asyncio.wait_for(run_tier1_preflight(server), timeout=settings.ssh_preflight_timeout_s)
+    except TimeoutError as exc:
+        raise SshConnectionError(server.ssh_host_alias, reason="timed_out") from exc
 
     status_value = "healthy" if result.passed else "degraded"
     reason_code = None
