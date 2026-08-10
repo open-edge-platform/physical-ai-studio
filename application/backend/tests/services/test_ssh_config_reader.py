@@ -189,6 +189,35 @@ def test_resolve_alias_follows_include_one_level_deep(tmp_path: Path) -> None:
     assert result.user == "trainer"
 
 
+def test_resolve_alias_later_stanza_overrides_earlier_one(tmp_path: Path) -> None:
+    """A later ``Host`` stanza with the same alias overrides earlier fields.
+
+    This mirrors real ssh behavior where later-declared values win, which
+    matters most for ``Include``d configs that redefine the same alias.
+    Fields the later stanza does not set (here, ``User``) keep the earlier
+    stanza's value rather than being cleared.
+    """
+    config_path = _write_config(
+        tmp_path,
+        """
+        Host my-gpu-box
+            HostName 10.0.0.5
+            Port 2222
+            User trainer
+
+        Host my-gpu-box
+            HostName 10.0.0.9
+        """,
+    )
+
+    result = resolve_alias(config_path, "my-gpu-box")
+
+    assert result.found is True
+    assert result.hostname == "10.0.0.9"
+    assert result.port == 2222
+    assert result.user == "trainer"
+
+
 def test_list_host_aliases_follows_include_one_level_deep(tmp_path: Path) -> None:
     _write_config(
         tmp_path,

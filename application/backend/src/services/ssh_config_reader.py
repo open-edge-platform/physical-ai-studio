@@ -178,15 +178,35 @@ def resolve_alias(config_path: Path, alias: str) -> ResolvedSshHost:
     Matches only a literal ``Host`` pattern equal to ``alias``: a wildcard
     stanza that would match it via glob is not a usable target, since aliases
     are created by literal name, and resolution here does no glob matching.
+
+    If the alias is defined by more than one stanza (common with ``Include``),
+    every matching stanza is scanned in file order and a later one overrides an
+    earlier one field-by-field, mirroring real ssh's "first obtained value is
+    used, but Included files are read in-place" semantics as they apply to
+    later stanzas overriding earlier ones - only a field the later stanza
+    actually sets is overridden, not the whole result.
     """
+    found = False
+    hostname: str | None = None
+    port: int | None = None
+    user: str | None = None
     for block in _iter_blocks(config_path):
         for pattern in block.patterns:
             if _is_literal_pattern(pattern) and pattern == alias:
-                return ResolvedSshHost(
-                    alias=alias,
-                    hostname=block.hostname or alias,
-                    port=block.port,
-                    user=block.user,
-                    found=True,
-                )
-    return ResolvedSshHost(alias=alias, found=False)
+                found = True
+                if block.hostname is not None:
+                    hostname = block.hostname
+                if block.port is not None:
+                    port = block.port
+                if block.user is not None:
+                    user = block.user
+                break
+    if not found:
+        return ResolvedSshHost(alias=alias, found=False)
+    return ResolvedSshHost(
+        alias=alias,
+        hostname=hostname or alias,
+        port=port,
+        user=user,
+        found=True,
+    )
