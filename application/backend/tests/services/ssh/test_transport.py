@@ -575,7 +575,6 @@ async def test_existing_known_hosts_file_is_passed_by_path(settings: Settings, k
     ("error", "expected", "reason_fragment"),
     [
         (TimeoutError(), SshConnectionError, "timeout"),
-        (TimeoutError(), SshConnectionError, "timeout"),
         (asyncssh.ConnectionLost("lost"), SshConnectionError, "connection_lost"),
         (asyncssh.ProtocolError("bad packet"), SshConnectionError, "protocol_error"),
         (asyncssh.KeyExchangeFailed("no kex"), SshConnectionError, "protocol_error"),

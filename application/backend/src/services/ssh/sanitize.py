@@ -97,6 +97,17 @@ def _skip_escape_sequence(text: str, start: int) -> int:  # noqa: PLR0911 - one 
             index += 1
         return length
 
+    # nF escape sequences: ESC, zero or more intermediate bytes (0x20-0x2F), then
+    # one final byte (0x30-0x7E). Character-set designations (e.g. `ESC ( B`) are
+    # the common case; a plain two-byte sequence (e.g. `ESC c`) is just the
+    # zero-intermediate-bytes case of this same rule.
+    if "\x20" <= introducer <= "\x2f":
+        index += 1
+        while index < length and "\x20" <= text[index] <= "\x2f":
+            index += 1
+        # Past the final byte, or end-of-string for an unterminated sequence.
+        return min(index + 1, length)
+
     # Any other ESC sequence is two bytes: ESC plus the following character.
     return index + 1
 

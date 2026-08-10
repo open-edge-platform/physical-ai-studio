@@ -115,7 +115,7 @@ _INTEL_VENDOR_ID: Final = "0x8086"
 
 # Fraction of device memory in use above which an accelerator counts as busy.
 # Used only where per-process attribution is unavailable (the XPU case).
-_GPU_BUSY_MEMORY_FRACTION: Final = 0.5
+_GPU_BUSY_MEMORY_FRACTION: Final = 0.3
 
 # Cap on `detail`, so a check can never carry an essay from a remote host.
 _DETAIL_MAX_CHARS: Final = 240
