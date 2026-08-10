@@ -78,6 +78,21 @@ def test_two_byte_escape_sequence_is_removed() -> None:
     assert _sanitize("before\x1bcafter") == "beforeafter"
 
 
+def test_charset_designation_escape_sequence_is_fully_removed() -> None:
+    # ESC ( B designates ASCII as G0: an intermediate byte (`(`) followed by a
+    # final byte (`B`), not a plain two-byte sequence. The final byte must not
+    # leak into the output as literal text.
+    assert _sanitize("before\x1b(Bafter") == "beforeafter"
+
+
+def test_multiple_intermediate_bytes_escape_sequence_is_fully_removed() -> None:
+    assert _sanitize("before\x1b%%Gafter") == "beforeafter"
+
+
+def test_unterminated_intermediate_byte_escape_sequence_is_dropped_entirely() -> None:
+    assert _sanitize("visible\x1b(") == "visible"
+
+
 def test_bare_escape_at_end_is_removed() -> None:
     assert _sanitize("tail\x1b") == "tail"
 

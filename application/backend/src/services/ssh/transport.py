@@ -25,9 +25,9 @@ constrained here rather than at the call sites:
 
 Host-key unknown vs. changed
 ----------------------------
-``asyncssh`` 2.24 raises the same :class:`asyncssh.HostKeyNotVerifiable` for a
-host absent from ``known_hosts`` and for a host whose key changed - both arrive
-as ``ValueError('Host key is not trusted')`` inside
+``asyncssh`` Raises the same :class:`asyncssh.HostKeyNotVerifiable` for a host
+  absent from ``known_hosts`` and for a host whose key changed - both arrive as
+``ValueError('Host key is not trusted')`` inside
 ``SSHClientConnection.validate_server_host_key``. To tell them apart, this module
 installs a callable ``known_hosts`` matcher that wraps
 :func:`asyncssh.match_known_hosts` and records how many entries matched the host
@@ -607,16 +607,26 @@ class SshTransport:
         )
 
     async def close(self) -> None:
-        """Close the connection and release the per-alias slot."""
+        """Close the connection and release the per-alias slot.
+
+        The semaphore release happens in a ``finally`` so it runs even if this
+        coroutine is cancelled while awaiting ``wait_closed()``:
+        ``asyncio.CancelledError`` is a ``BaseException`` and is not caught by
+        ``suppress(Exception)``, so without the ``finally`` a cancellation here
+        would skip the release and wedge the alias's concurrency slot for the
+        rest of the process.
+        """
         connection, self._connection = self._connection, None
         gate, self._gate = self._gate, None
 
-        if connection is not None:
-            connection.close()
-            with suppress(Exception):
-                await connection.wait_closed()
-        if gate is not None:
-            gate.semaphore.release()
+        try:
+            if connection is not None:
+                connection.close()
+                with suppress(Exception):
+                    await connection.wait_closed()
+        finally:
+            if gate is not None:
+                gate.semaphore.release()
 
 
 def open_transport(alias: str, settings: Settings | None = None) -> SshTransport:

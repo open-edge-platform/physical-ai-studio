@@ -2637,7 +2637,7 @@ requires-dist = [
     { name = "aiortc", specifier = ">=1.13.0" },
     { name = "aiosqlite", specifier = "~=0.21" },
     { name = "alembic", specifier = ">=1.16.5" },
-    { name = "asyncssh", specifier = ">=2.14" },
+    { name = "asyncssh", specifier = "~=2.24" },
     { name = "click", specifier = ">=8.3.0" },
     { name = "cv2-enumerate-cameras" },
     { name = "fastapi", extras = ["standard"], specifier = "<1" },
