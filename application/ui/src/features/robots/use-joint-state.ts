@@ -70,6 +70,7 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
                 setState(payload['data']);
                 setError(null);
                 setErrorCode(null);
+                setWarning(null);
                 hasFatalError.current = false;
             } else if (payload['event'] === 'error') {
                 if (isRecoverableRobotControlError(payload.error_code)) {
@@ -107,6 +108,7 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
                 }
                 setError(null);
                 setErrorCode(null);
+                setWarning(null);
                 socket.sendJsonMessage({
                     follower_id,
                     leader_id,
