@@ -423,18 +423,20 @@ class LeRobotDataModule(DataModule):
         augment_dataset_quantile_stats(full_ds)
 
         # Propagate computed quantiles to the train adapter
+        train_stats = train_lerobot_ds.meta.stats
         for key, feat_stats in full_ds.meta.stats.items():
-            if "q01" in feat_stats and key in train_lerobot_ds.meta.stats:
-                train_lerobot_ds.meta.stats[key]["q01"] = feat_stats["q01"]
-                train_lerobot_ds.meta.stats[key]["q99"] = feat_stats["q99"]
+            if "q01" in feat_stats and train_stats is not None and key in train_stats:
+                train_stats[key]["q01"] = feat_stats["q01"]
+                train_stats[key]["q99"] = feat_stats["q99"]
 
         # Propagate to val adapter if it exists
         if val_dataset is not None:
             val_lerobot_ds = val_dataset._lerobot_dataset  # noqa: SLF001
+            val_stats = val_lerobot_ds.meta.stats
             for key, feat_stats in full_ds.meta.stats.items():
-                if "q01" in feat_stats and key in val_lerobot_ds.meta.stats:
-                    val_lerobot_ds.meta.stats[key]["q01"] = feat_stats["q01"]
-                    val_lerobot_ds.meta.stats[key]["q99"] = feat_stats["q99"]
+                if "q01" in feat_stats and val_stats is not None and key in val_stats:
+                    val_stats[key]["q01"] = feat_stats["q01"]
+                    val_stats[key]["q99"] = feat_stats["q99"]
 
 
 __all__ = ["LeRobotDataModule"]
