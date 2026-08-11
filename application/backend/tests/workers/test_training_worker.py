@@ -444,6 +444,50 @@ class TestTraining:
             assert args[1].snapshot_id == snapshot_id
 
 
+class TestTargetKey:
+    """`_target_key` must give every remote kind its own key namespace."""
+
+    def test_local_target_key(self) -> None:
+        from workers.training_worker import TrainingWorker
+
+        payload = _make_payload()
+        assert TrainingWorker._target_key(payload) == "local"
+
+    def test_remote_target_key_uses_remote_trainer_id(self) -> None:
+        from workers.training_worker import TrainingWorker
+
+        payload = _make_payload()
+        payload.training_target = TrainingTarget.REMOTE
+        payload.remote_trainer_id = uuid4()
+        assert TrainingWorker._target_key(payload) == f"remote:{payload.remote_trainer_id}"
+
+    def test_ssh_target_key_uses_remote_server_id(self) -> None:
+        from workers.training_worker import TrainingWorker
+
+        payload = _make_payload()
+        payload.training_target = TrainingTarget.SSH
+        payload.remote_server_id = uuid4()
+        assert TrainingWorker._target_key(payload) == f"ssh:{payload.remote_server_id}"
+
+    def test_ssh_and_remote_targets_never_collide_on_none(self) -> None:
+        """Two well-formed jobs on different servers never collapse onto one key."""
+        from workers.training_worker import TrainingWorker
+
+        first = _make_payload()
+        first.training_target = TrainingTarget.SSH
+        first.remote_server_id = uuid4()
+        second = _make_payload()
+        second.training_target = TrainingTarget.SSH
+        second.remote_server_id = uuid4()
+
+        first_key = TrainingWorker._target_key(first)
+        second_key = TrainingWorker._target_key(second)
+
+        assert first_key != second_key
+        assert "None" not in first_key
+        assert "None" not in second_key
+
+
 class TestTrainingScheduling:
     @pytest.mark.anyio
     async def test_jobs_on_distinct_targets_start_without_waiting(self, worker) -> None:

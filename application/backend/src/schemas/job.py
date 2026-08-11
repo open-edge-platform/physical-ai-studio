@@ -23,10 +23,19 @@ class TrainingPrecision(StrEnum):
 
 
 class TrainingTarget(StrEnum):
-    """Where a training job executes."""
+    """Where a training job executes.
+
+    ``SSH`` is a distinct target from ``REMOTE`` rather than an overload of it:
+    an SSH job is discriminated by ``remote_server_id`` (an SSH-provisioned
+    server), while ``REMOTE`` keeps its existing ``remote_trainer_id`` /
+    pinned ``remote_trainer_url`` (a direct-URL registry entry). Keeping them
+    as separate enum members is what lets the payload validator reject a job
+    that tries to express both at once.
+    """
 
     LOCAL = "local"
     REMOTE = "remote"
+    SSH = "ssh"
 
 
 class JobList(BaseModel):
@@ -142,6 +151,10 @@ class TrainJobPayload(BaseModel):
         default=None,
         description="Resolved remote trainer name pinned when the job is submitted, for display in job logs",
     )
+    remote_server_id: UUID | None = Field(
+        default=None,
+        description="Configured SSH-provisioned remote server selected for an SSH run",
+    )
 
     remote_job_id: UUID | None = Field(
         default=None, description="Remote trainer job id, set when a remote run is in flight (for restart reattach)"
@@ -152,17 +165,31 @@ class TrainJobPayload(BaseModel):
 
     @model_validator(mode="after")
     def validate_training_target(self) -> "TrainJobPayload":
-        """Keep local jobs and pinned remote endpoints mutually consistent."""
+        """Keep local, direct-URL remote, and SSH jobs from expressing more than one target."""
         if self.training_target is TrainingTarget.LOCAL:
             if (
                 self.remote_trainer_id is not None
                 or self.remote_trainer_url is not None
                 or self.remote_trainer_name is not None
+                or self.remote_server_id is not None
             ):
-                raise ValueError("Local training cannot specify a remote trainer")
+                raise ValueError("Local training cannot specify a remote trainer or remote server")
             return self
+        if self.training_target is TrainingTarget.SSH:
+            if self.remote_server_id is None:
+                raise ValueError("SSH training requires remote_server_id")
+            if (
+                self.remote_trainer_id is not None
+                or self.remote_trainer_url is not None
+                or self.remote_trainer_name is not None
+            ):
+                raise ValueError("SSH training cannot specify a direct-URL remote trainer")
+            return self
+        # TrainingTarget.REMOTE: the existing direct-URL registry.
         if self.remote_trainer_id is None:
             raise ValueError("Remote training requires remote_trainer_id")
+        if self.remote_server_id is not None:
+            raise ValueError("Remote training cannot specify a remote server")
         return self
 
     @field_serializer("project_id")

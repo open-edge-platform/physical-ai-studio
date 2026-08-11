@@ -137,6 +137,43 @@ class RemoteResumeUnsupportedError(BaseException):
         )
 
 
+class RemoteServerNotReadyError(BaseException):
+    """Raised when an SSH job targets a server that has not passed preflight.
+
+    Studio never dials SSH from job submission (only the explicit save/check
+    actions do); this only consults the server's persisted last-check summary.
+    """
+
+    def __init__(self, server_name: str, last_check_status: str) -> None:
+        super().__init__(
+            message=(
+                f"Remote server '{server_name}' is not ready for training "
+                f"(last check status: {last_check_status}). Verify the server before submitting a job."
+            ),
+            error_code="remote_server_not_ready",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RemoteServerAliasNotFoundError(BaseException):
+    """Raised when an SSH job's server names an SSH alias no longer in the config.
+
+    Unlike `RemoteServerNotReadyError`, this is checked by parsing the SSH
+    config file directly (no SSH dial), so it also catches a `Host` entry that
+    was renamed or removed since the server was last verified.
+    """
+
+    def __init__(self, server_name: str, ssh_host_alias: str) -> None:
+        super().__init__(
+            message=(
+                f"Remote server '{server_name}' points at SSH host alias '{ssh_host_alias}', "
+                "which is no longer in your SSH config. Restore the Host entry, or edit the server."
+            ),
+            error_code="remote_server_alias_not_found",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
 class InvalidJobStateError(BaseException):
     """Raised when a job action is not valid in the current state."""
 

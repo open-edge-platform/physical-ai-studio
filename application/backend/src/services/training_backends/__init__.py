@@ -23,6 +23,13 @@ def get_training_backend(payload: TrainJobPayload) -> TrainingBackend:
     """Return the backend selected by a job's persisted execution target."""
     from schemas.job import TrainingTarget
 
+    if payload.training_target is TrainingTarget.SSH:
+        # SSH provisioning (PR7/PR8) is not wired in yet. JobService rejects SSH
+        # submissions before a job reaches this factory (see submit_train_job),
+        # so this should be unreachable; fail loudly rather than silently
+        # falling through to local training if it ever is reached.
+        raise NotImplementedError("SSH-provisioned training backend is not yet implemented")
+
     if payload.training_target is TrainingTarget.REMOTE:
         from services.training_backends.remote import RemoteTrainingBackend
 
