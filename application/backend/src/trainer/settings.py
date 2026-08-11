@@ -6,7 +6,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +24,20 @@ class TrainerSettings(BaseSettings):
     storage_dir: Path = Field(
         default=Path("~/.local/share/physicalai-trainer").expanduser(), alias="TRAINER_STORAGE_DIR"
     )
+
+    @field_validator("storage_dir", mode="before")
+    @classmethod
+    def expand_storage_dir(cls, value: Path | str) -> Path:
+        """Expand user-provided storage directories like ~/.local/share.
+
+        Field(default=...expanduser()) only expands the *default* value;
+        a value actually supplied via TRAINER_STORAGE_DIR (env var or
+        .env file) bypasses that and is parsed into a Path as-is, so a
+        literal "~" segment was never expanded. Matches the equivalent
+        validator on the studio Settings.storage_dir field.
+        """
+        return Path(value).expanduser()
+
     # Concurrency cap for the queue worker. Defaults to a single GPU job.
     max_concurrent_jobs: int = Field(default=1, ge=1, le=8, alias="TRAINER_MAX_CONCURRENT_JOBS")
 
