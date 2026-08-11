@@ -18,7 +18,7 @@ import {
 } from '@geti-ui/ui';
 import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { NavLink, Outlet, useParams } from 'react-router-dom';
+import { NavLink, Outlet, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
 import { getApiErrorMessage, isRecordingLockedError, isResourceInUseError } from '../../api/errors';
@@ -197,11 +197,24 @@ export const CamerasList = () => {
 
 export const Layout = () => {
     return (
-        <Grid areas={['camera controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
+        <Grid
+            areas={['camera controls']}
+            columns={['size-6000', minmax(0, '1fr')]}
+            rows={[minmax(0, '1fr')]}
+            height={'100%'}
+            minHeight={0}
+        >
             <View gridArea='camera' backgroundColor={'gray-100'} padding='size-400'>
                 <CamerasList />
             </View>
-            <View gridArea='controls' backgroundColor={'gray-50'} minHeight={0}>
+            <View
+                gridArea='controls'
+                backgroundColor={'gray-50'}
+                height='100%'
+                minHeight={0}
+                minWidth={0}
+                overflow='auto'
+            >
                 <Suspense
                     fallback={
                         <Grid width='100%' height='100%'>

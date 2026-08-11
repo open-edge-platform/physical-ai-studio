@@ -1,5 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
+import type { SchemaSo101RobotPayload } from '../../../../api/openapi-spec';
 import { useProjectId } from '../../../projects/use-project';
 import { useRobotForm } from '../../robot-form/provider';
 import { MotorProbeResult, SetupWebSocketState, useSetupWebSocket } from './use-setup-websocket';
@@ -158,9 +159,13 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
     // -----------------------------------------------------------------------
     // WebSocket hook
     // -----------------------------------------------------------------------
-    const serialNumber = robotForm.serial_number ?? '';
+    const so101Payload: SchemaSo101RobotPayload | null =
+        activeType === 'SO101_Follower' || activeType === 'SO101_Leader'
+            ? (robotForm.payload as SchemaSo101RobotPayload)
+            : null;
+    const serialNumber = so101Payload?.serial_number ?? '';
     const robotType = activeType;
-    const connectionString = 'connection_string' in robotForm ? (robotForm.connection_string ?? '') : '';
+    const connectionString = so101Payload?.connection_string ?? '';
 
     const wsEnabled = (!!serialNumber || !!connectionString) && robotType.startsWith('SO101');
 

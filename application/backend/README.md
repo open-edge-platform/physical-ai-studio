@@ -55,22 +55,37 @@ Please check out [this document](docs/video_hardware_acceleration_intel.md) for 
 # Activate virtual environment
 source .venv/bin/activate
 
-# Run server (backend with in-process training; TRAINING_MODE defaults to local)
+# Run server (backend with in-process training; local by default)
 uv run physicalai-studio serve
 
 # Equivalent thin wrapper
 ./run.sh
 ```
 
-Server starts at `http://localhost:8000`
+Server starts at `http://localhost:7860` by default.
+
+To change the host/port:
+
+```bash
+# Option A: CLI flags
+uv run physicalai-studio serve --host 127.0.0.1 --port 8000
+
+# Option B: environment variables
+HOST=127.0.0.1
+PORT=8000
+```
 
 ### Remote Training
 
-To run training on a separate, GPU-enabled machine, set `TRAINING_MODE=remote`
-and configure `TRAINER_URL` to point to a Physical AI Trainer service. The
-backend sends dataset snapshots to the service, monitors the training job, and
-imports the resulting model. Deploy and configure the service from
-[`application/trainer/README.md`](../trainer/README.md).
+The `serve` process supports local and remote training at the same time. Configure
+remote trainer URLs in the Studio UI, then choose the execution target when you
+submit a training job. `run.sh` is a thin wrapper around the CLI.
+
+To run training on a separate, GPU-enabled machine, deploy and configure a
+Physical AI Trainer service from
+[`docs/remote-trainer.md`](docs/remote-trainer.md), then register its URL
+as a remote trainer in the Studio UI. The backend sends dataset snapshots to
+the service, monitors the training job, and imports the resulting model.
 
 ### Database Migrations
 
@@ -99,9 +114,9 @@ uv run physicalai-studio db migrate
 
 Once the server is running:
 
-- **Interactive API Docs** - http://localhost:8000/docs (Swagger UI)
-- **Alternative Docs** - http://localhost:8000/redoc (ReDoc)
-- **OpenAPI Schema** - http://localhost:8000/openapi.json
+- **Interactive API Docs** - http://localhost:7860/docs (Swagger UI)
+- **Alternative Docs** - http://localhost:7860/redoc (ReDoc)
+- **OpenAPI Schema** - http://localhost:7860/api/openapi.json
 
 ## Configuration
 

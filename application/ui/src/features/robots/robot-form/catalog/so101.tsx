@@ -1,22 +1,23 @@
 import { Flex, Item, Picker, Text } from '@geti-ui/ui';
-import { v4 as uuidv4 } from 'uuid';
 
-import { $api } from '../../../../api/client';
+import type { SchemaSo101RobotPayload } from '../../../../api/openapi-spec';
+import { useCatalogIdentifyMutation, useDiscoverRobotsQuery } from '../../robot-catalog.hooks';
 import type { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../../robot-types';
 import { PermissionDeniedError } from '../../setup-wizard/so101/diagnostics-step-error';
 import { useRobotFormFields } from '../provider';
-import { IdentifyRobot, RefreshRobotsButton, useIdentifyMutation } from './actions';
+import { IdentifyRobot, RefreshRobotsButton } from './actions';
 
 export interface SO101FormData {
     name: string;
-    serial_number: string;
-    connection_string: string;
+    payload: SchemaSo101RobotPayload;
 }
 
 export const getInitialSO101FormData = (robot?: SchemaRobot): SO101FormData => ({
     name: robot?.name ?? '',
-    serial_number: robot?.payload?.serial_number ?? '',
-    connection_string: robot && 'connection_string' in robot.payload ? robot.payload.connection_string : '',
+    payload:
+        robot && (robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader')
+            ? robot.payload
+            : { connection_string: '', serial_number: '' },
 });
 
 export const buildSO101Body = (
@@ -24,7 +25,7 @@ export const buildSO101Body = (
     schemaType: SchemaRobotType,
     robot_id: string
 ): SchemaRobotInput | null => {
-    if (!formData.serial_number && !formData.connection_string) {
+    if (!formData.payload.serial_number && !formData.payload.connection_string) {
         return null;
     }
 
@@ -32,10 +33,7 @@ export const buildSO101Body = (
         id: robot_id,
         name: formData.name,
         type: schemaType,
-        payload: {
-            connection_string: formData.connection_string ?? '',
-            serial_number: formData.serial_number,
-        },
+        payload: formData.payload,
     } as SchemaRobotInput;
 };
 
@@ -53,19 +51,19 @@ const getDeviceKey = ({
 };
 
 export const SO101FormFields = () => {
-    const serialDevicesQuery = $api.useSuspenseQuery('get', '/api/hardware/serial_devices');
+    const { formData, updateField } = useRobotFormFields<SO101FormData>();
 
-    const { formData, updateField, activeType } = useRobotFormFields<SO101FormData>();
-
-    const identifyMutation = useIdentifyMutation();
-    const identifyRobot = buildSO101Body(formData, activeType, uuidv4());
+    const identifyMutation = useCatalogIdentifyMutation();
     const selectedKey =
-        formData.serial_number !== '' || formData.connection_string !== ''
+        formData.payload.serial_number !== '' || formData.payload.connection_string !== ''
             ? getDeviceKey({
-                  serial_number: formData.serial_number,
-                  connection_string: formData.connection_string,
+                  serial_number: formData.payload.serial_number,
+                  connection_string: formData.payload.connection_string,
               })
             : null;
+
+    const serialDevicesQuery = useDiscoverRobotsQuery('SO101_Follower');
+    const devices = serialDevicesQuery.data ?? [];
 
     return (
         <>
@@ -77,7 +75,7 @@ export const SO101FormFields = () => {
                     width='100%'
                     selectedKey={selectedKey}
                     onSelectionChange={(key) => {
-                        const device = serialDevicesQuery.data.find(
+                        const device = devices.find(
                             (d) =>
                                 getDeviceKey({
                                     serial_number: d.serial_number ?? '',
@@ -91,11 +89,14 @@ export const SO101FormFields = () => {
 
                         const serial_number = device.serial_number ?? '';
 
-                        updateField('serial_number', serial_number);
-                        updateField('connection_string', device.connection_string ?? '');
+                        updateField('payload', {
+                            ...formData.payload,
+                            serial_number,
+                            connection_string: device.connection_string ?? '',
+                        });
                     }}
                 >
-                    {serialDevicesQuery.data.map((serial_device) => {
+                    {devices.map((serial_device) => {
                         const serial_number = serial_device.serial_number ?? '';
                         const hasSerial = serial_number !== '';
                         const label = hasSerial ? serial_number : 'No serial number';
@@ -117,11 +118,11 @@ export const SO101FormFields = () => {
 
                 <Flex gap='size-100'>
                     <RefreshRobotsButton />
-                    <IdentifyRobot identifyMutation={identifyMutation} robot={identifyRobot} />
+                    <IdentifyRobot identifyMutation={identifyMutation} />
                 </Flex>
             </Flex>
 
-            {identifyMutation.isError && <PermissionDeniedError port={formData.connection_string} />}
+            {identifyMutation.isError && <PermissionDeniedError port={formData.payload.connection_string} />}
         </>
     );
 };

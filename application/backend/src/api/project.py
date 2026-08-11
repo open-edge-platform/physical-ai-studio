@@ -1,12 +1,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
-from api.dependencies import get_model_service, get_project_id, get_project_service
+from api.dependencies import get_model_service, get_project_id, get_project_service, get_project_thumbnail_service
 from internal_datasets.utils import get_internal_read_dataset
 from schemas import Model, Project
-from services import ModelService, ProjectService
+from services import ModelService, ProjectService, ProjectThumbnailService
 
 router = APIRouter(prefix="/api/projects", tags=["Projects"])
 
@@ -68,3 +68,26 @@ async def get_tasks_for_dataset(
         res[dataset.name] = get_internal_read_dataset(dataset).get_tasks()
 
     return res
+
+
+@router.get("/{project_id}/thumbnail")
+async def get_project_thumbnail(
+    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_service: Annotated[ProjectService, Depends(get_project_service)],
+    project_thumbnail_service: Annotated[ProjectThumbnailService, Depends(get_project_thumbnail_service)],
+    width: Annotated[int, Query(ge=32, le=1920)] = 156,
+    height: Annotated[int, Query(ge=32, le=1080)] = 156,
+) -> Response:
+    """Get a project thumbnail from the first frame of the first episode in the first dataset."""
+    project = await project_service.get_project_by_id(project_id)
+    thumbnail = project_thumbnail_service.get_thumbnail(project=project, width=width, height=height)
+
+    if thumbnail is None:
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+
+    cache_headers = {
+        "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
+        "Last-Modified": thumbnail.last_modified,
+    }
+
+    return Response(content=thumbnail.content, media_type="image/png", headers=cache_headers)

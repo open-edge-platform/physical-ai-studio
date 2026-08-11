@@ -7,15 +7,8 @@ from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
 
-from api.dependencies import (
-    RobotCalibrationServiceDep,
-    RobotConnectionManagerDep,
-    SchedulerDep,
-    get_project_id,
-    get_robot_id,
-    get_robot_service,
-)
-from robots.robot_client_factory import RobotClientFactory
+from api.dependencies import RobotClientFactoryDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
+from exceptions import BaseException as AppBaseException
 from services import RobotService
 from workers.base import run_at_frequency
 from workers.teleoperate_worker import TeleoperateWorker
@@ -23,6 +16,16 @@ from workers.teleoperate_worker import TeleoperateWorker
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
 
 ProjectID = Annotated[UUID, Depends(get_project_id)]
+
+
+def _websocket_error_payload(exc: Exception) -> dict[str, str]:
+    if isinstance(exc, AppBaseException):
+        return {"event": "error", "message": exc.message, "error_code": exc.error_code}
+    return {
+        "event": "error",
+        "message": str(exc) or "Failed to connect to the robot.",
+        "error_code": "robot_connection_failed",
+    }
 
 
 @router.get("/ws", tags=["WebSocket"], summary="Robot control (WebSocket)", status_code=426)
@@ -72,8 +75,7 @@ async def handle_incoming(websocket: WebSocket, worker: TeleoperateWorker) -> No
 async def robot_websocket(
     project_id: Annotated[UUID, Depends(get_project_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
-    robot_manager: RobotConnectionManagerDep,
-    calibration_service: RobotCalibrationServiceDep,
+    robot_client_factory: RobotClientFactoryDep,
     websocket: WebSocket,
     scheduler: SchedulerDep,
     fps: int = 30,
@@ -85,7 +87,6 @@ async def robot_websocket(
         project_id: ID of the project.
         robot_service: Service for robot metadata.
         robot_manager: Connection manager for robot discovery.
-        calibration_service: Service for loading calibration.
         websocket: The FastAPI WebSocket instance.
         registry: Registry for managing active robot workers.
         normalize: Whether to use normalized joint values.
@@ -96,24 +97,24 @@ async def robot_websocket(
     try:
         settings = await websocket.receive_json("text")
         follower_id = get_robot_id(settings["follower_id"])
-        robot_client_factory = RobotClientFactory(robot_manager, calibration_service)
         follower = await robot_service.get_robot_by_id(project_id, follower_id)
-        follower_client = await robot_client_factory.build(follower)
-        features = follower_client.features()
-
-        leader_client = None
+        leader = None
         if "leader_id" in settings:
             leader_id = get_robot_id(settings["leader_id"])
             leader = await robot_service.get_robot_by_id(project_id, leader_id)
-            leader_client = await robot_client_factory.build(leader)
 
         # Create worker
         worker = TeleoperateWorker(
-            follower=follower_client, leader=leader_client, frequency=fps, mp_stop_event=scheduler.mp_stop_event
+            robot_client_factory=robot_client_factory,
+            follower=follower,
+            leader=leader,
+            frequency=fps,
+            stop_event=scheduler.mp_stop_event,
         )
         worker.start()
 
-        await asyncio.to_thread(worker.loaded_event.wait)
+        await worker.wait_until_loaded()
+        features = worker.features
         await websocket.send_json({"event": "state", "data": _build_robot_control_state(worker)})
 
         incoming_task = asyncio.create_task(handle_incoming(websocket, worker))
@@ -129,8 +130,12 @@ async def robot_websocket(
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        logger.exception(f"Unexpected error in robot websocket: {e}")
+        if isinstance(e, AppBaseException):
+            logger.warning("Robot websocket error: {} ({})", e.message, e.error_code)
+        else:
+            logger.exception(f"Unexpected error in robot websocket: {e}")
         try:
+            await websocket.send_json(_websocket_error_payload(e))
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         except Exception as close_err:
             logger.error(f"Could not close websocket after Exception: {close_err}")

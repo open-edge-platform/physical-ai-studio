@@ -10,8 +10,12 @@ render identical human-readable sizes, throughput, and heartbeat log lines.
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from loguru import Logger
 
 # Minimum wall-clock gap between intermediate transfer progress log lines.
 _TRANSFER_LOG_INTERVAL_S = 15.0
@@ -43,9 +47,10 @@ class TransferProgressLogger:
     instantaneous throughput; otherwise it reports transferred bytes and rate.
     """
 
-    def __init__(self, verb: str, total_bytes: int | None) -> None:
+    def __init__(self, verb: str, total_bytes: int | None, *, logger_: Logger | None = None) -> None:
         self._verb = verb
         self._total = total_bytes if total_bytes and total_bytes > 0 else None
+        self._log = logger_ if logger_ is not None else logger
         now = time.monotonic()
         self._start = now
         self._last_log = now
@@ -64,7 +69,7 @@ class TransferProgressLogger:
             remaining = self._total - transferred
             avg_rate = window_bytes / window_s if window_s > 0 else 0
             eta = f"{remaining / avg_rate:.0f}s" if avg_rate > 0 else "n/a"
-            logger.info(
+            self._log.info(
                 "{} progress: {}/{} ({}%) at {}, ETA {}",
                 self._verb,
                 format_bytes(transferred),
@@ -74,7 +79,7 @@ class TransferProgressLogger:
                 eta,
             )
         else:
-            logger.info(
+            self._log.info(
                 "{} progress: {} transferred at {}",
                 self._verb,
                 format_bytes(transferred),

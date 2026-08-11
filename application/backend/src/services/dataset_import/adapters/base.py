@@ -12,6 +12,7 @@ from schemas.dataset_import_job import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from uuid import UUID
 
     from physicalai.data.archive_safety import SafeZipArchive
@@ -46,5 +47,11 @@ class DatasetImportAdapter(ABC):
         """
 
     @abstractmethod
-    async def commit(self, payload: DatasetImportJobPayload, project_id: UUID, archive: SafeZipArchive) -> Dataset:
+    async def commit(
+        self,
+        payload: DatasetImportJobPayload,
+        project_id: UUID,
+        archive: SafeZipArchive,
+        persist_dataset: Callable[[Dataset], Awaitable[Dataset]],
+    ) -> Dataset:
         """Execute extraction and register dataset in DB."""

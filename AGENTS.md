@@ -21,11 +21,13 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 - Run repo hooks with `prek run --all-files` from the repo root.
 - Limit hooks to the library with `prek run --all-files library/`.
 - Limit hooks to the backend with `prek run --all-files application/backend/`.
+- Limit hooks to the UI with `prek run --all-files application/ui/` (requires `npm install` in `application/ui/` first).
 - Regenerate UI API types with `npm run build:api:download && npm run build:api` from `application/ui/` while the backend is serving OpenAPI.
 
 ## Cross-Repo Rules
 
 - Runtime owns the `physicalai` executable and `pai` alias. Studio contributes subcommands through `physicalai.cli.subcommands`.
+- Runtime owns `physicalai.config` (single `Config` object). Studio consumes `Config`, `FromConfig`, and `instantiate_obj` from the runtime package and must not ship its own `physicalai/config/` package or duplicate config docs (see Runtime `docs/how-to/config/` and `skills/config/`).
 - Studio-owned CLI subcommands include `fit`, `validate`, `test`, `predict`, `benchmark`, and `export`.
 - Studio owns the export side of the export/load contract. Runtime consumes exported artifacts with `InferenceModel(...)`.
 - Keep customer-facing instructions stable and avoid exposing internal scaffolding unless the user is contributing to the repo.

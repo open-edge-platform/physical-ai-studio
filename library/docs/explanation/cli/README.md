@@ -25,7 +25,7 @@ policies using jsonargparse parsers registered into the shared `physicalai` host
 ## Quick Links
 
 - [Configuration Examples](../../../../configs/) - Example YAML configurations
-- [Config System Design](../config/overview.md) - Configuration system details
+- [Configuration (Runtime)](https://github.com/openvinotoolkit/physicalai/blob/main/docs/explanation/configuration.md) — `physicalai.config`
 
 ## Example Usage
 

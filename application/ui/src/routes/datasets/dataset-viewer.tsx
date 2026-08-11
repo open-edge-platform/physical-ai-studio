@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query';
 import { SchemaEpisode } from '../../api/openapi-spec';
 import { useDeleteEpisodeQuery } from '../../features/datasets/episodes/use-episodes';
 import { paths } from '../../router';
+import { pluralize } from '../../utils';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { useDataset } from './dataset-provider';
 import { EpisodeList } from './episode-list';
@@ -68,7 +69,7 @@ export const DatasetViewer = () => {
             <Flex margin={'size-200'} direction={'column'} flex>
                 <IllustratedMessage>
                     <EmptyIllustration />
-                    <Content> Currently there are episodes. </Content>
+                    <Content>Currently there are no episodes.</Content>
                     <Text>It&apos;s time to begin recording a dataset. </Text>
                     <Heading>No episodes yet</Heading>
                     <View margin={'size-100'}>
@@ -113,12 +114,19 @@ export const DatasetViewer = () => {
                                 <Delete fill='white' />
                             </ActionButton>
                             <AlertDialog
-                                onPrimaryAction={() => deleteEpisodes(selectedEpisodes)}
+                                onPrimaryAction={async () => {
+                                    const deletePromise = deleteEpisodes(selectedEpisodes);
+                                    setSelectedEpisodes([]);
+
+                                    await deletePromise;
+                                }}
                                 title='Delete episodes'
                                 variant='warning'
                                 primaryActionLabel='Delete'
+                                isPrimaryActionDisabled={isPending}
                             >
-                                Are you sure you want to delete the selected episodes?
+                                Are you sure you want to delete {selectedEpisodes.length} selected{' '}
+                                {pluralize(selectedEpisodes.length, 'episode', 'episodes')}?
                             </AlertDialog>
                         </DialogTrigger>
                     </Flex>

@@ -26,6 +26,7 @@ class DatasetManifestRecordingSchema(BaseModel):
 
     cameras: list[ManifestCameraEntry] = Field(default_factory=list)
     robots: list[ManifestRobotEntry] = Field(default_factory=list)
+    tasks: list[str] = Field(default_factory=list)
 
 
 class ImportStep(StrEnum):

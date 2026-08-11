@@ -1,130 +1,74 @@
-from typing import Literal
+from physicalai.config import to_config
+from physicalai.robot import SharedRobot
+from physicalai_studio_plugin import shared_robot_name
 
-from physicalai.robot.so101 import SO101, SO101Calibration
-from physicalai.robot.trossen import BimanualWidowXAI, WidowXAI
-
-from exceptions import ResourceNotFoundError, ResourceType
+from robots.catalog.registry import RobotCatalogRegistry
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
 from robots.robot_client import RobotClient
-from schemas.calibration import Calibration
-from schemas.robot import Robot, RobotType, SO101Robot, TrossenBimanualRobot
-from services.robot_calibration_service import RobotCalibrationService
-from utils.serial_robot_tools import RobotConnectionManager, find_so101_port, serial_port_from_so101
+from schemas import SerialPortInfo
+from schemas.robot import Robot
+from utils.serial_robot_tools import RobotConnectionManager
 
 
 class RobotClientFactory:
-    calibration_service: RobotCalibrationService
     robot_manager: RobotConnectionManager
+    catalog_registry: RobotCatalogRegistry
 
     def __init__(
         self,
         robot_manager: RobotConnectionManager,
-        calibration_service: RobotCalibrationService,
+        catalog_registry: RobotCatalogRegistry | None = None,
     ) -> None:
         self.robot_manager = robot_manager
-        self.calibration_service = calibration_service
+        self.catalog_registry = catalog_registry or RobotCatalogRegistry()
 
     async def build(self, robot: Robot) -> RobotClient:
-        match robot.type:
-            case RobotType.TROSSEN_WIDOWXAI_FOLLOWER:
-                robot_driver = WidowXAI(ip=robot.payload.connection_string, role="follower")
-                return PhysicalAIRobotAdapter(
-                    robot=robot_driver,
-                    robot_type=RobotType.TROSSEN_WIDOWXAI_FOLLOWER,
-                    config=PhysicalAIRobotAdapterConfig(
-                        include_velocities=True,
-                        goal_time_scale=1.0,
-                        external_effort_gain=0.1,
-                    ),
-                )
-            case RobotType.TROSSEN_WIDOWXAI_LEADER:
-                robot_driver = WidowXAI(ip=robot.payload.connection_string, role="leader")
-                return PhysicalAIRobotAdapter(
-                    robot=robot_driver,
-                    robot_type=RobotType.TROSSEN_WIDOWXAI_LEADER,
-                    config=PhysicalAIRobotAdapterConfig(
-                        include_velocities=True,
-                        goal_time_scale=1.0,
-                        external_effort_gain=0.1,
-                    ),
-                )
-            case RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER:
-                return self._build_bimanual_widowxai(robot, mode="follower")
-            case RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER:
-                return self._build_bimanual_widowxai(robot, mode="leader")
-            case RobotType.SO101_FOLLOWER:
-                return await self._build_so101(robot)
-            case RobotType.SO101_LEADER:
-                return await self._build_so101(robot)
-            case _:
-                raise ValueError(f"Unsupported robot type: {robot.type}")
+        definition = self.catalog_registry.get_definition(robot.type)
+
+        if definition is None:
+            raise ValueError(f"Robot type is not part of the catalog: {robot.type}")
+
+        builder = definition.robot_builder
+        if builder is None:
+            raise ValueError(f"Robot type {robot.type} has no robot builder")
+
+        robot_driver = await builder(robot, self)
+        # Builders return a plain driver; wrapping happens here so every robot
+        # type (including third-party plugins) gets one owner process holding
+        # the hardware. The driver itself is discarded — only its recipe is sent,
+        # and the owner rebuilds it. The name keys the owner's Zenoh topics, so
+        # it must come from the id, never the free-form display name.
+        shared_robot = SharedRobot.from_config(to_config(robot_driver), name=shared_robot_name(robot.id))
+        adapter_options = definition.adapter_options
+        return PhysicalAIRobotAdapter(
+            robot=shared_robot,
+            robot_type=robot.type,
+            robot_role=definition.role,
+            display_name=robot.name,
+            config=PhysicalAIRobotAdapterConfig(
+                include_velocities=adapter_options.include_velocities,
+                goal_time_scale=adapter_options.goal_time_scale,
+                external_effort_gain=adapter_options.external_effort_gain,
+            ),
+        )
+
+    async def find_port(self, port_info: SerialPortInfo) -> str | None:
+        port = self._resolve_port(self.robot_manager.robots, port_info)
+        if port is not None:
+            return port
+
+        await self.robot_manager.find_robots()
+        return self._resolve_port(self.robot_manager.robots, port_info)
 
     @staticmethod
-    def _build_bimanual_widowxai(
-        robot: TrossenBimanualRobot, mode: Literal["follower", "leader"]
-    ) -> PhysicalAIRobotAdapter:
-        left_driver = WidowXAI(ip=robot.payload.connection_string_left, role=mode)
-        right_driver = WidowXAI(ip=robot.payload.connection_string_right, role=mode)
-        bimanual_robot = BimanualWidowXAI(left=left_driver, right=right_driver)
-        robot_type = (
-            RobotType.TROSSEN_BIMANUAL_WIDOWXAI_FOLLOWER
-            if mode == "follower"
-            else RobotType.TROSSEN_BIMANUAL_WIDOWXAI_LEADER
-        )
-        return PhysicalAIRobotAdapter(
-            robot=bimanual_robot,
-            robot_type=robot_type,
-            config=PhysicalAIRobotAdapterConfig(
-                include_velocities=True,
-                goal_time_scale=1.0,
-                external_effort_gain=0.1,
-            ),
-        )
-
-    async def _build_so101(self, robot: SO101Robot) -> PhysicalAIRobotAdapter:
-        port = await self.find_robot_port(robot)
-        calibration = await self._get_robot_calibration(robot)
-
-        if calibration is None:
-            raise ResourceNotFoundError(ResourceType.ROBOT_CALIBRATION, robot.payload.serial_number)
-        if port is None:
-            raise ResourceNotFoundError(ResourceType.ROBOT, robot.payload.serial_number)
-
-        role = "follower" if robot.type == RobotType.SO101_FOLLOWER else "leader"
-
-        so101_cal = SO101Calibration.from_dict(
-            {
-                name: {
-                    "id": val.id,
-                    "drive_mode": val.drive_mode,
-                    "homing_offset": val.homing_offset,
-                    "range_min": val.range_min,
-                    "range_max": val.range_max,
-                }
-                for name, val in calibration.values.items()
-            }
-        )
-
-        so101 = SO101(port=port, calibration=so101_cal, role=role, unit="normalized")
-        return PhysicalAIRobotAdapter(
-            robot=so101,
-            robot_type=robot.type,
-            config=PhysicalAIRobotAdapterConfig(
-                include_velocities=False,
-                goal_time_scale=1.0,
-                external_effort_gain=None,
-            ),
-        )
-
-    async def find_robot_port(self, robot: SO101Robot) -> str:
-        port = await find_so101_port(self.robot_manager, serial_port_from_so101(robot))
-        if port is None:
-            resource_key = robot.payload.serial_number or robot.payload.connection_string
-            raise ResourceNotFoundError(ResourceType.ROBOT, resource_key)
-        return port
-
-    async def _get_robot_calibration(self, robot: SO101Robot) -> Calibration | None:
-        if robot.active_calibration_id is None:
+    def _resolve_port(discovered: list[SerialPortInfo], target: SerialPortInfo) -> str | None:
+        if target.serial_number:
+            for serial_port in discovered:
+                if serial_port.serial_number == target.serial_number:
+                    return serial_port.connection_string
             return None
 
-        return await self.calibration_service.get_calibration(robot.active_calibration_id)
+        for serial_port in discovered:
+            if serial_port.connection_string == target.connection_string:
+                return serial_port.connection_string
+        return None

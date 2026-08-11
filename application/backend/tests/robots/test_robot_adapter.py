@@ -1,9 +1,11 @@
 from unittest.mock import MagicMock
 
+import pytest
+from physicalai.robot import RobotDeviceAlreadyOwned, RobotNameConflict
 from physicalai.robot.so101.constants import SO101_JOINT_ORDER
 
+from exceptions import RobotDeviceAlreadyOwnedError, RobotNameConflictError
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
-from schemas.robot import RobotType
 
 
 def _make_mock_robot() -> MagicMock:
@@ -22,10 +24,12 @@ def _make_adapter(
     mode: str = "follower",
 ) -> tuple[PhysicalAIRobotAdapter, MagicMock]:
     robot = _make_mock_robot()
-    robot_type = RobotType.SO101_FOLLOWER if mode == "follower" else RobotType.SO101_LEADER
+    robot_type = "SO101_Follower" if mode == "follower" else "SO101_Leader"
+    robot_role = "follower" if mode == "follower" else "leader"
     adapter = PhysicalAIRobotAdapter(
         robot=robot,
         robot_type=robot_type,
+        robot_role=robot_role,
         config=PhysicalAIRobotAdapterConfig(
             include_velocities=False,
             goal_time_scale=1.0,
@@ -42,11 +46,11 @@ class TestProperties:
 
     def test_robot_type_follower(self):
         adapter, _ = _make_adapter(mode="follower")
-        assert adapter.robot_type == RobotType.SO101_FOLLOWER
+        assert adapter.robot_type == "SO101_Follower"
 
     def test_robot_type_teleoperator(self):
         adapter, _ = _make_adapter(mode="teleoperator")
-        assert adapter.robot_type == RobotType.SO101_LEADER
+        assert adapter.robot_type == "SO101_Leader"
 
     def test_is_connected_delegates_to_robot(self):
         adapter, robot = _make_adapter()
@@ -79,6 +83,31 @@ class TestConnect:
         robot.connect = MagicMock()
         adapter.connect()
         assert adapter.is_controlled is False
+
+    def test_connect_translates_device_already_owned(self):
+        adapter, robot = _make_adapter()
+        robot.connect = MagicMock(side_effect=RobotDeviceAlreadyOwned("device locked"))
+        with pytest.raises(RobotDeviceAlreadyOwnedError) as exc_info:
+            adapter.connect()
+        assert exc_info.value.error_code == "robot_device_already_owned"
+
+    def test_connect_error_reports_display_name_not_transport_name(self):
+        robot = _make_mock_robot()
+        # The driver's own name is the transport identifier (the robot's id).
+        robot.name = "8b1f1c4e-0b6a-4c1e-9d3a-2f5b7c9e0a11"
+        adapter = PhysicalAIRobotAdapter(
+            robot=robot,
+            robot_type="SO101_Follower",
+            robot_role="follower",
+            display_name="Left Arm",
+        )
+        robot.connect = MagicMock(side_effect=RobotNameConflict("name taken"))
+
+        with pytest.raises(RobotNameConflictError) as exc_info:
+            adapter.connect()
+
+        assert "Left Arm" in exc_info.value.message
+        assert "8b1f1c4e" not in exc_info.value.message
 
 
 class TestDisconnect:

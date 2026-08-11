@@ -22,6 +22,13 @@ class TrainingPrecision(StrEnum):
     BF16_TRUE = "bf16-true"
 
 
+class TrainingTarget(StrEnum):
+    """Where a training job executes."""
+
+    LOCAL = "local"
+    REMOTE = "remote"
+
+
 class JobList(BaseModel):
     jobs: list["Job"]
 
@@ -60,13 +67,47 @@ class TrainingDevice(BaseModel):
         return self
 
 
+_DEFAULT_MAX_EPOCHS = 5
+
+
 class TrainJobPayload(BaseModel):
     project_id: UUID
     dataset_id: UUID
     policy: str
     model_name: str
-    max_steps: int = Field(default=100, ge=100, le=100_000, description="Number of training steps")
+    max_epochs: int | None = Field(
+        default=None,
+        ge=1,
+        le=10_000,
+        description="Number of training epochs (preferred over max_steps when both are provided)",
+    )
+    max_steps: int | None = Field(
+        default=None,
+        ge=1,
+        le=100_000,
+        description="Number of training steps (legacy; ignored when max_epochs is provided)",
+    )
     batch_size: int = Field(default=8, ge=1, le=256, description="Training batch size")
+
+    @model_validator(mode="after")
+    def resolve_training_limit(self) -> "TrainJobPayload":
+        """Resolve training-limit fields, applying precedence and defaults.
+
+        Rules (in order of priority):
+        1. If ``max_epochs`` is set, use it (``max_steps`` is ignored).
+        2. If ``max_epochs`` is not set (including legacy ``max_steps``-only payloads),
+           default to ``_DEFAULT_MAX_EPOCHS`` epochs.
+
+        ``max_steps`` is retained only for backward-compatible payload parsing.
+        """
+        if self.max_epochs is not None:
+            # max_epochs wins; clear max_steps to avoid ambiguity downstream
+            self.max_steps = None
+        else:
+            # No epoch value provided (including legacy max_steps-only payloads)
+            self.max_epochs = _DEFAULT_MAX_EPOCHS
+        return self
+
     num_workers: int | Literal["auto"] = Field(default="auto", description="DataLoader workers ('auto' or 0-16)")
     auto_scale_batch_size: bool = Field(
         default=False,
@@ -85,6 +126,22 @@ class TrainJobPayload(BaseModel):
         description="Training precision ('32-true', 'bf16-mixed')",
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
+    training_target: TrainingTarget = Field(
+        default=TrainingTarget.LOCAL,
+        description="Whether training runs in the Studio process or on a configured remote trainer",
+    )
+    remote_trainer_id: UUID | None = Field(
+        default=None,
+        description="Configured remote trainer selected for a remote run",
+    )
+    remote_trainer_url: str | None = Field(
+        default=None,
+        description="Resolved remote trainer URL pinned when the job is submitted for restart recovery",
+    )
+    remote_trainer_name: str | None = Field(
+        default=None,
+        description="Resolved remote trainer name pinned when the job is submitted, for display in job logs",
+    )
 
     remote_job_id: UUID | None = Field(
         default=None, description="Remote trainer job id, set when a remote run is in flight (for restart reattach)"
@@ -92,6 +149,21 @@ class TrainJobPayload(BaseModel):
     snapshot_id: UUID | None = Field(
         default=None, description="Dataset snapshot id retained while a remote run is in flight (for model provenance)"
     )
+
+    @model_validator(mode="after")
+    def validate_training_target(self) -> "TrainJobPayload":
+        """Keep local jobs and pinned remote endpoints mutually consistent."""
+        if self.training_target is TrainingTarget.LOCAL:
+            if (
+                self.remote_trainer_id is not None
+                or self.remote_trainer_url is not None
+                or self.remote_trainer_name is not None
+            ):
+                raise ValueError("Local training cannot specify a remote trainer")
+            return self
+        if self.remote_trainer_id is None:
+            raise ValueError("Remote training requires remote_trainer_id")
+        return self
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:
