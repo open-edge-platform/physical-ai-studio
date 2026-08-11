@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from physicalai.training_config import Config
+from physicalai.config import Config
 from physicalai.policies.groot import Groot, GrootConfig
 
 # ============================================================================ #

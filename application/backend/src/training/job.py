@@ -4,7 +4,7 @@
 """One training run, described by a spec and executed by one function.
 
 :class:`TrainingJobSpec` is the complete configuration of a training run —
-policy, step budget, batch size, precision, device — and nothing else. It holds
+ policy, epoch budget, batch size, precision, device — and nothing else. It holds
 no paths, no job identity, and no transport details, so the same spec can be
 built in-process or sent over HTTP to a remote trainer and mean the same thing
 in both places.
@@ -16,7 +16,7 @@ result goes, how progress is reported, and how cancellation is signalled are all
 arguments — the runner owns none of that policy.
 
 Example:
-    >>> spec = TrainingJobSpec(policy="act", max_steps=1000, batch_size=8)
+    >>> spec = TrainingJobSpec(policy="act", max_epochs=5, batch_size=8)
     >>> run_training_job(  # doctest: +SKIP
     ...     spec,
     ...     dataset_root="/data/snapshot",
@@ -29,6 +29,7 @@ Example:
 
 from __future__ import annotations
 
+import gc
 import logging
 import shutil
 from pathlib import Path
@@ -74,7 +75,7 @@ class TrainingJobSpec(BaseModel):
     arguments to :func:`run_training_job`.
 
     Example:
-        >>> spec = TrainingJobSpec(policy="act", max_steps=2000)
+        >>> spec = TrainingJobSpec(policy="act", max_epochs=5)
         >>> spec.precision
         'bf16-mixed'
     """
@@ -86,7 +87,7 @@ class TrainingJobSpec(BaseModel):
         default="physicalai",
         description="Which implementation of the policy to train.",
     )
-    max_steps: int = Field(default=100, ge=1, description="Optimizer step budget.")
+    max_epochs: int = Field(default=5, ge=1, description="Training epoch budget.")
     batch_size: int = Field(default=8, ge=1, description="Training batch size.")
     num_workers: int | Literal["auto"] = Field(default="auto", description="Dataloader worker count.")
     val_split: float = Field(default=0.1, ge=0.0, lt=1.0, description="Fraction of episodes held out for validation.")
@@ -152,6 +153,13 @@ def run_training_job(
     has no artifact worth keeping. Callers distinguish a canceled run from a
     completed one by consulting ``should_stop`` again after this returns.
 
+    Before export, the trainer, datamodule, and their references back into the
+    policy are dropped and accelerator memory is released (see
+    :func:`_detach_trainer` and :func:`_release_memory`): the trainer's
+    optimizer state and dataloaders would otherwise stay resident throughout
+    export, and export conversion (OpenVINO in particular) can need several GB
+    on top of that.
+
     Args:
         spec: What to train.
         dataset_root: Local root of the LeRobot dataset to train on.
@@ -171,6 +179,7 @@ def run_training_job(
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
 
+    accelerator = resolve_accelerator(spec.device_type)
     output_dir, cache_dir = Path(output_dir), Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -189,10 +198,10 @@ def run_training_job(
             ModelCheckpoint(dirpath=cache_dir, filename="model", save_top_k=1, monitor="val/loss", mode="min"),
             ProgressReportingCallback(report=report, should_stop=should_stop),
         ],
-        accelerator=resolve_accelerator(spec.device_type),
+        accelerator=accelerator,
         strategy=resolve_strategy(spec.device_type),
         devices=resolve_devices(spec.device_index),
-        max_steps=spec.max_steps,
+        max_epochs=spec.max_epochs,
         auto_scale_batch_size=spec.auto_scale_batch_size,
         precision=spec.precision,
         check_val_every_n_epoch=1,
@@ -206,7 +215,12 @@ def run_training_job(
 
     trainer.save_checkpoint(cache_dir / CHECKPOINT_NAME)
     _publish(cache_dir, output_dir)
-    _export(_export_policy(spec, policy, output_dir), output_dir, report)
+
+    export_policy = _export_policy(spec, policy, output_dir)
+    _detach_trainer(export_policy, trainer)
+    del trainer, datamodule, policy
+    _release_memory()
+    _export(export_policy, output_dir, report)
 
 
 def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Policy:
@@ -266,6 +280,58 @@ def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> P
         return policy
 
 
+def _detach_trainer(export_policy: Policy, trainer: Any) -> None:
+    """Break the trainer<->policy<->datamodule reference cycle before export.
+
+    Lightning wires ``policy._trainer = trainer``, ``trainer.datamodule =
+    datamodule``, and ``trainer.strategy._lightning_module = policy`` during
+    ``fit``, and never undoes it. When ``export_policy`` is the very policy
+    that was just trained (the common case: no ``torch.compile`` reload), it
+    still holds that ``_trainer`` reference, which keeps the trainer — and
+    everything it holds: optimizer state, dataloaders, the strategy — alive
+    and reachable no matter how many local names ``run_training_job`` deletes.
+    ``gc.collect()`` only reclaims *unreachable* cycles, so without this the
+    memory release below is a no-op on the export object it matters most for.
+
+    Best-effort: a failure here must not abort the job.
+    """
+    try:
+        export_policy._trainer = None
+        if getattr(trainer, "strategy", None) is not None:
+            trainer.strategy._lightning_module = None
+        trainer.datamodule = None
+    except Exception as exc:
+        logger.warning("Could not detach trainer from policy: %s", exc)
+
+
+def _release_memory() -> None:
+    """Return held host and device memory to the OS/allocator before the next stage.
+
+    Export conversion (OpenVINO in particular) allocates several GB above the
+    model's resident size, on top of whatever the just-finished trainer and
+    dataloaders still hold. A garbage-collection pass plus clearing every
+    available accelerator's cache prevents that peak from stacking on top of
+    memory this process no longer needs. Best-effort: a failure here must not
+    abort the job.
+    """
+    gc.collect()
+    try:
+        import torch
+
+        if torch.xpu.is_available():
+            torch.xpu.synchronize()
+            torch.xpu.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+        if torch.mps.is_available():
+            torch.mps.empty_cache()
+    except ImportError:
+        pass
+    except Exception as exc:
+        logger.warning("Could not release device cache: %s", exc)
+
+
 def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
     """Export the policy to every backend it declares support for."""
     from physicalai.export import ExportablePolicyMixin
@@ -288,3 +354,7 @@ def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
         except Exception:
             # Export is best-effort: one failing backend must not abort the job.
             logger.exception("Failed exporting model to %s format", name)
+        finally:
+            # Conversion peaks well above the model's resident size, so release
+            # after every backend — not just before the first one.
+            _release_memory()

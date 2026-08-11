@@ -352,8 +352,8 @@ async def test_cancel_succeeds_for_awaiting_user_review_with_staging_id() -> Non
 # ---------------------------------------------------------------------------
 
 
-def test_dataset_manifest_identity_slim_shape_no_default_task() -> None:
-    """DatasetManifest no longer carries identity fields such as suggested_name/default_task."""
+def test_dataset_manifest_identity_slim_shape_has_no_default_task() -> None:
+    """DatasetManifest does not carry the selected default task."""
     from schemas.dataset_import_job import DatasetManifest
 
     manifest = DatasetManifest()

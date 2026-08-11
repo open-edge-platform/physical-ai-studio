@@ -572,8 +572,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.1.2.dev37+g3e163cfeb"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44#3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44" }
+version = "0.1.2.dev51+gcb934cd2e"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=cb934cd2e3b2c47236e8839444cdbb71cf7a7e83#cb934cd2e3b2c47236e8839444cdbb71cf7a7e83" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -623,7 +623,7 @@ lint = [
 
 [package.metadata]
 requires-dist = [
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=cb934cd2e3b2c47236e8839444cdbb71cf7a7e83" },
     { name = "pydantic", specifier = ">=2.12" },
 ]
 

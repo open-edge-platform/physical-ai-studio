@@ -8,3 +8,8 @@ export const toMMSS = (timeInSeconds: number): string => {
     const seconds = Math.floor(timeInSeconds % 60);
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
+
+const pluralRules = new Intl.PluralRules('en');
+
+export const pluralize = (count: number, singular: string, plural: string): string =>
+    pluralRules.select(count) === 'one' ? singular : plural;

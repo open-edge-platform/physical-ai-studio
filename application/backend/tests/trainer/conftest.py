@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 def sample_request() -> SubmitJobRequest:
     """A valid http-transfer job submission request."""
     return SubmitJobRequest(
-        spec=TrainingJobSpec(policy="act", max_steps=100, batch_size=8, precision="bf16-mixed"),
+        spec=TrainingJobSpec(policy="act", max_epochs=5, batch_size=8, precision="bf16-mixed"),
     )
 
 

@@ -12,6 +12,8 @@ is mocked out; it is not under test.
 
 from __future__ import annotations
 
+import gc
+import weakref
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -34,7 +36,7 @@ class TestTrainingJobSpec:
     def test_only_the_policy_is_required(self) -> None:
         spec = TrainingJobSpec(policy="act")
 
-        assert (spec.policy_source, spec.max_steps, spec.batch_size) == ("physicalai", 100, 8)
+        assert (spec.policy_source, spec.max_epochs, spec.batch_size) == ("physicalai", 5, 8)
         assert (spec.num_workers, spec.val_split, spec.precision) == ("auto", 0.1, "bf16-mixed")
         assert (spec.compile_model, spec.auto_scale_batch_size) == (False, False)
         assert (spec.device_type, spec.device_index) == (None, None)
@@ -47,7 +49,7 @@ class TestTrainingJobSpec:
     @pytest.mark.parametrize(
         "invalid",
         [
-            {"max_steps": 0},
+            {"max_epochs": 0},
             {"batch_size": 0},
             {"val_split": 1.0},
             {"val_split": -0.1},
@@ -61,7 +63,7 @@ class TestTrainingJobSpec:
 
     def test_spec_round_trips_through_json(self) -> None:
         """Remote submission sends the spec as JSON; it must survive the trip."""
-        spec = TrainingJobSpec(policy="pi0", max_steps=500, num_workers=4, device_type="xpu", device_index=1)
+        spec = TrainingJobSpec(policy="pi0", max_epochs=5, num_workers=4, device_type="xpu", device_index=1)
 
         assert TrainingJobSpec.model_validate_json(spec.model_dump_json()) == spec
 
@@ -168,7 +170,7 @@ class TestRunTrainingJob:
     def test_trainer_is_configured_from_the_spec(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(
             policy="act",
-            max_steps=500,
+            max_epochs=5,
             precision="32-true",
             auto_scale_batch_size=True,
             device_type="cpu",
@@ -178,7 +180,7 @@ class TestRunTrainingJob:
         trainer_class = _run(spec, tmp_path)
 
         kwargs = trainer_class.call_args.kwargs
-        assert kwargs["max_steps"] == 500
+        assert kwargs["max_epochs"] == 5
         assert kwargs["precision"] == "32-true"
         assert kwargs["auto_scale_batch_size"] is True
         assert (kwargs["accelerator"], kwargs["strategy"], kwargs["devices"]) == ("cpu", "auto", [1])
@@ -266,3 +268,48 @@ class TestRunTrainingJob:
         _run(TrainingJobSpec(policy="act"), tmp_path, policy=policy)
 
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
+
+    def test_trainer_and_datamodule_are_released_before_export(self, tmp_path: Path) -> None:
+        """The trainer must not still be resident (optimizer state, dataloaders) during export.
+
+        Lightning wires ``policy._trainer = trainer`` and ``trainer.datamodule =
+        datamodule`` during ``fit`` and never undoes it; that link is simulated
+        here since the real ``Trainer`` is mocked out. Without breaking it, the
+        exported policy keeps the whole trainer graph reachable and no amount of
+        ``gc.collect()`` can reclaim it: this is what regresses if the reference
+        cycle is left in place instead of explicitly detached before export.
+        """
+        policy = _ExportablePolicy([ExportBackend.TORCH])
+
+        with (
+            patch("physicalai.data.LeRobotDataModule") as datamodule_class,
+            patch(f"{JOB}.build_policy", return_value=policy),
+            patch("physicalai.train.trainer.Trainer") as trainer_class,
+        ):
+            trainer_instance = trainer_class.return_value
+            datamodule_instance = datamodule_class.return_value
+            # Simulate what Lightning's real `trainer.fit(policy, datamodule)` wires up.
+            policy._trainer = trainer_instance
+            trainer_instance.datamodule = datamodule_instance
+            trainer_instance.strategy._lightning_module = policy
+
+            trainer_ref = weakref.ref(trainer_instance)
+            datamodule_ref = weakref.ref(datamodule_instance)
+
+            run_training_job(
+                TrainingJobSpec(policy="act"),
+                dataset_root=tmp_path / "snapshot",
+                output_dir=tmp_path / "model",
+                cache_dir=tmp_path / "cache" / "job",
+                report=MagicMock(),
+                should_stop=lambda: False,
+            )
+
+        # Drop the test's own strong refs before collecting, mirroring what
+        # run_training_job does internally with its local `trainer`/`datamodule`.
+        del trainer_instance, datamodule_instance, trainer_class, datamodule_class
+        gc.collect()
+
+        assert trainer_ref() is None, "trainer is still reachable; the reference cycle was not broken"
+        assert datamodule_ref() is None, "datamodule is still reachable; the reference cycle was not broken"
+        assert policy._trainer is None

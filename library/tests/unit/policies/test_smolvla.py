@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-from physicalai.training_config import Config
+from physicalai.config import Config
 from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
 
 # ============================================================================ #

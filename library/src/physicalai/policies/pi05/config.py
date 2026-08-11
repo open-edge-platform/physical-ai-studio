@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from physicalai.training_config import Config
+from physicalai.config import Config
 
 
 @dataclass(frozen=True)

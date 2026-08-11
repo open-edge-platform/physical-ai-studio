@@ -1558,16 +1558,19 @@ class _SmolVLMWithExpertModel(nn.Module):
         return self
 
     def embed_image(self, image: torch.Tensor) -> torch.Tensor:
-        patch_attention_mask = None
-        # Get sequence from the vision encoder
-        image_hidden_states = (
-            self.get_vlm_model()
-            .vision_model(
-                pixel_values=image.to(dtype=self.get_vlm_model().vision_model.dtype),
-                patch_attention_mask=patch_attention_mask,
-            )
-            .last_hidden_state
+        vision_model = self.get_vlm_model().vision_model
+        pixel_values = image.to(dtype=vision_model.dtype)
+        batch_size, _, height, width = pixel_values.shape
+        patch_attention_mask = torch.ones(
+            (batch_size, height // vision_model.patch_size, width // vision_model.patch_size),
+            dtype=torch.bool,
+            device=pixel_values.device,
         )
+        # The vision transformer forward is inlined because every patch is valid here, so its
+        # bidirectional mask is a no-op, while building it from traced shapes breaks torch.jit.trace.
+        hidden_states = vision_model.embeddings(pixel_values=pixel_values, patch_attention_mask=patch_attention_mask)
+        hidden_states = vision_model.encoder(inputs_embeds=hidden_states, attention_mask=None).last_hidden_state
+        image_hidden_states = vision_model.post_layernorm(hidden_states)
         # Modality projection & resampling
         return self.get_vlm_model().connector(image_hidden_states)
 

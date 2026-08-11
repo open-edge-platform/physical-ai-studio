@@ -644,7 +644,7 @@ class TestHttpDatasetTransfer:
         """The remote job trains from the same spec a local run would execute."""
         settings = _settings()
         context = _context(tmp_path)
-        context.payload = context.payload.model_copy(update={"max_steps": 500, "batch_size": 16})
+        context.payload = context.payload.model_copy(update={"max_epochs": 5, "batch_size": 16})
 
         body = await _submitted_body(settings, context)
 
@@ -652,7 +652,7 @@ class TestHttpDatasetTransfer:
             "device_type": None,
             "device_index": None,
         }
-        assert (body["spec"]["policy"], body["spec"]["max_steps"], body["spec"]["batch_size"]) == ("act", 500, 16)
+        assert (body["spec"]["policy"], body["spec"]["max_epochs"], body["spec"]["batch_size"]) == ("act", 5, 16)
 
     @pytest.mark.anyio
     async def test_submit_body_omits_the_studios_device_selection(self, tmp_path):

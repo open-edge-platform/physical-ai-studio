@@ -39,13 +39,15 @@ export const EpisodeVideoCell = ({
 
     useEffect(() => {
         const video = videoRef.current;
-        if (video && player.isSeeking) {
+        const start = episodeVideo.start;
+
+        if (video && player.isSeeking && Number.isFinite(start)) {
             const interval = setInterval(() => {
-                video.currentTime = player.timeRef.current;
+                video.currentTime = player.timeRef.current + start;
             }, 1000 / 60);
             return () => clearInterval(interval);
         }
-    }, [player, videoRef]);
+    }, [player, episodeVideo.start]);
 
     const { containerRef, width, height } = useFittedMediaSize(
         videoRef.current?.videoWidth,

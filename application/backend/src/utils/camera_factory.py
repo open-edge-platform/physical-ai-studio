@@ -12,8 +12,6 @@ from loguru import logger
 from physicalai.capture import CameraType, ColorMode, SharedCamera
 
 if TYPE_CHECKING:
-    from physicalai.config import ComponentConfig
-
     from schemas.project_camera import Camera
 
 MIGRATED_DRIVERS: frozenset[str] = frozenset({"usb_camera", "realsense", "basler"})
@@ -44,7 +42,7 @@ _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
 }
 
 
-def _camera_component_config(config: Camera) -> ComponentConfig:
+def _camera_component_config(config: Camera) -> dict[str, Any]:
     class_path = _DRIVER_TO_CLASS_PATH[config.driver]
     allowed = _ALLOWED_KWARGS.get(config.driver, frozenset())
 

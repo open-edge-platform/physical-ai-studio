@@ -40,7 +40,7 @@ def _make_payload(
         dataset_id=uuid4(),
         policy="act",
         model_name="test-model",
-        max_steps=100,
+        max_epochs=5,
         batch_size=8,
         num_workers=0,
         auto_scale_batch_size=False,

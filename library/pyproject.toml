@@ -196,7 +196,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "3e163cfebc5f0fe6d97a6e792b4b0a55614d9a44" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "cb934cd2e3b2c47236e8839444cdbb71cf7a7e83" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

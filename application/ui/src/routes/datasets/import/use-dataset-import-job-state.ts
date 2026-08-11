@@ -1,7 +1,7 @@
 import { $api } from '../../../api/client';
 
 export interface FinalizeFields {
-    defaultTask: string;
+    defaultTask: string | undefined;
     environmentId: string | undefined;
 }
 

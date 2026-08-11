@@ -13,9 +13,9 @@ import lightning
 import torch
 from lightning.pytorch.callbacks import BatchSizeFinder, LearningRateMonitor
 from lightning.pytorch.strategies import DDPStrategy
+from physicalai.config.loading import instantiate_obj_from_dict
 
 from physicalai.train.callbacks import PolicyDatasetInteraction
-from physicalai.training_config.instantiate import instantiate_obj_from_dict
 
 
 class Trainer(lightning.Trainer):
