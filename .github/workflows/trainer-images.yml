@@ -188,7 +188,7 @@ jobs:
         id: build-metadata
         run: |
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
-          echo "build-ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
@@ -213,7 +213,9 @@ jobs:
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.build-ref }}
+          tags: |
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
             org.opencontainers.image.revision=${{ github.sha }}
@@ -273,18 +275,17 @@ jobs:
         with:
           image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
 
-      # Moving tags are promoted only after the immutable digest is verified and
-      # signed, so a failure in either step leaves them pointing at the previous
-      # good build instead of an unsigned one. `protocol-<N>` is the tag Studio
+      # `protocol-<N>` is promoted only after the immutable digest is verified
+      # and signed, so a failure in either step leaves it pointing at the
+      # previous good build instead of an unsigned one. It's the tag Studio
       # resolves automatically for SSH-provisioned training, and there is no
-      # `latest` fallback behind it, so it must never advance ahead of signing.
-      - name: Promote moving tags after signing
+      # `latest` fallback behind it, so it must never advance ahead of
+      # signing.
+      - name: Promote protocol tag after signing
         env:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          BRANCH_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           PROTOCOL_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:protocol-${{ env.TRAINER_API_PROTOCOL_VERSION }}
         run: |
-          docker buildx imagetools create --tag "$BRANCH_TAG" "$IMAGE"
           docker buildx imagetools create --tag "$PROTOCOL_TAG" "$IMAGE"
 
   required-check:
