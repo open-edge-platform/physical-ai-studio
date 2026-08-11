@@ -3,20 +3,12 @@ name: Trainer Images
 on:
   pull_request:
     branches: [main]
-    paths:
-      - application/backend/**
-      - application/docker/Dockerfile.trainer
-      - application/plugin/**
-      - library/**
-      - .github/workflows/trainer-images.yml
   push:
     branches: [main]
-    paths:
-      - application/backend/**
-      - application/docker/Dockerfile.trainer
-      - application/plugin/**
-      - library/**
-      - .github/workflows/trainer-images.yml
+    # check-paths always runs on push, so filter documentation-only pushes here
+    paths-ignore:
+      - "**/*.md"
+      - "**/docs/**"
   workflow_dispatch:
 
 permissions: {}
@@ -30,8 +22,51 @@ env:
   TRAINER_API_PROTOCOL_VERSION: "1"
 
 jobs:
+  check-paths:
+    name: Check if workflow should run
+    runs-on: ubuntu-latest
+    outputs:
+      run_workflow: ${{ steps.check_paths.outputs.run }}
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check paths
+        id: check_paths
+        uses: open-edge-platform/geti-ci/actions/check-paths@2ed3ce382d1dbd6db52c7c6b93ffdae280a1c06f # check-paths/v0.1.0
+        with:
+          files_yaml: |
+            test:
+              - application/backend/**
+              - application/docker/Dockerfile.trainer
+              - application/plugin/**
+              - library/src/**
+              - library/pyproject.toml
+              - library/uv.lock
+              - library/MANIFEST.in
+              - library/.dockerignore
+              - .github/workflows/trainer-images.yml
+              - '!**/*.md'
+              - '!**/docs/**'
+
   build-and-smoke-test:
     name: Build and smoke-test (${{ matrix.device }})
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -134,9 +169,9 @@ jobs:
           python -c 'import json, os; health = json.load(open("health.json")); assert health == {"status": "healthy", "protocol_version": 1, "device_type": os.environ["DEVICE"], "build_revision": os.environ["GITHUB_SHA"], "build_date": os.environ["BUILD_DATE"], "application_version": os.environ["VERSION"]}'
 
   publish:
-    name: Publish, attest, and sign (${{ matrix.device }})
-    needs: build-and-smoke-test
-    if: github.ref == 'refs/heads/main'
+    name: Publish, attest, scan, and sign (${{ matrix.device }})
+    needs: [check-paths, build-and-smoke-test]
+    if: github.ref == 'refs/heads/main' && needs.check-paths.outputs.run_workflow == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -290,7 +325,7 @@ jobs:
 
   required-check:
     name: Required Check trainer-images
-    needs: [build-and-smoke-test, publish]
+    needs: [check-paths, build-and-smoke-test, publish]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
@@ -300,7 +335,7 @@ jobs:
           PUBLISH_RESULT: ${{ needs.publish.result }}
           REF: ${{ github.ref }}
         run: |
-          test "$BUILD_RESULT" = success
+          test "$BUILD_RESULT" = success -o "$BUILD_RESULT" = skipped
           if [ "$REF" = refs/heads/main ]; then
-            test "$PUBLISH_RESULT" = success
+            test "$PUBLISH_RESULT" = success -o "$PUBLISH_RESULT" = skipped
           fi
