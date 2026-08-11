@@ -536,3 +536,154 @@ class RemoteServerPreflightError(BaseException):
             error_code="remote_server_preflight_failed",
             http_status=http.HTTPStatus.BAD_REQUEST,
         )
+
+
+class TrainerImageResolutionError(BaseException):
+    """Raised when the device-specific `protocol-<N>` trainer image cannot be resolved.
+
+    There is deliberately no fallback tag: a `latest` fallback here (unlike
+    Tier 1's advisory preflight check) would silently run a job against an
+    image whose protocol compatibility was never established.
+    """
+
+    def __init__(self, image_ref: str, protocol_version: int, detail: str | None = None) -> None:
+        extra = f" ({detail})" if detail else ""
+        super().__init__(
+            message=(
+                f"Could not resolve trainer image '{image_ref}' for protocol version {protocol_version}{extra}. "
+                "A matching `protocol-{n}`-tagged trainer image must be published before this job can run."
+            ),
+            error_code="trainer_image_unresolved",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class TrainerImagePullError(BaseException):
+    """Raised when `docker pull` of the resolved digest failed on the remote host."""
+
+    def __init__(self, image_ref: str, detail: str | None = None) -> None:
+        extra = f": {detail}" if detail else ""
+        super().__init__(
+            message=f"Could not pull trainer image '{image_ref}'{extra}.",
+            error_code="trainer_image_pull_failed",
+            http_status=http.HTTPStatus.BAD_GATEWAY,
+        )
+
+
+class TrainerImageVerificationError(BaseException):
+    """Raised when the trainer image's signature could not be verified.
+
+    Fails closed: this covers both a failed `cosign verify` and `cosign` being
+    unavailable on the remote host. Studio never launches an unverified image.
+    """
+
+    def __init__(self, image_ref: str, reason: str) -> None:
+        super().__init__(
+            message=f"Could not verify the signature of trainer image '{image_ref}': {reason}.",
+            error_code="trainer_image_verification_failed",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class TrainerLibraryVersionError(BaseException):
+    """Raised when the registry-reported `physicalai-train` version is below policy.
+
+    Read from the registry manifest label before any pull, so a version-policy
+    rejection never costs a multi-gigabyte transfer.
+    """
+
+    def __init__(self, policy_name: str, required_version: str, reported_version: str) -> None:
+        super().__init__(
+            message=(
+                f"Trainer image reports physicalai-train version '{reported_version}', which does not meet "
+                f"the '{policy_name}' policy's minimum of '{required_version}'."
+            ),
+            error_code="trainer_library_version_unmet",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class TrainerLibraryVersionMismatchError(BaseException):
+    """Raised when the launched container's `/health` disagrees with the registry label.
+
+    Defense in depth: the registry-manifest label is read before the pull, and
+    this re-confirms it against the running container's own report.
+    """
+
+    def __init__(self, label_version: str, health_version: str) -> None:
+        super().__init__(
+            message=(
+                f"Trainer image's registry label reports physicalai-train version '{label_version}', but the "
+                f"running container's /health reports '{health_version}'."
+            ),
+            error_code="trainer_library_version_mismatch",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class GpuBusyTimeoutError(BaseException):
+    """Raised when a remote GPU stayed busy past the configured give-up timeout."""
+
+    def __init__(self, server_name: str, waited_s: float) -> None:
+        super().__init__(
+            message=f"GPU on remote server '{server_name}' stayed busy for {waited_s:.0f}s; giving up.",
+            error_code="gpu_busy_timeout",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RemoteDiskSpaceError(BaseException):
+    """Raised when a remote server lacks room for this job's actual snapshot."""
+
+    def __init__(self, server_name: str, free_bytes: int, required_bytes: int) -> None:
+        super().__init__(
+            message=(
+                f"Remote server '{server_name}' has {free_bytes / (1024**3):.1f} GiB free, "
+                f"but this job needs {required_bytes / (1024**3):.1f} GiB."
+            ),
+            error_code="remote_disk_insufficient",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class TrainerContainerLaunchError(BaseException):
+    """Raised when the trainer container could not be started on the remote host."""
+
+    def __init__(self, server_name: str, detail: str | None = None) -> None:
+        extra = f": {detail}" if detail else ""
+        super().__init__(
+            message=f"Could not start the trainer container on remote server '{server_name}'{extra}.",
+            error_code="trainer_container_launch_failed",
+            http_status=http.HTTPStatus.BAD_GATEWAY,
+        )
+
+
+class TrainerReadinessTimeoutError(BaseException):
+    """Raised when the launched trainer never became ready, or reported no protocol version."""
+
+    def __init__(self, server_name: str, detail: str | None = None) -> None:
+        extra = f": {detail}" if detail else ""
+        super().__init__(
+            message=f"Trainer on remote server '{server_name}' did not become ready in time{extra}.",
+            error_code="trainer_readiness_timeout",
+            http_status=http.HTTPStatus.BAD_GATEWAY,
+        )
+
+
+class TrainerProtocolVersionMismatchError(BaseException):
+    """Raised when the launched trainer's reported protocol version does not match.
+
+    Strict for SSH-provisioned trainers: unlike Tier 1's advisory preflight,
+    provisioning a real job never proceeds on a protocol mismatch.
+    """
+
+    def __init__(self, server_name: str, expected: int, reported: int | None) -> None:
+        reported_text = str(reported) if reported is not None else "none"
+        super().__init__(
+            message=(
+                f"Trainer on remote server '{server_name}' reports protocol version {reported_text}, "
+                f"expected {expected}."
+            ),
+            error_code="trainer_protocol_mismatch",
+            http_status=http.HTTPStatus.CONFLICT,
+        )

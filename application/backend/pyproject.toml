@@ -38,6 +38,7 @@ dependencies = [
   "psutil~=7.2",
   "physicalai-studio-plugin",
   "asyncssh~=2.24",
+  "packaging>=24.0",
 ]
 
 [project.scripts]

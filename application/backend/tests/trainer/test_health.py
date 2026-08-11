@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 
 from trainer.main import health
-from trainer.schemas import _DEFAULT_PROTOCOL_VERSION
+from trainer.schemas import _DEFAULT_PROTOCOL_VERSION, _installed_library_version
 
 
 def test_health_reports_image_compatibility_metadata(monkeypatch) -> None:
@@ -28,6 +28,7 @@ def test_health_reports_image_compatibility_metadata(monkeypatch) -> None:
         "build_revision": "a" * 40,
         "build_date": "2026-07-14T08:00:00Z",
         "application_version": "0.1.0",
+        "library_version": _installed_library_version(),
     }
 
 
@@ -71,4 +72,5 @@ def test_health_endpoint_serializes_by_field_name_not_env_alias(monkeypatch) -> 
         "build_revision": "a" * 40,
         "build_date": "2026-07-14T08:00:00Z",
         "application_version": "0.1.0",
+        "library_version": _installed_library_version(),
     }

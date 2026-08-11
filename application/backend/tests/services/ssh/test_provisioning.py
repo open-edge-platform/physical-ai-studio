@@ -1,0 +1,377 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Tests for the SSH provisioning orchestrator.
+
+Every remote/docker interaction is faked: `SshTransport` and `SshTunnel` are
+monkeypatched with in-memory doubles, and `docker_ops` calls hit a scripted
+fake transport rather than a real host. This proves the *orchestration* -
+ordering, persistence, and cleanup-on-failure - independent of the individual
+docker_ops/transport unit tests.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING, Self
+from uuid import uuid4
+
+import pytest
+
+from exceptions import (
+    TrainerContainerLaunchError,
+    TrainerImageResolutionError,
+    TrainerImageVerificationError,
+    TrainerProtocolVersionMismatchError,
+    TrainerReadinessTimeoutError,
+)
+from schemas.hardware import DeviceType
+from schemas.job_provisioning import JobProvisioning, JobProvisioningUpdate
+from schemas.remote_server import RemoteServer
+from services.ssh import docker_ops
+from services.ssh import provisioning as provisioning_module
+from services.ssh.docker_ops import JOB_LABEL, LIBRARY_VERSION_LABEL, MANAGED_LABEL
+from services.ssh.preflight import PROTOCOL_LABEL
+from services.ssh.provisioning import SshProvisioningService
+from services.ssh.transport import CommandResult
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+_REGISTRY = "ghcr.io/open-edge-platform"
+_PROTOCOL_VERSION = 1
+_TAG_REF = f"{_REGISTRY}/physicalai-trainer-cuda:protocol-1"
+_DIGEST = "sha256:" + "b" * 64
+
+
+def _ok(stdout: str = "") -> CommandResult:
+    return CommandResult(argv=(), command="", exit_status=0, stdout=stdout)
+
+
+def _fail(stderr: str = "failed") -> CommandResult:
+    return CommandResult(argv=(), command="", exit_status=1, stderr=stderr)
+
+
+def _server() -> RemoteServer:
+    return RemoteServer(id=uuid4(), name="Lab GPU box", ssh_host_alias="gpu-box", device_type=DeviceType.CUDA)
+
+
+def _healthy_script(container_id: str = "abc123", published_port: int = 54321) -> dict[str, CommandResult]:
+    return {
+        f"docker buildx imagetools inspect {_TAG_REF} --format {{{{json .Manifest.Digest}}}}": _ok(json.dumps(_DIGEST)),
+        f"docker buildx imagetools inspect {_TAG_REF} --format {{{{json .Image.Config.Labels}}}}": _ok(
+            json.dumps({PROTOCOL_LABEL: "1", LIBRARY_VERSION_LABEL: "1.0.0"})
+        ),
+        "cosign version": _ok("v2.4.1"),
+        "cosign verify": _ok("Verified OK"),
+        "df -B1 -P /var/lib/docker": _ok(
+            "Filesystem 1B-blocks Used Available Capacity Mounted on\n"
+            "/dev/sda1 900000000000 100000000000 85899345920 12% /var/lib/docker\n"
+        ),
+        "docker pull": _ok("Status: Downloaded"),
+        "nvidia-smi --query-compute-apps": _ok("\n"),  # GPU free
+        "docker run": _ok(f"{container_id}\n"),
+        "docker port": _ok(f"127.0.0.1:{published_port}\n"),
+        "docker stop": _ok(""),
+        "docker rm": _ok(""),
+        "docker inspect": _ok("true\n"),
+    }
+
+
+class FakeSshTransport:
+    """Stand-in for `SshTransport` as an async context manager."""
+
+    def __init__(self, script: dict[str, CommandResult], recorder: list[tuple[str, ...]]) -> None:
+        self.script = script
+        self.recorder = recorder
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        return None
+
+    async def connect(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+    async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
+        self.recorder.append(tuple(argv))
+        joined = " ".join(argv)
+        for prefix, result in self.script.items():
+            if joined.startswith(prefix):
+                return result
+        return _fail(f"unscripted command: {joined}")
+
+
+class FakeSshTunnel:
+    """Stand-in for `SshTunnel` that never actually opens a socket."""
+
+    instances: list[FakeSshTunnel] = []
+
+    def __init__(self, open_transport, remote_host: str, remote_port: int, settings) -> None:
+        self._local_port = 40000 + len(FakeSshTunnel.instances)
+        self.closed = False
+        FakeSshTunnel.instances.append(self)
+
+    @property
+    def local_port(self) -> int:
+        return self._local_port
+
+    async def open(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class FakeProvisioningRepository:
+    """In-memory stand-in for `JobProvisioningRepository`."""
+
+    def __init__(self) -> None:
+        self._rows: dict[str, JobProvisioning] = {}
+
+    async def save(self, item: JobProvisioning) -> JobProvisioning:
+        self._rows[str(item.job_id)] = item
+        return item
+
+    async def get_by_job_id(self, job_id) -> JobProvisioning | None:
+        return self._rows.get(str(job_id))
+
+    async def update_by_job_id(self, job_id, update: JobProvisioningUpdate) -> JobProvisioning:
+        current = self._rows[str(job_id)]
+        changes = update.model_dump(exclude_unset=True, exclude_none=True)
+        merged = current.model_copy(update=changes)
+        self._rows[str(job_id)] = merged
+        return merged
+
+    async def delete_by_job_id(self, job_id) -> None:
+        self._rows.pop(str(job_id), None)
+
+
+@pytest.fixture(autouse=True)
+def _patch_transport_and_tunnel(monkeypatch):
+    """Route every SshTransport()/SshTunnel() construction to fakes."""
+    recorder: list[tuple[str, ...]] = []
+    script_holder: dict[str, dict[str, CommandResult]] = {"script": {}}
+
+    def fake_transport_ctor(alias, settings=None):
+        return FakeSshTransport(script_holder["script"], recorder)
+
+    def fake_open_transport(alias, settings=None):
+        return FakeSshTransport(script_holder["script"], recorder)
+
+    monkeypatch.setattr(provisioning_module, "SshTransport", fake_transport_ctor)
+    monkeypatch.setattr(provisioning_module, "open_transport", fake_open_transport)
+    monkeypatch.setattr(provisioning_module, "SshTunnel", FakeSshTunnel)
+    FakeSshTunnel.instances.clear()
+
+    yield recorder, script_holder
+
+
+def _set_script(fixture, script: dict[str, CommandResult]) -> None:
+    _, holder = fixture
+    holder["script"] = script
+
+
+def _commands(fixture) -> list[tuple[str, ...]]:
+    recorder, _ = fixture
+    return recorder
+
+
+@pytest.fixture
+def repository() -> FakeProvisioningRepository:
+    return FakeProvisioningRepository()
+
+
+async def test_provision_happy_path(_patch_transport_and_tunnel, repository) -> None:
+    _set_script(_patch_transport_and_tunnel, _healthy_script())
+    service = SshProvisioningService(repository)
+    server = _server()
+    job_id = uuid4()
+
+    async def fake_ready(base_url, server_name):
+        return {"protocol_version": _PROTOCOL_VERSION, "library_version": "1.0.0", "build_revision": "abc"}
+
+    service._await_ready = fake_ready  # type: ignore[method-assign]
+
+    trainer = await service.provision(job_id, server, protocol_version=_PROTOCOL_VERSION, snapshot_size_bytes=1024)
+
+    assert trainer.base_url.startswith("http://127.0.0.1:")
+    assert trainer.container_name == docker_ops.container_name(str(job_id))
+
+    persisted = await repository.get_by_job_id(job_id)
+    assert persisted.container_id == "abc123"
+    assert persisted.image_digest == _DIGEST
+    assert persisted.trainer_protocol_version == _PROTOCOL_VERSION
+
+    await trainer.teardown()
+    assert any(cmd[:2] == ("docker", "stop") for cmd in _commands(_patch_transport_and_tunnel))
+
+
+async def test_provision_fails_with_no_fallback_tag(_patch_transport_and_tunnel, repository) -> None:
+    _set_script(_patch_transport_and_tunnel, {})  # every docker call fails
+    service = SshProvisioningService(repository)
+
+    with pytest.raises(TrainerImageResolutionError):
+        await service.provision(uuid4(), _server(), protocol_version=_PROTOCOL_VERSION, snapshot_size_bytes=1)
+
+    assert not any(cmd[:2] == ("docker", "run") for cmd in _commands(_patch_transport_and_tunnel))
+
+
+async def test_provision_fails_closed_on_signature_verification(_patch_transport_and_tunnel, repository) -> None:
+    script = _healthy_script()
+    script["cosign verify"] = _fail("no matching signatures")
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    with pytest.raises(TrainerImageVerificationError):
+        await service.provision(uuid4(), _server(), protocol_version=_PROTOCOL_VERSION, snapshot_size_bytes=1)
+
+    # Signature verification fails before any pull.
+    assert not any(cmd[:2] == ("docker", "pull") for cmd in _commands(_patch_transport_and_tunnel))
+
+
+async def test_provision_waits_out_a_busy_gpu(_patch_transport_and_tunnel, repository, monkeypatch) -> None:
+    _set_script(_patch_transport_and_tunnel, _healthy_script())
+    service = SshProvisioningService(repository)
+    waited: list[float] = []
+
+    async def fake_ready(base_url, server_name):
+        return {"protocol_version": _PROTOCOL_VERSION, "library_version": "1.0.0"}
+
+    service._await_ready = fake_ready  # type: ignore[method-assign]
+
+    async def patched_wait(open_transport, device_type, settings, server_name, *, on_wait=None, **kwargs):
+        if on_wait is not None:
+            await on_wait(1.0)
+
+    monkeypatch.setattr(docker_ops, "wait_for_gpu_free", patched_wait)
+
+    async def on_gpu_wait(elapsed: float) -> None:
+        waited.append(elapsed)
+
+    await service.provision(
+        uuid4(),
+        _server(),
+        protocol_version=_PROTOCOL_VERSION,
+        snapshot_size_bytes=1,
+        on_gpu_wait=on_gpu_wait,
+    )
+
+    assert waited == [1.0]
+
+
+async def test_provision_cleans_up_container_on_protocol_mismatch(_patch_transport_and_tunnel, repository) -> None:
+    _set_script(_patch_transport_and_tunnel, _healthy_script())
+    service = SshProvisioningService(repository)
+
+    async def mismatched_ready(base_url, server_name):
+        return {"protocol_version": 99, "library_version": "1.0.0"}
+
+    service._await_ready = mismatched_ready  # type: ignore[method-assign]
+
+    with pytest.raises(TrainerProtocolVersionMismatchError):
+        await service.provision(uuid4(), _server(), protocol_version=_PROTOCOL_VERSION, snapshot_size_bytes=1)
+
+    assert any(cmd[:2] == ("docker", "stop") for cmd in _commands(_patch_transport_and_tunnel))
+    assert FakeSshTunnel.instances[-1].closed
+
+
+async def test_provision_cleans_up_on_readiness_timeout(_patch_transport_and_tunnel, repository) -> None:
+    _set_script(_patch_transport_and_tunnel, _healthy_script())
+    service = SshProvisioningService(repository)
+
+    async def never_ready(base_url, server_name):
+        raise TrainerReadinessTimeoutError(server_name, "no response")
+
+    service._await_ready = never_ready  # type: ignore[method-assign]
+
+    with pytest.raises(TrainerReadinessTimeoutError):
+        await service.provision(uuid4(), _server(), protocol_version=_PROTOCOL_VERSION, snapshot_size_bytes=1)
+
+    assert any(cmd[:2] == ("docker", "stop") for cmd in _commands(_patch_transport_and_tunnel))
+
+
+async def test_provision_launch_failure_needs_no_cleanup(_patch_transport_and_tunnel, repository) -> None:
+    script = _healthy_script()
+    script["docker run"] = _fail("port already allocated")
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    with pytest.raises(TrainerContainerLaunchError):
+        await service.provision(uuid4(), _server(), protocol_version=_PROTOCOL_VERSION, snapshot_size_bytes=1)
+
+    # docker run never produced a container id, so there is nothing to stop.
+    assert not any(cmd[:2] == ("docker", "stop") for cmd in _commands(_patch_transport_and_tunnel))
+
+
+async def test_reattach_returns_none_when_container_not_running(_patch_transport_and_tunnel, repository) -> None:
+    script = _healthy_script()
+    script["docker inspect"] = _ok("false\n")
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+    server = _server()
+    job_id = uuid4()
+    provisioning_row = JobProvisioning(
+        job_id=job_id,
+        remote_server_id=server.id,
+        ssh_host_alias=server.ssh_host_alias,
+        container_name=docker_ops.container_name(str(job_id)),
+        remote_port=8080,
+    )
+    await repository.save(provisioning_row)
+
+    result = await service.reattach(provisioning_row, server)
+
+    assert result is None
+
+
+async def test_reattach_reopens_tunnel_when_container_running(_patch_transport_and_tunnel, repository) -> None:
+    _set_script(_patch_transport_and_tunnel, _healthy_script())
+    service = SshProvisioningService(repository)
+    server = _server()
+    job_id = uuid4()
+    provisioning_row = JobProvisioning(
+        job_id=job_id,
+        remote_server_id=server.id,
+        ssh_host_alias=server.ssh_host_alias,
+        container_name=docker_ops.container_name(str(job_id)),
+        remote_port=8080,
+    )
+    await repository.save(provisioning_row)
+
+    result = await service.reattach(provisioning_row, server)
+
+    assert result is not None
+    assert result.base_url.startswith("http://127.0.0.1:")
+
+
+async def test_sweep_orphans_never_touches_active_or_foreign_containers(
+    _patch_transport_and_tunnel, repository
+) -> None:
+    server = _server()
+    active_job_id = uuid4()
+    orphan_job_id = uuid4()
+    ps_lines = "\n".join(
+        json.dumps(
+            {
+                "ID": f"container-{job_id}",
+                "Names": docker_ops.container_name(str(job_id)),
+                "Labels": f"{MANAGED_LABEL}=true,{JOB_LABEL}={job_id}",
+            }
+        )
+        for job_id in (active_job_id, orphan_job_id)
+    )
+    script = _healthy_script()
+    script["docker ps"] = _ok(ps_lines + "\n")
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    removed = await service.sweep_orphans(server, active_job_ids={active_job_id})
+
+    assert removed == [docker_ops.container_name(str(orphan_job_id))]
