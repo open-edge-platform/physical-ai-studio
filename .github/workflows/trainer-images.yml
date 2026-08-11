@@ -213,9 +213,6 @@ jobs:
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true
-          # Only the immutable tag is pushed here. The moving tags are promoted
-          # onto this digest after verification and signing, so they can never
-          # point at an unsigned build.
           tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
