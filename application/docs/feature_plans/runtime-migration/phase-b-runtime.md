@@ -10,7 +10,7 @@ Read [design.md](design.md) first, and [phase-a-teleop.md](phase-a-teleop.md) fo
 
 - Phase A merged. The session, the action source, the contract and the config builder all exist and work.
 - Phase 0 merged for B3 onward: `PolicySource.reset()` and public `warmup()`. See [phase-0-upstream.md](phase-0-upstream.md).
-- The exclusivity bug fixes merged before B4. Specifically: `api/camera.py` must pass `is_locked` to `CameraWorker`, so a preview stream attaches read-only during recording instead of being able to reconfigure the publisher. B4 adds preview subscribers during recording, which makes that latent bug more likely to fire. See [exclusivity-bugs.md](exclusivity-bugs.md).
+- The exclusivity bug fixes merged before B4. Specifically: `api/camera.py` must pass `is_locked` to `CameraWorker`, so a preview stream attaches read-only during recording instead of being able to reconfigure the publisher. B4 adds preview subscribers during recording, which makes that latent bug more likely to fire.
 
 ## Sequence
 
@@ -137,7 +137,7 @@ Leave follower torque enabled on shutdown. SO101 holds position rather than drop
 
 Generalise `recording_locked_camera_fingerprints` into a claim registry: `fingerprint → (holder, settings)`. First claimant pins the settings; a later session requesting different settings is rejected with the conflicting project named. Recording becomes one reason to hold a claim rather than a separate mechanism.
 
-This subsumes the cross-project settings conflict described in [exclusivity-bugs.md](exclusivity-bugs.md), so coordinate the two.
+This subsumes the cross-project settings conflict, so coordinate the two.
 
 ### Deletion checks query discovery
 
@@ -267,7 +267,7 @@ If B4 also moves the record page onto the binary stream (below), the base64 path
 
 Move `features/robots/robot-control/camera-cell.component.tsx` from base64-in-payload to the existing `<WebsocketCamera>` component, already used in three other places.
 
-This requires the preview-stream lock fix to be merged first: `api/camera.py` must pass `is_locked=<fingerprint in locked set>` to `CameraWorker`, so the stream attaches with `overwrite_settings=False`. Without it, adding preview subscribers during recording makes an existing reconfiguration bug more likely to fire, not less. See [exclusivity-bugs.md](exclusivity-bugs.md).
+This requires the preview-stream lock fix to be merged first: `api/camera.py` must pass `is_locked=<fingerprint in locked set>` to `CameraWorker`, so the stream attaches with `overwrite_settings=False`. Without it, adding preview subscribers during recording makes an existing reconfiguration bug more likely to fire, not less.
 
 ### Record socket vocabulary
 
@@ -362,4 +362,4 @@ The migration is complete when:
 - roughly 1100 lines of loop, process and queue machinery are gone
 - a downloaded bundle reproduces a Studio session through `physicalai run`
 
-Then delete this document and [phase-a-teleop.md](phase-a-teleop.md). [design.md](design.md) stays, as does [hil-design.md](../hil-design.md), which becomes the next thing to pick up.
+Then delete this document and [phase-a-teleop.md](phase-a-teleop.md). [design.md](design.md) stays; human-in-the-loop is the next thing to pick up.

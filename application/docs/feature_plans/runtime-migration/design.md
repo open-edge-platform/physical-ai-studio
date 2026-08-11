@@ -219,7 +219,7 @@ Two things inside `environment_integration.py` must survive its deletion:
 
 Teleoperation and policy execution are **modes of one session**, not separate sessions. `StudioActionSource` implements the upstream `ActionSource` protocol and selects between them.
 
-This is not merely tidier. Human-in-the-loop puts a human and a policy in control during the same episode, so two session types cannot express it. Committing to modes now means HIL is an arbitration change later rather than a restructuring. See [hil-design.md](../hil-design.md).
+This is not merely tidier. Human-in-the-loop puts a human and a policy in control during the same episode, so two session types cannot express it. Committing to modes now means HIL is an arbitration change later rather than a restructuring.
 
 The delegates are **live simultaneously**, and the mode selects whose output wins:
 
@@ -246,7 +246,7 @@ Both delegates are optional. Dataset recording runs with no model loaded, so `po
 | `hold`   | a target latched when the mode was entered         |
 | `teleop` | leader joint positions, plus efforts to the leader |
 | `policy` | next action from `PolicySource`                    |
-| `hil`    | reserved — see hil-design.md                       |
+| `hil`    | reserved                                           |
 
 `hold` must latch its target on entry and resend that same value. Sending the freshly measured position each tick makes the arm sag: measured position trails the commanded target by the servo's steady-state error, so feeding it back integrates that error downward under gravity.
 
@@ -378,7 +378,7 @@ The fix is a **camera claim registry** keyed by fingerprint: first claimant pins
 
 **Deletion checks query discovery, not memory.** An in-memory registry forgets everything when the API restarts, so deleting a robot would succeed while a live session is still driving it. Because sessions are name-addressed, the API can ask whether a session holds robot X. Deleting a robot, camera, or environment that is in use is rejected with the holder named, alongside a way to stop it.
 
-Three bugs in this area exist in `main` today and are being fixed separately. See [exclusivity-bugs.md](exclusivity-bugs.md).
+Three bugs in this area exist in `main` today and are being fixed separately.
 
 ## Export
 
@@ -499,9 +499,9 @@ Corollary: no database access in the session. The API resolves rows before sendi
 
 Phase 0 is required before B3, not before A. Phase A needs only `RobotRuntime.stop()`, which is already released.
 
-Deferred: human-in-the-loop ([hil-design.md](../hil-design.md)), the dataset action-provenance column, a configurable `goal_time` horizon, and importing a config back into Studio.
+Deferred: human-in-the-loop, the dataset action-provenance column, a configurable `goal_time` horizon, and importing a config back into Studio.
 
-Handled separately: the three exclusivity bugs in [exclusivity-bugs.md](exclusivity-bugs.md).
+Handled separately: the three exclusivity bugs.
 
 ## Known constraints
 
