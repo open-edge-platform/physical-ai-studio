@@ -54,7 +54,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-08-10T09:40:54.561052Z"
+exclude-newer = "2026-08-10T12:09:19.303364Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -2572,6 +2572,7 @@ dependencies = [
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "opencv-python" },
+    { name = "packaging" },
     { name = "physicalai", extra = ["capture", "robots", "transport"] },
     { name = "physicalai-studio-plugin" },
     { name = "physicalai-train", extra = ["pi0", "smolvla"] },
@@ -2650,6 +2651,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
+    { name = "packaging", specifier = ">=24.0" },
     { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=2528309e55ab6a5f7f71c6dc23b8baae21f80108" },
     { name = "physicalai-studio-plugin", editable = "../plugin" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },

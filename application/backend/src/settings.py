@@ -162,6 +162,45 @@ class Settings(BaseSettings):
         alias="TRAINER_IMAGE_REGISTRY",
     )
 
+    # --- SSH provisioning: GPU-busy wait ------------------------------------
+    # Backoff between GPU-busy re-checks while a job waits `pending`.
+    ssh_gpu_wait_initial_backoff_s: float = Field(default=5.0, alias="SSH_GPU_WAIT_INITIAL_BACKOFF_S")
+    ssh_gpu_wait_max_backoff_s: float = Field(default=60.0, alias="SSH_GPU_WAIT_MAX_BACKOFF_S")
+    # A job waiting this long for a busy GPU fails rather than waiting forever.
+    ssh_gpu_wait_giveup_s: float = Field(default=1800.0, alias="SSH_GPU_WAIT_GIVEUP_S")
+
+    # --- SSH provisioning: container lifecycle ------------------------------
+    # `docker stop`'s grace period before SIGKILL, bounding teardown latency.
+    ssh_container_stop_timeout_s: int = Field(default=30, alias="SSH_CONTAINER_STOP_TIMEOUT_S")
+    # Budget for the container to report healthy after launch, before the job
+    # fails rather than uploading a dataset to a trainer that never came up.
+    ssh_readiness_timeout_s: float = Field(default=120.0, alias="SSH_READINESS_TIMEOUT_S")
+    ssh_readiness_poll_interval_s: float = Field(default=2.0, alias="SSH_READINESS_POLL_INTERVAL_S")
+
+    # --- SSH provisioning: tunnel reconnect ---------------------------------
+    # Total time budget to reconnect a dropped tunnel and resume against the
+    # still-running container before the job fails.
+    ssh_tunnel_reconnect_budget_s: float = Field(default=300.0, alias="SSH_TUNNEL_RECONNECT_BUDGET_S")
+    ssh_tunnel_reconnect_backoff_max_s: float = Field(default=15.0, alias="SSH_TUNNEL_RECONNECT_BACKOFF_MAX_S")
+
+    # --- SSH provisioning: image signature verification ---------------------
+    # Pinned to the Studio release workflow so `cosign verify` cannot be
+    # satisfied by a signature from an unrelated identity/issuer.
+    cosign_certificate_identity_regexp: str = Field(
+        default=r"https://github\.com/open-edge-platform/physical-ai-studio/\.github/workflows/.+",
+        alias="COSIGN_CERTIFICATE_IDENTITY_REGEXP",
+    )
+    cosign_oidc_issuer: str = Field(
+        default="https://token.actions.githubusercontent.com",
+        alias="COSIGN_OIDC_ISSUER",
+    )
+
+    # --- SSH provisioning: library-version policy ---------------------------
+    # Minimum `physicalai-train` version a trainer image must report. A job
+    # policy (e.g. a specific model family) can require newer; see
+    # `services.ssh.docker_ops.check_library_version`.
+    ssh_min_library_version: str = Field(default="0.1.0", alias="SSH_MIN_LIBRARY_VERSION")
+
     @field_validator("ssh_config_path", "ssh_known_hosts_path", mode="before")
     @classmethod
     def expand_ssh_path(cls, value: Path | str) -> Path:

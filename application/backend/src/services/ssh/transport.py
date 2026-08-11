@@ -628,6 +628,31 @@ class SshTransport:
             if gate is not None:
                 gate.semaphore.release()
 
+    async def forward_local_port(self, remote_host: str, remote_port: int) -> asyncssh.SSHListener:
+        """Open a local-forward tunnel to ``remote_host:remote_port`` over this connection.
+
+        Binds the local end to ``127.0.0.1`` on an OS-assigned ephemeral port,
+        so an SSH-provisioned trainer is reachable only through the tunnel,
+        never from another host on the network.
+
+        Args:
+            remote_host: Host to connect to from the remote end (typically
+                ``127.0.0.1``, since the trainer itself publishes on its
+                container host's loopback interface).
+            remote_port: Port to connect to on ``remote_host``.
+
+        Returns:
+            The listener. ``listener.get_port()`` reports the assigned local
+            port; ``listener.close()`` followed by ``await
+            listener.wait_closed()`` tears the forward down.
+
+        Raises:
+            RuntimeError: The transport is not connected.
+        """
+        if self._connection is None:
+            raise RuntimeError("SshTransport.forward_local_port requires an open connection")
+        return await self._connection.forward_local_port("127.0.0.1", 0, remote_host, remote_port)
+
 
 def open_transport(alias: str, settings: Settings | None = None) -> SshTransport:
     """Return a transport for one alias.
