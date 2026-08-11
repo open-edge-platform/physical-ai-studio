@@ -66,7 +66,7 @@ describe('TrainingTargetsPage', () => {
 
         render(<TrainingTargetsPage />);
 
-        expect(await screen.findByRole('heading', { name: 'Training Targets' })).toBeInTheDocument();
+        expect(await screen.findByText('Configure and monitor where training jobs run.')).toBeInTheDocument();
         expect(await screen.findAllByText('managed-trainer')).not.toHaveLength(0);
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
     });

@@ -5,8 +5,6 @@
 }
 
 .addButton {
-    margin-bottom: var(--spectrum-global-dimension-size-100);
-
     /*
      * Spectrum's .spectrum-Button applies an asymmetric vertical padding
      * (`size-50 - 1px` top / `size-50 + 1px` bottom) as an optical correction
@@ -18,6 +16,21 @@
      * content, matching every ActionButton/FieldButton in the app.
      */
     padding-block: var(--spectrum-global-dimension-size-50);
+
+    /*
+     * The default secondary-variant border/text colors don't have enough
+     * contrast against this app's dark steel-blue background — the button
+     * nearly disappears. Give it the same subtle fill + stronger border
+     * used for the "add new" buttons elsewhere (robots-list.module.css)
+     * so it reads clearly without reverting to a full accent fill.
+     */
+    border-color: var(--spectrum-global-color-gray-500) !important;
+    background-color: var(--spectrum-global-color-gray-75) !important;
+}
+
+.addButton:hover {
+    border-color: var(--spectrum-global-color-gray-600) !important;
+    background-color: var(--spectrum-global-color-gray-100) !important;
 }
 
 .emptyList {

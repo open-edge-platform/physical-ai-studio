@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Button, DialogContainer, Flex, Heading, Text, View } from '@geti-ui/ui';
+import { Button, DialogContainer, Flex, Icon, Text, View } from '@geti-ui/ui';
 import { Add } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
@@ -33,18 +33,17 @@ export const TrainingTargetsPage = () => {
     return (
         <View padding='size-400' height='100%' maxWidth='240ch' marginX='auto'>
             <Flex marginBottom={'size-250'} justifyContent={'space-between'} alignItems={'center'}>
-                <View>
-                    <Heading level={1}>Training Targets</Heading>
-                    <Text>Configure and monitor where training jobs run.</Text>
-                </View>
+                <Text>Configure and monitor where training jobs run.</Text>
 
                 <Button
-                    variant='accent'
+                    variant='secondary'
                     UNSAFE_className={classes.addButton}
                     onPress={() => setAction({ type: 'create' })}
                 >
-                    <Add />
-                    <Text>New training target</Text>
+                    <Icon marginEnd='size-50'>
+                        <Add />
+                    </Icon>
+                    New training target
                 </Button>
             </Flex>
 
