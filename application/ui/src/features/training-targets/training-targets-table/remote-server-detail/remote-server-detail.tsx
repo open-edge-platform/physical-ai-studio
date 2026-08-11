@@ -87,7 +87,7 @@ export const RemoteServerDetail = ({
                         ))}
                         {tier2Checks.length === 0 && (
                             <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyCheckList}`}>
-                                Not verified yet. Test connection pulls the trainer image and probes the device — it
+                                Not verified yet. Test connection pulls the trainer image and probes the device. It
                                 never runs automatically.
                             </Text>
                         )}

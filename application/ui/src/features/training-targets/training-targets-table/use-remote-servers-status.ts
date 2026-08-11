@@ -40,7 +40,7 @@ export const useRemoteServersStatus = (remoteServerIds: string[]): Map<string, R
                 remoteServerId,
                 {
                     status: query.data,
-                    isChecking: query.isPending,
+                    isChecking: query.isFetching,
                     hasError: query.isError,
                     checkStatus: async () => {
                         const result = await query.refetch();
