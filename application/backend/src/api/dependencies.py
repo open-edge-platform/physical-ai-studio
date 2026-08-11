@@ -20,6 +20,7 @@ from services import (
     ProjectCameraService,
     ProjectService,
     ProjectThumbnailService,
+    RemoteServerService,
     RemoteTrainerService,
     RobotService,
 )
@@ -211,7 +212,7 @@ ModelDownloadServiceDep = Annotated[ModelDownloadService, Depends(get_model_down
 
 def get_job_service(session: AsyncSessionDep) -> JobService:
     """Provides a JobService instance for managing jobs."""
-    return JobService(session, RemoteTrainerService(session))
+    return JobService(session, RemoteTrainerService(session), RemoteServerService(session))
 
 
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]

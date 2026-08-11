@@ -87,9 +87,18 @@ class TrainingWorker(BaseProcessWorker):
 
     @staticmethod
     def _target_key(payload: TrainJobPayload) -> str:
-        """Return the exclusive execution target for a training job."""
+        """Return the exclusive execution target for a training job.
+
+        Each remote kind gets its own key namespace so an SSH job never
+        collapses onto the direct-URL registry's ``remote:<id>`` key (or vice
+        versa): the two id fields are unrelated, and their validator keeps
+        exactly one of them set per job, so neither branch can ever embed
+        ``None`` for a well-formed payload.
+        """
         if payload.training_target is TrainingTarget.LOCAL:
             return TrainingTarget.LOCAL.value
+        if payload.training_target is TrainingTarget.SSH:
+            return f"{TrainingTarget.SSH.value}:{payload.remote_server_id}"
         return f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
 
     async def _run_training_job(self, job: Job, payload: TrainJobPayload) -> None:
@@ -97,7 +106,10 @@ class TrainingWorker(BaseProcessWorker):
         with job_logging_ctx(job_id=str(job.id)):
             settings = get_settings()
             model_id = uuid4()
-            reattaching = payload.training_target is TrainingTarget.REMOTE and bool(payload.remote_job_id)
+            # Both remote kinds keep their trainer running independently of the
+            # studio process, so either can carry a persisted remote_job_id to
+            # reattach to across a restart; only local training never does.
+            reattaching = payload.training_target is not TrainingTarget.LOCAL and bool(payload.remote_job_id)
 
             base_model = None
             if payload.base_model_id is not None:

@@ -78,6 +78,54 @@ class TestReattachOrphans:
 
         assert service.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
 
+    @pytest.mark.anyio
+    async def test_ssh_running_job_with_remote_id_is_requeued(self):
+        """An SSH-provisioned job that recorded its remote id is requeued, not failed.
+
+        Its trainer container keeps running independently of the studio process,
+        the same way a direct-URL remote trainer does.
+        """
+        payload = TrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="act",
+            model_name="m",
+            training_target=TrainingTarget.SSH,
+            remote_server_id=uuid4(),
+            remote_job_id=uuid4(),
+        )
+        job = _job(payload)
+
+        service = MagicMock()
+        service.get_job_list = AsyncMock(return_value=[job])
+        service.update_job_status = AsyncMock(return_value=MagicMock())
+
+        await TrainingService.abort_orphan_jobs(service)
+
+        service.update_job_status.assert_awaited_once()
+        assert service.update_job_status.call_args.kwargs["status"] == JobStatus.PENDING
+
+    @pytest.mark.anyio
+    async def test_ssh_running_job_without_remote_id_is_failed(self):
+        """An SSH job that never got a remote id cannot resume and is failed."""
+        payload = TrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="act",
+            model_name="m",
+            training_target=TrainingTarget.SSH,
+            remote_server_id=uuid4(),
+        )
+        job = _job(payload)
+
+        service = MagicMock()
+        service.get_job_list = AsyncMock(return_value=[job])
+        service.update_job_status = AsyncMock(return_value=MagicMock())
+
+        await TrainingService.abort_orphan_jobs(service)
+
+        assert service.update_job_status.call_args.kwargs["status"] == JobStatus.FAILED
+
     def test_reattachable_remote_job_id_reads_dict_payload(self):
         """Payloads persisted as plain dicts are also understood."""
         job = MagicMock()
@@ -88,4 +136,14 @@ class TestReattachOrphans:
         job.payload = {"training_target": "remote", "remote_job_id": "not-a-uuid"}
         assert TrainingService._reattachable_remote_job_id(job) is None
         job.payload = {"training_target": "remote", "remote_job_id": None}
+        assert TrainingService._reattachable_remote_job_id(job) is None
+
+    def test_reattachable_remote_job_id_reads_ssh_dict_payload(self):
+        """An SSH job's dict payload is reattachable the same way a remote one is."""
+        job = MagicMock()
+        remote_job_id = uuid4()
+        job.payload = {"training_target": "ssh", "remote_job_id": str(remote_job_id)}
+        assert TrainingService._reattachable_remote_job_id(job) == remote_job_id
+
+        job.payload = {"training_target": "local", "remote_job_id": str(remote_job_id)}
         assert TrainingService._reattachable_remote_job_id(job) is None

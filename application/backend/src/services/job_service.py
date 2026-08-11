@@ -8,6 +8,8 @@ from db.schema import JobDB
 from exceptions import (
     DuplicateJobException,
     RemoteResumeUnsupportedError,
+    RemoteServerAliasNotFoundError,
+    RemoteServerNotReadyError,
     ResourceInUseError,
     ResourceNotFoundError,
     ResourceType,
@@ -17,15 +19,24 @@ from repositories import JobRepository
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
 from schemas.job import JobPayload, TrainingTarget, TrainJob, TrainJobPayload
+from services.remote_server_service import RemoteServerService
 from services.remote_trainer_service import RemoteTrainerService
+from services.ssh_config_reader import resolve_alias
 from services.system_service import SystemService
+from settings import get_settings
 
 
 class JobService:
-    def __init__(self, session: AsyncSession, remote_trainer_service: RemoteTrainerService | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        remote_trainer_service: RemoteTrainerService | None = None,
+        remote_server_service: RemoteServerService | None = None,
+    ) -> None:
         self.session = session
         self.repo = JobRepository(session)
         self.remote_trainer_service = remote_trainer_service
+        self.remote_server_service = remote_server_service
 
     async def create_job(self, job: Job) -> Job:
         return await self.repo.save(job)
@@ -59,6 +70,27 @@ class JobService:
                 payload.model_dump()
                 | {"remote_trainer_url": str(remote_trainer.url), "remote_trainer_name": remote_trainer.name}
             )
+
+        if payload.training_target is TrainingTarget.SSH:
+            if payload.remote_server_id is None:
+                raise ValueError("SSH training requires a selected remote server")
+            if payload.base_model_id is not None:
+                raise RemoteResumeUnsupportedError
+            remote_server_service = self.remote_server_service or RemoteServerService(self.session)
+            # Raises ResourceNotFoundError for an unknown server. Studio never
+            # dials SSH from job submission, so this only consults the
+            # persisted last-check summary from the explicit save/verify
+            # actions (last_check_status != "healthy" also catches a server
+            # that has never been checked at all).
+            remote_server = await remote_server_service.get_remote_server(payload.remote_server_id)
+            if remote_server.last_check_status != "healthy":
+                raise RemoteServerNotReadyError(remote_server.name, remote_server.last_check_status)
+            # A renamed/removed Host entry is caught by re-parsing the config
+            # file directly (no SSH dial), so it fails closed even if the
+            # server's last preflight happened before the alias disappeared.
+            resolved = resolve_alias(get_settings().ssh_config_path, remote_server.ssh_host_alias)
+            if not resolved.found:
+                raise RemoteServerAliasNotFoundError(remote_server.name, remote_server.ssh_host_alias)
 
         # A remote trainer validates its own devices. Validate only local device choices here.
         if (
