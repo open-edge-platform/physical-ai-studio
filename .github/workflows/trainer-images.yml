@@ -73,7 +73,6 @@ jobs:
         id: build-metadata
         run: |
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
-          echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -189,7 +188,7 @@ jobs:
         id: build-metadata
         run: |
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
-          echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
+          echo "build-ref=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
@@ -214,7 +213,7 @@ jobs:
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
+          tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.build-ref }}
           labels: |
             org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
             org.opencontainers.image.revision=${{ github.sha }}
