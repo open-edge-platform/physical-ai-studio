@@ -76,7 +76,7 @@ services:
     <<: *common
     profiles: [cuda]
     container_name: physicalai-trainer-cuda
-    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physicalai-trainer-cuda:${TRAINER_IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physicalai-trainer-cuda:${TRAINER_IMAGE_TAG:-main}
     build:
       <<: *common-build
       target: physicalai-trainer-cuda
@@ -92,7 +92,7 @@ services:
     <<: *common
     profiles: [xpu]
     container_name: physicalai-trainer-xpu
-    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physicalai-trainer-xpu:${TRAINER_IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/open-edge-platform/}physicalai-trainer-xpu:${TRAINER_IMAGE_TAG:-main}
     build:
       <<: *common-build
       target: physicalai-trainer-xpu

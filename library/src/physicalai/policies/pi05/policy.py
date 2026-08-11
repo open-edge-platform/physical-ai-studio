@@ -487,8 +487,8 @@ class Pi05(ExportablePolicyMixin, Policy):
             if detected is not None:
                 hf_config["normalization_mode"] = detected
 
-        # from_dict skips unknown keys and coerces lists→tuples via type hints
-        config = Pi05Config.from_dict(hf_config)
+        # strict=False: ignore legacy config.json keys not present in Pi05Config
+        config = Pi05Config.from_dict(hf_config, strict=False)
 
         # --- build dataset_stats from HF artefacts ---
         dataset_stats = _extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)

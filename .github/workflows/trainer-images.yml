@@ -191,23 +191,23 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             auth.docker.io:443
-            check.trivy.dev:443
             deb.debian.org:80
             developer.download.nvidia.com:443
             download.pytorch.org:443
             download-r2.pytorch.org:443
             files.pythonhosted.org:443
             fulcio.sigstore.dev:443
-            get.trivy.dev:443
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
             keyserver.ubuntu.com:443
+            mirror.gcr.io:443
             pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
             pypi.org:443
+            raw.githubusercontent.com:443
             registry-1.docker.io:443
             rekor.sigstore.dev:443
             release-assets.githubusercontent.com:443
@@ -223,6 +223,7 @@ jobs:
         id: build-metadata
         run: |
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
+          echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
@@ -247,7 +248,9 @@ jobs:
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
             org.opencontainers.image.revision=${{ github.sha }}
@@ -302,29 +305,23 @@ jobs:
               assert attestation, f"{name} attestation is missing"
           PY
 
-      - name: Scan immutable trainer image
-        uses: open-edge-platform/geti-ci/actions/trivy@7e686c1248b3939f8ee8e04e2612da727e379d91
-        with:
-          scan_type: image
-          scan_target: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          scan-scope: all
-          severity: HIGH,CRITICAL
-          scanners: vuln,secret,config
-          format: table
-          timeout: 20m
-          ignore_unfixed: "false"
-
       - name: Sign immutable trainer image
         uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
         with:
           image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
 
-      - name: Publish moving latest tag after scan and signing
+      # `protocol-<N>` is promoted only after the immutable digest is verified
+      # and signed, so a failure in either step leaves it pointing at the
+      # previous good build instead of an unsigned one. It's the tag Studio
+      # resolves automatically for SSH-provisioned training, and there is no
+      # `latest` fallback behind it, so it must never advance ahead of
+      # signing.
+      - name: Promote protocol tag after signing
         env:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          LATEST: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:latest
+          PROTOCOL_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:protocol-${{ env.TRAINER_API_PROTOCOL_VERSION }}
         run: |
-          docker buildx imagetools create --tag "$LATEST" "$IMAGE"
+          docker buildx imagetools create --tag "$PROTOCOL_TAG" "$IMAGE"
 
   required-check:
     name: Required Check trainer-images

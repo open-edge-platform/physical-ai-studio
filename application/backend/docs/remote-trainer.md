@@ -58,7 +58,6 @@ directory.
 | `TRAINER_MIN_FREE_BYTES`     | no       | Disk headroom kept free after extraction.    |
 | `TRAINER_PORT`               | no       | Listen port (default 8001).                  |
 
-
 ## Run
 
 ```bash
@@ -96,8 +95,8 @@ uv run --no-sync python -m trainer.main
 Remote SSH provisioning uses the dedicated, non-root trainer images instead of
 the Studio application images:
 
-- `ghcr.io/open-edge-platform/physicalai-trainer-cuda:<git-sha>`
-- `ghcr.io/open-edge-platform/physicalai-trainer-xpu:<git-sha>`
+- `ghcr.io/open-edge-platform/physicalai-trainer-cuda:<version>-dev-<short-sha>`
+- `ghcr.io/open-edge-platform/physicalai-trainer-xpu:<version>-dev-<short-sha>`
 
 Each image contains only the `trainer` package, `physicalai-train`, and the
 device-specific runtime dependencies. Although the trainer is built from this
@@ -111,10 +110,27 @@ The image is built from
 separately from the Studio application images in
 `application/docker/Dockerfile`.
 
-CI publishes a full Git-SHA tag, then attaches an SBOM and provenance
-attestations, scans the immutable digest, signs it with keyless Sigstore, and
-only then advances the moving `latest` tag. Use a SHA tag or resolved digest for
-reproducible deployments; `latest` is a compatibility fallback only.
+CI publishes a `<version>-dev-<short-sha>` tag and the moving `main` tag
+together, then attaches an SBOM and provenance attestations to the immutable
+tag and signs it with keyless Sigstore. `protocol-<N>` only advances after
+that signing succeeds, so a failed attestation or signing step leaves it
+pointing at the previous good build instead of an unsigned one. Use the
+`<version>-dev-<short-sha>` tag or a resolved digest for reproducible
+deployments; `main` and `protocol-<N>` are moving compatibility fallbacks
+only.
+
+Published tags:
+
+| Tag                         | Advanced by          | Points at                                   |
+| --------------------------- | -------------------- | -------------------------------------------- |
+| `<version>-dev-<short-sha>` | every push to `main` | that exact commit (immutable)               |
+| `main`                      | every push to `main` | newest `main` build                          |
+| `protocol-<N>`              | every push to `main` | newest signed build for the `N` compiled into that push's `TRAINER_API_PROTOCOL_VERSION` (older `protocol-<N>` values stop advancing once the workflow bumps the version) |
+
+Release channels (`X.Y.Z`, `latest`) are not published yet: `trainer-images.yml`
+has no release trigger, so every published trainer image is a development build.
+Trivy scanning of published trainer images runs on the nightly
+`security-scan.yml` schedule rather than gating publish.
 
 `GET /health` returns the image attributes that the Studio backend verifies
 before work is accepted:
@@ -152,9 +168,10 @@ curl --fail --silent http://127.0.0.1:8001/health
 docker compose -f docker-compose.trainer.yaml --profile cuda down   # add -v to also drop the data volume
 ```
 
-Set `TRAINER_IMAGE_TAG` in `.env.trainer` to an immutable Git-SHA tag or
-resolved digest before using this in anything but a throwaway environment;
-`latest` is a compatibility fallback only. The XPU profile also needs
+Set `TRAINER_IMAGE_TAG` in `.env.trainer` to an immutable
+`<version>-dev-<short-sha>` tag or resolved digest before using this in
+anything but a throwaway environment; the default `main` tag moves (see
+[Container images](#container-images) for what each tag tracks). The XPU profile also needs
 `RENDER_NODE` and `RENDER_GID` set to the host's Intel GPU render node (see
 `.env.trainer.example`).
 
@@ -167,8 +184,8 @@ its contents.
 docker volume create physicalai-trainer-data
 ```
 
-Replace `<image-reference>` with an immutable Git-SHA tag or a resolved digest.
-Use `latest` only when explicitly accepting the compatibility fallback.
+Replace `<image-reference>` with an immutable `<version>-dev-<short-sha>`
+tag or a resolved digest. Use `main` only when explicitly accepting a moving tag.
 
 PyTorch data loaders can exhaust Docker's default 64 MB `/dev/shm` allocation
 during larger training jobs. On a trusted single-tenant host, prefer the host's
@@ -266,15 +283,15 @@ docker volume rm physicalai-trainer-data
 
 ## API
 
-| Method | Path                   | Purpose                          |
-| ------ | ---------------------- | -------------------------------- |
-| POST   | `/jobs`                | Enqueue a training job.          |
-| PUT    | `/jobs/{id}/dataset`   | Upload the dataset ZIP.          |
-| GET    | `/jobs/{id}`           | Current job state.               |
-| GET    | `/jobs/{id}/events`    | SSE stream of state changes.     |
-| GET    | `/jobs/{id}/artifact`  | Download the model archive.      |
-| POST   | `/jobs/{id}/cancel`    | Cancel a queued or running job.  |
-| GET    | `/health`              | Liveness and image/protocol metadata. |
+| Method | Path                  | Purpose                               |
+| ------ | --------------------- | ------------------------------------- |
+| POST   | `/jobs`               | Enqueue a training job.               |
+| PUT    | `/jobs/{id}/dataset`  | Upload the dataset ZIP.               |
+| GET    | `/jobs/{id}`          | Current job state.                    |
+| GET    | `/jobs/{id}/events`   | SSE stream of state changes.          |
+| GET    | `/jobs/{id}/artifact` | Download the model archive.           |
+| POST   | `/jobs/{id}/cancel`   | Cancel a queued or running job.       |
+| GET    | `/health`             | Liveness and image/protocol metadata. |
 
 ## Security
 
