@@ -110,21 +110,21 @@ The image is built from
 separately from the Studio application images in
 `application/docker/Dockerfile`.
 
-CI pushes only the immutable `<version>-dev-<short-sha>` tag from the build,
-then attaches an SBOM and provenance attestations to it and signs it with
-keyless Sigstore. The moving `main` and `protocol-<N>` tags are promoted onto
-that digest only after signing succeeds, so a failed attestation or signing
-step leaves both pointing at the previous good build instead of an unsigned
-one. Use the `<version>-dev-<short-sha>` tag or a resolved digest for
-reproducible deployments; `main` and `protocol-<N>` are moving compatibility
-fallbacks only.
+CI publishes a `<version>-dev-<short-sha>` tag and the moving `main` tag
+together, then attaches an SBOM and provenance attestations to the immutable
+tag and signs it with keyless Sigstore. `protocol-<N>` only advances after
+that signing succeeds, so a failed attestation or signing step leaves it
+pointing at the previous good build instead of an unsigned one. Use the
+`<version>-dev-<short-sha>` tag or a resolved digest for reproducible
+deployments; `main` and `protocol-<N>` are moving compatibility fallbacks
+only.
 
 Published tags:
 
 | Tag                         | Advanced by          | Points at                                   |
 | --------------------------- | -------------------- | -------------------------------------------- |
 | `<version>-dev-<short-sha>` | every push to `main` | that exact commit (immutable)               |
-| `main`                      | every push to `main` | newest signed `main` build                   |
+| `main`                      | every push to `main` | newest `main` build                          |
 | `protocol-<N>`              | every push to `main` | newest signed build for the `N` compiled into that push's `TRAINER_API_PROTOCOL_VERSION` (older `protocol-<N>` values stop advancing once the workflow bumps the version) |
 
 Release channels (`X.Y.Z`, `latest`) are not published yet: `trainer-images.yml`

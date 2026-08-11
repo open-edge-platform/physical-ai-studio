@@ -248,7 +248,9 @@ jobs:
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
+          tags: |
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
             org.opencontainers.image.revision=${{ github.sha }}
@@ -303,33 +305,23 @@ jobs:
               assert attestation, f"{name} attestation is missing"
           PY
 
-      # `sign-image` resolves the digest itself with `crane digest` and then signs
-      # `<image-uri>@<digest>`, so it needs a repository + tag. Passing a digest
-      # reference yields `...@sha256:...@sha256:...`, which Cosign cannot parse.
-      # Use the immutable `<version>-dev-<short-sha>` tag: it is unique per commit
-      # and never re-pointed, so it resolves to exactly the digest verified above
-      # with no window for a concurrent build to move it.
       - name: Sign immutable trainer image
         uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
         with:
           image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
 
-      # Both moving tags are promoted only after the immutable digest is verified
-      # and signed, so a failure in either step leaves them pointing at the
-      # previous good build instead of an unsigned one.
-      #
-      # `protocol-<N>` is the tag Studio resolves automatically for
-      # SSH-provisioned training and there is no fallback tag behind it, so it
-      # must never advance ahead of signing. `<branch>` is what
-      # docker-compose.trainer.yaml defaults to and what the nightly
-      # `trivy-trainer-image-scan` job in security-scan.yml scans.
-      - name: Promote moving tags after signing
+      # `protocol-<N>` is promoted only after the immutable digest is verified
+      # and signed, so a failure in either step leaves it pointing at the
+      # previous good build instead of an unsigned one. It's the tag Studio
+      # resolves automatically for SSH-provisioned training, and there is no
+      # `latest` fallback behind it, so it must never advance ahead of
+      # signing.
+      - name: Promote protocol tag after signing
         env:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          BRANCH_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           PROTOCOL_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:protocol-${{ env.TRAINER_API_PROTOCOL_VERSION }}
         run: |
-          docker buildx imagetools create --tag "$BRANCH_TAG" --tag "$PROTOCOL_TAG" "$IMAGE"
+          docker buildx imagetools create --tag "$PROTOCOL_TAG" "$IMAGE"
 
   required-check:
     name: Required Check trainer-images
