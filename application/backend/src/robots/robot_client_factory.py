@@ -1,5 +1,6 @@
 from typing import Any
 
+from loguru import logger
 from physicalai.robot import SharedRobot
 from physicalai_studio_plugin import CatalogRobotFactory, RobotCatalogDefinition, shared_robot_name
 
@@ -8,7 +9,8 @@ from robots.catalog.registry import RobotCatalogRegistry
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
 from robots.robot_client import RobotClient
 from schemas import SerialPortInfo
-from schemas.robot import ReadableRobot, UnavailableRobot
+from schemas.robot import Robot, ReadableRobot, UnavailableRobot
+from utils.device_paths import resolve_serial_device
 from utils.serial_robot_tools import RobotConnectionManager
 
 
@@ -69,4 +71,26 @@ class RobotClientFactory:
         return shared_robot, definition
 
     async def find_port(self, port_info: SerialPortInfo) -> str | None:
-        return await self.robot_manager.find_port(port_info)
+        """Resolve a live serial port for a robot whose identity is known.
+
+        Returns ``None`` when the device is not attached, which the catalog
+        builders turn into an error. Reusing the port stored at registration
+        time would connect to whatever device now owns that path; the one
+        caller that deliberately wants the stored value is the runtime config
+        export (see ``runtime.config_builder``).
+
+        A ``/dev/serial/by-id`` alias is only substituted when the robot was
+        matched by serial number. Without one the match is by path alone, so
+        the device was located rather than identified, and a stable-looking
+        alias would dress that guess up as a verified one.
+        """
+        port = await self.robot_manager.find_port(port_info)
+        if port is None:
+            return None
+        if not port_info.serial_number:
+            logger.warning(
+                "Robot at {} has no serial number stored; matched by path, so its identity is unverified.",
+                port,
+            )
+            return port
+        return resolve_serial_device(port)

@@ -51,7 +51,7 @@ async def test_runtime_config_download_is_yaml_attachment(mocker) -> None:
         "physicalai.runtime.RobotRuntime",
         {"robot": {"class_path": "tests.runtime.fakes.FakeRobot", "init_args": {}}, "fps": 30.0},
     ).to_dict()
-    mocker.patch("api.environments.build_runtime_config", return_value=document)
+    build = mocker.patch("api.environments.build_runtime_config", return_value=document)
 
     response = await get_runtime_config(
         project_id=uuid4(),
@@ -63,6 +63,8 @@ async def test_runtime_config_download_is_yaml_attachment(mocker) -> None:
     assert response.media_type == "application/yaml"
     assert response.headers["content-disposition"] == 'attachment; filename="runtime.yaml"'
     assert b"physicalai.runtime.RobotRuntime" in response.body
+    # A config can be exported for a rig that is not plugged in right now.
+    assert build.call_args.kwargs["allow_stored_port"] is True
 
 
 async def test_runtime_config_download_requires_leader(mocker) -> None:

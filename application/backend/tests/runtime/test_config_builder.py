@@ -4,6 +4,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 from uuid import uuid4
 
+import pytest
 from physicalai.config import to_yaml, validate_config
 from physicalai.runtime import RobotRuntime
 
@@ -15,16 +16,19 @@ from schemas.robot import RobotAdapter
 
 
 class FakePortFinder:
+    def __init__(self, *, discovers: bool = True) -> None:
+        self._discovers = discovers
+
     async def find_port(self, port_info: SerialPortInfo) -> str | None:
-        return port_info.connection_string
+        return port_info.connection_string if self._discovers else None
 
 
-def _robot_factory() -> RobotClientFactory:
-    return RobotClientFactory(robot_manager=FakePortFinder())  # type: ignore[arg-type]
+def _robot_factory(*, discovers: bool = True) -> RobotClientFactory:
+    return RobotClientFactory(robot_manager=FakePortFinder(discovers=discovers))  # type: ignore[arg-type]
 
 
 def _stub_device_paths(mocker: Any) -> None:
-    mocker.patch("runtime.config_builder.resolve_serial_device", return_value="/dev/serial/by-id/test-robot")
+    mocker.patch("robots.robot_client_factory.resolve_serial_device", return_value="/dev/serial/by-id/test-robot")
     mocker.patch("runtime.config_builder.resolve_camera_device", return_value="/dev/v4l/by-id/test-camera")
 
 
@@ -90,7 +94,7 @@ async def test_builder_emits_valid_runtime_recipe_and_round_trips(mocker: Any) -
 
 
 async def test_builder_marks_unstable_device_paths(mocker: Any) -> None:
-    mocker.patch("runtime.config_builder.resolve_serial_device", side_effect=lambda device: device)
+    mocker.patch("robots.robot_client_factory.resolve_serial_device", side_effect=lambda device: device)
     mocker.patch("runtime.config_builder.resolve_camera_device", side_effect=lambda device: device)
     document = await build_runtime_config(
         follower=_robot("follower"),
@@ -101,3 +105,32 @@ async def test_builder_marks_unstable_device_paths(mocker: Any) -> None:
     )
 
     assert runtime_config_change_me(document) == ["/dev/ttyACM0", "/dev/video0", "/dev/ttyACM0"]
+
+
+async def test_builder_refuses_a_robot_that_is_not_attached() -> None:
+    """A live session must not be handed a port nobody has seen."""
+    with pytest.raises(ValueError, match="Could not resolve a serial port"):
+        await build_runtime_config(
+            follower=_robot("follower"),
+            leader=None,
+            cameras=[],
+            fps=30,
+            robot_factory=_robot_factory(discovers=False),
+        )
+
+
+async def test_export_keeps_the_stored_port_when_the_robot_is_absent(mocker: Any) -> None:
+    """An exported config describes a rig that does not have to be plugged in."""
+    mocker.patch("robots.robot_client_factory.resolve_serial_device", side_effect=lambda device: device)
+    document = await build_runtime_config(
+        follower=_robot("follower"),
+        leader=None,
+        cameras=[],
+        fps=30,
+        robot_factory=_robot_factory(discovers=False),
+        allow_stored_port=True,
+    )
+
+    port = document["init_args"]["robot"]["init_args"]["robot"]["init_args"]["port"]
+    assert port == "/dev/ttyACM0"
+    assert runtime_config_change_me(document) == ["/dev/ttyACM0"]

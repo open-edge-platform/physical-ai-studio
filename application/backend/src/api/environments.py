@@ -67,6 +67,8 @@ async def get_runtime_config(
             cameras=environment.cameras,
             fps=30,
             robot_factory=robot_client_factory,
+            # The rig this describes does not have to be attached to export it.
+            allow_stored_port=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

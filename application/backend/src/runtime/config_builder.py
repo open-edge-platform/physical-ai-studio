@@ -9,7 +9,7 @@ from physicalai_studio_plugin import shared_robot_name
 from robots.robot_client_factory import RobotClientFactory
 from runtime.features import sanitize_camera_name
 from utils.camera_factory import build_camera_config, is_migrated
-from utils.device_paths import resolve_camera_device, resolve_serial_device
+from utils.device_paths import resolve_camera_device
 
 if TYPE_CHECKING:
     from physicalai_studio_plugin import CatalogRobotFactory, SerialPortInfo
@@ -18,21 +18,27 @@ if TYPE_CHECKING:
     from schemas.robot import Robot
 
 
-class _StablePortFinder:
-    """Port finder for export: falls back to the stored port and prefers by-id paths."""
+class _StoredPortFallback:
+    """Export-only port finder: keeps the registered port when a robot is absent.
+
+    An exported config describes how to reconnect on another machine, so an
+    unplugged robot must not fail the download — ``runtime_config_change_me``
+    flags the unresolved path instead. A live session must never do this: by
+    then the stored path may belong to a different robot.
+    """
 
     def __init__(self, port_finder: CatalogRobotFactory) -> None:
         self._port_finder = port_finder
 
     async def find_port(self, port_info: SerialPortInfo) -> str | None:
         port = await self._port_finder.find_port(port_info)
-        if port is None:
-            port = port_info.connection_string
-        return None if port is None else resolve_serial_device(port)
+        return port if port is not None else port_info.connection_string
 
 
-async def _shared_robot_config(robot: Robot, robot_factory: RobotClientFactory) -> dict[str, Any]:
-    driver, _ = await robot_factory.build_robot_driver(robot, _StablePortFinder(robot_factory))
+async def _shared_robot_config(
+    robot: Robot, robot_factory: RobotClientFactory, port_finder: CatalogRobotFactory
+) -> dict[str, Any]:
+    driver, _ = await robot_factory.build_robot_driver(robot, port_finder)
     return Config(
         "physicalai.robot.SharedRobot",
         {
@@ -63,10 +69,18 @@ async def build_runtime_config(
     cameras: list[Camera],
     fps: float,
     robot_factory: RobotClientFactory,
+    allow_stored_port: bool = False,
 ) -> dict[str, Any]:
-    """Assemble one physicalai runtime recipe from Studio database rows."""
-    follower_config = await _shared_robot_config(follower, robot_factory)
-    leader_config = None if leader is None else await _shared_robot_config(leader, robot_factory)
+    """Assemble one physicalai runtime recipe from Studio database rows.
+
+    Serial ports are resolved against the devices attached right now, and an
+    unresolvable one raises. Set ``allow_stored_port`` to keep the port stored
+    at registration time instead: an exported config has to describe a rig that
+    is not plugged in, while a session about to drive that rig must not guess.
+    """
+    port_finder: CatalogRobotFactory = _StoredPortFallback(robot_factory) if allow_stored_port else robot_factory
+    follower_config = await _shared_robot_config(follower, robot_factory, port_finder)
+    leader_config = None if leader is None else await _shared_robot_config(leader, robot_factory, port_finder)
 
     camera_configs: dict[str, dict[str, Any]] = {}
     for camera in cameras:
