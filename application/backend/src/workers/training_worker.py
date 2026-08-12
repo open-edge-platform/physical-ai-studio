@@ -14,14 +14,17 @@ from loguru import logger
 
 from core.logging.utils import job_logging_ctx
 from db import get_async_db_session_ctx
+from repositories.job_provisioning_repo import JobProvisioningRepository
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
 from schemas.job import TrainingTarget, TrainJobPayload
 from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
+from services.remote_server_service import RemoteServerService
 from services.remote_trainer_service import RemoteTrainerService
 from services.snapshot_service import SnapshotService
+from services.ssh.recovery import recover_ssh_jobs
 from services.training_backends import (
     TrainingCanceledError,
     TrainingContext,
@@ -151,6 +154,10 @@ class TrainingWorker(BaseProcessWorker):
     async def setup(self) -> None:
         await super().setup()
         with logger.contextualize(worker=self.__class__.__name__):
+            # SSH recovery must run before the generic orphan abort: it confirms
+            # or fails each SSH job's container explicitly, so the generic pass
+            # only ever needs to catch a job this one somehow failed to reach.
+            await self._recover_ssh_jobs()
             await self._abort_orphan_jobs()
 
     async def teardown(self) -> None:
@@ -162,6 +169,24 @@ class TrainingWorker(BaseProcessWorker):
     async def _abort_orphan_jobs() -> None:
         async with get_async_db_session_ctx() as session:
             await TrainingService.abort_orphan_jobs(JobService(session, RemoteTrainerService(session)))
+
+    @staticmethod
+    async def _recover_ssh_jobs() -> None:
+        """Reattach or fail every SSH-provisioned job left non-terminal by a restart."""
+        async with get_async_db_session_ctx() as session:
+            provisioning_repo = JobProvisioningRepository(session)
+            remote_server_service = RemoteServerService(session)
+            job_service = JobService(session, RemoteTrainerService(session), remote_server_service)
+            report = await recover_ssh_jobs(job_service, provisioning_repo, remote_server_service)
+        logger.info(
+            "SSH job recovery: {} confirmed, {} pending retry, {} failed, {} stale row(s) cleaned, "
+            "{} orphan container(s) removed",
+            report.confirmed,
+            report.transient,
+            report.failed,
+            report.stale_rows_cleaned,
+            report.orphans_removed,
+        )
 
     @staticmethod
     async def _update_training_progress(

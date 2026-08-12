@@ -91,3 +91,19 @@ class JobProvisioningRepository(BaseRepository[JobProvisioning, JobProvisioningD
         )
         results = await self.db.execute(query)
         return [self.from_schema(model) for model in results.scalars().all()]
+
+    async def list_stale(self) -> list[JobProvisioning]:
+        """Return provisioning rows whose job has already reached a terminal state.
+
+        Recovers a row a crashed teardown left behind: `_teardown` deletes the
+        row only after stopping the container, so a crash between the two
+        leaves a row describing a job that will never run again.
+        """
+        query = (
+            select(JobProvisioningDB)
+            .join(JobDB, JobDB.id == JobProvisioningDB.job_id)
+            .where(JobDB.status.notin_(_NON_TERMINAL_JOB_STATUSES))
+            .order_by(JobProvisioningDB.created_at.asc())
+        )
+        results = await self.db.execute(query)
+        return [self.from_schema(model) for model in results.scalars().all()]

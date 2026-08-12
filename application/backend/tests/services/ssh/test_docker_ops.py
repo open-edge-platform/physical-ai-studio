@@ -451,3 +451,56 @@ async def test_list_managed_containers_parses_docker_ps_json_lines() -> None:
     assert len(containers) == 1
     assert containers[0].container_id == "abc123"
     assert containers[0].job_id == "job1"
+
+
+# --------------------------------------------------------------------------- #
+# management_labels / inspect_container (reattach support)                    #
+# --------------------------------------------------------------------------- #
+
+
+def test_management_labels_records_the_launched_image_digest() -> None:
+    labels = docker_ops.management_labels(
+        job_id="job1", server_id="server1", backend_instance_id="instance-1", image_digest=_DIGEST
+    )
+
+    assert labels[docker_ops.IMAGE_DIGEST_LABEL] == _DIGEST
+    assert labels[docker_ops.JOB_LABEL] == "job1"
+    assert labels[docker_ops.INSTANCE_LABEL] == "instance-1"
+
+
+async def test_inspect_container_returns_none_when_container_is_gone() -> None:
+    transport = FakeTransport({"docker inspect --format {{.State.Running}}": _fail("No such container")})
+
+    result = await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+    assert result is None
+
+
+async def test_inspect_container_reports_running_state_and_labels() -> None:
+    labels = {docker_ops.INSTANCE_LABEL: "instance-1", docker_ops.JOB_LABEL: "job1"}
+    transport = FakeTransport(
+        {
+            "docker inspect --format {{.State.Running}}": _ok("true\n"),
+            "docker inspect --format {{json .Config.Labels}}": _ok(json.dumps(labels)),
+        }
+    )
+
+    result = await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+    assert result is not None
+    assert result.running is True
+    assert result.labels == labels
+
+
+async def test_inspect_container_reports_stopped_state() -> None:
+    transport = FakeTransport(
+        {
+            "docker inspect --format {{.State.Running}}": _ok("false\n"),
+            "docker inspect --format {{json .Config.Labels}}": _ok("{}"),
+        }
+    )
+
+    result = await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+    assert result is not None
+    assert result.running is False
