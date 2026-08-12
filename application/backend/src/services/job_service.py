@@ -4,12 +4,19 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.security import get_ssh_feature_availability
 from db.schema import JobDB
-from exceptions import DuplicateJobException, ResourceInUseError, ResourceNotFoundError, ResourceType
+from exceptions import (
+    DuplicateJobException,
+    ResourceInUseError,
+    ResourceNotFoundError,
+    ResourceType,
+    SshFeatureDisabledError,
+)
 from repositories import JobRepository
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import JobPayload, TrainJob, TrainJobPayload
+from schemas.job import JobPayload, TrainingTarget, TrainJob, TrainJobPayload
 from services.remote_server_service import RemoteServerService
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets import get_training_target_handler
@@ -48,6 +55,11 @@ class JobService:
 
     async def submit_train_job(self, payload: TrainJobPayload) -> Job:
         """Validate and persist a training job with its execution target pinned."""
+        if payload.training_target is TrainingTarget.SSH:
+            availability = get_ssh_feature_availability()
+            if not availability.active:
+                raise SshFeatureDisabledError(availability.reason)
+
         handler = get_training_target_handler(
             payload, self.session, self.remote_trainer_service, self.remote_server_service
         )
