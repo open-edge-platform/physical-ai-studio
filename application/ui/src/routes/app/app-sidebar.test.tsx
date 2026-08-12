@@ -19,6 +19,15 @@ const renderSidebar = (selectedKey = 'projects') =>
     );
 
 describe('AppSidebar', () => {
+    it('renders the logo, linking to the projects page', () => {
+        renderSidebar();
+
+        const logoLink = screen.getByRole('link', { name: /physical ai studio/i });
+
+        expect(logoLink).toBeInTheDocument();
+        expect(logoLink).toHaveAttribute('href', '/projects');
+    });
+
     it('renders all enabled nav item labels', () => {
         renderSidebar();
 

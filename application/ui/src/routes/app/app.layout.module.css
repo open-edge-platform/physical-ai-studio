@@ -18,6 +18,14 @@
 
         &[class*='is-selected'] {
             background-color: var(--spectrum-global-color-gray-300);
+
+            .sidebarListItemIcon {
+                fill: var(--energy-blue);
+            }
         }
     }
+}
+
+.sidebarListItemIcon {
+    fill: var(--spectrum-global-color-gray-700);
 }
