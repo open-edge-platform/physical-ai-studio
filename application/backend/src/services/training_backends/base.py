@@ -62,7 +62,11 @@ class TrainingContext:
     ``on_remote_job_id`` is awaited once a fresh remote job id is known so the
     caller can persist it for restart recovery. ``should_suspend`` distinguishes
     an application shutdown (leave the remote job running) from a user
-    cancellation (cancel the remote job).
+    cancellation (cancel the remote job). ``should_cancel_job`` reports whether
+    *this specific job* was canceled by the user, independent of a concurrent
+    application shutdown; a backend must check it before ``should_suspend`` so
+    a user cancellation that happens to overlap with shutdown still cancels
+    the remote job instead of being left running for reattach.
     """
 
     job: Job
@@ -77,6 +81,7 @@ class TrainingContext:
     remote_job_id: UUID | None = None
     on_remote_job_id: Callable[[UUID], Awaitable[None]] | None = None
     should_suspend: Callable[[], bool] = field(default=lambda: False)
+    should_cancel_job: Callable[[], bool] = field(default=lambda: False)
 
 
 @runtime_checkable

@@ -207,6 +207,7 @@ class TrainingWorker(BaseProcessWorker):
                 remote_job_id=payload.remote_job_id,
                 on_remote_job_id=lambda remote_job_id: self._persist_remote_job_id(job, payload, remote_job_id),
                 should_suspend=self.should_stop,
+                should_cancel_job=lambda: bool(self.job_interrupt_flags.get(str(job.id), False)),
             )
 
             backend = get_training_backend(payload)

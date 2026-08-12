@@ -663,7 +663,17 @@ class RemoteTrainingBackend:
         archive.extract_to(output_dir, min_free_bytes=min_free_bytes)
 
     async def _handle_stop_request(self, context: TrainingContext, remote_job_id: uuid.UUID) -> None:
-        """Suspend on shutdown; cancel the remote job for a user stop request."""
+        """Cancel on a user stop request; suspend on shutdown.
+
+        Checked in this order because ``should_stop`` is a combined signal (user
+        cancel OR app shutdown): a user cancellation must win even when a backend
+        shutdown happens to be in flight at the same time, otherwise the job the
+        user explicitly stopped is left running on the trainer and gets silently
+        reattached to on the next startup.
+        """
+        if context.should_cancel_job():
+            await self._cancel(remote_job_id)
+            raise TrainingCanceledError("Training canceled")
         if context.should_suspend():
             raise TrainingSuspendedError("Studio shutting down; leaving remote training job running for reattach")
         await self._cancel(remote_job_id)

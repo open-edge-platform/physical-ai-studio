@@ -211,7 +211,13 @@ def _settings() -> MagicMock:
     return settings
 
 
-def _context(tmp_path: Path, *, should_stop: bool = False, remote_job_id: UUID | None = None) -> TrainingContext:
+def _context(
+    tmp_path: Path,
+    *,
+    should_stop: bool = False,
+    remote_job_id: UUID | None = None,
+    should_cancel_job: bool = False,
+) -> TrainingContext:
     snap = tmp_path / "snap"
     snap.mkdir()
     # A file in the snapshot dir gives the ZIP archive real bytes to stream.
@@ -241,6 +247,7 @@ def _context(tmp_path: Path, *, should_stop: bool = False, remote_job_id: UUID |
         progress=MagicMock(),
         should_stop=lambda: should_stop,
         remote_job_id=remote_job_id,
+        should_cancel_job=lambda: should_cancel_job,
     )
 
 
@@ -888,8 +895,38 @@ class TestModelDownloadCancellation:
 
         assert controller.cancelled is False
 
+    @pytest.mark.anyio
+    async def test_user_cancel_racing_shutdown_still_cancels_remote_job(self, tmp_path):
+        """A user cancel that overlaps a concurrent app shutdown must still cancel, not suspend.
 
-class TestSnapshotUploadHeartbeat:
+        Regression guard: stopping a job and then stopping the backend "soon
+        after" can make ``should_suspend`` true (app shutting down) at the same
+        moment the user's own interrupt made ``should_stop`` true. Suspend must
+        not win here, or the "canceled" job is left running on the trainer and
+        gets silently reattached to on the next startup.
+        """
+        from services.training_backends.base import TrainingCanceledError
+
+        settings = _settings()
+        context = _context(tmp_path, should_stop=True, should_cancel_job=True)
+        # A shutdown is *also* in flight at the same moment, but the user's own
+        # cancel of this specific job must take priority.
+        context.should_suspend = lambda: True
+        controller = _Controller(states=[])
+        controller.artifact_chunks = [b"a" * 500, b"b" * 500]
+        controller.artifact_headers = {"content-length": "1000"}
+        stream_timeout = httpx.Timeout(5.0)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            with pytest.raises(TrainingCanceledError):
+                await backend._stream_archive(context, controller.remote_job_id, tmp_path / "model.zip", stream_timeout)
+
+        assert controller.cancelled is True
+
     """The HTTP upload loop emits throttled byte heartbeats for large snapshots."""
 
     @pytest.mark.anyio
