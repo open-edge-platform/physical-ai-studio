@@ -110,15 +110,10 @@ async def robot_websocket(
             fps=fps,
             robot_factory=robot_client_factory,
         )
-        definition = robot_client_factory.catalog_registry.get_definition(follower.type)
-        if definition is None:
-            raise ValueError(f"Robot type is not part of the catalog: {follower.type}")
         event_sink = QueueEventSink()
         session = RuntimeSession(
             document,
             event_sink=event_sink,
-            include_velocities=definition.adapter_options.include_velocities,
-            external_effort_gain=definition.adapter_options.external_effort_gain,
             follower_name=follower.name,
             leader_name=None if leader is None else leader.name,
         )

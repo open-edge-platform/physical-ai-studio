@@ -12,7 +12,7 @@ def _observation(values: list[float], timestamp: float, *, efforts: list[float] 
     return FakeObservation(np.array(values, dtype=np.float32), timestamp, sensor_data)
 
 
-def _source(*, follower: FakeRobot, leader: FakeRobot | None, fps: float = 30, gain: float | None = None):
+def _source(*, follower: FakeRobot, leader: FakeRobot | None, fps: float = 30):
     mailbox = InMemoryCommandMailbox()
     events = QueueEventSink()
     source = StudioActionSource(
@@ -21,7 +21,6 @@ def _source(*, follower: FakeRobot, leader: FakeRobot | None, fps: float = 30, g
         mailbox=mailbox,
         event_sink=events,
         fps=fps,
-        external_effort_gain=gain,
     )
     source.connect(bus=object(), session_id="test")
     return source, mailbox, events
@@ -55,18 +54,6 @@ def test_connect_rejects_mismatched_joint_names() -> None:
 
     with pytest.raises(ValueError, match="joint names must match"):
         _source(follower=follower, leader=leader)
-
-
-def test_haptics_require_gain_and_effort_data() -> None:
-    follower = FakeRobot([_observation([0, 0], 1, efforts=[1, 2])])
-    leader = FakeRobot([_observation([4, 5], 1)])
-    source, mailbox, _ = _source(follower=follower, leader=leader, gain=0.2)
-    mailbox.apply(SetFollowerSourceCommand(follower_source="teleop"))
-
-    source.update(follower.get_observation(), {}, 0)
-
-    np.testing.assert_array_equal(leader.external_efforts[0][0], [1, 2])
-    assert leader.external_efforts[0][1] == 0.2
 
 
 def test_leader_read_error_uses_hold_and_session_survives() -> None:

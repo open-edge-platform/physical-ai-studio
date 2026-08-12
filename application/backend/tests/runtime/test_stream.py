@@ -9,7 +9,7 @@ from .fakes import FakeObservation
 
 def test_lifecycle_start_emits_connected_state_once() -> None:
     events = QueueEventSink()
-    callback = StreamCallback(event_sink=events, follower_source=lambda: "hold", include_velocities=False)
+    callback = StreamCallback(event_sink=events, follower_source=lambda: "hold")
 
     callback.on_lifecycle(
         LifecycleEvent(session_id="test", timestamp=1, event="start", metadata={"joint_names": ["joint"]})
@@ -21,7 +21,7 @@ def test_lifecycle_start_emits_connected_state_once() -> None:
 
 def test_tick_emits_exact_observation_shape() -> None:
     events = QueueEventSink()
-    callback = StreamCallback(event_sink=events, follower_source=lambda: "hold", include_velocities=False)
+    callback = StreamCallback(event_sink=events, follower_source=lambda: "hold")
     callback.on_lifecycle(
         LifecycleEvent(session_id="test", timestamp=1, event="start", metadata={"joint_names": ["joint"]})
     )

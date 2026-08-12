@@ -27,14 +27,12 @@ class StudioActionSource:
         mailbox: CommandMailbox,
         event_sink: EventSink,
         fps: float,
-        external_effort_gain: float | None,
     ) -> None:
         self._follower = follower
         self._leader = leader
         self._mailbox = mailbox
         self._event_sink = event_sink
         self._max_leader_failures = max(1, int(3 * fps))
-        self._external_effort_gain = external_effort_gain
         self._follower_source: FollowerSource = "hold"
         self._hold_target: np.ndarray | None = None
         self._last_leader_action: np.ndarray | None = None
@@ -137,7 +135,6 @@ class StudioActionSource:
                     f"Leader action shape {action.shape} does not match "
                     f"follower shape {robot_state.joint_positions.shape}"
                 )
-            self._push_efforts(robot_state)
         except Exception as exc:
             self._leader_failures += 1
             if not self._failure_logged:
@@ -152,16 +149,6 @@ class StudioActionSource:
         self._last_leader_timestamp = observation.timestamp
         self._last_leader_action = action
         return action
-
-    def _push_efforts(self, robot_state: RobotObservation) -> None:
-        if self._leader is None or self._external_effort_gain is None:
-            return
-        sensor_data = robot_state.sensor_data
-        if sensor_data is None or "efforts" not in sensor_data:
-            return
-        set_external_efforts = getattr(self._leader, "set_external_efforts", None)
-        if callable(set_external_efforts):
-            set_external_efforts(sensor_data["efforts"], gain=self._external_effort_gain)
 
     def _disable_failed_leader(self, robot_state: RobotObservation) -> None:
         self._leader_reads_enabled = False

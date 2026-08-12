@@ -30,15 +30,11 @@ class RuntimeSession:
         document: dict[str, Any],
         *,
         event_sink: EventSink,
-        include_velocities: bool = False,
-        external_effort_gain: float | None = None,
         follower_name: str | None = None,
         leader_name: str | None = None,
     ) -> None:
         self._document = document
         self._event_sink = event_sink
-        self._include_velocities = include_velocities
-        self._external_effort_gain = external_effort_gain
         self._follower_name = follower_name
         self._leader_name = leader_name
         self._mailbox = InMemoryCommandMailbox()
@@ -65,12 +61,10 @@ class RuntimeSession:
             mailbox=self._mailbox,
             event_sink=self._event_sink,
             fps=float(init_args["fps"]),
-            external_effort_gain=self._external_effort_gain,
         )
         self._stream_callback = StreamCallback(
             event_sink=self._event_sink,
             follower_source=lambda: self._action_source.follower_source,
-            include_velocities=self._include_velocities,
             ready=self.ready,
         )
 

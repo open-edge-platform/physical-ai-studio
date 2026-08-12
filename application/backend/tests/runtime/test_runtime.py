@@ -19,7 +19,6 @@ def test_stop_signal_ends_runtime_with_stop_requested() -> None:
         mailbox=InMemoryCommandMailbox(),
         event_sink=QueueEventSink(),
         fps=30,
-        external_effort_gain=None,
     )
     runtime = RobotRuntime(robot=follower, action_source=source, fps=30)
     stop = threading.Event()
@@ -39,7 +38,6 @@ def test_follower_connect_error_propagates() -> None:
         mailbox=InMemoryCommandMailbox(),
         event_sink=QueueEventSink(),
         fps=30,
-        external_effort_gain=None,
     )
     runtime = RobotRuntime(robot=follower, action_source=source, fps=30)
 

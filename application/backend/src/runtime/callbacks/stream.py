@@ -23,20 +23,21 @@ class StreamCallback:
         *,
         event_sink: EventSink,
         follower_source: Callable[[], FollowerSource],
-        include_velocities: bool,
         ready: threading.Event | None = None,
     ) -> None:
         self._event_sink = event_sink
         self._follower_source = follower_source
-        self._include_velocities = include_velocities
         self._joint_names: list[str] = []
         self.ready = ready or threading.Event()
 
     def on_tick(self, event: TickEvent) -> None:
+        # Positions only: the browser maps ".pos" features onto the URDF model
+        # and drops everything else. Velocities come back with the dataset
+        # features in phase B, where a declared schema is what needs them.
         data = observation_to_dict(
             self._joint_names,
             event.robot_state,
-            include_velocities=self._include_velocities,
+            include_velocities=False,
         )
         self._event_sink.emit(ObservationEvent(data=data))
 

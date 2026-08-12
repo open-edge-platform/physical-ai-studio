@@ -61,7 +61,6 @@ class FakeRobot:
         self._connect_delay = connect_delay
         self.name = name
         self.sent_actions: list[np.ndarray] = []
-        self.external_efforts: list[tuple[np.ndarray, float]] = []
 
     def connect(self) -> None:
         with _connect_depth_lock:
@@ -100,6 +99,3 @@ class FakeRobot:
     @property
     def device_ids(self) -> tuple[str, ...]:
         return ()
-
-    def set_external_efforts(self, efforts: np.ndarray, *, gain: float) -> None:
-        self.external_efforts.append((np.array(efforts, copy=True), gain))
