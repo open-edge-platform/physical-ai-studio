@@ -19,15 +19,13 @@ class RuntimeProcessHost(BaseProcessWorker):
 
     ROLE = "RuntimeProcessHost"
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         name: str,
         document: dict[str, Any],
         *,
         stop_event: EventClass,
         instance_id: str | None = None,
-        include_velocities: bool = False,
-        external_effort_gain: float | None = None,
         follower_name: str | None = None,
         leader_name: str | None = None,
     ) -> None:
@@ -35,8 +33,6 @@ class RuntimeProcessHost(BaseProcessWorker):
         self._session_name = name
         self._instance_id = instance_id
         self._document = document
-        self._include_velocities = include_velocities
-        self._external_effort_gain = external_effort_gain
         self._follower_name = follower_name
         self._leader_name = leader_name
         self._server: RuntimeZenohServer | None = None
@@ -61,8 +57,6 @@ class RuntimeProcessHost(BaseProcessWorker):
             self._runtime_session = RuntimeSession(
                 self._document,
                 event_sink=self._server,
-                include_velocities=self._include_velocities,
-                external_effort_gain=self._external_effort_gain,
                 follower_name=self._follower_name,
                 leader_name=self._leader_name,
             )

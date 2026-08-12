@@ -27,7 +27,6 @@ def test_lifecycle_start_is_suppressed_after_disconnect() -> None:
     callback = StreamCallback(
         event_sink=events,
         follower_source=lambda: "hold",
-        include_velocities=False,
         ready=ready,
         start_allowed=lambda: False,
     )
