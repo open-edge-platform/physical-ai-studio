@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, call
 
 from fastapi.websockets import WebSocketDisconnect
 
-from api.robot_control import _websocket_error_payload, handle_incoming
+from api.robot_control import _websocket_error_payload, handle_incoming, wait_until_runtime_ready
 from exceptions import RobotDeviceAlreadyOwnedError
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand
 
@@ -78,3 +78,13 @@ def test_handle_incoming_applies_disconnect_on_websocket_disconnect() -> None:
     asyncio.run(handle_incoming(websocket, session))
 
     session.apply.assert_called_once_with(DisconnectCommand())
+
+
+def test_wait_until_runtime_ready_keeps_process_failure_checks() -> None:
+    client = MagicMock()
+    host = MagicMock()
+
+    asyncio.run(wait_until_runtime_ready(client, host))
+
+    client.connect.assert_called_once_with(process=host)
+    client.wait_until_ready.assert_called_once_with(host)

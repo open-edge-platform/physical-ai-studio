@@ -44,6 +44,8 @@ class RuntimeSession:
         self._action_source: StudioActionSource | None = None
         self._stream_callback: StreamCallback | None = None
         self._runtime: RobotRuntime | None = None
+        self._disconnect_requested = False
+        self._lifecycle_lock = threading.Lock()
 
     async def setup(self) -> None:
         init_args = self._document["init_args"]
@@ -66,6 +68,8 @@ class RuntimeSession:
             event_sink=self._event_sink,
             follower_source=lambda: self._action_source.follower_source,
             ready=self.ready,
+            start_allowed=lambda: not self._disconnect_requested,
+            lifecycle_lock=self._lifecycle_lock,
         )
 
     def build_runtime(self) -> RobotRuntime:
@@ -78,21 +82,33 @@ class RuntimeSession:
             fps=float(self._document["init_args"]["fps"]),
             callbacks=[self._stream_callback],
         )
+        if self._disconnect_requested:
+            self._runtime.stop()
         return self._runtime
 
     def apply(self, command: Command) -> None:
         if isinstance(command, DisconnectCommand):
-            if self._runtime is not None:
-                self._runtime.stop()
+            with self._lifecycle_lock:
+                self._disconnect_requested = True
+                if self._runtime is not None:
+                    self._runtime.stop()
             return
         self._mailbox.apply(command)
 
     def run(self, stop_signal: StopSignal) -> None:
+        if self._disconnect_requested or stop_signal.is_set():
+            return
         runtime = self.build_runtime()
         try:
+            if self._disconnect_requested or stop_signal.is_set():
+                return
             self._preconnect_robots()
+            if self._disconnect_requested or stop_signal.is_set():
+                return
             # Do not use ``with runtime``: the session alone owns device teardown.
             runtime.connect()
+            if self._disconnect_requested or stop_signal.is_set():
+                return
             runtime.run(stop_event=stop_signal)
         except RobotError as exc:
             follower_connected = self._follower is not None and self._follower.is_connected()

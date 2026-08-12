@@ -135,6 +135,7 @@ class AckEvent(BaseModel):
 
 
 RuntimeEvent = ObservationEvent | StateEvent | ErrorEvent | LifecycleEvent | AckEvent
+RuntimeEventAdapter: TypeAdapter[RuntimeEvent] = TypeAdapter(RuntimeEvent)
 
 
 class CommandMailbox(Protocol):

@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from physicalai.config import Config
 
-from runtime.contract import QueueEventSink
+from runtime.contract import DisconnectCommand, QueueEventSink
 from runtime.hosts.thread_host import RuntimeThreadHost
 from runtime.session import RuntimeSession
 from tests.runtime.fakes import max_concurrent_connects, reset_connect_tracking
@@ -52,11 +52,11 @@ async def test_thread_host_runs_session_until_worker_stop_signal() -> None:
     events = QueueEventSink()
     session = RuntimeSession(_document(), event_sink=events)
     stop = mp.Event()
-    stop.set()
     host = RuntimeThreadHost(session, stop_event=stop)
 
     host.start()
     await host.wait_until_ready()
+    stop.set()
     await asyncio.to_thread(host.join, 2)
 
     assert not host.is_alive()
@@ -71,7 +71,8 @@ async def test_thread_host_runs_session_until_worker_stop_signal() -> None:
             emitted.append(events.get_nowait())
         except queue.Empty:
             break
-    assert [event.event for event in emitted] == ["state", "lifecycle"]
+    assert emitted[0].event == "state"
+    assert emitted[-1].event == "lifecycle"
 
 
 async def test_thread_host_propagates_setup_error() -> None:
@@ -120,6 +121,33 @@ async def test_preconnect_disconnects_robots_when_one_connect_fails() -> None:
     with pytest.raises(ConnectionError, match="leader connect failed"):
         session._preconnect_robots()
 
+    assert session._follower is not None
+    assert session._leader is not None
+    assert not session._follower.is_connected()
+    assert not session._leader.is_connected()
+
+
+async def test_disconnect_before_runtime_construction_stops_first_run() -> None:
+    session = RuntimeSession(_document(), event_sink=QueueEventSink())
+    session.apply(DisconnectCommand())
+    await session.setup()
+
+    session.run(mp.Event())
+
+    assert session._runtime is None
+    assert session._follower is not None
+    assert not session._follower.is_connected()
+
+
+async def test_worker_stop_before_run_does_not_connect_hardware() -> None:
+    session = RuntimeSession(_document_with_leader(), event_sink=QueueEventSink())
+    await session.setup()
+    stop = mp.Event()
+    stop.set()
+
+    session.run(stop)
+
+    assert session._runtime is None
     assert session._follower is not None
     assert session._leader is not None
     assert not session._follower.is_connected()

@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 from physicalai.runtime import LifecycleEvent, TickEvent
 
@@ -17,6 +19,24 @@ def test_lifecycle_start_emits_connected_state_once() -> None:
 
     event = events.get_nowait()
     assert event.model_dump() == {"event": "state", "data": {"connected": True, "follower_source": "hold"}}
+
+
+def test_lifecycle_start_is_suppressed_after_disconnect() -> None:
+    ready = threading.Event()
+    events = QueueEventSink()
+    callback = StreamCallback(
+        event_sink=events,
+        follower_source=lambda: "hold",
+        include_velocities=False,
+        ready=ready,
+        start_allowed=lambda: False,
+    )
+
+    callback.on_lifecycle(
+        LifecycleEvent(session_id="test", timestamp=1, event="start", metadata={"joint_names": ["joint"]})
+    )
+
+    assert not ready.is_set()
 
 
 def test_tick_emits_exact_observation_shape() -> None:
