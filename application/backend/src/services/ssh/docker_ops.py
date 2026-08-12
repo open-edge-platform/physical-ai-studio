@@ -61,6 +61,9 @@ MANAGED_LABEL: Final = "org.open-edge-platform.physicalai.managed"
 JOB_LABEL: Final = "org.open-edge-platform.physicalai.job-id"
 SERVER_LABEL: Final = "org.open-edge-platform.physicalai.server-id"
 INSTANCE_LABEL: Final = "org.open-edge-platform.physicalai.backend-instance-id"
+# Recorded so a reattach can detect drift between the persisted `JobProvisioningDB`
+# row and the container actually running, without a second registry round trip.
+IMAGE_DIGEST_LABEL: Final = "org.open-edge-platform.physicalai.image-digest"
 
 _CONTAINER_NAME_PREFIX: Final = "physicalai-trainer-"
 
@@ -158,20 +161,50 @@ def data_volume_name(job_id: str) -> str:
     return f"{_DATA_VOLUME_NAME_PREFIX}{job_id}"
 
 
-def management_labels(*, job_id: str, server_id: str, backend_instance_id: str) -> dict[str, str]:
+def management_labels(*, job_id: str, server_id: str, backend_instance_id: str, image_digest: str) -> dict[str, str]:
     """Return the labels every Studio-launched trainer container carries.
 
     `INSTANCE_LABEL` is the ownership marker the orphan sweep requires in
     addition to `MANAGED_LABEL`: a remote server can be shared by more than one
     Studio installation, and sweeping must never touch a container it merely
-    recognizes the shape of.
+    recognizes the shape of. `IMAGE_DIGEST_LABEL` lets a reattach detect that a
+    running container disagrees with the digest persisted for its job, without
+    a second registry call.
     """
     return {
         MANAGED_LABEL: "true",
         JOB_LABEL: job_id,
         SERVER_LABEL: server_id,
         INSTANCE_LABEL: backend_instance_id,
+        IMAGE_DIGEST_LABEL: image_digest,
     }
+
+
+@dataclass(frozen=True, slots=True)
+class ContainerInspection:
+    """A container's running state and labels, as reported by `docker inspect`."""
+
+    running: bool
+    labels: dict[str, str]
+
+
+async def inspect_container(transport: SshTransport, name_or_id: str) -> ContainerInspection | None:
+    """Inspect a container's running state and labels.
+
+    Returns:
+        ``None`` when the container does not exist at all. A container that
+        exists but is stopped is still returned, with ``running=False``.
+    """
+    running_result = await transport.run_command(["docker", "inspect", "--format", "{{.State.Running}}", name_or_id])
+    if not running_result.ok:
+        return None
+
+    labels_result = await transport.run_command(
+        ["docker", "inspect", "--format", "{{json .Config.Labels}}", name_or_id]
+    )
+    labels = _parse_json(labels_result.stdout) if labels_result.ok else None
+    labels = labels if isinstance(labels, dict) else {}
+    return ContainerInspection(running=running_result.first_line().lower() == "true", labels=labels)
 
 
 def _parse_json(text: str) -> object | None:
