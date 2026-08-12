@@ -691,3 +691,19 @@ class TrainerProtocolVersionMismatchError(BaseException):
             error_code="trainer_protocol_mismatch",
             http_status=http.HTTPStatus.CONFLICT,
         )
+
+
+class SshFeatureDisabledError(BaseException):
+    """Raised when the SSH remote-trainer feature is off, or fails closed on network exposure.
+
+    Carries the evaluated reason (if any) rather than any server/alias detail,
+    since this error can reach an unauthenticated caller.
+    """
+
+    def __init__(self, reason: str | None = None) -> None:
+        detail = f": {reason}" if reason else ""
+        super().__init__(
+            message=f"The SSH remote-trainer feature is not available{detail}.",
+            error_code="ssh_feature_unavailable",
+            http_status=http.HTTPStatus.SERVICE_UNAVAILABLE,
+        )

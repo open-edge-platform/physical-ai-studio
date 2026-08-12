@@ -160,6 +160,12 @@ class Settings(BaseSettings):
     huggingface: HuggingFaceSettings = HuggingFaceSettings()
 
     # SSH-provisioned remote training
+    # Master switch. Off by default: the feature has no authentication model,
+    # so it must never be on for a deployment that is not a single-user
+    # localhost workstation. See `core.security.ssh_network_exposure`, which
+    # additionally fails this closed at startup if the backend is bound to a
+    # non-loopback address regardless of this setting.
+    ssh_remote_trainer_enabled: bool = Field(default=False, alias="SSH_REMOTE_TRAINER_ENABLED")
     # Path to the user's SSH client config. asyncssh parses it to resolve a saved
     # `ssh_host_alias` into a hostname, port, user, and identity; Studio never
     # reads key material out of it.

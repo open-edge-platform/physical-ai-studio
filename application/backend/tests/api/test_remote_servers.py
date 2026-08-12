@@ -16,7 +16,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from api.dependencies import get_remote_server_service
+from api.dependencies import get_remote_server_service, require_ssh_feature_active
+from core.security import SshFeatureAvailability
 from exceptions import ResourceNotFoundError, ResourceType
 from main import app
 from schemas.hardware import DeviceType
@@ -108,8 +109,16 @@ def _gpu_busy_warning_result() -> PreflightResult:
     )
 
 
+def _active() -> SshFeatureAvailability:
+    return SshFeatureAvailability(enabled=True, network_exposed=False)
+
+
 @pytest.fixture(autouse=True)
 def _clear_overrides():
+    # Every route but `/feature-status` fails closed behind `require_ssh_feature_active`;
+    # default it to "active" so existing tests exercise their own behavior rather
+    # than the gate, and let the dedicated fail-closed test override it back off.
+    app.dependency_overrides[require_ssh_feature_active] = _active
     yield
     app.dependency_overrides.clear()
 
@@ -137,6 +146,30 @@ def test_list_remote_servers_non_empty():
     body = response.json()
     assert len(body) == 1
     assert body[0]["id"] == str(server.id)
+
+
+def test_list_remote_servers_fails_closed_when_feature_inactive():
+    """No override for `require_ssh_feature_active`: the real (disabled-by-default) check runs."""
+    del app.dependency_overrides[require_ssh_feature_active]
+    service = AsyncMock()
+    service.list_remote_servers.return_value = []
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    response = TestClient(app).get("/api/remote-servers")
+
+    assert response.status_code == 503
+
+
+def test_feature_status_endpoint_reports_disabled_by_default():
+    """Reachable with no dependency override and no auth - it explains the 503 above."""
+    del app.dependency_overrides[require_ssh_feature_active]
+
+    response = TestClient(app).get("/api/remote-servers/feature-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is False
+    assert body["network_exposed"] is False
 
 
 def test_list_ssh_host_aliases_returns_mocked_list(monkeypatch: pytest.MonkeyPatch):
