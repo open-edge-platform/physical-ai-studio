@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from exceptions import RobotDeviceAlreadyOwnedError
 from runtime.contract import AckData, AckEvent, ErrorEvent, LifecycleEvent, ObservationEvent, StateEvent
 from runtime.transport.codec import decode_command, encode_event, encode_metadata
 from runtime.transport.ids import command_key, error_key, lifecycle_key, metadata_key, request_key, state_key, tick_key
@@ -57,7 +58,13 @@ class RuntimeZenohServer:
         import zenoh
 
         self._command_handler = command_handler
-        self._session = open_session(self._name, listen=True)
+        try:
+            self._session = open_session(self._name, listen=True)
+        except Exception as exc:
+            if "Address already in use" in str(exc):
+                logger.warning("Runtime session {} port is taken: {}", self._name, exc)
+                raise RobotDeviceAlreadyOwnedError from exc
+            raise
         self._command_sub = self._session.declare_subscriber(
             command_key(self._name),
             zenoh.handlers.RingChannel(1),

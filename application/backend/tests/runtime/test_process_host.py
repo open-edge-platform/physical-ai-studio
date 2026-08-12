@@ -12,6 +12,7 @@ import pytest
 from physicalai.config import Config
 
 from api.robot_control import handle_outgoing
+from exceptions import RobotDeviceAlreadyOwnedError
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand, StateEvent
 from runtime.hosts.process_host import RuntimeProcessHost
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
@@ -167,7 +168,7 @@ def test_second_spawn_does_not_attach_to_or_disconnect_existing_session() -> Non
         _stop_host(first_host, first_client)
 
 
-def test_listener_bind_failure_reaches_parent_with_original_cause() -> None:
+def test_listener_bind_failure_reaches_parent_as_robot_ownership_error() -> None:
     ensure_spawn_start_method()
     name = runtime_session_name(UUID("b927ab53-13e9-4787-8fb7-fc4d837c9fb3"))
     blocker = socket.socket()
@@ -175,8 +176,10 @@ def test_listener_bind_failure_reaches_parent_with_original_cause() -> None:
     blocker.listen()
     host, client = _start_owned_host(name, _document(), "blocked-instance")
     try:
-        with pytest.raises(RuntimeProcessError, match="Address"):
+        with pytest.raises(RuntimeProcessError) as exc_info:
             client.connect(timeout=5, process=host)
+        assert exc_info.value.error_code == RobotDeviceAlreadyOwnedError().error_code
+        assert "already in use" in exc_info.value.message.lower()
     finally:
         host.stop()
         client.close()

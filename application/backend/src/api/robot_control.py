@@ -135,7 +135,7 @@ async def robot_websocket(  # noqa: PLR0912, PLR0915
         session_name = runtime_session_name(follower.id)
         instance_id = uuid4().hex
         client = RuntimeSessionClient(session_name, instance_id=instance_id)
-        client.open()
+        await asyncio.to_thread(client.open)
         host = RuntimeProcessHost(
             session_name,
             document,
