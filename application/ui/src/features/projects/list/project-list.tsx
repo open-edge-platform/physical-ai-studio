@@ -1,12 +1,22 @@
 import { Grid, Heading, Text, View } from '@geti-ui/ui';
 import { isEmpty } from 'lodash-es';
+import { preload } from 'react-dom';
 
 import { $api } from '../../../api/client';
+import backgroundUrl from '../../../assets/background.webp';
 import { NewProjectLink } from './new-project-link.component';
 import { NoProjects } from './no-projects/no-projects';
 import { ProjectCard } from './project-card';
 
 import classes from './project-list.module.css';
+
+// The background is applied through a CSS `background-image`, which the browser only starts
+// fetching once an element matching `.container` is in the render tree. Because that element
+// lives below a suspending query, the download would otherwise begin only after
+// `GET /api/projects` resolves. Preloading at module scope emits a
+// `<link rel="preload" as="image" fetchpriority="high">` as soon as the bundle evaluates, so the
+// image is fetched in parallel with the request rather than after it.
+preload(backgroundUrl, { as: 'image', fetchPriority: 'high' });
 
 export const ProjectList = () => {
     const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
@@ -17,16 +27,8 @@ export const ProjectList = () => {
 
     return (
         <View height={'100%'}>
-            <View
-                position={'absolute'}
-                top={0}
-                left={0}
-                right={0}
-                bottom={0}
-                UNSAFE_className={classes.container}
-                zIndex={0}
-            ></View>
-            <View height='100%' maxWidth={'240ch'} marginX='auto' zIndex={1} position={'relative'}>
+            <View position={'absolute'} top={0} left={0} right={0} bottom={0} UNSAFE_className={classes.container} />
+            <View height='100%' maxWidth={'240ch'} marginX='auto' position={'relative'}>
                 <Heading
                     level={1}
                     marginBottom={'size-250'}
