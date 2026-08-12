@@ -62,7 +62,7 @@ const RemoteTrainersMenuActions = ({
     return (
         <MenuTrigger>
             <ActionButton aria-label={`More actions ${remoteTrainerName}`} isQuiet>
-                <MoreMenu style={{ fill: '#fff' }} />
+                <MoreMenu style={{ fill: 'var(--spectrum-global-color-gray-900)' }} />
             </ActionButton>
             <Menu
                 onAction={handleAction}

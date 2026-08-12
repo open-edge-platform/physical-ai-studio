@@ -3,12 +3,17 @@ import { isEmpty } from 'lodash-es';
 
 import { $api } from '../../../api/client';
 import { NewProjectLink } from './new-project-link.component';
+import { NoProjects } from './no-projects/no-projects';
 import { ProjectCard } from './project-card';
 
 import classes from './project-list.module.css';
 
 export const ProjectList = () => {
     const { data: projects } = $api.useSuspenseQuery('get', '/api/projects');
+
+    if (projects.length === 0) {
+        return <NoProjects />;
+    }
 
     return (
         <View height={'100%'}>
