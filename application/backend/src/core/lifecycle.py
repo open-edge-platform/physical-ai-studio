@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from core.logging import setup_logging, setup_uvicorn_logging
+from core.security import get_ssh_feature_availability
 from services.event_processor import EventProcessor
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
@@ -23,6 +24,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     settings = get_settings()
     app.state.settings = settings
+
+    # Fail the SSH remote-trainer feature closed if it is enabled on a
+    # non-loopback bind address: the feature has no authentication model, so a
+    # network-exposed instance would let anyone who can reach the API execute
+    # code as root on every registered server. This never touches local or
+    # direct-URL training - only routes/dependencies gated behind
+    # `require_ssh_feature_active` (see `api.dependencies`) are affected.
+    ssh_feature_availability = get_ssh_feature_availability()
+    app.state.ssh_feature_availability = ssh_feature_availability
+    if ssh_feature_availability.enabled and ssh_feature_availability.network_exposed:
+        logger.critical(
+            "SSH remote-trainer feature disabled at startup: {}. Bind the backend to a loopback "
+            "address (127.0.0.1 or ::1) to use it.",
+            ssh_feature_availability.reason,
+        )
 
     # Camera fingerprints locked by an active recording/teleop session.
     # Mutated by the robot_control WS handler; checked by camera CRUD and

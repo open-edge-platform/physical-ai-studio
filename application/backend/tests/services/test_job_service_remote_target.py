@@ -3,12 +3,14 @@ from uuid import uuid4
 
 import pytest
 
+from core.security import SshFeatureAvailability
 from exceptions import (
     RemoteResumeUnsupportedError,
     RemoteServerAliasNotFoundError,
     RemoteServerNotReadyError,
     ResourceNotFoundError,
     ResourceType,
+    SshFeatureDisabledError,
 )
 from schemas.hardware import DeviceType
 from schemas.job import TrainingTarget, TrainJobPayload
@@ -17,6 +19,8 @@ from schemas.remote_trainer import RemoteTrainer
 from services.job_service import JobService
 
 MODULE = "services.job_service"
+
+_ACTIVE = SshFeatureAvailability(enabled=True, network_exposed=False)
 
 
 def _session_context() -> AsyncMock:
@@ -122,6 +126,7 @@ async def test_submit_ssh_job_accepts_a_healthy_server() -> None:
 
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_ACTIVE),
         patch(
             f"{MODULE}.resolve_alias",
             return_value=ResolvedSshHost(alias=remote_server.ssh_host_alias, hostname="gpu-box.lan", found=True),
@@ -155,6 +160,7 @@ async def test_submit_ssh_job_rejects_an_unhealthy_server() -> None:
 
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_ACTIVE),
         pytest.raises(RemoteServerNotReadyError),
     ):
         await JobService(session, remote_server_service=remote_server_service).submit_train_job(payload)
@@ -184,6 +190,7 @@ async def test_submit_ssh_job_rejects_a_renamed_or_removed_alias() -> None:
 
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_ACTIVE),
         patch(
             f"{MODULE}.resolve_alias",
             return_value=ResolvedSshHost(alias=remote_server.ssh_host_alias, found=False),
@@ -217,6 +224,7 @@ async def test_submit_ssh_job_rejects_an_unknown_server() -> None:
 
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_ACTIVE),
         pytest.raises(ResourceNotFoundError),
     ):
         await JobService(session, remote_server_service=remote_server_service).submit_train_job(payload)
@@ -242,7 +250,68 @@ async def test_submit_ssh_job_rejects_continuing_from_an_existing_model() -> Non
 
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_ACTIVE),
         pytest.raises(RemoteResumeUnsupportedError),
+    ):
+        await JobService(session, MagicMock()).submit_train_job(payload)
+
+    repository.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_submit_ssh_job_rejects_when_feature_disabled() -> None:
+    """The default (feature-off) availability blocks submission before any server lookup."""
+    session = _session_context()
+    repository = MagicMock()
+    repository.is_job_duplicate = AsyncMock(return_value=False)
+    repository.save = AsyncMock(side_effect=lambda job: job)
+    payload = TrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="model",
+        training_target=TrainingTarget.SSH,
+        remote_server_id=uuid4(),
+    )
+
+    remote_server_service = MagicMock()
+
+    with (
+        patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(
+            f"{MODULE}.get_ssh_feature_availability",
+            return_value=SshFeatureAvailability(enabled=False, network_exposed=False),
+        ),
+        pytest.raises(SshFeatureDisabledError),
+    ):
+        await JobService(session, remote_server_service=remote_server_service).submit_train_job(payload)
+
+    repository.save.assert_not_awaited()
+    remote_server_service.get_remote_server.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_submit_ssh_job_rejects_when_feature_fails_closed_on_network_exposure() -> None:
+    """Enabled but network-exposed is still inactive, and fails closed the same way."""
+    session = _session_context()
+    repository = MagicMock()
+    repository.is_job_duplicate = AsyncMock(return_value=False)
+    repository.save = AsyncMock(side_effect=lambda job: job)
+    payload = TrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="model",
+        training_target=TrainingTarget.SSH,
+        remote_server_id=uuid4(),
+    )
+
+    exposed = SshFeatureAvailability(enabled=True, network_exposed=True, reason="bound to a non-loopback address")
+
+    with (
+        patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=exposed),
+        pytest.raises(SshFeatureDisabledError, match="non-loopback"),
     ):
         await JobService(session, MagicMock()).submit_train_job(payload)
 

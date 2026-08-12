@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.security import get_ssh_feature_availability
 from db.schema import JobDB
 from exceptions import (
     DuplicateJobException,
@@ -13,6 +14,7 @@ from exceptions import (
     ResourceInUseError,
     ResourceNotFoundError,
     ResourceType,
+    SshFeatureDisabledError,
     UnsupportedDeviceError,
 )
 from repositories import JobRepository
@@ -74,6 +76,9 @@ class JobService:
         if payload.training_target is TrainingTarget.SSH:
             if payload.remote_server_id is None:
                 raise ValueError("SSH training requires a selected remote server")
+            availability = get_ssh_feature_availability()
+            if not availability.active:
+                raise SshFeatureDisabledError(availability.reason)
             if payload.base_model_id is not None:
                 raise RemoteResumeUnsupportedError
             remote_server_service = self.remote_server_service or RemoteServerService(self.session)
