@@ -4,8 +4,11 @@ import queue
 import threading
 from collections import deque
 from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
+from uuid import UUID  # noqa: TC003 — pydantic resolves annotations from module globals at build time
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+
+from schemas import InferenceDevice
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -28,13 +31,23 @@ class DisconnectCommand(CommandBase):
 
 class LoadModelCommand(CommandBase):
     command: Literal["load_model"] = "load_model"
-    model: dict[str, Any]
-    inference_device: dict[str, Any]
+    # An identifier, never a row: the API resolves it against the project the
+    # way the websocket handshake already resolves follower_id and leader_id,
+    # so a client cannot name the directory the backend loads a model from.
+    #
+    # The session owns no database, so it derives the rest from the filesystem:
+    # the artifacts live at ``models_dir / <model_id>`` (both writers keep that
+    # invariant, see training_worker and model_import_service) and the policy
+    # name comes from the export manifest, not from the model row.
+    model_id: UUID
+    inference_device: InferenceDevice
 
 
 class LoadDatasetCommand(CommandBase):
     command: Literal["load_dataset"] = "load_dataset"
-    dataset: dict[str, Any]
+    # ``datasets_dir / <dataset_id>`` is already the only definition of a
+    # dataset's location; see the Dataset schema.
+    dataset_id: UUID
 
 
 class StartTaskCommand(CommandBase):
