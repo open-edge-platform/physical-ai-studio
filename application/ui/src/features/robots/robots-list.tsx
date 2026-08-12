@@ -8,7 +8,7 @@ import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
-import RobotArm from './../../assets/robot-arm.png';
+import RobotArm from './../../assets/robot-arm.webp';
 import { SchemaRobot } from './robot-types';
 
 import classes from './robots-list.module.css';
