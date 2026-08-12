@@ -90,6 +90,33 @@ To run the ASGI app module directly:
 uv run --no-sync python -m trainer.main
 ```
 
+### Running over SSH
+
+If you start the trainer from an SSH session, run it inside `tmux` (or with
+`nohup`) so the process keeps running when the connection drops. A plain
+foreground `uv run` is a child of the SSH session: losing the connection sends
+it `SIGHUP` and kills the training job along with it.
+
+`tmux`:
+
+```bash
+tmux new -s physicalai-trainer
+uv run --no-sync physicalai-trainer
+# detach with Ctrl-b d; reattach later with: tmux attach -t physicalai-trainer
+```
+
+`nohup`:
+
+```bash
+nohup uv run --no-sync physicalai-trainer > trainer.log 2>&1 &
+disown
+```
+
+The [container images](#container-images) below run detached with `docker
+run -d` or `docker compose up -d`, so they are unaffected by SSH disconnects.
+This only matters for the bare `uv run` / `python -m trainer.main`
+invocations above.
+
 ## Container images
 
 Remote SSH provisioning uses the dedicated, non-root trainer images instead of
@@ -208,7 +235,7 @@ docker run --rm --gpus all \
 Start the trainer with GPU access and a loopback-only port binding:
 
 ```bash
-docker run --rm \
+docker run -d \
   --name physicalai-trainer \
   --gpus all \
   --ipc=host \
@@ -230,7 +257,7 @@ export RENDER_NODE=/dev/dri/renderD128
 test -c "$RENDER_NODE"
 export RENDER_GID="$(stat -c '%g' "$RENDER_NODE")"
 
-docker run --rm \
+docker run -d \
   --name physicalai-trainer \
   --device /dev/dri:/dev/dri \
   --group-add "$RENDER_GID" \
@@ -278,6 +305,7 @@ longer needed:
 
 ```bash
 docker stop physicalai-trainer
+docker rm physicalai-trainer
 docker volume rm physicalai-trainer-data
 ```
 
