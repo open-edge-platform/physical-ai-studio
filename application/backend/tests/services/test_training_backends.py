@@ -28,6 +28,12 @@ def _settings() -> MagicMock:
     return settings
 
 
+def _active_ssh_feature():
+    from core.security import SshFeatureAvailability
+
+    return SshFeatureAvailability(enabled=True, network_exposed=False)
+
+
 def _payload(target: TrainingTarget) -> TrainJobPayload:
     if target is TrainingTarget.LOCAL:
         return LocalTrainJobPayload(
@@ -88,7 +94,10 @@ async def test_get_training_backend_returns_ssh_for_ssh_job() -> None:
         ssh_host_alias="gpu-box",
         device_type=DeviceType.CUDA,
     )
-    with patch("services.remote_server_service.RemoteServerService.get_remote_server", AsyncMock(return_value=server)):
+    with (
+        patch("services.remote_server_service.RemoteServerService.get_remote_server", AsyncMock(return_value=server)),
+        patch("core.security.get_ssh_feature_availability", return_value=_active_ssh_feature()),
+    ):
         backend = await get_training_backend(payload, uuid4())
     assert isinstance(backend, SshTrainingBackend)
     assert backend._server is server
@@ -96,7 +105,24 @@ async def test_get_training_backend_returns_ssh_for_ssh_job() -> None:
 
 async def test_get_training_backend_raises_without_remote_server_id() -> None:
     payload = _payload(TrainingTarget.SSH).model_copy(update={"remote_server_id": None})
-    with pytest.raises(ValueError, match="remote server"):
+    with (
+        patch("core.security.get_ssh_feature_availability", return_value=_active_ssh_feature()),
+        pytest.raises(ValueError, match="remote server"),
+    ):
+        await get_training_backend(payload, uuid4())
+
+
+async def test_get_training_backend_rejects_ssh_job_when_feature_inactive() -> None:
+    """Defense in depth: a job persisted while active must not silently start if disabled since."""
+    from core.security import SshFeatureAvailability
+    from exceptions import SshFeatureDisabledError
+
+    payload = _payload(TrainingTarget.SSH)
+    inactive = SshFeatureAvailability(enabled=False, network_exposed=False)
+    with (
+        patch("core.security.get_ssh_feature_availability", return_value=inactive),
+        pytest.raises(SshFeatureDisabledError),
+    ):
         await get_training_backend(payload, uuid4())
 
 

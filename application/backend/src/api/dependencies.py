@@ -8,7 +8,9 @@ from fastapi.requests import HTTPConnection
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.scheduler import Scheduler
+from core.security import SshFeatureAvailability, get_ssh_feature_availability
 from db.engine import get_async_db_session
+from exceptions import SshFeatureDisabledError
 from robots.robot_client_factory import RobotClientFactory
 from services import (
     DatasetDownloadService,
@@ -105,6 +107,19 @@ def get_remote_server_service(session: AsyncSessionDep) -> RemoteServerService:
 
 
 RemoteServerServiceDep = Annotated[RemoteServerService, Depends(get_remote_server_service)]
+
+
+def require_ssh_feature_active() -> SshFeatureAvailability:
+    """Dependency that fails a route closed when the SSH feature is off or network-exposed.
+
+    Raises:
+        SshFeatureDisabledError: The feature is disabled by configuration, or
+            fails closed because the backend is bound to a non-loopback address.
+    """
+    availability = get_ssh_feature_availability()
+    if not availability.active:
+        raise SshFeatureDisabledError(availability.reason)
+    return availability
 
 
 def get_robot_service(session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep) -> RobotService:
