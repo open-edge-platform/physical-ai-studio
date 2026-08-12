@@ -123,3 +123,7 @@
     background-size: cover;
     filter: grayscale(75%) brightness(105%) contrast(1.3);
 }
+
+.projectsListContainer {
+    overflow-y: auto;
+}
