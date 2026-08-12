@@ -38,3 +38,9 @@
     padding: var(--spectrum-global-dimension-size-150);
     color: var(--spectrum-global-color-gray-700);
 }
+
+.notice {
+    display: block;
+    margin-bottom: var(--spectrum-global-dimension-size-150);
+    color: var(--spectrum-global-color-gray-700);
+}

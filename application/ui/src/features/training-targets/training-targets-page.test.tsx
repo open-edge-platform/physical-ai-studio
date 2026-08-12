@@ -91,6 +91,35 @@ describe('TrainingTargetsPage', () => {
         expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
     });
 
+    it('degrades gracefully when SSH-provisioned targets are unavailable in this environment', async () => {
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
+            http.get(REMOTE_SERVERS_PATH, () =>
+                // The backend's fail-closed 503 isn't a documented response for this
+                // endpoint, so openapi-msw can't type its body; the runtime shape
+                // (`error_code`/`message`/`http_status`) is what the app actually
+                // returns and is all `isSshFeatureUnavailableError` cares about.
+                HttpResponse.json(
+                    {
+                        error_code: 'ssh_feature_unavailable',
+                        message: 'The SSH remote-trainer feature is not available.',
+                        http_status: 503,
+                    } as never,
+                    { status: 503 }
+                )
+            )
+        );
+
+        render(<TrainingTargetsPage />);
+
+        // The page renders instead of crashing to the nearest error boundary,
+        // still showing the direct-URL trainer that loaded successfully.
+        expect(await screen.findByText('managed-trainer')).toBeInTheDocument();
+        expect(
+            await screen.findByText(/SSH-provisioned training targets are not available in this environment/i)
+        ).toBeInTheDocument();
+    });
+
     it('creates a configured remote trainer URL', async () => {
         const user = userEvent.setup();
         let trainers: (typeof remoteTrainer)[] = [];

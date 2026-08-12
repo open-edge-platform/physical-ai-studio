@@ -4,6 +4,7 @@ import { Button, DialogContainer, Flex, Icon, Text, View } from '@geti-ui/ui';
 import { Add } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
+import { isSshFeatureUnavailableError } from '../../api/errors';
 import { TrainingTargetForm } from './training-target-form/training-target-form';
 import { DeleteRemoteServerDialog } from './training-targets-table/delete-remote-server-dialog';
 import { DeleteRemoteTrainerDialog } from './training-targets-table/delete-remote-trainer-dialog';
@@ -22,12 +23,20 @@ type TrainingTargetAction =
 
 export const TrainingTargetsPage = () => {
     const { data: remoteTrainers } = $api.useSuspenseQuery('get', '/api/remote-trainers');
-    const { data: remoteServers } = $api.useSuspenseQuery('get', '/api/remote-servers');
+    // SSH-provisioned servers are gated behind a backend feature switch that
+    // fails closed (503 `ssh_feature_unavailable`) whenever this Studio
+    // instance is not eligible to run the feature (e.g. it is bound to more
+    // than loopback). That is an expected, often-permanent environment state,
+    // not a page-breaking error, so this is a plain query the page degrades
+    // gracefully around rather than a suspense query that would crash to the
+    // nearest error boundary.
+    const { data: remoteServers, error: remoteServersError } = $api.useQuery('get', '/api/remote-servers');
+    const sshUnavailable = isSshFeatureUnavailableError(remoteServersError);
     const [action, setAction] = useState<TrainingTargetAction>();
 
     const rows: TrainingTargetRow[] = [
         ...remoteTrainers.map((trainer): TrainingTargetRow => ({ kind: 'direct-url', trainer })),
-        ...remoteServers.map((server): TrainingTargetRow => ({ kind: 'ssh', server })),
+        ...(remoteServers ?? []).map((server): TrainingTargetRow => ({ kind: 'ssh', server })),
     ];
 
     return (
@@ -46,6 +55,13 @@ export const TrainingTargetsPage = () => {
                     New training target
                 </Button>
             </Flex>
+
+            {sshUnavailable && (
+                <Text UNSAFE_className={classes.notice}>
+                    SSH-provisioned training targets are not available in this environment. Direct-URL trainers below
+                    are unaffected.
+                </Text>
+            )}
 
             <View UNSAFE_className={classes.container}>
                 {rows.length === 0 ? (
