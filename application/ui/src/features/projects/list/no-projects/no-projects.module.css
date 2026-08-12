@@ -7,7 +7,7 @@
 }
 
 .createProjectCard {
-    background-color: color-mix(in srgb, var(--spectrum-global-color-gray-100) 50%, transparent);
+    background-color: color-mix(in srgb, var(--spectrum-global-color-gray-100) 70%, transparent);
 }
 
 .createProjectTitle {
