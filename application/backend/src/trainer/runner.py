@@ -55,8 +55,7 @@ class TrainerRunner:
         finally:
             self._cleanup_uploaded_dataset(job_id)
 
-        report(100, "Archiving model", None)
-        return self._archive_model(job_id, model_dir)
+        return self._archive_model(job_id, model_dir, report=report)
 
     @staticmethod
     def _cleanup_uploaded_dataset(job_id: str) -> None:
@@ -112,12 +111,25 @@ class TrainerRunner:
             raise JobCanceledError(msg)
 
     @staticmethod
-    def _archive_model(job_id: str, model_dir: Path) -> Path:
+    def _archive_model(job_id: str, model_dir: Path, *, report: ProgressFn) -> Path:
+        """Zip the model directory, reporting progress as each file is added.
+
+        Uses ``ZIP_STORED`` (no compression) rather than ``ZIP_DEFLATED``:
+        checkpoints and exported weights (float32/bf16 tensors, ONNX/OpenVINO
+        artifacts) barely compress, so DEFLATE burns single-threaded CPU time
+        for negligible size savings — for a large multi-backend export (e.g. a
+        VLA policy exporting torch + ONNX + OpenVINO) that can turn a
+        multi-minute step into tens of minutes with no visible progress.
+        """
         archives_dir = get_settings().archives_dir
         archives_dir.mkdir(parents=True, exist_ok=True)
         archive_path = archives_dir / f"{job_id}.zip"
-        with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for path in model_dir.rglob("*"):
-                if path.is_file():
-                    archive.write(path, arcname=path.relative_to(model_dir))
+
+        files = [path for path in model_dir.rglob("*") if path.is_file()]
+        total = len(files) or 1
+        with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
+            for index, path in enumerate(files, start=1):
+                archive.write(path, arcname=path.relative_to(model_dir))
+                report(100, f"Archiving model ({index}/{total})", None)
+
         return archive_path

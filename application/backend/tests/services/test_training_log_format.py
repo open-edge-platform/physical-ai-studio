@@ -139,6 +139,52 @@ def test_apply_state_mirrors_validation_fields_to_job_log() -> None:
     bound_logger.info.assert_called_once_with("Validation progress: batch=1, val/loss_step=0.3")
 
 
+def test_apply_state_falls_back_to_plain_message_when_not_cadence() -> None:
+    """Export/archiving progress carries only a message; it must still be logged.
+
+    Otherwise these long-running steps leave a silent gap in the job log
+    between the last training/validation line and job completion.
+    """
+    context = MagicMock()
+    state = {
+        "status": "running",
+        "progress": 99,
+        "message": "Exporting to onnx format",
+        "extra_info": {},
+    }
+    backend = _backend()
+    with patch.object(backend, "_log") as bound_logger:
+        completed = backend._apply_state(context, state)
+    assert completed is False
+    bound_logger.info.assert_called_once_with("Exporting to onnx format")
+
+
+def test_apply_state_falls_back_to_plain_message_with_no_extra_info() -> None:
+    """Archiving progress reports a message with no extra_info at all."""
+    context = MagicMock()
+    state = {
+        "status": "running",
+        "progress": 100,
+        "message": "Archiving model (3/10)",
+        "extra_info": None,
+    }
+    backend = _backend()
+    with patch.object(backend, "_log") as bound_logger:
+        backend._apply_state(context, state)
+    bound_logger.info.assert_called_once_with("Archiving model (3/10)")
+
+
+def test_apply_state_dedupes_repeated_plain_messages() -> None:
+    """Re-emitted identical messages (e.g. slow trainer polling) log only once."""
+    context = MagicMock()
+    state = {"status": "running", "progress": 99, "message": "Training model", "extra_info": {}}
+    backend = _backend()
+    with patch.object(backend, "_log") as bound_logger:
+        backend._apply_state(context, dict(state))
+        backend._apply_state(context, dict(state))
+    bound_logger.info.assert_called_once_with("Training model")
+
+
 def test_apply_state_suppresses_duplicate_progress_lines() -> None:
     """Re-emitted identical progress (e.g. during export) is logged only once."""
     context = MagicMock()

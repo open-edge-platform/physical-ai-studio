@@ -500,11 +500,14 @@ class RemoteTrainingBackend:
             message=state.get("message"),
             extra_info=extra_info,
         )
-        if extra_info is not None:
-            line = render_progress_log(extra_info)
-            if line is not None and line != self._last_progress_log:
-                self._log.info(line)
-                self._last_progress_log = line
+        line = render_progress_log(extra_info) if extra_info else None
+        if line is None:
+            message = state.get("message")
+            if isinstance(message, str) and message:
+                line = message
+        if line is not None and line != self._last_progress_log:
+            self._log.info(line)
+            self._last_progress_log = line
 
         if status in _TERMINAL_STATES:
             if status == "completed":
