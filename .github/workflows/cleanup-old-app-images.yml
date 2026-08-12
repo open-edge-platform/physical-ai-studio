@@ -65,4 +65,5 @@ jobs:
             physicalai-trainer-xpu
             physicalai-trainer-cuda
           min-versions-to-keep: ${{ github.event_name == 'workflow_dispatch' && inputs.min_versions_to_keep || 10 }}
-          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+          # Scheduled runs delete for real; manual dispatch previews by default.
+          dry-run: ${{ github.event_name != 'schedule' && inputs.dry_run && 'true' || 'false' }}
