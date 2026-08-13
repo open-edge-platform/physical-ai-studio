@@ -15,7 +15,7 @@ import { paths } from '../../../router';
 import { useProject } from './../use-project';
 import { PanelLink } from './page-link/panel-link.component';
 
-import styles from './projects-list.module.css';
+import styles from './project-menu.module.css';
 
 interface SelectedProjectProps {
     name: string;
@@ -37,7 +37,7 @@ const SelectedProjectButton = ({ name }: SelectedProjectProps) => {
     );
 };
 
-export const ProjectsListPanel = () => {
+export const ProjectMenu = () => {
     const project = useProject();
 
     const selectedProjectName = project.name;
