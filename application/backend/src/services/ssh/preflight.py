@@ -865,14 +865,40 @@ async def _check_signature(recorder: _CheckRecorder, transport: SshTransport, im
     )
 
 
-def _device_run_args(device_type: DeviceType) -> list[str]:
+async def resolve_render_group_gid(transport: SshTransport) -> str | None:
+    """Return the host GID that owns the first Intel render node, or ``None``.
+
+    The trainer container always runs as a fixed non-root UID/GID (see
+    ``docker_ops.build_run_argv``'s ``--user 10001:10001``), which is never a
+    member of the host's render group by default. ``--device /dev/dri`` alone
+    passes the device node through but leaves it unreadable by that user - the
+    node's group ownership still gates access, and without ``--group-add
+    <gid>`` the container's ``torch.xpu.is_available()`` reports zero devices
+    even though the host driver and render node are both fine. The GID is
+    discovered per host, never hardcoded, because it is not portable across
+    distributions.
+    """
+    result = await transport.run_command(
+        ["sh", "-c", "stat -c %g $(ls /dev/dri/renderD* 2>/dev/null | head -n1) 2>/dev/null"]
+    )
+    gid = result.first_line().strip()
+    return gid or None
+
+
+def _device_run_args(device_type: DeviceType, render_gid: str | None = None) -> list[str]:
     """Return the ``docker run`` flags that expose the accelerator.
 
     Derived from the configured device type, never from user-supplied text.
+    ``render_gid``, when known, is added via ``--group-add`` so the
+    container's non-root user can actually read/write the render node -
+    without it the device node is present but access is denied.
     """
     if device_type is DeviceType.CUDA:
         return ["--gpus", "all"]
-    return ["--device", "/dev/dri"]
+    args = ["--device", "/dev/dri"]
+    if render_gid:
+        args.extend(["--group-add", render_gid])
+    return args
 
 
 def _device_probe_expression(device_type: DeviceType) -> str:
@@ -893,11 +919,12 @@ async def _check_device_probe(
     host still tells you nothing about whether the container runtime passes the
     device through.
     """
+    render_gid = None if device_type is DeviceType.CUDA else await resolve_render_group_gid(transport)
     argv = [
         "docker",
         "run",
         "--rm",
-        *_device_run_args(device_type),
+        *_device_run_args(device_type, render_gid),
         "--entrypoint",
         "python",
         image_ref,
