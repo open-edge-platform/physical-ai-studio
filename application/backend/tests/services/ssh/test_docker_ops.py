@@ -304,6 +304,38 @@ def test_build_run_argv_security_properties() -> None:
     assert not any(":latest" in part or part.endswith(":protocol-1") for part in argv)
 
 
+def test_build_run_argv_xpu_adds_group_add_for_render_gid() -> None:
+    # Without --group-add the container's fixed non-root user cannot open the
+    # render node even though --device /dev/dri passes it through, and
+    # torch.xpu.is_available() silently reports zero devices.
+    argv = docker_ops.build_run_argv(
+        image_digest_ref=f"{_REGISTRY}/physicalai-trainer-xpu@{_DIGEST}",
+        device_type=DeviceType.XPU,
+        name="physicalai-trainer-abc",
+        labels={"a": "b"},
+        remote_container_port=8080,
+        stop_timeout_s=30,
+        render_gid="44",
+    )
+
+    assert "/dev/dri" in argv
+    assert "--group-add" in argv
+    assert "44" in argv
+
+
+def test_build_run_argv_xpu_without_render_gid_omits_group_add() -> None:
+    argv = docker_ops.build_run_argv(
+        image_digest_ref=f"{_REGISTRY}/physicalai-trainer-xpu@{_DIGEST}",
+        device_type=DeviceType.XPU,
+        name="physicalai-trainer-abc",
+        labels={"a": "b"},
+        remote_container_port=8080,
+        stop_timeout_s=30,
+    )
+
+    assert "--group-add" not in argv
+
+
 async def test_pull_image_raises_on_failure() -> None:
     transport = FakeTransport({"docker pull": _fail("no space left on device")})
     with pytest.raises(TrainerImagePullError):

@@ -32,6 +32,7 @@ from exceptions import (
     TrainerProtocolVersionMismatchError,
     TrainerReadinessTimeoutError,
 )
+from schemas.hardware import DeviceType
 from schemas.job_provisioning import JobProvisioning, JobProvisioningUpdate
 from services.ssh import docker_ops
 from services.ssh.docker_ops import LibraryVersionCheck, ResolvedImage
@@ -178,6 +179,11 @@ class SshProvisioningService:
             )
 
             async with SshTransport(server.ssh_host_alias, settings) as transport:
+                render_gid = (
+                    None
+                    if server.device_type is DeviceType.CUDA
+                    else await docker_ops.resolve_render_group_gid(transport)
+                )
                 argv = docker_ops.build_run_argv(
                     image_digest_ref=image.digest_reference,
                     device_type=server.device_type,
@@ -187,6 +193,7 @@ class SshProvisioningService:
                     ),
                     remote_container_port=TRAINER_CONTAINER_PORT,
                     stop_timeout_s=settings.ssh_container_stop_timeout_s,
+                    render_gid=render_gid,
                 )
                 container_id = await docker_ops.launch_container(transport, argv, server.name)
                 launched = True
