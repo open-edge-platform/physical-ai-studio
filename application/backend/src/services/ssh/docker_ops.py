@@ -72,6 +72,15 @@ _GPU_BUSY_MEMORY_FRACTION: Final = 0.3
 _DF_AVAILABLE_COLUMN: Final = 3
 _DF_MIN_COLUMNS: Final = 5
 
+# Fixed non-root uid/gid the trainer image runs as (Dockerfile.trainer's
+# `TRAINER_UID`/`TRAINER_GID` build args, both default to 10001). Used for both
+# `--user` and the `--tmpfs` mount ownership below: without matching `uid=`/
+# `gid=` mount options, `--read-only` + `--tmpfs` mounts default to root
+# ownership, and the trainer crashes on startup unable to create its own
+# storage subdirectories.
+_TRAINER_UID: Final = 10001
+_TRAINER_GID: Final = 10001
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedImage:
@@ -209,22 +218,36 @@ async def resolve_protocol_image(
 async def verify_image_signature(transport: SshTransport, image: ResolvedImage, settings: Settings) -> None:
     """Verify the resolved image's signature, pinned to Studio's release identity.
 
-    Fails closed: both a failed `cosign verify` and `cosign` being unavailable
-    on the remote host raise. This is the opposite policy from Tier 1's
-    advisory preflight signature check, which is defense-in-depth on top of the
-    publish-time signature and never blocks a save.
+    Fails closed by default: both a failed `cosign verify` and `cosign` being
+    unavailable on the remote host raise. This is the opposite policy from
+    Tier 1's advisory preflight signature check, which is defense-in-depth on
+    top of the publish-time signature and never blocks a save.
+
+    `cosign` being unavailable can be downgraded to a non-blocking warning by
+    setting `settings.ssh_require_cosign_verification` to `False` (e.g. for a
+    host where installing `cosign` is not viable). A failed `cosign verify`
+    always raises regardless of that setting: it means the image's signature
+    does not match Studio's expected identity, not that a tool is missing.
 
     Args:
         transport: An open transport to the remote server.
         image: The digest-resolved image to verify.
-        settings: Application settings (pinned certificate identity/issuer).
+        settings: Application settings (pinned certificate identity/issuer,
+            and whether `cosign` availability is required).
 
     Raises:
-        TrainerImageVerificationError: `cosign` is unavailable, or verification
-            failed.
+        TrainerImageVerificationError: `cosign` is unavailable and required,
+            or verification failed.
     """
     available = await transport.run_command(["cosign", "version"])
     if not available.ok:
+        if not settings.ssh_require_cosign_verification:
+            logger.warning(
+                "cosign is not available on the remote host; proceeding without signature "
+                "verification for '{}' because SSH_REQUIRE_COSIGN_VERIFICATION is disabled.",
+                image.digest_reference,
+            )
+            return
         raise TrainerImageVerificationError(image.digest_reference, "cosign is not available on the remote host")
 
     verified = await transport.run_command(
@@ -434,10 +457,11 @@ def _device_run_args(device_type: DeviceType, render_gid: str | None = None) -> 
     """Return the `docker run` flags that expose the accelerator.
 
     `render_gid`, when known, is added via `--group-add` so the container's
-    fixed non-root user (`--user 10001:10001`) can actually read/write the
-    render node - `--device /dev/dri` alone passes the node through but its
-    group ownership still gates access, and without this the container's
-    `torch.xpu.is_available()` silently reports zero devices.
+    fixed non-root user (`--user`, set to `_TRAINER_UID:_TRAINER_GID` below)
+    can actually read/write the render node - `--device /dev/dri` alone passes
+    the node through but its group ownership still gates access, and without
+    this the container's `torch.xpu.is_available()` silently reports zero
+    devices.
     """
     if device_type is DeviceType.CUDA:
         return ["--gpus", "all"]
@@ -475,7 +499,13 @@ def build_run_argv(
     XPU container: without it `--device /dev/dri` passes the render node
     through but the fixed non-root user cannot open it, and
     `torch.xpu.is_available()` reports zero devices. Ignored for CUDA.
+
+    Each `--tmpfs` carries explicit `uid=`/`gid=` mount options matching
+    `--user`: an unqualified `--tmpfs` mounts root-owned, and the trainer's
+    fixed non-root user cannot create its own storage subdirectories under it,
+    crashing on startup before it ever binds its port.
     """
+    tmpfs_owner = f"uid={_TRAINER_UID},gid={_TRAINER_GID}"
     return [
         "docker",
         "run",
@@ -488,28 +518,38 @@ def build_run_argv(
         "--publish",
         f"127.0.0.1::{remote_container_port}",
         "--user",
-        "10001:10001",
+        f"{_TRAINER_UID}:{_TRAINER_GID}",
         "--cap-drop",
         "ALL",
         "--security-opt",
         "no-new-privileges",
         "--read-only",
         "--tmpfs",
-        "/tmp:size=2g",  # noqa: S108 - a `docker run` mount spec, not a local temp-file access
+        f"/tmp:size=2g,{tmpfs_owner}",  # noqa: S108  # nosec B108 - a `docker run` mount spec, not a local temp-file access
         "--tmpfs",
-        "/var/lib/physicalai-trainer:size=64g",
+        f"/var/lib/physicalai-trainer:size=64g,{tmpfs_owner}",
         *_device_run_args(device_type, render_gid),
         image_digest_ref,
     ]
 
 
-async def pull_image(transport: SshTransport, image: ResolvedImage) -> None:
+async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Settings) -> None:
     """Pull the resolved image by digest.
 
+    Uses `settings.ssh_image_pull_timeout_s` rather than the default
+    `ssh_command_timeout_s`: that budget is sized for cheap probes
+    (`docker version`, `nvidia-smi`), and is far too short for a multi-gigabyte
+    image transfer. A pull that is still legitimately in progress when the
+    short budget elapses would otherwise surface as a spurious pull failure,
+    with only the partial progress output as its (misleading) detail.
+
     Raises:
-        TrainerImagePullError: The pull failed.
+        TrainerImagePullError: The pull failed, or did not finish within
+            `settings.ssh_image_pull_timeout_s`.
     """
-    result = await transport.run_command(["docker", "pull", image.digest_reference])
+    result = await transport.run_command(
+        ["docker", "pull", image.digest_reference], timeout=settings.ssh_image_pull_timeout_s
+    )
     if not result.ok:
         raise TrainerImagePullError(image.digest_reference, detail=result.stderr or result.stdout or None)
 

@@ -573,8 +573,11 @@ class TrainerImagePullError(BaseException):
 class TrainerImageVerificationError(BaseException):
     """Raised when the trainer image's signature could not be verified.
 
-    Fails closed: this covers both a failed `cosign verify` and `cosign` being
-    unavailable on the remote host. Studio never launches an unverified image.
+    Fails closed by default: this covers both a failed `cosign verify` and
+    `cosign` being unavailable on the remote host. `cosign` being unavailable
+    can be downgraded to a non-blocking warning via
+    `Settings.ssh_require_cosign_verification`; a failed `cosign verify`
+    always raises.
     """
 
     def __init__(self, image_ref: str, reason: str) -> None:
