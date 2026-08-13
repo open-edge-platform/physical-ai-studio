@@ -28,6 +28,7 @@ from loguru import logger
 
 from core.backend_instance import get_backend_instance_id
 from exceptions import (
+    TrainerContainerLaunchError,
     TrainerLibraryVersionMismatchError,
     TrainerProtocolVersionMismatchError,
     TrainerReadinessTimeoutError,
@@ -49,9 +50,10 @@ if TYPE_CHECKING:
     from schemas.remote_server import RemoteServer
     from settings import Settings
 
-# Port the trainer image always listens on inside the container. Fixed by the
-# image build, never user-configurable.
-TRAINER_CONTAINER_PORT = 8080
+# Port the trainer image listens on inside the container. This launch path
+# never sets `TRAINER_PORT`, so this must match `TrainerSettings.port`'s
+# default and the Dockerfile's `EXPOSE`.
+TRAINER_CONTAINER_PORT = 8001
 
 
 @dataclass
@@ -164,7 +166,7 @@ class SshProvisioningService:
                     logger.warning(library_check.warning)
                 await docker_ops.verify_image_signature(transport, image, settings)
                 await docker_ops.check_disk_for_job(transport, snapshot_size_bytes, server.name)
-                await docker_ops.pull_image(transport, image)
+                await docker_ops.pull_image(transport, image, settings)
 
                 await self._repository.update_by_job_id(
                     job_id, JobProvisioningUpdate(image_ref=image.tag_reference, image_digest=image.digest)
@@ -198,10 +200,12 @@ class SshProvisioningService:
                 container_id = await docker_ops.launch_container(transport, argv, server.name)
                 launched = True
 
+                published_port = await self._resolve_published_port(transport, name, server.name)
+
             tunnel = SshTunnel(
                 lambda: open_transport(server.ssh_host_alias, settings),
                 "127.0.0.1",
-                TRAINER_CONTAINER_PORT,
+                published_port,
                 settings,
             )
             await tunnel.open()
@@ -212,7 +216,7 @@ class SshProvisioningService:
                 JobProvisioningUpdate(
                     container_id=container_id,
                     container_name=name,
-                    remote_port=TRAINER_CONTAINER_PORT,
+                    remote_port=published_port,
                     local_tunnel_port=tunnel.local_port,
                     backend_instance_id=backend_instance_id,
                 ),
@@ -270,6 +274,26 @@ class SshProvisioningService:
                         "Failed to clean up container '{}' after a failed provision: {}", name, cleanup_error
                     )
             raise
+
+    async def _resolve_published_port(self, transport: SshTransport, name: str, server_name: str) -> int:
+        """Resolve the real host port docker published for the trainer container.
+
+        `--publish 127.0.0.1::<port>` in `build_run_argv` binds an OS-assigned
+        ephemeral host port, not `TRAINER_CONTAINER_PORT` itself - that number
+        only names the *container's* internal port. The tunnel must forward to
+        the real published port, or it connects to whatever (usually nothing)
+        is listening on the container port number on the host itself.
+
+        Raises:
+            TrainerContainerLaunchError: The published port could not be
+                resolved.
+        """
+        published_port = await docker_ops.resolve_published_port(transport, name, TRAINER_CONTAINER_PORT)
+        if published_port is None:
+            raise TrainerContainerLaunchError(
+                server_name, "container started but its published port could not be resolved"
+            )
+        return published_port
 
     async def _await_ready(self, base_url: str, server_name: str) -> dict:
         """Poll `/health` until it answers or the readiness budget is spent.

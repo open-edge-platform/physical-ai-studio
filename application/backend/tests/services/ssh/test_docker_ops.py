@@ -140,6 +140,23 @@ async def test_verify_image_signature_fails_closed_on_failed_verification(settin
         await docker_ops.verify_image_signature(transport, _image(), settings)
 
 
+async def test_verify_image_signature_allows_missing_cosign_when_not_required(settings) -> None:
+    """`SSH_REQUIRE_COSIGN_VERIFICATION=false` downgrades a missing `cosign` to a warning."""
+    settings = Settings(TRAINER_IMAGE_REGISTRY=_REGISTRY, SSH_REQUIRE_COSIGN_VERIFICATION=False)
+    transport = FakeTransport({"cosign version": _fail()})
+
+    await docker_ops.verify_image_signature(transport, _image(), settings)
+
+
+async def test_verify_image_signature_still_fails_closed_on_bad_signature_when_not_required(settings) -> None:
+    """Opting out of requiring `cosign` never excuses a signature that fails verification."""
+    settings = Settings(TRAINER_IMAGE_REGISTRY=_REGISTRY, SSH_REQUIRE_COSIGN_VERIFICATION=False)
+    transport = FakeTransport({"cosign version": _ok("v2.4.1"), "cosign verify": _fail("no matching signatures")})
+
+    with pytest.raises(TrainerImageVerificationError):
+        await docker_ops.verify_image_signature(transport, _image(), settings)
+
+
 async def test_verify_image_signature_passes_and_pins_identity(settings) -> None:
     transport = FakeTransport({"cosign version": _ok("v2.4.1"), "cosign verify": _ok("Verified OK")})
 
@@ -336,10 +353,10 @@ def test_build_run_argv_xpu_without_render_gid_omits_group_add() -> None:
     assert "--group-add" not in argv
 
 
-async def test_pull_image_raises_on_failure() -> None:
+async def test_pull_image_raises_on_failure(settings) -> None:
     transport = FakeTransport({"docker pull": _fail("no space left on device")})
     with pytest.raises(TrainerImagePullError):
-        await docker_ops.pull_image(transport, _image())
+        await docker_ops.pull_image(transport, _image(), settings)
 
 
 async def test_launch_container_returns_container_id() -> None:
