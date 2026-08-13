@@ -340,6 +340,63 @@ def test_check_remote_server_calls_tier2(monkeypatch: pytest.MonkeyPatch):
     assert response.json()["tiers_run"] == [2]
 
 
+def test_check_remote_server_persists_healthy_status_on_pass(monkeypatch: pytest.MonkeyPatch):
+    """A passing Tier 2 check must persist `last_check_status="healthy"`.
+
+    Regression guard: before this, neither `/status` (Tier 1) nor `/check`
+    (Tier 2) ever wrote back to the DB, so `last_check_status` stayed
+    "unknown" forever and job submission could never succeed.
+    """
+    server = _make_server()
+    tier2_result = PreflightResult(
+        remote_server_id=server.id,
+        tiers_run=[2],  # type: ignore[list-item]
+        checks=[_passing_check(CheckKey.IMAGE_RESOLVED, tier=2, blocking=True)],
+        checked_at=CHECKED_AT,
+        latency_ms=5000,
+    )
+    monkeypatch.setattr("api.remote_servers.run_tier2_preflight", AsyncMock(return_value=tier2_result))
+
+    service = AsyncMock()
+    service.get_remote_server.return_value = server
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    response = TestClient(app).post(f"/api/remote-servers/{server.id}/check")
+
+    assert response.status_code == 200
+    service.record_check_result.assert_awaited_once_with(server.id, tier2_result)
+
+
+def test_check_remote_server_persists_degraded_status_on_blocking_failure(monkeypatch: pytest.MonkeyPatch):
+    server = _make_server()
+    failing_check = PreflightCheck(
+        key=CheckKey.IMAGE_RESOLVED,
+        tier=2,  # type: ignore[arg-type]
+        outcome=CheckOutcome.FAILED,
+        blocking=True,
+        checked_at=CHECKED_AT,
+        reason_code="image_pull_failed",
+    )
+    tier2_result = PreflightResult(
+        remote_server_id=server.id,
+        tiers_run=[2],  # type: ignore[list-item]
+        checks=[failing_check],
+        checked_at=CHECKED_AT,
+        latency_ms=1000,
+    )
+    monkeypatch.setattr("api.remote_servers.run_tier2_preflight", AsyncMock(return_value=tier2_result))
+
+    service = AsyncMock()
+    service.get_remote_server.return_value = server
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    response = TestClient(app).post(f"/api/remote-servers/{server.id}/check")
+
+    assert response.status_code == 200
+    service.record_check_result.assert_awaited_once_with(server.id, tier2_result)
+    assert tier2_result.passed is False
+
+
 def test_status_endpoint_assembles_from_mocked_tier1(monkeypatch: pytest.MonkeyPatch):
     server = _make_server()
     run_tier1 = AsyncMock(return_value=_passing_tier1_result())

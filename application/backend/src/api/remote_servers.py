@@ -144,10 +144,14 @@ async def check_remote_server(
     """Explicitly run Tier 2 preflight against a registered server.
 
     Never runs inline on save: this is the only path that can trigger a
-    registry pull and one-shot GPU container probe.
+    registry pull and one-shot GPU container probe. Its outcome is also the
+    only thing that ever moves the server's persisted ``last_check_status``
+    off ``"unknown"`` - a live Tier 1 read from ``/status`` never does.
     """
     server = await remote_server_service.get_remote_server(remote_server_id)
-    return await run_tier2_preflight(server)
+    result = await run_tier2_preflight(server)
+    await remote_server_service.record_check_result(remote_server_id, result)
+    return result
 
 
 @router.get("/{remote_server_id}/status")
