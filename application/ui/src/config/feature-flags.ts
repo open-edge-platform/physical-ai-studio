@@ -5,12 +5,12 @@
  * changed from the browser console. For local testing, a `localStorage`
  * override takes precedence over the build-time value — from devtools:
  *
- *   setFeatureFlag('remoteTrainers', true)   // then reload the page
- *   setFeatureFlag('remoteTrainers', false)  // force-disable
- *   setFeatureFlag('remoteTrainers')         // clear override, use build default
+ *   setFeatureFlag('someFlag', true)   // then reload the page
+ *   setFeatureFlag('someFlag', false)  // force-disable
+ *   setFeatureFlag('someFlag')         // clear override, use build default
  */
 
-type FeatureFlagName = 'remoteTrainers';
+type FeatureFlagName = never;
 
 const STORAGE_KEY_PREFIX = 'physicalai:featureFlags:';
 
@@ -39,20 +39,17 @@ const resolveFlag = (name: FeatureFlagName, envValue: string | undefined): boole
     return override ?? getEnvValue(envValue);
 };
 
-export const featureFlags = {
-    /**
-     * Remote Trainers page and its nav tab, for offloading training jobs to
-     * remote SSH-managed hosts. Disabled by default; set
-     * `PUBLIC_ENABLE_REMOTE_TRAINERS=true` to enable it, or use
-     * `setFeatureFlag('remoteTrainers', true)` in the browser console.
-     */
-    get remoteTrainers(): boolean {
-        return resolveFlag(
-            'remoteTrainers',
-            typeof process !== 'undefined' ? process.env.PUBLIC_ENABLE_REMOTE_TRAINERS : undefined
-        );
-    },
-};
+void resolveFlag;
+
+/**
+ * Add a getter here for each new flag, e.g.:
+ *
+ *   get someFlag(): boolean {
+ *       const envValue = typeof process !== 'undefined' ? process.env.PUBLIC_ENABLE_SOME_FLAG : undefined;
+ *       return resolveFlag('someFlag', envValue);
+ *   },
+ */
+export const featureFlags = {};
 
 /**
  * Overrides a feature flag at runtime via `localStorage`, without needing a
@@ -81,6 +78,6 @@ declare global {
 
 if (typeof window !== 'undefined') {
     // Exposed so it's callable directly from devtools without an import:
-    // window.setFeatureFlag('remoteTrainers', true)
+    // window.setFeatureFlag('someFlag', true)
     window.setFeatureFlag = setFeatureFlag;
 }
