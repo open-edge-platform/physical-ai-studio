@@ -15,7 +15,7 @@ import { paths } from '../../../router';
 import { useProject } from './../use-project';
 import { PanelLink } from './page-link/panel-link.component';
 
-import styles from './project-menu.module.css';
+import classes from './project-menu.module.css';
 
 interface SelectedProjectProps {
     name: string;
@@ -27,7 +27,7 @@ const SelectedProjectButton = ({ name }: SelectedProjectProps) => {
             aria-label={`Selected project ${name}`}
             isQuiet
             staticColor='white'
-            UNSAFE_className={styles.selectedProjectButton}
+            UNSAFE_className={classes.selectedProjectButton}
         >
             <View margin={'size-50'}>{name}</View>
             <View margin='size-50'>
@@ -46,7 +46,7 @@ export const ProjectMenu = () => {
         <DialogTrigger type='popover' hideArrow>
             <SelectedProjectButton name={selectedProjectName} />
 
-            <Dialog width={'size-4600'} UNSAFE_className={styles.dialog}>
+            <Dialog width={'size-4600'} UNSAFE_className={classes.dialog}>
                 <Header marginTop={'size-250'}>
                     <Flex direction={'column'} justifyContent={'center'} width={'100%'} alignItems={'center'}>
                         <PhotoPlaceholder
@@ -60,7 +60,7 @@ export const ProjectMenu = () => {
                         </Heading>
                     </Flex>
                 </Header>
-                <Content UNSAFE_className={styles.panelContent}>
+                <Content UNSAFE_className={classes.panelContent}>
                     <Divider size={'S'} marginTop={'size-200'} />
 
                     <PanelLink href={paths.projects.index({})}>Projects</PanelLink>
