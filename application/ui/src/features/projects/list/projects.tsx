@@ -8,7 +8,7 @@ import { SchemaProjectInput } from '../../../api/openapi-spec';
 import backgroundUrl from '../../../assets/background.webp';
 import { NoMatchingProjects } from './no-matching-projects';
 import { NoProjects } from './no-projects/no-projects';
-import { ProjectActions } from './project-actions/project-actions';
+import { ProjectActions, type SortDirection } from './project-actions/project-actions';
 import { ProjectCard } from './project-card';
 import { ProjectsHeading } from './projects-heading/projects-heading';
 
@@ -29,6 +29,7 @@ type ProjectsListProps = {
 const ProjectsList = ({ projects }: ProjectsListProps) => {
     const [searchQuery, setSearchQuery] = useState<string>('');
     const deferredSearchQuery = useDeferredValue(searchQuery);
+    const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
     const filteredProjects = useMemo(
         () =>
@@ -37,6 +38,17 @@ const ProjectsList = ({ projects }: ProjectsListProps) => {
             }),
         [deferredSearchQuery, projects]
     );
+
+    const sortedProjects = useMemo(() => {
+        return filteredProjects.toSorted((projectA, projectB) => {
+            const projectUpdatedAtA = projectA.updated_at ? new Date(projectA.updated_at) : new Date(0);
+            const projectUpdatedAtB = projectB.updated_at ? new Date(projectB.updated_at) : new Date(0);
+
+            return sortDirection === 'desc'
+                ? projectUpdatedAtB.getTime() - projectUpdatedAtA.getTime()
+                : projectUpdatedAtA.getTime() - projectUpdatedAtB.getTime();
+        });
+    }, [filteredProjects, sortDirection]);
 
     return (
         <View height={'100%'} padding={'size-800'} paddingBottom={0}>
@@ -58,11 +70,13 @@ const ProjectsList = ({ projects }: ProjectsListProps) => {
                 <ProjectActions
                     searchQuery={searchQuery}
                     onSearch={setSearchQuery}
-                    projectsCount={filteredProjects.length}
+                    projectsCount={sortedProjects.length}
                     totalProjectsCount={projects.length}
+                    sortDirection={sortDirection}
+                    onSortDirectionChange={setSortDirection}
                 />
 
-                {filteredProjects.length === 0 ? (
+                {sortedProjects.length === 0 ? (
                     <NoMatchingProjects />
                 ) : (
                     <Grid
@@ -76,11 +90,9 @@ const ProjectsList = ({ projects }: ProjectsListProps) => {
                         alignContent={'start'}
                         UNSAFE_className={classes.projectsListContainer}
                     >
-                        {[...filteredProjects, ...filteredProjects, ...filteredProjects, ...filteredProjects].map(
-                            (item) => (
-                                <ProjectCard key={item.id} item={item} isActive={false} />
-                            )
-                        )}
+                        {sortedProjects.map((item) => (
+                            <ProjectCard key={item.id} item={item} isActive={false} />
+                        ))}
                     </Grid>
                 )}
             </Flex>
