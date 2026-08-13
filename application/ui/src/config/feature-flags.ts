@@ -42,9 +42,9 @@ const resolveFlag = (name: FeatureFlagName, envValue: string | undefined): boole
 export const featureFlags = {
     /**
      * Remote Trainers page and its nav tab, for offloading training jobs to
-     * remote SSH-managed hosts. Disabled by default; set
-     * `PUBLIC_ENABLE_REMOTE_TRAINERS=true` to enable it, or use
-     * `setFeatureFlag('remoteTrainers', true)` in the browser console.
+     * remote SSH-managed hosts. Enabled by default; set
+     * `PUBLIC_ENABLE_REMOTE_TRAINERS=false` to disable it, or use
+     * `setFeatureFlag('remoteTrainers', false)` in the browser console.
      */
     get remoteTrainers(): boolean {
         return resolveFlag(
