@@ -151,11 +151,7 @@ export const router = createBrowserRouter([
             },
             {
                 path: paths.project.index.pattern,
-                element: (
-                    <Suspense fallback={<Loading mode='fullscreen' />}>
-                        <ProjectLayout />
-                    </Suspense>
-                ),
+                element: <ProjectLayout />,
                 children: [
                     {
                         index: true,
