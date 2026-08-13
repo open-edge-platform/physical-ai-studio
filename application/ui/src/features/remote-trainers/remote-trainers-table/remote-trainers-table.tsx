@@ -1,0 +1,201 @@
+import { useState } from 'react';
+
+import { ActionButton, Badge, Flex, Grid, Icon, Item, Key, Menu, MenuTrigger, StatusLight, Text } from '@geti-ui/ui';
+import { ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
+
+import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
+import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
+import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
+import { useRemoteTrainersHealth } from './use-remote-trainers-health';
+
+import classes from './remote-trainers-table.module.css';
+
+export const REMOTE_TRAINERS_GRID_COLUMNS = 'max-content 1fr 1fr 1fr 1fr auto';
+
+const DEVICE_BADGE_CLASSES: Record<string, string> = {
+    CUDA: classes.cudaBadge,
+    XPU: classes.xpuBadge,
+};
+
+export const RemoteTrainersTableHeader = () => (
+    <div className={classes.tableHeader}>
+        <div />
+        <Text>Name</Text>
+        <Text>Trainer URL</Text>
+        <Text>Status</Text>
+        <Text>Compute</Text>
+        <div />
+    </div>
+);
+
+const REMOTE_TRAINERS_MENU_ACTION_ITEMS = {
+    CHECK_STATUS: 'check_status',
+    EDIT: 'Edit',
+    DELETE: 'Delete',
+};
+
+type RemoteTrainersMenuActionsProps = {
+    remoteTrainerName: string;
+    onCheck: () => void;
+    onEdit: () => void;
+    onDelete: () => void;
+    isChecking: boolean;
+};
+
+const RemoteTrainersMenuActions = ({
+    remoteTrainerName,
+    onCheck,
+    onEdit,
+    onDelete,
+    isChecking,
+}: RemoteTrainersMenuActionsProps) => {
+    const handleAction = (action: Key) => {
+        if (action === REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATUS) {
+            onCheck();
+        } else if (action === REMOTE_TRAINERS_MENU_ACTION_ITEMS.EDIT) {
+            onEdit();
+        } else if (action === REMOTE_TRAINERS_MENU_ACTION_ITEMS.DELETE) {
+            onDelete();
+        }
+    };
+
+    return (
+        <MenuTrigger>
+            <ActionButton aria-label={`More actions ${remoteTrainerName}`} isQuiet>
+                <MoreMenu style={{ fill: '#fff' }} />
+            </ActionButton>
+            <Menu
+                onAction={handleAction}
+                disabledKeys={isChecking ? [REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATUS] : undefined}
+            >
+                <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.EDIT}>Edit</Item>
+                <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.DELETE}>Delete</Item>
+                <Item key={REMOTE_TRAINERS_MENU_ACTION_ITEMS.CHECK_STATUS}>Check status</Item>
+            </Menu>
+        </MenuTrigger>
+    );
+};
+
+type RemoteTrainerRowProps = {
+    remoteTrainer: SchemaRemoteTrainer;
+    health?: SchemaRemoteTrainerHealth;
+    isChecking: boolean;
+    isExpanded: boolean;
+    onToggleExpanded: () => void;
+    onCheck: () => void;
+    onEdit: () => void;
+    onDelete: () => void;
+};
+
+const RemoteTrainerRow = ({
+    remoteTrainer,
+    health,
+    isChecking,
+    isExpanded,
+    onToggleExpanded,
+    onCheck,
+    onEdit,
+    onDelete,
+}: RemoteTrainerRowProps) => {
+    const types = deviceTypes(health);
+    const contentId = `remote-trainer-detail-${remoteTrainer.id}`;
+
+    return (
+        <div
+            data-testid={`remote-trainer-row-${remoteTrainer.id}`}
+            onClick={onToggleExpanded}
+            className={`${classes.trainerRow} ${isExpanded ? classes.rowExpanded : ''}`}
+        >
+            <ActionButton
+                isQuiet
+                aria-expanded={isExpanded}
+                aria-controls={contentId}
+                aria-label={`Show details for ${remoteTrainer.name}`}
+                onPress={onToggleExpanded}
+                UNSAFE_className={classes.disclosureButton}
+            >
+                <Icon>
+                    <ChevronRightSmallLight />
+                </Icon>
+            </ActionButton>
+
+            <Text>{remoteTrainer.name}</Text>
+
+            <Text UNSAFE_className={classes.trainerUrl}>{remoteTrainer.url}</Text>
+
+            <StatusLight variant={healthVariant(health, isChecking)} UNSAFE_className={classes.healthStatus}>
+                {healthLabel(health, isChecking)}
+            </StatusLight>
+
+            <Flex gap='size-100' alignItems='center' wrap>
+                {types.map((type) => (
+                    <Badge key={type} variant='neutral' UNSAFE_className={DEVICE_BADGE_CLASSES[type]}>
+                        {type}
+                    </Badge>
+                ))}
+                <Text UNSAFE_className={classes.cardMetaText}>
+                    {health?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported')}
+                </Text>
+            </Flex>
+
+            <Flex gap='size-100' wrap UNSAFE_className={classes.actionsCell}>
+                <RemoteTrainersMenuActions
+                    remoteTrainerName={remoteTrainer.name}
+                    onCheck={onCheck}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    isChecking={isChecking}
+                />
+            </Flex>
+
+            {isExpanded && (
+                <Grid id={contentId} gridColumn={'1/-1'} marginTop={'size-150'}>
+                    <RemoteTrainerDetail remoteTrainer={remoteTrainer} health={health} isChecking={isChecking} />
+                </Grid>
+            )}
+        </div>
+    );
+};
+
+type RemoteTrainersTableProps = {
+    remoteTrainers: SchemaRemoteTrainer[];
+    onEdit: (remoteTrainer: SchemaRemoteTrainer) => void;
+    onDelete: (remoteTrainer: SchemaRemoteTrainer) => void;
+};
+
+export const RemoteTrainersTable = ({ remoteTrainers, onEdit, onDelete }: RemoteTrainersTableProps) => {
+    const [expandedRemoteTrainerId, setExpandedRemoteTrainerId] = useState<string | undefined>(remoteTrainers[0]?.id);
+
+    const health = useRemoteTrainersHealth(remoteTrainers.map((remoteTrainer) => remoteTrainer.id));
+
+    return (
+        <Grid columns={REMOTE_TRAINERS_GRID_COLUMNS} columnGap='size-100' width='100%'>
+            <RemoteTrainersTableHeader />
+            {remoteTrainers.map((remoteTrainer) => {
+                const entry = health.get(remoteTrainer.id);
+                const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
+
+                return (
+                    <RemoteTrainerRow
+                        key={remoteTrainer.id}
+                        remoteTrainer={remoteTrainer}
+                        health={displayHealth}
+                        isChecking={entry?.isChecking ?? false}
+                        isExpanded={expandedRemoteTrainerId === remoteTrainer.id}
+                        onToggleExpanded={() =>
+                            setExpandedRemoteTrainerId((current) =>
+                                current === remoteTrainer.id ? undefined : remoteTrainer.id
+                            )
+                        }
+                        onCheck={() => {
+                            void entry?.checkHealth();
+                            setExpandedRemoteTrainerId(remoteTrainer.id);
+                        }}
+                        onEdit={() => onEdit(remoteTrainer)}
+                        onDelete={() => onDelete(remoteTrainer)}
+                    />
+                );
+            })}
+        </Grid>
+    );
+};

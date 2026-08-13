@@ -70,7 +70,7 @@ All configuration is done through the `.env` file. Copy `.env.example` to get st
 | `COMPOSE_PROFILES` | `cpu`                         | Hardware profile: `cpu`, `xpu`, or `cuda`                |
 | `PORT`             | `7860`                        | Host port to expose the web UI and API                   |
 | `REGISTRY`         | `ghcr.io/open-edge-platform/` | Container image registry                                 |
-| `IMAGE_TAG`        | `latest`                      | Image version tag                                        |
+| `IMAGE_TAG`        | `main`                        | Image version tag (`latest` is release-only; use `main` for the newest dev build) |
 | `APP_UID`          | `1000`                        | UID for the in-container user (match your host user)     |
 | `APP_GID`          | `1000`                        | GID for the in-container user (match your host user)     |
 | `VIDEO_GID`        | `video` (group name)          | Host GID for the `video` group (cameras)                 |
@@ -243,10 +243,11 @@ are passed as build arguments automatically.
 ## Remote training service (trainer)
 
 `docker-compose.trainer.yaml` in this directory is a separate, standalone
-Compose file for the remote training service under `application/trainer/`.
+Compose file for the remote training service under
+`application/backend/src/trainer/`.
 It does not start the Studio backend/UI images above, and this
 `docker-compose.yaml` does not reference the trainer images. See
-[`application/trainer/README.md`](../trainer/README.md) for setup, security
+[`application/backend/docs/remote-trainer.md`](../backend/docs/remote-trainer.md) for setup, security
 notes, and the manual container-startup guide.
 
 ## Troubleshooting

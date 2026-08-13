@@ -3,9 +3,11 @@ from typing import Literal
 
 import numpy as np
 from loguru import logger
+from physicalai.robot import RobotError
 from physicalai.robot.interface import Robot, RobotObservation
 
 from robots.robot_client import RobotClient
+from robots.shared_robot_errors import translate_robot_error
 
 
 @dataclass(frozen=True)
@@ -29,12 +31,17 @@ class PhysicalAIRobotAdapter(RobotClient):
         robot_type: str,
         robot_role: Literal["follower", "leader"],
         config: PhysicalAIRobotAdapterConfig | None = None,
+        display_name: str | None = None,
     ) -> None:
         resolved_config = config or PhysicalAIRobotAdapterConfig()
         self._robot = robot
         self._robot_type = robot_type
         self._robot_role = robot_role
         self._config = resolved_config
+        # Studio's human-readable name, for user-facing errors. The driver's own
+        # ``name`` is a transport identifier (see ``shared_robot_name``) and is
+        # meaningless to the user.
+        self._display_name = display_name
         self.is_controlled = False
 
     def _is_follower(self) -> bool:
@@ -79,6 +86,9 @@ class PhysicalAIRobotAdapter(RobotClient):
         except TimeoutError:
             logger.error("Timeout connecting to robot")
             raise
+        except RobotError as e:
+            logger.error(f"Failed to connect to robot: {e}")
+            raise translate_robot_error(e, robot_name=self._display_name) from e
         except Exception as e:
             logger.error(f"Failed to connect to robot: {e}")
             raise

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Self
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -132,3 +133,47 @@ async def test_check_remote_trainer_reports_malformed_devices_as_degraded() -> N
 
     assert result.status == "degraded"
     assert result.reason_code == "invalid_devices_response"
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_coalesces_concurrent_calls() -> None:
+    """Two callers checking the same trainer at once must trigger only one probe."""
+    trainer = _trainer()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    call_count = 0
+
+    class _SlowClient(_Client):
+        async def get(self, _url: str) -> _Response:
+            nonlocal call_count
+            if _url.endswith("/health"):
+                call_count += 1
+                started.set()
+                await release.wait()
+            return await super().get(_url)
+
+    client = _SlowClient(
+        [
+            _Response({"status": "healthy"}),
+            _Response([{"type": "cuda", "name": "NVIDIA A100", "memory": None, "index": 0}]),
+            _Response({"total_bytes": 1, "free_bytes": 1}),
+        ]
+    )
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient", return_value=client) as async_client,
+    ):
+        service_a = RemoteTrainerService(MagicMock())
+        service_b = RemoteTrainerService(MagicMock())
+
+        task_a = asyncio.create_task(service_a.check_remote_trainer(trainer.id))
+        await started.wait()
+        task_b = asyncio.create_task(service_b.check_remote_trainer(trainer.id))
+        release.set()
+
+        result_a, result_b = await asyncio.gather(task_a, task_b)
+
+    assert call_count == 1
+    assert async_client.call_count == 1
+    assert result_a == result_b

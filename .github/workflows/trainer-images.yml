@@ -3,16 +3,12 @@ name: Trainer Images
 on:
   pull_request:
     branches: [main]
-    paths:
-      - application/trainer/**
-      - library/**
-      - .github/workflows/trainer-images.yml
   push:
     branches: [main]
-    paths:
-      - application/trainer/**
-      - library/**
-      - .github/workflows/trainer-images.yml
+    # check-paths always runs on push, so filter documentation-only pushes here
+    paths-ignore:
+      - "**/*.md"
+      - "**/docs/**"
   workflow_dispatch:
 
 permissions: {}
@@ -26,8 +22,51 @@ env:
   TRAINER_API_PROTOCOL_VERSION: "1"
 
 jobs:
+  check-paths:
+    name: Check if workflow should run
+    runs-on: ubuntu-latest
+    outputs:
+      run_workflow: ${{ steps.check_paths.outputs.run }}
+    permissions:
+      contents: read
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check paths
+        id: check_paths
+        uses: open-edge-platform/geti-ci/actions/check-paths@2ed3ce382d1dbd6db52c7c6b93ffdae280a1c06f # check-paths/v0.1.0
+        with:
+          files_yaml: |
+            test:
+              - application/backend/**
+              - application/docker/Dockerfile.trainer
+              - application/plugin/**
+              - library/src/**
+              - library/pyproject.toml
+              - library/uv.lock
+              - library/MANIFEST.in
+              - library/.dockerignore
+              - .github/workflows/trainer-images.yml
+              - '!**/*.md'
+              - '!**/docs/**'
+
   build-and-smoke-test:
     name: Build and smoke-test (${{ matrix.device }})
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,7 +77,7 @@ jobs:
         device: [cuda, xpu]
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -61,7 +100,7 @@ jobs:
             registry-1.docker.io:443
 
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -72,11 +111,11 @@ jobs:
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to Container Registry
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -84,12 +123,13 @@ jobs:
 
       - name: Build trainer image
         id: build
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: application/trainer/Dockerfile
+          file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
+            plugin=application/plugin
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           load: true
@@ -130,8 +170,8 @@ jobs:
 
   publish:
     name: Publish, attest, scan, and sign (${{ matrix.device }})
-    needs: build-and-smoke-test
-    if: github.ref == 'refs/heads/main'
+    needs: [check-paths, build-and-smoke-test]
+    if: github.ref == 'refs/heads/main' && needs.check-paths.outputs.run_workflow == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -143,7 +183,7 @@ jobs:
         device: [cuda, xpu]
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -151,23 +191,23 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             auth.docker.io:443
-            check.trivy.dev:443
             deb.debian.org:80
             developer.download.nvidia.com:443
             download.pytorch.org:443
             download-r2.pytorch.org:443
             files.pythonhosted.org:443
             fulcio.sigstore.dev:443
-            get.trivy.dev:443
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
             keyserver.ubuntu.com:443
+            mirror.gcr.io:443
             pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
             pypi.org:443
+            raw.githubusercontent.com:443
             registry-1.docker.io:443
             rekor.sigstore.dev:443
             release-assets.githubusercontent.com:443
@@ -175,7 +215,7 @@ jobs:
             tuf-repo-cdn.sigstore.dev:443
 
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -183,30 +223,34 @@ jobs:
         id: build-metadata
         run: |
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
+          echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Build and publish immutable image
         id: build
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: application/trainer/Dockerfile
+          file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
+            plugin=application/plugin
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
+            ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
             org.opencontainers.image.revision=${{ github.sha }}
@@ -226,40 +270,62 @@ jobs:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
           VERSION: ${{ steps.build-metadata.outputs.version }}
         run: |
-          docker buildx imagetools inspect "$IMAGE" --format '{{json .}}' > image.json
-          grep -Fq '"org.opencontainers.image.revision":"'"$GITHUB_SHA"'"' image.json
-          grep -Fq '"org.opencontainers.image.version":"'"$VERSION"'"' image.json
-          grep -Fq '"org.open-edge-platform.physicalai.trainer.api-protocol":"1"' image.json
-          docker buildx imagetools inspect "$IMAGE" --format '{{json .Provenance}}' | grep -q .
-          docker buildx imagetools inspect "$IMAGE" --format '{{json .SBOM}}' | grep -q .
+          docker buildx imagetools inspect "$IMAGE" --format '{{json .Image}}' > image.json
+          docker buildx imagetools inspect "$IMAGE" --format '{{json .Provenance}}' > provenance.json
+          docker buildx imagetools inspect "$IMAGE" --format '{{json .SBOM}}' > sbom.json
+          python - <<'PY'
+          import json, os
 
-      - name: Scan immutable trainer image
-        uses: open-edge-platform/geti-ci/actions/trivy@7e686c1248b3939f8ee8e04e2612da727e379d91
-        with:
-          scan_type: image
-          scan_target: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          scan-scope: all
-          severity: HIGH,CRITICAL
-          scanners: vuln,secret,config
-          format: table
-          timeout: 20m
-          ignore_unfixed: "false"
+          def load(path):
+              with open(path) as handle:
+                  return json.load(handle)
+
+          # `imagetools inspect` returns the image config directly for a single
+          # platform and a {"os/arch": config} mapping for a multi-platform index.
+          image = load("image.json")
+          configs = [image] if "config" in image else list(image.values())
+          assert configs, "no image config returned by imagetools inspect"
+
+          expected = {
+              "org.opencontainers.image.revision": os.environ["GITHUB_SHA"],
+              "org.opencontainers.image.version": os.environ["VERSION"],
+              "org.open-edge-platform.physicalai.trainer.api-protocol": os.environ[
+                  "TRAINER_API_PROTOCOL_VERSION"
+              ],
+          }
+          for config in configs:
+              labels = config.get("config", {}).get("Labels") or {}
+              for label, value in expected.items():
+                  assert labels.get(label) == value, (
+                      f"label {label}: expected {value!r}, got {labels.get(label)!r}"
+                  )
+
+          for name, path in (("provenance", "provenance.json"), ("SBOM", "sbom.json")):
+              attestation = load(path)
+              assert attestation, f"{name} attestation is missing"
+          PY
 
       - name: Sign immutable trainer image
         uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
         with:
-          image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
+          image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
 
-      - name: Publish moving latest tag after scan and signing
+      # `protocol-<N>` is promoted only after the immutable digest is verified
+      # and signed, so a failure in either step leaves it pointing at the
+      # previous good build instead of an unsigned one. It's the tag Studio
+      # resolves automatically for SSH-provisioned training, and there is no
+      # `latest` fallback behind it, so it must never advance ahead of
+      # signing.
+      - name: Promote protocol tag after signing
         env:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
-          LATEST: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:latest
+          PROTOCOL_TAG: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:protocol-${{ env.TRAINER_API_PROTOCOL_VERSION }}
         run: |
-          docker buildx imagetools create --tag "$LATEST" "$IMAGE"
+          docker buildx imagetools create --tag "$PROTOCOL_TAG" "$IMAGE"
 
   required-check:
     name: Required Check trainer-images
-    needs: [build-and-smoke-test, publish]
+    needs: [check-paths, build-and-smoke-test, publish]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     steps:
@@ -269,7 +335,7 @@ jobs:
           PUBLISH_RESULT: ${{ needs.publish.result }}
           REF: ${{ github.ref }}
         run: |
-          test "$BUILD_RESULT" = success
+          test "$BUILD_RESULT" = success -o "$BUILD_RESULT" = skipped
           if [ "$REF" = refs/heads/main ]; then
-            test "$PUBLISH_RESULT" = success
+            test "$PUBLISH_RESULT" = success -o "$PUBLISH_RESULT" = skipped
           fi

@@ -163,3 +163,120 @@ class TestCollectFrame:
         obs = Observation(state=torch.randn(1, 4), images="not_an_image")
         frame = _collect_frame(obs, "camera")
         assert frame is None
+
+
+# ============================================================================ #
+# episode_index / rollout_idx forwarding Tests                                 #
+# ============================================================================ #
+
+
+class _SpyGym:
+    """Minimal Gym that records the kwargs passed to ``reset``.
+
+    Terminates every episode after a single step so rollouts stay tiny.
+    """
+
+    def __init__(self, batch_size: int = 1, action_dim: int = 2) -> None:
+        self.reset_calls: list[dict] = []
+        self.max_steps = 100
+        self._batch_size = batch_size
+        self._action_dim = action_dim
+
+    def _obs(self):
+        from physicalai.data import Observation
+
+        return Observation(state=torch.zeros(self._batch_size, 4))
+
+    def reset(self, *, seed=None, episode_index=0, **_kwargs):
+        self.reset_calls.append({"seed": seed, "episode_index": episode_index})
+        return self._obs(), {}
+
+    def step(self, _action):
+        reward = torch.zeros(self._batch_size)
+        terminated = torch.ones(self._batch_size, dtype=torch.bool)  # end after 1 step
+        truncated = torch.zeros(self._batch_size, dtype=torch.bool)
+        info = {"is_success": True}
+        return self._obs(), reward, terminated, truncated, info
+
+    def close(self) -> None:
+        pass
+
+    def sample_action(self) -> torch.Tensor:
+        return torch.zeros(self._batch_size, self._action_dim)
+
+    def to_observation(self, raw_obs):
+        return raw_obs
+
+
+class TestEpisodeIndexForwarding:
+    """Tests that rollout_idx flows through as env.reset(episode_index=...)."""
+
+    def test_setup_rollout_forwards_rollout_idx(self, dummy_policy) -> None:
+        """setup_rollout passes rollout_idx as episode_index to env.reset."""
+        from physicalai.eval.rollout.functional import setup_rollout
+
+        env = _SpyGym()
+        setup_rollout(env, dummy_policy, seed=1, max_steps=5, rollout_idx=7)
+
+        assert env.reset_calls == [{"seed": 1, "episode_index": 7}]
+
+    def test_rollout_forwards_rollout_idx(self, dummy_policy) -> None:
+        """rollout forwards rollout_idx down to env.reset."""
+        from physicalai.eval import rollout
+
+        env = _SpyGym()
+        rollout(env=env, policy=dummy_policy, seed=0, max_steps=1, rollout_idx=3)
+
+        assert env.reset_calls[0]["episode_index"] == 3
+
+    def test_rollout_default_rollout_idx_is_zero(self, dummy_policy) -> None:
+        """rollout defaults episode_index to 0 when rollout_idx is omitted."""
+        from physicalai.eval import rollout
+
+        env = _SpyGym()
+        rollout(env=env, policy=dummy_policy, seed=0, max_steps=1)
+
+        assert env.reset_calls[0]["episode_index"] == 0
+
+    def test_evaluate_policy_increments_episode_index(self, dummy_policy) -> None:
+        """evaluate_policy resets with episode_index 0, 1, 2 across episodes."""
+        from physicalai.eval.rollout.functional import evaluate_policy
+
+        env = _SpyGym()
+        evaluate_policy(env, dummy_policy, n_episodes=3, start_seed=100, max_steps=1)
+
+        episode_indices = [call["episode_index"] for call in env.reset_calls]
+        assert episode_indices == [0, 1, 2]
+
+    def test_evaluate_policy_episode_index_aligned_with_seed(self, dummy_policy) -> None:
+        """episode_index stays aligned with seed offset (guards off-by-one)."""
+        from physicalai.eval.rollout.functional import evaluate_policy
+
+        env = _SpyGym()
+        start_seed = 100
+        evaluate_policy(env, dummy_policy, n_episodes=3, start_seed=start_seed, max_steps=1)
+
+        for call in env.reset_calls:
+            assert call["episode_index"] == call["seed"] - start_seed
+
+    def test_evaluate_policy_episode_index_without_seed(self, dummy_policy) -> None:
+        """episode_index still increments when start_seed is None."""
+        from physicalai.eval.rollout.functional import evaluate_policy
+
+        env = _SpyGym()
+        evaluate_policy(env, dummy_policy, n_episodes=3, start_seed=None, max_steps=1)
+
+        episode_indices = [call["episode_index"] for call in env.reset_calls]
+        seeds = [call["seed"] for call in env.reset_calls]
+        assert episode_indices == [0, 1, 2]
+        assert seeds == [None, None, None]
+
+    def test_evaluate_policy_vectorized_indexes_rollouts_not_episodes(self, dummy_policy) -> None:
+        """With a batched env one rollout covers all episodes -> single reset at index 0."""
+        from physicalai.eval.rollout.functional import evaluate_policy
+
+        env = _SpyGym(batch_size=3)
+        evaluate_policy(env, dummy_policy, n_episodes=3, start_seed=0, max_steps=1)
+
+        episode_indices = [call["episode_index"] for call in env.reset_calls]
+        assert episode_indices == [0]

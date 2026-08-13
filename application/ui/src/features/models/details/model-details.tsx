@@ -156,7 +156,11 @@ const TrainingParameters = ({ summary }: { summary: SchemaModelDetailResponse['t
         <View>
             <Heading>Training parameters</Heading>
             <Flex direction='column' gap='size-75'>
-                <DetailRow name='Max steps' value={summary.max_steps} />
+                {summary.max_epochs !== null && summary.max_epochs !== undefined ? (
+                    <DetailRow name='Max epochs' value={summary.max_epochs} />
+                ) : (
+                    <DetailRow name='Max steps' value={summary.max_steps} />
+                )}
                 <DetailRow name='Batch size' value={summary.auto_scale_batch_size ? 'Auto' : summary.batch_size} />
                 <DetailRow name='Workers' value={summary.num_workers ?? '—'} />
                 {summary.precision && <DetailRow name='Precision' value={summary.precision} />}

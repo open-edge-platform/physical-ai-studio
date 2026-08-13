@@ -53,27 +53,32 @@ jobs:
 
       - &checkout
         name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Check paths
         id: check_paths
-        uses: open-edge-platform/geti-ci/actions/check-paths@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/check-paths@2ed3ce382d1dbd6db52c7c6b93ffdae280a1c06f # check-paths/v0.1.0
         with:
           files_yaml: |
             test:
-              - library/**
-              - physicalai/**
+              - library/src/**
+              - library/pyproject.toml
+              - library/uv.lock
+              - library/MANIFEST.in
+              - library/.dockerignore
               - application/**
               - .github/actions/docker-build/**
               - .github/workflows/docker-build.yml
+              - '!**/*.md'
+              - '!**/docs/**'
 
   build:
     name: Build (${{ matrix.device }})
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read # Checkout code
       packages: write # Push/pull registry build cache on GHCR
@@ -82,7 +87,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [cpu, xpu, cuda]
+        include:
+          # CPU and XPU build on GitHub-hosted runners
+          - device: cpu
+            runner: [ubuntu-latest]
+          - device: xpu
+            runner: [ubuntu-latest]
+          # CUDA needs GPU hardware for the smoke test
+          - device: cuda
+            runner: [self-hosted, linux, x64]
 
     steps:
       - *harden-runner
@@ -90,7 +103,7 @@ jobs:
       - *checkout
 
       - name: Log in to Container Registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

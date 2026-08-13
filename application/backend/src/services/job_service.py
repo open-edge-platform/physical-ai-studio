@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.schema import JobDB
 from exceptions import (
     DuplicateJobException,
+    RemoteResumeUnsupportedError,
     ResourceInUseError,
     ResourceNotFoundError,
     ResourceType,
@@ -50,10 +51,13 @@ class JobService:
         if payload.training_target is TrainingTarget.REMOTE:
             if payload.remote_trainer_id is None:
                 raise ValueError("Remote training requires a selected remote trainer")
+            if payload.base_model_id is not None:
+                raise RemoteResumeUnsupportedError
             remote_trainer_service = self.remote_trainer_service or RemoteTrainerService(self.session)
             remote_trainer = await remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
             payload = TrainJobPayload.model_validate(
-                payload.model_dump() | {"remote_trainer_url": str(remote_trainer.url)}
+                payload.model_dump()
+                | {"remote_trainer_url": str(remote_trainer.url), "remote_trainer_name": remote_trainer.name}
             )
 
         # A remote trainer validates its own devices. Validate only local device choices here.

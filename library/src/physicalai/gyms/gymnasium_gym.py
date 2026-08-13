@@ -199,12 +199,14 @@ class GymnasiumGym(Gym):
         self,
         *,
         seed: int | None = None,
+        episode_index: int = 0,  # noqa: ARG002
         **reset_kwargs: Any,  # noqa: ANN401
     ) -> tuple[Observation, dict[str, Any] | list[dict[str, Any]]]:
         """Reset the environment.
 
         Args:
             seed: Optional seed.
+            episode_index: Index of the episode being reset (unused). Defaults to 0.
             **reset_kwargs: Additional reset arguments.
 
         Returns:
