@@ -8,7 +8,7 @@ from schemas.base import BaseIDNameModel
 
 class Project(BaseIDNameModel):
     updated_at: datetime | None = Field(None)
-    created_at: datetime = Field()
+    created_at: datetime | None = Field(None)
     datasets: list[Dataset] = Field([], description="Datasets")
     model_config = {
         "json_schema_extra": {
