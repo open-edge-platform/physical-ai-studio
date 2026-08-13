@@ -10,7 +10,7 @@
 
     & a[class*='spectrum-Tabs-item'] {
         margin-left: 0;
-        padding-left: var(--spectrum-global-dimension-size-200);
+        padding-left: var(--spectrum-global-dimension-size-300);
 
         &:hover {
             background-color: var(--spectrum-global-color-gray-200);
@@ -18,6 +18,14 @@
 
         &[class*='is-selected'] {
             background-color: var(--spectrum-global-color-gray-300);
+
+            .sidebarListItemIcon {
+                fill: var(--energy-blue);
+            }
         }
     }
+}
+
+.sidebarListItemIcon {
+    fill: var(--spectrum-global-color-gray-700);
 }

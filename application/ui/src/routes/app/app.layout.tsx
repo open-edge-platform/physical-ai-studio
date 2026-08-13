@@ -1,9 +1,8 @@
 import { Suspense } from 'react';
 
-import { Flex, Grid, Loading, Tabs, View } from '@geti-ui/ui';
+import { Grid, Loading, Tabs, View } from '@geti-ui/ui';
 import { Outlet, useLocation } from 'react-router';
 
-import { AppLogo } from '../../components/app-logo/app-logo';
 import { AppSidebar } from './app-sidebar';
 import { disabledNavItemKeys } from './nav-items';
 
@@ -31,23 +30,13 @@ export const AppLayout = () => {
             width={'100%'}
         >
             <Grid
-                areas={['header header', 'sidebar content']}
-                rows={['size-800', 'minmax(0, 1fr)']}
+                areas={['sidebar content']}
+                rows={['minmax(0, 1fr)']}
                 columns={['size-3000', 'minmax(0, 1fr)']}
                 minHeight={0}
                 height='100%'
                 width={'100%'}
             >
-                <View
-                    gridArea='header'
-                    backgroundColor='gray-200'
-                    borderBottomColor={'gray-50'}
-                    borderBottomWidth={'thin'}
-                >
-                    <Flex height='100%' alignItems={'center'} marginX='1rem'>
-                        <AppLogo />
-                    </Flex>
-                </View>
                 <AppSidebar />
                 <View
                     gridArea='content'

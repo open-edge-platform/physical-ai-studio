@@ -1,6 +1,6 @@
 .dialog {
     background-color: var(--spectrum-gray-100);
-    background-image: url('./../../../assets/background.png');
+    background-image: url('./../../../assets/background.webp');
     background-blend-mode: luminosity;
     background-position: center;
     background-repeat: no-repeat;
@@ -11,19 +11,9 @@
     fill: currentColor;
 }
 
-.description {
-    display: block;
-    text-align: center;
-    margin: auto;
-    max-width: 50rem;
-    font-size: var(--spectrum-global-dimension-font-size-200);
-    line-height: var(--spectrum-global-dimension-font-size-500);
-    margin-bottom: var(--spectrum-global-dimension-font-size-1000);
-}
-
 .card {
     border-width: var(--spectrum-global-dimension-size-25);
-    border-color: var(--spectrum-global-color-gray-100);
+    border-color: var(--spectrum-global-color-gray-200);
     border-style: solid;
     border-radius: var(--spectrum-global-dimension-size-50);
     background-color: var(--spectrum-global-color-gray-300);
@@ -126,10 +116,14 @@
 }
 
 .container {
-    background-image: url('../../../assets/background.png');
+    background-image: url('../../../assets/background.webp');
     background-blend-mode: luminosity;
     background-position: center;
     background-repeat: no-repeat;
     background-size: cover;
     filter: grayscale(75%) brightness(105%) contrast(1.3);
+}
+
+.projectsListContainer {
+    overflow-y: auto;
 }

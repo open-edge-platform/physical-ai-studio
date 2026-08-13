@@ -8,7 +8,7 @@ import { render } from '../../test-utils/render';
 import { AppLayout } from './app.layout';
 
 describe('AppLayout', () => {
-    it('renders the logo in the header, linking to the projects page', () => {
+    it('renders the logo, linking to the projects page', () => {
         render(<AppLayout />, { route: '/projects', path: '/projects' });
 
         const logoLink = screen.getByRole('link', { name: /physical ai studio/i });

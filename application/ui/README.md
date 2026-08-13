@@ -91,7 +91,6 @@ Create `.env.local` for custom configuration:
 | Variable                          | Description                                    | Default                 |
 | --------------------------------- | ----------------------------------------------- | ----------------------- |
 | `PUBLIC_API_BASE_URL`             | Backend API base URL                            | `http://localhost:3000` |
-| `PUBLIC_ENABLE_REMOTE_TRAINERS`   | Show the Remote Trainers nav tab and page       | `false`                 |
 
 ### Development Proxy
 

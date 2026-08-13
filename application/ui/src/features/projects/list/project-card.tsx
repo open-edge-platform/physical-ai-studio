@@ -48,7 +48,7 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
             <Flex UNSAFE_className={clsx({ [classes.card]: true, [classes.activeCard]: isActive })}>
                 <View aria-label={'project thumbnail'} UNSAFE_className={classes.imgWrapper}>
                     {hasThumbnailError ? (
-                        <View width={IMAGE_SIZE} height={IMAGE_SIZE} backgroundColor={'gray-75'}>
+                        <View width={IMAGE_SIZE} height={IMAGE_SIZE} backgroundColor={'gray-100'}>
                             <Flex justifyContent={'center'} alignItems={'center'} width={'100%'} height={'100%'}>
                                 <PhysicalAIStudioLogo width={80} height={80} style={{ filter: 'grayscale(100)' }} />
                             </Flex>
