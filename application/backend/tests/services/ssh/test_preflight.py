@@ -1044,6 +1044,7 @@ async def test_tier2_xpu_device_probe_passes_the_dri_device(install_transport) -
     script = {
         f"docker manifest inspect {xpu_image}": _ok("{}"),
         "cosign version": _fail("not found", exit_status=127),
+        "sh -c stat -c %g": _ok("44\n"),
         "docker run": _ok("True"),
         "docker image inspect": _ok("1"),
     }
@@ -1054,6 +1055,30 @@ async def test_tier2_xpu_device_probe_passes_the_dri_device(install_transport) -
     run = next(argv for argv in transport.commands if argv[:2] == ("docker", "run"))
     assert "/dev/dri" in run
     assert "torch.xpu.is_available()" in " ".join(run)
+    # Without --group-add <render gid> the fixed non-root container user cannot
+    # open the render node even though it is passed through by --device.
+    assert "--group-add" in run
+    assert "44" in run
+
+
+async def test_resolve_render_group_gid_returns_none_when_unavailable(install_transport) -> None:
+    from services.ssh.preflight import resolve_render_group_gid
+
+    transport = install_transport(FakeTransport({}))
+
+    gid = await resolve_render_group_gid(transport)
+
+    assert gid is None
+
+
+async def test_resolve_render_group_gid_parses_stat_output(install_transport) -> None:
+    from services.ssh.preflight import resolve_render_group_gid
+
+    transport = install_transport(FakeTransport({"sh -c stat -c %g": _ok("44\n")}))
+
+    gid = await resolve_render_group_gid(transport)
+
+    assert gid == "44"
 
 
 async def test_tier2_device_unavailable_in_the_container_fails(install_transport) -> None:
