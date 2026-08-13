@@ -37,7 +37,12 @@ from exceptions import (
     TrainerLibraryVersionError,
 )
 from schemas.hardware import DeviceType
-from services.ssh.preflight import PROTOCOL_LABEL, protocol_tag, trainer_image_ref
+from services.ssh.preflight import (  # noqa: F401 - resolve_render_group_gid re-exported for provisioning.py
+    PROTOCOL_LABEL,
+    protocol_tag,
+    resolve_render_group_gid,
+    trainer_image_ref,
+)
 from services.ssh.transport import SshTransport
 from settings import Settings
 
@@ -425,11 +430,21 @@ async def check_disk_for_job(transport: SshTransport, required_bytes: int, serve
         raise RemoteDiskSpaceError(server_name, free_bytes=free_bytes, required_bytes=required_bytes)
 
 
-def _device_run_args(device_type: DeviceType) -> list[str]:
-    """Return the `docker run` flags that expose the accelerator."""
+def _device_run_args(device_type: DeviceType, render_gid: str | None = None) -> list[str]:
+    """Return the `docker run` flags that expose the accelerator.
+
+    `render_gid`, when known, is added via `--group-add` so the container's
+    fixed non-root user (`--user 10001:10001`) can actually read/write the
+    render node - `--device /dev/dri` alone passes the node through but its
+    group ownership still gates access, and without this the container's
+    `torch.xpu.is_available()` silently reports zero devices.
+    """
     if device_type is DeviceType.CUDA:
         return ["--gpus", "all"]
-    return ["--device", "/dev/dri"]
+    args = ["--device", "/dev/dri"]
+    if render_gid:
+        args.extend(["--group-add", render_gid])
+    return args
 
 
 def build_run_argv(
@@ -440,6 +455,7 @@ def build_run_argv(
     labels: dict[str, str],
     remote_container_port: int,
     stop_timeout_s: int,
+    render_gid: str | None = None,
 ) -> list[str]:
     """Build the least-privilege `docker run` command for one trainer container.
 
@@ -454,6 +470,11 @@ def build_run_argv(
       device nodes the configured accelerator needs are passed through.
     * `--read-only` plus one bounded `--tmpfs` gives the container a writable
       scratch area without unbounded writable storage.
+
+    `render_gid`, from `resolve_render_group_gid`, is required for a working
+    XPU container: without it `--device /dev/dri` passes the render node
+    through but the fixed non-root user cannot open it, and
+    `torch.xpu.is_available()` reports zero devices. Ignored for CUDA.
     """
     return [
         "docker",
@@ -477,7 +498,7 @@ def build_run_argv(
         "/tmp:size=2g",  # noqa: S108 - a `docker run` mount spec, not a local temp-file access
         "--tmpfs",
         "/var/lib/physicalai-trainer:size=64g",
-        *_device_run_args(device_type),
+        *_device_run_args(device_type, render_gid),
         image_digest_ref,
     ]
 
