@@ -20,7 +20,7 @@ import { AppLogo } from '../../components/app-logo/app-logo';
 import { JobStatus } from '../../features/jobs/footer/job-status';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
-import { useProjectId } from '../../features/projects/use-project';
+import { useProject, useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { getMainPageInProjectUrl } from './project-navigation';
 
@@ -106,6 +106,9 @@ const Footer = () => {
 export const ProjectLayout = () => {
     const { project_id } = useProjectId();
     const { pathname } = useLocation();
+
+    // We want to check if the project exists before rendering the layout. If it doesn't, error boundary will catch it.
+    useProject();
 
     const pageName = getMainPageInProjectUrl(pathname);
 
