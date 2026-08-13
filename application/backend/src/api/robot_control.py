@@ -2,7 +2,7 @@ import asyncio
 import queue
 import time
 from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket, status
 from fastapi.responses import Response
@@ -10,7 +10,7 @@ from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
 from pydantic import ValidationError
 
-from api.dependencies import RobotClientFactoryDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
+from api.dependencies import RobotClientFactoryDep, get_project_id, get_robot_id, get_robot_service
 from exceptions import BaseException as AppBaseException
 from exceptions import RobotPluginUnavailableError
 from runtime.config_builder import build_runtime_config
@@ -60,7 +60,7 @@ async def handle_outgoing(
                 if client.error is not None:
                     raise client.error
                 if not host.is_alive():
-                    if client.shutdown_received or host.completed_cleanly.is_set():
+                    if client.shutdown_received or host.exited_cleanly:
                         return
                     if host.error is not None:
                         raise host.error
@@ -92,8 +92,9 @@ async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) ->
         client.apply(DisconnectCommand())
 
 
-async def wait_until_runtime_ready(client: RuntimeSessionClient, host: RuntimeProcessHost) -> None:
-    """Wait for transport and hardware readiness without blocking WebSocket reads."""
+async def start_runtime_session(client: RuntimeSessionClient, host: RuntimeProcessHost) -> None:
+    """Spawn, then wait for transport and hardware readiness, off the event loop."""
+    await asyncio.to_thread(host.start)
     await asyncio.to_thread(client.connect, process=host)
     await asyncio.to_thread(client.wait_until_ready, host)
 
@@ -104,7 +105,6 @@ async def robot_websocket(  # noqa: PLR0912, PLR0915
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     robot_client_factory: RobotClientFactoryDep,
     websocket: WebSocket,
-    scheduler: SchedulerDep,
     fps: int = 30,
 ) -> None:
     """Stream follower state and accept hold/teleop mode changes."""
@@ -133,20 +133,16 @@ async def robot_websocket(  # noqa: PLR0912, PLR0915
             robot_factory=robot_client_factory,
         )
         session_name = runtime_session_name(follower.id)
-        instance_id = uuid4().hex
-        client = RuntimeSessionClient(session_name, instance_id=instance_id)
+        client = RuntimeSessionClient(session_name)
         await asyncio.to_thread(client.open)
         host = RuntimeProcessHost(
             session_name,
             document,
-            stop_event=scheduler.mp_stop_event,
-            instance_id=instance_id,
             follower_name=follower.name,
             leader_name=None if leader is None else leader.name,
         )
-        host.start()
         incoming_task = asyncio.create_task(handle_incoming(websocket, client))
-        startup_task = asyncio.create_task(wait_until_runtime_ready(client, host))
+        startup_task = asyncio.create_task(start_runtime_session(client, host))
         done, _ = await asyncio.wait(
             {incoming_task, startup_task},
             return_when=asyncio.FIRST_COMPLETED,

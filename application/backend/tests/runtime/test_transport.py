@@ -10,7 +10,7 @@ import pytest
 import zenoh
 
 from runtime.contract import Command, SaveEpisodeCommand, SetFollowerSourceCommand, StateData, StateEvent
-from runtime.transport.client import RuntimeSessionClient
+from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.codec import encode_event
 from runtime.transport.ids import (
     command_key,
@@ -107,7 +107,7 @@ def test_session_port_cannot_collide_with_follower_or_leader_robot_ports() -> No
 def test_metadata_exposes_public_instance_id_without_token_or_secret_fields() -> None:
     name = runtime_session_name(UUID("f517da57-708a-4cbd-ae73-2a28877d2656"))
     server = RuntimeZenohServer(name, instance_id="public-generation")
-    client = RuntimeSessionClient(name, instance_id="public-generation")
+    client = RuntimeSessionClient(name)
     client.open()
     try:
         server.open(lambda command: None)
@@ -115,6 +115,7 @@ def test_metadata_exposes_public_instance_id_without_token_or_secret_fields() ->
         metadata = client.connect(timeout=3)
 
         assert metadata["instance_id"] == "public-generation"
+        assert client._instance_id == "public-generation"
         assert not {"owner_token", "token", "secret"}.intersection(metadata)
     finally:
         server.close()
@@ -213,6 +214,19 @@ def test_client_buffers_command_until_metadata_answers() -> None:
         assert received == [command]
     finally:
         server.close()
+        client.close()
+
+
+def test_client_connect_keeps_a_received_fatal_error_when_the_process_has_exited() -> None:
+    name = runtime_session_name(UUID("b65f0a6f-bfc9-4d42-8d4f-59b0f3f62a09"))
+    client = RuntimeSessionClient(name)
+    client.open()
+    client.error = RuntimeProcessError("connect failed")
+    dead_process = type("DeadProcess", (), {"is_alive": lambda self: False, "error": None})()
+    try:
+        with pytest.raises(RuntimeProcessError, match="connect failed"):
+            client.connect(process=dead_process)
+    finally:
         client.close()
 
 
@@ -318,3 +332,23 @@ def test_event_from_replaced_instance_is_rejected() -> None:
 
     with pytest.raises(queue.Empty):
         client.get_nowait()
+
+
+def test_event_before_metadata_adoption_is_accepted() -> None:
+    client = RuntimeSessionClient(runtime_session_name(UUID("77df4e92-bbd8-46c8-9ca1-640ce0fe79f4")))
+    event = StateEvent(data=StateData(connected=True, follower_source="hold"))
+    sample = type(
+        "Sample",
+        (),
+        {
+            "payload": type(
+                "Payload",
+                (),
+                {"to_bytes": lambda self: encode_event(event, instance_id="new-instance")},
+            )()
+        },
+    )()
+
+    client._receive_event(sample)
+
+    assert client.get_nowait() == event

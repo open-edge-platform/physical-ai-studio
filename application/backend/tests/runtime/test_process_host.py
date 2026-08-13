@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import multiprocessing as mp
+import json
+import os
 import queue
 import socket
+import threading
 import time
 from typing import Any
 from uuid import UUID
@@ -12,13 +14,14 @@ import pytest
 from physicalai.config import Config
 
 from api.robot_control import handle_outgoing
+from exceptions import BaseException as AppBaseException
 from exceptions import RobotDeviceAlreadyOwnedError
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand, StateEvent
+from runtime.hosts import session_worker
 from runtime.hosts.process_host import RuntimeProcessHost
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.ids import derive_endpoint_port, runtime_session_name
 from tests.runtime.test_session import _document, _document_with_leader
-from utils.multiprocessing import ensure_spawn_start_method
 
 
 def _start_host(
@@ -27,7 +30,7 @@ def _start_host(
 ) -> tuple[RuntimeProcessHost, RuntimeSessionClient]:
     client = RuntimeSessionClient(name)
     client.open()
-    host = RuntimeProcessHost(name, document, stop_event=mp.Event())
+    host = RuntimeProcessHost(name, document)
     host.start()
     try:
         client.connect(timeout=5, process=host)
@@ -36,18 +39,6 @@ def _start_host(
         host.stop()
         client.close()
         raise
-    return host, client
-
-
-def _start_owned_host(
-    name: str,
-    document: dict[str, Any],
-    instance_id: str,
-) -> tuple[RuntimeProcessHost, RuntimeSessionClient]:
-    client = RuntimeSessionClient(name, instance_id=instance_id)
-    client.open()
-    host = RuntimeProcessHost(name, document, stop_event=mp.Event(), instance_id=instance_id)
-    host.start()
     return host, client
 
 
@@ -60,7 +51,6 @@ def _stop_host(host: RuntimeProcessHost, client: RuntimeSessionClient) -> None:
 
 
 def test_process_host_runs_session_and_streams_connected_state() -> None:
-    ensure_spawn_start_method()
     name = runtime_session_name(UUID("73caa570-b399-4ce3-b54f-dc96a4275534"))
     host, client = _start_host(name, _document())
     try:
@@ -84,7 +74,6 @@ def test_process_host_runs_session_and_streams_connected_state() -> None:
 
 
 def test_mode_command_crosses_process_boundary() -> None:
-    ensure_spawn_start_method()
     name = runtime_session_name(UUID("c6ffef31-0e82-4da4-8b19-cfc4be33e097"))
     host, client = _start_host(name, _document_with_leader())
     try:
@@ -111,7 +100,6 @@ def test_mode_command_crosses_process_boundary() -> None:
 
 
 def test_killed_process_is_observable_without_waiting_indefinitely() -> None:
-    ensure_spawn_start_method()
     name = runtime_session_name(UUID("d824be11-ffb4-4f72-afd6-d593e457950a"))
     host, client = _start_host(name, _document())
     try:
@@ -131,13 +119,14 @@ def test_killed_process_is_observable_without_waiting_indefinitely() -> None:
 
 
 def test_process_host_propagates_setup_error() -> None:
-    ensure_spawn_start_method()
     name = runtime_session_name(UUID("f7451520-6f14-4938-982c-d54c12e816dd"))
     client = RuntimeSessionClient(name)
     client.open()
-    host = RuntimeProcessHost(name, _document(connect_error="connect failed"), stop_event=mp.Event())
+    host = RuntimeProcessHost(name, _document(connect_error="connect failed"))
     host.start()
     try:
+        # connect_error is raised from session.run(), after READY, so this
+        # covers the Zenoh fatal-error path rather than the stdout handshake.
         client.connect(timeout=5, process=host)
 
         with pytest.raises(RuntimeProcessError, match="connect failed"):
@@ -148,19 +137,16 @@ def test_process_host_propagates_setup_error() -> None:
 
 
 def test_second_spawn_does_not_attach_to_or_disconnect_existing_session() -> None:
-    ensure_spawn_start_method()
     name = runtime_session_name(UUID("233f3b26-e411-4772-94aa-8580f7d44de2"))
-    first_host, first_client = _start_owned_host(name, _document(), "first-instance")
+    first_host, first_client = _start_host(name, _document())
     try:
-        first_client.connect(timeout=5, process=first_host)
-        first_client.wait_until_ready(first_host, timeout=5)
-        second_host, second_client = _start_owned_host(name, _document(), "second-instance")
+        second_host = RuntimeProcessHost(name, _document())
         try:
-            with pytest.raises(RuntimeProcessError):
-                second_client.connect(timeout=5, process=second_host)
+            with pytest.raises(AppBaseException) as exc_info:
+                second_host.start()
+            assert exc_info.value.error_code == RobotDeviceAlreadyOwnedError().error_code
         finally:
             second_host.stop()
-            second_client.close()
 
         assert first_host.is_alive()
         assert first_host.error is None
@@ -169,15 +155,18 @@ def test_second_spawn_does_not_attach_to_or_disconnect_existing_session() -> Non
 
 
 def test_listener_bind_failure_reaches_parent_as_robot_ownership_error() -> None:
-    ensure_spawn_start_method()
     name = runtime_session_name(UUID("b927ab53-13e9-4787-8fb7-fc4d837c9fb3"))
     blocker = socket.socket()
     blocker.bind(("127.0.0.1", derive_endpoint_port(name)))
     blocker.listen()
-    host, client = _start_owned_host(name, _document(), "blocked-instance")
+    client = RuntimeSessionClient(name)
+    client.open()
+    host = RuntimeProcessHost(name, _document())
     try:
-        with pytest.raises(RuntimeProcessError) as exc_info:
-            client.connect(timeout=5, process=host)
+        # server.open() fails before any Zenoh publisher exists, so this error
+        # can only reach the parent through the worker's stdout handshake.
+        with pytest.raises(AppBaseException) as exc_info:
+            host.start()
         assert exc_info.value.error_code == RobotDeviceAlreadyOwnedError().error_code
         assert "already in use" in exc_info.value.message.lower()
     finally:
@@ -188,7 +177,6 @@ def test_listener_bind_failure_reaches_parent_as_robot_ownership_error() -> None
 
 @pytest.mark.integration
 def test_runtime_session_and_own_shared_robot_use_different_listeners() -> None:
-    ensure_spawn_start_method()
     follower_id = UUID("c3f3f886-8813-4b3b-ba48-165cdaa39995")
     robot_name = str(follower_id)
     name = runtime_session_name(follower_id)
@@ -215,6 +203,47 @@ def test_runtime_session_and_own_shared_robot_use_different_listeners() -> None:
         assert derive_endpoint_port(name) != 46018
     finally:
         _stop_host(host, client)
+
+
+def test_spawn_payload_survives_json() -> None:
+    payload = {
+        "session_name": runtime_session_name(UUID("f6838e85-5d48-4a2f-91b2-0cfaf2829f01")),
+        "document": _document_with_leader(),
+        "follower_name": "follower",
+        "leader_name": "leader",
+        "parent_pid": os.getpid(),
+    }
+
+    assert json.loads(json.dumps(payload)) == payload
+
+
+def test_child_runs_in_its_own_process_group() -> None:
+    name = runtime_session_name(UUID("68181d7e-2728-4493-9dd3-2472f3a2a88f"))
+    host, client = _start_host(name, _document())
+    try:
+        assert host.pid is not None
+        assert os.getpgid(host.pid) != os.getpgid(0)
+    finally:
+        _stop_host(host, client)
+
+
+def test_parent_watchdog_stops_the_session_when_the_parent_pid_changes() -> None:
+    stop = threading.Event()
+
+    session_worker._watch_parent(parent_pid=os.getpid(), stop=stop)
+
+    assert stop.is_set()
+
+
+def test_stop_before_start_terminates_the_spawned_worker() -> None:
+    name = runtime_session_name(UUID("15e54f25-b877-412a-9a40-8efc3f932b82"))
+    host = RuntimeProcessHost(name, _document())
+
+    host.stop()
+    host.start()
+    host.join(timeout=2)
+
+    assert not host.is_alive()
 
 
 class _FakeWebSocket:

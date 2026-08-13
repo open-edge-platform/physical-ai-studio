@@ -64,6 +64,8 @@ class RuntimeSessionClient:
             raise RuntimeError("Runtime session client is not open")
         deadline = time.monotonic() + timeout
         while True:
+            if self.error is not None:
+                raise self.error
             if process is not None and not process.is_alive():
                 process_error = getattr(process, "error", None)
                 if process_error is not None:
@@ -79,7 +81,9 @@ class RuntimeSessionClient:
                     if sample is None:
                         continue
                     metadata = decode_metadata(sample.payload.to_bytes())
-                    if self._instance_id is not None and metadata.get("instance_id") != self._instance_id:
+                    if self._instance_id is None:
+                        self._instance_id = metadata["instance_id"]
+                    elif metadata.get("instance_id") != self._instance_id:
                         continue
                     self._metadata_ready.set()
                     self._flush_pending_command()
@@ -160,7 +164,7 @@ class RuntimeSessionClient:
     def _receive_event(self, sample: Any) -> None:
         try:
             event, fatal, instance_id = decode_event(sample.payload.to_bytes())
-            if instance_id != self._instance_id:
+            if self._instance_id is not None and instance_id != self._instance_id:
                 logger.warning("Rejected runtime event for a different instance")
                 return
             if fatal:
