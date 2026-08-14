@@ -154,9 +154,13 @@ async def robot_websocket(  # noqa: PLR0912, PLR0915
         )
         if incoming_task in done:
             incoming_task.result()
-            if owner.spawned:
+            # Stop a spawn we still own, including one that has not yet set
+            # ``spawned``. Never stop an attached session another client may be using.
+            if owner.host is not None:
                 await asyncio.to_thread(owner.stop)
             await asyncio.gather(startup_task, return_exceptions=True)
+            if owner.host is not None:
+                await asyncio.to_thread(owner.stop)
             return
         startup_task.result()
 

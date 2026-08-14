@@ -134,7 +134,7 @@ class RuntimeSessionOwner:
             self._attach_to(metadata)
             return
 
-        host = RuntimeProcessHost(
+        self._host = RuntimeProcessHost(
             self._session_name,
             self._document,
             follower_name=self._follower_name,
@@ -142,8 +142,9 @@ class RuntimeSessionOwner:
             idle_timeout_s=self._idle_timeout_s,
         )
         try:
-            host.start()
+            self._host.start()
         except AppBaseException as exc:
+            self._host = None
             if getattr(exc, "phase", None) != "name_lock_contention":
                 raise
             metadata = self._client.probe_with_retry(_RACE_RETRY_TIMEOUT)
@@ -152,7 +153,6 @@ class RuntimeSessionOwner:
             self._attach_to(metadata)
             return
 
-        self._host = host
         try:
             metadata = self._wait_for_spawned_metadata(_RACE_RETRY_TIMEOUT)
             if metadata is None:
@@ -163,7 +163,7 @@ class RuntimeSessionOwner:
                 )
             self._attach_to(metadata)
         except Exception:
-            host.stop()
+            self.stop()
             self._host = None
             raise
         self._spawned = True
