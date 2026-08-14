@@ -136,5 +136,18 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
         });
     };
 
-    return { joints, socket, state, error, errorCode, warning, setFollowerSource: setFollowerSourceRequest };
+    const disconnect = () => {
+        socket.sendJsonMessage({ event: 'disconnect' });
+    };
+
+    return {
+        joints,
+        socket,
+        state,
+        error,
+        errorCode,
+        warning,
+        setFollowerSource: setFollowerSourceRequest,
+        disconnect,
+    };
 };

@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useState } from 'react';
+import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from 'react';
 
 import { ActionButton, Flex, Grid, Heading, minmax, repeat, Slider, Switch, View } from '@geti-ui/ui';
 import { ChevronDownSmallLight } from '@geti-ui/ui/icons';
@@ -77,12 +77,17 @@ const useModelJoints = (): JointsState => {
 };
 
 // Combine the joint range of the urdf model with actual joint state from robot
-const useRobotJointsState = (): { joints: JointsState; error: string | null; errorCode: string | null } => {
+const useRobotJointsState = (): {
+    joints: JointsState;
+    error: string | null;
+    errorCode: string | null;
+    disconnect: () => void;
+} => {
     const robot = useRobot();
     const modelJoints = useModelJoints();
 
     const { project_id, robot_id } = useRobotId();
-    const { joints, error, errorCode } = useJointState(project_id, robot_id);
+    const { joints, error, errorCode, disconnect } = useJointState(project_id, robot_id);
     useSynchronizeModelJoints(joints, robot.type);
 
     return {
@@ -95,11 +100,23 @@ const useRobotJointsState = (): { joints: JointsState; error: string | null; err
         }),
         error,
         errorCode,
+        disconnect,
     };
 };
 
-const EnabledJointControls = ({ isExpanded }: { isExpanded: boolean }) => {
-    const { joints, error, errorCode } = useRobotJointsState();
+const EnabledJointControls = ({
+    isExpanded,
+    onDisconnectReady,
+}: {
+    isExpanded: boolean;
+    onDisconnectReady: (disconnect: (() => void) | null) => void;
+}) => {
+    const { joints, error, errorCode, disconnect } = useRobotJointsState();
+
+    useEffect(() => {
+        onDisconnectReady(disconnect);
+        return () => onDisconnectReady(null);
+    }, [disconnect, onDisconnectReady]);
 
     if (error) {
         return (
@@ -136,6 +153,17 @@ export const JointControls = ({
     setIsConnected: Dispatch<SetStateAction<boolean>>;
 }) => {
     const [isExpanded, setIsExpanded] = useState(true);
+    const disconnectRef = useRef<(() => void) | null>(null);
+    const onDisconnectReady = useCallback((disconnect: (() => void) | null) => {
+        disconnectRef.current = disconnect;
+    }, []);
+
+    const onConnectChange = (connected: boolean) => {
+        if (!connected) {
+            disconnectRef.current?.();
+        }
+        setIsConnected(connected);
+    };
 
     return (
         <View
@@ -166,12 +194,12 @@ export const JointControls = ({
                         </Heading>
                     </ActionButton>
 
-                    <Switch isSelected={isConnected} onChange={setIsConnected}>
+                    <Switch isSelected={isConnected} onChange={onConnectChange}>
                         Connect
                     </Switch>
                 </Flex>
                 {isConnected ? (
-                    <EnabledJointControls isExpanded={isExpanded} />
+                    <EnabledJointControls isExpanded={isExpanded} onDisconnectReady={onDisconnectReady} />
                 ) : (
                     <DisabledJointsControls isExpanded={isExpanded} />
                 )}
