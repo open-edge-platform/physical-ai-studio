@@ -7,6 +7,8 @@ from fastapi.responses import Response
 from loguru import logger
 
 from api.dependencies import ModelRegistryDep, RecordingLockedCamerasDep, RobotClientFactoryDep, SchedulerDep
+from exceptions import RuntimeSessionBusyError
+from runtime.owner import runtime_session_holder
 from schemas import Dataset, InferenceDevice, Model
 from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
@@ -14,10 +16,43 @@ from workers.robot_control_worker import RobotControlWorker
 router = APIRouter(prefix="/api/record")
 
 
+async def _refuse_if_runtime_holds_follower(websocket: WebSocket, environment: EnvironmentWithRelations) -> bool:
+    """Send an error frame when a runtime session already holds this follower."""
+    follower_id = environment.robots[0].robot.id
+    holder = await asyncio.to_thread(runtime_session_holder, follower_id)
+    if holder is None:
+        return False
+    error = RuntimeSessionBusyError(
+        robot_name=environment.robots[0].robot.name,
+        pid=holder.get("pid") if isinstance(holder.get("pid"), int) else None,
+    )
+    await websocket.send_json(
+        {
+            "event": "error",
+            "message": error.message,
+            "error_code": error.error_code,
+        }
+    )
+    return True
+
+
 @router.get("/robot_control/ws", tags=["WebSocket"], summary="Robot Control (WebSocket)", status_code=426)
 async def robot_control_websocket_openapi() -> Response:
     """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
     return Response(status_code=426)
+
+
+async def _load_environment_unless_held(
+    websocket: WebSocket,
+    process: RobotControlWorker,
+    environment: EnvironmentWithRelations,
+    locked_camera_fingerprints: set[str],
+) -> None:
+    if await _refuse_if_runtime_holds_follower(websocket, environment):
+        return
+    locked_camera_fingerprints.clear()
+    locked_camera_fingerprints.update(camera.fingerprint for camera in environment.cameras)
+    process.load_environment(environment)
 
 
 async def handle_incoming(
@@ -32,10 +67,12 @@ async def handle_incoming(
             payload = data.get("data", {})
             match data["event"]:
                 case "load_environment":
-                    environment = EnvironmentWithRelations.model_validate(payload["environment"])
-                    locked_camera_fingerprints.clear()
-                    locked_camera_fingerprints.update(camera.fingerprint for camera in environment.cameras)
-                    process.load_environment(environment)
+                    await _load_environment_unless_held(
+                        websocket,
+                        process,
+                        EnvironmentWithRelations.model_validate(payload["environment"]),
+                        locked_camera_fingerprints,
+                    )
                 case "load_model":
                     process.load_model(
                         Model.model_validate(payload["model"]),

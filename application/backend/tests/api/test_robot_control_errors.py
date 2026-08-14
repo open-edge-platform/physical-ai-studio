@@ -43,6 +43,7 @@ def test_handle_incoming_applies_a_valid_set_follower_source_command() -> None:
     asyncio.run(handle_incoming(websocket, session))
 
     session.apply.assert_any_call(SetFollowerSourceCommand(follower_source="teleop"))
+    session.apply.assert_called_once()
 
 
 def test_handle_incoming_drops_malformed_follower_source_without_crashing() -> None:
@@ -63,17 +64,23 @@ def test_handle_incoming_drops_malformed_follower_source_without_crashing() -> N
 
     asyncio.run(handle_incoming(websocket, session))
 
-    # Only the valid, later command was applied (the malformed ones were dropped),
-    # followed by the disconnect once the fake websocket runs out of messages.
     assert session.apply.call_args_list == [
         call(SetFollowerSourceCommand(follower_source="hold")),
-        call(DisconnectCommand()),
     ]
 
 
-def test_handle_incoming_applies_disconnect_on_websocket_disconnect() -> None:
+def test_handle_incoming_does_not_disconnect_on_websocket_close() -> None:
     session = MagicMock()
     websocket = FakeWebSocket([])
+
+    asyncio.run(handle_incoming(websocket, session))
+
+    session.apply.assert_not_called()
+
+
+def test_handle_incoming_applies_an_explicit_disconnect() -> None:
+    session = MagicMock()
+    websocket = FakeWebSocket([{"event": "disconnect"}])
 
     asyncio.run(handle_incoming(websocket, session))
 
@@ -82,10 +89,9 @@ def test_handle_incoming_applies_disconnect_on_websocket_disconnect() -> None:
 
 def test_start_runtime_session_keeps_process_failure_checks() -> None:
     client = MagicMock()
-    host = MagicMock()
+    owner = MagicMock()
 
-    asyncio.run(start_runtime_session(client, host))
+    asyncio.run(start_runtime_session(client, owner))
 
-    host.start.assert_called_once_with()
-    client.connect.assert_called_once_with(process=host)
-    client.wait_until_ready.assert_called_once_with(host)
+    owner.connect.assert_called_once_with()
+    client.wait_until_ready.assert_called_once_with(owner)

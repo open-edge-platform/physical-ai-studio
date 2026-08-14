@@ -10,12 +10,12 @@ from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
 from pydantic import ValidationError
 
-from api.dependencies import RobotClientFactoryDep, get_project_id, get_robot_id, get_robot_service
+from api.dependencies import RobotClientFactoryDep, SettingsDep, get_project_id, get_robot_id, get_robot_service
 from exceptions import BaseException as AppBaseException
 from exceptions import RobotPluginUnavailableError
 from runtime.config_builder import build_runtime_config
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand
-from runtime.hosts.process_host import RuntimeProcessHost
+from runtime.owner import RuntimeSessionOwner
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.ids import runtime_session_name
 from schemas.robot import ReadableRobot, UnavailableRobot
@@ -34,12 +34,6 @@ def _websocket_error_payload(exc: Exception) -> dict[str, str]:
     }
 
 
-@router.get("/ws", tags=["WebSocket"], summary="Robot control (WebSocket)", status_code=426)
-async def robot_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
-    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
-    return Response(status_code=426)
-
-
 def _ensure_robot_available(robot: ReadableRobot) -> None:
     if isinstance(robot, UnavailableRobot):
         raise RobotPluginUnavailableError(robot.name, robot.type)
@@ -48,7 +42,7 @@ def _ensure_robot_available(robot: ReadableRobot) -> None:
 async def handle_outgoing(
     websocket: WebSocket,
     client: RuntimeSessionClient,
-    host: RuntimeProcessHost,
+    owner: RuntimeSessionOwner,
 ) -> None:
     """Send all runtime events from one task so websocket writes cannot overlap."""
     process_dead_since: float | None = None
@@ -59,11 +53,11 @@ async def handle_outgoing(
             except queue.Empty:
                 if client.error is not None:
                     raise client.error
-                if not host.is_alive():
-                    if client.shutdown_received or host.exited_cleanly:
+                if not owner.is_alive():
+                    if client.shutdown_received or owner.exited_cleanly():
                         return
-                    if host.error is not None:
-                        raise host.error
+                    if owner.error is not None:
+                        raise owner.error
                     process_dead_since = process_dead_since or time.monotonic()
                     if time.monotonic() - process_dead_since >= 0.2:
                         raise RuntimeProcessError("Runtime session process stopped unexpectedly")
@@ -79,6 +73,9 @@ async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) ->
     try:
         while True:
             message = await websocket.receive_json("text")
+            if message.get("event") == "disconnect":
+                client.apply(DisconnectCommand())
+                return
             if message.get("event") != "set_follower_source":
                 continue
             payload = message.get("data", {})
@@ -89,14 +86,19 @@ async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) ->
                 continue
             client.apply(command)
     except WebSocketDisconnect:
-        client.apply(DisconnectCommand())
+        pass
 
 
-async def start_runtime_session(client: RuntimeSessionClient, host: RuntimeProcessHost) -> None:
-    """Spawn, then wait for transport and hardware readiness, off the event loop."""
-    await asyncio.to_thread(host.start)
-    await asyncio.to_thread(client.connect, process=host)
-    await asyncio.to_thread(client.wait_until_ready, host)
+async def start_runtime_session(client: RuntimeSessionClient, owner: RuntimeSessionOwner) -> None:
+    """Attach or spawn, then wait for hardware readiness, off the event loop."""
+    await asyncio.to_thread(owner.connect)
+    await asyncio.to_thread(client.wait_until_ready, owner)
+
+
+@router.get("/ws", tags=["WebSocket"], summary="Robot control (WebSocket)", status_code=426)
+async def robot_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
+    """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
+    return Response(status_code=426)
 
 
 @router.websocket("/ws")
@@ -104,24 +106,25 @@ async def robot_websocket(  # noqa: PLR0912, PLR0915
     project_id: Annotated[UUID, Depends(get_project_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     robot_client_factory: RobotClientFactoryDep,
+    settings: SettingsDep,
     websocket: WebSocket,
     fps: int = 30,
 ) -> None:
     """Stream follower state and accept hold/teleop mode changes."""
     await websocket.accept()
-    host: RuntimeProcessHost | None = None
+    owner: RuntimeSessionOwner | None = None
     client: RuntimeSessionClient | None = None
     incoming_task: asyncio.Task[None] | None = None
     outgoing_task: asyncio.Task[None] | None = None
     startup_task: asyncio.Task[None] | None = None
     try:
-        settings = await websocket.receive_json("text")
-        follower_id = get_robot_id(settings["follower_id"])
+        handshake = await websocket.receive_json("text")
+        follower_id = get_robot_id(handshake["follower_id"])
         follower = await robot_service.get_robot_by_id(project_id, follower_id)
         _ensure_robot_available(follower)
         leader = None
-        if settings.get("leader_id") is not None:
-            leader_id = get_robot_id(settings["leader_id"])
+        if handshake.get("leader_id") is not None:
+            leader_id = get_robot_id(handshake["leader_id"])
             leader = await robot_service.get_robot_by_id(project_id, leader_id)
             _ensure_robot_available(leader)
 
@@ -135,26 +138,29 @@ async def robot_websocket(  # noqa: PLR0912, PLR0915
         session_name = runtime_session_name(follower.id)
         client = RuntimeSessionClient(session_name)
         await asyncio.to_thread(client.open)
-        host = RuntimeProcessHost(
-            session_name,
-            document,
+        owner = RuntimeSessionOwner(
+            client,
+            session_name=session_name,
+            document=document,
             follower_name=follower.name,
             leader_name=None if leader is None else leader.name,
+            idle_timeout_s=settings.runtime_idle_timeout_s,
         )
         incoming_task = asyncio.create_task(handle_incoming(websocket, client))
-        startup_task = asyncio.create_task(start_runtime_session(client, host))
+        startup_task = asyncio.create_task(start_runtime_session(client, owner))
         done, _ = await asyncio.wait(
             {incoming_task, startup_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
         if incoming_task in done:
             incoming_task.result()
-            await asyncio.to_thread(host.stop)
+            if owner.spawned:
+                await asyncio.to_thread(owner.stop)
             await asyncio.gather(startup_task, return_exceptions=True)
             return
         startup_task.result()
 
-        outgoing_task = asyncio.create_task(handle_outgoing(websocket, client, host))
+        outgoing_task = asyncio.create_task(handle_outgoing(websocket, client, owner))
         done, pending = await asyncio.wait(
             {incoming_task, outgoing_task},
             return_when=asyncio.FIRST_COMPLETED,
@@ -181,9 +187,5 @@ async def robot_websocket(  # noqa: PLR0912, PLR0915
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        if client is not None:
-            client.apply(DisconnectCommand())
-        if host is not None:
-            await asyncio.to_thread(host.stop)
         if client is not None:
             client.close()

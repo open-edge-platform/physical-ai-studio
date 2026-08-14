@@ -204,6 +204,15 @@ class Settings(BaseSettings):
         """Expand `~` so the default resolves to the running user's SSH config."""
         return Path(value).expanduser()
 
+    # Runtime sessions
+    # Seconds a session keeps running with no client attached before it exits by
+    # itself. A websocket reconnect after a page refresh completes well under 5s,
+    # so 45 leaves roughly nine times the headroom for a slow reload or a brief
+    # network drop; at the other end it bounds an abandoned, torque-holding arm to
+    # under a minute. Labs on flaky networks want it longer, an unattended rig
+    # wants it shorter.
+    runtime_idle_timeout_s: float = Field(default=45.0, alias="RUNTIME_IDLE_TIMEOUT_S")
+
     # Server
     host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104
     port: int = Field(default=7860, alias="PORT")
