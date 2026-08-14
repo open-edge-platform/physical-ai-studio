@@ -22,7 +22,7 @@ from exceptions import ResourceNotFoundError, ResourceType
 from main import app
 from schemas.hardware import DeviceType
 from schemas.remote_server import RemoteServer, SshHostAliasOption
-from schemas.ssh_preflight import CheckKey, CheckOutcome, PreflightCheck, PreflightResult
+from schemas.ssh_preflight import CheckKey, CheckOutcome, PreflightCheck, PreflightResult, RemoteServerStatus
 
 CHECKED_AT = datetime.now(UTC)
 
@@ -430,13 +430,26 @@ def test_check_remote_server_persists_degraded_status_on_blocking_failure(monkey
     assert tier2_result.passed is False
 
 
-def test_status_endpoint_assembles_from_mocked_tier1(monkeypatch: pytest.MonkeyPatch):
+def test_status_endpoint_assembles_from_mocked_service_status():
+    """The route is a thin pass-through: `RemoteServerService.get_status` owns
+    the Tier 1 probe, its own coalescing/throttling, and the in-use/GPU-wait
+    reads (see `test_remote_server_service.py` for those behaviors).
+    """
     server = _make_server()
-    run_tier1 = AsyncMock(return_value=_passing_tier1_result())
-    monkeypatch.setattr("api.remote_servers.run_tier1_preflight", run_tier1)
-
+    tier1_result = _passing_tier1_result()
+    status_response = RemoteServerStatus(
+        remote_server_id=server.id,
+        status="healthy",
+        device_type=server.device_type.value,
+        checks=tier1_result.checks,
+        checked_at=tier1_result.checked_at,
+        latency_ms=tier1_result.latency_ms,
+        reason_code=None,
+        in_use_by_job_id=None,
+        waiting_for_gpu=False,
+    )
     service = AsyncMock()
-    service.get_remote_server.return_value = server
+    service.get_status.return_value = status_response
     app.dependency_overrides[get_remote_server_service] = lambda: service
 
     response = TestClient(app).get(f"/api/remote-servers/{server.id}/status")
@@ -449,6 +462,51 @@ def test_status_endpoint_assembles_from_mocked_tier1(monkeypatch: pytest.MonkeyP
     assert len(body["checks"]) == 9
     assert body["in_use_by_job_id"] is None
     assert body["waiting_for_gpu"] is False
+    service.get_status.assert_awaited_once_with(server.id)
+
+
+def test_status_endpoint_surfaces_in_use_and_waiting_for_gpu():
+    """A busy server's in-use job id and GPU-wait state pass straight through."""
+    server = _make_server()
+    job_id = uuid4()
+    status_response = RemoteServerStatus(
+        remote_server_id=server.id,
+        status="healthy",
+        device_type=server.device_type.value,
+        checks=[],
+        checked_at=CHECKED_AT,
+        latency_ms=10,
+        reason_code=None,
+        in_use_by_job_id=job_id,
+        waiting_for_gpu=True,
+    )
+    service = AsyncMock()
+    service.get_status.return_value = status_response
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    response = TestClient(app).get(f"/api/remote-servers/{server.id}/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["in_use_by_job_id"] == str(job_id)
+    assert body["waiting_for_gpu"] is True
+
+
+def test_status_endpoint_converts_timeout_into_connection_error():
+    """A Tier 1 probe that exceeds its budget surfaces as a connection error,
+    not a bare 500 - the route still needs the server's alias for the message,
+    which it fetches separately once `get_status` times out.
+    """
+    server = _make_server()
+    service = AsyncMock()
+    service.get_status.side_effect = TimeoutError()
+    service.get_remote_server.return_value = server
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    response = TestClient(app).get(f"/api/remote-servers/{server.id}/status")
+
+    assert response.status_code == 502
+    service.get_remote_server.assert_awaited_once_with(server.id)
 
 
 @pytest.mark.parametrize(

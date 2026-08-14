@@ -8,15 +8,38 @@ resolved-host display are layered on top by the API; this service never
 dials SSH.
 """
 
+import asyncio
+from time import monotonic
 from uuid import UUID, uuid4
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType
+from repositories.job_provisioning_repo import JobProvisioningRepository
+from repositories.job_repo import JobRepository
 from repositories.remote_server_repo import RemoteServerRepository
 from schemas.remote_server import RemoteServer, RemoteServerCreate, RemoteServerUpdate
-from schemas.ssh_preflight import PreflightResult
+from schemas.ssh_preflight import PreflightResult, RemoteServerStatus
+from services.ssh.preflight import run_tier1_preflight
+from services.training_backends.phase import PhaseState
+from settings import Settings, get_settings
+
+# Per-server Tier 1 status: at most one in-flight SSH probe, shared across
+# concurrent callers (multiple browser tabs/components polling the same
+# server), plus a short-lived cached result so repeated polling within
+# `settings.ssh_preflight_throttle_s` never dials out again. This is the
+# per-server throttle the status endpoint shares with provisioning's own
+# per-alias connect throttle (`services.ssh.transport`), so UI polling cannot
+# pile SSH connections onto a server a job is actively using.
+_status_checks: dict[UUID, asyncio.Task[PreflightResult]] = {}
+_status_cache: dict[UUID, tuple[float, PreflightResult]] = {}
+
+
+def reset_status_cache() -> None:
+    """Drop every cached/in-flight Tier 1 status probe. Test-support only."""
+    _status_checks.clear()
+    _status_cache.clear()
 
 
 class RemoteServerService:
@@ -90,3 +113,84 @@ class RemoteServerService:
             "last_check_reason_code": reason_code,
         }
         return await self.repo.update(remote_server, partial_update)
+
+    async def get_status(self, remote_server_id: UUID, settings: Settings | None = None) -> RemoteServerStatus:
+        """Return one server's live status: a throttled Tier 1 probe plus in-use/GPU-wait state.
+
+        The Tier 1 SSH probe is shared across concurrent callers (multiple
+        browser tabs/components polling the same server) and cached for
+        `settings.ssh_preflight_throttle_s`, so repeated UI polling never dials
+        out more than once per throttle window - on top of, not instead of, the
+        per-alias connect throttle every `SshTransport.connect()` already applies
+        (`services.ssh.transport`). ``in_use_by_job_id``/``waiting_for_gpu`` are
+        cheap DB reads and are never cached: they must reflect the currently
+        provisioning/training job the moment it changes.
+        """
+        settings = settings or get_settings()
+        server = await self.get_remote_server(remote_server_id)
+
+        active = await JobProvisioningRepository(self.session).get_active_for_server(remote_server_id)
+        in_use_by_job_id = active.job_id if active is not None else None
+        waiting_for_gpu = False
+        if active is not None:
+            job = await JobRepository(self.session).get_by_id(active.job_id)
+            waiting_for_gpu = job is not None and self._is_waiting_for_gpu(job)
+
+        result = await self._tier1_status(server, settings)
+        status_value = "healthy" if result.passed else "degraded"
+        reason_code = result.blocking_failures[0].reason_code if result.blocking_failures else None
+
+        return RemoteServerStatus(
+            remote_server_id=remote_server_id,
+            status=status_value,
+            device_type=server.device_type.value,
+            checks=result.checks,
+            checked_at=result.checked_at,
+            latency_ms=result.latency_ms,
+            reason_code=reason_code,
+            in_use_by_job_id=in_use_by_job_id,
+            waiting_for_gpu=waiting_for_gpu,
+        )
+
+    @staticmethod
+    def _is_waiting_for_gpu(job: object) -> bool:
+        """True when a job's last reported phase is waiting on a busy remote GPU.
+
+        Reads the structured stepper descriptor `services.training_backends.phase`
+        attaches at `extra_info["phase"]` - the same channel
+        `SshTrainingBackend`'s `_on_gpu_wait` reports through while backing off a
+        busy accelerator. Per the `extra_info` contract, this is read only for
+        display: nothing here ever gates a workflow decision.
+        """
+        extra_info = getattr(job, "extra_info", None)
+        if not isinstance(extra_info, dict):
+            return False
+        phase = extra_info.get("phase")
+        if not isinstance(phase, dict):
+            return False
+        return phase.get("state") == PhaseState.WAITING.value
+
+    async def _tier1_status(self, server: RemoteServer, settings: Settings) -> PreflightResult:
+        """Return a Tier 1 preflight result, coalesced and throttled per server."""
+        cached = _status_cache.get(server.id)
+        if cached is not None:
+            cached_at, cached_result = cached
+            if monotonic() - cached_at < settings.ssh_preflight_throttle_s:
+                return cached_result
+
+        task = _status_checks.get(server.id)
+        if task is None:
+            task = asyncio.ensure_future(
+                asyncio.wait_for(run_tier1_preflight(server), timeout=settings.ssh_preflight_timeout_s)
+            )
+            _status_checks[server.id] = task
+
+            def _clear_inflight(done: asyncio.Task[PreflightResult], server_id: UUID = server.id) -> None:
+                if _status_checks.get(server_id) is done:
+                    del _status_checks[server_id]
+
+            task.add_done_callback(_clear_inflight)
+
+        result = await task
+        _status_cache[server.id] = (monotonic(), result)
+        return result
