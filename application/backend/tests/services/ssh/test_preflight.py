@@ -50,6 +50,7 @@ from services.ssh.preflight import (
     REASON_GPU_BUSY,
     REASON_HOST_KEY_MISMATCH,
     REASON_HOST_KEY_UNKNOWN,
+    REASON_IMAGE_PULLING,
     REASON_IMAGE_UNRESOLVED,
     REASON_INSUFFICIENT_DISK,
     REASON_NO_SIGNAL,
@@ -211,6 +212,12 @@ def _reason(result, key: CheckKey) -> str | None:
     check = result.check(key)
     assert check is not None, f"missing check: {key}"
     return check.reason_code
+
+
+def _detail_for(result, key: CheckKey) -> str | None:
+    check = result.check(key)
+    assert check is not None, f"missing check: {key}"
+    return check.detail
 
 
 # --------------------------------------------------------------------------- #
@@ -1201,3 +1208,79 @@ async def test_tier2_signature_check_is_never_blocking(install_transport) -> Non
 def test_trainer_image_ref_is_built_from_constants() -> None:
     assert trainer_image_ref(_REGISTRY, DeviceType.CUDA, "protocol-1") == _CUDA_IMAGE
     assert trainer_image_ref(f"{_REGISTRY}/", DeviceType.XPU, "latest").endswith("physicalai-trainer-xpu:latest")
+
+
+async def test_tier2_device_probe_mid_pull_is_skipped_not_failed(install_transport) -> None:
+    # Defense-in-depth for the race between `_image_present_locally` reporting
+    # present and the `docker run` a few lines later - e.g. another process
+    # evicting the image in between, forcing Docker to pull it inline. The raw
+    # progress output must never read as the compute probe, or the device,
+    # having failed.
+    script = _healthy_tier2_script()
+    script["docker run"] = _fail(
+        "Unable to find image 'ghcr.io/open-edge-platform/physicalai-trainer-cuda:protocol-1' locally\n"
+        "protocol-1: Pulling from open-edge-platform/physicalai-trainer-cuda\n"
+        "26c307b5e35a: Pulling fs layer\n"
+        "b07d7dc8cffa: Pulling fs layer\n"
+    )
+    install_transport(FakeTransport(script))
+
+    result = await run_tier2_preflight(_server())
+
+    assert _outcome(result, CheckKey.CONTAINER_DEVICE_PROBE) is CheckOutcome.SKIPPED
+    assert _reason(result, CheckKey.CONTAINER_DEVICE_PROBE) == REASON_IMAGE_PULLING
+    assert result.passed is True
+
+
+async def test_tier2_device_probe_mid_pull_also_skips_the_protocol_check(install_transport) -> None:
+    # `docker image inspect` needs the image locally too, so running it right
+    # after a mid-pull device probe would just produce a second, equally
+    # misleading failure ("no protocol version") for the same root cause.
+    script = _healthy_tier2_script()
+    script["docker run"] = _fail("Unable to find image 'img' locally\nPulling from registry\n")
+    install_transport(FakeTransport(script))
+
+    result = await run_tier2_preflight(_server())
+
+    assert _outcome(result, CheckKey.PROTOCOL_COMPATIBLE) is CheckOutcome.SKIPPED
+    assert _reason(result, CheckKey.PROTOCOL_COMPATIBLE) == REASON_IMAGE_PULLING
+
+
+async def test_tier2_device_probe_starts_a_background_pull_when_image_is_absent(install_transport) -> None:
+    # The primary path: the image simply is not cached locally yet (a cold
+    # host, or a protocol bump CI has not published an image for). Rather than
+    # `docker run` pulling it inline - tying the transfer to this check's
+    # short timeout and to the SSH connection Tier 2 is about to close - the
+    # pull is handed to a detached, `nohup`-backed process that keeps going
+    # after this check returns.
+    script = _healthy_tier2_script()
+    script["docker image inspect"] = _fail("Error: No such image: img", exit_status=1)
+    script["sh -c test -f"] = _fail("", exit_status=1)  # no pull already running
+    script["sh -c nohup docker pull"] = _ok("")
+    transport = install_transport(FakeTransport(script))
+
+    result = await run_tier2_preflight(_server())
+
+    assert _outcome(result, CheckKey.CONTAINER_DEVICE_PROBE) is CheckOutcome.SKIPPED
+    assert _reason(result, CheckKey.CONTAINER_DEVICE_PROBE) == REASON_IMAGE_PULLING
+    assert "Started pulling" in (_detail_for(result, CheckKey.CONTAINER_DEVICE_PROBE) or "")
+    assert _outcome(result, CheckKey.PROTOCOL_COMPATIBLE) is CheckOutcome.SKIPPED
+    assert _reason(result, CheckKey.PROTOCOL_COMPATIBLE) == REASON_IMAGE_PULLING
+    assert not transport.ran("docker run")
+    assert transport.ran("nohup docker pull")
+    assert result.passed is True
+
+
+async def test_tier2_device_probe_does_not_start_a_second_pull_already_in_flight(install_transport) -> None:
+    # Repeated "Test connection" clicks while a pull is downloading must not
+    # each kick off a competing pull for the same image.
+    script = _healthy_tier2_script()
+    script["docker image inspect"] = _fail("Error: No such image: img", exit_status=1)
+    script["sh -c test -f"] = _ok("")  # a pull is already running
+    transport = install_transport(FakeTransport(script))
+
+    result = await run_tier2_preflight(_server())
+
+    assert _outcome(result, CheckKey.CONTAINER_DEVICE_PROBE) is CheckOutcome.SKIPPED
+    assert "Still pulling" in (_detail_for(result, CheckKey.CONTAINER_DEVICE_PROBE) or "")
+    assert not transport.ran("nohup docker pull")
