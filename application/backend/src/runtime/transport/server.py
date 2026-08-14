@@ -108,6 +108,11 @@ class RuntimeZenohServer:
 
         self._metadata_queryable = self._session.declare_queryable(metadata_key(self._name), answer_metadata)
 
+    def has_matching_subscribers(self) -> bool:
+        """Return whether at least one client is subscribed to session state."""
+        publisher = self._publishers.get(StateEvent)
+        return publisher is not None and bool(publisher.matching_status.matching)
+
     def emit(self, event: RuntimeEvent, *, fatal: bool = False) -> None:
         """Publish an event without allowing transport failure to stop the robot loop."""
         with self._metadata_lock:

@@ -5,7 +5,6 @@ import json
 import os
 import queue
 import socket
-import threading
 import time
 from typing import Any
 from uuid import UUID
@@ -17,7 +16,6 @@ from api.robot_control import handle_outgoing
 from exceptions import BaseException as AppBaseException
 from exceptions import RobotDeviceAlreadyOwnedError
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand, StateEvent
-from runtime.hosts import session_worker
 from runtime.hosts.process_host import RuntimeProcessHost
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.ids import derive_endpoint_port, runtime_session_name
@@ -113,7 +111,7 @@ def test_killed_process_is_observable_without_waiting_indefinitely() -> None:
         assert not host.is_alive()
         assert not client.shutdown_received
         with pytest.raises(RuntimeProcessError, match="stopped unexpectedly"):
-            asyncio.run(asyncio.wait_for(handle_outgoing(_FakeWebSocket(), client, host), timeout=2))
+            asyncio.run(asyncio.wait_for(handle_outgoing(_FakeWebSocket(), client, _HostAsOwner(host)), timeout=2))
     finally:
         _stop_host(host, client)
 
@@ -134,24 +132,6 @@ def test_process_host_propagates_setup_error() -> None:
     finally:
         host.stop()
         client.close()
-
-
-def test_second_spawn_does_not_attach_to_or_disconnect_existing_session() -> None:
-    name = runtime_session_name(UUID("233f3b26-e411-4772-94aa-8580f7d44de2"))
-    first_host, first_client = _start_host(name, _document())
-    try:
-        second_host = RuntimeProcessHost(name, _document())
-        try:
-            with pytest.raises(AppBaseException) as exc_info:
-                second_host.start()
-            assert exc_info.value.error_code == RobotDeviceAlreadyOwnedError().error_code
-        finally:
-            second_host.stop()
-
-        assert first_host.is_alive()
-        assert first_host.error is None
-    finally:
-        _stop_host(first_host, first_client)
 
 
 def test_listener_bind_failure_reaches_parent_as_robot_ownership_error() -> None:
@@ -211,7 +191,7 @@ def test_spawn_payload_survives_json() -> None:
         "document": _document_with_leader(),
         "follower_name": "follower",
         "leader_name": "leader",
-        "parent_pid": os.getpid(),
+        "idle_timeout_s": 45.0,
     }
 
     assert json.loads(json.dumps(payload)) == payload
@@ -227,14 +207,6 @@ def test_child_runs_in_its_own_process_group() -> None:
         _stop_host(host, client)
 
 
-def test_parent_watchdog_stops_the_session_when_the_parent_pid_changes() -> None:
-    stop = threading.Event()
-
-    session_worker._watch_parent(parent_pid=os.getpid(), stop=stop)
-
-    assert stop.is_set()
-
-
 def test_stop_before_start_terminates_the_spawned_worker() -> None:
     name = runtime_session_name(UUID("15e54f25-b877-412a-9a40-8efc3f932b82"))
     host = RuntimeProcessHost(name, _document())
@@ -244,6 +216,21 @@ def test_stop_before_start_terminates_the_spawned_worker() -> None:
     host.join(timeout=2)
 
     assert not host.is_alive()
+
+
+class _HostAsOwner:
+    def __init__(self, host: RuntimeProcessHost) -> None:
+        self._host = host
+
+    def is_alive(self) -> bool:
+        return self._host.is_alive()
+
+    def exited_cleanly(self) -> bool:
+        return self._host.exited_cleanly
+
+    @property
+    def error(self) -> AppBaseException | None:
+        return self._host.error
 
 
 class _FakeWebSocket:

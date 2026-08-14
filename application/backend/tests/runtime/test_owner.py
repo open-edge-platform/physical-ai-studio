@@ -1,0 +1,305 @@
+from __future__ import annotations
+
+import http
+import json
+import os
+import queue
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
+from uuid import UUID, uuid4
+
+import pytest
+
+from exceptions import RuntimeSessionBusyError
+from runtime.contract import DisconnectCommand, SetFollowerSourceCommand, StateEvent
+from runtime.owner import RuntimeSessionOwner, probe_session_metadata, runtime_session_holder
+from runtime.transport.client import RuntimeSessionClient
+from runtime.transport.ids import runtime_session_name
+from runtime.transport.lock import SessionNameLock, live_session_pid, registered_session_names, session_lock_path
+from tests.runtime.test_session import _document, _document_with_leader
+
+
+def _name() -> str:
+    return runtime_session_name(uuid4())
+
+
+def _connect_owner(
+    name: str,
+    document: dict[str, Any],
+    *,
+    idle_timeout_s: float = 30.0,
+    follower_name: str | None = "follower",
+    leader_name: str | None = None,
+) -> tuple[RuntimeSessionOwner, RuntimeSessionClient]:
+    client = RuntimeSessionClient(name)
+    client.open()
+    owner = RuntimeSessionOwner(
+        client,
+        session_name=name,
+        document=document,
+        follower_name=follower_name,
+        leader_name=leader_name,
+        idle_timeout_s=idle_timeout_s,
+    )
+    try:
+        owner.connect()
+        client.wait_until_ready(owner, timeout=5)
+    except Exception:
+        owner.stop()
+        client.close()
+        raise
+    return owner, client
+
+
+def _stop_session(owner: RuntimeSessionOwner, *clients: RuntimeSessionClient) -> None:
+    if clients:
+        clients[0].apply(DisconnectCommand())
+    deadline = time.monotonic() + 3
+    while owner.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    owner.stop()
+    for client in clients:
+        client.close()
+
+
+def _drain_until_source(client: RuntimeSessionClient, source: str, timeout: float = 2.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            event = client.get_nowait()
+        except queue.Empty:
+            time.sleep(0.01)
+            continue
+        if isinstance(event, StateEvent) and event.data.follower_source == source:
+            return
+    pytest.fail(f"Did not observe follower_source={source!r}")
+
+
+def _follower_source(metadata: dict[str, Any]) -> str | None:
+    state = metadata.get("state")
+    if not isinstance(state, dict):
+        return None
+    data = state.get("data")
+    if not isinstance(data, dict):
+        return None
+    source = data.get("follower_source")
+    return source if isinstance(source, str) else None
+
+
+def _missing_pid() -> int:
+    for candidate in range(2**22, 2**22 + 10_000):
+        try:
+            os.kill(candidate, 0)
+        except OSError:
+            return candidate
+    raise RuntimeError("Could not find an unused pid")
+
+
+def test_second_client_attaches_to_the_running_session() -> None:
+    name = _name()
+    document = _document()
+    first_owner, first_client = _connect_owner(name, document)
+    try:
+        second_owner, second_client = _connect_owner(name, document)
+        try:
+            assert first_owner.spawned is True
+            assert second_owner.spawned is False
+            assert first_owner.metadata["pid"] == second_owner.metadata["pid"]
+            assert first_owner.host is not None
+            assert first_owner.host.is_alive()
+            assert second_owner.host is None
+        finally:
+            second_client.close()
+    finally:
+        _stop_session(first_owner, first_client)
+
+
+def test_losing_the_spawn_race_attaches_to_the_winner() -> None:
+    name = _name()
+    document = _document()
+
+    def connect() -> tuple[RuntimeSessionOwner, RuntimeSessionClient]:
+        return _connect_owner(name, document)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [future.result(timeout=30) for future in (pool.submit(connect), pool.submit(connect))]
+
+    owners = [owner for owner, _ in results]
+    clients = [client for _, client in results]
+    try:
+        pids = {owner.metadata["pid"] for owner in owners}
+        assert len(pids) == 1
+        assert sum(owner.spawned for owner in owners) <= 1
+        assert any(not owner.spawned for owner in owners)
+    finally:
+        _stop_session(owners[0], *clients)
+        for owner in owners[1:]:
+            owner.stop()
+
+
+def test_attaching_with_a_different_rig_is_refused() -> None:
+    name = _name()
+    owner, client = _connect_owner(name, _document(), follower_name="left arm")
+    try:
+        different = _document()
+        different["init_args"]["fps"] = 15.0
+        second_client = RuntimeSessionClient(name)
+        second_client.open()
+        second_owner = RuntimeSessionOwner(
+            second_client,
+            session_name=name,
+            document=different,
+            follower_name="left arm",
+            leader_name=None,
+            idle_timeout_s=30.0,
+        )
+        try:
+            with pytest.raises(RuntimeSessionBusyError) as exc_info:
+                second_owner.connect()
+            assert int(exc_info.value.http_status) == http.HTTPStatus.LOCKED
+            assert exc_info.value.error_code == "runtime_session_busy"
+            assert "left arm" in exc_info.value.message
+            assert str(owner.metadata["pid"]) in exc_info.value.message
+        finally:
+            second_owner.stop()
+            second_client.close()
+    finally:
+        _stop_session(owner, client)
+
+
+def test_losing_the_last_subscriber_switches_to_hold() -> None:
+    name = _name()
+    document = _document_with_leader()
+    owner, client = _connect_owner(name, document, idle_timeout_s=5.0, leader_name="leader")
+    try:
+        client.apply(SetFollowerSourceCommand(follower_source="teleop"))
+        _drain_until_source(client, "teleop")
+        client.close()
+        time.sleep(0.4)
+
+        second_owner, second_client = _connect_owner(name, document, idle_timeout_s=5.0, leader_name="leader")
+        try:
+            assert second_owner.spawned is False
+            assert _follower_source(second_owner.metadata) == "hold"
+        finally:
+            _stop_session(second_owner, second_client)
+    finally:
+        if owner.is_alive():
+            owner.stop()
+
+
+def test_session_exits_when_no_client_is_attached() -> None:
+    name = _name()
+    owner, client = _connect_owner(name, _document(), idle_timeout_s=1.0)
+    try:
+        client.close()
+        deadline = time.monotonic() + 5
+        while owner.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not owner.is_alive()
+    finally:
+        owner.stop()
+
+
+def test_a_client_attaching_on_the_idle_deadline_keeps_the_session() -> None:
+    name = _name()
+    owner, client = _connect_owner(name, _document(), idle_timeout_s=1.5)
+    try:
+        client.close()
+        time.sleep(1.2)
+        second_owner, second_client = _connect_owner(name, _document(), idle_timeout_s=1.5)
+        try:
+            time.sleep(1.0)
+            assert second_owner.is_alive()
+            assert second_owner.metadata["pid"] == owner.metadata["pid"]
+        finally:
+            _stop_session(second_owner, second_client)
+    finally:
+        if owner.is_alive():
+            owner.stop()
+
+
+def test_a_new_client_reattaches_after_every_client_goes_away() -> None:
+    name = _name()
+    document = _document()
+    owner, client = _connect_owner(name, document, idle_timeout_s=5.0)
+    original_pid = owner.metadata["pid"]
+    try:
+        client.close()
+        time.sleep(0.2)
+        second_owner, second_client = _connect_owner(name, document, idle_timeout_s=5.0)
+        try:
+            assert second_owner.spawned is False
+            assert second_owner.metadata["pid"] == original_pid
+            events: list[object] = []
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                try:
+                    events.append(second_client.get_nowait())
+                except queue.Empty:
+                    time.sleep(0.01)
+                if any(isinstance(event, StateEvent) for event in events):
+                    break
+            assert any(isinstance(event, StateEvent) and event.data.connected for event in events)
+        finally:
+            _stop_session(second_owner, second_client)
+    finally:
+        if owner.is_alive():
+            owner.stop()
+
+
+def test_dead_pid_is_not_reported_as_a_holder() -> None:
+    name = _name()
+    path = session_lock_path(name)
+    path.write_text(
+        json.dumps(
+            {
+                "kind": "rt-name",
+                "identity": name,
+                "pid": _missing_pid(),
+                "created_at": time.time(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert name not in registered_session_names()
+    assert live_session_pid(name) is None
+
+
+def test_released_lock_is_not_reported_as_a_holder() -> None:
+    name = _name()
+    lock = SessionNameLock(name)
+    assert lock.acquire()
+    assert name in registered_session_names()
+    lock.release()
+
+    assert lock.path.exists()
+    assert name not in registered_session_names()
+    assert live_session_pid(name) is None
+
+
+def test_holder_does_not_probe_when_the_lock_is_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def _probe(session_name: str, timeout: float = 1.0) -> dict[str, Any] | None:
+        calls.append(session_name)
+        return {"pid": 1}
+
+    monkeypatch.setattr("runtime.owner.probe_session_metadata", _probe)
+    assert runtime_session_holder(uuid4()) is None
+    assert calls == []
+
+
+def test_probe_session_metadata_is_reachable_after_lock_hit() -> None:
+    name = _name()
+    owner, client = _connect_owner(name, _document())
+    try:
+        follower_id = UUID(name.removeprefix("rt-"))
+        holder = runtime_session_holder(follower_id)
+        assert holder is not None
+        assert holder["pid"] == owner.metadata["pid"]
+        assert probe_session_metadata(name) is not None
+    finally:
+        _stop_session(owner, client)

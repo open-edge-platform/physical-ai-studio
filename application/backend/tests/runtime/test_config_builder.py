@@ -9,7 +9,7 @@ from physicalai.config import to_yaml, validate_config
 from physicalai.runtime import RobotRuntime
 
 from robots.robot_client_factory import RobotClientFactory
-from runtime.config_builder import build_runtime_config, runtime_config_change_me
+from runtime.config_builder import build_runtime_config, runtime_config_change_me, runtime_config_digest
 from schemas import SerialPortInfo
 from schemas.project_camera import CameraAdapter
 from schemas.robot import RobotAdapter
@@ -134,3 +134,21 @@ async def test_export_keeps_the_stored_port_when_the_robot_is_absent(mocker: Any
     port = document["init_args"]["robot"]["init_args"]["robot"]["init_args"]["port"]
     assert port == "/dev/ttyACM0"
     assert runtime_config_change_me(document) == ["/dev/ttyACM0"]
+
+
+def test_runtime_config_digest_changes_when_the_rig_changes() -> None:
+    document = {
+        "class_path": "physicalai.runtime.RobotRuntime",
+        "init_args": {"fps": 30.0, "cameras": {}},
+    }
+    same = {
+        "init_args": {"cameras": {}, "fps": 30.0},
+        "class_path": "physicalai.runtime.RobotRuntime",
+    }
+    different = {
+        "class_path": "physicalai.runtime.RobotRuntime",
+        "init_args": {"fps": 15.0, "cameras": {}},
+    }
+
+    assert runtime_config_digest(document) == runtime_config_digest(same)
+    assert runtime_config_digest(document) != runtime_config_digest(different)

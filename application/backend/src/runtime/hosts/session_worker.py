@@ -9,29 +9,72 @@ import os
 import signal
 import sys
 import threading
+import time
 import traceback
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from loguru import logger
 
 from core.logging import setup_logging
 from exceptions import BaseException as AppBaseException
-from runtime.contract import ErrorEvent
+from exceptions import RuntimeSessionBusyError
+from runtime.config_builder import runtime_config_digest
+from runtime.contract import ErrorEvent, LifecycleData, LifecycleEvent, SetFollowerSourceCommand
 from runtime.session import RuntimeSession
+from runtime.transport.lock import SessionNameLock, live_session_pid
 from runtime.transport.server import RuntimeZenohServer
 
 if TYPE_CHECKING:
     from types import FrameType
 
-_WATCHDOG_INTERVAL_S = 0.1
+_IDLE_POLL_INTERVAL_S = 0.1
 
 
-def _watch_parent(parent_pid: int, stop: threading.Event) -> None:
-    """Stop when B1's spawning API exits; B2 replaces this with subscriber presence."""
-    while not stop.wait(_WATCHDOG_INTERVAL_S):
-        if os.getppid() != parent_pid:
-            logger.warning("Parent process {} exited; stopping the runtime session", parent_pid)
+def _watch_subscribers(
+    server: RuntimeZenohServer,
+    session: RuntimeSession,
+    idle_timeout_s: float,
+    stop: threading.Event,
+) -> None:
+    """Force hold when the last subscriber leaves, then idle-exit.
+
+    Started only after wait_for_client() returned, so a subscriber has already
+    matched at least once. Losing every subscriber is the worst abandonment
+    state — an arm following a leader with nobody watching — so the session
+    latches a target before the countdown starts.
+    """
+    subscribers_present = True
+    idle_since: float | None = None
+
+    while not stop.wait(_IDLE_POLL_INTERVAL_S):
+        if server.has_matching_subscribers():
+            subscribers_present = True
+            idle_since = None
+            continue
+        if subscribers_present:
+            subscribers_present = False
+            logger.warning("Runtime session lost its last subscriber; switching follower to hold")
+            try:
+                session.apply(SetFollowerSourceCommand(follower_source="hold"))
+            except Exception:
+                logger.exception("Failed to switch runtime session to hold after losing subscribers")
+        now = time.monotonic()
+        if idle_since is None:
+            idle_since = now
+        elif now - idle_since > idle_timeout_s:
+            if server.has_matching_subscribers():
+                # A client attached on the deadline. Without this re-check they
+                # would lose the session and pay a full hardware reconnect.
+                idle_since = None
+                continue
+            logger.info("Runtime session idle for {}s; shutting down", idle_timeout_s)
+            server.emit(LifecycleEvent(data=LifecycleData(event="shutdown", reason="idle_timeout")))
+            # Setting stop ends session.run(...), which returns through
+            # session.teardown() in main(). B4 extends that teardown with
+            # RecordingMutation.teardown so an idle exit during recording
+            # still saves the episode.
             stop.set()
             return
 
@@ -122,6 +165,78 @@ def _teardown(
     return failed
 
 
+@dataclass(frozen=True, slots=True)
+class _StartupPayload:
+    session_name: str
+    document: dict[str, Any]
+    follower_name: str | None
+    leader_name: str | None
+    idle_timeout_s: float
+
+
+def _parse_startup_payload(raw: str) -> _StartupPayload:
+    payload = json.loads(raw)
+    session_name = payload["session_name"]
+    document = payload["document"]
+    follower_name = payload.get("follower_name")
+    leader_name = payload.get("leader_name")
+    idle_timeout_s = payload["idle_timeout_s"]
+    if (
+        not isinstance(session_name, str)
+        or not isinstance(document, dict)
+        or isinstance(idle_timeout_s, bool)
+        or not isinstance(idle_timeout_s, int | float)
+        or (follower_name is not None and not isinstance(follower_name, str))
+        or (leader_name is not None and not isinstance(leader_name, str))
+    ):
+        raise TypeError("Runtime session startup payload has invalid field types")
+    return _StartupPayload(session_name, document, follower_name, leader_name, float(idle_timeout_s))
+
+
+def _open_locked_session(
+    payload: _StartupPayload,
+    stop: threading.Event,
+    loop: asyncio.AbstractEventLoop,
+    phase: list[str],
+) -> tuple[SessionNameLock, RuntimeZenohServer, RuntimeSession]:
+    """Take the name lock, declare endpoints, and set the session up.
+
+    ``phase`` is a one-element list so the handshake can report where startup
+    failed after this function raises.
+    """
+    lock = SessionNameLock(payload.session_name)
+    phase[0] = "name_lock_contention"
+    if not lock.acquire():
+        raise RuntimeSessionBusyError(robot_name=payload.follower_name, pid=live_session_pid(payload.session_name))
+
+    instance_id = uuid4().hex
+    server = RuntimeZenohServer(payload.session_name, instance_id=instance_id)
+    server.update_metadata(
+        config_digest=runtime_config_digest(payload.document),
+        pid=os.getpid(),
+        started_at=time.time(),
+        idle_timeout_s=payload.idle_timeout_s,
+    )
+    session = RuntimeSession(
+        payload.document,
+        event_sink=server,
+        follower_name=payload.follower_name,
+        leader_name=payload.leader_name,
+    )
+    phase[0] = "endpoint_collision"
+    server.open(session.apply)
+    server.wait_for_client()
+    threading.Thread(
+        target=_watch_subscribers,
+        args=(server, session, payload.idle_timeout_s, stop),
+        name="runtime-subscriber-watch",
+        daemon=True,
+    ).start()
+    phase[0] = "setup_failed"
+    loop.run_until_complete(session.setup())
+    return lock, server, session
+
+
 def main() -> int:
     """Run one runtime session configured by JSON stdin and acknowledged on stdout."""
     raw = sys.stdin.read()
@@ -132,61 +247,42 @@ def main() -> int:
     saved_fd = suppress_stdout()
     server: RuntimeZenohServer | None = None
     session: RuntimeSession | None = None
-    phase = "invalid_config"
+    lock: SessionNameLock | None = None
+    phase = ["invalid_config"]
 
     try:
-        payload = json.loads(raw)
-        session_name = payload["session_name"]
-        document = payload["document"]
-        follower_name = payload.get("follower_name")
-        leader_name = payload.get("leader_name")
-        parent_pid = payload["parent_pid"]
-        if not isinstance(session_name, str) or not isinstance(document, dict) or not isinstance(parent_pid, int):
-            raise TypeError("Runtime session startup payload has invalid field types")
+        try:
+            payload = _parse_startup_payload(raw)
+            setup_logging()
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, lambda signum, frame: _stop_on_sigterm(signum, frame, stop))
+            lock, server, session = _open_locked_session(payload, stop, loop, phase)
+        except Exception as exc:
+            restore_stdout(saved_fd)
+            signal_error(exc, phase=phase[0])
+            _teardown(loop, session, server, report_errors=False)
+            return 1
 
-        setup_logging()
-        signal.signal(signal.SIGINT, signal.SIG_IGN)
-        signal.signal(signal.SIGTERM, lambda signum, frame: _stop_on_sigterm(signum, frame, stop))
-        threading.Thread(
-            target=_watch_parent,
-            args=(parent_pid, stop),
-            name="runtime-parent-watchdog",
-            daemon=True,
-        ).start()
-
-        instance_id = uuid4().hex
-        server = RuntimeZenohServer(session_name, instance_id=instance_id)
-        session = RuntimeSession(
-            document,
-            event_sink=server,
-            follower_name=follower_name,
-            leader_name=leader_name,
-        )
-        phase = "endpoint_collision"
-        server.open(session.apply)
-        server.wait_for_client()
-        phase = "setup_failed"
-        loop.run_until_complete(session.setup())
-    except Exception as exc:
         restore_stdout(saved_fd)
-        signal_error(exc, phase=phase)
-        _teardown(loop, session, server, report_errors=False)
-        return 1
+        signal_ready()
 
-    restore_stdout(saved_fd)
-    signal_ready()
-
-    completed = False
-    try:
-        session.run(stop)
-        completed = True
-    except Exception as exc:
-        logger.exception("Runtime session failed")
-        _publish_fatal(server, exc)
+        completed = False
+        try:
+            # session.run() returns through session.teardown() below. B4 extends
+            # that teardown with RecordingMutation.teardown so an idle exit
+            # during recording still saves the episode.
+            session.run(stop)
+            completed = True
+        except Exception as exc:
+            logger.exception("Runtime session failed")
+            _publish_fatal(server, exc)
+        finally:
+            if _teardown(loop, session, server, report_errors=True):
+                completed = False
+        return 0 if completed else 1
     finally:
-        if _teardown(loop, session, server, report_errors=True):
-            completed = False
-    return 0 if completed else 1
+        if lock is not None:
+            lock.release()
 
 
 if __name__ == "__main__":

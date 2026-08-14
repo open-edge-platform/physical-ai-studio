@@ -58,6 +58,45 @@ class RuntimeSessionClient:
             encoding=zenoh.Encoding("application/msgpack"),
         )
 
+    def probe(self, timeout: float = 1.0) -> dict[str, Any] | None:
+        """Query metadata once. No retry and no client state change."""
+        if self._session is None:
+            raise RuntimeError("Runtime session client is not open")
+        try:
+            replies = self._session.get(metadata_key(self._name), timeout=timeout)
+            for reply in replies:
+                sample = reply.ok
+                if sample is None:
+                    continue
+                metadata = decode_metadata(sample.payload.to_bytes())
+                if self._instance_id is not None and metadata.get("instance_id") != self._instance_id:
+                    continue
+                return metadata
+        except Exception:
+            logger.debug("Runtime metadata query failed for {}", self._name, exc_info=True)
+        return None
+
+    def probe_with_retry(self, timeout: float) -> dict[str, Any] | None:
+        """Poll ``probe`` until metadata answers or the deadline elapses."""
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            metadata = self.probe(timeout=min(1.0, remaining))
+            if metadata is not None:
+                return metadata
+            time.sleep(min(0.05, remaining))
+
+    def attach(self, metadata: dict[str, Any]) -> None:
+        """Adopt the session generation id and flush any command buffered before it."""
+        instance_id = metadata.get("instance_id")
+        if instance_id is not None and (not isinstance(instance_id, str) or not instance_id):
+            raise RuntimeError("Runtime session metadata instance_id must be a string")
+        self._instance_id = instance_id
+        self._metadata_ready.set()
+        self._flush_pending_command()
+
     def connect(self, timeout: float = 10.0, *, process: Any = None) -> dict[str, Any]:
         """Wait for metadata before allowing any command publication."""
         if self._session is None:
@@ -74,22 +113,10 @@ class RuntimeSessionClient:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"Runtime session {self._name} did not answer metadata")
-            try:
-                replies = self._session.get(metadata_key(self._name), timeout=min(1.0, remaining))
-                for reply in replies:
-                    sample = reply.ok
-                    if sample is None:
-                        continue
-                    metadata = decode_metadata(sample.payload.to_bytes())
-                    if self._instance_id is None:
-                        self._instance_id = metadata["instance_id"]
-                    elif metadata.get("instance_id") != self._instance_id:
-                        continue
-                    self._metadata_ready.set()
-                    self._flush_pending_command()
-                    return metadata
-            except Exception:
-                logger.debug("Runtime metadata query failed for {}", self._name, exc_info=True)
+            metadata = self.probe(timeout=min(1.0, remaining))
+            if metadata is not None:
+                self.attach(metadata)
+                return metadata
             time.sleep(min(0.05, remaining))
 
     def apply(self, command: Command) -> None:
@@ -151,9 +178,15 @@ class RuntimeSessionClient:
             except Exception:
                 logger.debug("Failed to undeclare runtime subscriber", exc_info=True)
         if self._command_pub is not None:
-            self._command_pub.undeclare()
+            try:
+                self._command_pub.undeclare()
+            except Exception:
+                logger.debug("Failed to undeclare runtime command publisher", exc_info=True)
         if self._session is not None:
-            self._session.close()
+            try:
+                self._session.close()
+            except Exception:
+                logger.debug("Failed to close runtime Zenoh session", exc_info=True)
 
     def _flush_pending_command(self) -> None:
         with self._lock:

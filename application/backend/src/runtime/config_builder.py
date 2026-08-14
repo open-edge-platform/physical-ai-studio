@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import TYPE_CHECKING, Any, cast
 
 from physicalai.capture import ColorMode, SharedCamera
@@ -103,6 +105,12 @@ async def build_runtime_config(
     document = Config("physicalai.runtime.RobotRuntime", init_args).to_dict()
     validate_config(document)
     return cast("dict[str, Any]", document)
+
+
+def runtime_config_digest(document: dict[str, Any]) -> str:
+    """Identify one rig configuration, so a client cannot attach to a different one."""
+    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def runtime_config_change_me(document: dict[str, Any]) -> list[str]:

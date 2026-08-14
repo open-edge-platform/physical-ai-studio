@@ -26,12 +26,14 @@ class RuntimeProcessHost:
         *,
         follower_name: str | None = None,
         leader_name: str | None = None,
+        idle_timeout_s: float = 45.0,
         start_timeout: float = _DEFAULT_START_TIMEOUT,
     ) -> None:
         self._session_name = name
         self._document = document
         self._follower_name = follower_name
         self._leader_name = leader_name
+        self._idle_timeout_s = idle_timeout_s
         self._start_timeout = start_timeout
         self._proc: subprocess.Popen[str] | None = None
         self._error: AppBaseException | None = None
@@ -61,7 +63,7 @@ class RuntimeProcessHost:
                 "document": self._document,
                 "follower_name": self._follower_name,
                 "leader_name": self._leader_name,
-                "parent_pid": os.getpid(),
+                "idle_timeout_s": self._idle_timeout_s,
             }
         )
         with self._lock:
@@ -208,12 +210,15 @@ class RuntimeProcessHost:
             payload = json.loads(line.removeprefix("ERROR:"))
             message = payload["msg"]
             error_code = payload["error_code"]
+            phase = payload.get("phase")
             if not isinstance(message, str) or not isinstance(error_code, str):
                 raise TypeError("msg and error_code must be strings")
+            if phase is not None and not isinstance(phase, str):
+                raise TypeError("phase must be a string")
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise AppBaseException(
                 message=f"Runtime session worker returned a malformed startup error: {line!r}",
                 error_code="robot_connection_failed",
                 http_status=500,
             ) from exc
-        return AppBaseException(message=message, error_code=error_code, http_status=500)
+        return AppBaseException(message=message, error_code=error_code, http_status=500, phase=phase)

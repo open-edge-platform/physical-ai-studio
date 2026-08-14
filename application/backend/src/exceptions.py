@@ -27,10 +27,11 @@ class BaseException(Exception):
     :param http_status: int default http status code to return to user
     """
 
-    def __init__(self, message: str, error_code: str, http_status: int) -> None:
+    def __init__(self, message: str, error_code: str, http_status: int, *, phase: str | None = None) -> None:
         self.message = message
         self.error_code = error_code
         self.http_status = http_status
+        self.phase = phase
         super().__init__(message)
 
 
@@ -224,7 +225,24 @@ class RecordingLockError(BaseException):
         super().__init__(
             message=message,
             error_code="recording_locked",
-            http_status=423,
+            http_status=http.HTTPStatus.LOCKED,
+        )
+
+
+class RuntimeSessionBusyError(BaseException):
+    """Raised when a live runtime session already holds the robot being asked for."""
+
+    def __init__(self, *, robot_name: str | None = None, pid: int | None = None) -> None:
+        subject = f"Robot {robot_name!r} is" if robot_name else "This robot is"
+        holder = f" (pid {pid})" if pid is not None else ""
+        message = (
+            f"{subject} already in use by a running session{holder}. "
+            "Stop that session, or wait for it to disconnect, then try again."
+        )
+        super().__init__(
+            message=message,
+            error_code="runtime_session_busy",
+            http_status=http.HTTPStatus.LOCKED,
         )
 
 
