@@ -57,6 +57,24 @@ def test_deleting_a_held_robot_returns_423(monkeypatch: pytest.MonkeyPatch) -> N
     assert service.deleted == []
 
 
+def test_deleting_a_robot_whose_lock_is_live_without_metadata_returns_423(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _StubRobotService(_StubRobot("left arm"))
+    monkeypatch.setattr("runtime.owner.live_session_pid", lambda name: 41273)
+    monkeypatch.setattr("runtime.owner.probe_session_metadata", lambda *args, **kwargs: None)
+    project_id = uuid4()
+    robot_id = uuid4()
+
+    response = _client(service).delete(f"/api/projects/{project_id}/robots/{robot_id}")
+
+    assert response.status_code == 423
+    body = response.json()
+    assert body["error_code"] == "runtime_session_busy"
+    assert "41273" in body["message"]
+    assert service.deleted == []
+
+
 def test_deleting_an_unheld_robot_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     service = _StubRobotService(_StubRobot("idle arm"))
     probe = MagicMock()

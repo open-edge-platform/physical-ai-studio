@@ -7,13 +7,15 @@ import queue
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
 
 from exceptions import RuntimeSessionBusyError
+from runtime.config_builder import runtime_config_digest
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand, StateEvent
-from runtime.owner import RuntimeSessionOwner, probe_session_metadata, runtime_session_holder
+from runtime.owner import RuntimeSessionOwner, probe_session_metadata, runtime_session_holder, stop_runtime_session
 from runtime.transport.client import RuntimeSessionClient
 from runtime.transport.ids import runtime_session_name
 from runtime.transport.lock import SessionNameLock, live_session_pid, registered_session_names, session_lock_path
@@ -168,6 +170,86 @@ def test_attaching_with_a_different_rig_is_refused() -> None:
         _stop_session(owner, client)
 
 
+def test_replace_stops_the_existing_session_and_spawns_with_the_new_rig() -> None:
+    name = _name()
+    owner, client = _connect_owner(name, _document(), follower_name="left arm")
+    original_pid = owner.metadata["pid"]
+    try:
+        different = _document()
+        different["init_args"]["fps"] = 15.0
+        second_client = RuntimeSessionClient(name)
+        second_client.open()
+        second_owner = RuntimeSessionOwner(
+            second_client,
+            session_name=name,
+            document=different,
+            follower_name="left arm",
+            leader_name=None,
+            idle_timeout_s=30.0,
+        )
+        try:
+            second_owner.connect(replace=True)
+            second_client.wait_until_ready(second_owner, timeout=5)
+            assert second_owner.spawned is True
+            assert second_owner.metadata["pid"] != original_pid
+            assert second_owner.metadata["config_digest"] == runtime_config_digest(different)
+            assert not owner.is_alive()
+        finally:
+            _stop_session(second_owner, second_client)
+    finally:
+        if owner.is_alive():
+            owner.stop()
+        client.close()
+
+
+def test_replace_spawns_even_when_the_rig_matches() -> None:
+    name = _name()
+    document = _document()
+    owner, client = _connect_owner(name, document)
+    original_pid = owner.metadata["pid"]
+    try:
+        second_client = RuntimeSessionClient(name)
+        second_client.open()
+        second_owner = RuntimeSessionOwner(
+            second_client,
+            session_name=name,
+            document=document,
+            follower_name="follower",
+            leader_name=None,
+            idle_timeout_s=30.0,
+        )
+        try:
+            second_owner.connect(replace=True)
+            second_client.wait_until_ready(second_owner, timeout=5)
+            assert second_owner.spawned is True
+            assert second_owner.metadata["pid"] != original_pid
+        finally:
+            _stop_session(second_owner, second_client)
+    finally:
+        if owner.is_alive():
+            owner.stop()
+        client.close()
+
+
+def test_stop_runtime_session_is_a_noop_when_nothing_is_running() -> None:
+    stop_runtime_session(_name())
+
+
+def test_stop_runtime_session_terminates_a_live_child() -> None:
+    name = _name()
+    owner, client = _connect_owner(name, _document())
+    try:
+        stop_runtime_session(name)
+        deadline = time.monotonic() + 3
+        while owner.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not owner.is_alive()
+        assert live_session_pid(name) is None
+    finally:
+        owner.stop()
+        client.close()
+
+
 def test_losing_the_last_subscriber_switches_to_hold() -> None:
     name = _name()
     document = _document_with_leader()
@@ -303,3 +385,67 @@ def test_probe_session_metadata_is_reachable_after_lock_hit() -> None:
         assert probe_session_metadata(name) is not None
     finally:
         _stop_session(owner, client)
+
+
+def test_holder_treats_a_lock_without_metadata_as_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    follower_id = uuid4()
+    name = runtime_session_name(follower_id)
+    monkeypatch.setattr("runtime.owner.live_session_pid", lambda session_name: 41273 if session_name == name else None)
+    monkeypatch.setattr("runtime.owner.probe_session_metadata", lambda *args, **kwargs: None)
+
+    holder = runtime_session_holder(follower_id)
+
+    assert holder == {"pid": 41273}
+
+
+def _owner_with_mock_client(name: str | None = None) -> tuple[RuntimeSessionOwner, Any]:
+    client = MagicMock()
+    owner = RuntimeSessionOwner(
+        client,
+        session_name=name or _name(),
+        document=_document(),
+        follower_name="follower",
+        leader_name=None,
+        idle_timeout_s=30.0,
+    )
+    return owner, client
+
+
+def test_abandoned_spawn_is_stopped_before_metadata_answers() -> None:
+    owner, client = _owner_with_mock_client()
+    host = MagicMock()
+    owner._host = host
+    client.probe.return_value = None
+
+    owner.stop_abandoned_spawn()
+
+    host.stop.assert_called_once()
+
+
+def test_abandoned_spawn_is_not_stopped_once_metadata_answers() -> None:
+    owner, client = _owner_with_mock_client()
+    host = MagicMock()
+    owner._host = host
+    client.probe.return_value = {"pid": 41273}
+
+    owner.stop_abandoned_spawn()
+
+    host.stop.assert_not_called()
+
+
+def test_abandoned_spawn_is_not_stopped_after_the_child_is_ready() -> None:
+    owner, client = _owner_with_mock_client()
+    host = MagicMock()
+    owner._host = host
+    owner._spawned = True
+
+    owner.stop_abandoned_spawn()
+
+    host.stop.assert_not_called()
+    client.probe.assert_not_called()
+
+
+def test_attached_owner_does_not_stop_on_abandon() -> None:
+    owner, _client = _owner_with_mock_client()
+
+    owner.stop_abandoned_spawn()

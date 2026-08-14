@@ -60,7 +60,10 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
     const [error, setError] = useState<string | null>(null);
     const [errorCode, setErrorCode] = useState<string | null>(null);
     const [warning, setWarning] = useState<string | null>(null);
+    const [socketEnabled, setSocketEnabled] = useState(true);
     const hasFatalError = useRef(false);
+    const restartRequested = useRef(false);
+    const socketEnabledRef = useRef(true);
 
     const handleMessage = useCallback((event: WebSocketEventMap['message']) => {
         try {
@@ -106,28 +109,42 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
             reconnectAttempts: 5,
             reconnectInterval: 3000,
             onOpen: () => {
+                socketEnabledRef.current = true;
                 if (hasFatalError.current) {
                     return;
                 }
                 setError(null);
                 setErrorCode(null);
                 setWarning(null);
+                const shouldRestart = restartRequested.current;
+                restartRequested.current = false;
                 socket.sendJsonMessage({
                     follower_id,
                     leader_id,
+                    ...(shouldRestart ? { restart: true } : {}),
                 });
             },
             onMessage: handleMessage,
             onError: (wsError) => console.error('WebSocket error:', wsError),
             onClose: (event) => {
+                if (!socketEnabledRef.current || restartRequested.current) {
+                    return;
+                }
                 if (!hasFatalError.current && event.code !== 1000) {
                     hasFatalError.current = true;
                     setError(`Connection closed unexpectedly (code ${event.code})`);
                     setErrorCode('connection_closed');
                 }
             },
-        }
+        },
+        socketEnabled
     );
+
+    useEffect(() => {
+        if (!socketEnabled) {
+            setSocketEnabled(true);
+        }
+    }, [socketEnabled]);
 
     const setFollowerSourceRequest = (value: FollowerSource) => {
         socket.sendJsonMessage({
@@ -140,6 +157,15 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
         socket.sendJsonMessage({ event: 'disconnect' });
     };
 
+    const restart = useCallback(() => {
+        hasFatalError.current = false;
+        restartRequested.current = true;
+        socketEnabledRef.current = false;
+        setError(null);
+        setErrorCode(null);
+        setSocketEnabled(false);
+    }, []);
+
     return {
         joints,
         socket,
@@ -149,5 +175,6 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
         warning,
         setFollowerSource: setFollowerSourceRequest,
         disconnect,
+        restart,
     };
 };

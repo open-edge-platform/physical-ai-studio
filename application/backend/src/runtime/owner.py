@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
+import signal
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -24,6 +26,7 @@ if TYPE_CHECKING:
 
 _PROBE_TIMEOUT = 1.0
 _RACE_RETRY_TIMEOUT = 5.0
+_STOP_TIMEOUT = 5.0
 
 
 def probe_session_metadata(session_name: str, timeout: float = _PROBE_TIMEOUT) -> dict[str, Any] | None:
@@ -50,12 +53,67 @@ def runtime_session_holder(follower_id: UUID | str, *, timeout: float = _PROBE_T
     """Return metadata for a live session driving this follower, or ``None``.
 
     Reads the on-disk lock registry first — a miss is the common case and must
-    not open a Zenoh session — and only probes ``/metadata`` on a hit.
+    not open a Zenoh session — and only probes ``/metadata`` on a hit. A live
+    lock with a metadata miss is still treated as held: the worker may have
+    the flock and the arm before ``/metadata`` answers, and a probe timeout
+    must not look like an idle robot.
     """
     name = runtime_session_name(follower_id)
-    if live_session_pid(name) is None:
+    pid = live_session_pid(name)
+    if pid is None:
         return None
-    return probe_session_metadata(name, timeout=timeout)
+    metadata = probe_session_metadata(name, timeout=timeout)
+    if metadata is not None:
+        return metadata
+    logger.warning(
+        "Runtime session {} holds the lock (pid {}) but metadata did not answer",
+        name,
+        pid,
+    )
+    return {"pid": pid}
+
+
+def stop_runtime_session(session_name: str, *, timeout: float = _STOP_TIMEOUT) -> None:
+    """Terminate the live session for ``session_name``, if any. Blocking.
+
+    Sends SIGTERM to the lock holder, waits for the name lock to drop, then
+    SIGKILL. Does not attach as a subscriber, so a winding-down session is
+    not kept alive by the stop itself.
+    """
+    pid = live_session_pid(session_name)
+    if pid is None:
+        metadata = probe_session_metadata(session_name, timeout=min(1.0, timeout))
+        raw = None if metadata is None else metadata.get("pid")
+        pid = raw if isinstance(raw, int) and raw > 0 else None
+    if pid is None:
+        return
+
+    logger.info("Stopping runtime session {} (pid {})", session_name, pid)
+    _signal_pid(pid, signal.SIGTERM)
+    if _wait_until_session_gone(session_name, pid, timeout):
+        return
+
+    logger.warning("Runtime session {} (pid {}) did not stop within {}s, killing", session_name, pid, timeout)
+    _signal_pid(pid, signal.SIGKILL)
+    _wait_until_session_gone(session_name, pid, 1.0)
+
+
+def _signal_pid(pid: int, sig: signal.Signals) -> None:
+    with contextlib.suppress(OSError):
+        os.kill(pid, sig)
+
+
+def _wait_until_session_gone(session_name: str, pid: int, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if live_session_pid(session_name) is None:
+            return True
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return True
+        time.sleep(0.05)
+    return live_session_pid(session_name) is None
 
 
 class RuntimeSessionOwner:
@@ -127,9 +185,29 @@ class RuntimeSessionOwner:
         if self._host is not None:
             self._host.stop()
 
-    def connect(self) -> None:
-        """Attach to a live session, or spawn one. Blocking."""
-        metadata = self._client.probe()
+    def stop_abandoned_spawn(self) -> None:
+        """Stop a child this owner started that other clients cannot attach to yet.
+
+        A websocket close after ``/metadata`` is up is a detach: another client
+        may already be attached, and a refresh must be able to rejoin. Only an
+        in-flight spawn that has not published metadata is private to this owner.
+        """
+        if self._host is None or self._spawned or self._metadata is not None:
+            return
+        if self._client.probe(timeout=_PROBE_TIMEOUT) is not None:
+            return
+        self.stop()
+
+    def connect(self, *, replace: bool = False) -> None:
+        """Attach to a live session, or spawn one. Blocking.
+
+        When ``replace`` is true, any live session for this name is stopped
+        first and this owner always tries to spawn with its current document.
+        """
+        if replace:
+            stop_runtime_session(self._session_name)
+
+        metadata = None if replace else self._client.probe()
         if metadata is not None:
             self._attach_to(metadata)
             return
@@ -153,6 +231,7 @@ class RuntimeSessionOwner:
             self._attach_to(metadata)
             return
 
+        self._spawned = True
         try:
             metadata = self._wait_for_spawned_metadata(_RACE_RETRY_TIMEOUT)
             if metadata is None:
@@ -165,8 +244,8 @@ class RuntimeSessionOwner:
         except Exception:
             self.stop()
             self._host = None
+            self._spawned = False
             raise
-        self._spawned = True
 
     def _wait_for_spawned_metadata(self, timeout: float) -> dict[str, Any] | None:
         deadline = time.monotonic() + timeout

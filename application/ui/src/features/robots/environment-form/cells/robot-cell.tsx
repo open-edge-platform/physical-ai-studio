@@ -1,4 +1,4 @@
-import { Flex, ProgressCircle, Switch, View } from '@geti-ui/ui';
+import { Button, Flex, ProgressCircle, Switch, View } from '@geti-ui/ui';
 
 import { $api } from '../../../../api/client';
 import { getRobotConnectionErrorTitle } from '../../../../api/errors';
@@ -19,7 +19,7 @@ const AvailableRobotCell = ({
     leaderId?: string;
 }) => {
     const { project_id } = useProjectId();
-    const { joints, state, error, errorCode, warning, setFollowerSource } = useJointState(
+    const { joints, state, error, errorCode, warning, setFollowerSource, restart } = useJointState(
         project_id,
         followerId,
         leaderId
@@ -31,12 +31,24 @@ const AvailableRobotCell = ({
     if (error) {
         return (
             <View width='100%' height='100%' padding='size-200'>
-                <Flex width='100%' height='100%' justifyContent='center' alignItems='center'>
+                <Flex
+                    width='100%'
+                    height='100%'
+                    justifyContent='center'
+                    alignItems='center'
+                    direction='column'
+                    gap='size-100'
+                >
                     <InlineAlert variant='error'>
                         <strong>{getRobotConnectionErrorTitle(errorCode)}</strong>
                         <br />
                         {error}
                     </InlineAlert>
+                    {errorCode === 'runtime_session_busy' && (
+                        <Button variant='primary' onPress={restart}>
+                            Restart session
+                        </Button>
+                    )}
                 </Flex>
             </View>
         );
@@ -65,13 +77,18 @@ const AvailableRobotCell = ({
                     <InlineAlert variant='warning'>{warning}</InlineAlert>
                 </View>
             )}
-            {leaderId !== undefined && (
-                <View position={'absolute'} right={0} top={0}>
-                    <Switch isSelected={isTeleoperating} onChange={(b) => setFollowerSource(b ? 'teleop' : 'hold')}>
-                        Teleoperate
-                    </Switch>
-                </View>
-            )}
+            <View position={'absolute'} right={0} top={0} padding='size-100'>
+                <Flex gap='size-100' alignItems='center'>
+                    <Button variant='secondary' onPress={restart}>
+                        Restart session
+                    </Button>
+                    {leaderId !== undefined && (
+                        <Switch isSelected={isTeleoperating} onChange={(b) => setFollowerSource(b ? 'teleop' : 'hold')}>
+                            Teleoperate
+                        </Switch>
+                    )}
+                </Flex>
+            </View>
         </View>
     );
 };

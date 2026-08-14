@@ -82,12 +82,13 @@ const useRobotJointsState = (): {
     error: string | null;
     errorCode: string | null;
     disconnect: () => void;
+    restart: () => void;
 } => {
     const robot = useRobot();
     const modelJoints = useModelJoints();
 
     const { project_id, robot_id } = useRobotId();
-    const { joints, error, errorCode, disconnect } = useJointState(project_id, robot_id);
+    const { joints, error, errorCode, disconnect, restart } = useJointState(project_id, robot_id);
     useSynchronizeModelJoints(joints, robot.type);
 
     return {
@@ -101,22 +102,23 @@ const useRobotJointsState = (): {
         error,
         errorCode,
         disconnect,
+        restart,
     };
 };
 
 const EnabledJointControls = ({
     isExpanded,
-    onDisconnectReady,
+    onSessionReady,
 }: {
     isExpanded: boolean;
-    onDisconnectReady: (disconnect: (() => void) | null) => void;
+    onSessionReady: (session: { disconnect: () => void; restart: () => void } | null) => void;
 }) => {
-    const { joints, error, errorCode, disconnect } = useRobotJointsState();
+    const { joints, error, errorCode, disconnect, restart } = useRobotJointsState();
 
     useEffect(() => {
-        onDisconnectReady(disconnect);
-        return () => onDisconnectReady(null);
-    }, [disconnect, onDisconnectReady]);
+        onSessionReady({ disconnect, restart });
+        return () => onSessionReady(null);
+    }, [disconnect, restart, onSessionReady]);
 
     if (error) {
         return (
@@ -153,14 +155,14 @@ export const JointControls = ({
     setIsConnected: Dispatch<SetStateAction<boolean>>;
 }) => {
     const [isExpanded, setIsExpanded] = useState(true);
-    const disconnectRef = useRef<(() => void) | null>(null);
-    const onDisconnectReady = useCallback((disconnect: (() => void) | null) => {
-        disconnectRef.current = disconnect;
+    const sessionRef = useRef<{ disconnect: () => void; restart: () => void } | null>(null);
+    const onSessionReady = useCallback((session: { disconnect: () => void; restart: () => void } | null) => {
+        sessionRef.current = session;
     }, []);
 
     const onConnectChange = (connected: boolean) => {
         if (!connected) {
-            disconnectRef.current?.();
+            sessionRef.current?.disconnect();
         }
         setIsConnected(connected);
     };
@@ -194,12 +196,17 @@ export const JointControls = ({
                         </Heading>
                     </ActionButton>
 
-                    <Switch isSelected={isConnected} onChange={onConnectChange}>
-                        Connect
-                    </Switch>
+                    <Flex alignItems='center' gap='size-150'>
+                        {isConnected && (
+                            <ActionButton onPress={() => sessionRef.current?.restart()}>Restart session</ActionButton>
+                        )}
+                        <Switch isSelected={isConnected} onChange={onConnectChange}>
+                            Connect
+                        </Switch>
+                    </Flex>
                 </Flex>
                 {isConnected ? (
-                    <EnabledJointControls isExpanded={isExpanded} onDisconnectReady={onDisconnectReady} />
+                    <EnabledJointControls isExpanded={isExpanded} onSessionReady={onSessionReady} />
                 ) : (
                     <DisabledJointsControls isExpanded={isExpanded} />
                 )}

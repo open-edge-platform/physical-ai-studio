@@ -93,5 +93,15 @@ def test_start_runtime_session_keeps_process_failure_checks() -> None:
 
     asyncio.run(start_runtime_session(client, owner))
 
-    owner.connect.assert_called_once_with()
+    owner.connect.assert_called_once_with(replace=False)
+    client.wait_until_ready.assert_called_once_with(owner)
+
+
+def test_start_runtime_session_forwards_replace() -> None:
+    client = MagicMock()
+    owner = MagicMock()
+
+    asyncio.run(start_runtime_session(client, owner, replace=True))
+
+    owner.connect.assert_called_once_with(replace=True)
     client.wait_until_ready.assert_called_once_with(owner)

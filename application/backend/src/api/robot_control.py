@@ -89,9 +89,15 @@ async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) ->
         pass
 
 
-async def start_runtime_session(client: RuntimeSessionClient, owner: RuntimeSessionOwner) -> None:
-    """Attach or spawn, then wait for hardware readiness, off the event loop."""
-    await asyncio.to_thread(owner.connect)
+async def start_runtime_session(
+    client: RuntimeSessionClient, owner: RuntimeSessionOwner, *, replace: bool = False
+) -> None:
+    """Attach or spawn, then wait for hardware readiness, off the event loop.
+
+    ``replace`` stops any live session for this follower before spawning with
+    the handshake's current recipe.
+    """
+    await asyncio.to_thread(owner.connect, replace=replace)
     await asyncio.to_thread(client.wait_until_ready, owner)
 
 
@@ -102,7 +108,7 @@ async def robot_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
 
 
 @router.websocket("/ws")
-async def robot_websocket(  # noqa: PLR0912, PLR0915
+async def robot_websocket(  # noqa: PLR0915
     project_id: Annotated[UUID, Depends(get_project_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     robot_client_factory: RobotClientFactoryDep,
@@ -147,20 +153,20 @@ async def robot_websocket(  # noqa: PLR0912, PLR0915
             idle_timeout_s=settings.runtime_idle_timeout_s,
         )
         incoming_task = asyncio.create_task(handle_incoming(websocket, client))
-        startup_task = asyncio.create_task(start_runtime_session(client, owner))
+        startup_task = asyncio.create_task(
+            start_runtime_session(client, owner, replace=handshake.get("restart") is True)
+        )
         done, _ = await asyncio.wait(
             {incoming_task, startup_task},
             return_when=asyncio.FIRST_COMPLETED,
         )
         if incoming_task in done:
             incoming_task.result()
-            # Stop a spawn we still own, including one that has not yet set
-            # ``spawned``. Never stop an attached session another client may be using.
-            if owner.host is not None:
-                await asyncio.to_thread(owner.stop)
+            # Interrupt a spawn that is not yet discoverable. Once /metadata is
+            # up this close is a detach — same as after startup.
+            await asyncio.to_thread(owner.stop_abandoned_spawn)
             await asyncio.gather(startup_task, return_exceptions=True)
-            if owner.host is not None:
-                await asyncio.to_thread(owner.stop)
+            await asyncio.to_thread(owner.stop_abandoned_spawn)
             return
         startup_task.result()
 
