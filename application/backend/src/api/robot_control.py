@@ -166,7 +166,6 @@ async def robot_websocket(  # noqa: PLR0915
             # up this close is a detach — same as after startup.
             await asyncio.to_thread(owner.stop_abandoned_spawn)
             await asyncio.gather(startup_task, return_exceptions=True)
-            await asyncio.to_thread(owner.stop_abandoned_spawn)
             return
         startup_task.result()
 

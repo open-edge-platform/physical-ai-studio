@@ -226,14 +226,14 @@ def _open_locked_session(
     phase[0] = "endpoint_collision"
     server.open(session.apply)
     server.wait_for_client()
+    phase[0] = "setup_failed"
+    loop.run_until_complete(session.setup())
     threading.Thread(
         target=_watch_subscribers,
         args=(server, session, payload.idle_timeout_s, stop),
         name="runtime-subscriber-watch",
         daemon=True,
     ).start()
-    phase[0] = "setup_failed"
-    loop.run_until_complete(session.setup())
     return lock, server, session
 
 
