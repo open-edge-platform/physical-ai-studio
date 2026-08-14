@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
@@ -290,5 +290,36 @@ describe('TrainModelDialog', () => {
             )
         ).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+    });
+
+    it('shows a status indicator for each run target so its health is clear at a glance', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer({ remoteServers: [healthyRemoteServer] });
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () => HttpResponse.json(healthyRemoteTrainer)),
+            http.get('/api/remote-servers/{remote_server_id}/status', () =>
+                HttpResponse.json({
+                    remote_server_id: remoteServerId,
+                    status: 'healthy',
+                    device_type: 'cuda',
+                    waiting_for_gpu: false,
+                    checks: [],
+                })
+            )
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+
+        // Local always has a status (its device state), remote targets reflect live health.
+        const localOption = await screen.findByRole('option', { name: /this machine \(local\)/i });
+        expect(within(localOption).getByText('CPU only')).toBeInTheDocument();
+
+        const trainerOption = screen.getByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText('Healthy')).toBeInTheDocument());
+
+        const sshOption = screen.getByRole('option', { name: new RegExp(healthyRemoteServer.name) });
+        await waitFor(() => expect(within(sshOption).getByText('Healthy')).toBeInTheDocument());
     });
 });

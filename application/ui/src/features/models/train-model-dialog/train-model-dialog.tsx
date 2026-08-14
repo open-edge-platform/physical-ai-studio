@@ -14,6 +14,7 @@ import {
     Item,
     Key,
     Picker,
+    StatusLight,
     Text,
 } from '@geti-ui/ui';
 
@@ -21,6 +22,10 @@ import { $api } from '../../../api/client';
 import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
 import { useProject } from '../../projects/use-project';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
+import { remoteServerStatusLabel, remoteServerStatusVariant } from '../../training-targets/remote-server-status-utils';
+import { getDisplayHealth, healthLabel, healthVariant } from '../../training-targets/remote-trainer-health-utils';
+import { useRemoteServersStatus } from '../../training-targets/training-targets-table/use-remote-servers-status';
+import { useRemoteTrainersHealth } from '../../training-targets/training-targets-table/use-remote-trainers-health';
 import { useRemoteTrainerHealth } from '../../training-targets/use-remote-trainer-health';
 import { MODELS } from './policies';
 import { PolicyAccessAlert } from './policy-access-alert';
@@ -43,11 +48,15 @@ interface TrainModelDialogProps {
 
 export type TrainingTargetKind = 'local' | 'trainer' | 'ssh';
 
+type TrainingTargetStatusVariant = 'positive' | 'notice' | 'negative' | 'neutral' | 'yellow';
+
 type TrainingTargetOption = {
     id: string;
     label: string;
     /** `local`, `trainer:<remote_trainer_id>`, or `ssh:<remote_server_id>`. */
     kind: TrainingTargetKind;
+    statusVariant: TrainingTargetStatusVariant;
+    statusLabel: string;
 };
 
 const LOCAL_TARGET_ID = 'local';
@@ -63,24 +72,47 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // has: the trainer protocol can receive a dataset but not a base checkpoint.
     // So a resumed run offers local training only.
     const canTrainRemotely = baseModel === undefined;
+    const remoteTrainerHealthById = useRemoteTrainersHealth(canTrainRemotely ? remoteTrainers.map((t) => t.id) : []);
+    const remoteServerStatusById = useRemoteServersStatus(canTrainRemotely ? remoteServers.map((s) => s.id) : []);
     // One control lists every target type (local, direct-URL trainer, SSH
     // server) rather than a separate remote-server dropdown or a local/remote
     // mode toggle, so the derived `training_target` is always unambiguous.
+    // Each option carries its own status variant/label so the "Run on" dropdown
+    // shows, at a glance, which targets are currently working correctly.
     const trainingTargetOptions: TrainingTargetOption[] = [
-        { id: LOCAL_TARGET_ID, label: 'This machine (local)', kind: 'local' },
+        {
+            id: LOCAL_TARGET_ID,
+            label: 'This machine (local)',
+            kind: 'local',
+            statusVariant: 'positive',
+            statusLabel: bestDevice ? bestDevice.type.toUpperCase() : 'CPU only',
+        },
         ...(canTrainRemotely
-            ? remoteTrainers.map((remoteTrainer) => ({
-                  id: `trainer:${remoteTrainer.id}`,
-                  label: remoteTrainer.name,
-                  kind: 'trainer' as const,
-              }))
+            ? remoteTrainers.map((remoteTrainer) => {
+                  const entry = remoteTrainerHealthById.get(remoteTrainer.id);
+                  const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
+                  const isChecking = entry?.isChecking ?? false;
+                  return {
+                      id: `trainer:${remoteTrainer.id}`,
+                      label: remoteTrainer.name,
+                      kind: 'trainer' as const,
+                      statusVariant: healthVariant(displayHealth, isChecking),
+                      statusLabel: healthLabel(displayHealth, isChecking),
+                  };
+              })
             : []),
         ...(canTrainRemotely
-            ? remoteServers.map((remoteServer) => ({
-                  id: `ssh:${remoteServer.id}`,
-                  label: remoteServer.name,
-                  kind: 'ssh' as const,
-              }))
+            ? remoteServers.map((remoteServer) => {
+                  const entry = remoteServerStatusById.get(remoteServer.id);
+                  const isChecking = entry?.isChecking ?? false;
+                  return {
+                      id: `ssh:${remoteServer.id}`,
+                      label: remoteServer.name,
+                      kind: 'ssh' as const,
+                      statusVariant: remoteServerStatusVariant(entry?.status, isChecking),
+                      statusLabel: remoteServerStatusLabel(entry?.status, isChecking),
+                  };
+              })
             : []),
     ];
 
@@ -255,7 +287,19 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                         width='100%'
                         items={trainingTargetOptions}
                     >
-                        {(trainingTarget) => <Item key={trainingTarget.id}>{trainingTarget.label}</Item>}
+                        {(trainingTarget) => (
+                            <Item key={trainingTarget.id} textValue={trainingTarget.label}>
+                                <Text>{trainingTarget.label}</Text>
+                                {/* `Item` only recognizes plain `Text` children for its label/description
+                                    slots (a `StatusLight` isn't one), so nest it inside the description
+                                    slot rather than passing it as a sibling — otherwise both children
+                                    collapse into the same "label" grid area and overlap. */}
+                                <Text slot='description'>{trainingTarget.statusLabel}</Text>
+                                <Text slot={'icon'}>
+                                    <StatusLight variant={trainingTarget.statusVariant} marginBottom={0} />
+                                </Text>
+                            </Item>
+                        )}
                     </Picker>
 
                     <PolicySelection
