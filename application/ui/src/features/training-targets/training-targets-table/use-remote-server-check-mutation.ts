@@ -1,7 +1,7 @@
 import { $api } from '../../../api/client';
 
 /**
- * Runs the explicit Tier 2 preflight ("Test connection") for one SSH server.
+ * Runs the explicit Tier 2 preflight ("Pull & verify image") for one SSH server.
  * A mutation, never a query — this pulls a multi-gigabyte trainer image and
  * launches a one-shot container, so it must only ever fire from a deliberate
  * user action, never on mount or a status poll.

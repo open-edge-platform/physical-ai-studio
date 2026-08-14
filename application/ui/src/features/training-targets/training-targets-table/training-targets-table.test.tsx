@@ -314,7 +314,7 @@ describe('TrainingTargetsTable', () => {
             expect(checkSpy).not.toHaveBeenCalled();
         });
 
-        it('runs the Tier 2 check only from the explicit Test connection action', async () => {
+        it('runs the Tier 2 check only from the explicit Pull & verify image action', async () => {
             let callCount = 0;
             server.use(
                 http.post(REMOTE_SERVER_CHECK_PATH, () => {
@@ -331,7 +331,7 @@ describe('TrainingTargetsTable', () => {
             const user = userEvent.setup();
             render(<TrainingTargetsTable rows={[sshRow(remoteServer)]} onEdit={vi.fn()} onDelete={vi.fn()} />);
 
-            await user.click(await screen.findByRole('button', { name: 'Test connection' }));
+            await user.click(await screen.findByRole('button', { name: 'Pull & verify image' }));
 
             expect(callCount).toBe(1);
         });

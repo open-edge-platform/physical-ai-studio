@@ -32,12 +32,16 @@ export const checksForTier = (
  * Rolls a status result up into one badge variant, distinguishing a transiently
  * busy GPU (reported via a WARNING on gpu_free, never blocking) from an actual
  * failure so a busy target still reads as "notice", not "negative".
+ *
+ * Once a status has been reported, a subsequent re-check in flight keeps
+ * showing that last-known status rather than flipping to "neutral" — only the
+ * very first check (no status yet) reads as neutral/checking.
  */
 export const remoteServerStatusVariant = (
     status: Pick<SchemaRemoteServerStatus, 'status' | 'checks'> | undefined,
-    isChecking: boolean
+    _isChecking: boolean
 ): RemoteServerStatusVariant => {
-    if (isChecking || status === undefined) return 'neutral';
+    if (status === undefined) return 'neutral';
     if (status.status === 'healthy') {
         const isBusy = (status.checks ?? []).some((check) => check.key === 'gpu_free' && check.outcome === 'warning');
         return isBusy ? 'notice' : 'positive';
@@ -50,8 +54,7 @@ export const remoteServerStatusLabel = (
     status: Pick<SchemaRemoteServerStatus, 'status' | 'checks'> | undefined,
     isChecking: boolean
 ): string => {
-    if (isChecking) return 'Checking…';
-    if (status === undefined) return 'Not checked';
+    if (status === undefined) return isChecking ? 'Checking…' : 'Not checked';
     const variant = remoteServerStatusVariant(status, isChecking);
     if (variant === 'notice' && status.status === 'healthy') return 'Busy';
     if (status.status === 'healthy') return 'Healthy';
@@ -69,7 +72,7 @@ export const checkLabel: Record<string, string> = {
     driver_present: 'GPU driver present',
     registry_reachable: 'Registry reachable',
     gpu_free: 'GPU free',
-    image_resolved: 'Image resolved & pulled',
+    image_resolved: 'Image pulled',
     image_signature: 'Image signature verified',
     container_device_probe: 'Container compute probe',
     protocol_compatible: 'Trainer protocol compatible',
@@ -84,8 +87,9 @@ export const remoteServerComputeDetail = (
     status: Pick<SchemaRemoteServerStatus, 'checks'> | undefined
 ): string | undefined => (status?.checks ?? []).find((check) => check.key === 'driver_present')?.detail ?? undefined;
 
-export const checkStatusLabel = (outcome: SchemaCheckOutcome): string => {
-    switch (outcome) {
+export const checkStatusLabel = (check: Pick<SchemaPreflightCheck, 'outcome' | 'reason_code'>): string => {
+    if (check.outcome === 'skipped' && check.reason_code === 'image_pulling') return 'Pulling image';
+    switch (check.outcome) {
         case 'passed':
             return 'Healthy';
         case 'warning':

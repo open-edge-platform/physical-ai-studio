@@ -1,3 +1,50 @@
 .emptyCheckList {
     grid-column: 1 / -1;
 }
+
+/*
+ * The "Image pull & verification" checks tend to carry long detail strings
+ * (image refs, error reasons) that wrap onto their own line, so this section
+ * gets extra breathing room between the label/detail lines and between rows.
+ * The "Health & preflight" checks stay on the compact default layout.
+ */
+.tier2CheckRow {
+    padding-block: var(--spectrum-global-dimension-size-150);
+}
+
+.tier2CheckRow:first-child {
+    padding-top: var(--spectrum-global-dimension-size-75);
+}
+
+.tier2CheckContent {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spectrum-global-dimension-size-50);
+}
+
+.summaryRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spectrum-global-dimension-size-100);
+    margin-top: var(--spectrum-global-dimension-size-100);
+}
+
+.emptyState {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-global-dimension-size-50);
+    max-width: 100%;
+    margin-top: var(--spectrum-global-dimension-size-100);
+}
+
+.emptyStateTitle {
+    display: block;
+    color: var(--spectrum-global-color-gray-800);
+    font-weight: 500;
+}
+
+.emptyStateBody {
+    display: block;
+    line-height: 1.4;
+}

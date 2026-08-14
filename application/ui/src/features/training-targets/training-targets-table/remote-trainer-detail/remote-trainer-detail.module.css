@@ -1,27 +1,112 @@
 .sectionHeading {
     margin-top: 0;
+    margin-bottom: 0;
     color: var(--spectrum-global-color-gray-700);
     font-size: var(--spectrum-global-dimension-font-size-100);
     letter-spacing: 0.06em;
     text-transform: uppercase;
 }
 
+/*
+ * Deterministic column layout for the expanded detail panel.
+ *
+ * A wrapping flex row sized each card by its content, so a single long detail
+ * string could push a card onto its own line and leave the others stacked
+ * unpredictably. A grid with equal, min-width-capped columns keeps the cards
+ * side by side and only collapses at defined breakpoints.
+ */
+.detailGrid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: var(--spectrum-global-dimension-size-300);
+    align-items: start;
+}
+
+.detailGrid.twoColumns {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+@media (max-width: 90rem) {
+    .detailGrid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 60rem) {
+    .detailGrid,
+    .detailGrid.twoColumns {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .detailSection {
+    /* Allows the card to shrink inside its grid track instead of overflowing. */
+    min-width: 0;
     padding: var(--spectrum-global-dimension-size-200);
     background: var(--spectrum-global-color-gray-100);
     border: 1px solid var(--spectrum-global-color-gray-300);
     border-radius: var(--spectrum-global-dimension-size-75);
 }
 
+.sectionHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spectrum-global-dimension-size-150);
+    min-height: var(--spectrum-global-dimension-size-400);
+}
+
+.sectionNote {
+    display: block;
+    max-width: 44ch;
+    margin-top: var(--spectrum-global-dimension-size-100);
+}
+
 .definitionList {
     display: grid;
-    grid-template-columns: minmax(9rem, max-content) minmax(0, 1fr);
-    gap: var(--spectrum-global-dimension-size-100) var(--spectrum-global-dimension-size-200);
+    grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+    align-items: baseline;
+    gap: 0 var(--spectrum-global-dimension-size-200);
     margin: var(--spectrum-global-dimension-size-150) 0 0;
 }
 
 .definitionList dt {
+    padding-block: var(--spectrum-global-dimension-size-100);
     color: var(--spectrum-global-color-gray-700);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+}
+
+.definitionList dd {
+    padding-block: var(--spectrum-global-dimension-size-100);
+    margin: 0;
+    min-width: 0;
+    color: var(--spectrum-global-color-gray-900);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+/* Hairline row separators, skipping the last row so the card doesn't end on a rule. */
+.definitionList dt:not(:nth-last-child(2)),
+.definitionList dd:not(:last-child) {
+    border-bottom: 1px solid var(--spectrum-global-color-gray-200);
+}
+
+/* Technical/identifier values (aliases, URLs, device codes) read better as monospace. */
+.definitionListMono {
+    font-family: var(--spectrum-alias-font-family-code, ui-monospace, monospace);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+}
+
+/* Timestamp values line up digit-for-digit instead of jittering. */
+.definitionListTabular {
+    font-variant-numeric: tabular-nums;
+}
+
+/* "Connection type" is informational metadata, not a health status, so it gets a neutral
+ * pill (matching the connection-kind badge in the table row) rather than a StatusLight. */
+.connectionTypeBadge {
+    color: var(--spectrum-global-color-gray-800);
+    background: var(--spectrum-global-color-gray-300);
 }
 
 .checkList {
@@ -33,9 +118,11 @@
 
 .checkContent {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     gap: var(--spectrum-global-dimension-size-75);
     min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .checkLabel {
@@ -81,4 +168,15 @@
 
 .neutral {
     color: var(--spectrum-global-color-gray-600);
+}
+
+.visuallyHidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }

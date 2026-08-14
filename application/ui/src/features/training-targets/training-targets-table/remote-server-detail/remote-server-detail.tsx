@@ -1,4 +1,6 @@
-import { Button, Flex, Heading, StatusLight, Text, View } from '@geti-ui/ui';
+import { useState } from 'react';
+
+import { ActionButton, Badge, Button, Heading, StatusLight, Text, Tooltip, TooltipTrigger, View } from '@geti-ui/ui';
 
 import { SchemaPreflightResult, SchemaRemoteServer, SchemaRemoteServerStatus } from '../../../../api/openapi-spec';
 import {
@@ -38,43 +40,80 @@ export const RemoteServerDetail = ({
     const rollupVariant = remoteServerStatusVariant(status, isChecking);
     const rollupLabel = remoteServerStatusLabel(status, isChecking);
 
+    const tier1Passing = tier1Checks.filter((check) => checkStateForCheck(check) === 'positive').length;
+    const tier1AllPassing = tier1Checks.length > 0 && tier1Passing === tier1Checks.length;
+    // An all-green list carries no actionable information, so it starts collapsed.
+    const [showTier1Checks, setShowTier1Checks] = useState(false);
+    const tier1Expanded = showTier1Checks || !tier1AllPassing;
+
+    // Pulling/verifying the image requires an SSH connection to the host, so the
+    // action is only meaningful once the "reachable" tier 1 check has passed.
+    const reachableCheck = tier1Checks.find((check) => check.key === 'reachable');
+    const isHostUnreachable = reachableCheck !== undefined && checkStateForCheck(reachableCheck) !== 'positive';
+    const isTestConnectionDisabled = isHostUnreachable || isRunningTier2;
+
     return (
         <View backgroundColor={'gray-75'} padding={'size-300'} borderColor={'gray-300'} borderWidth={'thin'}>
-            <Flex gap={'size-300'} wrap>
+            <div className={detailClasses.detailGrid}>
                 <View UNSAFE_className={detailClasses.detailSection}>
-                    <Flex justifyContent={'space-between'} alignItems={'center'}>
+                    <div className={detailClasses.sectionHeader}>
                         <Heading level={3} UNSAFE_className={detailClasses.sectionHeading}>
-                            Health &amp; preflight — Tier 1
+                            Health &amp; preflight
                         </Heading>
                         <StatusLight variant={rollupVariant}>{rollupLabel}</StatusLight>
-                    </Flex>
-                    <div className={detailClasses.checkList}>
-                        {tier1Checks.map((check) => (
-                            <HealthCheckRow
-                                key={check.key}
-                                label={checkLabel[check.key] ?? check.key}
-                                detail={check.detail ?? (check.method ? `via ${check.method}` : '')}
-                                state={checkStateForCheck(check)}
-                                status={checkStatusLabel(check.outcome)}
-                            />
-                        ))}
-                        {tier1Checks.length === 0 && (
-                            <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyCheckList}`}>
-                                Not checked yet.
-                            </Text>
-                        )}
                     </div>
+                    {tier1AllPassing && (
+                        <div className={classes.summaryRow}>
+                            <Text UNSAFE_className={detailClasses.checkDetail}>
+                                {`All ${tier1Checks.length} preflight checks passed`}
+                            </Text>
+                            <ActionButton isQuiet onPress={() => setShowTier1Checks((shown) => !shown)}>
+                                {showTier1Checks ? 'Hide checks' : 'Show checks'}
+                            </ActionButton>
+                        </div>
+                    )}
+                    {tier1Expanded && (
+                        <div className={detailClasses.checkList}>
+                            {tier1Checks.map((check) => (
+                                <HealthCheckRow
+                                    key={check.key}
+                                    label={checkLabel[check.key] ?? check.key}
+                                    detail={check.detail ?? (check.method ? `via ${check.method}` : '')}
+                                    state={checkStateForCheck(check)}
+                                    status={checkStatusLabel(check)}
+                                />
+                            ))}
+                            {tier1Checks.length === 0 && (
+                                <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyCheckList}`}>
+                                    Not checked yet.
+                                </Text>
+                            )}
+                        </div>
+                    )}
                 </View>
 
                 <View UNSAFE_className={detailClasses.detailSection}>
-                    <Flex justifyContent={'space-between'} alignItems={'center'}>
+                    <div className={detailClasses.sectionHeader}>
                         <Heading level={3} UNSAFE_className={detailClasses.sectionHeading}>
-                            Deep verification — Tier 2
+                            Image pull &amp; verification
                         </Heading>
-                        <Button variant='secondary' onPress={onTestConnection} isPending={isRunningTier2}>
-                            Test connection
-                        </Button>
-                    </Flex>
+                        <TooltipTrigger delay={300}>
+                            <Button
+                                variant='secondary'
+                                onPress={onTestConnection}
+                                isPending={isRunningTier2}
+                                isDisabled={isTestConnectionDisabled}
+                            >
+                                Pull &amp; verify image
+                            </Button>
+                            <Tooltip>
+                                {isHostUnreachable
+                                    ? 'SSH host is not reachable. Resolve connectivity before pulling ' +
+                                      'and verifying the image.'
+                                    : 'Pull and verify the trainer image'}
+                            </Tooltip>
+                        </TooltipTrigger>
+                    </div>
                     <div className={detailClasses.checkList}>
                         {tier2Checks.map((check) => (
                             <HealthCheckRow
@@ -82,47 +121,56 @@ export const RemoteServerDetail = ({
                                 label={checkLabel[check.key] ?? check.key}
                                 detail={check.detail ?? (check.method ? `via ${check.method}` : '')}
                                 state={checkStateForCheck(check)}
-                                status={checkStatusLabel(check.outcome)}
+                                status={checkStatusLabel(check)}
+                                rowClassName={classes.tier2CheckRow}
+                                contentClassName={classes.tier2CheckContent}
                             />
                         ))}
-                        {tier2Checks.length === 0 && (
-                            <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyCheckList}`}>
-                                Not verified yet. Test connection pulls the trainer image and probes the device. It
-                                never runs automatically.
-                            </Text>
-                        )}
                     </div>
+                    {tier2Checks.length === 0 && (
+                        <div className={classes.emptyState}>
+                            <Text UNSAFE_className={classes.emptyStateTitle}>Not verified yet</Text>
+                            <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyStateBody}`}>
+                                Pull &amp; verify image the trainer image (if needed) and probes the device.
+                            </Text>
+                        </div>
+                    )}
                     {tier2CheckedAt !== undefined && (
-                        <Text UNSAFE_className={detailClasses.checkDetail}>
+                        <Text UNSAFE_className={`${detailClasses.checkDetail} ${detailClasses.sectionNote}`}>
                             Last verified {new Date(tier2CheckedAt).toLocaleString()}
                         </Text>
                     )}
                 </View>
-
                 <View UNSAFE_className={detailClasses.detailSection}>
-                    <Heading level={3} UNSAFE_className={detailClasses.sectionHeading}>
-                        Connection
-                    </Heading>
+                    <div className={detailClasses.sectionHeader}>
+                        <Heading level={3} UNSAFE_className={detailClasses.sectionHeading}>
+                            Connection
+                        </Heading>
+                    </div>
                     <dl className={detailClasses.definitionList}>
                         <dt>Connection type</dt>
-                        <dd>SSH provisioned</dd>
-                        <dt>SSH host alias</dt>
-                        <dd>{remoteServer.ssh_host_alias}</dd>
-                        <dt>Device type</dt>
-                        <dd>{remoteServer.device_type.toUpperCase()}</dd>
-                        <dt>Added</dt>
                         <dd>
+                            <Badge variant='neutral' UNSAFE_className={detailClasses.connectionTypeBadge}>
+                                SSH provisioned
+                            </Badge>
+                        </dd>
+                        <dt>SSH host alias</dt>
+                        <dd className={detailClasses.definitionListMono}>{remoteServer.ssh_host_alias}</dd>
+                        <dt>Device type</dt>
+                        <dd className={detailClasses.definitionListMono}>{remoteServer.device_type.toUpperCase()}</dd>
+                        <dt>Added</dt>
+                        <dd className={detailClasses.definitionListTabular}>
                             {remoteServer.created_at ? new Date(remoteServer.created_at).toLocaleString() : 'Unknown'}
                         </dd>
                         <dt>Last checked</dt>
-                        <dd>
+                        <dd className={detailClasses.definitionListTabular}>
                             {remoteServer.last_check_at
                                 ? new Date(remoteServer.last_check_at).toLocaleString()
                                 : 'Not checked'}
                         </dd>
                     </dl>
                 </View>
-            </Flex>
+            </div>
         </View>
     );
 };
