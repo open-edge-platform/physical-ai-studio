@@ -222,7 +222,7 @@ class Settings(BaseSettings):
         return Path(value).expanduser()
 
     # Server
-    host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104
+    host: str = Field(default="127.0.0.1", alias="HOST")
     port: int = Field(default=7860, alias="PORT")
 
     # Database

@@ -31,9 +31,11 @@ arguments), the backend re-evaluates whether it is safe to serve the feature:
 - If `SSH_REMOTE_TRAINER_ENABLED` is `false` (the default), the feature is
   simply off.
 - If it is `true` **and** the backend is bound to a loopback address
-  (`127.0.0.1`, `::1`, or `localhost`), the feature is active.
+  (`127.0.0.1`, `::1`, or `localhost` — the packaged default), the feature is
+  active.
 - If it is `true` **and** the backend is bound to anything else (including
-  the packaged default `HOST=0.0.0.0`), the feature fails closed: it behaves
+  `HOST=0.0.0.0`, as set by the packaged Docker Compose file), the feature
+  fails closed: it behaves
   as if it were disabled, and the backend logs a `critical` startup message
   explaining why.
 
@@ -76,7 +78,8 @@ reached without authentication.
 - Keep `SSH_REMOTE_TRAINER_ENABLED=false` (the default) for any deployment
   that is not a single operator's own workstation.
 - When enabling it, also confirm `HOST` is a loopback address
-  (`127.0.0.1`/`::1`) — the default packaged `HOST=0.0.0.0` will cause the
+  (`127.0.0.1`/`::1`, the packaged default) — running under the Docker Compose
+  deployment, which sets `HOST=0.0.0.0`, will cause the
   feature to fail closed even with the switch on.
 - Treat a `critical`-level `"SSH remote-trainer feature disabled at
   startup"` log line as an operator action item: either narrow `HOST` to a
