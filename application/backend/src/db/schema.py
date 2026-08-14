@@ -10,6 +10,22 @@ class Base(DeclarativeBase):
     pass
 
 
+class RemoteTrainerDB(Base):
+    """A direct trainer endpoint configured for reuse across projects."""
+
+    __tablename__ = "remote_trainers"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
 class ProjectDB(Base):
     __tablename__ = "projects"
 

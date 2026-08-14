@@ -27,8 +27,8 @@ class JobRepository(BaseRepository):
         return JobMapper.from_schema
 
     async def is_job_duplicate(self, project_id: UUID, payload: TrainJobPayload) -> bool:
-        # Convert payload to dict for comparison
-        payload_dict = payload.model_dump()
+        # Match the JSON representation stored by JobMapper, including UUID values.
+        payload_dict = payload.model_dump(mode="json")
 
         # Check for jobs with same payload that are not completed
         existing_job = await self.get_one(
@@ -44,6 +44,14 @@ class JobRepository(BaseRepository):
 
     async def get_pending_job_by_type(self, job_type: JobType) -> Job | None:
         return await self.get_one(
+            extra_filters={"type": job_type, "status": JobStatus.PENDING},
+            order_by=self.schema.created_at,
+            ascending=True,
+        )
+
+    async def get_pending_jobs_by_type(self, job_type: JobType) -> list[Job]:
+        """Return pending jobs in submission order."""
+        return await self.get_all(
             extra_filters={"type": job_type, "status": JobStatus.PENDING},
             order_by=self.schema.created_at,
             ascending=True,

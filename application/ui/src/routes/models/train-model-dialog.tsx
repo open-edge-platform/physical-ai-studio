@@ -24,8 +24,14 @@ import {
 } from '@geti-ui/ui';
 
 import { $api } from '../../api/client';
-import { SchemaDeviceInfo, SchemaTrainJob as SchemaJob, SchemaModel } from '../../api/openapi-spec';
+import {
+    SchemaDeviceInfo,
+    SchemaTrainJob as SchemaJob,
+    SchemaModel,
+    SchemaRemoteTrainerHealth,
+} from '../../api/openapi-spec';
 import { useProject } from '../../features/projects/use-project';
+import { useRemoteTrainerHealth } from '../../features/remote-trainers/use-remote-trainer-health';
 import { InlineAlert } from '../../features/robots/setup-wizard/shared/inline-alert';
 
 import classes from './train-model-dialog.module.css';
@@ -35,9 +41,6 @@ export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
 };
 
 const GB = 1024 ** 3;
-
-/** How often to re-check training-device status while the remote trainer is unavailable (ms). */
-const REMOTE_UNAVAILABLE_POLL_MS = 5000;
 
 /** Format bytes as a human-readable GB string. */
 const formatBytes = (bytes: number): string => {
@@ -79,8 +82,13 @@ export const MODELS: ReadonlyArray<{
 interface TrainModelDialogProps {
     baseModel?: SchemaModel;
     close: (job: SchemaJob | undefined) => void;
-    defaultMaxSteps?: number;
+    defaultMaxEpochs?: number;
 }
+
+type TrainingTargetOption = {
+    id: string;
+    label: string;
+};
 
 interface PolicySelectionProps {
     selectedPolicy: string;
@@ -152,63 +160,62 @@ const PolicySelection = ({ selectedPolicy, onSelectionChange, isDisabled, traini
     );
 };
 
+/** Pick the device with the most VRAM (if any) from a list of reported devices. */
+const pickBestDevice = (devices: SchemaDeviceInfo[]): SchemaDeviceInfo | null =>
+    devices
+        .filter((d) => d.type !== 'cpu' && d.memory != null)
+        .reduce((best: SchemaDeviceInfo | null, device) => {
+            if (best === null || (device.memory ?? 0) > (best.memory ?? 0)) {
+                return device;
+            }
+
+            return best;
+        }, null);
+
 const useBestTrainingDevice = (): SchemaDeviceInfo | null => {
     const { devices } = useTrainingDevices();
 
-    // Pick the GPU with the most VRAM (if any)
-    return useMemo(() => {
-        return devices
-            .filter((d) => d.type !== 'cpu' && d.memory != null)
-            .reduce((best, device): SchemaDeviceInfo | null => {
-                if (best === null || (device.memory ?? 0) > (best.memory ?? 0)) {
-                    return device;
-                }
-
-                return best;
-            }, null);
-    }, [devices]);
+    return useMemo(() => pickBestDevice(devices), [devices]);
 };
 
 /**
  * Reads the training devices endpoint and normalizes the response.
  *
- * `remoteUnavailable` is true only when the backend runs in remote mode and the
- * remote trainer cannot be reached, in which case training must be blocked.
- *
- * The status is refetched every time the dialog is (re)opened so it never shows
- * stale cached data, and it is polled only while the remote trainer is
- * unavailable so the UI recovers automatically once the trainer comes back.
+ * The endpoint always reports this Studio host's local training devices. Remote
+ * trainer configuration is selected independently for each submitted job.
  */
 const useTrainingDevices = () => {
-    const { data, refetch } = $api.useQuery(
-        'get',
-        '/api/system/devices/training',
-        {},
-        {
-            refetchOnMount: 'always',
-            refetchInterval: (query) =>
-                query.state.data?.mode === 'remote' && !query.state.data.remote_available
-                    ? REMOTE_UNAVAILABLE_POLL_MS
-                    : false,
-        }
-    );
+    const { data } = $api.useQuery('get', '/api/system/devices/training', {}, { refetchOnMount: 'always' });
 
     return {
         devices: data?.devices ?? [],
-        remoteUnavailable: data?.mode === 'remote' && !data.remote_available,
-        // Re-run the status check on demand (e.g. right before submitting).
-        refetch,
     };
 };
 
-const TrainingDeviceInfo = () => {
+interface TrainingDeviceInfoProps {
+    isRemoteTarget: boolean;
+    remoteHealth: SchemaRemoteTrainerHealth | null;
+    isCheckingRemote: boolean;
+}
+
+const TrainingDeviceInfo = ({ isRemoteTarget, remoteHealth, isCheckingRemote }: TrainingDeviceInfoProps) => {
     const bestDevice = useBestTrainingDevice();
-    const { remoteUnavailable } = useTrainingDevices();
+    const bestRemoteDevice = useMemo(() => pickBestDevice(remoteHealth?.devices ?? []), [remoteHealth]);
 
     return (
         <Flex UNSAFE_style={{ textAlign: 'right' }} direction='column' gap='size-75'>
-            {remoteUnavailable ? (
-                <StatusLight variant='negative'>Remote trainer unavailable</StatusLight>
+            {isRemoteTarget ? (
+                remoteHealth?.status === 'unreachable' ? (
+                    <StatusLight variant='negative'>Remote trainer unavailable</StatusLight>
+                ) : bestRemoteDevice ? (
+                    <StatusLight variant='positive'>
+                        {bestRemoteDevice.name}, {formatBytes(bestRemoteDevice.memory!)} VRAM
+                    </StatusLight>
+                ) : isCheckingRemote && remoteHealth === null ? (
+                    <StatusLight variant='neutral'>Checking remote trainer…</StatusLight>
+                ) : (
+                    <StatusLight variant='neutral'>Remote trainer selected</StatusLight>
+                )
             ) : bestDevice ? (
                 <StatusLight variant='positive'>
                     {bestDevice.name}, {formatBytes(bestDevice.memory!)} VRAM
@@ -231,8 +238,8 @@ const PRECISION_LABELS: Record<string, string> = {
 };
 
 interface TrainingParametersProps {
-    maxSteps: number;
-    onMaxStepsChange: (value: number) => void;
+    maxEpochs: number;
+    onMaxEpochsChange: (value: number) => void;
     batchSize: number;
     onBatchSizeChange: (value: number) => void;
     numWorkers: Key | null;
@@ -248,8 +255,8 @@ interface TrainingParametersProps {
 }
 
 const TrainingParameters = ({
-    maxSteps,
-    onMaxStepsChange,
+    maxEpochs,
+    onMaxEpochsChange,
     batchSize,
     onBatchSizeChange,
     numWorkers,
@@ -297,20 +304,20 @@ const TrainingParameters = ({
                 </Flex>
             </Flex>
             <NumberField
-                label='Max Steps'
-                value={maxSteps}
-                onChange={onMaxStepsChange}
-                minValue={100}
-                maxValue={100000}
-                step={100}
+                label='Max Epochs'
+                value={maxEpochs}
+                onChange={onMaxEpochsChange}
+                minValue={1}
+                maxValue={1000}
+                step={1}
                 width='100%'
                 contextualHelp={
                     <ContextualHelp variant='info'>
-                        <Heading>Max steps</Heading>
+                        <Heading>Max epochs</Heading>
                         <Content>
                             <Text>
-                                Total number of gradient update steps. Training will stop after this many steps
-                                regardless of epochs.
+                                Total number of training epochs. Training will stop after this many full passes through
+                                the dataset. We recommend training for 5 to 10 epochs
                             </Text>
                         </Content>
                     </ContextualHelp>
@@ -392,9 +399,22 @@ const TrainingParameters = ({
     </Flex>
 );
 
-export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: TrainModelDialogProps) => {
+export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
-    const { remoteUnavailable, refetch: refetchTrainingDevices } = useTrainingDevices();
+    const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+    // Continuing an existing model needs its checkpoint, which only this machine
+    // has: the trainer protocol can receive a dataset but not a base checkpoint.
+    // So a resumed run offers local training only.
+    const canTrainRemotely = baseModel === undefined;
+    const trainingTargetOptions: TrainingTargetOption[] = [
+        { id: 'local', label: 'This machine (local)' },
+        ...(canTrainRemotely
+            ? remoteTrainers.map((remoteTrainer) => ({
+                  id: remoteTrainer.id,
+                  label: remoteTrainer.name,
+              }))
+            : []),
+    ];
 
     const defaultDatasetId = baseModel?.dataset_id ?? null;
     const extraPayload = baseModel ? { base_model_id: baseModel.id! } : undefined;
@@ -403,19 +423,37 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const { datasets, id: projectId } = useProject();
 
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
-    const [maxSteps, setMaxSteps] = useState<number>(defaultMaxSteps);
+    const [maxEpochs, setMaxEpochs] = useState<number>(defaultMaxEpochs);
     const [batchSize, setBatchSize] = useState<number>(8);
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
     const [precision, setPrecision] = useState<Key | null>(bestDevice?.type === 'cuda' ? 'bf16-mixed' : '32-true');
     const [compileModel, setCompileModel] = useState<boolean>(false);
+    const [remoteTrainerId, setRemoteTrainerId] = useState<Key | null>('local');
+    const isRemoteTarget = remoteTrainerId !== null && remoteTrainerId !== 'local';
+    const {
+        health: remoteTrainerHealth,
+        isChecking: isCheckingRemoteTrainer,
+        checkHealth: checkRemoteTrainerHealth,
+    } = useRemoteTrainerHealth(isRemoteTarget ? (remoteTrainerId?.toString() ?? null) : null);
+    const remoteUnavailable = isRemoteTarget && remoteTrainerHealth?.status === 'unreachable';
+    const bestRemoteDevice = useMemo(() => pickBestDevice(remoteTrainerHealth?.devices ?? []), [remoteTrainerHealth]);
+    // The device actually driving this job: the local GPU when training locally,
+    // or the remote trainer's reported GPU once its health check resolves. Auto
+    // scale/precision defaults and the disabled state below should track whichever
+    // one is currently in play, the same way they did when there was only ever a
+    // single active device to consider.
+    const activeDevice = isRemoteTarget ? bestRemoteDevice : bestDevice;
 
     useEffect(() => {
-        if (bestDevice?.type === 'cuda') {
+        if (activeDevice?.type === 'cuda') {
             setPrecision('bf16-mixed');
             setAutoScaleBatchSize(true);
+        } else {
+            setPrecision('32-true');
+            setAutoScaleBatchSize(false);
         }
-    }, [bestDevice]);
+    }, [activeDevice]);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train', {
         meta: {
@@ -426,15 +464,17 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
     const save = async () => {
         const dataset_id = selectedDataset?.toString();
 
-        if (!dataset_id || !selectedPolicy || remoteUnavailable) {
+        if (!dataset_id || !selectedPolicy || remoteTrainerId === null) {
             return;
         }
 
-        // Final guard: the remote trainer may have gone offline since the last
-        // poll, so re-check availability right before submitting the job.
-        const { data: latest } = await refetchTrainingDevices();
-        if (latest?.mode === 'remote' && !latest.remote_available) {
-            return;
+        if (isRemoteTarget) {
+            // Final guard: the remote trainer may have gone offline since the last
+            // poll, so re-check availability right before submitting the job.
+            const latestHealth = await checkRemoteTrainerHealth();
+            if (latestHealth === null || latestHealth.status === 'unreachable') {
+                return;
+            }
         }
 
         const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
@@ -444,13 +484,15 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
             project_id: projectId,
             model_name: name,
             policy: selectedPolicy,
-            max_steps: maxSteps,
+            max_epochs: maxEpochs,
             batch_size: batchSize,
             num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
             auto_scale_batch_size: autoScaleBatchSize,
             precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
             compile_model: compileModel,
             val_split: 0.1,
+            training_target: isRemoteTarget ? 'remote' : 'local',
+            ...(isRemoteTarget ? { remote_trainer_id: remoteTrainerId?.toString() } : {}),
             ...extraPayload,
         };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
@@ -464,7 +506,11 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                 <Flex justifyContent={'space-between'}>
                     <Text> Train model</Text>
 
-                    <TrainingDeviceInfo />
+                    <TrainingDeviceInfo
+                        isRemoteTarget={isRemoteTarget}
+                        remoteHealth={remoteTrainerHealth ?? null}
+                        isCheckingRemote={isCheckingRemoteTrainer}
+                    />
                 </Flex>
             </Heading>
             <Divider />
@@ -488,11 +534,21 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                         ))}
                     </Picker>
 
+                    <Picker
+                        label='Run on'
+                        selectedKey={remoteTrainerId}
+                        onSelectionChange={setRemoteTrainerId}
+                        width='100%'
+                        items={trainingTargetOptions}
+                    >
+                        {(trainingTarget) => <Item key={trainingTarget.id}>{trainingTarget.label}</Item>}
+                    </Picker>
+
                     <PolicySelection
                         selectedPolicy={selectedPolicy}
                         onSelectionChange={setSelectedPolicy}
                         isDisabled={baseModel !== undefined}
-                        trainingDevice={bestDevice}
+                        trainingDevice={activeDevice}
                     />
 
                     <Disclosure
@@ -506,8 +562,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                         </DisclosureTitle>
                         <DisclosurePanel UNSAFE_style={{ padding: 0 }}>
                             <TrainingParameters
-                                maxSteps={maxSteps}
-                                onMaxStepsChange={setMaxSteps}
+                                maxEpochs={maxEpochs}
+                                onMaxEpochsChange={setMaxEpochs}
                                 batchSize={batchSize}
                                 onBatchSizeChange={setBatchSize}
                                 numWorkers={numWorkers}
@@ -518,8 +574,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                                 onPrecisionChange={setPrecision}
                                 compileModel={compileModel}
                                 onCompileModelChange={setCompileModel}
-                                isAutoScaleBatchDisabled={bestDevice?.type !== 'cuda'}
-                                deviceType={bestDevice?.type}
+                                isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
+                                deviceType={activeDevice?.type}
                             />
                         </DisclosurePanel>
                     </Disclosure>
@@ -532,7 +588,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxSteps = 10000 }: 
                 <Button
                     variant='accent'
                     onPress={save}
-                    isDisabled={!selectedDataset || !selectedPolicy || remoteUnavailable}
+                    isDisabled={!selectedDataset || !selectedPolicy || remoteTrainerId === null || remoteUnavailable}
                 >
                     Train
                 </Button>

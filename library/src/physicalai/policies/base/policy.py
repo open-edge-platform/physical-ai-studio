@@ -244,7 +244,7 @@ class Policy(L.LightningModule, ABC):
             return loss
         return self.evaluate_gym(batch, batch_idx, stage="val")
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss on a batch.
 
         Subclasses must override this to define how validation loss is computed.

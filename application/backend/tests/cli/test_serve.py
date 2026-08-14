@@ -1,9 +1,25 @@
 import importlib
+import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 serve_module = importlib.import_module("cli.serve")
+
+
+@pytest.fixture(autouse=True)
+def _clear_settings_cache() -> Iterator[None]:
+    settings_module = importlib.import_module("settings")
+    os.environ.pop("ALEMBIC_CONFIG_PATH", None)
+    os.environ.pop("ALEMBIC_SCRIPT_LOCATION", None)
+    os.environ.pop("STATIC_FILES_DIR", None)
+    settings_module.get_settings.cache_clear()
+    yield
+    os.environ.pop("ALEMBIC_CONFIG_PATH", None)
+    os.environ.pop("ALEMBIC_SCRIPT_LOCATION", None)
+    os.environ.pop("STATIC_FILES_DIR", None)
+    settings_module.get_settings.cache_clear()
 
 
 def test_sync_missing_robot_assets_skips_when_available(monkeypatch) -> None:

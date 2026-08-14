@@ -9,10 +9,9 @@ from loguru import logger
 
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import TrainJobPayload
+from schemas.job import TrainingTarget, TrainJobPayload
 from services.event_processor import EventType
 from services.job_service import JobService
-from settings import get_settings
 from workers.base import BaseThreadWorker
 
 
@@ -84,11 +83,10 @@ class TrainingService:
         the studio restarting (e.g. the laptop was closed overnight). Any other
         orphaned RUNNING training job cannot resume and is marked FAILED.
         """
-        remote_mode = get_settings().training_mode == "remote"
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}
         running_jobs = await job_service.get_job_list(extra_filters=query)
         for job in running_jobs:
-            remote_job_id = TrainingService._reattachable_remote_job_id(job) if remote_mode else None
+            remote_job_id = TrainingService._reattachable_remote_job_id(job)
             if remote_job_id is not None:
                 logger.info(
                     "Requeuing remote training job {} to reattach to trainer job {}",
@@ -113,9 +111,11 @@ class TrainingService:
         """Return the persisted remote job id for a training job, if any."""
         payload = getattr(job, "payload", None)
         if isinstance(payload, TrainJobPayload):
-            return payload.remote_job_id
+            return payload.remote_job_id if payload.training_target is TrainingTarget.REMOTE else None
         if isinstance(payload, dict):
             remote_job_id = payload.get("remote_job_id")
+            if payload.get("training_target") != TrainingTarget.REMOTE:
+                return None
             try:
                 return UUID(str(remote_job_id))
             except (TypeError, ValueError, AttributeError):

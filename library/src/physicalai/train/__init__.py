@@ -12,4 +12,9 @@ from .trainer import Trainer
 
 __version__ = version("physicalai-train")
 
-__all__ = ["IterationTimer", "ProgressReportingCallback", "Trainer", "__version__"]
+__all__ = [
+    "IterationTimer",
+    "ProgressReportingCallback",
+    "Trainer",
+    "__version__",
+]

@@ -32,11 +32,7 @@ def _configure_packaged_runtime() -> None:
 
 
 def start_server(host: str, port: int) -> None:
-    """Configure the packaged runtime, run migrations, and launch the API server.
-
-    Shared by the ``serve`` and ``remote`` run commands so they both go through the
-    same startup sequence.
-    """
+    """Configure the packaged runtime, run migrations, and launch the API server."""
     _configure_packaged_runtime()
     _sync_missing_robot_assets()
     _run_migrations()

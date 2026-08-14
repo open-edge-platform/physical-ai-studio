@@ -86,6 +86,7 @@ class ModelService:
         device_type = str(payload.device.type) if payload.device is not None else None
 
         return TrainingSummary(
+            max_epochs=payload.max_epochs,
             max_steps=payload.max_steps,
             batch_size=payload.batch_size,
             precision=str(payload.precision),

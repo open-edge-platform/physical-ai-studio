@@ -5,7 +5,16 @@
 
 model:
   class_path: physicalai.policies.SmolVLA
-  # init_args:
+  init_args:
+    # Optional camera remapping for pretrained SmolVLA checkpoints.
+    # Example: map dataset camera keys to pretrained camera slot indices.
+    # image_key_reorder_map:
+    #   overview: 0
+    #   gripper: 1
+    image_key_reorder_map: {}
+    # Total number of camera slots; unfilled slots become masked dummy cameras.
+    # Values <= 0 keep only the cameras present in the batch.
+    num_cameras: 0
   # SnapFlow self-distillation (arxiv.org/abs/2604.05656)
   # Uncomment to enable 1-step inference via progressive self-distillation:
   # snapflow_enabled: true

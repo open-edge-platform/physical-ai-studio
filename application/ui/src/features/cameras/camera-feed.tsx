@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 
-import { Flex, Grid, Heading, minmax, repeat, View, Well } from '@geti-ui/ui';
+import { Flex, Grid, Heading, minmax, View } from '@geti-ui/ui';
 
 import { SchemaProjectCamera } from '../../api/types';
 import { WebsocketCamera } from './websocket-camera';
@@ -17,21 +17,16 @@ const CameraWell = ({
     const aspectRatio = width && height ? width / height : undefined;
 
     return (
-        <Flex direction='column' alignContent='start' flex gap='size-30'>
-            <Flex UNSAFE_style={{ aspectRatio }}>
-                <Well flex UNSAFE_style={{ position: 'relative', overflow: 'hidden' }}>
-                    <View
-                        maxHeight='100%'
-                        padding='size-400'
-                        backgroundColor='gray-100'
-                        height='100%'
-                        position='relative'
-                    >
-                        {children}
-                    </View>
-                </Well>
-            </Flex>
-        </Flex>
+        <View
+            UNSAFE_style={{ aspectRatio, position: 'relative', overflow: 'hidden' }}
+            width='100%'
+            height='100%'
+            minHeight={0}
+        >
+            <View maxHeight='100%' height='100%' position='relative'>
+                {children}
+            </View>
+        </View>
     );
 };
 
@@ -80,14 +75,16 @@ const CameraHeading = ({ camera }: { camera: SchemaProjectCamera }) => {
 
 export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCamera; empty?: boolean }) => {
     return (
-        <Flex direction='column' gap='size-200'>
+        <Flex direction='column' gap='size-200' height='100%' minHeight={0}>
             {empty === false && camera && <CameraHeading camera={camera} />}
 
             <Grid
-                columns={repeat('auto-fit', minmax('size-6000', '1fr'))}
-                rows={repeat('auto-fit', minmax('size-6000', '1fr'))}
+                columns={[minmax(0, '1fr')]}
+                rows={[minmax(0, '1fr')]}
                 gap='size-400'
                 width='100%'
+                flex={1}
+                minHeight={0}
             >
                 <CameraWell width={camera.payload.width} height={camera.payload.height}>
                     <WebsocketCamera camera={camera} />

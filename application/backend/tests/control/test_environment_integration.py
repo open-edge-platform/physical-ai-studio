@@ -6,7 +6,20 @@ import pytest
 import torch
 from physicalai.capture import SharedCamera
 
-from control.environment_integration import EnvironmentIntegration
+from control.environment_integration import EnvironmentIntegration, sanitize_camera_name
+
+
+def test_sanitize_camera_name():
+    assert sanitize_camera_name("Bob's view") == "bob_s view"
+    assert sanitize_camera_name("global view") == "global view"
+    assert sanitize_camera_name("Left Camera") == "left camera"
+    assert sanitize_camera_name("Front") == "front"
+    assert sanitize_camera_name("  -front-  ") == "  -front-  "
+    assert sanitize_camera_name("grabber") == "grabber"
+    assert sanitize_camera_name("cámara-1") == "c_mara-1"
+    assert sanitize_camera_name("bob\\view") == "bob_view"
+    assert sanitize_camera_name("my\ncam") == "my_cam"
+    assert sanitize_camera_name(sanitize_camera_name("Bob's view")) == sanitize_camera_name("Bob's view")
 
 
 def _make_mock_camera():
@@ -96,6 +109,41 @@ class TestInferenceEnvironmentIntegration:
         assert "shoulder_pan.pos" in report_obs["state"]
         assert "3ed60255-04ae-407b-8e2c-c3281847a4e0" in report_obs["cameras"]  # camera id 1
         assert "4629e172-2aa7-4fde-86b1-e19eb1d210ff" in report_obs["cameras"]  # camera id 2
+
+    def test_build_features_sanitizes_camera_names(self, inference_environment_integration) -> None:
+        camera = inference_environment_integration.environment.cameras[0]
+        camera.name = "Bob's view"
+
+        features = inference_environment_integration.build_lerobot_dataset_features()
+
+        assert f"observation.images.{sanitize_camera_name(camera.name)}" in features
+        assert "observation.images.bob's view" not in features
+
+    def test_model_input_sanitizes_camera_names(self, inference_environment_integration, event_loop) -> None:
+        camera = inference_environment_integration.environment.cameras[0]
+        camera.name = "Bob's view"
+
+        observation = event_loop.run_until_complete(inference_environment_integration.get_observation())
+        phy_ai_obs = inference_environment_integration.format_model_input_observation(observation)
+
+        assert sanitize_camera_name(camera.name) in phy_ai_obs.images
+        assert "bob's view" not in phy_ai_obs.images
+
+    def test_remap_camera_observations_sanitizes_camera_names(self, inference_environment_integration) -> None:
+        camera = inference_environment_integration.environment.cameras[0]
+        camera.name = "Bob's view"
+        camera_id = str(camera.id)
+        other_id = str(inference_environment_integration.environment.cameras[1].id)
+        observation = {
+            camera_id: np.zeros([480, 640, 3], dtype=np.uint8),
+            other_id: np.zeros([480, 640, 3], dtype=np.uint8),
+        }
+
+        remapped = inference_environment_integration._remap_camera_observations(observation)
+
+        assert sanitize_camera_name(camera.name) in remapped
+        assert camera_id not in remapped
+        assert other_id not in remapped
 
     def test_teardown_disconnects_robot_and_stops_cameras(
         self,

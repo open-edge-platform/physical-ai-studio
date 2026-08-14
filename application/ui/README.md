@@ -88,9 +88,9 @@ ui/src/
 
 Create `.env.local` for custom configuration:
 
-| Variable              | Description          | Default                 |
-| --------------------- | -------------------- | ----------------------- |
-| `PUBLIC_API_BASE_URL` | Backend API base URL | `http://localhost:3000` |
+| Variable                          | Description                                    | Default                 |
+| --------------------------------- | ----------------------------------------------- | ----------------------- |
+| `PUBLIC_API_BASE_URL`             | Backend API base URL                            | `http://localhost:3000` |
 
 ### Development Proxy
 

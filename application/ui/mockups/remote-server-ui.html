@@ -1,0 +1,1524 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Remote Server SSH Container Provisioning UI Mockup</title>
+        <style>
+            :root {
+                --gray-50: #1d1d1d;
+                --gray-75: #242424;
+                --gray-100: #2b2b2b;
+                --gray-200: #323232;
+                --gray-300: #3e3e3e;
+                --gray-400: #545454;
+                --gray-500: #707070;
+                --gray-600: #8f8f8f;
+                --gray-700: #adadad;
+                --gray-800: #d6d6d6;
+                --gray-900: #efefef;
+                --energy-blue: #0af;
+                --accent: #2680eb;
+                --accent-hover: #378ef0;
+                --positive: #33ab84;
+                --notice: #e68619;
+                --negative: #e34850;
+                --neutral: #7c7c7c;
+                --radius: 6px;
+                font-family:
+                    'Intel Clear',
+                    'Segoe UI',
+                    system-ui,
+                    -apple-system,
+                    sans-serif;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                background: var(--gray-50);
+                color: var(--gray-900);
+                font-size: 14px;
+                line-height: 1.4;
+            }
+            .app-bar {
+                display: flex;
+                align-items: center;
+                gap: 24px;
+                padding: 0 20px;
+                height: 52px;
+                background: #000;
+                border-bottom: 1px solid var(--gray-300);
+            }
+            .app-bar .brand {
+                font-weight: 700;
+                letter-spacing: 0.3px;
+            }
+            .app-bar .brand span {
+                color: var(--energy-blue);
+            }
+            .nav {
+                display: flex;
+                gap: 4px;
+                margin-left: 12px;
+            }
+            .nav button {
+                appearance: none;
+                background: none;
+                border: none;
+                font: inherit;
+                color: var(--gray-700);
+                text-decoration: none;
+                padding: 6px 12px;
+                border-radius: var(--radius);
+                font-size: 13px;
+                cursor: pointer;
+            }
+            .nav button.active {
+                color: var(--gray-900);
+                background: var(--gray-200);
+            }
+            .nav button.new-badge::after {
+                content: 'NEW';
+                font-size: 9px;
+                font-weight: 700;
+                color: #000;
+                background: var(--energy-blue);
+                border-radius: 3px;
+                padding: 1px 4px;
+                margin-left: 6px;
+                vertical-align: middle;
+            }
+
+            .mock-switcher {
+                display: flex;
+                gap: 6px;
+                padding: 12px 20px;
+                background: var(--gray-75);
+                border-bottom: 1px solid var(--gray-300);
+                flex-wrap: wrap;
+            }
+            .mock-switcher button {
+                background: var(--gray-100);
+                color: var(--gray-800);
+                border: 1px solid var(--gray-300);
+                border-radius: 16px;
+                padding: 6px 14px;
+                font-size: 12px;
+                cursor: pointer;
+            }
+            .mock-switcher button.active {
+                background: var(--accent);
+                border-color: var(--accent);
+                color: #fff;
+            }
+
+            .screen {
+                display: none;
+                padding: 20px;
+            }
+            .screen.active {
+                display: block;
+            }
+            .screen-label {
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.8px;
+                color: var(--gray-500);
+                margin-bottom: 14px;
+            }
+
+            /* list-detail layout */
+            .split {
+                display: grid;
+                grid-template-columns: minmax(360px, 420px) 1fr;
+                gap: 1px;
+                background: var(--gray-300);
+                border: 1px solid var(--gray-300);
+                border-radius: var(--radius);
+                overflow: hidden;
+                min-height: 560px;
+            }
+            .list-pane {
+                background: var(--gray-100);
+                padding: 16px;
+            }
+            .detail-pane {
+                background: var(--gray-75);
+                padding: 24px;
+            }
+
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                border-radius: var(--radius);
+                padding: 7px 14px;
+                font-size: 13px;
+                border: 1px solid var(--gray-400);
+                background: transparent;
+                color: var(--gray-900);
+                cursor: pointer;
+            }
+            .btn.secondary {
+                border-color: var(--gray-500);
+            }
+            .btn.accent {
+                background: var(--accent);
+                border-color: var(--accent);
+                color: #fff;
+            }
+            .btn.accent:hover {
+                background: var(--accent-hover);
+            }
+            .btn.full {
+                width: 100%;
+                justify-content: center;
+            }
+            .btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+            .btn .plus {
+                font-size: 16px;
+                line-height: 1;
+            }
+
+            .server-card {
+                background: var(--gray-200);
+                border: 1px solid var(--gray-300);
+                border-radius: var(--radius);
+                padding: 14px;
+                margin-top: 10px;
+                cursor: pointer;
+            }
+            .server-card.active {
+                border-color: var(--energy-blue);
+                box-shadow: inset 3px 0 0 var(--energy-blue);
+            }
+            .server-card .top {
+                display: flex;
+                justify-content: space-between;
+                align-items: start;
+            }
+            .server-card h3 {
+                margin: 0 0 2px;
+                font-size: 15px;
+            }
+            .server-card.active h3 {
+                color: var(--energy-blue);
+            }
+            .server-card .sub {
+                font-size: 12px;
+                color: var(--gray-700);
+            }
+            .server-card .meta {
+                margin-top: 10px;
+                font-size: 11px;
+                color: var(--gray-500);
+                display: flex;
+                gap: 14px;
+                flex-wrap: wrap;
+            }
+            .server-card .meta code {
+                color: var(--gray-700);
+            }
+
+            .status-light {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                color: var(--gray-800);
+            }
+            .dot {
+                width: 9px;
+                height: 9px;
+                border-radius: 50%;
+                flex: none;
+            }
+            .dot.positive {
+                background: var(--positive);
+            }
+            .dot.notice {
+                background: var(--notice);
+            }
+            .dot.negative {
+                background: var(--negative);
+            }
+            .dot.neutral {
+                background: var(--neutral);
+            }
+            .dot.pulse {
+                animation: pulse 1.1s infinite;
+            }
+            @keyframes pulse {
+                0%,
+                100% {
+                    opacity: 1;
+                }
+                50% {
+                    opacity: 0.3;
+                }
+            }
+
+            .device-chip {
+                font-size: 10px;
+                font-weight: 700;
+                padding: 2px 7px;
+                border-radius: 4px;
+                letter-spacing: 0.5px;
+            }
+            .device-chip.cuda {
+                background: rgba(118, 185, 0, 0.18);
+                color: #9ccc2f;
+            }
+            .device-chip.xpu {
+                background: rgba(0, 153, 255, 0.18);
+                color: #3ab7ff;
+            }
+            .connection-chip {
+                font-size: 10px;
+                font-weight: 700;
+                padding: 2px 7px;
+                border: 1px solid var(--gray-400);
+                border-radius: 4px;
+                color: var(--gray-700);
+                letter-spacing: 0.4px;
+            }
+            .connection-chip.url {
+                border-color: rgba(10, 170, 255, 0.55);
+                color: #59c4ff;
+            }
+
+            h2.detail-title {
+                margin: 0;
+                font-size: 22px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+            .detail-sub {
+                color: var(--gray-600);
+                font-size: 13px;
+                margin: 6px 0 20px;
+            }
+            .detail-actions {
+                display: flex;
+                gap: 8px;
+                margin-left: auto;
+            }
+
+            .panel {
+                background: var(--gray-100);
+                border: 1px solid var(--gray-300);
+                border-radius: var(--radius);
+                padding: 18px;
+                margin-bottom: 16px;
+            }
+            .panel h4 {
+                margin: 0 0 14px;
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 0.6px;
+                color: var(--gray-600);
+            }
+
+            .check-row {
+                display: grid;
+                grid-template-columns: 22px 1fr auto;
+                align-items: center;
+                gap: 10px;
+                padding: 9px 0;
+                border-bottom: 1px solid var(--gray-200);
+                font-size: 13px;
+            }
+            .check-row:last-child {
+                border-bottom: none;
+            }
+            .check-icon {
+                text-align: center;
+                font-size: 14px;
+            }
+            .check-icon.ok {
+                color: var(--positive);
+            }
+            .check-detail {
+                color: var(--gray-600);
+                font-size: 12px;
+            }
+
+            .kv {
+                display: grid;
+                grid-template-columns: 150px 1fr;
+                gap: 8px 16px;
+                font-size: 13px;
+            }
+            .kv .k {
+                color: var(--gray-600);
+            }
+            .kv .v code {
+                color: var(--gray-800);
+            }
+
+            /* form */
+            .form-grid {
+                max-width: 640px;
+            }
+            .field {
+                margin-bottom: 16px;
+            }
+            .field label {
+                display: block;
+                font-size: 12px;
+                color: var(--gray-700);
+                margin-bottom: 6px;
+            }
+            .field input,
+            .field select {
+                width: 100%;
+                background: var(--gray-100);
+                border: 1px solid var(--gray-400);
+                border-radius: var(--radius);
+                color: var(--gray-900);
+                padding: 8px 10px;
+                font-size: 13px;
+                font-family: inherit;
+            }
+            .field input:focus,
+            .field select:focus {
+                outline: none;
+                border-color: var(--accent);
+            }
+            .field .hint {
+                font-size: 11px;
+                color: var(--gray-500);
+                margin-top: 5px;
+            }
+            .seg {
+                display: flex;
+                gap: 0;
+                border: 1px solid var(--gray-400);
+                border-radius: var(--radius);
+                overflow: hidden;
+                width: fit-content;
+            }
+            .seg button {
+                background: var(--gray-100);
+                border: none;
+                color: var(--gray-700);
+                padding: 7px 16px;
+                cursor: pointer;
+                font-size: 13px;
+            }
+            .seg button.active {
+                background: var(--accent);
+                color: #fff;
+            }
+
+            .inline-alert {
+                display: flex;
+                gap: 10px;
+                align-items: start;
+                border-radius: var(--radius);
+                padding: 12px 14px;
+                font-size: 13px;
+                margin: 12px 0;
+            }
+            .inline-alert.positive {
+                background: rgba(51, 171, 132, 0.12);
+                border: 1px solid rgba(51, 171, 132, 0.4);
+            }
+            .inline-alert.negative {
+                background: rgba(227, 72, 80, 0.12);
+                border: 1px solid rgba(227, 72, 80, 0.4);
+            }
+            .inline-alert .ico {
+                font-weight: 700;
+            }
+
+            /* dialog mock */
+            .dialog-backdrop {
+                background: rgba(0, 0, 0, 0.5);
+                border-radius: var(--radius);
+                padding: 40px;
+                display: flex;
+                justify-content: center;
+            }
+            .dialog {
+                background: var(--gray-75);
+                border: 1px solid var(--gray-300);
+                border-radius: 8px;
+                width: 720px;
+                max-width: 100%;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            }
+            .dialog-head {
+                padding: 20px 24px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid var(--gray-300);
+            }
+            .dialog-head h3 {
+                margin: 0;
+                font-size: 18px;
+            }
+            .dialog-body {
+                padding: 22px 24px;
+            }
+            .dialog-foot {
+                padding: 16px 24px;
+                display: flex;
+                justify-content: end;
+                gap: 10px;
+                border-top: 1px solid var(--gray-300);
+            }
+
+            .server-select-card {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: var(--gray-100);
+                border: 1px solid var(--gray-300);
+                border-radius: var(--radius);
+                padding: 12px 14px;
+                margin-top: 8px;
+                cursor: pointer;
+            }
+            .server-select-card.sel {
+                border-color: var(--accent);
+            }
+            .server-select-card.disabled {
+                opacity: 0.55;
+                cursor: not-allowed;
+                border-style: dashed;
+            }
+
+            /* stepper */
+            .stepper {
+                display: flex;
+                align-items: center;
+                margin: 8px 0 18px;
+            }
+            .step {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 6px;
+                flex: 1;
+                position: relative;
+            }
+            .step .bead {
+                width: 26px;
+                height: 26px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+                font-weight: 700;
+                background: var(--gray-300);
+                color: var(--gray-600);
+                border: 2px solid var(--gray-300);
+                z-index: 1;
+            }
+            .step .lbl {
+                font-size: 10.5px;
+                color: var(--gray-600);
+                text-align: center;
+                white-space: nowrap;
+            }
+            .step.done .bead {
+                background: var(--positive);
+                border-color: var(--positive);
+                color: #062;
+            }
+            .step.done .lbl {
+                color: var(--gray-800);
+            }
+            .step.skipped .bead {
+                background: var(--gray-200);
+                border-color: var(--gray-400);
+                color: var(--gray-600);
+            }
+            .step.skipped .lbl {
+                color: var(--gray-500);
+            }
+            .step.active .bead {
+                background: var(--accent);
+                border-color: var(--accent);
+                color: #fff;
+            }
+            .step.active .lbl {
+                color: var(--energy-blue);
+                font-weight: 700;
+            }
+            .step.waiting .bead {
+                background: var(--notice);
+                border-color: var(--notice);
+                color: #fff;
+            }
+            .step.waiting .lbl {
+                color: #8a4b00;
+                font-weight: 700;
+            }
+            .step.failed .bead {
+                background: var(--negative);
+                border-color: var(--negative);
+                color: #fff;
+            }
+            .step.failed .lbl {
+                color: var(--negative);
+            }
+            .step:not(:last-child)::after {
+                content: '';
+                position: absolute;
+                top: 13px;
+                left: 50%;
+                width: 100%;
+                height: 2px;
+                background: var(--gray-300);
+                z-index: 0;
+            }
+            .step.done:not(:last-child)::after {
+                background: var(--positive);
+            }
+
+            .progress-track {
+                height: 8px;
+                background: var(--gray-300);
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .progress-fill {
+                height: 100%;
+                background: var(--accent);
+                border-radius: 4px;
+                transition: width 0.3s;
+            }
+            .progress-fill.indet {
+                width: 40% !important;
+                background: linear-gradient(90deg, transparent, var(--accent), transparent);
+                animation: indet 1.3s infinite;
+            }
+            @keyframes indet {
+                0% {
+                    transform: translateX(-120%);
+                }
+                100% {
+                    transform: translateX(320%);
+                }
+            }
+
+            .log {
+                background: #111;
+                border: 1px solid var(--gray-300);
+                border-radius: var(--radius);
+                padding: 12px;
+                margin-top: 14px;
+                font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+                font-size: 12px;
+                color: var(--gray-700);
+                max-height: 150px;
+                overflow: auto;
+            }
+            .log .ln {
+                padding: 1px 0;
+            }
+            .log .heartbeat {
+                color: var(--gray-500);
+                font-style: italic;
+            }
+            .caption {
+                font-size: 12px;
+                color: var(--gray-600);
+                margin-top: 6px;
+            }
+            .callout {
+                font-size: 12px;
+                color: var(--gray-500);
+                border-left: 3px solid var(--energy-blue);
+                padding: 4px 0 4px 12px;
+                margin: 16px 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="app-bar">
+            <div class="brand">Physical AI <span>Studio</span></div>
+            <nav class="nav">
+                <button type="button">Projects</button>
+                <button type="button">Datasets</button>
+                <button type="button">Robots</button>
+                <button type="button">Models</button>
+                <button type="button" class="active new-badge">Training Targets</button>
+            </nav>
+        </div>
+
+        <div class="mock-switcher">
+            <button class="active" data-screen="list">1 · Target list &amp; status</button>
+            <button data-screen="form">2 · Add / edit SSH target (preflight)</button>
+            <button data-screen="dialog">3 · Train dialog · target selector</button>
+            <button data-screen="progress">4 · Provisioning phase stepper</button>
+            <button data-screen="failed">5 · Failure attribution</button>
+        </div>
+
+        <!-- ============ SCREEN 1: LIST + DETAIL ============ -->
+        <section class="screen active" id="screen-list">
+            <div class="screen-label">Training targets management screen (global, non-project-scoped)</div>
+            <div class="split">
+                <!-- list -->
+                <div class="list-pane">
+                    <button class="btn accent full"><span class="plus">+</span> New training target</button>
+
+                    <div class="server-card active">
+                        <div class="top">
+                            <div>
+                                <h3>lambda-a100</h3>
+                                <div class="sub">ssh: gpu-01 · gpu-01.lab.internal:22</div>
+                            </div>
+                            <span class="status-light"><span class="dot positive"></span> Healthy</span>
+                        </div>
+                        <div class="meta">
+                            <span class="device-chip cuda">CUDA</span>
+                            <span>Docker 27.5 · revision image ready</span>
+                        </div>
+                    </div>
+
+                    <div class="server-card">
+                        <div class="top">
+                            <div>
+                                <h3>arc-workstation</h3>
+                                <div class="sub">ssh: arc-ws · 10.0.4.12:22</div>
+                            </div>
+                            <span class="status-light"><span class="dot notice"></span> Busy</span>
+                        </div>
+                        <div class="meta">
+                            <span class="device-chip xpu">XPU</span>
+                            <span>Docker 27.4 · trainer in use</span>
+                        </div>
+                    </div>
+
+                    <div class="server-card">
+                        <div class="top">
+                            <div>
+                                <h3>old-rig</h3>
+                                <div class="sub">ssh: old-rig · alias not found</div>
+                            </div>
+                            <span class="status-light"><span class="dot negative"></span> Misconfigured</span>
+                        </div>
+                        <div class="meta">
+                            <span class="device-chip cuda">CUDA</span>
+                            <span>No such Host in ~/.ssh/config</span>
+                        </div>
+                    </div>
+
+                    <div class="server-card">
+                        <div class="top">
+                            <div>
+                                <h3>staging-xpu</h3>
+                                <div class="sub">ssh: staging-xpu · 10.0.4.99:22</div>
+                            </div>
+                            <span class="status-light"><span class="dot neutral pulse"></span> Checking…</span>
+                        </div>
+                        <div class="meta">
+                            <span class="device-chip xpu">XPU</span>
+                        </div>
+                    </div>
+
+                    <div class="server-card">
+                        <div class="top">
+                            <div>
+                                <h3>managed-trainer</h3>
+                                <div class="sub">trainer.acme.example · direct endpoint</div>
+                            </div>
+                            <span class="status-light"><span class="dot positive"></span> Healthy</span>
+                        </div>
+                        <div class="meta">
+                            <span class="connection-chip url">TRAINER URL</span>
+                            <span class="device-chip cuda">CUDA</span>
+                            <span>API v1 · GPU free</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- detail -->
+                <div class="detail-pane">
+                    <div style="display: flex; align-items: start">
+                        <div>
+                            <h2 class="detail-title">
+                                lambda-a100 <span class="connection-chip">SSH PROVISIONED</span>
+                                <span class="device-chip cuda">CUDA</span>
+                            </h2>
+                            <div class="detail-sub">
+                                ssh alias <code>gpu-01</code> → ubuntu@gpu-01.lab.internal:22 · last checked 12 s ago
+                            </div>
+                        </div>
+                        <div class="detail-actions">
+                            <button class="btn secondary">↻ Test connection</button>
+                            <button class="btn secondary">Edit</button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h4>Health &amp; preflight <span class="check-detail">· Tier 1, cheap, run on save</span></h4>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >Reachable &amp; authenticated
+                                <span class="check-detail"> host key verified via ~/.ssh/known_hosts</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >Docker available
+                                <span class="check-detail"> Docker 27.5.1 · daemon access verified</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >Registry reachable
+                                <span class="check-detail"> GHCR responds to a manifest HEAD</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span>Storage available <span class="check-detail"> 186 GB free</span></span>
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >GPU driver
+                                <span class="check-detail"> nvidia-smi · Driver 550.90 · CUDA 12.4</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >GPU free <span class="check-detail"> 0 compute apps · 512 MiB / 80 GB used</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span>Not in use by a running job</span>
+                            <span class="status-light"><span class="dot positive"></span> Idle</span>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h4>
+                            Deep verification
+                            <span class="check-detail">· Tier 2, pulls the image, run on demand</span>
+                        </h4>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >Image resolved &amp; pulled
+                                <span class="check-detail">
+                                    revision-tagged CUDA image · digest sha256:4a7…91c</span
+                                ></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >Container compute
+                                <span class="check-detail"> probed inside the container · CUDA visible</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span>Trainer compatibility <span class="check-detail"> API protocol v1</span></span>
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="callout">
+                            Tier 2 pulls a multi-gigabyte image and starts a container, so it never runs implicitly on
+                            save or on list render it runs only when the user presses
+                            <strong>Test connection</strong>, and reports progress through the same phase channel a job
+                            uses. Tier 1 above is what gates saving a target.
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <h4>Connection</h4>
+                        <div class="kv">
+                            <div class="k">SSH host alias</div>
+                            <div class="v"><code>gpu-01</code> · from ~/.ssh/config</div>
+                            <div class="k">Resolved host</div>
+                            <div class="v"><code>gpu-01.lab.internal</code> (derived, not stored)</div>
+                            <div class="k">Resolved port</div>
+                            <div class="v"><code>22</code> (derived, not stored)</div>
+                            <div class="k">Resolved user</div>
+                            <div class="v"><code>ubuntu</code> (derived, not stored)</div>
+                            <div class="k">Device type</div>
+                            <div class="v">CUDA</div>
+                            <div class="k">Container runtime</div>
+                            <div class="v">Docker 27.5.1</div>
+                            <div class="k">Trainer image</div>
+                            <div class="v"><code>physicalai-trainer-cuda:&lt;git-sha&gt;</code></div>
+                            <div class="k">Image selection</div>
+                            <div class="v">
+                                Revision tag preferred · <code>latest</code> only on resolution fallback
+                            </div>
+                            <div class="k">Detection method</div>
+                            <div class="v">nvidia-smi</div>
+                            <div class="k">Persistence</div>
+                            <div class="v">Saved record stores the alias only — 8 columns, no secrets</div>
+                        </div>
+                        <div class="callout">
+                            <strong>Studio never receives your SSH credentials.</strong> Authentication uses your
+                            existing <code>~/.ssh/config</code> entry; keys stay on disk (or in your SSH agent) and host
+                            keys are verified against <code>~/.ssh/known_hosts</code>. There is nothing encrypted at
+                            rest because there is nothing stored — the database holds one alias string. Host, port, and
+                            user shown above are resolved from your SSH config at read time, so they can never drift out
+                            of sync with it.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ SCREEN 2: FORM ============ -->
+        <section class="screen" id="screen-form">
+            <div class="screen-label">Create / edit a training target with verify-on-save Tier 1 preflight</div>
+            <div class="split">
+                <div class="list-pane">
+                    <div class="form-grid">
+                        <div class="field">
+                            <label for="server-name">Name</label>
+                            <input id="server-name" value="lambda-a100" />
+                        </div>
+                        <div class="field">
+                            <label>Target type</label>
+                            <div class="seg">
+                                <button class="active">SSH provisioned</button>
+                                <button>Direct trainer URL</button>
+                            </div>
+                            <div class="hint">
+                                SSH targets launch a trainer container per job. Direct endpoints run an already-managed
+                                trainer; Studio does not SSH to or provision the host.
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="ssh-alias">SSH host</label>
+                            <select id="ssh-alias">
+                                <option selected>gpu-01</option>
+                                <option>arc-ws</option>
+                                <option>staging-xpu</option>
+                                <option>jetson-dev</option>
+                            </select>
+                            <div class="hint">
+                                Pick a <code>Host</code> entry from your <code>~/.ssh/config</code>. Studio connects
+                                exactly the way <code>ssh gpu-01</code> would — it never asks for or stores a key,
+                                password, or passphrase.
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label>Resolves to</label>
+                            <div
+                                style="
+                                    padding: 8px 10px;
+                                    background: var(--gray-100);
+                                    border-radius: 6px;
+                                    font-size: 12px;
+                                    font-family: ui-monospace, monospace;
+                                "
+                            >
+                                ubuntu@gpu-01.lab.internal:22<br />
+                                <span style="color: var(--gray-600); font-family: inherit"
+                                    >IdentityFile ~/.ssh/id_gpu01 · known_hosts entry present</span
+                                >
+                            </div>
+                            <div class="hint">
+                                Read-only, resolved from your SSH config so you can confirm the right host. Not stored
+                                in the database.
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="device-type">Device type</label>
+                            <select id="device-type">
+                                <option selected>CUDA</option>
+                                <option>XPU</option>
+                            </select>
+                            <div class="hint">
+                                Determines which trainer image is provisioned. The trainer is not running yet, so this
+                                is configuration, not detection.
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 8px">
+                            <button class="btn accent">Verify &amp; save</button>
+                            <button class="btn secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="detail-pane">
+                    <h4
+                        style="
+                            margin: 0 0 14px;
+                            font-size: 13px;
+                            text-transform: uppercase;
+                            letter-spacing: 0.6px;
+                            color: var(--gray-600);
+                        "
+                    >
+                        Tier 1 preflight result
+                    </h4>
+
+                    <div class="inline-alert positive">
+                        <span class="ico">✓</span>
+                        <div>All Tier 1 checks passed. This training target can be saved.</div>
+                    </div>
+
+                    <div class="panel" style="margin-top: 8px">
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >SSH host alias resolves
+                                <span class="check-detail"> gpu-01 found in ~/.ssh/config</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >Reachable &amp; authenticated
+                                <span class="check-detail"> key accepted · no passphrase prompt needed</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >Host key verified
+                                <span class="check-detail"> matches ~/.ssh/known_hosts entry</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >Docker available
+                                <span class="check-detail"> docker version · no sudo required</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span>Storage available <span class="check-detail"> 186 GB free</span></span>
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span
+                                >GPU driver present
+                                <span class="check-detail"> nvidia-smi · Driver 550.90 · CUDA 12.4</span></span
+                            >
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                        <div class="check-row">
+                            <span class="check-icon ok">✓</span>
+                            <span>GPU free <span class="check-detail"> 0 compute apps</span></span>
+                            <span class="status-light"><span class="dot positive"></span></span>
+                        </div>
+                    </div>
+
+                    <div class="callout" style="border-color: var(--notice)">
+                        Save runs <strong>Tier 1 only</strong> — seconds, bounded timeout. The registry pull, image
+                        signature policy, and in-container <code>torch.cuda.is_available()</code> probe are
+                        <strong>Tier 2</strong>, run by the explicit “Test connection” action, because a multi-GB pull
+                        must never happen inside a save request.
+                    </div>
+
+                    <h4
+                        style="
+                            margin: 22px 0 10px;
+                            font-size: 13px;
+                            text-transform: uppercase;
+                            letter-spacing: 0.6px;
+                            color: var(--gray-600);
+                        "
+                    >
+                        The three credential failure states
+                    </h4>
+                    <div class="hint" style="margin-bottom: 10px">
+                        Each one names the exact recovery command instead of a generic “connection failed”. Because
+                        Studio holds no credentials, every fix is something the user performs in their own SSH setup —
+                        never a field they retype here.
+                    </div>
+
+                    <div class="inline-alert negative">
+                        <span class="ico">✕</span>
+                        <div>
+                            <strong>Host fingerprint not accepted (blocks save):</strong> the host key for
+                            <code>gpu-01.lab.internal</code> is not in <code>~/.ssh/known_hosts</code>. Run
+                            <code>ssh gpu-01</code> once to accept its fingerprint, then retry. Studio will not connect
+                            to an unverified host, and it will not add the key for you.
+                        </div>
+                    </div>
+
+                    <div class="inline-alert negative" style="margin-top: 8px">
+                        <span class="ico">✕</span>
+                        <div>
+                            <strong>SSH host alias not found (blocks save):</strong> there is no
+                            <code>Host old-rig</code> entry in <code>~/.ssh/config</code> any more. Pick a different
+                            alias above, or re-add the entry and reload. This is the drift case — the saved alias is the
+                            only thing in the database, so a renamed config entry surfaces here rather than at job time.
+                        </div>
+                    </div>
+
+                    <div class="inline-alert negative" style="margin-top: 8px">
+                        <span class="ico">✕</span>
+                        <div>
+                            <strong>Key needs a passphrase and no agent is available (blocks save):</strong>
+                            <code>~/.ssh/id_gpu01</code> is passphrase-protected and <code>SSH_AUTH_SOCK</code> is not
+                            set. Run <code>ssh-add ~/.ssh/id_gpu01</code> to load it into your agent, then retry. Studio
+                            has no passphrase prompt by design — adding one would mean holding the secret.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ SCREEN 3: TRAIN DIALOG ============ -->
+        <section class="screen" id="screen-dialog">
+            <div class="screen-label">
+                Unified training-target selector in the existing Train model dialog (one list, not two dropdowns)
+            </div>
+            <div class="dialog-backdrop">
+                <div class="dialog">
+                    <div class="dialog-head">
+                        <h3>Train model</h3>
+                        <span class="status-light"
+                            ><span class="dot positive"></span> SSH target · configured CUDA</span
+                        >
+                    </div>
+                    <div class="dialog-body">
+                        <div class="field">
+                            <label for="training-dataset">Dataset</label>
+                            <select id="training-dataset">
+                                <option>pick-and-place-v3 (240 episodes)</option>
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label>Training target</label>
+                            <div class="hint" style="margin-bottom: 4px">
+                                One list. Local, direct-URL trainers, and SSH targets are entries with a type badge —
+                                <strong>not</strong> a mode toggle plus a second dropdown. The selection derives both
+                                <code>training_target</code> (<code>LOCAL</code> / <code>REMOTE</code> /
+                                <code>SSH</code>) and the matching id field.
+                            </div>
+
+                            <div class="server-select-card">
+                                <div>
+                                    <div style="font-weight: 600">
+                                        This machine <span class="connection-chip">LOCAL</span>
+                                        <span class="device-chip cuda">CUDA</span>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-600)">
+                                        RTX 4090 24 GB · no SSH, no container
+                                    </div>
+                                </div>
+                                <span class="status-light"><span class="dot positive"></span> Ready</span>
+                            </div>
+
+                            <div class="server-select-card sel">
+                                <div>
+                                    <div style="font-weight: 600">
+                                        lambda-a100 <span class="connection-chip">SSH</span>
+                                        <span class="device-chip cuda">CUDA</span>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-600)">
+                                        ssh gpu-01 · configured CUDA · GPU free
+                                    </div>
+                                </div>
+                                <span class="status-light"><span class="dot positive"></span> Healthy</span>
+                            </div>
+
+                            <div class="server-select-card">
+                                <div>
+                                    <div style="font-weight: 600">
+                                        arc-workstation <span class="connection-chip">SSH</span>
+                                        <span class="device-chip xpu">XPU</span>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-600)">
+                                        ssh arc-ws · GPU busy selectable, the job will wait for it
+                                    </div>
+                                </div>
+                                <span class="status-light"><span class="dot notice"></span> Busy</span>
+                            </div>
+
+                            <div class="server-select-card">
+                                <div>
+                                    <div style="font-weight: 600">
+                                        managed-trainer <span class="connection-chip url">TRAINER URL</span>
+                                        <span class="device-chip cuda">CUDA</span>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-600)">
+                                        https://trainer.acme.example/api · A100 80 GB · GPU free
+                                    </div>
+                                </div>
+                                <span class="status-light"><span class="dot positive"></span> Healthy</span>
+                            </div>
+
+                            <div class="server-select-card disabled">
+                                <div>
+                                    <div style="font-weight: 600">
+                                        old-rig <span class="connection-chip">SSH</span>
+                                        <span class="device-chip cuda">CUDA</span>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-600)">
+                                        ssh old-rig · alias missing from ~/.ssh/config not selectable
+                                    </div>
+                                </div>
+                                <span class="status-light"><span class="dot negative"></span> Misconfigured</span>
+                            </div>
+
+                            <div class="hint" style="margin-top: 6px">
+                                SSH targets use their saved device configuration the trainer is not running yet, so
+                                there is no live device probe. Direct URLs use their last health response.
+                            </div>
+                        </div>
+
+                        <div class="field">
+                            <label for="training-policy">Policy</label>
+                            <select id="training-policy">
+                                <option>ACT Action Chunking with Transformers</option>
+                            </select>
+                        </div>
+
+                        <div style="font-size: 13px; color: var(--accent); cursor: pointer">▸ Advanced settings</div>
+                    </div>
+                    <div class="dialog-foot">
+                        <button class="btn secondary">Cancel</button>
+                        <button class="btn accent">Train on lambda-a100</button>
+                    </div>
+                </div>
+            </div>
+            <div class="callout">
+                Submit is disabled for <em>unreachable</em> or <em>misconfigured</em> targets. A
+                <strong>busy</strong> target stays selectable the job is submitted, stays <code>pending</code>, and
+                waits for the GPU with backoff until a give-up timeout. The dialog must state that wait before submit so
+                it does not look like a hang.
+            </div>
+        </section>
+
+        <!-- ============ SCREEN 4: PROGRESS STEPPER ============ -->
+        <section class="screen" id="screen-progress">
+            <div class="screen-label">Progress reporting phase-windowed bar + stepper (extra_info.phase)</div>
+            <div class="dialog-backdrop">
+                <div class="dialog" style="width: 760px">
+                    <div class="dialog-head">
+                        <h3>Training on lambda-a100</h3>
+                        <span class="status-light"><span class="dot positive"></span> Connected</span>
+                    </div>
+                    <div class="dialog-body">
+                        <div class="stepper">
+                            <div class="step done">
+                                <div class="bead">✓</div>
+                                <div class="lbl">Connect</div>
+                            </div>
+                            <div class="step active">
+                                <div class="bead">2</div>
+                                <div class="lbl">Image pull</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">3</div>
+                                <div class="lbl">Image verify</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">4</div>
+                                <div class="lbl">Trainer start</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">5</div>
+                                <div class="lbl">Upload</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">6</div>
+                                <div class="lbl">Train</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">7</div>
+                                <div class="lbl">Download</div>
+                            </div>
+                        </div>
+
+                        <div
+                            style="
+                                display: flex;
+                                justify-content: space-between;
+                                font-size: 12px;
+                                color: var(--gray-700);
+                                margin-bottom: 6px;
+                            "
+                        >
+                            <span>Image pull revision-tagged CUDA trainer</span>
+                            <span>3%</span>
+                        </div>
+                        <div class="progress-track"><div class="progress-fill indet"></div></div>
+                        <div class="caption">
+                            Indeterminate phase spinner + sanitized Docker output while image layers are pulled.
+                        </div>
+
+                        <div class="log">
+                            <div class="ln">
+                                Build revision from image label org.opencontainers.image.revision: 8f3c21a
+                            </div>
+                            <div class="ln">Resolved ghcr.io/open-edge-platform/physicalai-trainer-cuda:8f3c21a</div>
+                            <div class="ln">
+                                Pulling ghcr.io/open-edge-platform/physicalai-trainer-cuda@sha256:4a7…91c
+                            </div>
+                            <div class="ln">Layer 8d4…2ef: downloading</div>
+                            <div class="ln heartbeat">… still working (heartbeat 00:42)</div>
+                        </div>
+
+                        <div class="callout">
+                            Streamed output from remote Docker commands is
+                            <strong>sanitized &amp; length-capped</strong> before display. <code>latest</code> is
+                            queried only if the build revision or its revision-tagged image cannot be resolved. The
+                            container always launches by the resolved digest, never by a mutable tag.
+                        </div>
+                    </div>
+                    <div class="dialog-foot">
+                        <button class="btn secondary">Cancel &amp; tear down</button>
+                    </div>
+                </div>
+            </div>
+
+            <div style="max-width: 760px; margin: 20px auto 0">
+                <div class="screen-label">Later training phase (dominant window 17–96%)</div>
+                <div class="dialog" style="width: 100%">
+                    <div class="dialog-body">
+                        <div class="stepper">
+                            <div class="step done">
+                                <div class="bead">✓</div>
+                                <div class="lbl">Connect</div>
+                            </div>
+                            <div class="step done">
+                                <div class="bead">✓</div>
+                                <div class="lbl">Image pull</div>
+                            </div>
+                            <div class="step done">
+                                <div class="bead">✓</div>
+                                <div class="lbl">Image verify</div>
+                            </div>
+                            <div class="step done">
+                                <div class="bead">✓</div>
+                                <div class="lbl">Trainer start</div>
+                            </div>
+                            <div class="step done">
+                                <div class="bead">✓</div>
+                                <div class="lbl">Upload</div>
+                            </div>
+                            <div class="step active">
+                                <div class="bead">6</div>
+                                <div class="lbl">Train</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">7</div>
+                                <div class="lbl">Download</div>
+                            </div>
+                        </div>
+                        <div
+                            style="
+                                display: flex;
+                                justify-content: space-between;
+                                font-size: 12px;
+                                color: var(--gray-700);
+                                margin-bottom: 6px;
+                            "
+                        >
+                            <span>Training step 4,120 / 10,000 · loss 0.0143</span>
+                            <span>49%</span>
+                        </div>
+                        <div class="progress-track"><div class="progress-fill" style="width: 49%"></div></div>
+                        <div class="caption">
+                            Existing step-loss telemetry renders here, mapped into the 17–96% window.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="max-width: 760px; margin: 20px auto 0">
+                <div class="screen-label">GPU busy waiting phase state, job status is still <code>pending</code></div>
+                <div class="dialog" style="width: 100%">
+                    <div class="dialog-body">
+                        <div class="stepper">
+                            <div class="step waiting">
+                                <div class="bead"></div>
+                                <div class="lbl">Connect</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">2</div>
+                                <div class="lbl">Image pull</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">3</div>
+                                <div class="lbl">Image verify</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">4</div>
+                                <div class="lbl">Trainer start</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">5</div>
+                                <div class="lbl">Upload</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">6</div>
+                                <div class="lbl">Train</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">7</div>
+                                <div class="lbl">Download</div>
+                            </div>
+                        </div>
+                        <div
+                            style="
+                                display: flex;
+                                justify-content: space-between;
+                                font-size: 12px;
+                                color: var(--gray-700);
+                                margin-bottom: 6px;
+                            "
+                        >
+                            <span>Waiting for the GPU on arc-workstation another job is using it</span>
+                            <span>0%</span>
+                        </div>
+                        <div class="progress-track"><div class="progress-fill indet"></div></div>
+                        <div class="caption">
+                            Re-checking with exponential backoff · next check in 32s · gives up at 14:20 and fails with
+                            a clear message.
+                        </div>
+
+                        <div class="callout" style="border-color: var(--notice)">
+                            <strong>This is a phase state, not a job status.</strong> The job is still
+                            <code>pending</code> <code>JobStatus</code> stays
+                            <code>pending | running | completed | failed | canceled</code>, so no generated UI consumer
+                            changes. The waiting state lives in <code>extra_info.phase.state</code>. The UI must show
+                            the wait <em>and</em> its give-up deadline, otherwise a legitimate queue looks like a hang.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============ SCREEN 5: FAILURE ============ -->
+        <section class="screen" id="screen-failed">
+            <div class="screen-label">Error attribution the active step is marked failed with the phase message</div>
+            <div class="dialog-backdrop">
+                <div class="dialog" style="width: 760px">
+                    <div class="dialog-head">
+                        <h3>Training on old-rig</h3>
+                        <span class="status-light"><span class="dot negative"></span> Failed</span>
+                    </div>
+                    <div class="dialog-body">
+                        <div class="stepper">
+                            <div class="step done">
+                                <div class="bead">✓</div>
+                                <div class="lbl">Connect</div>
+                            </div>
+                            <div class="step done">
+                                <div class="bead">✓</div>
+                                <div class="lbl">Image pull</div>
+                            </div>
+                            <div class="step failed">
+                                <div class="bead">✕</div>
+                                <div class="lbl">Image verify</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">4</div>
+                                <div class="lbl">Trainer start</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">5</div>
+                                <div class="lbl">Upload</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">6</div>
+                                <div class="lbl">Train</div>
+                            </div>
+                            <div class="step">
+                                <div class="bead">7</div>
+                                <div class="lbl">Download</div>
+                            </div>
+                        </div>
+
+                        <div class="inline-alert negative">
+                            <span class="ico">✕</span>
+                            <div>
+                                <strong>Failed during image verification.</strong> The selected trainer image reports
+                                API protocol v2, but this Studio backend supports protocol v1. No dataset was uploaded.
+                            </div>
+                        </div>
+
+                        <div class="log">
+                            <div class="ln">Selected revision-tagged image: physicalai-trainer-cuda:8f3c21a</div>
+                            <div class="ln">Resolved digest: sha256:4a7…91c</div>
+                            <div class="ln">Signature verified: open-edge-platform/physical-ai-trainer-cuda</div>
+                            <div class="ln" style="color: var(--negative)">
+                                error: trainer API protocol v2 is incompatible with v1
+                            </div>
+                        </div>
+
+                        <div class="callout">
+                            On failure the trainer container is stopped and removed and the tunnel is closed in a
+                            <code>finally</code> block; persisted container identity, ports, and digest support orphan
+                            recovery.
+                        </div>
+                    </div>
+                    <div class="dialog-foot">
+                        <button class="btn secondary">Close</button>
+                        <button class="btn accent">Retry</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <script>
+            const buttons = document.querySelectorAll('.mock-switcher button');
+            const screens = document.querySelectorAll('.screen');
+            buttons.forEach((b) =>
+                b.addEventListener('click', () => {
+                    buttons.forEach((x) => x.classList.remove('active'));
+                    screens.forEach((s) => s.classList.remove('active'));
+                    b.classList.add('active');
+                    document.getElementById('screen-' + b.dataset.screen).classList.add('active');
+                })
+            );
+
+            // let server cards in the list act as a selector
+            document.querySelectorAll('#screen-list .server-card').forEach((card) => {
+                card.addEventListener('click', () => {
+                    document.querySelectorAll('#screen-list .server-card').forEach((c) => c.classList.remove('active'));
+                    card.classList.add('active');
+                });
+            });
+
+            // target selection in the train dialog: misconfigured targets are not selectable
+            document.querySelectorAll('#screen-dialog .server-select-card').forEach((card) => {
+                card.addEventListener('click', () => {
+                    if (card.classList.contains('disabled')) return;
+                    document
+                        .querySelectorAll('#screen-dialog .server-select-card')
+                        .forEach((c) => c.classList.remove('sel'));
+                    card.classList.add('sel');
+                });
+            });
+        </script>
+    </body>
+</html>

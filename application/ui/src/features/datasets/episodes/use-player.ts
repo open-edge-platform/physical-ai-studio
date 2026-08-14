@@ -49,6 +49,8 @@ export const usePlayer = (episode: SchemaEpisode): Player => {
     const seek = (newTime: number) => {
         setTimeSynced(newTime);
         setState(PlayState.Seeking);
+
+        requestAnimationFrame(() => setState(PlayState.Paused));
     };
 
     useEffect(() => {

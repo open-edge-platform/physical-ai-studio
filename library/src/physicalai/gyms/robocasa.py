@@ -427,12 +427,14 @@ class RoboCasaGym(Gym):
         self,
         *,
         seed: int | None = None,
+        episode_index: int = 0,  # noqa: ARG002
         **reset_kwargs: Any,  # noqa: ANN401, ARG002
     ) -> tuple[Observation, dict[str, Any]]:
         """Reset the environment and return ``(Observation, info)``.
 
         Args:
             seed: Optional random seed forwarded to the MuJoCo env.
+            episode_index: Index of the episode being reset (unused). Defaults to 0.
             **reset_kwargs: Ignored, present for ``Gym`` ABC compatibility.
 
         Returns:

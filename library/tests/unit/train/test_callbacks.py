@@ -17,10 +17,13 @@ def _loss(value: float) -> MagicMock:
     return tensor
 
 
-def _trainer(*, global_step: int, max_steps: int, epoch: int = 0) -> MagicMock:
+def _trainer(
+    *, global_step: int, max_steps: int, estimated_steps: int | None = None, epoch: int = 0
+) -> MagicMock:
     trainer = MagicMock(spec=L.Trainer)
     trainer.global_step = global_step
     trainer.max_steps = max_steps
+    trainer.estimated_stepping_batches = max_steps if estimated_steps is None else estimated_steps
     trainer.current_epoch = epoch
     trainer.should_stop = False
     trainer.callback_metrics = {}
@@ -127,10 +130,22 @@ class TestProgressReportingCallback:
         progress = report.call_args[0][0]
         assert progress == 100
 
+    def test_max_epochs_uses_estimated_step_budget(self) -> None:
+        cb, report = self._callback()
+        trainer = _trainer(global_step=1000, max_steps=-1, estimated_steps=2000)
+        cb.on_fit_start(trainer, MagicMock())
+
+        cb.on_train_batch_end(trainer, MagicMock(), {"loss": _loss(0.1)}, None, 0)
+
+        assert cb._every_n_steps == 2
+        progress, _, extra = report.call_args[0]
+        assert progress == 50
+        assert extra["max_steps"] == 2000
+
     def test_unset_max_steps_emits_none_sentinel(self) -> None:
         # Lightning uses -1 for an unbounded step budget; surface it as None.
         cb, report = self._callback()
-        trainer = _trainer(global_step=1, max_steps=-1)
+        trainer = _trainer(global_step=1, max_steps=-1, estimated_steps=-1)
         cb.on_fit_start(trainer, MagicMock())
 
         cb.on_train_batch_end(trainer, MagicMock(), {"loss": _loss(0.5)}, None, 0)

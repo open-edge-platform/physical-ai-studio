@@ -4,8 +4,9 @@
 """Mixin classes for exporting Policies."""
 
 import inspect
+import logging
 import tempfile
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from os import PathLike
 from pathlib import Path
@@ -38,6 +39,50 @@ from physicalai.export.backends import (
 CONFIG_KEY = "model_config"
 POLICY_NAME_KEY = "policy_name"
 DATASET_STATS_KEY = "dataset_stats"
+
+# The ONNX exporter's optimizer and IR passes log one INFO record per graph node
+# (constant folding, slice collapsing, initializer dedup, ...). For a VLA policy
+# that is tens of thousands of lines per export, which drowns out the job log.
+# Their warnings and errors still matter, so only INFO and below is suppressed.
+_VERBOSE_ONNX_EXPORT_LOGGERS = ("onnxscript", "onnx_ir")
+
+# openvino.convert_model() probes a string/Path input against several PyTorch
+# loaders (torch.jit.load, then torch.export.load) before falling back to its
+# ONNX frontend. When the input is actually a plain ONNX file (our via_onnx
+# OpenVINO export path), the torch.export.load() probe always fails and torch
+# logs it at WARNING with a full traceback (exc_info=True), even though the
+# RuntimeError is caught internally by both torch and OpenVINO and is harmless.
+_ONNX_PROBE_NOISE_LOGGERS = ("torch.export",)
+
+
+@contextmanager
+def _quiet_loggers(names: Iterable[str], level: int = logging.WARNING) -> Generator[None, None, None]:
+    """Raise the given loggers to `level` for the duration of the block.
+
+    Usable as either a context manager or a decorator. Loggers that already sit
+    at `level` or above (for example because the caller configured them
+    explicitly) are left untouched, and every level is restored on exit even if
+    the block raises.
+    """
+    restore: list[tuple[logging.Logger, int]] = []
+    for name in names:
+        target_logger = logging.getLogger(name)
+        if target_logger.getEffectiveLevel() >= level:
+            continue
+        restore.append((target_logger, target_logger.level))
+        target_logger.setLevel(level)
+    try:
+        yield
+    finally:
+        for target_logger, restored_level in restore:
+            target_logger.setLevel(restored_level)
+
+
+@contextmanager
+def _quiet_onnx_export_logs() -> Generator[None, None, None]:
+    """Raise the ONNX exporter loggers to WARNING for the duration of the block."""
+    with _quiet_loggers(_VERBOSE_ONNX_EXPORT_LOGGERS):
+        yield
 
 
 class ExportablePolicyMixin:
@@ -450,11 +495,12 @@ class ExportablePolicyMixin:
                         arg_name=arg_name,
                         **extra_export_kwargs,
                     )
-                    ov_model = openvino.convert_model(
-                        tmp.name,
-                        example_input={arg_name: input_sample},
-                        input=input_shapes,
-                    )
+                    with _quiet_loggers(_ONNX_PROBE_NOISE_LOGGERS, level=logging.ERROR):
+                        ov_model = openvino.convert_model(
+                            tmp.name,
+                            example_input={arg_name: input_sample},
+                            input=input_shapes,
+                        )
             else:
                 ov_model = openvino.convert_model(
                     self.model,
@@ -661,6 +707,7 @@ class ExportablePolicyMixin:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
 
+    @_quiet_onnx_export_logs()
     def _onnx_core_export_step(
         self,
         model_path: Path,

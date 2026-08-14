@@ -1,6 +1,7 @@
 import {
     Button,
     ButtonGroup,
+    ComboBox,
     Content,
     Flex,
     Heading,
@@ -8,7 +9,6 @@ import {
     Item,
     Picker,
     Text,
-    TextField,
     View,
 } from '@geti-ui/ui';
 import { isNumber } from 'lodash-es';
@@ -63,6 +63,7 @@ const DatasetManifestSummary = ({ importJob }: { importJob: SchemaDatasetImportJ
 
     const cameras = draft.dataset_schema?.cameras ?? [];
     const robots = draft.dataset_schema?.robots ?? [];
+    const tasks = draft.dataset_schema?.tasks ?? [];
 
     const fps = draft.dataset_schema?.cameras?.at(0)?.fps;
     const episodeCount = draft.statistics?.episode_count;
@@ -81,6 +82,11 @@ const DatasetManifestSummary = ({ importJob }: { importJob: SchemaDatasetImportJ
                 {robots.length > 0 && <RobotsSummary robots={robots} />}
 
                 {cameras.length > 0 && <CamerasSummary cameras={cameras} />}
+                {tasks.length > 0 && (
+                    <Text>
+                        <strong>Tasks</strong>: {tasks.join(', ')}
+                    </Text>
+                )}
             </Flex>
         </Flex>
     );
@@ -101,19 +107,22 @@ export const ImportStepUserReview = ({
     fields,
     onFieldsChange,
 }: ImportStepUserReviewProps) => {
+    const tasks = importJob.payload?.dataset_manifest_draft?.dataset_schema?.tasks ?? [];
     const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
         params: { path: { project_id } },
     });
+    const defaultTask = fields.defaultTask ?? tasks.at(0) ?? '';
+    const environmentId = fields.environmentId ?? (environments.length === 1 ? environments[0].id : undefined);
 
     const finalizeMutation = $api.useMutation('post', '/api/projects/{project_id}/imports/datasets/{job_id}:finalize', {
         meta: {
             invalidates: [['get', '/api/jobs/{job_id}', { params: { path: { job_id: importJob.id! } } }]],
         },
     });
-    const canFinalize = fields.environmentId !== undefined;
+    const canFinalize = environmentId !== undefined;
 
     const onFinalize = () => {
-        if (!canFinalize || fields.environmentId === undefined) {
+        if (!canFinalize || environmentId === undefined) {
             return;
         }
 
@@ -122,8 +131,8 @@ export const ImportStepUserReview = ({
                 path: { project_id, job_id: importJob.id! },
             },
             body: {
-                environment_id: fields.environmentId,
-                default_task: fields.defaultTask,
+                environment_id: environmentId,
+                default_task: defaultTask,
             },
         });
     };
@@ -159,7 +168,7 @@ export const ImportStepUserReview = ({
                         label='Recording environment'
                         width='100%'
                         items={environments}
-                        selectedKey={fields.environmentId}
+                        selectedKey={environmentId}
                         onSelectionChange={(value) =>
                             onFieldsChange({
                                 ...fields,
@@ -170,12 +179,17 @@ export const ImportStepUserReview = ({
                         {(item) => <Item key={item.id}>{item.name}</Item>}
                     </Picker>
 
-                    <TextField
+                    <ComboBox
                         width='100%'
                         label='Task'
-                        value={fields.defaultTask}
-                        onChange={(value) => onFieldsChange({ ...fields, defaultTask: value })}
-                    />
+                        allowsCustomValue
+                        inputValue={defaultTask}
+                        onInputChange={(task) => onFieldsChange({ ...fields, defaultTask: task })}
+                    >
+                        {tasks.map((task) => (
+                            <Item key={task}>{task}</Item>
+                        ))}
+                    </ComboBox>
                 </Flex>
             </Content>
 

@@ -70,6 +70,23 @@ pre-commit run check-alembic-heads
 uv run alembic -c src/alembic.ini revision --autogenerate -m "describe your change"
 ```
 
+Migration filenames are generated with a UTC timestamp prefix (accurate to
+seconds), followed by the Alembic revision ID and slug:
+
+```
+YYYYMMDD_HHMMSS_<revision>_<slug>.py
+```
+
+Example:
+
+```
+20260729_142358_d4e5f6a7b8c9_normalize_robot_types_and_trim_widowx_payload.py
+```
+
+This improves chronological readability in `src/alembic/versions/`. The
+migration graph is still defined by `down_revision`, so always ensure
+`uv run alembic -c src/alembic.ini heads` reports exactly one head.
+
 Before creating a migration:
 
 1. **Pull the latest `main`** and rebase your branch

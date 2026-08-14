@@ -103,8 +103,7 @@ def _run_training_job_step() -> None:
             created_at=None,
         )
 
-        worker = TrainingWorker(stop_event=mp.Event(), interrupt_event=mp.Event(), event_queue=mp.Queue())
-        worker.interrupt_event.clear()
+        worker = TrainingWorker(stop_event=mp.Event(), job_interrupt_flags={}, event_queue=mp.Queue())
         await worker._train_model(job, model, snapshot, payload)
 
     asyncio.run(_drain())
@@ -176,7 +175,7 @@ def test_dataset_upload_train_export_infer_e2e(
             "dataset_id": dataset_id,
             "policy": "act",
             "model_name": "E2E ACT Model",
-            "max_steps": 100,  # TrainJobPayload.max_steps has a ge=100 floor
+            "max_epochs": 1,
             "batch_size": 2,
             "num_workers": 0,
             "val_split": 0.5,
@@ -212,7 +211,7 @@ def test_dataset_upload_train_export_infer_e2e(
     assert response.status_code == 200, response.text
     detail = response.json()
     assert any(export["type"] == _ONNX_BACKEND for export in detail["exports"])
-    assert detail["training_summary"]["max_steps"] == 100
+    assert detail["training_summary"]["max_epochs"] == 1
 
     # --- 5. Download the onnx export and confirm it is a valid archive -------------
     response = client.get(f"/api/models/{model_id}/exports/{_ONNX_BACKEND}/download")
@@ -263,7 +262,7 @@ def _assert_exported_model_runs_inference(export_dir: Path, dataset_id: str) -> 
     assert action.shape[-1] == 2
 
 
-def test_submit_training_job_for_missing_project_returns_404() -> None:
+def test_submit_training_job_for_missing_project_returns_404(migrated_db: None) -> None:
     """Submitting against a project that doesn't exist is a clean 404, not a crash."""
     client = TestClient(app)
 
@@ -274,7 +273,7 @@ def test_submit_training_job_for_missing_project_returns_404() -> None:
             "dataset_id": str(uuid4()),
             "policy": "act",
             "model_name": "Orphan Job",
-            "max_steps": 100,
+            "max_epochs": 1,
         },
     )
     assert response.status_code == 404, response.text
@@ -309,7 +308,7 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
                     dataset_id=uuid4(),
                     policy="act",
                     model_name="Interrupt Me",
-                    max_steps=100,
+                    max_epochs=1,
                 )
             )
             await job_service.update_job_status(job.id, status=JobStatus.RUNNING, message="Training started")
@@ -317,7 +316,7 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
 
     job_id = asyncio.run(_submit_and_run(project_id))
 
-    fake_scheduler = SimpleNamespace(training_interrupt_event=mp.Event())
+    fake_scheduler = SimpleNamespace(job_interrupt_flags={})
     app.dependency_overrides[get_scheduler] = lambda: fake_scheduler
     try:
         response = client.post(f"/api/jobs/{job_id}:interrupt")
@@ -325,7 +324,7 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert fake_scheduler.training_interrupt_event.is_set()
+    assert fake_scheduler.job_interrupt_flags[job_id] is True
 
     response = client.get(f"/api/jobs/{job_id}")
     assert response.status_code == 200, response.text
