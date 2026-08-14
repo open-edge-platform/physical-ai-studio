@@ -267,7 +267,7 @@ class Settings(BaseSettings):
     runtime_idle_timeout_s: float = Field(default=45.0, alias="RUNTIME_IDLE_TIMEOUT_S")
 
     # Server
-    host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104
+    host: str = Field(default="127.0.0.1", alias="HOST")
     port: int = Field(default=7860, alias="PORT")
 
     # Database
