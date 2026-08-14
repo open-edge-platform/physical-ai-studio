@@ -26,6 +26,7 @@ The transport is reached through :data:`transport_factory`, so a caller can
 substitute a fake without patching ``asyncssh``.
 """
 
+import hashlib
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -91,6 +92,10 @@ REASON_TOOL_MISSING: Final = "tool_missing"
 REASON_DEVICE_UNAVAILABLE: Final = "device_unavailable"
 REASON_PROTOCOL_MISMATCH: Final = "protocol_mismatch"
 REASON_PROTOCOL_UNKNOWN: Final = "protocol_unknown"
+# The image was not yet present locally when the probe ran, so it was handed
+# to a background pull. Distinct from REASON_DEVICE_UNAVAILABLE: this is a
+# multi-gigabyte transfer still in flight, not a broken accelerator.
+REASON_IMAGE_PULLING: Final = "image_pulling"
 
 # Which probe answered a check, so the UI can show how a result was obtained.
 METHOD_SSH_CONFIG: Final = "ssh-config"
@@ -907,18 +912,111 @@ def _device_probe_expression(device_type: DeviceType) -> str:
     return f"import torch; print(torch.{accelerator}.is_available())"
 
 
+# Substrings Docker's own client prints while it pulls an image inline for a
+# `docker run` whose image is not yet cached locally. Matched against a failed
+# probe's output as a defense-in-depth fallback for the race between
+# `_image_present_locally` and the `docker run` a few lines later - e.g.
+# another process evicting the image in between. The normal path never hits
+# this: the presence check below routes a genuinely absent image to a
+# background pull instead of an inline one.
+_IMAGE_PULL_MARKERS: Final = ("unable to find image", "pulling fs layer", "pulling from")
+
+
+def _is_pulling_image(result: CommandResult) -> bool:
+    """True when a failed command's output shows Docker mid-pull, not broken."""
+    text = f"{result.stdout}\n{result.stderr}".lower()
+    return any(marker in text for marker in _IMAGE_PULL_MARKERS)
+
+
+async def _image_present_locally(transport: SshTransport, image_ref: str) -> bool:
+    """True when the image is already cached in the remote Docker image store."""
+    result = await transport.run_command(["docker", "image", "inspect", image_ref])
+    return result.ok
+
+
+def _pull_state_paths(image_ref: str) -> tuple[str, str]:
+    """Return the (pid file, log file) paths a background pull for this image uses.
+
+    Named from a hash of the image reference rather than the reference itself,
+    so the path is stable across calls and never carries `/`, `:`, or other
+    reference characters into a filename.
+    """
+    digest = hashlib.sha256(image_ref.encode()).hexdigest()[:16]
+    return f"/tmp/physicalai-pull-{digest}.pid", f"/tmp/physicalai-pull-{digest}.log"  # noqa: S108 - a remote-host path, not a local temp-file access
+
+
+async def _pull_already_running(transport: SshTransport, pidfile: str) -> bool:
+    """True when a previously started background pull's PID is still alive."""
+    result = await transport.run_command(
+        ["sh", "-c", 'test -f "$1" && kill -0 "$(cat "$1" 2>/dev/null)" 2>/dev/null', "sh", pidfile]
+    )
+    return result.ok
+
+
+async def _start_background_pull(transport: SshTransport, image_ref: str, pidfile: str, logfile: str) -> None:
+    """Launch ``docker pull`` detached from this SSH session so it outlives it.
+
+    ``nohup`` plus stdio redirected away from the exec channel is what makes
+    this survive: Tier 2 closes its SSH connection right after this check
+    returns, which would otherwise SIGHUP a foreground pull mid-transfer,
+    aborting it and discarding an already-mostly-downloaded image. Progress
+    and PID land in host-local files under ``/tmp`` so a later check can tell
+    "still pulling" from "pull finished or died" without needing this SSH
+    connection to still be open.
+    """
+    await transport.run_command(
+        [
+            "sh",
+            "-c",
+            'nohup docker pull "$1" >"$2" 2>&1 </dev/null & echo "$!" >"$3"',
+            "sh",
+            image_ref,
+            logfile,
+            pidfile,
+        ]
+    )
+
+
 async def _check_device_probe(
     recorder: _CheckRecorder,
     transport: SshTransport,
     device_type: DeviceType,
     image_ref: str,
-) -> None:
+) -> bool:
     """Run a one-shot container and record whether it sees the accelerator.
 
     The authoritative check, and the reason Tier 2 exists: a driver visible on the
     host still tells you nothing about whether the container runtime passes the
     device through.
+
+    Checks the image is already cached locally before running anything: a
+    `docker run` against a cold image pulls it inline, tying the transfer to
+    this check's short timeout and to this SSH connection's lifetime - both of
+    which end long before a multi-gigabyte image finishes. An absent image is
+    instead handed to a detached background pull that keeps going after this
+    check (and the whole preflight) returns.
+
+    Returns:
+        True when the image was still being pulled when this probe ran, so the
+        caller can skip the protocol check rather than have it fail against an
+        image that is not there yet.
     """
+    if not await _image_present_locally(transport, image_ref):
+        pidfile, logfile = _pull_state_paths(image_ref)
+        already_running = await _pull_already_running(transport, pidfile)
+        if not already_running:
+            await _start_background_pull(transport, image_ref, pidfile, logfile)
+
+        verb = "Still pulling" if already_running else "Started pulling"
+        recorder.add(
+            CheckKey.CONTAINER_DEVICE_PROBE,
+            CheckOutcome.SKIPPED,
+            reason_code=REASON_IMAGE_PULLING,
+            detail=f"{verb} {image_ref} in the background. Run Test connection again once it finishes.",
+            method=METHOD_CONTAINER,
+        )
+        return True
+
     render_gid = None if device_type is DeviceType.CUDA else await resolve_render_group_gid(transport)
     argv = [
         "docker",
@@ -934,7 +1032,16 @@ async def _check_device_probe(
     result = await transport.run_command(argv, timeout=get_settings().ssh_preflight_timeout_s)
     if result.ok and result.first_line().lower() == "true":
         recorder.add(CheckKey.CONTAINER_DEVICE_PROBE, CheckOutcome.PASSED, method=METHOD_CONTAINER)
-        return
+        return False
+    if _is_pulling_image(result):
+        recorder.add(
+            CheckKey.CONTAINER_DEVICE_PROBE,
+            CheckOutcome.SKIPPED,
+            reason_code=REASON_IMAGE_PULLING,
+            detail=f"Started pulling {image_ref}. Run Test connection again once the pull finishes.",
+            method=METHOD_CONTAINER,
+        )
+        return True
     recorder.add(
         CheckKey.CONTAINER_DEVICE_PROBE,
         CheckOutcome.FAILED,
@@ -942,6 +1049,7 @@ async def _check_device_probe(
         detail=_failure_detail(result) or "The container did not report the device as available.",
         method=METHOD_CONTAINER,
     )
+    return False
 
 
 async def _check_protocol(
@@ -1040,8 +1148,15 @@ async def run_tier2_preflight(
             return _result(server, recorder, started, checked_at)
 
         await _check_signature(recorder, transport, image_ref)
-        await _check_device_probe(recorder, transport, server.device_type, image_ref)
-        await _check_protocol(recorder, transport, image_ref, protocol_version)
+        pulling = await _check_device_probe(recorder, transport, server.device_type, image_ref)
+        if pulling:
+            # The protocol check reads a label off the local image via `docker
+            # image inspect`; with the pull still in flight that image is not
+            # there yet, and running it now would report a spurious
+            # "no protocol version" failure instead of the real cause.
+            recorder.skip(CheckKey.PROTOCOL_COMPATIBLE, reason_code=REASON_IMAGE_PULLING)
+        else:
+            await _check_protocol(recorder, transport, image_ref, protocol_version)
     except SshConnectionError as error:
         logger.warning(
             "SSH connection lost during Tier 2 preflight for alias '{}': {}",

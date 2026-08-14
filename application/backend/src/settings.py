@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     # Free disk a server must have at save time for the image plus a nominal job.
     # The actual dataset size is re-checked at provisioning time.
     ssh_min_free_disk_bytes: int = Field(
-        default=60 * 1024 * 1024 * 1024,
+        default=50 * 1024 * 1024 * 1024,
         alias="SSH_MIN_FREE_DISK_BYTES",
     )
     # Maximum characters of streamed remote command output forwarded per line and
