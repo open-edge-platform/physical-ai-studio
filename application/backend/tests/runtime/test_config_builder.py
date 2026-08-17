@@ -9,7 +9,13 @@ from physicalai.config import to_yaml, validate_config
 from physicalai.runtime import RobotRuntime
 
 from robots.robot_client_factory import RobotClientFactory
-from runtime.config_builder import build_runtime_config, runtime_config_change_me, runtime_config_digest
+from runtime.config_builder import (
+    RUNTIME_FPS,
+    build_runtime_config,
+    runtime_camera_keys,
+    runtime_config_change_me,
+    runtime_identity_digest,
+)
 from schemas import SerialPortInfo
 from schemas.project_camera import CameraAdapter
 from schemas.robot import RobotAdapter
@@ -55,12 +61,12 @@ def _robot(role: str) -> Any:
     )
 
 
-def _camera() -> Any:
+def _camera(*, name: str = "Overhead Camera") -> Any:
     return CameraAdapter.validate_python(
         {
             "id": str(uuid4()),
             "driver": "usb_camera",
-            "name": "Overhead Camera",
+            "name": name,
             "fingerprint": "/dev/video0:0",
             "hardware_name": "Camera",
             "payload": {"width": 640, "height": 480, "fps": 30},
@@ -136,19 +142,69 @@ async def test_export_keeps_the_stored_port_when_the_robot_is_absent(mocker: Any
     assert runtime_config_change_me(document) == ["/dev/ttyACM0"]
 
 
-def test_runtime_config_digest_changes_when_the_rig_changes() -> None:
-    document = {
-        "class_path": "physicalai.runtime.RobotRuntime",
-        "init_args": {"fps": 30.0, "cameras": {}},
+def _identity_document(
+    *,
+    fps: float = 30.0,
+    cameras: dict[str, object] | None = None,
+    leader: bool = False,
+) -> dict[str, Any]:
+    init_args: dict[str, Any] = {
+        "robot": {"class_path": "tests.runtime.fakes.FakeRobot", "init_args": {"name": "follower"}},
+        "cameras": cameras or {},
+        "fps": fps,
     }
-    same = {
-        "init_args": {"cameras": {}, "fps": 30.0},
-        "class_path": "physicalai.runtime.RobotRuntime",
-    }
-    different = {
-        "class_path": "physicalai.runtime.RobotRuntime",
-        "init_args": {"fps": 15.0, "cameras": {}},
-    }
+    if leader:
+        init_args["action_source"] = {
+            "class_path": "physicalai.runtime.TeleopSource",
+            "init_args": {
+                "leader": {"class_path": "tests.runtime.fakes.FakeRobot", "init_args": {"name": "leader"}},
+            },
+        }
+    return {"class_path": "physicalai.runtime.RobotRuntime", "init_args": init_args}
 
-    assert runtime_config_digest(document) == runtime_config_digest(same)
-    assert runtime_config_digest(document) != runtime_config_digest(different)
+
+def test_identity_digest_ignores_cameras() -> None:
+    without_cameras = _identity_document()
+    with_cameras = _identity_document(cameras={"overhead camera": {"class_path": "unused"}})
+
+    assert runtime_identity_digest(without_cameras) == runtime_identity_digest(with_cameras)
+
+
+def test_identity_digest_changes_with_the_leader() -> None:
+    follower_only = _identity_document()
+    with_leader = _identity_document(leader=True)
+
+    assert runtime_identity_digest(follower_only) != runtime_identity_digest(with_leader)
+
+
+def test_identity_digest_changes_with_fps() -> None:
+    at_default = _identity_document(fps=RUNTIME_FPS)
+    at_half = _identity_document(fps=15.0)
+
+    assert runtime_identity_digest(at_default) != runtime_identity_digest(at_half)
+
+
+async def test_camera_keys_are_sorted_sanitized_names(mocker: Any) -> None:
+    _stub_device_paths(mocker)
+    document = await build_runtime_config(
+        follower=_robot("follower"),
+        leader=None,
+        cameras=[_camera(name="Zebra Cam"), _camera(name="Alpha/Cam")],
+        robot_factory=_robot_factory(),
+    )
+
+    assert runtime_camera_keys(document) == ["alpha_cam", "zebra cam"]
+
+
+async def test_cameras_validate_on_connect_and_never_overwrite(mocker: Any) -> None:
+    _stub_device_paths(mocker)
+    document = await build_runtime_config(
+        follower=_robot("follower"),
+        leader=None,
+        cameras=[_camera()],
+        robot_factory=_robot_factory(),
+    )
+
+    shared_camera = document["init_args"]["cameras"]["overhead camera"]["init_args"]
+    assert shared_camera["validate_on_connect"] is True
+    assert shared_camera["overwrite_settings"] is False

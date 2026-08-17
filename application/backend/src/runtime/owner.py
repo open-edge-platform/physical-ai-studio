@@ -12,7 +12,7 @@ from loguru import logger
 
 from exceptions import BaseException as AppBaseException
 from exceptions import RuntimeSessionBusyError
-from runtime.config_builder import runtime_config_digest
+from runtime.config_builder import runtime_camera_keys, runtime_identity_digest
 from runtime.hosts.process_host import RuntimeProcessHost
 from runtime.transport.codec import decode_metadata
 from runtime.transport.ids import metadata_key, runtime_session_name
@@ -209,8 +209,18 @@ class RuntimeSessionOwner:
 
         metadata = None if replace else self._client.probe()
         if metadata is not None:
-            self._attach_to(metadata)
-            return
+            # Identity first: a client asking for a different arm must get 423,
+            # not a silent takeover because it also happens to need more cameras.
+            self._reject_if_different_rig(metadata)
+            if self._needs_more_cameras(metadata):
+                logger.info(
+                    "Runtime session {} is missing cameras this client needs; restarting",
+                    self._session_name,
+                )
+                stop_runtime_session(self._session_name)
+            else:
+                self._attach_to(metadata)
+                return
 
         self._host = RuntimeProcessHost(
             self._session_name,
@@ -272,12 +282,23 @@ class RuntimeSessionOwner:
         self._metadata = metadata
 
     def _reject_if_different_rig(self, metadata: dict[str, Any]) -> None:
-        expected = runtime_config_digest(self._document)
-        actual = metadata.get("config_digest")
-        if actual == expected:
+        expected = runtime_identity_digest(self._document)
+        if metadata.get("identity_digest") == expected:
             return
         pid = metadata.get("pid")
         raise RuntimeSessionBusyError(
             robot_name=self._follower_name,
             pid=pid if isinstance(pid, int) else None,
         )
+
+    def _needs_more_cameras(self, metadata: dict[str, Any]) -> bool:
+        """Whether the running session lacks a camera this client needs.
+
+        Cameras are outside the session identity, so a session started by a client
+        that needed none — the environment form preview — is a valid attach target
+        for its own identity but cannot serve a client that has to read frames.
+        Restarting is correct rather than rude: the displaced client reattaches to
+        the superset, because its identity still matches.
+        """
+        running = set(metadata.get("camera_keys") or [])
+        return not set(runtime_camera_keys(self._document)).issubset(running)

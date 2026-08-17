@@ -20,7 +20,7 @@ from loguru import logger
 from core.logging import setup_logging
 from exceptions import BaseException as AppBaseException
 from exceptions import RuntimeSessionBusyError
-from runtime.config_builder import runtime_config_digest
+from runtime.config_builder import runtime_camera_keys, runtime_identity_digest
 from runtime.contract import ErrorEvent, LifecycleData, LifecycleEvent, SetFollowerSourceCommand
 from runtime.session import RuntimeSession
 from runtime.transport.lock import SessionNameLock, live_session_pid
@@ -212,7 +212,8 @@ def _open_locked_session(
     instance_id = uuid4().hex
     server = RuntimeZenohServer(payload.session_name, instance_id=instance_id)
     server.update_metadata(
-        config_digest=runtime_config_digest(payload.document),
+        identity_digest=runtime_identity_digest(payload.document),
+        camera_keys=runtime_camera_keys(payload.document),
         pid=os.getpid(),
         started_at=time.time(),
         idle_timeout_s=payload.idle_timeout_s,
