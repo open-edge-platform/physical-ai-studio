@@ -23,7 +23,7 @@ const ModelInputInterface = ({ inputFeatures }: { inputFeatures: IOFeature[] }) 
 const ModelOutputInterface = ({ outputFeatures }: { outputFeatures: IOFeature[] }) => {
     return (
         <Flex direction='column' gap='size-100' width='size-3600'>
-            <Text UNSAFE_style={{ fontWeight: 600 }}>Inputs ({outputFeatures.length})</Text>
+            <Text UNSAFE_style={{ fontWeight: 600 }}>Outputs ({outputFeatures.length})</Text>
             <Flex direction={'column'} gap='size-200'>
                 {outputFeatures.map((feature) => {
                     return <FeatureRow key={feature.name} feature={feature} />;
