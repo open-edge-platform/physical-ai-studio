@@ -14,6 +14,7 @@ from api.dependencies import (
 )
 from api.record import robot_control_websocket
 from api.robot_control import robot_websocket
+from api.robot_observations import robot_observations_websocket
 from robots.robot_client_factory import RobotClientFactory
 from services.job_service import JobService
 from services.robot_catalog_service import RobotCatalogService
@@ -78,3 +79,7 @@ def test_record_websocket_depends_on_robot_client_factory() -> None:
 
 def test_teleoperation_websocket_depends_on_robot_client_factory() -> None:
     assert get_robot_client_factory in _dependency_calls(robot_websocket)
+
+
+def test_observation_websocket_depends_on_robot_client_factory() -> None:
+    assert get_robot_client_factory in _dependency_calls(robot_observations_websocket)
