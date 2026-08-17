@@ -13,3 +13,10 @@
     padding-inline: var(--spectrum-global-dimension-size-200);
     padding-block: var(--spectrum-global-dimension-size-250);
 }
+
+.thumbnailWrapper {
+    display: block;
+    flex-shrink: 0;
+    border-radius: 50%;
+    overflow: hidden;
+}
