@@ -1,19 +1,33 @@
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 import numpy as np
 from loguru import logger
+from physicalai.runtime import WorkerDiedError
 
-from runtime.contract import ErrorEvent, SetFollowerSourceCommand, StateData, StateEvent
+from runtime.contract import (
+    ErrorEvent,
+    LoadModelCommand,
+    SetFollowerSourceCommand,
+    StartTaskCommand,
+    StateData,
+    StateEvent,
+    StopTaskCommand,
+)
+from runtime.policy_loader import PolicyLoader
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
 
     from physicalai.capture.frame import Frame
     from physicalai.robot.interface import Robot, RobotObservation
+    from physicalai.runtime import PolicySource
 
     from runtime.contract import CommandMailbox, EventSink, FollowerSource
+    from runtime.policy_loader import ObservationSnapshot
 
 
 class StudioActionSource:
@@ -27,6 +41,8 @@ class StudioActionSource:
         mailbox: CommandMailbox,
         event_sink: EventSink,
         fps: float,
+        camera_keys: Sequence[str] = (),
+        models_dir: Path | None = None,
     ) -> None:
         self._follower = follower
         self._leader = leader
@@ -42,13 +58,36 @@ class StudioActionSource:
         self._failure_logged = False
         self._bus: object | None = None
         self._session_id: str | None = None
+        self._policy: PolicySource | None = None
+        self._policy_lock = threading.Lock()
+        self._attached_generation = 0
+        self._model_loaded = False
+        self._task: str | None = None
+        self._policy_error_emitted = False
+        self._last_robot_state: RobotObservation | None = None
+        self._last_camera_frames: Mapping[str, Frame] = {}
+        self._loader = PolicyLoader(
+            event_sink=event_sink,
+            on_ready=self._set_policy,
+            camera_keys=camera_keys,
+            models_dir=models_dir,
+        )
 
     @property
     def follower_source(self) -> FollowerSource:
         return self._follower_source
 
+    def state_data(self) -> StateData:
+        """Return the session state currently published to the browser."""
+        return StateData(
+            connected=True,
+            follower_source=self._follower_source,
+            model_loaded=self._model_loaded,
+            task=self._task,
+        )
+
     def connect(self, *, bus: object, session_id: str) -> None:
-        """Connect the leader once and remember runtime context for phase B."""
+        """Connect the leader once and remember runtime context for policy loads."""
         self._bus = bus
         self._session_id = session_id
         if self._leader is not None and not self._leader.is_connected():
@@ -59,15 +98,17 @@ class StudioActionSource:
     def update(
         self,
         robot_state: RobotObservation,
-        camera_frames: Mapping[str, Frame],  # noqa: ARG002
-        step: int,  # noqa: ARG002
+        camera_frames: Mapping[str, Frame],
+        step: int,
     ) -> np.ndarray:
+        self._last_robot_state = robot_state
+        self._last_camera_frames = camera_frames
         self._drain_commands(robot_state)
         if self._hold_target is None:
             self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
 
         leader_action = self._read_leader(robot_state) if self._leader_reads_enabled else self._last_leader_action
-        policy_action = None
+        policy_action = self._policy_action(robot_state, camera_frames, step)
 
         if self._follower_source == "teleop" and leader_action is not None:
             return leader_action
@@ -76,7 +117,7 @@ class StudioActionSource:
         return self._hold_target.copy()
 
     def disconnect(self) -> None:
-        """Clear per-run state without disconnecting session-owned devices."""
+        """Clear per-run state without stopping a loaded policy's execution worker."""
         self._bus = None
         self._session_id = None
         self._hold_target = None
@@ -85,42 +126,178 @@ class StudioActionSource:
         self._leader_failures = 0
         self._leader_reads_enabled = self._leader is not None
         self._failure_logged = False
+        self._last_robot_state = None
+        self._last_camera_frames = {}
+
+    def shutdown_policy(self) -> None:
+        """Stop in-flight loads and the policy execution worker. Session teardown only."""
+        self._loader.shutdown()
+        with self._policy_lock:
+            policy = self._policy
+            self._policy = None
+            self._model_loaded = False
+        if policy is not None:
+            policy.disconnect()
+
+    def _set_policy(self, source: PolicySource, generation: int) -> None:
+        with self._policy_lock:
+            if generation < self._attached_generation:
+                stale = True
+                previous = None
+            else:
+                stale = False
+                previous = self._policy
+                self._policy = source
+                self._attached_generation = generation
+                self._model_loaded = True
+                self._policy_error_emitted = False
+        if stale:
+            source.disconnect()
+            return
+        self._emit_state()
+        if previous is not None and previous is not source:
+            previous.disconnect()
+
+    def _latest_observation(self) -> ObservationSnapshot:
+        if self._last_robot_state is None:
+            return None
+        return self._last_robot_state, self._last_camera_frames
+
+    def _policy_action(
+        self,
+        robot_state: RobotObservation,
+        camera_frames: Mapping[str, Frame],
+        step: int,
+    ) -> np.ndarray | None:
+        with self._policy_lock:
+            policy = self._policy
+            if policy is None:
+                return None
+            try:
+                return policy.update(robot_state, camera_frames, step)
+            except WorkerDiedError:
+                raise
+            except Exception as exc:
+                self._drop_policy_to_hold(robot_state, exc)
+                return None
+
+    def _drop_policy_to_hold(self, robot_state: RobotObservation, exc: Exception) -> None:
+        self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
+        changed = self._follower_source != "hold"
+        self._follower_source = "hold"
+        if not self._policy_error_emitted:
+            logger.exception("Policy update failed; switching to hold")
+            self._policy_error_emitted = True
+            self._event_sink.emit(
+                ErrorEvent(
+                    message=str(exc) or "Policy inference failed.",
+                    error_code="policy_inference_failed",
+                )
+            )
+        if changed:
+            self._emit_state()
 
     def _drain_commands(self, robot_state: RobotObservation) -> None:
         for command in self._mailbox.drain():
-            if not isinstance(command, SetFollowerSourceCommand):
-                continue
-            requested = command.follower_source
-            if requested == "teleop" and self._leader is None:
-                self._event_sink.emit(
-                    ErrorEvent(
-                        message="Teleoperation requires a leader robot.",
-                        error_code="leader_required",
-                    )
+            if isinstance(command, LoadModelCommand):
+                self._handle_load_model(command)
+            elif isinstance(command, StartTaskCommand):
+                self._handle_start_task(command)
+            elif isinstance(command, StopTaskCommand):
+                self._handle_stop_task(robot_state)
+            elif isinstance(command, SetFollowerSourceCommand):
+                self._handle_set_follower_source(command, robot_state)
+
+    def _handle_load_model(self, command: LoadModelCommand) -> None:
+        self._model_loaded = False
+        self._emit_state()
+        if self._bus is None or self._session_id is None:
+            self._event_sink.emit(
+                ErrorEvent(
+                    message="Cannot load a model before the runtime session is connected.",
+                    error_code="model_load_failed",
                 )
-                continue
-            if requested == "teleop" and not self._leader_reads_enabled:
-                self._event_sink.emit(
-                    ErrorEvent(
-                        message="The leader robot is not responding. Reconnect before resuming teleoperation.",
-                        error_code="leader_connection_lost",
-                    )
+            )
+            return
+        self._loader.request(
+            command,
+            self._latest_observation,
+            bus=self._bus,
+            session_id=self._session_id,
+        )
+
+    def _handle_start_task(self, command: StartTaskCommand) -> None:
+        if not self._arm_policy(task=command.task):
+            return
+        self._emit_state()
+
+    def _handle_stop_task(self, robot_state: RobotObservation) -> None:
+        if self._follower_source == "hold":
+            return
+        self._follower_source = "hold"
+        self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
+        self._emit_state()
+
+    def _handle_set_follower_source(self, command: SetFollowerSourceCommand, robot_state: RobotObservation) -> None:
+        requested = command.follower_source
+        if requested == "teleop" and self._leader is None:
+            self._event_sink.emit(
+                ErrorEvent(
+                    message="Teleoperation requires a leader robot.",
+                    error_code="leader_required",
                 )
-                continue
-            if requested == "policy":
+            )
+            return
+        if requested == "teleop" and not self._leader_reads_enabled:
+            self._event_sink.emit(
+                ErrorEvent(
+                    message="The leader robot is not responding. Reconnect before resuming teleoperation.",
+                    error_code="leader_connection_lost",
+                )
+            )
+            return
+        if requested == "policy":
+            if not self._arm_policy(task=self._task):
+                return
+            self._emit_state()
+            return
+        if requested == self._follower_source:
+            return
+        self._follower_source = requested
+        if requested == "hold":
+            self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
+        self._emit_state()
+
+    def _arm_policy(self, *, task: str | None) -> bool:
+        """Reset the policy, then switch into policy mode. Return whether the switch happened."""
+        with self._policy_lock:
+            policy = self._policy
+            if policy is None:
                 self._event_sink.emit(
                     ErrorEvent(
                         message="No policy is loaded.",
                         error_code="policy_not_loaded",
                     )
                 )
-                continue
-            if requested == self._follower_source:
-                continue
-            self._follower_source = requested
-            if requested == "hold":
-                self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
-            self._emit_state()
+                return False
+            try:
+                if task is not None:
+                    policy.set_task(task)
+                policy.reset()
+            except WorkerDiedError:
+                raise
+            except RuntimeError as exc:
+                self._event_sink.emit(
+                    ErrorEvent(
+                        message=str(exc) or "Failed to arm the policy.",
+                        error_code="policy_reset_failed",
+                    )
+                )
+                return False
+            self._task = task
+            self._policy_error_emitted = False
+            self._follower_source = "policy"
+            return True
 
     def _read_leader(self, robot_state: RobotObservation) -> np.ndarray | None:
         if self._leader is None:
@@ -166,4 +343,4 @@ class StudioActionSource:
         )
 
     def _emit_state(self) -> None:
-        self._event_sink.emit(StateEvent(data=StateData(connected=True, follower_source=self._follower_source)))
+        self._event_sink.emit(StateEvent(data=self.state_data()))

@@ -303,6 +303,32 @@ class RobotProtocolMismatchError(BaseException):
         )
 
 
+class ModelCameraMismatchError(BaseException):
+    """Raised when a model's image inputs do not match the session's cameras."""
+
+    def __init__(self, *, expected: list[str], provided: list[str]) -> None:
+        expected_text = _format_camera_keys(expected)
+        provided_text = _format_camera_keys(provided)
+        message = (
+            f"This model expects camera inputs {expected_text}, but this environment "
+            f"provides {provided_text}. Cameras were probably renamed after the model "
+            "was trained. Rename them back, or retrain."
+        )
+        super().__init__(
+            message=message,
+            error_code="model_camera_mismatch",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+        self.expected = expected
+        self.provided = provided
+
+
+def _format_camera_keys(keys: list[str]) -> str:
+    if not keys:
+        return "none"
+    return ", ".join(f"`{key}`" for key in keys)
+
+
 class SharedRobotTransportError(BaseException):
     """Raised when SharedRobot transport fails (spawn, handshake, or wire)."""
 

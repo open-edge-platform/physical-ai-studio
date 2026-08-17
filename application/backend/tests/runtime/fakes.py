@@ -128,6 +128,51 @@ class FakeRobot:
         return ()
 
 
+class FakeAdapter:
+    def __init__(self, input_names: list[str]) -> None:
+        self.input_names = input_names
+
+
+class FakeInferenceModel:
+    """Stand-in for physicalai.inference.InferenceModel used by PolicyLoader tests."""
+
+    def __init__(
+        self,
+        export_dir: object = None,
+        policy_name: str | None = None,
+        backend: str = "auto",
+        device: str = "auto",
+        *,
+        input_names: list[str] | None = None,
+        chunk: np.ndarray | None = None,
+        construct_delay: float = 0.0,
+        label: str = "fake",
+        predict: object | None = None,
+    ) -> None:
+        if construct_delay > 0:
+            time.sleep(construct_delay)
+        self.export_dir = export_dir
+        self.policy_name = policy_name
+        self.backend = backend
+        self.device = device
+        self.adapter = FakeAdapter(input_names or ["state"])
+        self._chunk = np.zeros((4, 1), dtype=np.float32) if chunk is None else np.asarray(chunk, dtype=np.float32)
+        self.chunk_size = int(self._chunk.shape[0])
+        self.predict_calls: list[dict] = []
+        self.reset_calls = 0
+        self.label = label
+        self._predict = predict
+
+    def predict_action_chunk(self, observation: dict) -> np.ndarray:
+        self.predict_calls.append(observation)
+        if callable(self._predict):
+            return np.asarray(self._predict(observation), dtype=np.float32)
+        return np.array(self._chunk, copy=True)
+
+    def reset(self) -> None:
+        self.reset_calls += 1
+
+
 class FakeCamera:
     """Stand-in for SharedCamera that participates in session connect/teardown."""
 
