@@ -415,9 +415,12 @@ class XR1(ExportablePolicyMixin, Policy):
         """List the export backends this policy supports.
 
         Returns:
-            Supported backends. Graph backends are not listed yet: the backbone's
-            key/value cache and the iterative sampler need a component-split export,
-            which is tracked separately.
+            Only the Torch backend. ONNX and OpenVINO are deliberately not claimed:
+            the Qwen3-VL backbone cannot be captured by ``torch.export`` or
+            ``torch.jit.trace`` once images are present, for reasons documented in
+            :mod:`physicalai.policies.xr1.graph_export`. That module exports the
+            action expert - the part evaluated ``num_inference_steps`` times per
+            chunk - as a standalone ONNX or OpenVINO graph instead.
         """
         return [ExportBackend.TORCH]
 
