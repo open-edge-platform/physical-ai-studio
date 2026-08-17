@@ -3489,6 +3489,42 @@
       "description": "Argument `Dataset | None` is not assignable to parameter `object` with type `Dataset` in function `list.append`",
       "concise_description": "Argument `Dataset | None` is not assignable to parameter `object` with type `Dataset` in function `list.append`",
       "severity": "error"
+    },
+    {
+      "line": 181,
+      "column": 14,
+      "stop_line": 181,
+      "stop_column": 19,
+      "path": "src/physicalai/policies/xr1/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR1.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner\n  `XR1.model` has type `XR1Model | None`, which is not consistent with `Module` in `ExportablePolicyMixin.model` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR1.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 181,
+      "column": 14,
+      "stop_line": 181,
+      "stop_column": 19,
+      "path": "src/physicalai/policies/xr1/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR1.model` overrides parent class `Policy` in an inconsistent manner\n  `XR1.model` has type `XR1Model | None`, which is not consistent with `Model | None` in `Policy.model` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR1.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 182,
+      "column": 14,
+      "stop_line": 182,
+      "stop_column": 27,
+      "path": "src/physicalai/policies/xr1/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR1._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner\n  `XR1._preprocessor` has type `XR1Preprocessor | None`, which is not consistent with `Module` in `ExportablePolicyMixin._preprocessor` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR1._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
     }
   ]
 }
