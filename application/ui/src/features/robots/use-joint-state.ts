@@ -53,10 +53,11 @@ interface RobotControlState {
 }
 
 // Compose from a typed project path so this does not depend on regenerating OpenAPI.
-const runtimeSocketUrl = (project_id: string): string =>
+// follower_id must be in the URL: react-use-websocket share:true keys by URL.
+export const runtimeSocketUrl = (project_id: string, follower_id: string): string =>
     `${fetchClient.PATH('/api/projects/{project_id}', {
         params: { path: { project_id } },
-    })}/runtime/ws`;
+    })}/runtime/ws?follower_id=${encodeURIComponent(follower_id)}`;
 
 export const useJointState = (
     project_id: string,
@@ -109,7 +110,7 @@ export const useJointState = (
     }, []);
 
     const socket = useWebSocket(
-        runtimeSocketUrl(project_id),
+        runtimeSocketUrl(project_id, follower_id),
         {
             share: true,
             shouldReconnect: () => !hasFatalError.current,
