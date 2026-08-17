@@ -23,6 +23,16 @@ VLM_LAYERS = 4
 VLM_HEAD_DIM = 32
 VLM_KV_HEADS = 2
 VOCAB_SIZE = 200
+#: The stock id is 151655, which does not fit the shrunken vocabulary.
+IMAGE_TOKEN_ID = VOCAB_SIZE - 1
+PROMPT_LENGTH = 9
+
+VISION_PATCH_SIZE = 14
+VISION_TEMPORAL_PATCH = 2
+VISION_MERGE_SIZE = 2
+#: One patch row per (t, h, w) cell; h and w must be multiples of the merge size.
+VISION_GRID = (1, VISION_MERGE_SIZE, VISION_MERGE_SIZE)
+VISION_PATCH_DIM = 3 * VISION_TEMPORAL_PATCH * VISION_PATCH_SIZE**2
 
 DIT_HIDDEN = 256
 CHUNK_SIZE = 4
@@ -58,15 +68,16 @@ def tiny_vlm() -> XR1Qwen3VL:
             "intermediate_size": 256,
             "vocab_size": VOCAB_SIZE,
         },
+        image_token_id=IMAGE_TOKEN_ID,
         vision_config={
             "hidden_size": 64,
             "depth": 2,
             "num_heads": 2,
             "intermediate_size": 128,
             "out_hidden_size": VLM_HIDDEN,
-            "patch_size": 14,
-            "temporal_patch_size": 2,
-            "spatial_merge_size": 2,
+            "patch_size": VISION_PATCH_SIZE,
+            "temporal_patch_size": VISION_TEMPORAL_PATCH,
+            "spatial_merge_size": VISION_MERGE_SIZE,
         },
     )
     return XR1Qwen3VL._from_config(  # noqa: SLF001 - no public build-from-config entry point
@@ -145,21 +156,35 @@ class StubProcessor:
 
         Returns:
             Encoded batch with ``input_ids``, ``attention_mask`` and, when images are
-            given, ``pixel_values`` and ``image_grid_thw``.
+            given, ``pixel_values``, ``image_grid_thw`` and ``mm_token_type_ids``.
         """
         del kwargs
         batch_size = len(text)
+        views = len(images[0]) if images else 0
+        # Text ids stay strictly below the image token id so no random id is mistaken
+        # for an image placeholder.
+        input_ids = torch.randint(0, IMAGE_TOKEN_ID, (batch_size, PROMPT_LENGTH))
+        mm_token_type_ids = torch.zeros(batch_size, PROMPT_LENGTH, dtype=torch.int32)
         encoded = {
-            "input_ids": torch.randint(0, VOCAB_SIZE, (batch_size, 9)),
-            "attention_mask": torch.ones(batch_size, 9, dtype=torch.long),
+            "input_ids": input_ids,
+            "attention_mask": torch.ones(batch_size, PROMPT_LENGTH, dtype=torch.long),
         }
-        if images:
-            num_images = batch_size * len(images[0])
-            encoded["pixel_values"] = torch.randn(num_images, 3, 16, 16)
-            encoded["image_grid_thw"] = torch.ones(num_images, 3, dtype=torch.long)
-            # The real processor returns this alongside input_ids, and transformers
-            # requires it for multimodal RoPE once images are present.
-            encoded["mm_token_type_ids"] = torch.zeros(batch_size, 9, dtype=torch.int32)
+        if views:
+            # transformers checks that the number of image placeholders equals the
+            # number of merged vision features, so both sides are derived from the
+            # same grid: (t * h * w) / merge ** 2 merged tokens per image.
+            merged_per_image = VISION_GRID[0] * VISION_GRID[1] * VISION_GRID[2] // VISION_MERGE_SIZE**2
+            placeholders = views * merged_per_image
+            input_ids[:, 1 : 1 + placeholders] = IMAGE_TOKEN_ID
+            mm_token_type_ids[:, 1 : 1 + placeholders] = 1
+
+            num_images = batch_size * views
+            # Shapes the real Qwen3-VL image processor would produce: one row per
+            # patch, each of width in_channels * temporal_patch * patch ** 2.
+            patches = num_images * VISION_GRID[1] * VISION_GRID[2]
+            encoded["pixel_values"] = torch.randn(patches, VISION_PATCH_DIM)
+            encoded["image_grid_thw"] = torch.tensor([VISION_GRID] * num_images, dtype=torch.long)
+            encoded["mm_token_type_ids"] = mm_token_type_ids
         return encoded
 
 

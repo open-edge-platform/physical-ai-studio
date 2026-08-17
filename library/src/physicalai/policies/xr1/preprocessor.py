@@ -27,13 +27,15 @@ import torch
 from torch import nn
 
 from physicalai.data import Feature, FeatureType
-from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 from physicalai.policies.xr1.embodiment import gather_slots, scatter_slots
 from physicalai.policies.xr1.io import build_action_mask, pad_vector, resize_with_pad
 
 if TYPE_CHECKING:
     from physicalai.policies.xr1.config import XR1Config
+
+IMAGE_HISTORY_RANK = 5
 
 _NORMALIZATION_TYPES = {
     "MEAN_STD": NormalizationType.MEAN_STD,
@@ -150,36 +152,63 @@ class XR1Preprocessor(nn.Module):
     def _ordered_images(self, batch: dict[str, Any]) -> list[torch.Tensor]:
         """Collect camera tensors in the configured view order.
 
+        ``Observation.to_dict()`` flattens nested fields by default, so cameras arrive
+        as ``images.top`` rather than under a single ``images`` dict. Both layouts have
+        to work: the datamodule and the Runtime adapter disagree about which one they
+        hand over, and reading only the nested form silently drops every camera.
+
         Args:
-            batch: Observation dict.
+            batch: Observation dict, flattened or nested.
 
         Returns:
             One ``(batch, channels, height, width)`` tensor per view.
         """
-        images = batch.get(IMAGES)
-        if images is None:
+        views = self._collect_views(batch)
+        if not views:
             return []
-        if isinstance(images, torch.Tensor):
-            return [self._prepare_images(images)]
 
-        ordered: list[torch.Tensor] = [
-            self._prepare_images(images[view]) for view in self.config.camera_views if view in images
-        ]
+        ordered = [views[name] for name in self.config.camera_views if name in views]
         if not ordered:
             # Fall back to whatever the dataset provides, in its own order, so a
             # dataset whose cameras are named differently still trains.
-            ordered = [self._prepare_images(value) for value in images.values()]
-        return ordered
+            ordered = list(views.values())
+        return [self._prepare_images(image) for image in ordered]
+
+    @staticmethod
+    def _collect_views(batch: dict[str, Any]) -> dict[str, torch.Tensor]:
+        """Gather camera tensors keyed by view name.
+
+        Args:
+            batch: Observation dict, flattened or nested.
+
+        Returns:
+            Mapping from view name to image tensor, in the order the batch lists them.
+        """
+        views: dict[str, torch.Tensor] = {}
+        for key in Observation.get_flattened_keys(batch, IMAGES):
+            if "is_pad" in key:
+                continue
+            value = batch.get(key)
+            if isinstance(value, dict):
+                views.update(value)
+            elif isinstance(value, torch.Tensor):
+                views[key.removeprefix(f"{IMAGES}.")] = value
+        return views
 
     def _prepare_images(self, images: torch.Tensor) -> torch.Tensor:
         """Letterbox a camera tensor to the configured resolution.
 
         Args:
-            images: Tensor of shape ``(batch, channels, height, width)``.
+            images: Tensor of shape ``(batch, channels, height, width)``, or
+                ``(batch, history, channels, height, width)`` when the datamodule
+                carries an observation history.
 
         Returns:
             Resized tensor in ``float32`` in ``[0, 1]``.
         """
+        if images.ndim == IMAGE_HISTORY_RANK:
+            # XR1 conditions on the current observation only; keep the latest frame.
+            images = images[:, -1]
         images = images.float() / 255.0 if images.dtype == torch.uint8 else images.float()
         height, width = self.config.image_resolution
         return resize_with_pad(images, height, width)
