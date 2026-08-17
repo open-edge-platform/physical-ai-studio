@@ -12,7 +12,7 @@ from uuid import UUID
 import pytest
 from physicalai.config import Config
 
-from api.robot_control import handle_outgoing
+from api.runtime_ws import handle_outgoing
 from exceptions import BaseException as AppBaseException
 from exceptions import RobotDeviceAlreadyOwnedError
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand, StateEvent
