@@ -6,25 +6,21 @@ from multiprocessing import Event, Queue
 from multiprocessing.synchronize import Event as EventClass
 from pathlib import Path
 from typing import Literal
-from uuid import UUID  # noqa: TC003
 
 from loguru import logger
 from pydantic import BaseModel
 
 from control.environment_integration import EnvironmentIntegration
-from control.sync_mixed_model_integration import SyncMixedModelIntegration
 from exceptions import BaseException as AppBaseException
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.recording_mutation import RecordingMutation
 from robots.robot_client_factory import RobotClientFactory
-from schemas import InferenceDevice, Model
 from schemas.dataset import Dataset, Episode
 from schemas.environment import EnvironmentWithRelations
 
 from .base import BaseThreadWorker
-from .model_worker_registry import ModelWorkerRegistry
 
 
 class RobotControlState(BaseModel):
@@ -40,7 +36,6 @@ class RobotControlState(BaseModel):
 class WorkerEvents:
     def __init__(self):
         self.interrupt = Event()
-        self.new_model = Event()
         self.new_environment = Event()
         self.start_recording = Event()
         self.save_episode = Event()
@@ -55,7 +50,6 @@ class RobotControlWorker(BaseThreadWorker):
 
     queue: Queue
     state: RobotControlState
-    model_integration: SyncMixedModelIntegration | None = None
     environment_integration: EnvironmentIntegration | None = None
     dataset: DatasetClient | None = None
     recording_mutation: RecordingMutation | None = None
@@ -72,26 +66,12 @@ class RobotControlWorker(BaseThreadWorker):
         stop_event: EventClass,
         queue: Queue,
         robot_client_factory: RobotClientFactory,
-        model_worker_registry: ModelWorkerRegistry,
     ):
         super().__init__(stop_event=stop_event)
         self.queue = queue
         self.state = RobotControlState()
         self.robot_client_factory = robot_client_factory
         self.events = WorkerEvents()
-        self._model_worker_registry = model_worker_registry
-        self._model_worker_id: UUID | None = None
-        self._pending_model: Model | None = None
-        self._pending_inference_device: InferenceDevice | None = None
-
-    def start_task(self, task: str) -> None:
-        if self.state.model_loaded and self.state.environment_loaded:
-            if self.model_integration is not None:
-                self.model_integration.reset()
-            self.state.task = task
-            self.state.follower_source = "model"
-            self.start_episode_t = time.perf_counter()
-        self._report_state()
 
     def load_dataset(self, dataset: Dataset) -> None:
         self.dataset = InternalLeRobotDataset(Path(dataset.path), access_mode=DatasetAccessMode.RECORDING_MUTATION)
@@ -107,24 +87,12 @@ class RobotControlWorker(BaseThreadWorker):
     def discard_episode(self) -> None:
         self.events.discard_episode.set()
 
-    def stop(self) -> None:
-        """Stop inference."""
-        self.state.follower_source = None
-        self._report_state()
-
     def disconnect(self) -> None:
         """Stop inference and teardown."""
         self.events.interrupt.set()
 
     def set_follower_source(self, follower_source: Literal["model", "teleoperation"] | None) -> None:
         self.state.follower_source = follower_source
-        self._report_state()
-
-    def load_model(self, model: Model, inference_device: InferenceDevice) -> None:
-        self._pending_model = model
-        self._pending_inference_device = inference_device
-        self.state.model_loaded = False
-        self.events.new_model.set()
         self._report_state()
 
     def load_environment(self, environment: EnvironmentWithRelations) -> None:
@@ -145,11 +113,6 @@ class RobotControlWorker(BaseThreadWorker):
         self._report_state()
 
     @property
-    def ready_for_inference(self) -> bool:
-        """Check if model and environment is loaded and no errors occurred."""
-        return self.state.environment_loaded and self.state.model_loaded and self.state.task is not None
-
-    @property
     def ready_for_recording(self) -> bool:
         """Check if model and environment is loaded and no errors occurred."""
         return self.state.environment_loaded and self.recording_mutation is not None and self.state.task is not None
@@ -161,7 +124,6 @@ class RobotControlWorker(BaseThreadWorker):
 
             while not self.should_stop() and not self.events.interrupt.is_set():
                 await asyncio.gather(
-                    self._handle_new_model_load(),
                     self._handle_setup_environment(),
                     self._handle_start_mutation(),
                     self._handle_start_recording(),
@@ -180,21 +142,8 @@ class RobotControlWorker(BaseThreadWorker):
                         )
 
                         actions = None
-                        match self.state.follower_source:
-                            case "teleoperation":
-                                actions = await self.environment_integration.set_follower_position_from_leader(
-                                    goal_time
-                                )
-                            case "model":
-                                if self.model_integration:
-                                    dataset_observation = self.environment_integration.format_model_input_observation(
-                                        observation, task=self.state.task
-                                    )
-                                    action = self.model_integration.select_action(dataset_observation)
-                                    if action is not None:
-                                        actions = dict(zip(self.environment_integration.action_keys, action))
-                                        report_observation["actions"] = actions
-                                        await self.environment_integration.set_joints_state(actions, goal_time)
+                        if self.state.follower_source == "teleoperation":
+                            actions = await self.environment_integration.set_follower_position_from_leader(goal_time)
 
                         if (
                             self.state.is_recording
@@ -218,33 +167,6 @@ class RobotControlWorker(BaseThreadWorker):
         except Exception as e:
             logger.exception(f"RobotControl loop error: {e}")
             self._report_error(e)
-
-    async def _handle_new_model_load(self) -> None:
-        if self._pending_model is not None and self.events.new_model.is_set():
-            self.events.new_model.clear()
-            try:
-                if self._pending_inference_device is None:
-                    raise ValueError("Inference device must be provided before loading a model.")
-
-                # Release any previously held worker slot
-                if self._model_worker_id is not None:
-                    await self._model_worker_registry.release(self._model_worker_id)
-                    self._model_worker_id = None
-
-                worker_id, worker = await self._model_worker_registry.acquire(
-                    self._pending_model, self._pending_inference_device
-                )
-                self._model_worker_id = worker_id
-                self.model_integration = SyncMixedModelIntegration(model_worker=worker, fps=self.fps)
-                await self.model_integration.setup()
-                self.state.model_loaded = True
-                self._report_state()
-            except Exception as e:
-                self.model_integration = None
-                self._report_error(e)
-            finally:
-                self._pending_model = None
-                self._pending_inference_device = None
 
     async def _handle_setup_environment(self) -> None:
         if self.environment_integration and self.events.new_environment.is_set():
@@ -303,13 +225,6 @@ class RobotControlWorker(BaseThreadWorker):
         """Disconnect robots and close queue."""
         if self.environment_integration:
             await self.environment_integration.teardown()
-
-        if self.model_integration is not None:
-            self.model_integration.teardown()
-
-        if self._model_worker_id is not None:
-            await self._model_worker_registry.release(self._model_worker_id)
-            self._model_worker_id = None
 
         if self.recording_mutation:
             self.recording_mutation.teardown()

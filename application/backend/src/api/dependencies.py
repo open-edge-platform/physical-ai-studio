@@ -34,7 +34,6 @@ from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
 from settings import Settings, get_settings
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.model_worker_registry import ModelWorkerRegistry
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_db_session)]
@@ -328,14 +327,3 @@ def get_recording_locked_camera_fingerprints(request: HTTPConnection) -> set[str
 
 
 RecordingLockedCamerasDep = Annotated[set[str], Depends(get_recording_locked_camera_fingerprints)]
-
-
-def get_model_registry(request: HTTPConnection) -> ModelWorkerRegistry:
-    """Dependency to get model worker registry."""
-    registry = getattr(request.app.state, "model_registry", None)
-    if registry is None:
-        raise RuntimeError("Model worker registry not initialized")
-    return cast("ModelWorkerRegistry", registry)
-
-
-ModelRegistryDep = Annotated[ModelWorkerRegistry, Depends(get_model_registry)]

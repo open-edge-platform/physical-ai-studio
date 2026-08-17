@@ -6,10 +6,10 @@ from fastapi import APIRouter, WebSocket
 from fastapi.responses import Response
 from loguru import logger
 
-from api.dependencies import ModelRegistryDep, RecordingLockedCamerasDep, RobotClientFactoryDep, SchedulerDep
+from api.dependencies import RecordingLockedCamerasDep, RobotClientFactoryDep, SchedulerDep
 from exceptions import RuntimeSessionBusyError
 from runtime.owner import runtime_session_holder
-from schemas import Dataset, InferenceDevice, Model
+from schemas.dataset import Dataset
 from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
 
@@ -73,11 +73,6 @@ async def handle_incoming(
                         EnvironmentWithRelations.model_validate(payload["environment"]),
                         locked_camera_fingerprints,
                     )
-                case "load_model":
-                    process.load_model(
-                        Model.model_validate(payload["model"]),
-                        InferenceDevice.model_validate(payload["inference_device"]),
-                    )
                 case "load_dataset":
                     process.load_dataset(Dataset.model_validate(payload["dataset"]))
                 case "set_follower_source":
@@ -88,10 +83,6 @@ async def handle_incoming(
                     process.save_episode()
                 case "discard_episode":
                     process.discard_episode()
-                case "start_task":
-                    process.start_task(payload["task"])
-                case "stop_task":
-                    process.stop()
                 case "disconnect":
                     process.disconnect()
                     break
@@ -120,7 +111,6 @@ async def robot_control_websocket(
     websocket: WebSocket,
     robot_client_factory: RobotClientFactoryDep,
     scheduler: SchedulerDep,
-    model_registry: ModelRegistryDep,
     locked_camera_fingerprints: RecordingLockedCamerasDep,
 ) -> None:
     """Robot control websocket."""
@@ -130,7 +120,6 @@ async def robot_control_websocket(
         stop_event=scheduler.mp_stop_event,
         robot_client_factory=robot_client_factory,
         queue=queue,
-        model_worker_registry=model_registry,
     )
     process.start()
 
