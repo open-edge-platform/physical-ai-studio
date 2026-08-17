@@ -81,10 +81,13 @@ class RuntimeSession:
             mailbox=self._mailbox,
             event_sink=self._event_sink,
             fps=float(init_args["fps"]),
+            camera_keys=tuple(self._cameras),
         )
+        action_source = self._action_source
         self._stream_callback = StreamCallback(
             event_sink=self._event_sink,
-            follower_source=lambda: self._action_source.follower_source,
+            follower_source=lambda: action_source.follower_source,
+            state_data=action_source.state_data,
             ready=self.ready,
             start_allowed=lambda: not self._disconnect_requested,
             lifecycle_lock=self._lifecycle_lock,
@@ -136,6 +139,9 @@ class RuntimeSession:
 
     async def teardown(self) -> None:
         # Device lifetime belongs to the session, not to a disposable runtime view.
+        # Stop the policy worker before dropping devices it may still be reading.
+        if self._action_source is not None:
+            self._action_source.shutdown_policy()
         # Cameras first so a wedged publisher cannot strand the arm connected.
         for key, camera in self._cameras.items():
             try:

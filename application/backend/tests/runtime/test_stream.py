@@ -18,7 +18,10 @@ def test_lifecycle_start_emits_connected_state_once() -> None:
     )
 
     event = events.get_nowait()
-    assert event.model_dump() == {"event": "state", "data": {"connected": True, "follower_source": "hold"}}
+    assert event.model_dump() == {
+        "event": "state",
+        "data": {"connected": True, "follower_source": "hold", "model_loaded": None, "task": None},
+    }
 
 
 def test_lifecycle_start_is_suppressed_after_disconnect() -> None:
@@ -66,7 +69,7 @@ def test_tick_emits_exact_observation_shape() -> None:
 def test_state_and_error_events_keep_the_websocket_contract() -> None:
     assert StateEvent(data=StateData(connected=True, follower_source="teleop")).model_dump() == {
         "event": "state",
-        "data": {"connected": True, "follower_source": "teleop"},
+        "data": {"connected": True, "follower_source": "teleop", "model_loaded": None, "task": None},
     }
     assert ErrorEvent(message="lost", error_code="leader_connection_lost").model_dump() == {
         "event": "error",

@@ -99,6 +99,8 @@ class StateData(BaseModel):
 
     connected: bool
     follower_source: FollowerSource
+    model_loaded: bool | None = None
+    task: str | None = None
 
 
 class StateEvent(BaseModel):
