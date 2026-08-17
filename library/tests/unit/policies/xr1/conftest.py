@@ -15,7 +15,8 @@ from typing import Any
 import pytest
 import torch
 from physicalai.data import Feature, FeatureType, NormalizationParameters
-from physicalai.policies.xr1 import XR1Config
+from physicalai.policies.xr1 import XR1, XR1Config
+from physicalai.policies.xr1.vla import XR1Model
 from physicalai.policies.xr1.vlm import XR1Qwen3VL
 
 VLM_HIDDEN = 128
@@ -111,6 +112,98 @@ def tiny_config() -> XR1Config:
         camera_views=("top", "wrist"),
         gradient_checkpointing=False,
     )
+
+
+TINY_KWARGS: dict[str, Any] = {
+    "vlm_pretrained": False,
+    "dtype": "float32",
+    "chunk_size": CHUNK_SIZE,
+    "n_action_steps": CHUNK_SIZE,
+    "max_state_dim": STATE_DIM,
+    "max_action_dim": ACTION_DIM,
+    "dit_num_layers": VLM_LAYERS,
+    "dit_hidden_size": DIT_HIDDEN,
+    "dit_head_dim": VLM_HEAD_DIM,
+    "dit_kv_heads": VLM_KV_HEADS,
+    "num_inference_steps": 2,
+    "training_repeat": 1,
+    "image_resolution": (64, 64),
+    "camera_views": ("top",),
+    "gradient_checkpointing": False,
+}
+
+
+@pytest.fixture
+def dataset_stats() -> dict[str, dict[str, Any]]:
+    """Return dataset statistics in the shape ``Dataset.stats`` produces.
+
+    ``type`` is a plain string, which is what LeRobot writes and therefore what ends
+    up in a checkpoint's hyperparameters. Storing the enum instead would make the
+    checkpoint unloadable under ``torch.load(weights_only=True)``.
+
+    Returns:
+        Statistics for one state feature, one camera and the action.
+    """
+    return {
+        "observation.state": {
+            "name": "state",
+            "type": str(FeatureType.STATE),
+            "shape": (DATASET_STATE_DIM,),
+            "mean": [0.0] * DATASET_STATE_DIM,
+            "std": [1.0] * DATASET_STATE_DIM,
+        },
+        "observation.images.top": {
+            "name": "top",
+            "type": str(FeatureType.VISUAL),
+            "shape": (3, 96, 96),
+            "mean": [0.0] * 3,
+            "std": [1.0] * 3,
+        },
+        "action": {
+            "name": "action",
+            "type": str(FeatureType.ACTION),
+            "shape": (DATASET_ACTION_DIM,),
+            "mean": [0.0] * DATASET_ACTION_DIM,
+            "std": [1.0] * DATASET_ACTION_DIM,
+        },
+    }
+
+
+@pytest.fixture
+def offline_backbone(monkeypatch: pytest.MonkeyPatch, tiny_vlm: XR1Qwen3VL) -> XR1Qwen3VL:
+    """Make model construction use the tiny random backbone instead of the Hub.
+
+    Args:
+        monkeypatch: Pytest patcher.
+        tiny_vlm: The small backbone.
+
+    Returns:
+        The backbone that will be injected.
+    """
+    monkeypatch.setattr(XR1Model, "_build_vlm", staticmethod(lambda _config: tiny_vlm))
+    return tiny_vlm
+
+
+@pytest.fixture
+def policy(
+    offline_backbone: XR1Qwen3VL,
+    dataset_stats: dict[str, dict[str, Any]],
+    stub_processor: Any,
+) -> XR1:
+    """Build an eagerly initialized policy with a stubbed processor.
+
+    Args:
+        offline_backbone: Ensures no Hub download happens.
+        dataset_stats: Statistics driving normalization and schemas.
+        stub_processor: Processor stand-in.
+
+    Returns:
+        The policy, ready for forward and inference calls.
+    """
+    del offline_backbone
+    policy = XR1(dataset_stats=dataset_stats, **TINY_KWARGS)
+    policy._preprocessor._processor = stub_processor  # noqa: SLF001 - avoids a tokenizer download
+    return policy
 
 
 class StubProcessor:
