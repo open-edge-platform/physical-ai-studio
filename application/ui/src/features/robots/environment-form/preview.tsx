@@ -31,8 +31,21 @@ const EmptyPreview = () => {
 };
 
 const components = {
-    follower: (props: IDockviewPanelProps<{ title: string; follower_id: string; leader_id: string | undefined }>) => {
-        return <RobotCell follower_id={props.params.follower_id} leader_id={props.params.leader_id} />;
+    follower: (
+        props: IDockviewPanelProps<{
+            title: string;
+            follower_id: string;
+            leader_id: string | undefined;
+            camera_ids: string[];
+        }>
+    ) => {
+        return (
+            <RobotCell
+                follower_id={props.params.follower_id}
+                leader_id={props.params.leader_id}
+                camera_ids={props.params.camera_ids}
+            />
+        );
     },
     camera: (props: IDockviewPanelProps<{ camera_id: string }>) => {
         return <CameraCell camera_id={props.params.camera_id} />;
@@ -45,7 +58,8 @@ const components = {
 const buildDockviewPanels = (
     api: DockviewReadyEvent['api'],
     environment: EnvironmentFormState,
-    cameraNameMap: Record<string, string>
+    cameraNameMap: Record<string, string>,
+    cameraIds: string[]
 ) => {
     if (environment === null) {
         return api;
@@ -82,6 +96,7 @@ const buildDockviewPanels = (
                     title: 'Follower',
                     follower_id: robot.robot_id,
                     leader_id: teleoperator_id,
+                    camera_ids: cameraIds,
                 },
                 title: 'Follower',
                 component: 'follower',
@@ -124,8 +139,10 @@ const ActualPreview = () => {
         return map;
     }, [camerasQuery.data]);
 
+    const cameraIds = useMemo(() => environment.cameras.map(({ camera_id }) => camera_id), [environment.cameras]);
+
     const onReady = (event: DockviewReadyEvent): void => {
-        api.current = buildDockviewPanels(event.api, environment, cameraNameMap);
+        api.current = buildDockviewPanels(event.api, environment, cameraNameMap, cameraIds);
     };
 
     useEffect(() => {
@@ -133,8 +150,8 @@ const ActualPreview = () => {
             return;
         }
 
-        buildDockviewPanels(api.current, environment, cameraNameMap);
-    }, [environment, cameraNameMap]);
+        buildDockviewPanels(api.current, environment, cameraNameMap, cameraIds);
+    }, [environment, cameraNameMap, cameraIds]);
 
     return <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />;
 };

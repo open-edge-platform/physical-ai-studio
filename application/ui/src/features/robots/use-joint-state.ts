@@ -42,6 +42,7 @@ export const useSynchronizeModelJoints = (joints: JointsState, robotType: Schema
 export type FollowerSource = 'hold' | 'teleop' | 'policy';
 
 const RECOVERABLE_ERROR_CODES = new Set(['leader_connection_lost']);
+const EMPTY_CAMERA_IDS: string[] = [];
 
 export const isRecoverableRobotControlError = (errorCode: unknown): errorCode is string =>
     typeof errorCode === 'string' && RECOVERABLE_ERROR_CODES.has(errorCode);
@@ -51,7 +52,18 @@ interface RobotControlState {
     follower_source: FollowerSource;
 }
 
-export const useJointState = (project_id: string, follower_id: string, leader_id?: string) => {
+// Compose from a typed project path so this does not depend on regenerating OpenAPI.
+const runtimeSocketUrl = (project_id: string): string =>
+    `${fetchClient.PATH('/api/projects/{project_id}', {
+        params: { path: { project_id } },
+    })}/runtime/ws`;
+
+export const useJointState = (
+    project_id: string,
+    follower_id: string,
+    leader_id?: string,
+    camera_ids: string[] = EMPTY_CAMERA_IDS
+) => {
     const [joints, setJoints] = useState<JointsState>([]);
     const [state, setState] = useState<RobotControlState>({
         connected: false,
@@ -97,13 +109,8 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
     }, []);
 
     const socket = useWebSocket(
-        fetchClient.PATH('/api/projects/{project_id}/robots/ws', {
-            params: { path: { project_id } },
-        }),
+        runtimeSocketUrl(project_id),
         {
-            queryParams: {
-                fps: 30,
-            },
             share: true,
             shouldReconnect: () => !hasFatalError.current,
             reconnectAttempts: 5,
@@ -121,6 +128,7 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
                 socket.sendJsonMessage({
                     follower_id,
                     leader_id,
+                    camera_ids,
                     ...(shouldRestart ? { restart: true } : {}),
                 });
             },
