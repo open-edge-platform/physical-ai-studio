@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from repositories.job_provisioning_repo import JobProvisioningRepository
+    from schemas.job_provisioning import JobProvisioning
     from services.job_service import JobService
     from services.remote_server_service import RemoteServerService
     from settings import Settings
@@ -111,6 +112,83 @@ async def _reconcile_stale_rows(
     return cleaned
 
 
+async def _reattach_one_row(
+    job_service: JobService,
+    provisioning_service: SshProvisioningService,
+    remote_server_service: RemoteServerService,
+    row: JobProvisioning,
+) -> tuple[str, UUID | None, str | None]:
+    """Classify one active row and fail its job when the classification says to.
+
+    Returns ``(bucket, reserve_server_id, failure_reason)``:
+
+    - ``bucket`` is one of ``"confirmed"``, ``"transient"``, ``"failed"``.
+    - ``reserve_server_id``, when set, is the server id whose active-job set
+      this row's job id must be added to, so the orphan sweep below never
+      reclaims a container this pass still considers claimed. ``None`` means
+      the job was failed (or its server could not even be looked up) and
+      nothing here reserves its container.
+    - ``failure_reason`` is the reason code to tally, only set for ``"failed"``.
+    """
+    if row.container_name is None:
+        # Never got far enough to launch a container - nothing here for this
+        # pass to verify; leave it to the normal pickup path.
+        return "transient", row.remote_server_id, None
+
+    try:
+        server = await remote_server_service.get_remote_server(row.remote_server_id)
+    except ResourceNotFoundError:
+        logger.error("Failing job {}: remote server {} no longer registered", row.job_id, row.remote_server_id)
+        await job_service.update_job_status(
+            job_id=row.job_id,
+            status=JobStatus.FAILED,
+            message="Training job failed: its remote server is no longer registered",
+        )
+        return "failed", None, "server_not_registered"
+
+    try:
+        outcome = await provisioning_service.verify_reattach(row, server)
+    except Exception as error:  # one job's failure must not abort recovery of the rest
+        logger.error(
+            "Reattach check for job {} on server '{}' raised unexpectedly; leaving pending for retry: {}",
+            row.job_id,
+            server.name,
+            error,
+        )
+        return "transient", server.id, None
+
+    if outcome.ok:
+        logger.info("Confirmed reattach for job {} on server '{}'", row.job_id, server.name)
+        return "confirmed", server.id, None
+
+    if outcome.reason in _TRANSIENT_REASONS:
+        logger.warning(
+            "Reattach check for job {} on server '{}' was inconclusive ({}); leaving pending for retry: {}",
+            row.job_id,
+            server.name,
+            outcome.reason,
+            outcome.detail,
+        )
+        return "transient", server.id, None
+
+    message = (
+        _ACTIONABLE_MESSAGES.get(outcome.reason, "its trainer container could not be verified")
+        if outcome.reason is not None
+        else "its trainer container could not be verified"
+    )
+    logger.error("Failing job {} on server '{}': {} ({})", row.job_id, server.name, message, outcome.detail)
+    await job_service.update_job_status(
+        job_id=row.job_id,
+        status=JobStatus.FAILED,
+        message=f"Training job failed: {message}",
+    )
+    # A failed job is never reserved above, so the sweep below reclaims its
+    # container - but only when ownership was actually established; a foreign
+    # container is never listed by the sweep in the first place (it filters on
+    # this installation's own backend_instance_id label).
+    return "failed", None, outcome.reason.value if outcome.reason is not None else None
+
+
 async def recover_ssh_jobs(
     job_service: JobService,
     provisioning_repo: JobProvisioningRepository,
@@ -135,65 +213,19 @@ async def recover_ssh_jobs(
 
     for row in active_rows:
         with job_logging_ctx(job_id=str(row.job_id)):
-            if row.container_name is None:
-                # Never got far enough to launch a container - nothing here for
-                # this pass to verify; leave it to the normal pickup path.
-                active_job_ids_by_server[row.remote_server_id].add(row.job_id)
-                transient += 1
-                continue
-
-            try:
-                server = await remote_server_service.get_remote_server(row.remote_server_id)
-            except ResourceNotFoundError:
-                logger.error("Failing job {}: remote server {} no longer registered", row.job_id, row.remote_server_id)
-                await job_service.update_job_status(
-                    job_id=row.job_id,
-                    status=JobStatus.FAILED,
-                    message="Training job failed: its remote server is no longer registered",
-                )
-                failed += 1
-                failures_by_reason["server_not_registered"] += 1
-                continue
-
-            outcome = await provisioning_service.verify_reattach(row, server)
-
-            if outcome.ok:
-                logger.info("Confirmed reattach for job {} on server '{}'", row.job_id, server.name)
-                active_job_ids_by_server[server.id].add(row.job_id)
+            bucket, reserve_server_id, failure_reason = await _reattach_one_row(
+                job_service, provisioning_service, remote_server_service, row
+            )
+            if reserve_server_id is not None:
+                active_job_ids_by_server[reserve_server_id].add(row.job_id)
+            if bucket == "confirmed":
                 confirmed += 1
-                continue
-
-            if outcome.reason in _TRANSIENT_REASONS:
-                logger.warning(
-                    "Reattach check for job {} on server '{}' was inconclusive ({}); leaving pending for retry: {}",
-                    row.job_id,
-                    server.name,
-                    outcome.reason,
-                    outcome.detail,
-                )
-                active_job_ids_by_server[server.id].add(row.job_id)
+            elif bucket == "transient":
                 transient += 1
-                continue
-
-            message = (
-                _ACTIONABLE_MESSAGES.get(outcome.reason, "its trainer container could not be verified")
-                if outcome.reason is not None
-                else "its trainer container could not be verified"
-            )
-            logger.error("Failing job {} on server '{}': {} ({})", row.job_id, server.name, message, outcome.detail)
-            await job_service.update_job_status(
-                job_id=row.job_id,
-                status=JobStatus.FAILED,
-                message=f"Training job failed: {message}",
-            )
-            # A failed job is never added back to active_job_ids_by_server, so
-            # the sweep below reclaims its container - but only when ownership
-            # was actually established; a foreign container is never listed by
-            # the sweep in the first place (it filters on this installation's
-            # own backend_instance_id label).
-            failed += 1
-            if outcome.reason is not None:
-                failures_by_reason[outcome.reason.value] += 1
+            else:
+                failed += 1
+                if failure_reason is not None:
+                    failures_by_reason[failure_reason] += 1
 
     orphans_removed = 0
     for server in await remote_server_service.list_remote_servers():

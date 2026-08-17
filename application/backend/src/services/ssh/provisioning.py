@@ -525,6 +525,14 @@ class SshProvisioningService:
             )
         except SshConnectionError as error:
             return ReattachVerification(ok=False, reason=ReattachFailureReason.PORT_UNREACHABLE, detail=str(error))
+        except SshHostAliasNotFoundError as error:
+            # Same failure the ownership/digest check above already guards
+            # against, but this tunnel opens a second, independent connection -
+            # a config edit racing between the two checks must fail closed the
+            # same way, not escape as an unhandled exception.
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.ALIAS_MISSING, detail=str(error))
+        except (SshHostKeyUnknownError, SshHostKeyMismatchError) as error:
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.HOST_KEY_FAILURE, detail=str(error))
         finally:
             await tunnel.close()
 
