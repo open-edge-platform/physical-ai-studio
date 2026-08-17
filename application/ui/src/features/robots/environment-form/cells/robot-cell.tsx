@@ -13,16 +13,19 @@ const AvailableRobotCell = ({
     robot,
     followerId,
     leaderId,
+    cameraIds,
 }: {
     robot: AvailableSchemaRobot;
     followerId: string;
     leaderId?: string;
+    cameraIds: string[];
 }) => {
     const { project_id } = useProjectId();
     const { joints, state, error, errorCode, warning, setFollowerSource, restart } = useJointState(
         project_id,
         followerId,
-        leaderId
+        leaderId,
+        cameraIds
     );
     useSynchronizeModelJoints(joints, robot.type);
 
@@ -93,7 +96,15 @@ const AvailableRobotCell = ({
     );
 };
 
-export const RobotCell = ({ follower_id, leader_id }: { follower_id: string; leader_id?: string }) => {
+export const RobotCell = ({
+    follower_id,
+    leader_id,
+    camera_ids,
+}: {
+    follower_id: string;
+    leader_id?: string;
+    camera_ids: string[];
+}) => {
     const { project_id } = useProjectId();
 
     const { data: robot } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots/{robot_id}', {
@@ -105,7 +116,12 @@ export const RobotCell = ({ follower_id, leader_id }: { follower_id: string; lea
 
     return (
         <RobotModelsProvider>
-            <AvailableRobotCell robot={robot} followerId={follower_id} leaderId={leader_id} />
+            <AvailableRobotCell
+                robot={robot}
+                followerId={follower_id}
+                leaderId={leader_id}
+                cameraIds={camera_ids}
+            />
         </RobotModelsProvider>
     );
 };
