@@ -81,6 +81,8 @@ class XR1(ExportablePolicyMixin, Policy):
         max_state_dim: int = 32,
         max_action_dim: int = 32,
         state_len: int = 1,
+        state_slot_map: tuple[int, ...] | None = None,
+        action_slot_map: tuple[int, ...] | None = None,
         # Action expert
         dit_num_layers: int = 36,
         dit_hidden_size: int = 1024,
@@ -142,6 +144,8 @@ class XR1(ExportablePolicyMixin, Policy):
             max_state_dim=max_state_dim,
             max_action_dim=max_action_dim,
             state_len=state_len,
+            state_slot_map=None if state_slot_map is None else tuple(state_slot_map),
+            action_slot_map=None if action_slot_map is None else tuple(action_slot_map),
             dit_num_layers=dit_num_layers,
             dit_hidden_size=dit_hidden_size,
             dit_head_dim=dit_head_dim,

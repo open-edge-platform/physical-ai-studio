@@ -25,6 +25,7 @@ from physicalai.config import Config
 from physicalai.data import (
     Feature,  # noqa: TC001 - needed at runtime for type hint resolution
 )
+from physicalai.policies.xr1.embodiment import validate_slot_map
 
 MIN_CHOICES = 2
 IMAGE_RESOLUTION_RANK = 2
@@ -69,6 +70,17 @@ class XR1Config(Config):
             Defaults to 32.
         state_len: Number of state tokens in the DiT query sequence. Defaults
             to 1.
+        state_slot_map: Optional destination slot for each dataset state
+            dimension. ``None`` (the default) puts dimension *i* in slot *i*,
+            which is right when training from scratch. Released XR1 weights
+            expect the fixed 60-slot joint layout instead; see
+            :mod:`physicalai.policies.xr1.embodiment`, which ships
+            ``ALOHA_STATE_TO_XR1`` for the ALOHA datasets.
+        action_slot_map: Optional destination slot for each dataset action
+            dimension, applied on the way in and inverted on the way out.
+            ``None`` by default. No mapping exists between joint-target actions
+            and XR1's end-effector-delta action slots, so this stays unset for
+            ALOHA-style datasets.
         dit_num_layers: Number of DiT decoder layers. Defaults to 36. Must not
             exceed the VLM's layer count, because each DiT layer attends over the
             corresponding VLM cache layer.
@@ -148,6 +160,9 @@ class XR1Config(Config):
     max_action_dim: int = 32
     state_len: int = 1
 
+    state_slot_map: tuple[int, ...] | None = None
+    action_slot_map: tuple[int, ...] | None = None
+
     dit_num_layers: int = 36
     dit_hidden_size: int = 1024
     dit_head_dim: int = 128
@@ -220,6 +235,12 @@ class XR1Config(Config):
         if self.state_len < 1:
             msg = f"state_len ({self.state_len}) must be positive"
             raise ValueError(msg)
+
+        if self.state_slot_map is not None:
+            validate_slot_map(self.state_slot_map, self.max_state_dim, "state_slot_map")
+
+        if self.action_slot_map is not None:
+            validate_slot_map(self.action_slot_map, self.max_action_dim, "action_slot_map")
 
     def _validate_dit_geometry(self) -> None:
         """Validate the action expert's head geometry.

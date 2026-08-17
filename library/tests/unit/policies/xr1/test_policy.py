@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -12,7 +13,7 @@ import torch
 from physicalai.data import FeatureType, Observation
 from physicalai.export import ExportBackend
 from physicalai.policies import get_policy
-from physicalai.policies.xr1 import XR1
+from physicalai.policies.xr1 import XR1, XR1Config
 from physicalai.policies.xr1.vla import XR1Model
 
 if TYPE_CHECKING:
@@ -171,6 +172,23 @@ class TestConfigPlumbing:
 
         assert policy.config.freeze_vlm is True
         assert policy.config.num_inference_steps == 7
+
+    def test_defaults_match_the_config(self) -> None:
+        """The constructor restates every default, so the two can silently drift.
+
+        jsonargparse needs the arguments spelled out for the CLI, which duplicates
+        every default from ``XR1Config``. This is the only thing stopping a config
+        default from being changed in one place and not the other.
+        """
+        policy = XR1(vlm_pretrained=False)
+
+        assert dataclasses.asdict(policy.config) == dataclasses.asdict(XR1Config(vlm_pretrained=False))
+
+    def test_slot_maps_reach_the_config(self) -> None:
+        """Slot maps arrive from YAML as lists and must end up as tuples."""
+        policy = XR1(**{**TINY_KWARGS, "state_slot_map": [0, 2, 4, 5, 6]})
+
+        assert policy.config.state_slot_map == (0, 2, 4, 5, 6)
 
     def test_hparams_carry_resolved_config(self) -> None:
         """Checkpoints must round-trip the resolved config, not the raw arguments."""

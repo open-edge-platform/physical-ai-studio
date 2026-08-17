@@ -8,7 +8,9 @@ into the tensors the backbone and action expert consume:
 
 * state and action are normalized with the dataset statistics, then zero-padded to
   ``max_state_dim`` / ``max_action_dim``, with a mask recording which entries are
-  real;
+  real. When the config carries a slot map, dimensions are routed to the slots the
+  released checkpoints expect instead of being packed from index zero (see
+  :mod:`physicalai.policies.xr1.embodiment`);
 * camera images are letterboxed to ``image_resolution`` and laid out in the order
   given by ``camera_views``, each announced by name in the prompt so the backbone
   can tell the views apart;
@@ -27,6 +29,7 @@ from torch import nn
 from physicalai.data import Feature, FeatureType
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
+from physicalai.policies.xr1.embodiment import gather_slots, scatter_slots
 from physicalai.policies.xr1.io import build_action_mask, pad_vector, resize_with_pad
 
 if TYPE_CHECKING:
@@ -223,7 +226,10 @@ class XR1Preprocessor(nn.Module):
             state = torch.cat([value.flatten(start_dim=1) for value in state.values()], dim=-1)
 
         state = state.flatten(start_dim=1)
-        state = pad_vector(state, self.config.max_state_dim)
+        if self.config.state_slot_map is not None:
+            state = scatter_slots(state, self.config.state_slot_map, self.config.max_state_dim)
+        else:
+            state = pad_vector(state, self.config.max_state_dim)
         return state[:, None, :].expand(-1, self.config.state_len, -1).contiguous()
 
     def _prepare_action(self, batch: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor] | None:
@@ -243,9 +249,19 @@ class XR1Preprocessor(nn.Module):
         if action.ndim == 2:  # noqa: PLR2004 - (batch, action_dim) for a single step
             action = action[:, None, :]
 
-        valid_dim = action.shape[-1]
-        padded = pad_vector(action, self.config.max_action_dim)
-        mask = build_action_mask(padded, valid_dim, batch.get("action_is_pad_inverse"))
+        slot_map = self.config.action_slot_map
+        if slot_map is not None:
+            padded = scatter_slots(action, slot_map, self.config.max_action_dim)
+            # Only the mapped slots carry supervision; the unused ones stay zero and
+            # must not be treated as a target the model has to reproduce.
+            mask = torch.zeros_like(padded)
+            mask[..., list(slot_map)] = 1.0
+            temporal = batch.get("action_is_pad_inverse")
+            if temporal is not None:
+                mask *= temporal[..., None].to(mask.dtype)
+        else:
+            padded = pad_vector(action, self.config.max_action_dim)
+            mask = build_action_mask(padded, action.shape[-1], batch.get("action_is_pad_inverse"))
         return padded, mask
 
     def forward(self, batch: dict[str, Any]) -> dict[str, Any]:
@@ -301,7 +317,12 @@ class XR1Preprocessor(nn.Module):
         if action is not None:
             processed[ACTION], processed["action_mask"] = action
         if "action_prefix" in batch:
-            processed["action_prefix"] = pad_vector(batch["action_prefix"], self.config.max_action_dim)
+            prefix = batch["action_prefix"]
+            processed["action_prefix"] = (
+                scatter_slots(prefix, self.config.action_slot_map, self.config.max_action_dim)
+                if self.config.action_slot_map is not None
+                else pad_vector(prefix, self.config.max_action_dim)
+            )
         if "prefix_length" in batch:
             processed["prefix_length"] = batch["prefix_length"]
 
@@ -346,7 +367,9 @@ class XR1Postprocessor(nn.Module):
         if action is None:
             return batch
 
-        if self._action_dim is not None:
+        if self.config.action_slot_map is not None:
+            action = gather_slots(action, self.config.action_slot_map)
+        elif self._action_dim is not None:
             action = action[..., : self._action_dim]
         batch[ACTION] = action
 

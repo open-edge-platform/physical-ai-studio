@@ -38,14 +38,38 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SAFETENSORS_INDEX = "model.safetensors.index.json"
+PREPROCESSOR_CONFIG = "preprocessor_config.json"
 DEEPSPEED_WEIGHTS_KEY = "module"
 MODULATION_TERMS = 6
+
+# A released checkpoint pads its action statistics out to all 60 slots and marks the
+# slots its embodiment does not use with a placeholder standard deviation of 1e-6.
+# Anything above this threshold is a slot the checkpoint was actually trained on.
+ACTIVE_SLOT_STD_THRESHOLD = 1e-5
 
 # Keys the released checkpoints legitimately omit. Upstream never computes token
 # logits (it passes skip_logits=True), so the language-model head was dropped on
 # export; this port keeps it because stock Qwen3-VL always builds one, and it is
 # unused at inference.
 EXPECTED_MISSING = ("vlm.lm_head.weight",)
+
+# The choice head is training-only, and the released checkpoints were exported
+# without it: none of the 1120 published tensors is a choice projector or query
+# embedding. Fine-tuning from a released checkpoint therefore starts the head from
+# scratch, which is expected rather than a mismatch.
+CHOICE_HEAD_MARKERS = ("_choice", "_query_embed")
+
+
+def is_expected_missing(key: str) -> bool:
+    """Decide whether a parameter the checkpoint omits is omitted legitimately.
+
+    Args:
+        key: Parameter name the model has but the checkpoint does not.
+
+    Returns:
+        True when the omission is known and harmless.
+    """
+    return key in EXPECTED_MISSING or any(marker in key for marker in CHOICE_HEAD_MARKERS)
 
 
 @dataclass
@@ -202,7 +226,120 @@ def _read_sharded_safetensors(index_file: Path) -> dict[str, torch.Tensor]:
     return merged
 
 
-def infer_config_overrides(state_dict: Mapping[str, torch.Tensor]) -> dict[str, int]:
+@dataclass
+class EmbodimentStats:
+    """Action statistics one released checkpoint was trained with.
+
+    The published ``preprocessor_config.json`` carries an ``action_config`` entry
+    per embodiment, each holding a ``(chunk_size, 60)`` mean and standard deviation.
+    Both are useful beyond normalization: the row count is the action horizon the
+    checkpoint was trained for, and the columns whose standard deviation is a real
+    number rather than the 1e-6 placeholder are exactly the slots that embodiment
+    drives.
+
+    Attributes:
+        name: Embodiment key, e.g. ``"robocasa_mg"``.
+        chunk_size: Action horizon, read from the number of statistics rows.
+        mean: Per-step, per-slot mean of shape ``(chunk_size, slots)``.
+        std: Per-step, per-slot standard deviation, same shape as ``mean``.
+        active_slots: Slots the embodiment actually drives, in ascending order.
+    """
+
+    name: str
+    chunk_size: int
+    mean: torch.Tensor
+    std: torch.Tensor
+    active_slots: tuple[int, ...]
+
+    @property
+    def num_slots(self) -> int:
+        """Total number of action slots the statistics cover.
+
+        Returns:
+            Width of the statistics rows, 60 for every released checkpoint.
+        """
+        return int(self.std.shape[-1])
+
+    def summary(self) -> str:
+        """Describe the embodiment in one line.
+
+        Returns:
+            A human-readable summary.
+        """
+        return (
+            f"{self.name}: chunk_size={self.chunk_size}, "
+            f"{len(self.active_slots)} of {self.num_slots} action slots active {self.active_slots}"
+        )
+
+
+def read_embodiment_stats(
+    pretrained_name_or_path: str | Path,
+    *,
+    embodiment: str | None = None,
+    **download_kwargs: Any,  # noqa: ANN401
+) -> EmbodimentStats:
+    """Read one embodiment's action statistics out of a released checkpoint.
+
+    Args:
+        pretrained_name_or_path: Local checkpoint directory or Hub repo id.
+        embodiment: Which ``action_config`` entry to read. Defaults to the only
+            entry when the checkpoint defines exactly one.
+        **download_kwargs: Forwarded to the Hub downloader.
+
+    Returns:
+        The statistics for the selected embodiment.
+
+    Raises:
+        FileNotFoundError: If the checkpoint has no ``preprocessor_config.json``.
+        KeyError: If it carries no ``action_config``, or not the requested entry.
+        ValueError: If ``embodiment`` is omitted and the checkpoint defines more
+            than one, so there is no unambiguous default.
+    """
+    import json  # noqa: PLC0415  # only needed on this path
+
+    path = resolve_checkpoint(pretrained_name_or_path, **download_kwargs)
+    config_file = path if path.is_file() else path / PREPROCESSOR_CONFIG
+    if not config_file.is_file():
+        msg = f"No {PREPROCESSOR_CONFIG} in {path}"
+        raise FileNotFoundError(msg)
+
+    with config_file.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    action_config = payload.get("action_config")
+    if not action_config:
+        msg = f"{config_file} carries no action_config"
+        raise KeyError(msg)
+
+    if embodiment is None:
+        if len(action_config) != 1:
+            msg = f"{config_file} defines {sorted(action_config)}; pass embodiment= to choose one"
+            raise ValueError(msg)
+        embodiment = next(iter(action_config))
+    if embodiment not in action_config:
+        msg = f"{config_file} has no embodiment {embodiment!r}; known: {sorted(action_config)}"
+        raise KeyError(msg)
+
+    entry = action_config[embodiment]
+    mean = torch.tensor(entry["mean"], dtype=torch.float32)
+    std = torch.tensor(entry["std"], dtype=torch.float32)
+    active = (std > ACTIVE_SLOT_STD_THRESHOLD).any(dim=0).nonzero().flatten().tolist()
+
+    stats = EmbodimentStats(
+        name=embodiment,
+        chunk_size=int(std.shape[0]),
+        mean=mean,
+        std=std,
+        active_slots=tuple(int(slot) for slot in active),
+    )
+    logger.info("XR-1 embodiment: %s", stats.summary())
+    return stats
+
+
+def infer_config_overrides(
+    state_dict: Mapping[str, torch.Tensor],
+    stats: EmbodimentStats | None = None,
+) -> dict[str, int]:
     """Read the architecture sizes back out of a checkpoint.
 
     The released weights are sized for a 60-dimensional dual-arm action space and a
@@ -210,14 +347,23 @@ def infer_config_overrides(state_dict: Mapping[str, torch.Tensor]) -> dict[str, 
     :class:`~physicalai.policies.xr1.config.XR1Config` turns an unreadable shape
     error into a configuration that simply matches.
 
+    The tensor shapes do not pin down the action horizon, because the action expert
+    is horizon-agnostic. Supplying ``stats`` from :func:`read_embodiment_stats`
+    fills in ``chunk_size`` and ``n_action_steps`` as well.
+
     Args:
         state_dict: Remapped checkpoint tensors.
+        stats: Optional embodiment statistics from the same checkpoint.
 
     Returns:
         Config field names mapped to the values the checkpoint implies. Only fields
         the checkpoint actually determines are included.
     """
     overrides: dict[str, int] = {}
+
+    if stats is not None:
+        overrides["chunk_size"] = stats.chunk_size
+        overrides["n_action_steps"] = stats.chunk_size
 
     layers = {int(key.split(".")[2]) for key in state_dict if key.startswith("dit.layers.")}
     if layers:
@@ -265,7 +411,7 @@ def load_pretrained_weights(
         RuntimeError: If ``strict`` and the checkpoint does not fit the model.
     """
     incompatible = model.load_state_dict(state_dict, strict=False)
-    missing = [key for key in incompatible.missing_keys if key not in EXPECTED_MISSING]
+    missing = [key for key in incompatible.missing_keys if not is_expected_missing(key)]
     unexpected = list(incompatible.unexpected_keys)
     report = LoadReport(
         loaded=len(state_dict) - len(unexpected),

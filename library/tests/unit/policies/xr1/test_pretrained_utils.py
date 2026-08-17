@@ -14,8 +14,10 @@ from physicalai.policies.xr1.pretrained_utils import (
     EXPECTED_MISSING,
     LoadReport,
     infer_config_overrides,
+    is_expected_missing,
     load_pretrained_weights,
     load_state_dict,
+    read_embodiment_stats,
     remap_state_dict,
     resolve_checkpoint,
 )
@@ -29,6 +31,34 @@ DIT_HIDDEN = 256
 HEAD_DIM = 64
 ACTION_DIM = 60
 STATE_DIM = 60
+CHECKPOINT_CHUNK = 10
+PLACEHOLDER_STD = 1e-6
+
+
+def preprocessor_payload(embodiments: tuple[str, ...] = ("robocasa_mg",)) -> dict[str, object]:
+    """Return a stand-in for a released ``preprocessor_config.json``.
+
+    The real file pads its statistics to all 60 action slots and marks the slots the
+    embodiment does not drive with a placeholder standard deviation; only the shape
+    and that convention matter here.
+
+    Args:
+        embodiments: Embodiment keys to include.
+
+    Returns:
+        A JSON-serializable payload.
+    """
+    active = [0.25, 0.2, 0.32, 0.15, 0.15, 0.15, 0.3333]
+    row_std = active + [PLACEHOLDER_STD] * (ACTION_DIM - len(active))
+    return {
+        "action_config": {
+            name: {
+                "mean": [[0.0] * ACTION_DIM for _ in range(CHECKPOINT_CHUNK)],
+                "std": [list(row_std) for _ in range(CHECKPOINT_CHUNK)],
+            }
+            for name in embodiments
+        }
+    }
 
 
 def released_key_shapes() -> dict[str, tuple[int, ...]]:
@@ -169,6 +199,78 @@ class TestLoadPretrainedWeights:
 
         assert report.unexpected == ["nonexistent"]
         assert "unexpected" in report.summary()
+
+
+class TestEmbodimentStats:
+    """What the released ``preprocessor_config.json`` tells us."""
+
+    def test_reads_horizon_and_active_slots(self, tmp_path: Path) -> None:
+        """The row count is the action horizon; real deviations mark used slots."""
+        (tmp_path / "preprocessor_config.json").write_text(json.dumps(preprocessor_payload()), encoding="utf-8")
+
+        stats = read_embodiment_stats(tmp_path)
+
+        assert stats.name == "robocasa_mg"
+        assert stats.chunk_size == CHECKPOINT_CHUNK
+        assert stats.num_slots == ACTION_DIM
+        assert stats.active_slots == (0, 1, 2, 3, 4, 5, 6)
+
+    def test_summary_reports_the_slot_count(self, tmp_path: Path) -> None:
+        """The summary is what a user sees before a fine-tune starts."""
+        (tmp_path / "preprocessor_config.json").write_text(json.dumps(preprocessor_payload()), encoding="utf-8")
+
+        assert "7 of 60 action slots active" in read_embodiment_stats(tmp_path).summary()
+
+    def test_ambiguous_embodiment_must_be_named(self, tmp_path: Path) -> None:
+        """Picking one of several embodiments silently would be a guess."""
+        payload = preprocessor_payload(("robocasa_mg", "vlabench"))
+        (tmp_path / "preprocessor_config.json").write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="pass embodiment="):
+            read_embodiment_stats(tmp_path)
+
+    def test_named_embodiment_is_selected(self, tmp_path: Path) -> None:
+        """Naming one of several is unambiguous."""
+        payload = preprocessor_payload(("robocasa_mg", "vlabench"))
+        (tmp_path / "preprocessor_config.json").write_text(json.dumps(payload), encoding="utf-8")
+
+        assert read_embodiment_stats(tmp_path, embodiment="vlabench").name == "vlabench"
+
+    def test_unknown_embodiment_lists_the_known_ones(self, tmp_path: Path) -> None:
+        """A typo should say what was available."""
+        (tmp_path / "preprocessor_config.json").write_text(json.dumps(preprocessor_payload()), encoding="utf-8")
+
+        with pytest.raises(KeyError, match="robocasa_mg"):
+            read_embodiment_stats(tmp_path, embodiment="libero")
+
+    def test_missing_file_is_reported(self, tmp_path: Path) -> None:
+        """The base checkpoint ships no preprocessor config."""
+        with pytest.raises(FileNotFoundError, match="preprocessor_config.json"):
+            read_embodiment_stats(tmp_path)
+
+    def test_supplies_the_action_horizon_to_the_config(self, tmp_path: Path) -> None:
+        """Tensor shapes cannot pin down the horizon; the statistics can."""
+        (tmp_path / "preprocessor_config.json").write_text(json.dumps(preprocessor_payload()), encoding="utf-8")
+        stats = read_embodiment_stats(tmp_path)
+
+        overrides = infer_config_overrides(released_state_dict(), stats)
+
+        assert overrides["chunk_size"] == CHECKPOINT_CHUNK
+        assert overrides["n_action_steps"] == CHECKPOINT_CHUNK
+
+
+class TestChoiceHeadOmission:
+    """The released checkpoints were exported without the training-only head."""
+
+    def test_choice_parameters_are_tolerated_missing(self) -> None:
+        """Fine-tuning starts the head from scratch, which is not a mismatch."""
+        assert is_expected_missing("action_projector_choice.0.layers.0.weight")
+        assert is_expected_missing("action_query_embed.weight")
+        assert is_expected_missing("score_query_embed.weight")
+
+    def test_real_omissions_are_still_reported(self) -> None:
+        """Tolerance must not extend to the action expert itself."""
+        assert not is_expected_missing("dit.layers.0.attn.qkv_proj.weight")
 
 
 class TestCheckpointLayouts:

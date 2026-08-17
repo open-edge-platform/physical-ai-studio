@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import pytest
-from physicalai.policies.xr1 import XR1Config
+from physicalai.policies.xr1 import ALOHA_STATE_TO_XR1, XR1Config
 
 
 class TestDefaults:
@@ -152,3 +152,30 @@ class TestValidation:
         """A partial feature schema cannot be resolved."""
         with pytest.raises(ValueError, match="must be provided together"):
             XR1Config(input_features=[])
+
+
+class TestSlotMaps:
+    """Routing dataset dimensions onto XR1's fixed slot layout."""
+
+    def test_absent_by_default(self) -> None:
+        """Training from scratch needs no slot layout, so nothing is imposed."""
+        config = XR1Config()
+
+        assert config.state_slot_map is None
+        assert config.action_slot_map is None
+
+    def test_accepts_the_aloha_state_map(self) -> None:
+        """The shipped ALOHA map must fit the 60-slot state vector."""
+        config = XR1Config(max_state_dim=60, state_slot_map=ALOHA_STATE_TO_XR1)
+
+        assert config.state_slot_map == ALOHA_STATE_TO_XR1
+
+    def test_rejects_a_slot_past_the_state_width(self) -> None:
+        """A map is only meaningful relative to the configured width."""
+        with pytest.raises(ValueError, match="state_slot_map"):
+            XR1Config(max_state_dim=14, state_slot_map=ALOHA_STATE_TO_XR1)
+
+    def test_rejects_a_duplicated_action_slot(self) -> None:
+        """Two action dimensions in one slot would lose one of them."""
+        with pytest.raises(ValueError, match="action_slot_map"):
+            XR1Config(action_slot_map=(0, 0))

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -194,6 +195,60 @@ class TestPostprocessor:
         recovered = postprocessor({"action": processed["action"]})["action"]
 
         assert torch.allclose(recovered, observation_batch["action"], atol=1e-5)
+
+class TestSlotMaps:
+    """Routing a dataset's dimensions onto XR1's fixed slot layout."""
+
+    def test_state_lands_in_the_mapped_slots(
+        self,
+        tiny_config: XR1Config,
+        stub_processor: Any,
+        observation_batch: dict[str, Any],
+    ) -> None:
+        """Without a map dimension i goes to slot i; with one it goes where told."""
+        slot_map = (1, 3, 5, 6, 7)
+        config = dataclasses.replace(tiny_config, state_slot_map=slot_map)
+        preprocessor = XR1Preprocessor(config, None, stub_processor)
+
+        state = preprocessor(observation_batch)["state"]
+
+        assert state.shape == (2, config.state_len, config.max_state_dim)
+        assert torch.equal(state[:, 0, list(slot_map)], observation_batch["state"])
+        assert state[:, 0, 0].abs().sum() == 0.0
+
+    def test_action_mask_covers_only_the_mapped_slots(
+        self,
+        tiny_config: XR1Config,
+        stub_processor: Any,
+        observation_batch: dict[str, Any],
+    ) -> None:
+        """Unmapped slots carry no target, so they must not be supervised."""
+        slot_map = (0, 2, 4, 5, 6, 7)
+        config = dataclasses.replace(tiny_config, action_slot_map=slot_map)
+        preprocessor = XR1Preprocessor(config, None, stub_processor)
+
+        processed = preprocessor(observation_batch)
+
+        assert torch.equal(processed["action"][..., list(slot_map)], observation_batch["action"])
+        assert processed["action_mask"][..., list(slot_map)].all()
+        assert processed["action_mask"][..., 1].sum() == 0.0
+
+    def test_postprocessor_inverts_the_action_map(
+        self,
+        tiny_config: XR1Config,
+        stub_processor: Any,
+        observation_batch: dict[str, Any],
+    ) -> None:
+        """A robot must get its own action layout back, not XR1's slots."""
+        slot_map = (0, 2, 4, 5, 6, 7)
+        config = dataclasses.replace(tiny_config, action_slot_map=slot_map)
+        preprocessor, postprocessor = make_xr1_preprocessors(config, None, stub_processor)
+
+        processed = preprocessor(observation_batch)
+        recovered = postprocessor({"action": processed["action"]})["action"]
+
+        assert torch.allclose(recovered, observation_batch["action"], atol=1e-6)
+
 
 class TestDeviceConsistency:
     """Everything the model consumes must land on the batch's device.

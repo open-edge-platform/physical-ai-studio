@@ -10,13 +10,24 @@ Reference: `Xiaomi-Robotics-1 <https://arxiv.org/abs/2607.15330>`_.
 """
 
 from .config import XR1Config
+from .embodiment import ACTION_SLOTS, ALOHA_STATE_TO_XR1, STATE_SLOTS
 from .policy import XR1
 from .preprocessor import XR1Postprocessor, XR1Preprocessor, make_xr1_preprocessors
-from .pretrained_utils import infer_config_overrides, load_pretrained_weights, load_state_dict
+from .pretrained_utils import (
+    EmbodimentStats,
+    infer_config_overrides,
+    load_pretrained_weights,
+    load_state_dict,
+    read_embodiment_stats,
+)
 from .vla import XR1Model
 
 __all__ = [
+    "ACTION_SLOTS",
+    "ALOHA_STATE_TO_XR1",
+    "STATE_SLOTS",
     "XR1",
+    "EmbodimentStats",
     "XR1Config",
     "XR1Model",
     "XR1Postprocessor",
@@ -25,4 +36,5 @@ __all__ = [
     "load_pretrained_weights",
     "load_state_dict",
     "make_xr1_preprocessors",
+    "read_embodiment_stats",
 ]
