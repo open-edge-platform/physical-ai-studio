@@ -207,55 +207,50 @@ class RuntimeSessionOwner:
         if replace:
             stop_runtime_session(self._session_name)
 
-        metadata = None if replace else self._client.probe()
-        if metadata is not None:
-            # Identity first: a client asking for a different arm must get 423,
-            # not a silent takeover because it also happens to need more cameras.
-            self._reject_if_different_rig(metadata)
-            if self._needs_more_cameras(metadata):
-                logger.info(
-                    "Runtime session {} is missing cameras this client needs; restarting",
-                    self._session_name,
-                )
-                stop_runtime_session(self._session_name)
-            else:
-                self._attach_to(metadata)
+        skip_probe = replace
+        while True:
+            metadata = None if skip_probe else self._client.probe()
+            skip_probe = False
+            if metadata is not None and self._try_attach(metadata):
                 return
 
-        self._host = RuntimeProcessHost(
-            self._session_name,
-            self._document,
-            follower_name=self._follower_name,
-            leader_name=self._leader_name,
-            idle_timeout_s=self._idle_timeout_s,
-        )
-        try:
-            self._host.start()
-        except AppBaseException as exc:
-            self._host = None
-            if getattr(exc, "phase", None) != "name_lock_contention":
-                raise
-            metadata = self._client.probe_with_retry(_RACE_RETRY_TIMEOUT)
-            if metadata is None:
-                raise
-            self._attach_to(metadata)
-            return
+            self._host = RuntimeProcessHost(
+                self._session_name,
+                self._document,
+                follower_name=self._follower_name,
+                leader_name=self._leader_name,
+                idle_timeout_s=self._idle_timeout_s,
+            )
+            try:
+                self._host.start()
+            except AppBaseException as exc:
+                self._host = None
+                if getattr(exc, "phase", None) != "name_lock_contention":
+                    raise
+                # The winner may not have published metadata yet.
+                metadata = self._client.probe_with_retry(_RACE_RETRY_TIMEOUT)
+                if metadata is None:
+                    raise
+                if self._try_attach(metadata):
+                    return
+                continue
 
-        self._spawned = True
-        try:
-            metadata = self._wait_for_spawned_metadata(_RACE_RETRY_TIMEOUT)
-            if metadata is None:
-                raise AppBaseException(
-                    message=f"Runtime session {self._session_name} reported READY but its metadata is unreachable.",
-                    error_code="robot_connection_failed",
-                    http_status=500,
-                )
-            self._attach_to(metadata)
-        except Exception:
-            self.stop()
-            self._host = None
-            self._spawned = False
-            raise
+            self._spawned = True
+            try:
+                metadata = self._wait_for_spawned_metadata(_RACE_RETRY_TIMEOUT)
+                if metadata is None:
+                    raise AppBaseException(
+                        message=f"Runtime session {self._session_name} reported READY but its metadata is unreachable.",
+                        error_code="robot_connection_failed",
+                        http_status=500,
+                    )
+                self._attach_to(metadata)
+            except Exception:
+                self.stop()
+                self._host = None
+                self._spawned = False
+                raise
+            return
 
     def _wait_for_spawned_metadata(self, timeout: float) -> dict[str, Any] | None:
         deadline = time.monotonic() + timeout
@@ -275,6 +270,27 @@ class RuntimeSessionOwner:
             if metadata is not None:
                 return metadata
             time.sleep(min(0.05, remaining))
+
+    def _try_attach(self, metadata: dict[str, Any]) -> bool:
+        """Attach to ``metadata`` if it can serve this client.
+
+        Returns True after attaching. Returns False after stopping a session
+        that matches identity but lacks cameras this client needs, so the
+        caller can spawn. Raises RuntimeSessionBusyError on an identity mismatch.
+
+        Identity is checked first: a client asking for a different arm must get
+        423, not a silent takeover because it also happens to need more cameras.
+        """
+        self._reject_if_different_rig(metadata)
+        if self._needs_more_cameras(metadata):
+            logger.info(
+                "Runtime session {} is missing cameras this client needs; restarting",
+                self._session_name,
+            )
+            stop_runtime_session(self._session_name)
+            return False
+        self._attach_to(metadata)
+        return True
 
     def _attach_to(self, metadata: dict[str, Any]) -> None:
         self._reject_if_different_rig(metadata)

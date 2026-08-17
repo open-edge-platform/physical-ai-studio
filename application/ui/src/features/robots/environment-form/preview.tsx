@@ -89,6 +89,10 @@ const buildDockviewPanels = (
     environment.robots.forEach((robot) => {
         const teleoperator_id = robot.teleoperator.type === 'robot' ? robot.teleoperator.robot_id : undefined;
         panels.add(robot.robot_id);
+        // Existing follower panels keep the camera_ids they were created with.
+        // Adding a camera here must not restart the live preview; session cameras
+        // are not what this preview displays. A later client that needs the new
+        // cameras (record) restarts from the owner.
         if (!api.panels.some((panel) => panel.id === robot.robot_id)) {
             api.addPanel({
                 id: robot.robot_id,

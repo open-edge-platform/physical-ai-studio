@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from exceptions import BaseException as AppBaseException
 from exceptions import RuntimeSessionBusyError
 from runtime.config_builder import runtime_identity_digest
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand, StateEvent
@@ -138,6 +139,117 @@ def test_losing_the_spawn_race_attaches_to_the_winner() -> None:
         _stop_session(owners[0], *clients)
         for owner in owners[1:]:
             owner.stop()
+
+
+def test_losing_the_spawn_race_attaches_when_the_winner_has_the_cameras(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name = _name()
+    document = _document_with_cameras("front")
+    client = MagicMock()
+    owner = RuntimeSessionOwner(
+        client,
+        session_name=name,
+        document=document,
+        follower_name="follower",
+        leader_name=None,
+        idle_timeout_s=30.0,
+    )
+    winner_metadata = {
+        "identity_digest": runtime_identity_digest(document),
+        "camera_keys": ["front"],
+        "pid": 41273,
+        "instance_id": "winner",
+    }
+    client.probe.return_value = None
+    client.probe_with_retry.return_value = winner_metadata
+    contention = AppBaseException(
+        message="lock held",
+        error_code="runtime_session_busy",
+        http_status=http.HTTPStatus.LOCKED,
+        phase="name_lock_contention",
+    )
+    host = MagicMock()
+    host.start.side_effect = contention
+    monkeypatch.setattr("runtime.owner.RuntimeProcessHost", lambda *_args, **_kwargs: host)
+    stop = MagicMock()
+    monkeypatch.setattr("runtime.owner.stop_runtime_session", stop)
+
+    owner.connect()
+
+    stop.assert_not_called()
+    assert owner.spawned is False
+    client.attach.assert_called_once_with(winner_metadata)
+    assert owner.metadata == winner_metadata
+
+
+def test_losing_the_spawn_race_restarts_when_the_winner_lacks_cameras(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name = _name()
+    document = _document_with_cameras("front")
+    client = MagicMock()
+    owner = RuntimeSessionOwner(
+        client,
+        session_name=name,
+        document=document,
+        follower_name="follower",
+        leader_name=None,
+        idle_timeout_s=30.0,
+    )
+    winner_metadata = {
+        "identity_digest": runtime_identity_digest(document),
+        "camera_keys": [],
+        "pid": 41273,
+        "instance_id": "winner",
+    }
+    spawned_metadata = {
+        "identity_digest": runtime_identity_digest(document),
+        "camera_keys": ["front"],
+        "pid": 41274,
+        "instance_id": "ours",
+    }
+    probe_calls = {"n": 0}
+
+    def probe(*_args: Any, **_kwargs: Any) -> dict[str, Any] | None:
+        probe_calls["n"] += 1
+        if probe_calls["n"] <= 2:
+            return None
+        return spawned_metadata
+
+    client.probe.side_effect = probe
+    client.probe_with_retry.return_value = winner_metadata
+    contention = AppBaseException(
+        message="lock held",
+        error_code="runtime_session_busy",
+        http_status=http.HTTPStatus.LOCKED,
+        phase="name_lock_contention",
+    )
+    hosts: list[MagicMock] = []
+
+    def fake_host(*_args: Any, **_kwargs: Any) -> MagicMock:
+        host = MagicMock()
+        if not hosts:
+            host.start.side_effect = contention
+        else:
+            host.start.return_value = None
+            host.is_alive.return_value = True
+        hosts.append(host)
+        return host
+
+    monkeypatch.setattr("runtime.owner.RuntimeProcessHost", fake_host)
+    stop = MagicMock()
+    monkeypatch.setattr("runtime.owner.stop_runtime_session", stop)
+
+    owner.connect()
+
+    stop.assert_called_once_with(name)
+    assert len(hosts) == 2
+    hosts[1].start.assert_called_once()
+    assert owner.spawned is True
+    client.attach.assert_called_once_with(spawned_metadata)
+    assert owner.metadata == spawned_metadata
+    client.probe_with_retry.assert_called_once()
 
 
 def test_attaching_with_a_different_rig_is_refused() -> None:
