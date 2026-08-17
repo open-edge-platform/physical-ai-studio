@@ -3,16 +3,16 @@ import { Suspense, useState } from 'react';
 import { Button, ButtonGroup, Content, Dialog, Divider, Heading, ProgressCircle } from '@geti-ui/ui';
 import { createSearchParams, useNavigate } from 'react-router';
 
-import { $api } from '../../api/client';
-import { SchemaModel } from '../../api/openapi-spec';
+import { $api } from '../../../api/client';
+import { SchemaModel } from '../../../api/openapi-spec';
+import { paths } from '../../../router';
 import {
     BackendSelection,
     defaultBackend,
     getDefaultInferenceDevice,
     getSupportedInferenceDevices,
     InferenceDevice,
-} from '../../features/models/backend-selection';
-import { paths } from '../../router';
+} from '../backend-selection/backend-selection';
 
 const getDefaultbackend = (model: SchemaModel) => {
     if (model.available_backends.includes(defaultBackend)) {

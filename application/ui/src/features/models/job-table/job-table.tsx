@@ -16,21 +16,21 @@ import {
 import { MoreMenu } from '@geti-ui/ui/icons';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { $api } from '../../api/client';
-import { ElapsedDuration } from '../../components/elapsed-duration.component';
+import { $api } from '../../../api/client';
+import { ElapsedDuration } from '../../../components/elapsed-duration.component';
 import { notify } from '../../components/notification/notification.component';
-import { CollapsableRow } from './collapsable-row.component';
-import { GRID_COLUMNS } from './constants';
-import { JobRowContent } from './job-row-content.component';
-import { SingleBadge, SplitBadge } from './split-badge.component';
-import { SchemaTrainJob } from './train-model-dialog';
-import { durationBetween } from './utils';
+import { CollapsableRow } from '../shared/collapsable-row';
+import { durationBetween } from '../shared/duration';
+import { SingleBadge, SplitBadge } from '../shared/split-badge';
+import { GRID_COLUMNS } from '../shared/table-columns';
+import { SchemaTrainJob } from '../train-model-dialog/train-model-dialog';
+import { JobRowContent } from './job-row-content';
 
-import classes from './model-table.module.css';
+import classes from '../shared/table.module.css';
 
 export const TrainingHeader = () => {
     return (
-        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelHeader}>
+        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.tableHeader}>
             <Text>Model name</Text>
             <Text>Loss</Text>
             <div />
@@ -65,7 +65,7 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                     <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time ? (
-                    <Text UNSAFE_className={classes.modelInfo}>
+                    <Text UNSAFE_className={classes.rowInfo}>
                         Started: {new Date(job.start_time).toLocaleString()} | Elapsed:{' '}
                         <ElapsedDuration date={job.start_time} />
                     </Text>
@@ -84,7 +84,7 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                     <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time && job.end_time && (
-                    <Text UNSAFE_className={classes.modelInfo}>
+                    <Text UNSAFE_className={classes.rowInfo}>
                         Elapsed: {durationBetween(job.start_time, job.end_time)}
                     </Text>
                 )}
@@ -162,7 +162,7 @@ export const TrainingRow = ({
                         columns={GRID_COLUMNS}
                         alignItems={'center'}
                         width={'100%'}
-                        UNSAFE_className={classes.modelRow}
+                        UNSAFE_className={classes.tableRow}
                     >
                         <TrainJobStatus job={trainJob} />
                         <Text>{loss ? loss.toFixed(2) : '...'}</Text>

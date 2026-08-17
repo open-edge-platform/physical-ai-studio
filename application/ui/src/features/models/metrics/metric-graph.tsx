@@ -3,7 +3,7 @@ import { useId } from 'react';
 import { Flex, View } from '@geti-ui/ui';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 
-import { Box } from './box.component';
+import { Box } from '../shared/box';
 
 export type MetricGraphPoint = {
     x: number;

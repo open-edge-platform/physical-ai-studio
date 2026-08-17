@@ -2,9 +2,9 @@ import { useMemo } from 'react';
 
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
-import { fetchClient } from '../../api/client';
-import { fetchSSE } from '../../api/fetch-sse';
-import { MetricGraph } from './metrics-graph.component';
+import { fetchClient } from '../../../api/client';
+import { fetchSSE } from '../../../api/fetch-sse';
+import { MetricGraph } from './metric-graph';
 
 interface MetricsEntry {
     epoch: number;

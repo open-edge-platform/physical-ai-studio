@@ -1,4 +1,4 @@
-.modelHeader {
+.tableHeader {
     border-radius: 4px 4px 0px 0px;
     background-color: var(--spectrum-global-color-gray-200);
     padding: var(--spectrum-global-dimension-size-150);
@@ -9,13 +9,13 @@
     font-size: var(--spectrum-global-dimension-font-size-50);
 }
 
-.modelRow {
+.tableRow {
     padding: var(--spectrum-global-dimension-size-150);
     border-left: 4px solid transparent;
     height: var(--spectrum-global-dimension-size-1000);
 }
 
-.modelRow.selected {
+.tableRow.selected {
     background-color: #0c1e29;
     border: 1px dotted var(--energy-blue);
     border-left: 4px solid var(--energy-blue);
@@ -23,7 +23,7 @@
     padding-left: var(--spectrum-global-dimension-size-1000);
 }
 
-.modelInfo {
+.rowInfo {
     color: var(--spectrum-global-color-gray-700);
 }
 

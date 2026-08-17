@@ -15,11 +15,11 @@ import {
 import { Back, Pause, Play } from '@geti-ui/ui/icons';
 
 import { ErrorMessage } from '../../../components/error-page/error-page';
-import { useProjectId } from '../../../features/projects/use-project';
-import { useRobotControl } from '../../../features/robots/robot-control-provider';
-import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
-import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
+import { useProjectId } from '../../projects/use-project';
+import { useRobotControl } from '../../robots/robot-control-provider';
+import { RobotControlView } from '../../robots/robot-control/robot-control-view';
+import { RobotModelsProvider } from '../../robots/robot-models-context';
 
 interface InferenceViewerProps {
     tasks: string[];
