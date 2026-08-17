@@ -30,6 +30,7 @@ class RuntimeZenohServer:
         self._metadata_queryable: Any = None
         self._publishers: dict[type, Any] = {}
         self._command_handler: Callable[[Command], None] | None = None
+        self._request_handler: Callable[[Command], None] | None = None
         self._stop = threading.Event()
         self._command_thread: threading.Thread | None = None
         self._metadata_lock = threading.Lock()
@@ -53,11 +54,21 @@ class RuntimeZenohServer:
         with self._metadata_lock:
             self._metadata.update(values)
 
-    def open(self, command_handler: Callable[[Command], None]) -> None:
-        """Declare every endpoint, then expose metadata as the readiness gate."""
+    def open(
+        self,
+        command_handler: Callable[[Command], None],
+        request_handler: Callable[[Command], None] | None = None,
+    ) -> None:
+        """Declare every endpoint, then expose metadata as the readiness gate.
+
+        ``command_handler`` receives published commands. ``request_handler``
+        answers the request queryable; when omitted, published commands and
+        requests share ``command_handler``.
+        """
         import zenoh
 
         self._command_handler = command_handler
+        self._request_handler = request_handler
         try:
             self._session = open_session(self._name, listen=True)
         except Exception as exc:
@@ -189,13 +200,14 @@ class RuntimeZenohServer:
             request_id = command.request_id
             if request_id is None:
                 raise ValueError("Runtime request has no request_id")
-            ack = AckEvent(
-                data=AckData(
-                    request_id=request_id,
-                    ok=False,
-                    error=f"{command.command} is not supported by this runtime session",
-                )
-            )
+            handler = self._request_handler if self._request_handler is not None else self._command_handler
+            try:
+                if handler is not None:
+                    handler(command)
+            except Exception as exc:
+                ack = AckEvent(data=AckData(request_id=request_id, ok=False, error=str(exc)))
+            else:
+                ack = AckEvent(data=AckData(request_id=request_id, ok=True))
             query.reply(
                 request_key(self._name),
                 encode_event(ack, instance_id=self._instance_id),
