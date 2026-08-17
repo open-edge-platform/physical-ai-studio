@@ -14,12 +14,11 @@ import {
 } from '@geti-ui/ui';
 import { Back, Pause, Play } from '@geti-ui/ui/icons';
 
-import { ErrorMessage } from '../../../components/error-page/error-page';
 import { paths } from '../../../router';
 import { useProjectId } from '../../projects/use-project';
-import { useRobotControl } from '../../robots/robot-control-provider';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
+import { useRuntimeSession } from '../../robots/runtime-session-provider';
 
 interface InferenceViewerProps {
     tasks: string[];
@@ -30,11 +29,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
 
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { model, readyForInference, state, startTask, stopTask } = useRobotControl();
-
-    if (state.error) {
-        return <ErrorMessage message={'An error occurred during inference setup'} />;
-    }
+    const { model, readyForInference, state, startTask, stopTask, environment, observation } = useRuntimeSession();
 
     if (!readyForInference) {
         return (
@@ -45,7 +40,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                 </Heading>
                 <Flex direction='column' margin='size-200'>
                     <StatusLight variant={state.model_loaded ? 'positive' : 'yellow'}>Model</StatusLight>
-                    <StatusLight variant={state.environment_loaded ? 'positive' : 'yellow'}>Environment</StatusLight>
+                    <StatusLight variant={state.connected ? 'positive' : 'yellow'}>Environment</StatusLight>
                 </Flex>
                 <Button variant={'secondary'} href={paths.project.models.index({ project_id })}>
                     Cancel
@@ -68,7 +63,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         ))}
                     </ComboBox>
                     <ButtonGroup>
-                        {state.follower_source === 'model' ? (
+                        {state.follower_source === 'policy' ? (
                             <Button variant='primary' isPending={stopTask.isPending} onPress={() => stopTask.mutate()}>
                                 <Pause fill='white' />
                                 Stop
@@ -85,7 +80,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         )}
                     </ButtonGroup>
                 </Flex>
-                <RobotControlView />
+                <RobotControlView environment={environment} isReady={state.connected} joints={observation} />
             </Flex>
         </RobotModelsProvider>
     );

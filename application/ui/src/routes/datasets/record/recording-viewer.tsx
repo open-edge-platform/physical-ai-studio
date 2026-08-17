@@ -22,7 +22,8 @@ import { paths } from '../../../router';
 import classes from './recording-viewer.module.css';
 
 export const RecordingViewer = () => {
-    const { dataset, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl();
+    const { dataset, state, startEpisode, discardEpisode, saveEpisode, readyForRecording, environment, observation } =
+        useRobotControl();
 
     if (dataset === undefined) {
         throw 'Cannot load recording viewer without dataset.';
@@ -119,7 +120,19 @@ export const RecordingViewer = () => {
                         )}
                     </Flex>
                 </Form>
-                <RobotControlView />
+                <RobotControlView
+                    environment={environment}
+                    isReady={state.environment_loaded}
+                    joints={{
+                        get current() {
+                            const snapshot = observation.current;
+                            if (snapshot === undefined) {
+                                return undefined;
+                            }
+                            return snapshot.actions ?? snapshot.state;
+                        },
+                    }}
+                />
             </Flex>
         </RobotModelsProvider>
     );
