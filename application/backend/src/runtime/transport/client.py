@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import queue
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -89,11 +90,21 @@ class RuntimeSessionClient:
             time.sleep(min(0.05, remaining))
 
     def attach(self, metadata: dict[str, Any]) -> None:
-        """Adopt the session generation id and flush any command buffered before it."""
+        """Adopt one session generation and drop any state from a previous one."""
         instance_id = metadata.get("instance_id")
         if instance_id is not None and (not isinstance(instance_id, str) or not instance_id):
             raise RuntimeError("Runtime session metadata instance_id must be a string")
         self._instance_id = instance_id
+        with self._state_lock:
+            self._hardware_ready.clear()
+            self._last_state = None
+            self.error = None
+            self._shutdown_received.clear()
+        while True:
+            try:
+                self._events.get_nowait()
+            except queue.Empty:
+                break
         self._metadata_ready.set()
         self._flush_pending_command()
 
@@ -197,6 +208,8 @@ class RuntimeSessionClient:
     def _receive_event(self, sample: Any) -> None:
         try:
             event, fatal, instance_id = decode_event(sample.payload.to_bytes())
+            if not self._metadata_ready.is_set():
+                return
             if self._instance_id is not None and instance_id != self._instance_id:
                 logger.warning("Rejected runtime event for a different instance")
                 return
