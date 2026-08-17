@@ -41,15 +41,22 @@ Example:
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
+from physicalai.inference.postprocessors.base import Postprocessor
 from torch import nn
+
+from physicalai.data.observation import ACTION
 
 if TYPE_CHECKING:
     from physicalai.policies.xr1.vla import XR1Model
+
+#: Basename of the exported action-expert artifact.
+ARTIFACT_STEM = "xr1_action_expert"
 
 #: Inputs that are always present, in graph order, before the cache tensors.
 BASE_INPUT_NAMES = ("noise", "state_embed", "cos", "sin", "attn_mask")
@@ -254,24 +261,231 @@ def export_action_expert(
 
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    onnx_path = directory / "xr1_action_expert.onnx"
-
     expert = XR1ActionExpert(model).eval()
-    torch.onnx.export(
-        expert,
-        inputs.as_args(),
-        f=str(onnx_path),
-        input_names=inputs.names,
-        output_names=[OUTPUT_NAME],
-        dynamo=True,
-    )
+
+    def write_onnx(path: Path) -> None:
+        torch.onnx.export(
+            expert,
+            inputs.as_args(),
+            f=str(path),
+            input_names=inputs.names,
+            output_names=[OUTPUT_NAME],
+            dynamo=True,
+        )
+
     if backend == "onnx":
+        onnx_path = directory / f"{ARTIFACT_STEM}.onnx"
+        write_onnx(onnx_path)
         return onnx_path
 
     import openvino  # noqa: PLC0415  # optional at import time
 
-    ov_model = openvino.convert_model(str(onnx_path))
-    xml_path = directory / "xr1_action_expert.xml"
+    # The ONNX graph is scaffolding, and large models come with an external-data
+    # sidecar next to it. Building it in a temporary directory keeps both out of the
+    # export, which otherwise ships tens of megabytes nothing reads.
+    with tempfile.TemporaryDirectory() as staging:
+        onnx_path = Path(staging) / f"{ARTIFACT_STEM}.onnx"
+        write_onnx(onnx_path)
+        ov_model = openvino.convert_model(str(onnx_path))
+
+    xml_path = directory / f"{ARTIFACT_STEM}.xml"
     openvino.save_model(ov_model, str(xml_path), compress_to_fp16=compress_to_fp16)
-    onnx_path.unlink()
     return xml_path
+
+
+class XR1BackboneStage(nn.Module):
+    """First stage of the hybrid export: an observation in, expert tensors out.
+
+    Runtime's Torch adapter reconstructs whatever ``manifest.policy.source.class_path``
+    names, calls it with an :class:`~physicalai.data.observation.Observation` and
+    converts the result to numpy. Naming this class there gives the two-stage runner a
+    first stage that stops after the backbone, without changing what :class:`XR1`
+    itself does.
+
+    Preprocessing stays here rather than moving into Runtime: the Qwen3-VL chat
+    template, image letterboxing and tokenizer all live on the Studio side already,
+    and Runtime ships no Qwen3-VL preprocessing component.
+    """
+
+    def __init__(self, policy: Any) -> None:  # noqa: ANN401 - an XR1, typed loosely to avoid a circular import
+        """Wrap a policy as the hybrid export's first stage.
+
+        Args:
+            policy: The :class:`~physicalai.policies.xr1.policy.XR1` policy.
+        """
+        super().__init__()
+        self.policy = policy
+
+    @classmethod
+    def load_from_checkpoint(
+        cls,
+        checkpoint_path: Path | str,
+        map_location: str = "cpu",
+        **kwargs: Any,  # noqa: ANN401 - forwarded to the policy loader
+    ) -> XR1BackboneStage:
+        """Load the policy from a checkpoint and wrap it.
+
+        Args:
+            checkpoint_path: Path to the ``.pt`` written by ``to_torch``.
+            map_location: Device to map storages onto.
+            **kwargs: Forwarded to :meth:`XR1.load_from_checkpoint`.
+
+        Returns:
+            The wrapped first stage, in eval mode.
+        """
+        from physicalai.policies.xr1.policy import XR1  # noqa: PLC0415  # circular at module import time
+
+        kwargs.setdefault("weights_only", False)
+        policy = XR1.load_from_checkpoint(checkpoint_path, map_location=map_location, **kwargs)
+        return cls(policy.eval())
+
+    @property
+    def extra_export_args(self) -> dict[str, Any]:
+        """Export parameters, read by Runtime's Torch adapter for output names.
+
+        Returns:
+            The policy's own export parameters.
+        """
+        return dict(self.policy.extra_export_args)
+
+    @torch.no_grad()
+    def forward(self, observation: Any) -> dict[str, torch.Tensor]:  # noqa: ANN401 - an Observation
+        """Run preprocessing and the backbone, and emit the expert's inputs.
+
+        Args:
+            observation: Observation batch.
+
+        Returns:
+            The action expert's graph inputs, keyed by graph input name.
+        """
+        batch = self.policy._preprocessor(observation.to(self.policy.device).to_dict())  # noqa: SLF001 - the stage is the policy's own preprocessing
+        return build_action_expert_inputs(self.policy.model, batch).as_dict()
+
+
+class XR1ActionTrimmer(Postprocessor):
+    """Trim the padded action slots off the exported graph's output.
+
+    The action expert predicts ``max_action_dim`` slots because the architecture is
+    sized by config, not by dataset. Everything past the dataset's own width is
+    padding and must be dropped before denormalization, which carries per-dimension
+    statistics.
+    """
+
+    def __init__(self, action_dim: int, key: str = "action") -> None:
+        """Configure the trimmer.
+
+        Args:
+            action_dim: The dataset's action width.
+            key: Output key to trim.
+        """
+        self.action_dim = action_dim
+        self.key = key
+
+    def __call__(self, outputs: dict[str, Any]) -> dict[str, Any]:
+        """Trim the action tensor.
+
+        Args:
+            outputs: Runner outputs.
+
+        Returns:
+            The same dict with the action trimmed to the dataset width.
+        """
+        action = outputs.get(self.key)
+        if action is None:
+            return outputs
+        return {**outputs, self.key: action[..., : self.action_dim]}
+
+    def __repr__(self) -> str:
+        """Return string representation of the postprocessor.
+
+        Returns:
+            A representation naming the width kept.
+        """
+        return f"{self.__class__.__name__}(action_dim={self.action_dim})"
+
+
+def export_hybrid(policy: Any, output_dir: Path | str, *, compress_to_fp16: bool = False) -> Path:  # noqa: ANN401 - an XR1
+    """Write a hybrid export: Torch backbone plus an OpenVINO action expert.
+
+    The result is a normal export directory that Runtime's ``InferenceModel`` loads
+    unchanged. Its manifest declares two artifacts and a ``two_stage`` runner, so the
+    backbone runs through the Torch adapter and the action expert through the
+    OpenVINO one.
+
+    Args:
+        policy: An initialized :class:`~physicalai.policies.xr1.policy.XR1`.
+        output_dir: Directory for the artifacts and the manifest.
+        compress_to_fp16: Store the OpenVINO weights as fp16.
+
+    Returns:
+        The export directory.
+
+    Raises:
+        ValueError: If the policy has not been initialized with dataset statistics,
+            which the manifest needs for its feature schema and denormalization.
+    """
+    from physicalai.inference.manifest import (  # noqa: PLC0415  # heavy import, deferred
+        ComponentSpec,
+        Manifest,
+        ModelSpec,
+        PolicySource,
+        PolicySpec,
+    )
+
+    directory = Path(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    sample = policy._get_default_export_input_sample()  # noqa: SLF001 - the mixin's own tracing sample
+    if sample is None:
+        msg = "Dataset stats are required for a hybrid export. Initialize the policy with dataset_stats."
+        raise ValueError(msg)
+
+    inputs = build_action_expert_inputs(policy.model, sample)
+    expert_path = export_action_expert(
+        policy.model,
+        directory,
+        inputs,
+        backend="openvino",
+        compress_to_fp16=compress_to_fp16,
+    )
+
+    # Reuse the tested checkpoint writer, then replace the manifest it leaves behind:
+    # the artifact is the same, only the way it is driven differs.
+    policy.to_torch(directory)
+
+    action_stats = policy._dataset_stats[ACTION]  # noqa: SLF001 - the mixin exposes no public accessor
+    action_dim = int(cast("tuple", action_stats["shape"])[-1])
+    stage = XR1BackboneStage
+    manifest = Manifest(
+        policy=PolicySpec(
+            name=policy.__class__.__name__.lower(),
+            source=PolicySource(class_path=f"{stage.__module__}.{stage.__qualname__}"),
+        ),
+        model=ModelSpec(
+            # class_path mode on purpose: in type mode every extra field is passed to
+            # the constructor, and chunk_size is manifest metadata that Runtime reads
+            # off the spec rather than a runner argument.
+            runner=ComponentSpec(
+                class_path="physicalai.inference.runners.TwoStage",
+                init_args={"backend": "openvino", "artifact": expert_path.name},
+                chunk_size=policy.config.chunk_size,
+            ),
+            artifacts={"torch": f"{policy.__class__.__name__.lower()}.pt", "openvino": expert_path.name},
+            preprocessors=[ComponentSpec(type="to_float_tensor")],
+            postprocessors=[
+                ComponentSpec(
+                    class_path=f"{XR1ActionTrimmer.__module__}.{XR1ActionTrimmer.__qualname__}",
+                    init_args={"action_dim": action_dim},
+                ),
+                ComponentSpec(
+                    type="denormalize",
+                    stats={ACTION: action_stats},
+                    mode=policy.config.normalization_mode.lower(),
+                ),
+            ],
+            input_features=policy._to_component_specs(policy.inputs_schema or []),  # noqa: SLF001 - mixin helper
+            output_features=policy._to_component_specs(policy.outputs_schema or []),  # noqa: SLF001 - mixin helper
+        ),
+    )
+    manifest.save(directory / "manifest.json")
+    return directory

@@ -5,11 +5,15 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
 import torch
+from physicalai.export import ExportBackend
+from physicalai.inference import InferenceModel
+from physicalai.inference.runners import TwoStage
 from physicalai.policies.xr1 import XR1Config, XR1Model
 from physicalai.policies.xr1.graph_export import (
     BASE_INPUT_NAMES,
@@ -17,7 +21,9 @@ from physicalai.policies.xr1.graph_export import (
     XR1ActionExpert,
     build_action_expert_inputs,
     export_action_expert,
+    export_hybrid,
 )
+from physicalai.policies.xr1.preprocessor import XR1Preprocessor
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,6 +31,7 @@ if TYPE_CHECKING:
     from physicalai.policies.xr1.vlm import XR1Qwen3VL
 
 BATCH = 1
+ACTION_DIM = 6
 #: float32 round-off through two exporters; anything larger is a real divergence.
 PARITY_TOLERANCE = 1e-5
 
@@ -299,3 +306,87 @@ class TestBackboneExportBlockers:
 
         with pytest.raises(IndexError, match="tuple index out of range"):
             torch.jit.trace(wrapper, (batch["state"],), strict=False, check_trace=False)
+
+
+@pytest.mark.slow
+class TestHybridExport:
+    """Milestone 8: an export directory Runtime loads and partly runs on OpenVINO."""
+
+    @pytest.fixture
+    def exported(self, policy: Any, tmp_path: Path, stub_processor: Any) -> Path:
+        """Write a hybrid export and keep the reload path offline.
+
+        Args:
+            policy: An initialized policy.
+            tmp_path: Export directory.
+            stub_processor: Processor stand-in, reused by the reloaded policy.
+
+        Returns:
+            The export directory.
+        """
+        pytest.importorskip("openvino")
+
+        directory = export_hybrid(policy, tmp_path / "hybrid")
+        XR1Preprocessor.processor = property(lambda _self: stub_processor)  # type: ignore[method-assign, assignment]
+        return directory
+
+    def test_manifest_declares_both_stages(self, exported: Path) -> None:
+        """Runtime picks the primary adapter and the runner out of the manifest."""
+        manifest = json.loads((exported / "manifest.json").read_text())
+
+        assert manifest["model"]["artifacts"] == {"torch": "xr1.pt", "openvino": "xr1_action_expert.xml"}
+        # Torch is listed first, so it is the primary adapter Runtime loads.
+        assert next(iter(manifest["model"]["artifacts"])) == "torch"
+        assert manifest["model"]["runner"]["class_path"].endswith("TwoStage")
+        assert manifest["model"]["runner"]["init_args"]["artifact"] == "xr1_action_expert.xml"
+        assert manifest["policy"]["source"]["class_path"].endswith("XR1BackboneStage")
+
+    def test_reports_the_real_chunk_size(self, policy: Any, exported: Path) -> None:
+        """A chunking policy that reports a chunk size of one is a broken manifest."""
+        model = InferenceModel(exported, device="cpu")
+
+        assert model.chunk_size == policy.config.chunk_size
+
+    def test_runs_end_to_end_through_inference_model(self, policy: Any, exported: Path) -> None:
+        """The action expert executes on OpenVINO inside a normal InferenceModel call."""
+        model = InferenceModel(exported, device="cpu")
+        rng = np.random.RandomState(0)
+        shapes = {feature.name: feature.shape for feature in policy.inputs_schema or []}
+        observation = {
+            "state": rng.randn(1, *shapes["state"]).astype(np.float32),
+            "images": rng.rand(1, *shapes["images"]).astype(np.float32),
+            "task": ["transfer the cube"],
+        }
+
+        chunk = np.asarray(model.predict_action_chunk(observation))
+
+        assert isinstance(model.runner, TwoStage)
+        assert model.runner.backend == "openvino"
+        # Trimmed to the dataset's action width, not the padded architecture width.
+        assert chunk.shape == (policy.config.chunk_size, ACTION_DIM)
+        assert np.isfinite(chunk).all()
+
+    def test_matches_the_pure_torch_export(self, policy: Any, exported: Path, tmp_path: Path) -> None:
+        """The split must not change the answer, only where it is computed.
+
+        Both paths integrate the same flow from the same RNG state, so the only
+        difference left is OpenVINO's float32 arithmetic.
+        """
+        torch_dir = tmp_path / "torch-only"
+        policy.export(torch_dir, backend=ExportBackend.TORCH)
+
+        rng = np.random.RandomState(1)
+        shapes = {feature.name: feature.shape for feature in policy.inputs_schema or []}
+        observation = {
+            "state": rng.randn(1, *shapes["state"]).astype(np.float32),
+            "images": rng.rand(1, *shapes["images"]).astype(np.float32),
+            "task": ["transfer the cube"],
+        }
+
+        state = torch.get_rng_state()
+        hybrid = np.asarray(InferenceModel(exported, device="cpu").predict_action_chunk(observation))
+        torch.set_rng_state(state)
+        reference = np.asarray(InferenceModel(torch_dir, device="cpu").predict_action_chunk(observation))
+
+        assert hybrid.shape == reference.shape
+        np.testing.assert_allclose(hybrid, reference, rtol=PARITY_TOLERANCE, atol=PARITY_TOLERANCE)
