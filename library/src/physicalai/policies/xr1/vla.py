@@ -247,6 +247,7 @@ class XR1Model(Model):
             attention_mask=batch.get("attention_mask"),
             pixel_values=batch.get("pixel_values"),
             image_grid_thw=batch.get("image_grid_thw"),
+            mm_token_type_ids=batch.get("mm_token_type_ids"),
             return_hidden_states=return_hidden_states,
         )
 

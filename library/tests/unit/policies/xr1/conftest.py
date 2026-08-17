@@ -157,6 +157,9 @@ class StubProcessor:
             num_images = batch_size * len(images[0])
             encoded["pixel_values"] = torch.randn(num_images, 3, 16, 16)
             encoded["image_grid_thw"] = torch.ones(num_images, 3, dtype=torch.long)
+            # The real processor returns this alongside input_ids, and transformers
+            # requires it for multimodal RoPE once images are present.
+            encoded["mm_token_type_ids"] = torch.zeros(batch_size, 9, dtype=torch.int32)
         return encoded
 
 

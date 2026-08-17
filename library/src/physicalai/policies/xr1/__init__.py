@@ -12,6 +12,7 @@ Reference: `Xiaomi-Robotics-1 <https://arxiv.org/abs/2607.15330>`_.
 from .config import XR1Config
 from .policy import XR1
 from .preprocessor import XR1Postprocessor, XR1Preprocessor, make_xr1_preprocessors
+from .pretrained_utils import infer_config_overrides, load_pretrained_weights, load_state_dict
 from .vla import XR1Model
 
 __all__ = [
@@ -20,5 +21,8 @@ __all__ = [
     "XR1Model",
     "XR1Postprocessor",
     "XR1Preprocessor",
+    "infer_config_overrides",
+    "load_pretrained_weights",
+    "load_state_dict",
     "make_xr1_preprocessors",
 ]

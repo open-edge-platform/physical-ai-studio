@@ -291,7 +291,9 @@ class XR1Preprocessor(nn.Module):
             "attention_mask": encoded["attention_mask"].to(device),
             STATE: state,
         }
-        for key in ("pixel_values", "image_grid_thw"):
+        # ``mm_token_type_ids`` marks which prompt positions are image tokens;
+        # transformers needs it to compute multimodal RoPE once images are present.
+        for key in ("pixel_values", "image_grid_thw", "mm_token_type_ids"):
             if key in encoded:
                 processed[key] = encoded[key].to(device)
 

@@ -68,6 +68,7 @@ class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
         attention_mask: torch.Tensor | None = None,
         pixel_values: torch.Tensor | None = None,
         image_grid_thw: torch.LongTensor | None = None,
+        mm_token_type_ids: torch.IntTensor | None = None,
         *,
         return_hidden_states: bool = False,
         **kwargs: Any,  # noqa: ANN401 - forwarded verbatim to the backbone
@@ -80,6 +81,9 @@ class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
                 all-ones.
             pixel_values: Flattened image patches, when images are present.
             image_grid_thw: Image grid sizes matching ``pixel_values``.
+            mm_token_type_ids: Per-position multimodal token types from the processor.
+                Required by ``transformers`` for multimodal RoPE whenever images are
+                present.
             return_hidden_states: Also return the final hidden states. Only needed
                 by the (optional) action-choice head.
             **kwargs: Extra keyword arguments forwarded to the backbone.
@@ -100,6 +104,7 @@ class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
             inputs_embeds=None,
             image_grid_thw=image_grid_thw,
             attention_mask=attention_mask,
+            mm_token_type_ids=mm_token_type_ids,
         )
 
         outputs = super().forward(
@@ -108,6 +113,7 @@ class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
             position_ids=position_ids,
             pixel_values=pixel_values,
             image_grid_thw=image_grid_thw,
+            mm_token_type_ids=mm_token_type_ids,
             use_cache=True,
             output_hidden_states=return_hidden_states,
             # The action expert never reads token logits; keeping one position
