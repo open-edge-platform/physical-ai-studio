@@ -25,7 +25,7 @@ from api.dependencies import (
 from exceptions import BaseException as AppBaseException
 from exceptions import RobotPluginUnavailableError
 from runtime.config_builder import RUNTIME_FPS, build_runtime_config
-from runtime.contract import DisconnectCommand, SetFollowerSourceCommand
+from runtime.contract import CommandAdapter, DisconnectCommand
 from runtime.owner import RuntimeSessionOwner
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.ids import runtime_session_name
@@ -83,21 +83,28 @@ async def handle_outgoing(
         pass
 
 
+_RUNTIME_COMMANDS = frozenset({"set_follower_source", "load_model", "start_task", "stop_task"})
+
+
 async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) -> None:
     """Validate websocket commands and apply them to the runtime mailbox."""
     try:
         while True:
             message = await websocket.receive_json("text")
-            if message.get("event") == "disconnect":
-                client.apply(DisconnectCommand())
+            event = message.get("event")
+            if event == "disconnect":
+                client.apply(DisconnectCommand(request_id=message.get("request_id")))
                 return
-            if message.get("event") != "set_follower_source":
+            if event not in _RUNTIME_COMMANDS:
                 continue
-            payload = message.get("data", {})
+            payload = dict(message.get("data") or {})
+            payload["command"] = event
+            if message.get("request_id") is not None:
+                payload["request_id"] = message["request_id"]
             try:
-                command = SetFollowerSourceCommand.model_validate({"follower_source": payload.get("follower_source")})
+                command = CommandAdapter.validate_python(payload)
             except ValidationError as exc:
-                logger.warning("Rejected malformed set_follower_source payload {}: {}", payload, exc)
+                logger.warning("Rejected malformed {} payload {}: {}", event, payload, exc)
                 continue
             client.apply(command)
     except WebSocketDisconnect:
