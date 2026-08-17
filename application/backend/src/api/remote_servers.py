@@ -74,7 +74,15 @@ async def _gate_on_tier1(candidate: RemoteServer, settings: SettingsDep) -> None
     Never persists anything: the caller passes an in-memory ``RemoteServer``
     that is only saved once this returns without raising.
     """
-    result = await asyncio.wait_for(run_tier1_preflight(candidate), timeout=settings.ssh_preflight_timeout_s)
+    try:
+        result = await asyncio.wait_for(run_tier1_preflight(candidate), timeout=settings.ssh_preflight_timeout_s)
+    except TimeoutError as exc:
+        # `run_tier1_preflight` itself never raises, so this only fires if the
+        # whole probe outlives its own timeout budget (e.g. a wedged transport).
+        # Mapped the same way `/status` maps it, so create/update never surfaces
+        # a bare 500 for a failure mode the rest of this API already has an
+        # actionable error for.
+        raise SshConnectionError(candidate.ssh_host_alias, reason="timed_out") from exc
     if result.passed:
         return
 
