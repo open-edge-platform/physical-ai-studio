@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from loguru import logger
 from physicalai.config import Config
@@ -16,10 +16,22 @@ from runtime.callbacks.stream import StreamCallback
 from runtime.contract import DisconnectCommand, InMemoryCommandMailbox
 
 if TYPE_CHECKING:
+    from physicalai.capture import Camera
     from physicalai.robot.interface import Robot
     from physicalai.runtime import StopSignal
 
     from runtime.contract import Command, EventSink
+
+
+class _Connectable(Protocol):
+    def connect(self) -> None: ...
+    def disconnect(self) -> None: ...
+
+
+def _is_connected(device: object) -> bool:
+    """Return connection state for a robot (method) or camera (property)."""
+    connected = getattr(device, "is_connected", False)
+    return bool(connected() if callable(connected) else connected)
 
 
 class RuntimeSession:
@@ -41,6 +53,7 @@ class RuntimeSession:
         self.ready = threading.Event()
         self._follower: Robot | None = None
         self._leader: Robot | None = None
+        self._cameras: dict[str, Camera] = {}
         self._action_source: StudioActionSource | None = None
         self._stream_callback: StreamCallback | None = None
         self._runtime: RobotRuntime | None = None
@@ -56,6 +69,11 @@ class RuntimeSession:
             leader_config = source_args.get("leader") if isinstance(source_args, dict) else None
             if isinstance(leader_config, dict):
                 self._leader = cast("Robot", Config.from_dict(leader_config).instantiate())
+
+        self._cameras = {
+            key: cast("Camera", Config.from_dict(config).instantiate())
+            for key, config in init_args.get("cameras", {}).items()
+        }
 
         self._action_source = StudioActionSource(
             follower=self._follower,
@@ -78,7 +96,7 @@ class RuntimeSession:
         self._runtime = RobotRuntime(
             robot=self._follower,
             action_source=self._action_source,
-            cameras={},
+            cameras=self._cameras,
             fps=float(self._document["init_args"]["fps"]),
             callbacks=[self._stream_callback],
         )
@@ -102,7 +120,7 @@ class RuntimeSession:
         try:
             if self._disconnect_requested or stop_signal.is_set():
                 return
-            self._preconnect_robots()
+            self._preconnect_devices()
             if self._disconnect_requested or stop_signal.is_set():
                 return
             # Do not use ``with runtime``: the session alone owns device teardown.
@@ -118,6 +136,12 @@ class RuntimeSession:
 
     async def teardown(self) -> None:
         # Device lifetime belongs to the session, not to a disposable runtime view.
+        # Cameras first so a wedged publisher cannot strand the arm connected.
+        for key, camera in self._cameras.items():
+            try:
+                camera.disconnect()
+            except Exception as exc:
+                logger.warning("Camera {} disconnect failed: {}", key, exc)
         if self._leader is not None:
             try:
                 self._leader.disconnect()
@@ -129,25 +153,26 @@ class RuntimeSession:
             except Exception as exc:
                 logger.warning("Follower disconnect failed: {}", exc)
 
-    def _preconnect_robots(self) -> None:
-        """Connect robots in parallel to reduce session startup time."""
+    def _preconnect_devices(self) -> None:
+        """Connect robots and cameras in parallel to reduce session startup time."""
         if self._follower is None:
             raise RuntimeError("Follower robot is not set up")
-        robots = [self._follower]
+        devices: list[_Connectable] = [self._follower]
         if self._leader is not None:
-            robots.append(self._leader)
-        with ThreadPoolExecutor(max_workers=len(robots)) as executor:
-            futures = {executor.submit(robot.connect): robot for robot in robots}
+            devices.append(self._leader)
+        devices.extend(self._cameras.values())
+        with ThreadPoolExecutor(max_workers=len(devices)) as executor:
+            futures = {executor.submit(device.connect): device for device in devices}
             try:
                 for future in as_completed(futures):
                     future.result()
             except Exception as exc:
-                logger.error("Robot parallel connect failed: {}", exc)
+                logger.error("Device parallel connect failed: {}", exc)
                 for future in futures:
                     future.cancel()
-                for robot in robots:
-                    if robot.is_connected():
-                        logger.error("Disconnecting robot {} after connect failure", robot)
+                for device in devices:
+                    if _is_connected(device):
+                        logger.error("Disconnecting device {} after connect failure", device)
                         with contextlib.suppress(Exception):
-                            robot.disconnect()
+                            device.disconnect()
                 raise

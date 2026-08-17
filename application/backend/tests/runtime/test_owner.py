@@ -13,13 +13,13 @@ from uuid import UUID, uuid4
 import pytest
 
 from exceptions import RuntimeSessionBusyError
-from runtime.config_builder import runtime_config_digest
+from runtime.config_builder import runtime_identity_digest
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand, StateEvent
 from runtime.owner import RuntimeSessionOwner, probe_session_metadata, runtime_session_holder, stop_runtime_session
 from runtime.transport.client import RuntimeSessionClient
 from runtime.transport.ids import runtime_session_name
 from runtime.transport.lock import SessionNameLock, live_session_pid, registered_session_names, session_lock_path
-from tests.runtime.test_session import _document, _document_with_leader
+from tests.runtime.test_session import _document, _document_with_cameras, _document_with_leader
 
 
 def _name() -> str:
@@ -192,7 +192,8 @@ def test_replace_stops_the_existing_session_and_spawns_with_the_new_rig() -> Non
             second_client.wait_until_ready(second_owner, timeout=5)
             assert second_owner.spawned is True
             assert second_owner.metadata["pid"] != original_pid
-            assert second_owner.metadata["config_digest"] == runtime_config_digest(different)
+            assert second_owner.metadata["identity_digest"] == runtime_identity_digest(different)
+            assert second_owner.metadata["camera_keys"] == []
             assert not owner.is_alive()
         finally:
             _stop_session(second_owner, second_client)
@@ -449,3 +450,71 @@ def test_attached_owner_does_not_stop_on_abandon() -> None:
     owner, _client = _owner_with_mock_client()
 
     owner.stop_abandoned_spawn()
+
+
+def test_attaching_with_extra_cameras_is_allowed() -> None:
+    name = _name()
+    running = _document_with_cameras("front", "wrist")
+    owner, client = _connect_owner(name, running)
+    try:
+        subset = _document_with_cameras("front")
+        second_owner, second_client = _connect_owner(name, subset)
+        try:
+            assert second_owner.spawned is False
+            assert second_owner.metadata["pid"] == owner.metadata["pid"]
+            assert second_owner.metadata["camera_keys"] == ["front", "wrist"]
+            assert second_owner.metadata["identity_digest"] == runtime_identity_digest(subset)
+        finally:
+            second_client.close()
+    finally:
+        _stop_session(owner, client)
+
+
+def test_a_client_needing_more_cameras_restarts_the_session() -> None:
+    name = _name()
+    owner, client = _connect_owner(name, _document())
+    original_pid = owner.metadata["pid"]
+    try:
+        needing_cameras = _document_with_cameras("front")
+        second_owner, second_client = _connect_owner(name, needing_cameras)
+        try:
+            assert second_owner.spawned is True
+            assert second_owner.metadata["pid"] != original_pid
+            assert second_owner.metadata["camera_keys"] == ["front"]
+            assert not owner.is_alive()
+            assert live_session_pid(name) == second_owner.metadata["pid"]
+        finally:
+            _stop_session(second_owner, second_client)
+    finally:
+        if owner.is_alive():
+            owner.stop()
+        client.close()
+
+
+def test_a_client_needing_a_different_robot_is_refused_before_the_camera_check() -> None:
+    name = _name()
+    owner, client = _connect_owner(name, _document(), follower_name="left arm")
+    try:
+        different = _document_with_cameras("front", name="other-follower")
+        second_client = RuntimeSessionClient(name)
+        second_client.open()
+        second_owner = RuntimeSessionOwner(
+            second_client,
+            session_name=name,
+            document=different,
+            follower_name="left arm",
+            leader_name=None,
+            idle_timeout_s=30.0,
+        )
+        try:
+            with pytest.raises(RuntimeSessionBusyError) as exc_info:
+                second_owner.connect()
+            assert int(exc_info.value.http_status) == http.HTTPStatus.LOCKED
+            assert not second_owner.spawned
+            assert owner.is_alive()
+            assert live_session_pid(name) == owner.metadata["pid"]
+        finally:
+            second_owner.stop()
+            second_client.close()
+    finally:
+        _stop_session(owner, client)

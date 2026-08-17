@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from schemas.project_camera import Camera
     from schemas.robot import Robot
 
+RUNTIME_FPS = 30.0
+
 
 class _StoredPortFallback:
     """Export-only port finder: keeps the registered port when a robot is absent.
@@ -57,9 +59,15 @@ def _shared_camera_config(camera: Camera) -> dict[str, Any]:
     if fingerprint.startswith("/dev/video") and ":" in fingerprint:
         fingerprint = fingerprint.split(":")[0]
     device = resolve_camera_device(fingerprint) if camera.driver == "usb_camera" else None
+    # Never reconfigure another session's publisher (overwrite_settings=False).
+    # Refuse frames at a resolution this environment did not declare rather
+    # than silently reading the wrong size: that is a wrong answer, not a
+    # degraded one. See runtime-process-context.md#cameras-connect-strictly.
     shared_camera = SharedCamera(
         camera=build_camera_config(camera, device=device),
         color_mode=ColorMode.RGB,
+        validate_on_connect=True,
+        overwrite_settings=False,
     )
     return to_config(shared_camera).to_dict()
 
@@ -69,8 +77,8 @@ async def build_runtime_config(
     follower: Robot,
     leader: Robot | None,
     cameras: list[Camera],
-    fps: float,
     robot_factory: RobotClientFactory,
+    fps: float = RUNTIME_FPS,
     allow_stored_port: bool = False,
 ) -> dict[str, Any]:
     """Assemble one physicalai runtime recipe from Studio database rows.
@@ -107,10 +115,28 @@ async def build_runtime_config(
     return cast("dict[str, Any]", document)
 
 
-def runtime_config_digest(document: dict[str, Any]) -> str:
-    """Identify one rig configuration, so a client cannot attach to a different one."""
-    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
+def runtime_identity_digest(document: dict[str, Any]) -> str:
+    """Identify the hardware a session is driving, so a client cannot attach to a different rig.
+
+    Covers the robot recipe, the leader recipe and fps — everything that
+    physically determines what the arm does. Cameras are deliberately excluded:
+    they are read-only observation, a client that needs more can restart the
+    session, and including them would make every camera edit in the environment
+    form look like a rig change. See runtime-process-context.md#decisions.
+    """
+    init_args = document["init_args"]
+    identity = {
+        "robot": init_args["robot"],
+        "action_source": init_args.get("action_source"),
+        "fps": init_args["fps"],
+    }
+    canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def runtime_camera_keys(document: dict[str, Any]) -> list[str]:
+    """Return the sorted camera feature keys this document declares."""
+    return sorted(document["init_args"].get("cameras", {}))
 
 
 def runtime_config_change_me(document: dict[str, Any]) -> list[str]:

@@ -35,6 +35,19 @@ def _document(*, connect_error: str | None = None, **follower_kwargs: Any) -> di
     ).to_dict()
 
 
+def _camera_config(**kwargs: Any) -> dict[str, Any]:
+    return {
+        "class_path": "tests.runtime.fakes.FakeCamera",
+        "init_args": kwargs,
+    }
+
+
+def _document_with_cameras(*names: str, **follower_kwargs: Any) -> dict:
+    document = _document(**follower_kwargs)
+    document["init_args"]["cameras"] = {name: _camera_config(name=name) for name in names}
+    return document
+
+
 def _document_with_leader(*, leader_kwargs: dict[str, Any] | None = None, **follower_kwargs: Any) -> dict:
     document = _document(**follower_kwargs)
     document["init_args"]["action_source"] = {
@@ -99,7 +112,7 @@ async def test_preconnect_runs_follower_and_leader_connects_in_parallel() -> Non
     )
     await session.setup()
 
-    session._preconnect_robots()
+    session._preconnect_devices()
 
     assert session._follower is not None
     assert session._leader is not None
@@ -119,7 +132,7 @@ async def test_preconnect_disconnects_robots_when_one_connect_fails() -> None:
     await session.setup()
 
     with pytest.raises(ConnectionError, match="leader connect failed"):
-        session._preconnect_robots()
+        session._preconnect_devices()
 
     assert session._follower is not None
     assert session._leader is not None
