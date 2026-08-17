@@ -6,17 +6,26 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 import torch
+from jsonargparse import Namespace
+from physicalai.cli import export as cli_export
+from physicalai.cli.export import build_parser
 from physicalai.data import FeatureType, Observation
 from physicalai.export import ExportBackend
+from physicalai.inference import InferenceModel
 from physicalai.policies import get_policy
 from physicalai.policies.xr1 import XR1, XR1Config
+from physicalai.policies.xr1.preprocessor import XR1Preprocessor
 from physicalai.policies.xr1.vla import XR1Model
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from physicalai.policies.xr1.vlm import XR1Qwen3VL
 
 STATE_DIM = 5
@@ -46,27 +55,31 @@ TINY_KWARGS: dict[str, Any] = {
 def dataset_stats() -> dict[str, dict[str, Any]]:
     """Return dataset statistics in the shape ``Dataset.stats`` produces.
 
+    ``type`` is a plain string, which is what LeRobot writes and therefore what ends
+    up in a checkpoint's hyperparameters. Storing the enum instead would make the
+    checkpoint unloadable under ``torch.load(weights_only=True)``.
+
     Returns:
         Statistics for one state feature, one camera and the action.
     """
     return {
         "observation.state": {
             "name": "state",
-            "type": FeatureType.STATE,
+            "type": str(FeatureType.STATE),
             "shape": (STATE_DIM,),
             "mean": [0.0] * STATE_DIM,
             "std": [1.0] * STATE_DIM,
         },
         "observation.images.top": {
             "name": "top",
-            "type": FeatureType.VISUAL,
+            "type": str(FeatureType.VISUAL),
             "shape": (3, 96, 96),
             "mean": [0.0] * 3,
             "std": [1.0] * 3,
         },
         "action": {
             "name": "action",
-            "type": FeatureType.ACTION,
+            "type": str(FeatureType.ACTION),
             "shape": (ACTION_DIM,),
             "mean": [0.0] * ACTION_DIM,
             "std": [1.0] * ACTION_DIM,
@@ -312,3 +325,114 @@ class TestExportSurface:
         specs = policy.extra_export_args["torch"].postprocessors_specs
 
         assert any(spec.type == "action_chunk_trimmer" for spec in specs)
+
+class TestTorchExportRoundTrip:
+    """Milestones 5 and 6: export through ``.to_torch()``, then load with Runtime.
+
+    Everything here runs against the tiny backbone, so the round trip is exercised in
+    CI rather than only in a manual script.
+    """
+
+    @pytest.fixture
+    def exported(self, policy: XR1, tmp_path: Path, stub_processor: Any) -> Path:
+        """Export the policy and make the reload path work offline.
+
+        Args:
+            policy: An initialized policy.
+            tmp_path: Export directory.
+            stub_processor: Processor stand-in, also used by the reloaded policy.
+
+        Returns:
+            The export directory.
+        """
+        export_dir = tmp_path / "export-torch"
+        policy.export(export_dir, backend=ExportBackend.TORCH)
+        # ``InferenceModel`` reconstructs the policy from the checkpoint, which would
+        # otherwise fetch the real processor from the Hub.
+        XR1Preprocessor.processor = property(lambda _self: stub_processor)  # type: ignore[method-assign, assignment]
+        return export_dir
+
+    @staticmethod
+    def _sample(policy: XR1) -> dict[str, Any]:
+        """Build one numpy observation matching the exported input schema.
+
+        Args:
+            policy: The policy, read for its input schema.
+
+        Returns:
+            An observation dict of numpy arrays, as Runtime receives it.
+        """
+        rng = np.random.RandomState(0)
+        shapes = {feature.name: feature.shape for feature in policy.inputs_schema or []}
+        return {
+            "state": rng.randn(1, *shapes["state"]).astype(np.float32),
+            "images": rng.rand(1, *shapes["images"]).astype(np.float32),
+            "task": ["transfer the cube"],
+        }
+
+    def test_artifact_and_manifest(self, policy: XR1, exported: Path) -> None:
+        """The export contract needs a backend-identifying file plus metadata."""
+        manifest = json.loads((exported / "manifest.json").read_text())
+
+        assert (exported / "xr1.pt").is_file()
+        assert manifest["model"]["artifacts"] == {"torch": "xr1.pt"}
+        assert manifest["policy"]["source"]["class_path"].endswith("xr1.policy.XR1")
+        output_feature = manifest["model"]["output_features"][0]["init_args"]
+        assert output_feature["name"] == "action"
+        assert output_feature["shape"] == [policy.config.chunk_size, ACTION_DIM]
+
+    def test_cli_matches_the_python_api(self, policy: XR1, exported: Path, tmp_path: Path) -> None:
+        """Both routes must produce the same artifact, per the export contract."""
+        cli_dir = tmp_path / "export-cli"
+
+        cli_export.run(
+            build_parser(),
+            Namespace(
+                policy="physicalai.policies.XR1",
+                # ``to_torch`` writes a Lightning-shaped checkpoint, so the artifact
+                # from the API route is itself a valid CLI input.
+                ckpt_path=str(exported / "xr1.pt"),
+                backend="torch",
+                output_dir=str(cli_dir),
+            ),
+        )
+
+        assert sorted(p.name for p in cli_dir.iterdir()) == sorted(p.name for p in exported.iterdir())
+        assert json.loads((cli_dir / "manifest.json").read_text()) == json.loads(
+            (exported / "manifest.json").read_text(),
+        )
+
+    def test_inference_model_loads_the_artifact(self, exported: Path) -> None:
+        """Runtime must auto-detect the backend from the ``.pt`` extension."""
+        model = InferenceModel(exported, device="cpu")
+
+        assert model.backend == "torch"
+
+    def test_matches_the_torch_policy_path(self, policy: XR1, exported: Path) -> None:
+        """Parity is what proves the exported artifact is the same model.
+
+        The sampler is stochastic, so both paths integrate from the same RNG state.
+        """
+        observation = self._sample(policy)
+        model = InferenceModel(exported, device="cpu")
+        policy.eval()
+
+        state = torch.get_rng_state()
+        runtime_chunk = np.asarray(model.predict_action_chunk(observation))
+        torch.set_rng_state(state)
+        with torch.no_grad():
+            torch_chunk = policy.predict_action_chunk(Observation.from_dict(observation).to_torch("cpu"))
+
+        expected = torch_chunk.squeeze(0).cpu().numpy()
+        assert runtime_chunk.shape == expected.shape
+        np.testing.assert_allclose(runtime_chunk, expected, rtol=0, atol=0)
+
+    def test_select_action_drains_the_chunk(self, policy: XR1, exported: Path) -> None:
+        """Runtime serves one action per step out of a single chunk."""
+        observation = self._sample(policy)
+        model = InferenceModel(exported, device="cpu")
+        model.reset()
+
+        actions = [np.asarray(model.select_action(observation)) for _ in range(3)]
+
+        assert [a.shape for a in actions] == [(ACTION_DIM,)] * 3
