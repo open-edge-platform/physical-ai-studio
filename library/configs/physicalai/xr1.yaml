@@ -43,9 +43,16 @@ model:
     enable_freq: true
     freq_coefficient: 1.0
 
-    # Off by default: both need supervision LeRobot datasets do not carry.
-    async_train: false
-    enable_choice_head: false
+    # Both training-only branches of the reference recipe. async_train conditions on
+    # a prefix taken from the head of the target chunk; the Choice Policy head is
+    # supervised by that same chunk, so neither needs extra dataset fields. Neither
+    # affects inference. Costs, if you need to trade them away for throughput:
+    # async_train adds one no-grad `num_inference_steps`-step rollout on roughly half
+    # the optimizer steps, and the choice head adds 59.6M trainable parameters plus one
+    # text-stack pass over chunk_size + 2 tokens.
+    async_train: true
+    enable_choice_head: true
+    n_choices: 5
 
     # Observation preprocessing
     image_resolution:

@@ -45,10 +45,10 @@ class XR1(ExportablePolicyMixin, Policy):
     trained on. Passing ``dataset_stats`` to the constructor builds it eagerly, which
     is the path checkpoint loading takes.
 
-    Two reference-implementation features are off by default because LeRobot datasets
-    cannot supervise them: ``async_train`` (needs an executed action prefix) and
-    ``enable_choice_head`` (needs per-sample action candidates). Both are
-    training-only, so inference is unaffected.
+    ``async_train`` and ``enable_choice_head`` are on by default, as in the reference
+    implementation. Both are training-only - the Choice Policy head's query tokens are
+    kept out of the action expert's key/value cache - so inference is unaffected either
+    way, and both can be turned off to trade fidelity for throughput.
 
     Memory: the released configuration is 5.04B parameters, 9.4 GiB of bf16 weights.
     That fits a 24 GB card for inference, but a full AdamW fine-tune needs roughly
@@ -98,12 +98,12 @@ class XR1(ExportablePolicyMixin, Policy):
         beta_beta: float = 1.0,
         training_repeat: int = 4,
         prefix_mask_prob: float = 0.5,
-        async_train: bool = False,
+        async_train: bool = True,
         # Loss terms
         enable_freq: bool = True,
         freq_coefficient: float = 1.0,
         freq_excluded_dims: tuple[int, ...] = (17, 18, 19),
-        enable_choice_head: bool = False,
+        enable_choice_head: bool = True,
         n_choices: int = 5,
         # Observation preprocessing
         image_resolution: tuple[int, int] = (256, 256),

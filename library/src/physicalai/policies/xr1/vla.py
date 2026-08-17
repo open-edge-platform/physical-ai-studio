@@ -11,12 +11,15 @@ by layer. Its query sequence is ``[sink, state, actions]``: a learned sink token
 that gives attention somewhere neutral to point, the projected robot state, and the
 action tokens being predicted.
 
-Optional pieces that the reference implementation always enables are gated here,
-because they need supervision a LeRobot dataset does not carry:
+Two pieces of the reference recipe are training-only and configurable here:
 
-* ``async_train`` conditions on an executed action prefix;
-* ``enable_choice_head`` trains an auxiliary head that scores several action
-  candidates. It is training-only, so inference is identical either way.
+* ``async_train`` conditions on an executed action prefix taken from the head of the
+  target chunk, and weights the loss by the error of a full rollout;
+* ``enable_choice_head`` trains the auxiliary Choice Policy head - ``n_choices``
+  candidate chunks plus a score per candidate, supervised winner-takes-all. Its query
+  tokens are appended to the language sequence *after* the action expert's cache has
+  been snapshotted, so they can never leak into the action expert. Inference does not
+  run the head at all.
 """
 
 from __future__ import annotations
@@ -31,11 +34,14 @@ from physicalai.policies.base.model import Model
 from physicalai.policies.xr1.io import (
     build_dit_attention_mask,
     continue_position_ids,
+    continue_text_position_ids,
 )
 from physicalai.policies.xr1.model import XR1FlowModel
 from physicalai.policies.xr1.qwen3vl_dit import DiT, MLPProjector, TimestepEmbedder
 
 if TYPE_CHECKING:
+    from transformers.cache_utils import Cache
+
     from physicalai.policies.xr1.config import XR1Config
     from physicalai.policies.xr1.vlm import XR1Qwen3VL, XR1VLMOutput
 
@@ -186,7 +192,15 @@ class XR1Model(Model):
             raise ValueError(msg)
 
     def _build_choice_head(self, config: XR1Config, vlm_hidden: int) -> None:
-        """Build the optional action-choice head.
+        """Build the Choice Policy head.
+
+        The head reads the backbone at dedicated query positions: one state token,
+        one token per action step, and one score token. The reference implementation
+        gets those positions by adding ``<state>``, ``<a_i>`` and ``<score>`` to the
+        tokenizer and scattering learned embeddings over them. Adding vocabulary
+        entries would fork the released tokenizer, so the same embeddings are appended
+        directly instead - the tokens have no text meaning, only a learned embedding,
+        so nothing is lost.
 
         Args:
             config: Model configuration.
@@ -197,6 +211,10 @@ class XR1Model(Model):
             vlm_hidden,
             num_layers=PROJECTOR_DEPTH,
         )
+        # One learned query per action step, so a step's candidates can depend on
+        # where in the chunk it sits, plus one for the score.
+        self.action_query_embed = nn.Embedding(config.chunk_size, vlm_hidden)
+        self.score_query_embed = nn.Embedding(1, vlm_hidden)
         self.action_projector_choice = nn.Sequential(
             MLPProjector(vlm_hidden, vlm_hidden, num_layers=CHOICE_PROJECTOR_DEPTH),
             MLPProjector(vlm_hidden, config.max_action_dim * config.n_choices),
@@ -230,14 +248,12 @@ class XR1Model(Model):
         weight = cast("torch.Tensor", self.action_projector.layers[0].weight)
         return weight.dtype
 
-    def encode_prompt(self, batch: dict[str, Any], *, return_hidden_states: bool = False) -> XR1VLMOutput:
+    def encode_prompt(self, batch: dict[str, Any]) -> XR1VLMOutput:
         """Run the backbone over images and the instruction.
 
         Args:
             batch: Preprocessed batch carrying ``input_ids`` and, when images are
                 present, ``pixel_values`` and ``image_grid_thw``.
-            return_hidden_states: Also return final hidden states, for the choice
-                head.
 
         Returns:
             Cache, position grid and padding mask for the action expert.
@@ -248,7 +264,6 @@ class XR1Model(Model):
             pixel_values=batch.get("pixel_values"),
             image_grid_thw=batch.get("image_grid_thw"),
             mm_token_type_ids=batch.get("mm_token_type_ids"),
-            return_hidden_states=return_hidden_states,
         )
 
     def dit_forward(
@@ -403,7 +418,8 @@ class XR1Model(Model):
         action_mask = batch["action_mask"].to(self.dtype)
         prefix_length = self._sample_prefix_length(batch, action.shape[1])
 
-        vlm_outputs = self.encode_prompt(batch, return_hidden_states=self.config.enable_choice_head)
+        vlm_outputs = self.encode_prompt(batch)
+        choice_losses = self._choice_loss(batch, vlm_outputs) if self.config.enable_choice_head else None
         dit_kwargs, action, action_mask = self._prepare_dit_inputs(
             batch,
             vlm_outputs,
@@ -442,8 +458,8 @@ class XR1Model(Model):
             "loss_freq": loss_freq.detach(),
         }
 
-        if self.config.enable_choice_head:
-            loss_choice, loss_score = self._choice_loss(batch, vlm_outputs)
+        if choice_losses is not None:
+            loss_choice, loss_score = choice_losses
             loss = loss + 0.5 * loss_choice + 0.5 * loss_score
             metrics["loss_choice"] = loss_choice.detach()
             metrics["loss_score"] = loss_score.detach()
@@ -451,49 +467,134 @@ class XR1Model(Model):
         metrics["loss"] = loss.detach()
         return loss, metrics
 
+    def _choice_queries(self, state: torch.Tensor, horizon: int) -> torch.Tensor:
+        """Build the choice turn's query embeddings.
+
+        The layout mirrors the reference implementation's appended chat turn:
+        ``"Robot state: <state>"`` followed by ``<a_0>...<a_{T-1}><score>``.
+
+        Args:
+            state: Padded state of shape ``(batch, state_len, max_state_dim)``.
+            horizon: Number of action steps, one query token each.
+
+        Returns:
+            Embeddings of shape ``(batch, state_len + horizon + 1, vlm_hidden)``.
+
+        Raises:
+            ValueError: If ``horizon`` exceeds the configured ``chunk_size``, which
+                would index past the learned per-step query embeddings.
+        """
+        if horizon > self.config.chunk_size:
+            msg = f"action horizon ({horizon}) exceeds chunk_size ({self.config.chunk_size})"
+            raise ValueError(msg)
+
+        batch_size = state.shape[0]
+        state_tokens = self.state_projector_choice(state)
+        steps = torch.arange(horizon, device=state.device)
+        action_tokens = self.action_query_embed(steps)[None].expand(batch_size, -1, -1)
+        score_token = self.score_query_embed.weight[None].expand(batch_size, -1, -1)
+        return torch.cat([state_tokens, action_tokens, score_token], dim=1).to(state_tokens.dtype)
+
+    def _choice_predictions(
+        self,
+        hidden: torch.Tensor,
+        state_length: int,
+        horizon: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Read candidate chunks and their scores off the query positions.
+
+        Args:
+            hidden: Hidden states over the choice turn, shape
+                ``(batch, state_len + horizon + 1, vlm_hidden)``.
+            state_length: Number of leading state tokens to skip.
+            horizon: Number of action-query tokens.
+
+        Returns:
+            ``(candidates, scores)`` of shapes
+            ``(batch, horizon, n_choices, max_action_dim)`` and ``(batch, n_choices)``.
+        """
+        action_hidden = hidden[:, state_length : state_length + horizon]
+        candidates = self.action_projector_choice(action_hidden).view(
+            hidden.shape[0],
+            horizon,
+            self.config.n_choices,
+            self.config.max_action_dim,
+        )
+        return candidates, self.score_projector_choice(hidden[:, -1])
+
+    @staticmethod
+    def _choice_cache(batch: dict[str, Any], vlm_outputs: XR1VLMOutput) -> Cache:
+        """Check the batch can supervise the choice head and return the prompt cache.
+
+        Args:
+            batch: Preprocessed batch.
+            vlm_outputs: Backbone outputs for the prompt.
+
+        Returns:
+            The cache the choice turn continues from.
+
+        Raises:
+            KeyError: If the batch carries no action supervision.
+            ValueError: If the backbone returned no cache to continue from.
+        """
+        if "action" not in batch or "action_mask" not in batch:
+            msg = "The choice head needs 'action' and 'action_mask' supervision in the batch"
+            raise KeyError(msg)
+        if vlm_outputs.cache is None:
+            msg = "The choice head needs the backbone cache; encode() must run with use_cache=True"
+            raise ValueError(msg)
+        return vlm_outputs.cache
+
     def _choice_loss(
         self,
         batch: dict[str, Any],
         vlm_outputs: XR1VLMOutput,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Compute the auxiliary action-choice losses.
+        """Compute the Choice Policy losses.
+
+        The head emits ``n_choices`` candidate chunks and one score per candidate.
+        Only the candidate closest to the target is trained (winner-takes-all on the
+        masked L1 error), so the candidates are free to spread over the distinct ways
+        of solving the task instead of collapsing onto their average. The scores
+        regress onto those same L1 errors, detached, which is what makes them usable
+        as a selection signal at deployment.
+
+        The target is the action chunk the flow branch already trains on, so no extra
+        dataset fields are needed. Steps that run past the end of an episode carry a
+        zero mask and contribute nothing.
 
         Args:
-            batch: Batch carrying ``choice_target`` and ``choice_mask``.
-            vlm_outputs: Backbone outputs including hidden states.
+            batch: Preprocessed batch carrying ``state``, ``action`` and
+                ``action_mask``.
+            vlm_outputs: Backbone outputs for the prompt.
 
         Returns:
             ``(candidate_loss, score_loss)``.
-
-        Raises:
-            KeyError: If the batch lacks choice supervision.
-            ValueError: If hidden states were not returned.
         """
-        if vlm_outputs.last_hidden_state is None:
-            msg = "The choice head needs backbone hidden states; encode with return_hidden_states=True"
-            raise ValueError(msg)
-        missing = {"choice_target", "choice_mask"} - set(batch)
-        if missing:
-            msg = (
-                f"enable_choice_head=True requires {sorted(missing)} in the batch. "
-                "LeRobot datasets do not provide choice supervision; use an upstream-format dataset "
-                "or leave the choice head disabled."
-            )
-            raise KeyError(msg)
+        cache = self._choice_cache(batch, vlm_outputs)
 
-        hidden = vlm_outputs.last_hidden_state
-        target = batch["choice_target"].to(self.dtype)
-        mask = batch["choice_mask"].to(torch.bool)
+        state = batch["state"].to(self.dtype)
+        target = batch["action"].to(self.dtype)
+        mask = batch["action_mask"].to(self.dtype)
+        horizon = target.shape[1]
 
-        candidates = self.action_projector_choice(hidden[:, -1])
-        candidates = candidates.view(hidden.shape[0], self.config.n_choices, -1)
-        scores = self.score_projector_choice(hidden[:, -1])
+        queries = self._choice_queries(state, horizon)
+        hidden = self.vlm.continue_sequence(
+            queries,
+            cache=cache,
+            prompt_attention_mask=vlm_outputs.attention_mask,
+            position_ids=continue_text_position_ids(vlm_outputs.position_ids, queries.shape[1]),
+        )
 
-        errors = (candidates - target[:, None].expand_as(candidates)).abs()
-        errors = torch.where(mask[:, None].expand_as(errors), errors, torch.zeros_like(errors))
-        per_choice = errors.flatten(2).mean(dim=-1)
-        best = per_choice.argmin(dim=-1)
-        candidate_loss = per_choice.gather(1, best[:, None]).mean()
+        candidates, scores = self._choice_predictions(hidden, state.shape[1], horizon)
+
+        absolute_error = (candidates - target[:, :, None, :]).abs() * mask[:, :, None, :]
+        # Mean over the supervised entries only, per sample and candidate.
+        valid = mask.sum(dim=(1, 2)).clamp(min=1.0)[:, None]
+        per_choice = absolute_error.sum(dim=(1, 3)) / valid
+
+        winner = per_choice.argmin(dim=-1, keepdim=True)
+        candidate_loss = per_choice.gather(1, winner).mean()
         score_loss = ((scores - per_choice.detach()) ** 2).mean()
         return candidate_loss, score_loss
 

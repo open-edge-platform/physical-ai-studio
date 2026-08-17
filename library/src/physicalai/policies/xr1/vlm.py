@@ -43,14 +43,15 @@ class XR1VLMOutput:
             continues its own positions from ``position_ids.max(dim=-1) + 1``.
         attention_mask: Padding mask of shape ``(batch, seq)`` covering the cached
             prefix, used to build the DiT's cross-attention mask.
-        last_hidden_state: Final backbone hidden states, or ``None`` when they were
-            not requested. Only the choice head needs them.
+        cache: The backbone's own cache object, which :meth:`XR1Qwen3VL.continue_sequence`
+            extends. ``past_key_values`` above is a snapshot taken before any such
+            extension, so the action expert always reads the prompt alone.
     """
 
     past_key_values: list[tuple[torch.Tensor, torch.Tensor]]
     position_ids: torch.Tensor
     attention_mask: torch.Tensor
-    last_hidden_state: torch.Tensor | None = None
+    cache: Cache | None = None
 
 
 class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
@@ -69,8 +70,6 @@ class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
         pixel_values: torch.Tensor | None = None,
         image_grid_thw: torch.LongTensor | None = None,
         mm_token_type_ids: torch.IntTensor | None = None,
-        *,
-        return_hidden_states: bool = False,
         **kwargs: Any,  # noqa: ANN401 - forwarded verbatim to the backbone
     ) -> XR1VLMOutput:
         """Run the backbone and return everything the action expert needs.
@@ -84,13 +83,10 @@ class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
             mm_token_type_ids: Per-position multimodal token types from the processor.
                 Required by ``transformers`` for multimodal RoPE whenever images are
                 present.
-            return_hidden_states: Also return the final hidden states. Only needed
-                by the (optional) action-choice head.
             **kwargs: Extra keyword arguments forwarded to the backbone.
 
         Returns:
-            The cache, the 3D position grid, the padding mask and, optionally, the
-            final hidden states.
+            The cache, the 3D position grid and the padding mask.
 
         Raises:
             ValueError: If the backbone returns no key/value cache, which means
@@ -115,7 +111,6 @@ class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
             image_grid_thw=image_grid_thw,
             mm_token_type_ids=mm_token_type_ids,
             use_cache=True,
-            output_hidden_states=return_hidden_states,
             # The action expert never reads token logits; keeping one position
             # avoids materializing a (batch, seq, vocab) tensor.
             logits_to_keep=1,
@@ -126,16 +121,55 @@ class XR1Qwen3VL(Qwen3VLForConditionalGeneration):
             msg = "Qwen3-VL returned no key/value cache; the DiT action expert requires use_cache=True"
             raise ValueError(msg)
 
-        last_hidden_state = None
-        if return_hidden_states and outputs.hidden_states is not None:
-            last_hidden_state = outputs.hidden_states[-1]
-
         return XR1VLMOutput(
+            # Snapshot the per-layer tensors now. ``continue_sequence`` concatenates
+            # into fresh tensors and rebinds the cache's own references, so this list
+            # keeps pointing at the prompt-only keys and values.
             past_key_values=as_key_value_list(outputs.past_key_values),
             position_ids=normalize_position_ids(position_ids, input_ids),
             attention_mask=attention_mask,
-            last_hidden_state=last_hidden_state,
+            cache=outputs.past_key_values,
         )
+
+    def continue_sequence(
+        self,
+        inputs_embeds: torch.Tensor,
+        *,
+        cache: Cache,
+        prompt_attention_mask: torch.Tensor,
+        position_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run the text stack over embeddings appended after an encoded prompt.
+
+        The reference implementation puts the choice head's query tokens in the same
+        chat turn as the prompt and then *truncates* the key/value cache the action
+        expert reads, so those tokens condition on the prompt but never leak into the
+        action expert. Encoding the prompt first and continuing over the cache
+        afterwards is the same computation - causal masking already prevents the
+        prompt from attending forward - and it makes the exclusion structural rather
+        than something a later edit could quietly undo.
+
+        Args:
+            inputs_embeds: Appended token embeddings of shape ``(batch, extra, hidden)``.
+            cache: The prompt cache from :meth:`encode`.
+            prompt_attention_mask: Prompt padding mask of shape ``(batch, seq)``.
+            position_ids: Positions for the appended tokens, shape
+                ``(axes, batch, extra)``.
+
+        Returns:
+            Final hidden states for the appended tokens, shape
+            ``(batch, extra, hidden)``.
+        """
+        batch_size, extra, _ = inputs_embeds.shape
+        appended = prompt_attention_mask.new_ones((batch_size, extra))
+        outputs = self.model.language_model(
+            inputs_embeds=inputs_embeds,
+            attention_mask=torch.cat([prompt_attention_mask, appended], dim=-1),
+            position_ids=position_ids,
+            past_key_values=cache,
+            use_cache=True,
+        )
+        return outputs.last_hidden_state
 
 
 def as_key_value_list(

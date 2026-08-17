@@ -35,10 +35,9 @@ IMAGE_RESOLUTION_RANK = 2
 class XR1Config(Config):
     """Configuration for the XR1 flow-matching model.
 
-    Defaults follow the reference implementation unless noted. Three defaults
-    deliberately differ, because the upstream value is either not portable or not
-    supervisable by LeRobot datasets: ``vlm_attn_implementation``, ``async_train``
-    and ``enable_choice_head``.
+    Defaults follow the reference implementation unless noted. One default
+    deliberately differs, because the upstream value is not portable:
+    ``vlm_attn_implementation``.
 
     Attributes:
         vlm_model_id: HuggingFace id of the Qwen3-VL backbone. Defaults to
@@ -99,20 +98,24 @@ class XR1Config(Config):
             denoised at several timesteps per step. Defaults to 4.
         prefix_mask_prob: Probability of masking a prefix action token during
             training. Defaults to 0.5.
-        async_train: Randomly condition on an action prefix during training.
-            Defaults to False; the reference implementation defaults to True, but
-            the prefix path expects data carrying an executed action prefix.
+        async_train: Randomly condition on an action prefix during training, and
+            weight the loss by the error of a full rollout. Defaults to True, as in
+            the reference implementation. The prefix is taken from the head of the
+            target chunk, so no extra dataset fields are needed; the cost is one
+            extra ``num_inference_steps``-step rollout, without gradients, on
+            roughly half the optimizer steps.
         enable_freq: Add the frequency-domain loss term. Defaults to True.
         freq_coefficient: Weight of the frequency-domain loss term. Defaults
             to 1.0.
         freq_excluded_dims: Action dimensions excluded from the frequency loss
             (gripper-like dimensions in the reference layout). Defaults to
             ``(17, 18, 19)``.
-        enable_choice_head: Train the discrete action-choice head. Defaults to
-            False. The head needs per-sample choice targets, dedicated prompt
-            tokens and a state-embedding input that only the reference
-            implementation's vendored VLM accepts; it is training-only, so
-            inference is unaffected when disabled.
+        enable_choice_head: Train the auxiliary Choice Policy head. Defaults to
+            True, as in the reference implementation. The head is supervised by the
+            same action chunk as the flow branch, so it needs no extra dataset
+            fields. It runs only while training, and its query tokens are excluded
+            from the action expert's key/value cache, so inference is bit-for-bit
+            identical whether or not the head was trained.
         n_choices: Number of action candidates produced by the choice head.
             Defaults to 5.
         image_resolution: Target image resolution (height, width). Defaults to
@@ -174,13 +177,13 @@ class XR1Config(Config):
     beta_beta: float = 1.0
     training_repeat: int = 4
     prefix_mask_prob: float = 0.5
-    async_train: bool = False
+    async_train: bool = True
 
     enable_freq: bool = True
     freq_coefficient: float = 1.0
     freq_excluded_dims: tuple[int, ...] = (17, 18, 19)
 
-    enable_choice_head: bool = False
+    enable_choice_head: bool = True
     n_choices: int = 5
 
     image_resolution: tuple[int, int] = (256, 256)

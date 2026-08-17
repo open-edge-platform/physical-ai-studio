@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 import torch
 from physicalai.policies.xr1.io import (
+    continue_text_position_ids,
     build_action_mask,
     build_dit_attention_mask,
     continue_position_ids,
@@ -113,6 +114,35 @@ class TestContinuePositionIds:
         )
 
         assert positions[0, 0].tolist() == [1, 2, 3, 14, 15]
+
+
+class TestContinueTextPositionIds:
+    """The choice head's query tokens continue the language sequence."""
+
+    def test_starts_after_the_prompt(self) -> None:
+        """The queries take the next plain text positions."""
+        vlm_positions = torch.arange(6).view(1, 1, -1).expand(3, 2, 6)
+
+        positions = continue_text_position_ids(vlm_positions, 4)
+
+        assert positions.shape == (3, 2, 4)
+        assert positions[0, 0].tolist() == [6, 7, 8, 9]
+
+    def test_all_axes_advance_together(self) -> None:
+        """Text tokens have no separate temporal, row or column position."""
+        vlm_positions = torch.zeros(3, 1, 3, dtype=torch.long)
+        vlm_positions[1] = 5
+
+        positions = continue_text_position_ids(vlm_positions, 2)
+
+        assert positions[0, 0].tolist() == [1, 2]
+        assert positions[1, 0].tolist() == [6, 7]
+
+    def test_mirrors_the_prompt_rank(self) -> None:
+        """A text-only prompt can arrive with a single-axis grid."""
+        positions = continue_text_position_ids(torch.arange(4).view(1, 1, -1), 2)
+
+        assert positions.shape == (1, 1, 2)
 
 
 class TestBuildDitAttentionMask:

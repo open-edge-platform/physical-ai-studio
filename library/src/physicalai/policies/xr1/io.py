@@ -149,6 +149,27 @@ def continue_position_ids(
     return base
 
 
+def continue_text_position_ids(vlm_position_ids: torch.Tensor, length: int) -> torch.Tensor:
+    """Continue the prompt's position grid for tokens appended to the same turn.
+
+    The choice head's query tokens are part of the language sequence, not of the
+    action expert's separate query, so they take the next plain text positions after
+    the prompt - identical on all rope axes and with no extra offset. The grid's rank
+    and batch size are taken from the prompt, so this works for both the 3-axis
+    multimodal grid and the plain text-only fallback.
+
+    Args:
+        vlm_position_ids: Prompt grid of shape ``(axes, batch, seq)``.
+        length: Number of appended tokens.
+
+    Returns:
+        Position grid of shape ``(axes, batch, length)``.
+    """
+    axes, batch_size, _ = vlm_position_ids.shape
+    base = torch.arange(length, device=vlm_position_ids.device).view(1, 1, -1).repeat(axes, batch_size, 1)
+    return base + vlm_position_ids.max(dim=-1).values[..., None] + 1
+
+
 def build_dit_attention_mask(
     cache_mask: torch.Tensor,
     query_length: int,

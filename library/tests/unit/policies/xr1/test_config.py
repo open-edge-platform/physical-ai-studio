@@ -35,17 +35,21 @@ class TestDefaults:
         assert config.n_choices == 5
 
     def test_documented_divergences(self) -> None:
-        """Defaults that intentionally differ from the reference implementation.
+        """The one default that intentionally differs from the reference.
 
-        ``flash_attention_2`` is not a library dependency and is not exportable;
-        the prefix and choice-head training paths need supervision that LeRobot
-        datasets do not provide.
+        ``flash_attention_2`` is not a library dependency and is not exportable, so
+        the backbone defaults to ``sdpa`` instead.
         """
         config = XR1Config()
 
         assert config.vlm_attn_implementation == "sdpa"
-        assert config.async_train is False
-        assert config.enable_choice_head is False
+
+    def test_reference_training_recipe_is_the_default(self) -> None:
+        """Both training-only branches of the reference recipe are on by default."""
+        config = XR1Config()
+
+        assert config.async_train is True
+        assert config.enable_choice_head is True
 
     def test_is_frozen(self) -> None:
         """Config is immutable, like every other first-party policy config."""
