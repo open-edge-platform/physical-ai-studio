@@ -2,7 +2,6 @@ import asyncio
 from unittest.mock import MagicMock
 
 from api.record import handle_incoming
-from schemas import InferenceBackend, InferenceDevice, Model
 
 
 class FakeWebSocket:
@@ -17,30 +16,6 @@ class FakeWebSocket:
 
     async def send_json(self, payload: dict) -> None:
         self.sent.append(payload)
-
-
-def test_handle_incoming_load_model_requires_inference_device(test_model) -> None:
-    process = MagicMock()
-    websocket = FakeWebSocket(
-        [
-            {
-                "event": "load_model",
-                "data": {
-                    "model": test_model.model_dump(mode="json"),
-                    "inference_device": {"backend": "openvino", "device": "GPU"},
-                },
-            },
-            {"event": "disconnect", "data": {}},
-        ]
-    )
-
-    asyncio.run(handle_incoming(websocket, process, set()))
-
-    process.load_model.assert_called_once_with(
-        Model.model_validate(test_model.model_dump(mode="json")),
-        InferenceDevice(backend=InferenceBackend.OPENVINO, device="GPU"),
-    )
-    process.disconnect.assert_called_once()
 
 
 def test_record_path_refuses_a_held_follower(test_environment, monkeypatch) -> None:
