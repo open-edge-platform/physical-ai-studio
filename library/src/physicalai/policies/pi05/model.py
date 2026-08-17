@@ -571,6 +571,10 @@ class Pi05Model(Model):
         gradient_checkpointing: bool = False,
         compile_model: bool = False,
         use_random_input_noise: bool = False,
+        lora_rank: int = 0,
+        lora_alpha: int = 16,
+        lora_dropout: float = 0.1,
+        lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
     ) -> None:
         """Initialize Pi05Model.
 
@@ -604,6 +608,10 @@ class Pi05Model(Model):
             compile_model: Whether to use torch.compile.
             use_random_input_noise: Whether to use random noise as the initial input for the denoising
                 process during inference. If False, zeros are used instead.
+            lora_rank: LoRA rank (0 disables LoRA).
+            lora_alpha: LoRA alpha scaling factor.
+            lora_dropout: LoRA dropout probability.
+            lora_target_modules: Modules to apply LoRA to.
 
         Raises:
             ValueError: If image resolution is not square.
@@ -644,6 +652,17 @@ class Pi05Model(Model):
             freeze_vision_encoder=freeze_vision_encoder,
             train_expert_only=train_expert_only,
         )
+
+        if lora_rank > 0:
+            from physicalai.policies.pi0.components.lora import apply_lora
+
+            self.paligemma_with_expert = apply_lora(
+                self.paligemma_with_expert,
+                rank=lora_rank,
+                alpha=lora_alpha,
+                dropout=lora_dropout,
+                target_modules=lora_target_modules,
+            )
 
         self.action_in_proj = nn.Linear(max_action_dim, action_expert_config.width)
         self.action_out_proj = nn.Linear(action_expert_config.width, max_action_dim)

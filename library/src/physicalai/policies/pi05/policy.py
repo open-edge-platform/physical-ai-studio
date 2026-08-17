@@ -81,6 +81,10 @@ class Pi05(ExportablePolicyMixin, Policy):
         compile_mode: Torch compile mode. Default: "max-autotune".
         freeze_vision_encoder: Freeze vision encoder. Default: False.
         train_expert_only: Train only action expert. Default: False.
+        lora_rank: LoRA rank (0 disables LoRA). Default: 0.
+        lora_alpha: LoRA alpha parameter. Default: 16.
+        lora_dropout: LoRA dropout rate. Default: 0.1.
+        lora_target_modules: Target modules for LoRA. Default: ("q_proj", "v_proj", "k_proj", "o_proj").
         normalization_mode: Normalization method for state/action features — ``"QUANTILES"``
             (percentile-based, robust to outliers) or ``"MEAN_STD"``. Default: ``"QUANTILES"``.
 
@@ -148,6 +152,11 @@ class Pi05(ExportablePolicyMixin, Policy):
         # Finetuning
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = False,
+        # LoRA settings
+        lora_rank: int = 0,
+        lora_alpha: int = 16,
+        lora_dropout: float = 0.1,
+        lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
         # Normalization
         normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         # Optimizer
@@ -223,6 +232,10 @@ class Pi05(ExportablePolicyMixin, Policy):
                 compile_mode=compile_mode,
                 freeze_vision_encoder=freeze_vision_encoder,
                 train_expert_only=train_expert_only,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                lora_target_modules=lora_target_modules,
                 normalization_mode=normalization_mode,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
@@ -291,6 +304,10 @@ class Pi05(ExportablePolicyMixin, Policy):
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
             use_random_input_noise=self.config.use_random_input_noise,
+            lora_rank=self.config.lora_rank,
+            lora_alpha=self.config.lora_alpha,
+            lora_dropout=self.config.lora_dropout,
+            lora_target_modules=self.config.lora_target_modules,
         )
         if weights_file is not None:
             # load raw state dict
@@ -347,6 +364,10 @@ class Pi05(ExportablePolicyMixin, Policy):
         compile_mode: str | None = "max-autotune",
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = False,
+        lora_rank: int = 0,
+        lora_alpha: int = 16,
+        lora_dropout: float = 0.1,
+        lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
         optimizer_eps: float = 1e-8,
@@ -385,6 +406,10 @@ class Pi05(ExportablePolicyMixin, Policy):
             compile_mode: Override torch compile mode.
             freeze_vision_encoder: Override whether to freeze the vision encoder.
             train_expert_only: Override whether to train only the action expert.
+            lora_rank: Override LoRA rank.
+            lora_alpha: Override LoRA alpha.
+            lora_dropout: Override LoRA dropout.
+            lora_target_modules: Override LoRA target modules.
             optimizer_lr: Override learning rate.
             optimizer_betas: Override Adam beta coefficients.
             optimizer_eps: Override optimizer epsilon.
@@ -471,6 +496,10 @@ class Pi05(ExportablePolicyMixin, Policy):
             hf_config["compile_mode"] = compile_mode
         hf_config["freeze_vision_encoder"] = freeze_vision_encoder
         hf_config["train_expert_only"] = train_expert_only
+        hf_config["lora_rank"] = lora_rank
+        hf_config["lora_alpha"] = lora_alpha
+        hf_config["lora_dropout"] = lora_dropout
+        hf_config["lora_target_modules"] = lora_target_modules
         hf_config["optimizer_lr"] = optimizer_lr
         hf_config["optimizer_betas"] = optimizer_betas
         hf_config["optimizer_eps"] = optimizer_eps

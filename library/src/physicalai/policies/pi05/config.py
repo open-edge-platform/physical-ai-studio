@@ -16,7 +16,7 @@ Example (API):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from physicalai.config import Config
@@ -111,6 +111,13 @@ class Pi05Config(Config):
 
     freeze_vision_encoder: bool = False
     train_expert_only: bool = False
+
+    lora_rank: int = 0
+    lora_alpha: int = 16
+    lora_dropout: float = 0.1
+    lora_target_modules: tuple[str, ...] = field(
+        default_factory=lambda: ("q_proj", "v_proj", "k_proj", "o_proj"),
+    )
 
     normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES"
 
