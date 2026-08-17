@@ -1,0 +1,73 @@
+# XR1 smoke configuration - wiring check, not a training recipe.
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/xr1_smoke.yaml --trainer.fast_dev_run=true
+#
+# `vlm_pretrained: false` fetches only the backbone *config* and randomly
+# initializes the weights, then shrinks it through vlm_config_overrides. That keeps
+# this runnable on any machine in seconds instead of pulling a 9.4 GiB checkpoint.
+# Nothing here is expected to learn a useful policy.
+
+model:
+  class_path: physicalai.policies.XR1
+  init_args:
+    vlm_model_id: Qwen/Qwen3-VL-4B-Instruct
+    vlm_pretrained: false
+    vlm_config_overrides:
+      text_config:
+        num_hidden_layers: 4
+        hidden_size: 256
+        intermediate_size: 512
+        num_attention_heads: 4
+        num_key_value_heads: 2
+        head_dim: 64
+      vision_config:
+        depth: 2
+        hidden_size: 128
+        intermediate_size: 256
+        num_heads: 2
+        out_hidden_size: 256
+    vlm_attn_implementation: sdpa
+    dtype: float32
+
+    chunk_size: 8
+    n_action_steps: 8
+    max_state_dim: 16
+    max_action_dim: 16
+
+    # Depth, head dim and kv heads must track the shrunken backbone above.
+    dit_num_layers: 4
+    dit_hidden_size: 256
+    dit_head_dim: 64
+    dit_kv_heads: 2
+
+    num_inference_steps: 2
+    training_repeat: 1
+
+    image_resolution:
+      - 128
+      - 128
+    camera_views:
+      - top
+    tokenizer_max_length: 128
+
+    gradient_checkpointing: false
+    freeze_vlm: false
+    normalization_mode: MEAN_STD
+    optimizer_lr: 1.0e-4
+    scheduler_warmup_steps: 10
+    scheduler_decay_steps: 100
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    train_batch_size: 1
+    data_format: "physicalai"
+
+trainer:
+  max_epochs: 1
+  accelerator: auto
+  devices: 1
+  precision: 32
+  log_every_n_steps: 1
