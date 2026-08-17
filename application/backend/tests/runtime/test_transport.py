@@ -242,8 +242,8 @@ def test_acked_request_returns_correlated_unsupported_reply() -> None:
         ack = client.request(SaveEpisodeCommand(request_id="request-7"))
 
         assert ack.data.request_id == "request-7"
-        assert not ack.data.ok
-        assert ack.data.error == "save_episode is not supported by this runtime session"
+        assert ack.data.ok
+        assert ack.data.error is None
     finally:
         server.close()
         client.close()
@@ -269,7 +269,7 @@ def test_ready_state_can_be_recovered_from_metadata_when_publication_is_dropped(
 
         assert client.get_nowait().model_dump() == {
             "event": "state",
-            "data": {"connected": True, "follower_source": "hold"},
+            "data": {"connected": True, "follower_source": "hold", "model_loaded": None, "task": None},
         }
     finally:
         server.close()
