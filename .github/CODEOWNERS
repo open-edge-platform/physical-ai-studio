@@ -2,12 +2,13 @@
 
 # Lock files
 library/uv.lock                   @open-edge-platform/physical-ai-studio-maintain @sys-geti
-physicalai/uv.lock                @open-edge-platform/physical-ai-studio-maintain @sys-geti
 application/backend/uv.lock       @open-edge-platform/physical-ai-studio-maintain @sys-geti
 application/ui/package-lock.json  @open-edge-platform/physical-ai-studio-maintain @sys-geti
+application/plugin/uv.lock        @open-edge-platform/physical-ai-studio-maintain @sys-geti
 
 # Dockerfile
-application/docker/Dockerfile     @open-edge-platform/physical-ai-studio-maintain @sys-geti
+application/docker/Dockerfile         @open-edge-platform/physical-ai-studio-maintain @sys-geti
+application/docker/Dockerfile.trainer @open-edge-platform/physical-ai-studio-maintain @sys-geti
 
 # CI and security
 .github/actions/                  @open-edge-platform/geti-ci-maintain

@@ -282,3 +282,19 @@ class SharedRobotTransportError(BaseException):
             error_code="robot_transport_error",
             http_status=http.HTTPStatus.BAD_REQUEST,
         )
+
+
+class RobotIdentifyError(BaseException):
+    """Raised when visually identifying a robot fails during joint motion."""
+
+    def __init__(
+        self,
+        message: str = (
+            "Robot identify failed: a joint could not be moved safely. Power-cycle the robot and try again."
+        ),
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_identify_error",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )

@@ -26,7 +26,6 @@ from api.robot_catalog import router as robot_catalog_router
 from api.robot_control import router as robot_control_router
 from api.robot_setup import router as robot_setup_router
 from api.robots import router as project_robots_router
-from api.settings import router as settings_router
 from api.system import system_router
 from api.webui import SPAStaticFiles
 from core.lifecycle import lifespan
@@ -56,7 +55,6 @@ app.include_router(camera_router)
 app.include_router(dataset_router)
 app.include_router(record_router)
 app.include_router(remote_trainers_router)
-app.include_router(settings_router)
 app.include_router(models_router)
 app.include_router(policies_router)
 app.include_router(job_router)

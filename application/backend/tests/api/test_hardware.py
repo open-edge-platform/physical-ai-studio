@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -128,27 +128,23 @@ class TestHardwareApi:
         robot_manager.find_robots.assert_awaited_once()
 
     def test_identify_so101_uses_robot_manager_dependency(self):
-        robot_manager = _StubRobotManager([])
+        robot_manager = _StubRobotManager([SerialPortInfo(connection_string="/dev/ttyUSB0", serial_number=None)])
         app.dependency_overrides[get_robot_manager_service] = lambda: robot_manager
 
         try:
             client = TestClient(app)
-            with patch("robots.catalog.so101.identify_so101_robot_visually", new_callable=AsyncMock) as identify:
+            with patch("robots.catalog.so101.identify_so101_robot_visually", new_callable=Mock) as identify:
                 response = client.post(
                     "/api/robots/catalog/SO101_Follower/identify",
-                    params={"joint": "gripper"},
                     json={"connection_string": "/dev/ttyUSB0", "serial_number": ""},
                 )
         finally:
             app.dependency_overrides.clear()
 
         assert response.status_code == 200, response.text
-        identify.assert_awaited_once()
-        manager_arg, robot_arg, joint_arg = identify.await_args.args
-        assert manager_arg is robot_manager
-        assert robot_arg.type == "SO101_Follower"
-        assert robot_arg.payload.connection_string == "/dev/ttyUSB0"
-        assert joint_arg == "gripper"
+        identify.assert_called_once()
+        (connection_string,) = identify.call_args.args
+        assert connection_string == "/dev/ttyUSB0"
 
     def test_identify_trossen_calls_trossen_identifier(self):
         robot_manager = _StubRobotManager([])
