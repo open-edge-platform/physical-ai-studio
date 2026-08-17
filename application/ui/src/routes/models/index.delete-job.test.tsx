@@ -13,19 +13,37 @@ const jobId = 'f1b3f8f0-1c1a-4b1a-9c1a-1c1a1c1a1c1a';
 
 // `Index` opens a live WebSocket for job updates. jsdom has no server to
 // connect to, so stub out `WebSocket` with a minimal no-op implementation
-// that never attempts a real network connection.
+// that never attempts a real network connection. Matches the constructor
+// signature of the real WebSocket so `react-use-websocket` can instantiate
+// it safely, and is stubbed/restored per-test so it can't leak into other
+// test files.
 class FakeWebSocket extends EventTarget {
     static readonly CONNECTING = 0;
     static readonly OPEN = 1;
     static readonly CLOSING = 2;
     static readonly CLOSED = 3;
     readyState = FakeWebSocket.OPEN;
+
+    constructor(
+        public url: string | URL,
+        public protocols?: string | string[]
+    ) {
+        super();
+    }
+
     close() {
         this.readyState = FakeWebSocket.CLOSED;
     }
     send() {}
 }
-vi.stubGlobal('WebSocket', FakeWebSocket);
+
+beforeEach(() => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+});
+
+afterEach(() => {
+    vi.unstubAllGlobals();
+});
 
 let jobs: SchemaTrainJob[];
 
