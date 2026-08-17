@@ -12,6 +12,8 @@ interface TrainingDeviceInfoProps {
     remoteHealth: SchemaRemoteTrainerHealth | null;
     isCheckingRemote: boolean;
     sshServer: SchemaRemoteServer | null;
+    /** Exact GPU/XPU name reported by the SSH server's `driver_present` health check, if known. */
+    sshComputeDetail?: string;
 }
 
 export const TrainingDeviceInfo = ({
@@ -19,6 +21,7 @@ export const TrainingDeviceInfo = ({
     remoteHealth,
     isCheckingRemote,
     sshServer,
+    sshComputeDetail,
 }: TrainingDeviceInfoProps) => {
     const bestDevice = useBestTrainingDevice();
     const bestRemoteDevice = useMemo(() => pickBestDevice(remoteHealth?.devices ?? []), [remoteHealth]);
@@ -33,7 +36,9 @@ export const TrainingDeviceInfo = ({
                         Remote server not ready ({sshServer.last_check_status})
                     </StatusLight>
                 ) : (
-                    <StatusLight variant='positive'>{sshServer.device_type.toUpperCase()} (remote server)</StatusLight>
+                    <StatusLight variant='positive'>
+                        {sshComputeDetail ?? sshServer.device_type.toUpperCase()}
+                    </StatusLight>
                 )}
             </Flex>
         );

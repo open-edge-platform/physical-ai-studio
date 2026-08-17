@@ -22,7 +22,11 @@ import { $api } from '../../../api/client';
 import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
 import { useProject } from '../../projects/use-project';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
-import { remoteServerStatusLabel, remoteServerStatusVariant } from '../../training-targets/remote-server-status-utils';
+import {
+    remoteServerComputeDetail,
+    remoteServerStatusLabel,
+    remoteServerStatusVariant,
+} from '../../training-targets/remote-server-status-utils';
 import { getDisplayHealth, healthLabel, healthVariant } from '../../training-targets/remote-trainer-health-utils';
 import { useRemoteServersStatus } from '../../training-targets/training-targets-table/use-remote-servers-status';
 import { useRemoteTrainersHealth } from '../../training-targets/training-targets-table/use-remote-trainers-health';
@@ -180,6 +184,12 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         : !sshVerified
           ? selectedSshServer.last_check_status
           : remoteServerStatusLabel(selectedSshStatusEntry?.status, selectedSshStatusEntry?.isChecking ?? false);
+    const selectedSshComputeDetail = useMemo(() => {
+        if (!isSshTarget || selectedSshServer === null) {
+            return undefined;
+        }
+        return remoteServerComputeDetail(selectedSshStatusEntry?.status);
+    }, [isSshTarget, selectedSshServer, selectedSshStatusEntry]);
     // The device actually driving this job: the local GPU when training locally,
     // the remote trainer's reported GPU once its health check resolves, or the
     // configured accelerator for an SSH-provisioned server (no live VRAM probe,
@@ -276,6 +286,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                         remoteHealth={remoteTrainerHealth ?? null}
                         isCheckingRemote={isCheckingRemoteTrainer}
                         sshServer={selectedSshServer}
+                        sshComputeDetail={selectedSshComputeDetail}
                     />
                 </Flex>
             </Heading>
