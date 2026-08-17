@@ -54,7 +54,6 @@ const ModelList = ({
 
     return (
         <View
-            marginBottom={'size-600'}
             borderWidth='thin'
             borderColor={'gray-200'}
             borderBottomWidth='thin'
@@ -132,6 +131,25 @@ const useProjectTrainingJobs = (project_id: string): SchemaTrainJob[] => {
         .filter((job): job is SchemaTrainJob => job.type === 'training');
 };
 
+const NoModelsPlaceholder = () => {
+    return (
+        <Flex margin={'size-200'} direction={'column'} height='100%'>
+            <IllustratedMessage>
+                <EmptyIllustration />
+                <Content> Currently there are no trained models available. </Content>
+                <Text>If you&apos;ve recorded a dataset it&apos;s time to begin training your model. </Text>
+                <Heading>No trained models</Heading>
+                <View margin={'size-100'}>
+                    <DialogTrigger>
+                        <Button variant='accent'>Train model</Button>
+                        {(close) => <TrainModelDialog close={close} />}
+                    </DialogTrigger>
+                </View>
+            </IllustratedMessage>
+        </Flex>
+    );
+};
+
 export const Index = () => {
     const { project_id } = useProjectId();
     const { data: models } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/models', {
@@ -193,28 +211,15 @@ export const Index = () => {
     const showIllustratedMessage = !hasModels && !hasJobs;
 
     return (
-        <View height='100%' padding={'size-200'} UNSAFE_style={{ overflowY: 'scroll' }}>
-            <Flex direction={'column'} flex>
+        <View height='100%' padding={'size-300'} UNSAFE_style={{ overflowY: 'auto' }}>
+            <Flex direction={'column'} height={'100%'}>
                 {showIllustratedMessage ? (
-                    <Flex margin={'size-200'} direction={'column'} flex height='100%'>
-                        <IllustratedMessage>
-                            <EmptyIllustration />
-                            <Content> Currently there are no trained models available. </Content>
-                            <Text>If you&apos;ve recorded a dataset it&apos;s time to begin training your model. </Text>
-                            <Heading>No trained models</Heading>
-                            <View margin={'size-100'}>
-                                <DialogTrigger>
-                                    <Button variant='accent'>Train model</Button>
-                                    {(close) => <TrainModelDialog close={close} />}
-                                </DialogTrigger>
-                            </View>
-                        </IllustratedMessage>
-                    </Flex>
+                    <NoModelsPlaceholder />
                 ) : (
-                    <View margin={'size-300'}>
-                        <Flex justifyContent={'end'} marginBottom='size-300'>
+                    <Flex direction={'column'} flex={1} gap={'size-300'}>
+                        <Flex justifyContent={'end'}>
                             <DialogTrigger>
-                                <Button variant='secondary'>Train model</Button>
+                                <Button variant='accent'>Train model</Button>
                                 {(close) => (
                                     <TrainModelDialog
                                         close={(job) => {
@@ -239,7 +244,7 @@ export const Index = () => {
                                 onViewLogs={handleViewLogs}
                             />
                         )}
-                    </View>
+                    </Flex>
                 )}
             </Flex>
             <DialogContainer onDismiss={() => setRetrainModel(null)}>
