@@ -14,9 +14,11 @@ import {
     View,
 } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { $api } from '../../api/client';
 import { ElapsedDuration } from '../../components/elapsed-duration.component';
+import { notify } from '../../components/notification/notification.component';
 import { CollapsableRow } from './collapsable-row.component';
 import { GRID_COLUMNS } from './constants';
 import { JobRowContent } from './job-row-content.component';
@@ -92,9 +94,20 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
 };
 
 const JobMenu = ({ trainJob, onViewLogs }: { trainJob: SchemaTrainJob; onViewLogs: () => void }) => {
+    const queryClient = useQueryClient();
     const deleteJobMutation = $api.useMutation('delete', '/api/jobs/{job_id}', {
         meta: {
             invalidates: [['get', '/api/jobs']],
+        },
+        onSuccess: () => {
+            // Remove the job from the cache immediately instead of waiting on the
+            // fire-and-forget invalidation refetch, so the row disappears right away.
+            queryClient.setQueryData<SchemaTrainJob[]>(['get', '/api/jobs'], (old = []) =>
+                old.filter((job) => job.id !== trainJob.id)
+            );
+        },
+        onError: () => {
+            notify('error', `Failed to delete ${trainJob.payload.model_name}`);
         },
     });
     const onAction = (key: Key) => {
@@ -109,7 +122,8 @@ const JobMenu = ({ trainJob, onViewLogs }: { trainJob: SchemaTrainJob; onViewLog
         }
     };
 
-    const disabledKeys = trainJob.status === 'failed' ? [] : ['delete'];
+    const isDeletable = trainJob.status === 'failed' || trainJob.status === 'canceled';
+    const disabledKeys = isDeletable ? [] : ['delete'];
 
     return (
         <MenuTrigger>
