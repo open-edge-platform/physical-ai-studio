@@ -384,20 +384,36 @@ class XR1Model(Model):
         }
         return dit_kwargs, action, action_mask
 
-    def _sample_prefix_length(self, batch: dict[str, Any], action_length: int) -> int:
-        """Decide how many leading action steps are supplied as a prefix.
+    def _sample_prefix_length(self, action_length: int) -> int:
+        """Draw the training-time action prefix length.
+
+        Args:
+            action_length: Length of the action chunk.
+
+        Returns:
+            A prefix length in ``1 .. MAX_PREFIX_LENGTH`` on roughly half the steps
+            when ``async_train`` is set, otherwise 0.
+        """
+        if self.config.async_train and random.random() < 0.5:  # noqa: S311, PLR2004 - schedule jitter, not crypto
+            return min(random.randint(1, MAX_PREFIX_LENGTH), action_length)  # noqa: S311
+        return 0
+
+    @staticmethod
+    def _requested_prefix_length(batch: dict[str, Any], action_length: int) -> int:
+        """Read the caller's action prefix length for inference.
+
+        Asynchronous execution is a property of the request, not of the module's
+        train/eval flag, so this never consults ``self.training``: calling
+        :meth:`predict_action_chunk` on a module left in train mode must not start
+        demanding an ``action_prefix`` the caller never supplied.
 
         Args:
             batch: Preprocessed batch; may carry an explicit ``prefix_length``.
             action_length: Length of the action chunk.
 
         Returns:
-            The prefix length, clamped to the chunk length.
+            The requested prefix length, clamped to the chunk length.
         """
-        if self.training:
-            if self.config.async_train and random.random() < 0.5:  # noqa: S311, PLR2004 - schedule jitter, not crypto
-                return min(random.randint(1, MAX_PREFIX_LENGTH), action_length)  # noqa: S311
-            return 0
         return min(int(batch.get("prefix_length", 0) or 0), action_length)
 
     def compute_loss(  # noqa: PLR0914 - the flow-matching step needs its intermediates named
@@ -416,7 +432,7 @@ class XR1Model(Model):
         """
         action = batch["action"].to(self.dtype)
         action_mask = batch["action_mask"].to(self.dtype)
-        prefix_length = self._sample_prefix_length(batch, action.shape[1])
+        prefix_length = self._sample_prefix_length(action.shape[1]) if self.training else 0
 
         vlm_outputs = self.encode_prompt(batch)
         choice_losses = self._choice_loss(batch, vlm_outputs) if self.config.enable_choice_head else None
@@ -640,7 +656,7 @@ class XR1Model(Model):
             device=state.device,
             dtype=self.dtype,
         )
-        prefix_length = self._sample_prefix_length(batch, horizon)
+        prefix_length = self._requested_prefix_length(batch, horizon)
         if prefix_length:
             placeholder[:, :prefix_length] = batch["action_prefix"][:, :prefix_length].to(self.dtype)
 
