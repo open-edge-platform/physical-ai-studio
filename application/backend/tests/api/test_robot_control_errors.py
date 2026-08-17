@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, call
 
 from fastapi.websockets import WebSocketDisconnect
 
-from api.robot_control import _websocket_error_payload, handle_incoming, start_runtime_session
+from api.runtime_ws import _websocket_error_payload, handle_incoming, start_runtime_session
 from exceptions import RobotDeviceAlreadyOwnedError
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand
 

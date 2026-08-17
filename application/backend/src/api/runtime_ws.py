@@ -1,27 +1,42 @@
+from __future__ import annotations
+
 import asyncio
 import queue
 import time
-from typing import Annotated
-from uuid import UUID
+from typing import TYPE_CHECKING, Annotated, Any
+from uuid import UUID  # noqa: TC003  # FastAPI evaluates websocket annotations at runtime
 
 from fastapi import APIRouter, Depends, WebSocket, status
+from fastapi.exceptions import HTTPException
 from fastapi.responses import Response
 from fastapi.websockets import WebSocketDisconnect
 from loguru import logger
 from pydantic import ValidationError
 
-from api.dependencies import RobotClientFactoryDep, SettingsDep, get_project_id, get_robot_id, get_robot_service
+from api.dependencies import (
+    ProjectCameraServiceDep,
+    RobotClientFactoryDep,
+    SettingsDep,
+    get_camera_id,
+    get_project_id,
+    get_robot_id,
+    get_robot_service,
+)
 from exceptions import BaseException as AppBaseException
 from exceptions import RobotPluginUnavailableError
-from runtime.config_builder import build_runtime_config
+from runtime.config_builder import RUNTIME_FPS, build_runtime_config
 from runtime.contract import DisconnectCommand, SetFollowerSourceCommand
 from runtime.owner import RuntimeSessionOwner
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.ids import runtime_session_name
 from schemas.robot import ReadableRobot, UnavailableRobot
-from services import RobotService
+from services import ProjectCameraService, RobotService
 
-router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
+if TYPE_CHECKING:
+    from schemas.project_camera import Camera
+    from schemas.robot import Robot
+
+router = APIRouter(prefix="/api/projects/{project_id}/runtime", tags=["Runtime"])
 
 
 def _websocket_error_payload(exc: Exception) -> dict[str, str]:
@@ -103,20 +118,47 @@ async def start_runtime_session(
     await asyncio.to_thread(client.wait_until_ready, owner)
 
 
-@router.get("/ws", tags=["WebSocket"], summary="Robot control (WebSocket)", status_code=426)
-async def robot_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
+async def _devices_from_handshake(
+    handshake: dict[str, Any],
+    project_id: UUID,
+    robot_service: RobotService,
+    camera_service: ProjectCameraService,
+) -> tuple[Robot, Robot | None, list[Camera]]:
+    """Resolve handshake ids against the project so a client cannot name another project's devices."""
+    follower_id = get_robot_id(handshake["follower_id"])
+    follower = await robot_service.get_robot_by_id(project_id, follower_id)
+    _ensure_robot_available(follower)
+    leader = None
+    if handshake.get("leader_id") is not None:
+        leader_id = get_robot_id(handshake["leader_id"])
+        leader = await robot_service.get_robot_by_id(project_id, leader_id)
+        _ensure_robot_available(leader)
+
+    raw_camera_ids = handshake.get("camera_ids") or []
+    if not isinstance(raw_camera_ids, list):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="camera_ids must be a list")
+    cameras: list[Camera] = []
+    for raw in raw_camera_ids:
+        if not isinstance(raw, str):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid camera ID")
+        cameras.append(await camera_service.get_camera_by_id(project_id, get_camera_id(raw)))
+    return follower, leader, cameras
+
+
+@router.get("/ws", tags=["WebSocket"], summary="Runtime session (WebSocket)", status_code=426)
+async def runtime_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
     """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
     return Response(status_code=426)
 
 
 @router.websocket("/ws")
-async def robot_websocket(  # noqa: PLR0915
+async def runtime_websocket(
     project_id: Annotated[UUID, Depends(get_project_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
+    camera_service: ProjectCameraServiceDep,
     robot_client_factory: RobotClientFactoryDep,
     settings: SettingsDep,
     websocket: WebSocket,
-    fps: int = 30,
 ) -> None:
     """Stream follower state and accept hold/teleop mode changes."""
     await websocket.accept()
@@ -127,20 +169,12 @@ async def robot_websocket(  # noqa: PLR0915
     startup_task: asyncio.Task[None] | None = None
     try:
         handshake = await websocket.receive_json("text")
-        follower_id = get_robot_id(handshake["follower_id"])
-        follower = await robot_service.get_robot_by_id(project_id, follower_id)
-        _ensure_robot_available(follower)
-        leader = None
-        if handshake.get("leader_id") is not None:
-            leader_id = get_robot_id(handshake["leader_id"])
-            leader = await robot_service.get_robot_by_id(project_id, leader_id)
-            _ensure_robot_available(leader)
-
+        follower, leader, cameras = await _devices_from_handshake(handshake, project_id, robot_service, camera_service)
         document = await build_runtime_config(
             follower=follower,
             leader=leader,
-            cameras=[],
-            fps=fps,
+            cameras=cameras,
+            fps=RUNTIME_FPS,
             robot_factory=robot_client_factory,
         )
         session_name = runtime_session_name(follower.id)
@@ -185,9 +219,9 @@ async def robot_websocket(  # noqa: PLR0915
         pass
     except Exception as exc:
         if isinstance(exc, AppBaseException):
-            logger.warning("Robot websocket error: {} ({})", exc.message, exc.error_code)
+            logger.warning("Runtime websocket error: {} ({})", exc.message, exc.error_code)
         else:
-            logger.exception("Unexpected error in robot websocket: {}", exc)
+            logger.exception("Unexpected error in runtime websocket: {}", exc)
         try:
             await websocket.send_json(_websocket_error_payload(exc))
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
