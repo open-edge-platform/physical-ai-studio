@@ -73,7 +73,7 @@ from physicalai.benchmark.gyms import LiberoBenchmark
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # LeRobot Weights
-policy = Pi05(pretrained_name_or_path="lerobot/pi05_libero_base")
+policy = Pi05(pretrained_name_or_path="lerobot/pi05_libero_finetuned")
 policy.eval()
 
 # Benchmark
