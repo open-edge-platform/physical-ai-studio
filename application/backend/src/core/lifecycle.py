@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from core.logging import setup_logging, setup_uvicorn_logging
+from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
@@ -23,11 +24,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     app.state.settings = settings
 
-    # Camera fingerprints locked by an active recording/teleop session.
-    # Mutated by the robot_control WS handler; checked by camera CRUD and
-    # camera-stream WS endpoints. Keyed by fingerprint (not ProjectCamera ID)
-    # so aliased project rows for the same physical device share one lock.
-    app.state.recording_locked_camera_fingerprints = set()
+    # Camera settings pinned by live runtime sessions in this API process.
+    # In-memory on purpose: see CameraClaimRegistry. Keyed by fingerprint so
+    # aliased project rows for the same physical device share one pin.
+    app.state.camera_claim_registry = CameraClaimRegistry()
     logger.info(f"Starting {settings.app_name} application...")
     ensure_spawn_start_method()
     app_scheduler = Scheduler()

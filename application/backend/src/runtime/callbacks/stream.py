@@ -4,7 +4,7 @@ import threading
 from typing import TYPE_CHECKING
 
 from runtime.contract import LifecycleData, LifecycleEvent, ObservationEvent, StateData, StateEvent
-from runtime.features import observation_to_dict
+from runtime.features import action_to_dict, observation_to_dict
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -45,7 +45,10 @@ class StreamCallback:
             event.robot_state,
             include_velocities=False,
         )
-        self._event_sink.emit(ObservationEvent(data=data))
+        actions = None
+        if event.action_sent is not None and self._joint_names:
+            actions = action_to_dict(self._joint_names, event.action_sent)
+        self._event_sink.emit(ObservationEvent(data=data, actions=actions))
 
     def on_lifecycle(self, event: RuntimeLifecycleEvent) -> None:
         if event.event == "start":

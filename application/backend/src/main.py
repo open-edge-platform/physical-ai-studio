@@ -20,7 +20,6 @@ from api.models import router as models_router
 from api.policies import router as policies_router
 from api.project import router as project_router
 from api.project_camera import router as project_cameras_router
-from api.record import router as record_router
 from api.remote_trainers import router as remote_trainers_router
 from api.robot_catalog import router as robot_catalog_router
 from api.robot_observations import router as robot_observations_router
@@ -56,7 +55,6 @@ app.include_router(project_environments_router)
 app.include_router(hardware_router)
 app.include_router(camera_router)
 app.include_router(dataset_router)
-app.include_router(record_router)
 app.include_router(remote_trainers_router)
 app.include_router(settings_router)
 app.include_router(models_router)

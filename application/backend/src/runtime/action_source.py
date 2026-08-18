@@ -11,6 +11,7 @@ from runtime.contract import (
     ErrorEvent,
     LoadModelCommand,
     SetFollowerSourceCommand,
+    StartRecordingCommand,
     StartTaskCommand,
     StateData,
     StateEvent,
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from physicalai.robot.interface import Robot, RobotObservation
     from physicalai.runtime import PolicySource
 
+    from runtime.callbacks.recording import RecordingState
     from runtime.contract import CommandMailbox, EventSink, FollowerSource
     from runtime.policy_loader import ObservationSnapshot
 
@@ -74,18 +76,27 @@ class StudioActionSource:
             camera_keys=camera_keys,
             models_dir=models_dir,
         )
+        self._recording: RecordingState | None = None
 
     @property
     def follower_source(self) -> FollowerSource:
         return self._follower_source
 
+    def bind_recording(self, recording: RecordingState) -> None:
+        """Attach session-owned recording flags so state events include them."""
+        self._recording = recording
+
     def state_data(self) -> StateData:
         """Return the session state currently published to the browser."""
+        recording = self._recording
         return StateData(
             connected=True,
             follower_source=self._follower_source,
             model_loaded=self._model_loaded,
             task=self._task,
+            dataset_loaded=None if recording is None else recording.dataset_loaded,
+            is_recording=None if recording is None else recording.is_recording,
+            episodes_recorded=None if recording is None else recording.episodes_recorded,
         )
 
     def connect(self, *, bus: object, session_id: str) -> None:
@@ -211,6 +222,8 @@ class StudioActionSource:
                 self._handle_stop_task(robot_state)
             elif isinstance(command, SetFollowerSourceCommand):
                 self._handle_set_follower_source(command, robot_state)
+            elif isinstance(command, StartRecordingCommand):
+                self._handle_start_recording(command)
 
     def _handle_load_model(self, command: LoadModelCommand) -> None:
         self._cancel_arming()
@@ -242,6 +255,17 @@ class StudioActionSource:
             return
         self._follower_source = "hold"
         self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
+        self._emit_state()
+
+    def _handle_start_recording(self, command: StartRecordingCommand) -> None:
+        if self._recording is None or not self._recording.start(command.task):
+            self._event_sink.emit(
+                ErrorEvent(
+                    message="Load a dataset before starting a recording.",
+                    error_code="dataset_not_loaded",
+                )
+            )
+            return
         self._emit_state()
 
     def _handle_set_follower_source(self, command: SetFollowerSourceCommand, robot_state: RobotObservation) -> None:

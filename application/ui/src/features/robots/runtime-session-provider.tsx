@@ -1,8 +1,13 @@
 import { createContext, ReactNode, RefObject, useContext, useRef, useState } from 'react';
 
-import { useMutation, UseMutationResult } from '@tanstack/react-query';
+import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
 
-import { SchemaEnvironmentWithRelations, SchemaInferenceDeviceInfo, SchemaModel } from '../../api/openapi-spec';
+import {
+    SchemaDatasetOutput,
+    SchemaEnvironmentWithRelations,
+    SchemaInferenceDeviceInfo,
+    SchemaModel,
+} from '../../api/openapi-spec';
 import useWebSocketWithResponse from '../../components/websockets/use-websocket-with-response';
 import { useProjectId } from '../projects/use-project';
 import { FollowerSource, runtimeSocketUrl } from './use-joint-state';
@@ -14,6 +19,9 @@ interface RuntimeSessionState {
     follower_source: FollowerSource;
     model_loaded: boolean;
     task: string | null;
+    dataset_loaded: boolean;
+    is_recording: boolean;
+    episodes_recorded: number;
 }
 
 const createRuntimeSessionState = (): RuntimeSessionState => ({
@@ -21,11 +29,15 @@ const createRuntimeSessionState = (): RuntimeSessionState => ({
     follower_source: 'hold',
     model_loaded: false,
     task: null,
+    dataset_loaded: false,
+    is_recording: false,
+    episodes_recorded: 0,
 });
 
 interface RuntimeApiJsonResponse<T = RuntimeSessionState> {
     event: string;
     data?: T;
+    actions?: Record<string, number> | null;
     message?: string;
     error_code?: string;
 }
@@ -34,6 +46,7 @@ interface RuntimeSessionProviderProps {
     children: ReactNode;
     environment: SchemaEnvironmentWithRelations;
     model?: SchemaModel;
+    dataset?: SchemaDatasetOutput;
     inferenceDevice?: InferenceDevice;
     onError: (error: string) => void;
 }
@@ -42,15 +55,22 @@ type MutationResult<TVariables = void> = UseMutationResult<RuntimeApiJsonRespons
 
 type RuntimeSessionContextValue = {
     observation: RefObject<Record<string, number> | undefined>;
+    actions: RefObject<Record<string, number> | undefined>;
     environment: SchemaEnvironmentWithRelations;
     model: SchemaModel | undefined;
+    dataset: SchemaDatasetOutput | undefined;
     inferenceDevice: InferenceDevice | undefined;
     state: RuntimeSessionState;
     loadModel: MutationResult<{ model: SchemaModel; inference_device: InferenceDevice }>;
+    loadDataset: MutationResult<SchemaDatasetOutput>;
     startTask: MutationResult<string>;
     stopTask: MutationResult;
     setFollowerSource: MutationResult<FollowerSource>;
+    startEpisode: MutationResult<string>;
+    saveEpisode: MutationResult;
+    discardEpisode: MutationResult;
     readyForInference: boolean;
+    readyForRecording: boolean;
     isConnected: boolean;
 };
 
@@ -69,13 +89,37 @@ const handshakeDevices = (environment: SchemaEnvironmentWithRelations) => {
     };
 };
 
+const EPISODE_ACK_TIMEOUT_MS = 60_000;
+
+const useRefreshEpisodes = (dataset_id?: string) => {
+    const queryClient = useQueryClient();
+
+    return () => {
+        if (dataset_id === undefined) {
+            return;
+        }
+        queryClient.invalidateQueries({
+            queryKey: [
+                'get',
+                '/api/dataset/{dataset_id}/episodes',
+                {
+                    params: { path: { dataset_id } },
+                },
+            ],
+        });
+    };
+};
+
 export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
     const { project_id } = useProjectId();
     const [state, setState] = useState<RuntimeSessionState>(createRuntimeSessionState());
     const observation = useRef<Record<string, number> | undefined>(undefined);
+    const actions = useRef<Record<string, number> | undefined>(undefined);
     const [model, setModel] = useState<SchemaModel | undefined>(props.model);
     const [inferenceDevice, setInferenceDevice] = useState<InferenceDevice | undefined>(props.inferenceDevice);
+    const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(props.dataset);
     const devices = handshakeDevices(props.environment);
+    const invalidateEpisodesQuery = useRefreshEpisodes(dataset?.id);
 
     const onOpen = () => {
         socket.sendJsonMessage({
@@ -85,6 +129,10 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
         });
         if (props.model && props.inferenceDevice) {
             loadModel.mutate({ model: props.model, inference_device: props.inferenceDevice });
+        }
+        if (props.dataset) {
+            loadDataset.mutate(props.dataset);
+            setFollowerSource.mutate('teleop');
         }
     };
 
@@ -96,6 +144,7 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
             const message = JSON.parse(event.data) as RuntimeApiJsonResponse<unknown>;
             if (message.event === 'observation' && message.data !== undefined && typeof message.data === 'object') {
                 observation.current = message.data as Record<string, number>;
+                actions.current = message.actions ?? undefined;
             }
             if (message.event === 'state' && message.data !== undefined && typeof message.data === 'object') {
                 const next = message.data as Partial<RuntimeSessionState>;
@@ -104,6 +153,9 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
                     follower_source: next.follower_source ?? 'hold',
                     model_loaded: next.model_loaded ?? false,
                     task: next.task ?? null,
+                    dataset_loaded: next.dataset_loaded ?? false,
+                    is_recording: next.is_recording ?? false,
+                    episodes_recorded: next.episodes_recorded ?? 0,
                 });
             }
             if (message.event === 'error') {
@@ -136,6 +188,18 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
         },
     });
 
+    const loadDataset = useMutation({
+        meta: { skipInvalidation: true },
+        mutationFn: async (datasetConfig: SchemaDatasetOutput) => {
+            const result = await socket.sendJsonMessageAndWait<RuntimeApiJsonResponse>(
+                { event: 'load_dataset', data: { dataset_id: datasetConfig.id } },
+                ({ event, data }) => event === 'state' && data?.dataset_loaded === true
+            );
+            setDataset(datasetConfig);
+            return result;
+        },
+    });
+
     const startTask = useMutation({
         meta: { skipInvalidation: true },
         mutationFn: async (task: string) =>
@@ -163,19 +227,58 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
             ),
     });
 
+    const startEpisode = useMutation({
+        meta: { skipInvalidation: true },
+        mutationFn: async (task: string) =>
+            socket.sendJsonMessageAndWait<RuntimeApiJsonResponse>(
+                { event: 'start_recording', data: { task } },
+                ({ event, data }) => event === 'state' && data?.is_recording === true
+            ),
+    });
+
+    const saveEpisode = useMutation({
+        meta: { skipInvalidation: true },
+        mutationFn: async () => {
+            const result = await socket.sendJsonMessageAndWait<RuntimeApiJsonResponse>(
+                { event: 'save_episode', data: {} },
+                undefined,
+                { timeout: EPISODE_ACK_TIMEOUT_MS }
+            );
+            invalidateEpisodesQuery();
+            return result;
+        },
+    });
+
+    const discardEpisode = useMutation({
+        meta: { skipInvalidation: true },
+        mutationFn: async () =>
+            socket.sendJsonMessageAndWait<RuntimeApiJsonResponse>(
+                { event: 'discard_episode', data: {} },
+                undefined,
+                { timeout: EPISODE_ACK_TIMEOUT_MS }
+            ),
+    });
+
     return (
         <RuntimeSessionContext.Provider
             value={{
                 observation,
+                actions,
                 environment: props.environment,
                 model,
+                dataset,
                 inferenceDevice,
                 state,
                 loadModel,
+                loadDataset,
                 startTask,
                 stopTask,
                 setFollowerSource,
+                startEpisode,
+                saveEpisode,
+                discardEpisode,
                 readyForInference: state.connected && state.model_loaded,
+                readyForRecording: state.connected && state.dataset_loaded,
                 isConnected: socket.readyState === 1,
             }}
         >

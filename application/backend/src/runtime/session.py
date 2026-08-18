@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -10,17 +11,38 @@ from physicalai.config import Config
 from physicalai.robot import RobotError
 from physicalai.runtime import RobotRuntime
 
+from internal_datasets.access_mode import DatasetAccessMode
+from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from robots.shared_robot_errors import translate_robot_error
 from runtime.action_source import StudioActionSource
+from runtime.callbacks.recording import RecordingCallback, RecordingState
 from runtime.callbacks.stream import StreamCallback
-from runtime.contract import DisconnectCommand, InMemoryCommandMailbox
+from runtime.command_thread import CommandWorker
+from runtime.contract import (
+    DiscardEpisodeCommand,
+    DisconnectCommand,
+    ErrorEvent,
+    InMemoryCommandMailbox,
+    LoadDatasetCommand,
+    SaveEpisodeCommand,
+    StateEvent,
+)
+from runtime.dataset_features import build_lerobot_dataset_features
+from settings import get_settings
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from physicalai.capture import Camera
     from physicalai.robot.interface import Robot
     from physicalai.runtime import StopSignal
 
     from runtime.contract import Command, EventSink
+
+# Bounds a ``copytree`` of a dataset that may be gigabytes. The alternative
+# to waiting is deleting the cache without copying it back.
+RECORDING_TEARDOWN_TIMEOUT_S = 60.0
+_DEVICE_READY_TIMEOUT_S = 30.0
 
 
 class _Connectable(Protocol):
@@ -44,11 +66,13 @@ class RuntimeSession:
         event_sink: EventSink,
         follower_name: str | None = None,
         leader_name: str | None = None,
+        datasets_dir: Path | None = None,
     ) -> None:
         self._document = document
         self._event_sink = event_sink
         self._follower_name = follower_name
         self._leader_name = leader_name
+        self._datasets_dir = datasets_dir
         self._mailbox = InMemoryCommandMailbox()
         self.ready = threading.Event()
         self._follower: Robot | None = None
@@ -56,9 +80,17 @@ class RuntimeSession:
         self._cameras: dict[str, Camera] = {}
         self._action_source: StudioActionSource | None = None
         self._stream_callback: StreamCallback | None = None
+        self._recording = RecordingState()
+        self._recording_callback: RecordingCallback | None = None
+        self._command_worker = CommandWorker()
         self._runtime: RobotRuntime | None = None
         self._disconnect_requested = False
         self._lifecycle_lock = threading.Lock()
+
+    @property
+    def is_recording(self) -> bool:
+        """Return whether an episode is open. Idle countdown reads this."""
+        return self._recording.is_recording
 
     async def setup(self) -> None:
         init_args = self._document["init_args"]
@@ -83,6 +115,7 @@ class RuntimeSession:
             fps=float(init_args["fps"]),
             camera_keys=tuple(self._cameras),
         )
+        self._action_source.bind_recording(self._recording)
         action_source = self._action_source
         self._stream_callback = StreamCallback(
             event_sink=self._event_sink,
@@ -92,16 +125,25 @@ class RuntimeSession:
             start_allowed=lambda: not self._disconnect_requested,
             lifecycle_lock=self._lifecycle_lock,
         )
+        self._recording_callback = RecordingCallback(
+            recording=self._recording,
+            follower_source=lambda: action_source.follower_source,
+        )
 
     def build_runtime(self) -> RobotRuntime:
-        if self._follower is None or self._action_source is None or self._stream_callback is None:
+        if (
+            self._follower is None
+            or self._action_source is None
+            or self._stream_callback is None
+            or self._recording_callback is None
+        ):
             raise RuntimeError("Runtime session has not been set up")
         self._runtime = RobotRuntime(
             robot=self._follower,
             action_source=self._action_source,
             cameras=self._cameras,
             fps=float(self._document["init_args"]["fps"]),
-            callbacks=[self._stream_callback],
+            callbacks=[self._stream_callback, self._recording_callback],
         )
         if self._disconnect_requested:
             self._runtime.stop()
@@ -114,7 +156,30 @@ class RuntimeSession:
                 if self._runtime is not None:
                     self._runtime.stop()
             return
+        if isinstance(command, LoadDatasetCommand):
+            self._command_worker.submit("load_dataset", lambda: self._load_dataset(command))
+            return
         self._mailbox.apply(command)
+
+    def handle_request(self, command: Command) -> None:
+        """Run an acked command on the command worker and raise if it failed."""
+        if isinstance(command, SaveEpisodeCommand):
+            self._command_worker.submit(
+                "save_episode",
+                self._save_episode,
+                request_id=command.request_id,
+            )
+        elif isinstance(command, DiscardEpisodeCommand):
+            self._command_worker.submit(
+                "discard_episode",
+                self._discard_episode,
+                request_id=command.request_id,
+            )
+        else:
+            raise ValueError(f"{command.command} is not supported by this runtime session")
+        ack = self._command_worker.wait(command.request_id, timeout=RECORDING_TEARDOWN_TIMEOUT_S)
+        if not ack.ok:
+            raise RuntimeError(ack.error or f"{command.command} failed")
 
     def run(self, stop_signal: StopSignal) -> None:
         if self._disconnect_requested or stop_signal.is_set():
@@ -138,6 +203,12 @@ class RuntimeSession:
             raise translate_robot_error(exc, robot_name=robot_name) from exc
 
     async def teardown(self) -> None:
+        # Finalize first: a dataset that will not copy back must not prevent
+        # the arm from being released, but skipping it loses the recording.
+        self._command_worker.shutdown(timeout=RECORDING_TEARDOWN_TIMEOUT_S)
+        self._finalize_recording()
+        if self._recording_callback is not None:
+            self._recording_callback.close()
         # Device lifetime belongs to the session, not to a disposable runtime view.
         # Stop the policy worker before dropping devices it may still be reading.
         if self._action_source is not None:
@@ -158,6 +229,86 @@ class RuntimeSession:
                 self._follower.disconnect()
             except Exception as exc:
                 logger.warning("Follower disconnect failed: {}", exc)
+
+    def _finalize_recording(self) -> None:
+        mutation = self._recording.take_mutation()
+        if mutation is None:
+            return
+        try:
+            mutation.teardown()
+        except Exception:
+            logger.exception("Recording mutation teardown failed; the cache may not have been copied back")
+
+    def _load_dataset(self, command: LoadDatasetCommand) -> None:
+        try:
+            self._wait_until_devices_ready()
+            previous = self._recording.take_mutation()
+            if previous is not None:
+                previous.teardown()
+            dataset_path = self._dataset_path(command)
+            dataset = InternalLeRobotDataset(dataset_path, access_mode=DatasetAccessMode.RECORDING_MUTATION)
+            if self._follower is None:
+                raise RuntimeError("Follower robot is not set up")
+            mutation = dataset.start_recording_mutation(
+                fps=int(self._document["init_args"]["fps"]),
+                features=build_lerobot_dataset_features(
+                    joint_names=list(self._follower.joint_names),
+                    camera_specs=self._camera_specs_from_frames(),
+                ),
+                robot_type=self._follower_name or "unknown",
+            )
+            self._recording.attach_mutation(mutation)
+            self._emit_state()
+        except Exception as exc:
+            logger.exception("Failed to load dataset {}", command.dataset_id)
+            self._event_sink.emit(
+                ErrorEvent(
+                    message=str(exc) or "Failed to load the dataset.",
+                    error_code="dataset_load_failed",
+                )
+            )
+            raise
+
+    def _save_episode(self) -> None:
+        mutation = self._recording.stop_episode()
+        mutation.save_episode()
+        self._recording.mark_saved()
+        self._emit_state()
+
+    def _discard_episode(self) -> None:
+        mutation = self._recording.stop_episode()
+        mutation.discard_buffer()
+        self._recording.mark_discarded()
+        self._emit_state()
+
+    def _emit_state(self) -> None:
+        if self._action_source is None:
+            return
+        self._event_sink.emit(StateEvent(data=self._action_source.state_data()))
+
+    def _dataset_path(self, command: LoadDatasetCommand) -> Path:
+        root = self._datasets_dir if self._datasets_dir is not None else get_settings().datasets_dir
+        return root / str(command.dataset_id)
+
+    def _camera_specs_from_frames(self) -> dict[str, tuple[int, int, int]]:
+        specs: dict[str, tuple[int, int, int]] = {}
+        for key, camera in self._cameras.items():
+            frame = camera.read_latest()
+            height, width, channels = frame.data.shape
+            specs[key] = (int(height), int(width), int(channels))
+        return specs
+
+    def _wait_until_devices_ready(self) -> None:
+        deadline = time.monotonic() + _DEVICE_READY_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if (
+                self._follower is not None
+                and _is_connected(self._follower)
+                and all(_is_connected(camera) for camera in self._cameras.values())
+            ):
+                return
+            time.sleep(0.05)
+        raise TimeoutError("Devices were not connected in time to start recording")
 
     def _preconnect_devices(self) -> None:
         """Connect robots and cameras in parallel to reduce session startup time."""

@@ -14,7 +14,7 @@ import {
     Text,
 } from '@geti-ui/ui';
 
-import { useRobotControl } from '../../../features/robots/robot-control-provider';
+import { useRuntimeSession } from '../../../features/robots/runtime-session-provider';
 import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
@@ -22,8 +22,17 @@ import { paths } from '../../../router';
 import classes from './recording-viewer.module.css';
 
 export const RecordingViewer = () => {
-    const { dataset, state, startEpisode, discardEpisode, saveEpisode, readyForRecording, environment, observation } =
-        useRobotControl();
+    const {
+        dataset,
+        state,
+        startEpisode,
+        discardEpisode,
+        saveEpisode,
+        readyForRecording,
+        environment,
+        observation,
+        actions,
+    } = useRuntimeSession();
 
     if (dataset === undefined) {
         throw 'Cannot load recording viewer without dataset.';
@@ -65,7 +74,7 @@ export const RecordingViewer = () => {
                 </Heading>
                 <Flex direction='column' margin='size-200'>
                     <StatusLight variant={state.dataset_loaded ? 'positive' : 'yellow'}>Dataset</StatusLight>
-                    <StatusLight variant={state.environment_loaded ? 'positive' : 'yellow'}>Environment</StatusLight>
+                    <StatusLight variant={state.connected ? 'positive' : 'yellow'}>Environment</StatusLight>
                 </Flex>
                 <Button
                     variant={'secondary'}
@@ -122,14 +131,10 @@ export const RecordingViewer = () => {
                 </Form>
                 <RobotControlView
                     environment={environment}
-                    isReady={state.environment_loaded}
+                    isReady={state.connected}
                     joints={{
                         get current() {
-                            const snapshot = observation.current;
-                            if (snapshot === undefined) {
-                                return undefined;
-                            }
-                            return snapshot.actions ?? snapshot.state;
+                            return actions.current ?? observation.current;
                         },
                     }}
                 />

@@ -1,13 +1,12 @@
 import asyncio
-import multiprocessing as mp
 import queue
+import threading
 from typing import Any
 
 import pytest
 from physicalai.config import Config
 
 from runtime.contract import DisconnectCommand, QueueEventSink
-from runtime.hosts.thread_host import RuntimeThreadHost
 from runtime.session import RuntimeSession
 from tests.runtime.fakes import max_concurrent_connects, reset_connect_tracking
 
@@ -61,19 +60,18 @@ def _document_with_leader(*, leader_kwargs: dict[str, Any] | None = None, **foll
     return document
 
 
-async def test_thread_host_runs_session_until_worker_stop_signal() -> None:
+async def test_session_runs_until_stop_signal() -> None:
     events = QueueEventSink()
     session = RuntimeSession(_document(), event_sink=events)
-    stop = mp.Event()
-    host = RuntimeThreadHost(session, stop_event=stop)
-
-    host.start()
-    await host.wait_until_ready()
+    stop = threading.Event()
+    await session.setup()
+    thread = threading.Thread(target=session.run, args=(stop,), daemon=True)
+    thread.start()
+    await asyncio.to_thread(session.ready.wait, 2)
     stop.set()
-    await asyncio.to_thread(host.join, 2)
+    await asyncio.to_thread(thread.join, 2)
+    await session.teardown()
 
-    assert not host.is_alive()
-    assert host.error is None
     assert session._runtime is not None
     assert session._runtime.last_run_reason == "stop_requested"
     assert session._follower is not None
@@ -88,16 +86,15 @@ async def test_thread_host_runs_session_until_worker_stop_signal() -> None:
     assert emitted[-1].event == "lifecycle"
 
 
-async def test_thread_host_propagates_setup_error() -> None:
+async def test_session_propagates_connect_error() -> None:
     session = RuntimeSession(_document(connect_error="connect failed"), event_sink=QueueEventSink())
-    host = RuntimeThreadHost(session, stop_event=mp.Event())
-
-    host.start()
+    await session.setup()
     with pytest.raises(ConnectionError, match="connect failed"):
-        await host.wait_until_ready()
-    await asyncio.to_thread(host.join, 2)
+        session.run(threading.Event())
+    await session.teardown()
 
-    assert not host.is_alive()
+    assert session._follower is not None
+    assert not session._follower.is_connected()
 
 
 async def test_preconnect_runs_follower_and_leader_connects_in_parallel() -> None:
@@ -145,7 +142,7 @@ async def test_disconnect_before_runtime_construction_stops_first_run() -> None:
     session.apply(DisconnectCommand())
     await session.setup()
 
-    session.run(mp.Event())
+    session.run(threading.Event())
 
     assert session._runtime is None
     assert session._follower is not None
@@ -155,7 +152,7 @@ async def test_disconnect_before_runtime_construction_stops_first_run() -> None:
 async def test_worker_stop_before_run_does_not_connect_hardware() -> None:
     session = RuntimeSession(_document_with_leader(), event_sink=QueueEventSink())
     await session.setup()
-    stop = mp.Event()
+    stop = threading.Event()
     stop.set()
 
     session.run(stop)

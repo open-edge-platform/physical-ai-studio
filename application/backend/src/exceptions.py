@@ -229,6 +229,28 @@ class RecordingLockError(BaseException):
         )
 
 
+class CameraSettingsConflictError(BaseException):
+    """Raised when a session asks for camera settings that another project has pinned."""
+
+    def __init__(
+        self,
+        *,
+        project_name: str,
+        pinned: tuple[int, int, int],
+        requested: tuple[int, int, int],
+    ) -> None:
+        width, height, fps = pinned
+        req_width, req_height, req_fps = requested
+        super().__init__(
+            message=(
+                f"Camera is already in use by project {project_name!r} at {width}x{height}@{fps}. "
+                f"This session requested {req_width}x{req_height}@{req_fps}."
+            ),
+            error_code="camera_settings_conflict",
+            http_status=http.HTTPStatus.LOCKED,
+        )
+
+
 class RuntimeSessionBusyError(BaseException):
     """Raised when a live runtime session already holds the robot being asked for."""
 
