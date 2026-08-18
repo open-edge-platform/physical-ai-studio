@@ -250,4 +250,29 @@ describe('ModelRow', () => {
 
         expect(await screen.findAllByRole('tab', { name: 'Model formats' })).toHaveLength(2);
     });
+
+    it('names the disclosure button "Show details for {model.name}" and exposes aria-expanded', async () => {
+        const user = userEvent.setup();
+        renderModelRow();
+
+        const disclosureButton = screen.getByRole('button', { name: 'Show details for pick-and-place' });
+        expect(disclosureButton).toHaveAttribute('aria-expanded', 'false');
+
+        await user.click(disclosureButton);
+
+        expect(await screen.findByRole('tab', { name: 'Model formats' })).toBeInTheDocument();
+        expect(disclosureButton).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('is expandable via the keyboard', async () => {
+        const user = userEvent.setup();
+        renderModelRow();
+
+        await user.tab();
+        expect(screen.getByRole('button', { name: 'Show details for pick-and-place' })).toHaveFocus();
+
+        await user.keyboard('{Enter}');
+
+        expect(await screen.findByRole('tab', { name: 'Model formats' })).toBeInTheDocument();
+    });
 });

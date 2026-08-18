@@ -1,9 +1,18 @@
-import { View } from '@geti-ui/ui';
-
 import { $api } from '../../../api/client';
 import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
+import { Table, TableColumn } from '../../../components/table/table';
 import { useProjectId } from '../../projects/use-project';
-import { ModelHeader, ModelRow } from './model-table';
+import { ModelRow } from './model-table';
+
+const MODEL_COLUMNS: TableColumn[] = [
+    { width: 'max-content' },
+    { width: '2fr', header: 'Model name' },
+    { width: '1fr', header: 'Trained' },
+    { width: '1fr', header: 'Duration' },
+    { width: '1fr', header: 'Architecture' },
+    { width: '1fr' },
+    { width: 'auto', align: 'end' },
+];
 
 interface ModelListProps {
     models: SchemaModel[];
@@ -31,17 +40,7 @@ export const ModelList = ({ models, jobs, onRetrain, onViewLogs }: ModelListProp
     };
 
     return (
-        <View
-            borderWidth='thin'
-            borderColor={'gray-200'}
-            borderBottomWidth='thin'
-            borderBottomColor={'gray-200'}
-            borderStartWidth='thin'
-            borderStartColor={'gray-200'}
-            borderEndWidth='thin'
-            borderEndColor={'gray-200'}
-        >
-            <ModelHeader />
+        <Table columns={MODEL_COLUMNS}>
             {sortedModels.map((model) => (
                 <ModelRow
                     key={model.id}
@@ -52,6 +51,6 @@ export const ModelList = ({ models, jobs, onRetrain, onViewLogs }: ModelListProp
                     onViewLogs={() => onViewLogs(model)}
                 />
             ))}
-        </View>
+        </Table>
     );
 };
