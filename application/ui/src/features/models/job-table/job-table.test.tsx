@@ -199,4 +199,36 @@ describe('TrainingRow', () => {
         renderTrainingRow({ status: 'completed', end_time: '2026-07-14T10:30:00Z' });
         expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
     });
+
+    it('names the disclosure button "Show details for {model_name}" and exposes aria-expanded', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow();
+
+        const disclosureButton = screen.getByRole('button', { name: 'Show details for pick-and-place' });
+        expect(disclosureButton).toHaveAttribute('aria-expanded', 'false');
+
+        await user.click(disclosureButton);
+
+        expect(await screen.findByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
+        expect(disclosureButton).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('is expandable via the keyboard', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow();
+
+        await user.tab();
+        expect(screen.getByRole('button', { name: 'Show details for pick-and-place' })).toHaveFocus();
+
+        await user.keyboard('{Enter}');
+
+        expect(await screen.findByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
+    });
+
+    it('renders the ProgressBar outside the detail panel, visible while the row is collapsed', () => {
+        renderTrainingRow({ status: 'running' });
+
+        expect(screen.getByRole('progressbar')).toBeInTheDocument();
+        expect(screen.queryByRole('tab', { name: 'Model Metrics' })).not.toBeInTheDocument();
+    });
 });

@@ -4,7 +4,6 @@ import {
     Button,
     DialogTrigger,
     Flex,
-    Grid,
     Item,
     Key,
     Menu,
@@ -19,27 +18,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { $api } from '../../../api/client';
 import { ElapsedDuration } from '../../../components/elapsed-duration.component';
 import { notify } from '../../../components/notification/notification.component';
-import { CollapsableRow } from '../shared/collapsable-row';
+import { Table } from '../../../components/table/table';
 import { durationBetween } from '../shared/duration';
 import { SingleBadge, SplitBadge } from '../shared/split-badge';
-import { GRID_COLUMNS } from '../shared/table-columns';
 import { SchemaTrainJob } from '../train-model-dialog/train-model-dialog';
 import { JobRowContent } from './job-row-content';
 
-import classes from '../shared/table.module.css';
-
-export const TrainingHeader = () => {
-    return (
-        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.tableHeader}>
-            <Text>Model name</Text>
-            <Text>Loss</Text>
-            <div />
-            <Text>Architecture</Text>
-            <div />
-            <div />
-        </Grid>
-    );
-};
+import classes from './job-table.module.css';
 
 /** Small pill naming the remote trainer a job runs on. Hidden entirely for local jobs. */
 const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
@@ -58,7 +43,7 @@ const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload']
 const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
     if (job.status === 'running') {
         return (
-            <View>
+            <Flex direction={'column'} gap={'size-50'}>
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
                     <SplitBadge first={job.status} second={job.message} />
@@ -72,12 +57,12 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                 ) : (
                     <></>
                 )}
-            </View>
+            </Flex>
         );
     } else {
         const color = job.status === 'failed' ? 'var(--spectrum-negative-visual-color)' : 'var(--energy-blue)';
         return (
-            <View>
+            <Flex direction={'column'} gap={'size-50'}>
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
                     <SingleBadge color={color} text={job.status} />
@@ -88,7 +73,7 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                         Elapsed: {durationBetween(job.start_time, job.end_time)}
                     </Text>
                 )}
-            </View>
+            </Flex>
         );
     }
 };
@@ -155,50 +140,47 @@ export const TrainingRow = ({
     const loss = trainJob.extra_info && (trainJob.extra_info['train/loss_step'] as number | undefined);
 
     return (
-        <View>
-            <CollapsableRow
-                header={
-                    <Grid
-                        columns={GRID_COLUMNS}
-                        alignItems={'center'}
+        <Table.ExpandableRow
+            id={trainJob.id}
+            label={trainJob.payload.model_name}
+            detail={<JobRowContent job={trainJob} />}
+            after={
+                trainJob.status === 'running' && (
+                    <ProgressBar
+                        size='S'
+                        UNSAFE_className={classes.progressBar}
                         width={'100%'}
-                        UNSAFE_className={classes.tableRow}
-                    >
-                        <TrainJobStatus job={trainJob} />
-                        <Text>{loss ? loss.toFixed(2) : '...'}</Text>
-                        <div />
-                        <Text>{trainJob.payload.policy.toUpperCase()}</Text>
-                        <View>
-                            {trainJob.status === 'running' && (
-                                <DialogTrigger>
-                                    <Button variant='secondary'>Stop</Button>
-                                    <AlertDialog
-                                        onPrimaryAction={onInterrupt}
-                                        title='Stop training?'
-                                        variant='destructive'
-                                        primaryActionLabel='Stop'
-                                        cancelLabel='Cancel'
-                                    >
-                                        Stop training for {trainJob.payload.model_name}?
-                                        <br />
-                                        <br />
-                                        Your model checkpoint will be saved at the current step. You cannot resume this
-                                        run.
-                                    </AlertDialog>
-                                </DialogTrigger>
-                            )}
-                        </View>
-                        <View justifySelf={'end'}>
-                            <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
-                        </View>
-                    </Grid>
-                }
-            >
-                <JobRowContent job={trainJob} />
-            </CollapsableRow>
-            {trainJob.status === 'running' && (
-                <ProgressBar size='S' UNSAFE_className={classes.progressBar} width={'100%'} value={trainJob.progress} />
-            )}
-        </View>
+                        value={trainJob.progress}
+                    />
+                )
+            }
+        >
+            <TrainJobStatus job={trainJob} />
+            <Text>{loss ? loss.toFixed(2) : '...'}</Text>
+            <div />
+            <Text>{trainJob.payload.policy.toUpperCase()}</Text>
+            <div onClick={(e) => e.stopPropagation()}>
+                {trainJob.status === 'running' && (
+                    <DialogTrigger>
+                        <Button variant='secondary'>Stop</Button>
+                        <AlertDialog
+                            onPrimaryAction={onInterrupt}
+                            title='Stop training?'
+                            variant='destructive'
+                            primaryActionLabel='Stop'
+                            cancelLabel='Cancel'
+                        >
+                            Stop training for {trainJob.payload.model_name}?
+                            <br />
+                            <br />
+                            Your model checkpoint will be saved at the current step. You cannot resume this run.
+                        </AlertDialog>
+                    </DialogTrigger>
+                )}
+            </div>
+            <View>
+                <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
+            </View>
+        </Table.ExpandableRow>
     );
 };
