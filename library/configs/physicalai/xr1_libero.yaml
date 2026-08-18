@@ -87,8 +87,8 @@ data:
 
 trainer:
   # One epoch is 273465 optimizer steps at this batch size, so max_steps rather than
-  # max_epochs is the honest control here. 30000 steps is roughly a ninth of an epoch
-  # and about 8-16 hours on a single RTX 3090.
+  # max_epochs is the honest control here. 30000 steps is roughly a ninth of an epoch;
+  # for scale, 10000 steps at batch 4 took 1.6 h on one RTX 3090 (1.76 it/s).
   max_steps: 30000
   accelerator: gpu
   devices: 1
