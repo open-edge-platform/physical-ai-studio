@@ -1,9 +1,8 @@
-import { Divider, Flex, Heading, Item, Picker, Radio, RadioGroup, Text, View } from '@geti-ui/ui';
-import { Label } from 'react-aria-components';
+import { Flex, Item, Picker, RadioGroup, Text } from '@geti-ui/ui';
 
-import { $api } from '../../api/client';
-import { SchemaInferenceDeviceInfo, SchemaModel } from '../../api/openapi-spec';
-import { INFERENCE_BACKENDS } from './inference-backends';
+import { $api } from '../../../api/client';
+import { SchemaInferenceDeviceInfo, SchemaModel } from '../../../api/openapi-spec';
+import { BackendOption } from './backend-option';
 
 export const defaultBackend = 'openvino';
 
@@ -57,52 +56,6 @@ export const getDefaultInferenceDevice = (devices: SchemaInferenceDeviceInfo[], 
     return supportedDevices.find((device) => device.type !== 'cpu') ?? supportedDevices.at(0);
 };
 
-interface BackendProps {
-    id: string;
-    isSelected?: boolean;
-    isDisabled?: boolean;
-}
-const Backend = ({ id, isSelected = false, isDisabled = false }: BackendProps) => {
-    const backend = INFERENCE_BACKENDS[id];
-
-    return (
-        <Label htmlFor={id}>
-            <View
-                borderColor={isSelected ? 'blue-400' : 'gray-50'}
-                borderWidth='thick'
-                borderRadius='small'
-                padding='size-100'
-                backgroundColor={isSelected ? 'gray-50' : 'gray-100'}
-                UNSAFE_style={isDisabled ? { opacity: 0.7 } : undefined}
-            >
-                <Flex direction='row' gap='size-100' alignItems='center'>
-                    <View padding='size-200'>
-                        <Radio id={id} value={id} marginEnd={0} isDisabled={isDisabled} />
-                    </View>
-
-                    <Divider orientation='vertical' size='S' />
-                    <Flex height='100%' alignItems='center' justifyContent={'center'} width='size-1000'>
-                        <View padding='size-100'>
-                            <backend.logo height={'50px'} />
-                        </View>
-                    </Flex>
-                    <View>
-                        <Heading level={4}>{backend.label}</Heading>
-                        <Text
-                            UNSAFE_style={{
-                                fontSize: '12px',
-                                color: 'var(--spectrum-global-color-gray-700)',
-                            }}
-                        >
-                            {backend.description}
-                        </Text>
-                    </View>
-                </Flex>
-            </View>
-        </Label>
-    );
-};
-
 interface BackendSelectionProps {
     model: SchemaModel;
     inferenceDevice: InferenceDevice | undefined;
@@ -141,7 +94,12 @@ export const BackendSelection = ({
                         const isDisabled = !model.available_backends.includes(backendId);
 
                         return (
-                            <Backend key={backendId} id={backendId} isSelected={isSelected} isDisabled={isDisabled} />
+                            <BackendOption
+                                key={backendId}
+                                id={backendId}
+                                isSelected={isSelected}
+                                isDisabled={isDisabled}
+                            />
                         );
                     })}
                 </Flex>

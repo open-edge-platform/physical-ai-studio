@@ -1,0 +1,8 @@
+.thumbnail {
+    display: block;
+    object-fit: cover;
+}
+
+.placeholder {
+    filter: grayscale(1);
+}

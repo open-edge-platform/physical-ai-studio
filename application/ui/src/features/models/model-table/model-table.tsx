@@ -3,19 +3,19 @@ import { useState } from 'react';
 import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
-import { SchemaModel, SchemaTrainJob } from '../../api/openapi-spec';
-import { CollapsableRow } from './collapsable-row.component';
-import { GRID_COLUMNS } from './constants';
-import { ModelDownloadDialog } from './model-download-dialog.component';
-import { ModelRowContent } from './model-row-content.component';
-import { StartInferenceDialog } from './start-model-modal.component';
-import { durationBetween } from './utils';
+import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
+import { CollapsableRow } from '../shared/collapsable-row';
+import { durationBetween } from '../shared/duration';
+import { GRID_COLUMNS } from '../shared/table-columns';
+import { ModelDownloadDialog } from './model-download-dialog';
+import { ModelRowContent } from './model-row-content';
+import { StartInferenceDialog } from './start-inference-dialog';
 
-import classes from './model-table.module.css';
+import classes from '../shared/table.module.css';
 
 export const ModelHeader = () => {
     return (
-        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.modelHeader}>
+        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.tableHeader}>
             <Text>Model name</Text>
             <Text>Trained</Text>
             <Text>Duration</Text>
@@ -75,7 +75,7 @@ export const ModelRow = ({
                         columns={GRID_COLUMNS}
                         alignItems={'center'}
                         width={'100%'}
-                        UNSAFE_className={classes.modelRow}
+                        UNSAFE_className={classes.tableRow}
                     >
                         <Flex alignItems='center' gap='size-100'>
                             <Text>{model.name}</Text>
@@ -86,7 +86,7 @@ export const ModelRow = ({
                             )}
                         </Flex>
                         <Text>{new Date(model.created_at!).toLocaleString()}</Text>
-                        <Text UNSAFE_className={duration ? undefined : classes.modelInfo}>{duration ?? '—'}</Text>
+                        <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
                         <Text>{model.policy.toUpperCase()}</Text>
                         <View>
                             <DialogTrigger>

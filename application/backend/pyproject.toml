@@ -73,7 +73,6 @@ cuda = [
 xpu = [
     "torch>=2.11,<2.12",
     "torchvision>=0.26,<0.27",
-    "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 
 tests = [
@@ -137,7 +136,8 @@ torchvision = [
     { index = "pytorch-cu128", extra = "cuda" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
-pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
+# torch's XPU build depends on triton-xpu transitively; pin its index.
+triton-xpu = { index = "pytorch-xpu" }
 
 [dependency-groups]
 dev = [
@@ -163,7 +163,7 @@ package = true
 default-groups = ["all"]
 exclude-newer = "7 days"
 # The pytorch-xpu index is non-explicit (explicit = false) because
-# transitive deps like pytorch-triton-xpu only exist on the XPU index.
+# transitive deps like triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale
 # copies of common packages; best-match avoids index-order shadowing.
 #

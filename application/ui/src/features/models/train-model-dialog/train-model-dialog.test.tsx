@@ -2,10 +2,10 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
-import { SchemaModel } from '../../api/openapi-spec';
-import { http } from '../../api/utils';
-import { server } from '../../msw-node-setup';
-import { render } from '../../test-utils/render';
+import { SchemaModel } from '../../../api/openapi-spec';
+import { http } from '../../../api/utils';
+import { server } from '../../../msw-node-setup';
+import { render } from '../../../test-utils/render';
 import { TrainModelDialog } from './train-model-dialog';
 
 const projectId = 'b8b28d4f-e78f-48ad-afb8-03d060178a3c';

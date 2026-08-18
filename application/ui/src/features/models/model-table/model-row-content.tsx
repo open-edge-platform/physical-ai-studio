@@ -1,10 +1,10 @@
 import { Heading, IllustratedMessage, Item, TabList, TabPanels, Tabs, View } from '@geti-ui/ui';
 
-import { SchemaModel } from '../../api/openapi-spec';
-import { ModelDetails } from '../../features/models/details/model-details';
-import { ModelFormats } from '../../features/models/formats/model-formats';
-import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
-import { MetricsContent } from './metrics';
+import { SchemaModel } from '../../../api/openapi-spec';
+import { MetricsContent } from '../metrics/metrics';
+import { ModelDetails } from '../model-details/model-details';
+import { ModelFormats } from '../model-formats/model-formats';
+import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
 
 import classes from './model-row-content.module.css';
 

@@ -46,7 +46,7 @@ async def delete_job(
     job_id: Annotated[UUID, Depends(get_job_id)],
     job_service: Annotated[JobService, Depends(get_job_service)],
 ) -> None:
-    """Delete a job. Only allows deleting failed jobs"""
+    """Delete a job. Only allows deleting failed or canceled jobs"""
     await job_service.delete_job(job_id)
 
 

@@ -72,10 +72,8 @@ from physicalai.benchmark.gyms import LiberoBenchmark
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# LeRobot weights. Use the LIBERO fine-tuned checkpoint: lerobot/pi05_libero_base is
-# the base model in LIBERO's input/output shape, not a policy trained on LIBERO, and it
-# scores 0% here.
-policy = Pi05(pretrained_name_or_path="lerobot/pi05_libero_finetuned_v044")
+# LeRobot Weights
+policy = Pi05(pretrained_name_or_path="lerobot/pi05_libero_finetuned")
 policy.eval()
 
 # Benchmark

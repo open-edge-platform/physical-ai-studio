@@ -1,37 +1,21 @@
-import { Suspense } from 'react';
-
-import {
-    Badge,
-    Button,
-    Content,
-    ContextualHelp,
-    Divider,
-    Flex,
-    Grid,
-    Heading,
-    Icon,
-    Loading,
-    Text,
-    View,
-} from '@geti-ui/ui';
+import { Badge, Button, Content, ContextualHelp, Divider, Flex, Heading, Icon, Text, View } from '@geti-ui/ui';
 import { DownloadIcon } from '@geti-ui/ui/icons';
 
-import { $api, fetchClient } from '../../../api/client';
+import { fetchClient } from '../../../api/client';
 import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
-
-interface ModelExportsProps {
-    model: SchemaModel;
-}
 
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
 type ExportBackend = components['schemas']['ExportBackend'];
 type ModelDetailResponse = components['schemas']['ModelDetailResponse'];
 
-const isExportBackend = (backendType: string): backendType is ExportBackend => backendType in INFERENCE_BACKENDS;
-const cardGridColumns = 'repeat(auto-fill, minmax(min(100%, var(--spectrum-global-dimension-size-4600)), 1fr))';
-
-const InferenceBackendLogo = ({ backend, isAvailable }: { backend: InferenceBackendConfig; isAvailable: boolean }) => {
+export const InferenceBackendLogo = ({
+    backend,
+    isAvailable,
+}: {
+    backend: InferenceBackendConfig;
+    isAvailable: boolean;
+}) => {
     const Logo = backend.logo;
     const unavailableStyle = isAvailable ? undefined : { opacity: 0.4 };
 
@@ -56,7 +40,7 @@ const InferenceBackendLogo = ({ backend, isAvailable }: { backend: InferenceBack
     );
 };
 
-const Unavailable = ({ backend }: { backend: InferenceBackendConfig }) => {
+export const Unavailable = ({ backend }: { backend: InferenceBackendConfig }) => {
     return (
         <Flex direction='column' gap='size-100' alignItems={'end'}>
             <Badge variant={'negative'} UNSAFE_style={{ padding: 0, opacity: 0.9 }}>
@@ -126,7 +110,7 @@ interface BackendCardProps {
     model: SchemaModel;
 }
 
-const BackendCard = ({ modelDetail, backendType, model }: BackendCardProps) => {
+export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProps) => {
     const exportDetail = modelDetail.exports.find(({ type }) => type === backendType);
     const isAvailable = exportDetail !== undefined;
     const backend = INFERENCE_BACKENDS[backendType];
@@ -186,38 +170,5 @@ const BackendCard = ({ modelDetail, backendType, model }: BackendCardProps) => {
                 </View>
             </Flex>
         </View>
-    );
-};
-
-const ModelFormatsContents = ({ model }: { model: SchemaModel }) => {
-    const { data: modelDetail } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
-        params: { path: { model_id: model.id! } },
-    });
-    const { data: policyBackends } = $api.useSuspenseQuery('get', '/api/policies/backends');
-
-    const backends = (policyBackends[model.policy] ?? []).filter(isExportBackend);
-
-    return (
-        <Grid
-            gap='size-200'
-            marginTop='size-400'
-            UNSAFE_style={{
-                gridTemplateColumns: cardGridColumns,
-            }}
-        >
-            {backends.map((backendType) => {
-                return (
-                    <BackendCard key={backendType} backendType={backendType} model={model} modelDetail={modelDetail} />
-                );
-            })}
-        </Grid>
-    );
-};
-
-export const ModelFormats = ({ model }: ModelExportsProps) => {
-    return (
-        <Suspense fallback={<Loading mode='inline' size='M' marginY='size-400' />}>
-            <ModelFormatsContents model={model} />
-        </Suspense>
     );
 };

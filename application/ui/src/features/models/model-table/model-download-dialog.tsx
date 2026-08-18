@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import { Button, ButtonGroup, Checkbox, Content, Dialog, DialogContainer, Divider, Flex, Heading } from '@geti-ui/ui';
 
-import { fetchClient } from '../../api/client';
+import { fetchClient } from '../../../api/client';
 
 export const useModelDownload = (modelId: string) => {
     const [includeSnapshot, setIncludeSnapshot] = useState(false);

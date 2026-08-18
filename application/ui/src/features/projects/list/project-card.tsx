@@ -1,13 +1,11 @@
-import { useState } from 'react';
-
 import { Flex, Heading, Key, Text, View } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 import { NavLink } from 'react-router';
 
-import { $api, fetchClient } from '../../../api/client';
+import { $api } from '../../../api/client';
 import { SchemaProjectInput } from '../../../api/openapi-spec';
 import { paths } from '../../../router';
-import { ReactComponent as PhysicalAIStudioLogo } from './../../../assets/icons/physicalai-studio-logo.svg';
+import { ProjectThumbnail } from '../project-thumbnail/project-thumbnail';
 import { MenuActions } from './menu-actions.component';
 
 import classes from './project-list.module.css';
@@ -20,15 +18,10 @@ type ProjectCardProps = {
 };
 
 export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
-    const [hasThumbnailError, setHasThumbnailError] = useState(false);
     const deleteMutation = $api.useMutation('delete', '/api/projects/{project_id}', {
         meta: {
             invalidates: [['get', '/api/projects']],
         },
-    });
-
-    const projectThumbnailUrl = fetchClient.PATH('/api/projects/{project_id}/thumbnail', {
-        params: { path: { project_id: item.id! }, query: { width: IMAGE_SIZE, height: IMAGE_SIZE } },
     });
 
     const onAction = (key: Key) => {
@@ -47,20 +40,7 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
         <NavLink to={paths.project.robots.index({ project_id: item.id! })}>
             <Flex UNSAFE_className={clsx({ [classes.card]: true, [classes.activeCard]: isActive })}>
                 <View aria-label={'project thumbnail'} UNSAFE_className={classes.imgWrapper}>
-                    {hasThumbnailError ? (
-                        <View width={IMAGE_SIZE} height={IMAGE_SIZE} backgroundColor={'gray-100'}>
-                            <Flex justifyContent={'center'} alignItems={'center'} width={'100%'} height={'100%'}>
-                                <PhysicalAIStudioLogo width={80} height={80} style={{ filter: 'grayscale(100)' }} />
-                            </Flex>
-                        </View>
-                    ) : (
-                        <img
-                            style={{ width: IMAGE_SIZE, height: IMAGE_SIZE }}
-                            src={projectThumbnailUrl}
-                            alt={item.name}
-                            onError={() => setHasThumbnailError(true)}
-                        />
-                    )}
+                    <ProjectThumbnail projectId={item.id!} name={item.name} size={IMAGE_SIZE} />
                 </View>
 
                 <View width={'100%'} padding={'size-200'}>

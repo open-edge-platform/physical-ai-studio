@@ -1,6 +1,6 @@
 import { useParams, useSearchParams } from 'react-router';
 
-import { defaultBackend } from '../../../features/models/backend-selection';
+import { defaultBackend } from '../backend-selection/backend-selection';
 
 export const useInferenceParams = () => {
     const { project_id, model_id, backend } = useParams();
