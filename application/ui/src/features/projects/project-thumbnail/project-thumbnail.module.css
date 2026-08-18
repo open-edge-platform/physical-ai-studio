@@ -4,5 +4,5 @@
 }
 
 .placeholder {
-    filter: grayscale(1);
+    transform: scaleX(-1);
 }

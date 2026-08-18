@@ -11,7 +11,7 @@
 
 .selectedProjectButton {
     padding-inline: var(--spectrum-global-dimension-size-200);
-    padding-block: var(--spectrum-global-dimension-size-250);
+    padding-block: var(--spectrum-global-dimension-size-300);
 }
 
 .thumbnailWrapper {
@@ -19,4 +19,12 @@
     flex-shrink: 0;
     border-radius: 50%;
     overflow: hidden;
+}
+
+.thumbnailWrapper:has(img[class*='placeholder']) {
+    background-image: linear-gradient(
+        to top right,
+        var(--spectrum-global-color-gray-75),
+        var(--spectrum-global-color-gray-300)
+    );
 }
