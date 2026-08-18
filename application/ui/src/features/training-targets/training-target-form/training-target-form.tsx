@@ -121,7 +121,7 @@ export const TrainingTargetForm = ({ close }: TrainingTargetFormProps) => {
                             />
                             <Text UNSAFE_className={classes.hint}>
                                 SSH targets launch a trainer container per job. Direct endpoints run an already-managed
-                                trainer; Studio does not SSH to or provision the host.
+                                trainer.
                             </Text>
                         </Flex>
 

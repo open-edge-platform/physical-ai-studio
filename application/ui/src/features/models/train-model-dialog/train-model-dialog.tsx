@@ -20,8 +20,8 @@ import {
 import { $api } from '../../../api/client';
 import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
 import { useProject } from '../../projects/use-project';
-import { useRemoteTrainerHealth } from '../../training-targets/use-remote-trainer-health';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
+import { useRemoteTrainerHealth } from '../../training-targets/use-remote-trainer-health';
 import { MODELS } from './policies';
 import { PolicyAccessAlert } from './policy-access-alert';
 import { PolicySelection } from './policy-selection';
