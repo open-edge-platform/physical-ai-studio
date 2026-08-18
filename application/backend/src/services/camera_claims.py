@@ -44,9 +44,14 @@ class CameraClaimRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._claims: dict[str, dict[str, CameraClaim]] = {}
+        self._generation: dict[str, int] = {}
 
-    def claim(self, claims: Sequence[CameraClaim]) -> None:
-        """Pin every camera in ``claims``, or pin none of them."""
+    def claim(self, claims: Sequence[CameraClaim]) -> int:
+        """Pin every camera in ``claims``, or pin none of them.
+
+        Returns a generation for the holder so a stale waiter cannot unpin a
+        later reconnect that reused the same session name.
+        """
         with self._lock:
             for incoming in claims:
                 holders = self._claims.get(incoming.fingerprint)
@@ -62,9 +67,16 @@ class CameraClaimRegistry:
             for incoming in claims:
                 holders = self._claims.setdefault(incoming.fingerprint, {})
                 holders[incoming.holder] = incoming
+            if not claims:
+                return 0
+            holder = claims[0].holder
+            self._generation[holder] = self._generation.get(holder, 0) + 1
+            return self._generation[holder]
 
-    def release(self, holder: str) -> None:
+    def release(self, holder: str, *, generation: int | None = None) -> None:
         with self._lock:
+            if generation is not None and self._generation.get(holder) != generation:
+                return
             empty: list[str] = []
             for fingerprint, holders in self._claims.items():
                 holders.pop(holder, None)

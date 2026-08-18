@@ -34,11 +34,14 @@ from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.ids import runtime_session_name
 from schemas.robot import ReadableRobot, UnavailableRobot
 from services import ProjectCameraService, RobotService
-from services.camera_claims import CameraClaim, settings_from_camera
+from services.camera_claims import CameraClaim, CameraClaimRegistry, settings_from_camera
 
 if TYPE_CHECKING:
     from schemas.project_camera import Camera
     from schemas.robot import Robot
+
+_CLAIM_POLL_INTERVAL_S = 0.5
+_claim_waiters: set[asyncio.Task[None]] = set()
 
 router = APIRouter(prefix="/api/projects/{project_id}/runtime", tags=["Runtime"])
 
@@ -170,6 +173,27 @@ async def _devices_from_handshake(
     return follower, leader, cameras
 
 
+async def _release_claims_when_dead(
+    owner: RuntimeSessionOwner,
+    claims: CameraClaimRegistry,
+    holder: str,
+    generation: int,
+) -> None:
+    """Drop pins after the detached session process exits.
+
+    A websocket close is a detach, not a stop. Releasing immediately would let
+    a preview reconfigure cameras mid-recording. Ignore a stale generation so
+    a reconnect that reused this holder keeps its pin.
+    """
+    try:
+        # Poll the child; there is no in-process Event for process death.
+        while await asyncio.to_thread(owner.is_alive):  # noqa: ASYNC110
+            await asyncio.sleep(_CLAIM_POLL_INTERVAL_S)
+    except asyncio.CancelledError:
+        return
+    claims.release(holder, generation=generation)
+
+
 def _camera_claims(
     *,
     cameras: list[Camera],
@@ -215,6 +239,7 @@ async def runtime_websocket(  # noqa: PLR0913, PLR0915, PLR0912
     startup_task: asyncio.Task[None] | None = None
     session_name: str | None = None
     claimed = False
+    claim_generation = 0
     try:
         handshake = await websocket.receive_json("text")
         follower, leader, cameras = await _devices_from_handshake(handshake, project_id, robot_service, camera_service)
@@ -228,7 +253,7 @@ async def runtime_websocket(  # noqa: PLR0913, PLR0915, PLR0912
         name = runtime_session_name(follower.id)
         session_name = name
         project = await project_service.get_project_by_id(project_id)
-        claims.claim(
+        claim_generation = claims.claim(
             _camera_claims(
                 cameras=cameras,
                 session_name=name,
@@ -257,7 +282,7 @@ async def runtime_websocket(  # noqa: PLR0913, PLR0915, PLR0912
                 return_when=asyncio.FIRST_COMPLETED,
             )
         except Exception:
-            claims.release(name)
+            claims.release(name, generation=claim_generation)
             claimed = False
             raise
         if incoming_task in done:
@@ -298,5 +323,13 @@ async def runtime_websocket(  # noqa: PLR0913, PLR0915, PLR0912
         await asyncio.gather(*tasks, return_exceptions=True)
         if client is not None:
             client.close()
-        if claimed and session_name is not None and (owner is None or not owner.is_alive()):
-            claims.release(session_name)
+        if claimed and session_name is not None:
+            if owner is None or not owner.is_alive():
+                claims.release(session_name, generation=claim_generation)
+            else:
+                waiter = asyncio.create_task(
+                    _release_claims_when_dead(owner, claims, session_name, claim_generation),
+                    name=f"release-claims-{session_name}",
+                )
+                _claim_waiters.add(waiter)
+                waiter.add_done_callback(_claim_waiters.discard)

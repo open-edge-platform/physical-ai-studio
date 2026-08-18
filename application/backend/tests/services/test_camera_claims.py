@@ -74,3 +74,16 @@ def test_release_allows_new_settings() -> None:
     held = registry.holder_of("cam")
     assert held is not None
     assert held.settings == (1280, 720, 30)
+
+
+def test_a_stale_generation_does_not_release() -> None:
+    registry = CameraClaimRegistry()
+    first = registry.claim([_claim("cam", (640, 480, 30), holder="rt-a")])
+    second = registry.claim([_claim("cam", (640, 480, 30), holder="rt-a")])
+
+    registry.release("rt-a", generation=first)
+
+    assert first != second
+    assert registry.holder_of("cam") is not None
+    registry.release("rt-a", generation=second)
+    assert registry.holder_of("cam") is None
