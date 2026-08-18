@@ -1,4 +1,4 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""model servers for vla-eval."""
+"""Model servers for vla-eval."""
