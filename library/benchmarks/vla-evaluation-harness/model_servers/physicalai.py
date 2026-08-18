@@ -94,6 +94,8 @@ class PhysicalAIModelServer(PredictModelServer):
         state_key: str | None = "state",
         device: str | None = None,
         *,
+        send_state: bool = True,
+        send_wrist_image: bool = True,
         chunk_size: int | None = None,
         action_ensemble: str = "newest",
         _policy: Policy | InferenceModel | None = None,
@@ -110,6 +112,8 @@ class PhysicalAIModelServer(PredictModelServer):
 
         self.image_keys = image_keys
         self.state_key = None if state_key in {None, "None", "none"} else state_key
+        self.send_state = send_state
+        self.send_wrist_image = send_wrist_image
         self.device = device
         self._logged_image_map = False
         self._policy = _policy if _policy is not None else _instantiate_policy(policy)  # type: ignore[arg-type]
@@ -255,12 +259,10 @@ class PhysicalAIModelServer(PredictModelServer):
         Returns:
             Observation flags understood by vla-eval.
         """
-        params: dict[str, Any] = {}
-        if self.state_key:
-            params["send_state"] = True
-        if len(self._expected_image_keys) > 1 or len(self.image_keys or {}) > 1:
-            params["send_wrist_image"] = True
-        return params
+        return {
+            "send_state": self.send_state,
+            "send_wrist_image": self.send_wrist_image,
+        }
 
     def get_action_spec(self) -> dict[str, DimSpec]:  # noqa: PLR6301
         """Declare the policy's raw action format.

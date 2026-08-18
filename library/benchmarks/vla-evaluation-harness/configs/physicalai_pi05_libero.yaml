@@ -9,5 +9,7 @@ args:
     agentview: image
     wrist: image2
   state_key: observation.state
+  send_state: true
+  send_wrist_image: true
   chunk_size: 10
   device: cuda # xpu cpu etc
