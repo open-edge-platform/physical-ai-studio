@@ -159,17 +159,23 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                         {isAvailable && (
                             <View marginStart='auto' alignSelf={'center'}>
                                 <Flex gap='size-100'>
-                                    <DialogTrigger>
-                                        <Button
-                                            aria-label={`Download ${backend.label} runtime bundle`}
-                                            variant='secondary'
-                                        >
-                                            Runtime bundle
-                                        </Button>
-                                        {(close) => (
-                                            <RuntimeBundleDialog close={close} model={model} backend={backendType} />
-                                        )}
-                                    </DialogTrigger>
+                                    {backendType === 'openvino' && (
+                                        <DialogTrigger>
+                                            <Button
+                                                aria-label={`Download ${backend.label} runtime bundle`}
+                                                variant='secondary'
+                                            >
+                                                Runtime bundle
+                                            </Button>
+                                            {(close) => (
+                                                <RuntimeBundleDialog
+                                                    close={close}
+                                                    model={model}
+                                                    backend={backendType}
+                                                />
+                                            )}
+                                        </DialogTrigger>
+                                    )}
                                     <Button
                                         href={downloadUrl}
                                         aria-label={`Download ${backend.label} export`}
