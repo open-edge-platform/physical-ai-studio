@@ -126,7 +126,14 @@ export const ProjectLayout = () => {
                 height={'100%'}
             >
                 <Header project_id={project_id} />
-                <View gridArea={'content'} maxHeight={'100vh'} minWidth={0} minHeight={0} height='100%'>
+                <View
+                    gridArea={'content'}
+                    maxHeight={'100vh'}
+                    minWidth={0}
+                    minHeight={0}
+                    height='100%'
+                    backgroundColor={'gray-75'}
+                >
                     <Suspense fallback={<Loading mode='overlay' />}>
                         <Outlet />
                     </Suspense>
