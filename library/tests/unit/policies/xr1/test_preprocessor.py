@@ -6,12 +6,19 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
 from physicalai.policies.xr1 import XR1Config, make_xr1_preprocessors
 from physicalai.policies.xr1.preprocessor import XR1Preprocessor, normalization_map, split_features
+
+# Skipping when CUDA is absent keeps the suite green on runners without a GPU, but the
+# same condition hides a broken environment on a machine that has one: a stray `uv run`
+# can resolve `torch` to the XPU wheel, and the only symptom is this test quietly
+# skipping. Set REQUIRE_CUDA=1 where a GPU is expected and the skip becomes a failure.
+_SKIP_CUDA = not torch.cuda.is_available() and os.environ.get("REQUIRE_CUDA") != "1"
 
 if TYPE_CHECKING:
     from physicalai.data import Feature
@@ -274,7 +281,7 @@ class TestDeviceConsistency:
             if isinstance(value, torch.Tensor):
                 assert value.device == expected, f"{name} is on {value.device}, expected {expected}"
 
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA device")
+    @pytest.mark.skipif(_SKIP_CUDA, reason="requires a CUDA device")
     def test_outputs_move_to_cuda(
         self,
         tiny_config: XR1Config,
