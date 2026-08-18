@@ -55,13 +55,20 @@ _DATASET_REPO_ID = "snapshot"
 PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
     "pi05": "lerobot/pi05_base",
     "smolvla": "lerobot/smolvla_base",
+    "xr1": "XiaomiRobotics/Xiaomi-Robotics-1-RoboCasa",
 }
-"""Hub checkpoints used to initialize policies that only fine-tune from pretrained weights."""
+"""Hub checkpoints used to initialize policies that only fine-tune from pretrained weights.
+
+XR-1 can be built from random weights, but a 5B action expert is not trainable from
+scratch on the hardware this UI targets. RoboCasa is the released checkpoint whose active
+action slots are end-effector deltas, which is the parameterization the built-in gyms
+use; it also carries the per-slot statistics and the action horizon the others omit.
+"""
 
 _WEIGHTS_ONLY_RESUME_POLICIES = frozenset({"pi0"})
 """Policies whose checkpoints must be reloaded with ``weights_only=True``."""
 
-_COMPILED_EXPORT_RELOAD_POLICIES = frozenset({"act", "smolvla"})
+_COMPILED_EXPORT_RELOAD_POLICIES = frozenset({"act", "smolvla", "xr1"})
 """Policies that cannot be exported while ``torch.compile``d, so are reloaded first."""
 
 
