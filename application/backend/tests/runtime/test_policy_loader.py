@@ -12,7 +12,7 @@ from physicalai.inference.constants import IMAGES, STATE
 
 from exceptions import ModelCameraMismatchError
 from runtime.action_source import StudioActionSource
-from runtime.contract import ErrorEvent, InMemoryCommandMailbox, LoadModelCommand, QueueEventSink
+from runtime.contract import ErrorEvent, InMemoryCommandMailbox, LoadModelCommand, QueueEventSink, StartTaskCommand
 from runtime.policy_loader import check_camera_keys
 from schemas import InferenceBackend, InferenceDevice
 
@@ -122,11 +122,20 @@ def test_warmup_runs_on_the_loader_thread(tmp_path, monkeypatch: pytest.MonkeyPa
     _wait_until(lambda: source._policy is not None and source._model_loaded)
     assert warmup_threads
     assert all(thread != loop_thread for thread in warmup_threads)
-    before = len(warmup_threads)
+    load_warmups = len(warmup_threads)
     source.update(follower.get_observation(), {}, 2)
-    assert len(warmup_threads) == before
+    assert len(warmup_threads) == load_warmups
     assert source._policy is not None
     assert source._policy._warmed_up
+
+    mailbox.apply(StartTaskCommand(task="pick"))
+    source.update(follower.get_observation(), {}, 3)
+    _wait_until(lambda: source.follower_source == "policy")
+    assert len(warmup_threads) > load_warmups
+    assert all(thread != loop_thread for thread in warmup_threads)
+    after_play = len(warmup_threads)
+    source.update(follower.get_observation(), {}, 4)
+    assert len(warmup_threads) == after_play
     source.shutdown_policy()
 
 

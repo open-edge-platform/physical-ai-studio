@@ -61,6 +61,8 @@ class StudioActionSource:
         self._policy: PolicySource | None = None
         self._policy_lock = threading.Lock()
         self._attached_generation = 0
+        self._arm_generation = 0
+        self._arming = False
         self._model_loaded = False
         self._task: str | None = None
         self._policy_error_emitted = False
@@ -133,6 +135,7 @@ class StudioActionSource:
         """Stop in-flight loads and the policy execution worker. Session teardown only."""
         self._loader.shutdown()
         with self._policy_lock:
+            self._cancel_arming_locked()
             policy = self._policy
             self._policy = None
             self._model_loaded = False
@@ -146,6 +149,7 @@ class StudioActionSource:
                 previous = None
             else:
                 stale = False
+                self._cancel_arming_locked()
                 previous = self._policy
                 self._policy = source
                 self._attached_generation = generation
@@ -171,7 +175,7 @@ class StudioActionSource:
     ) -> np.ndarray | None:
         with self._policy_lock:
             policy = self._policy
-            if policy is None:
+            if policy is None or self._arming:
                 return None
             try:
                 return policy.update(robot_state, camera_frames, step)
@@ -209,6 +213,7 @@ class StudioActionSource:
                 self._handle_set_follower_source(command, robot_state)
 
     def _handle_load_model(self, command: LoadModelCommand) -> None:
+        self._cancel_arming()
         self._model_loaded = False
         self._emit_state()
         if self._bus is None or self._session_id is None:
@@ -232,6 +237,7 @@ class StudioActionSource:
         self._emit_state()
 
     def _handle_stop_task(self, robot_state: RobotObservation) -> None:
+        self._cancel_arming()
         if self._follower_source == "hold":
             return
         self._follower_source = "hold"
@@ -261,6 +267,7 @@ class StudioActionSource:
                 return
             self._emit_state()
             return
+        self._cancel_arming()
         if requested == self._follower_source:
             return
         self._follower_source = requested
@@ -269,7 +276,7 @@ class StudioActionSource:
         self._emit_state()
 
     def _arm_policy(self, *, task: str | None) -> bool:
-        """Reset the policy, then switch into policy mode. Return whether the switch happened."""
+        """Reset the policy, then warm up off this thread. Return whether mode already switched."""
         with self._policy_lock:
             policy = self._policy
             if policy is None:
@@ -296,8 +303,60 @@ class StudioActionSource:
                 return False
             self._task = task
             self._policy_error_emitted = False
-            self._follower_source = "policy"
+            self._arm_generation += 1
+            generation = self._arm_generation
+            self._arming = True
+        snapshot = self._latest_observation()
+        if snapshot is None:
+            with self._policy_lock:
+                if generation != self._arm_generation or self._policy is not policy:
+                    return False
+                self._arming = False
+                self._follower_source = "policy"
             return True
+        thread = threading.Thread(
+            target=self._finish_arm,
+            name=f"policy-arm-{generation}",
+            args=(policy, generation, snapshot),
+            daemon=True,
+        )
+        thread.start()
+        return False
+
+    def _finish_arm(self, policy: PolicySource, generation: int, snapshot: ObservationSnapshot) -> None:
+        """Warm the current observation, then switch into policy mode if still current."""
+        if snapshot is None:
+            return
+        robot_state, camera_frames = snapshot
+        try:
+            policy.warmup(policy.to_model_input(robot_state, camera_frames))
+        except Exception as exc:
+            with self._policy_lock:
+                if generation != self._arm_generation:
+                    return
+                self._arming = False
+            logger.exception("Policy warmup failed; staying in hold")
+            self._event_sink.emit(
+                ErrorEvent(
+                    message=str(exc) or "Failed to warm up the policy.",
+                    error_code="policy_warmup_failed",
+                )
+            )
+            return
+        with self._policy_lock:
+            if generation != self._arm_generation or self._policy is not policy:
+                return
+            self._arming = False
+            self._follower_source = "policy"
+        self._emit_state()
+
+    def _cancel_arming(self) -> None:
+        with self._policy_lock:
+            self._cancel_arming_locked()
+
+    def _cancel_arming_locked(self) -> None:
+        self._arm_generation += 1
+        self._arming = False
 
     def _read_leader(self, robot_state: RobotObservation) -> np.ndarray | None:
         if self._leader is None:
