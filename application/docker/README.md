@@ -181,12 +181,11 @@ sudo usermod -aG render $USER   # Intel XPU only
 
 ## Volumes and Data Persistence
 
-The compose file defines one named volume and one bind mount:
+The compose file defines one named volume:
 
 | Volume                       | Container path                                         | Purpose                                              |
 |------------------------------|--------------------------------------------------------|------------------------------------------------------|
 | `physical-ai-studio-storage` | `/app/storage`                                         | Persistent storage, including app data and artifacts |
-| *(bind mount)*               | `~/.cache/huggingface/lerobot/calibration` (read-only) | Shared robot calibration data from the host          |
 
 Runtime defaults use `STORAGE_DIR=/app/storage`; the application database is stored under `$STORAGE_DIR/data`.
 
