@@ -4,7 +4,7 @@
 """Persistence for SSH-provisioned training servers.
 
 Create and update here only persist the row. Tier-1-preflight-gated saves and
-resolved-host display are layered on top by the API (PR 4); this service never
+resolved-host display are layered on top by the API; this service never
 dials SSH.
 """
 
