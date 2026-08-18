@@ -57,7 +57,7 @@ export const ModelRow = ({
         <Table.ExpandableRow id={model.id} label={model.name} detail={<ModelRowContent model={model} />}>
             <Flex alignItems='center' gap='size-100'>
                 <Text>{model.name}</Text>
-                {<Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
+                {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
             </Flex>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
