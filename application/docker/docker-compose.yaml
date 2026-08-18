@@ -66,7 +66,7 @@ x-common: &common
       - "${VIDEO_GID:-video}" # cameras & video (/dev/video*)
       - "${RENDER_GID:-render}" # Intel GPU render nodes
 
-    # Persisted data and storage volumes + shared robot calibration
+    # Persisted application storage volume
     volumes:
       - physical-ai-studio-storage:/app/storage
 
