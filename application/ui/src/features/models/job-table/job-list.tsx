@@ -1,8 +1,19 @@
 import { Heading, View } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
+import { Table, TableColumn } from '../../../components/table/table';
 import { SchemaTrainJob } from '../train-model-dialog/train-model-dialog';
-import { TrainingHeader, TrainingRow } from './job-table';
+import { TrainingRow } from './job-table';
+
+const JOB_COLUMNS: TableColumn[] = [
+    { width: 'max-content' },
+    { width: '2fr', header: 'Model name' },
+    { width: '1fr', header: 'Loss' },
+    { width: '1fr' },
+    { width: '1fr', header: 'Architecture' },
+    { width: '1fr' },
+    { width: 'auto', align: 'end' },
+];
 
 interface JobListProps {
     jobs: SchemaTrainJob[];
@@ -36,20 +47,21 @@ export const JobList = ({ jobs, onViewLogs }: JobListProps) => {
     }
 
     return (
-        <View marginBottom={'size-600'}>
+        <View>
             <Heading level={4} marginBottom={'size-100'}>
                 Current Training
             </Heading>
 
-            <TrainingHeader />
-            {sortedJobs.map((job) => (
-                <TrainingRow
-                    key={job.id}
-                    trainJob={job}
-                    onInterrupt={() => onInterrupt(job)}
-                    onViewLogs={() => onViewLogs(job)}
-                />
-            ))}
+            <Table columns={JOB_COLUMNS}>
+                {sortedJobs.map((job) => (
+                    <TrainingRow
+                        key={job.id}
+                        trainJob={job}
+                        onInterrupt={() => onInterrupt(job)}
+                        onViewLogs={() => onViewLogs(job)}
+                    />
+                ))}
+            </Table>
         </View>
     );
 };

@@ -1,30 +1,16 @@
 import { useState } from 'react';
 
-import { ActionButton, Button, DialogTrigger, Flex, Grid, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
+import { ActionButton, Button, DialogTrigger, Flex, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
-import { CollapsableRow } from '../shared/collapsable-row';
+import { Table } from '../../../components/table/table';
 import { durationBetween } from '../shared/duration';
-import { GRID_COLUMNS } from '../shared/table-columns';
 import { ModelDownloadDialog } from './model-download-dialog';
 import { ModelRowContent } from './model-row-content';
 import { StartInferenceDialog } from './start-inference-dialog';
 
-import classes from '../shared/table.module.css';
-
-export const ModelHeader = () => {
-    return (
-        <Grid columns={GRID_COLUMNS} alignItems={'center'} width={'100%'} UNSAFE_className={classes.tableHeader}>
-            <Text>Model name</Text>
-            <Text>Trained</Text>
-            <Text>Duration</Text>
-            <Text>Architecture</Text>
-            <div />
-            <div />
-        </Grid>
-    );
-};
+import classes from './model-table.module.css';
 
 export const ModelRow = ({
     model,
@@ -68,59 +54,38 @@ export const ModelRow = ({
     const version = model.version ?? 1;
 
     return (
-        <View>
-            <CollapsableRow
-                header={
-                    <Grid
-                        columns={GRID_COLUMNS}
-                        alignItems={'center'}
-                        width={'100%'}
-                        UNSAFE_className={classes.tableRow}
-                    >
-                        <Flex alignItems='center' gap='size-100'>
-                            <Text>{model.name}</Text>
-                            {version > 1 && (
-                                <Text UNSAFE_style={{ color: 'var(--spectrum-gray-600)', fontSize: '0.85em' }}>
-                                    v{version}
-                                </Text>
-                            )}
-                        </Flex>
-                        <Text>{new Date(model.created_at!).toLocaleString()}</Text>
-                        <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
-                        <Text>{model.policy.toUpperCase()}</Text>
-                        <View>
-                            <DialogTrigger>
-                                <Button variant='secondary'>Run model</Button>
-                                {(close) => <StartInferenceDialog close={close} model={model} />}
-                            </DialogTrigger>
-                        </View>
-                        <View justifySelf={'end'}>
-                            <MenuTrigger direction='left'>
-                                <ActionButton
-                                    isQuiet
-                                    UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
-                                    aria-label='options'
-                                >
-                                    <MoreMenu />
-                                </ActionButton>
-                                <Menu onAction={onAction} disabledKeys={disabledKeys}>
-                                    <Item key='logs'>Logs</Item>
-                                    <Item key='download'>Download</Item>
-                                    <Item key='retrain'>Retrain</Item>
-                                    <Item key='delete'>Delete</Item>
-                                </Menu>
-                            </MenuTrigger>
-                            <ModelDownloadDialog
-                                modelId={model.id!}
-                                isOpen={isDownloadDialogOpen}
-                                onClose={() => setDownloadDialogOpen(false)}
-                            />
-                        </View>
-                    </Grid>
-                }
-            >
-                <ModelRowContent model={model} />
-            </CollapsableRow>
-        </View>
+        <Table.ExpandableRow id={model.id} label={model.name} detail={<ModelRowContent model={model} />}>
+            <Flex alignItems='center' gap='size-100'>
+                <Text>{model.name}</Text>
+                {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
+            </Flex>
+            <Text>{new Date(model.created_at!).toLocaleString()}</Text>
+            <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
+            <Text>{model.policy.toUpperCase()}</Text>
+            <div onClick={(e) => e.stopPropagation()}>
+                <DialogTrigger>
+                    <Button variant='secondary'>Run model</Button>
+                    {(close) => <StartInferenceDialog close={close} model={model} />}
+                </DialogTrigger>
+            </div>
+            <View>
+                <MenuTrigger direction='left'>
+                    <ActionButton isQuiet UNSAFE_className={classes.optionsButton} aria-label='options'>
+                        <MoreMenu />
+                    </ActionButton>
+                    <Menu onAction={onAction} disabledKeys={disabledKeys}>
+                        <Item key='logs'>Logs</Item>
+                        <Item key='download'>Download</Item>
+                        <Item key='retrain'>Retrain</Item>
+                        <Item key='delete'>Delete</Item>
+                    </Menu>
+                </MenuTrigger>
+                <ModelDownloadDialog
+                    modelId={model.id!}
+                    isOpen={isDownloadDialogOpen}
+                    onClose={() => setDownloadDialogOpen(false)}
+                />
+            </View>
+        </Table.ExpandableRow>
     );
 };

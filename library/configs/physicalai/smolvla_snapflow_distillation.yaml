@@ -1,0 +1,73 @@
+# SmolVLA SnapFlow Phase-2 Distillation Configuration
+#
+# Use this config for the second phase of SnapFlow two-phase training when you
+# want two explicit runs — for example to distill from a checkpoint you
+# already have (a published checkpoint, or a phase-1 run from elsewhere).
+#
+# Two-phase recipe (two explicit CLI runs):
+#
+#   # Phase 1 — standard flow-matching training
+#   physicalai fit --config configs/physicalai/smolvla.yaml
+#
+#   # Phase 2 — SnapFlow distillation, VLM frozen
+#   physicalai fit \
+#       --config configs/physicalai/smolvla_snapflow_distillation.yaml \
+#       --fit.ckpt_path ./experiments/lightning_logs/version_0/checkpoints/last.ckpt \
+#       --trainer.max_steps 30000
+#
+# Note that `--fit.ckpt_path` is a full Lightning *resume*: it restores the
+# global step, optimizer state, and LR schedule from phase 1. Set
+# `--trainer.max_steps` to the combined phase-1 + phase-2 budget accordingly.
+# This does NOT give phase 2 its own optimizer state or LR horizon — if you
+# need that, warm-start from phase-1 weights only via the Python API instead
+# (see `Policy.load_from_checkpoint` in docs/how-to/training/snapflow_distillation.md).
+#
+# Single-run alternative (recommended):
+#   Add SnapFlowPhaseCallback to smolvla.yaml trainer.callbacks with a
+#   start_epoch (or start_step) boundary and run a single `physicalai fit`.
+#   See configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml for a
+#   worked example.
+#
+# See docs/how-to/training/snapflow_distillation.md.
+# Paper reference: arXiv:2604.05656 (SnapFlow)
+
+model:
+  class_path: physicalai.policies.SmolVLA
+  init_args:
+    # SnapFlow distillation — paper defaults (§3.6 + Appendix J)
+    snapflow_enabled: true
+    snapflow_alpha: 0.5 # FM-loss weight
+    snapflow_lambda: 0.1 # shortcut-loss scale
+    snapflow_num_inference_steps: 1 # 1-NFE inference
+
+    # Freeze VLM; train only action expert + target-time embedding (~10% params)
+    train_expert_only: true
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/pusht"
+    train_batch_size: 64
+    data_format: "physicalai"
+    val_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+    image_transforms:
+      class_path: torchvision.transforms.v2.Compose
+      init_args:
+        transforms:
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              contrast:
+                - 0.8
+                - 1.2
+              brightness:
+                - 0.7
+                - 1.3
+
+trainer:
+  max_steps: 30000
+  accelerator: gpu
+  devices: 1
+  precision: 32
+  log_every_n_steps: 100
+  check_val_every_n_epoch: 10

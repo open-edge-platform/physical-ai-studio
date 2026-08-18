@@ -1,0 +1,165 @@
+# Pi05 + SnapFlow two-phase distillation on the SO-101 pick-and-place dataset.
+#
+# Single-run recipe — no second CLI call, no checkpoint juggling:
+#
+#   Phase 1 (epochs 0-4)   standard flow-matching finetuning, warm-started from
+#                          lerobot/pi05_base. Full model trains.
+#   Phase 2 (epochs 5-7)   SnapFlow self-distillation. SnapFlowPhaseCallback
+#                          freezes the VLM and reconfigures the optimizer, so
+#                          only the action expert + target-time embedding train
+#                          (~10% of parameters) toward 1-NFE inference.
+#
+# Run:
+#   physicalai fit --config configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml
+#
+# Handy overrides:
+#   --data.train_batch_size 8                       # if you hit OOM
+#   --trainer.accumulate_grad_batches 2             # recover effective batch size
+#   --trainer.max_epochs 20                         # longer total budget
+#   --trainer.fast_dev_run 1                        # smoke test the wiring
+#
+# Epoch budgets follow LeRobot's guidance (5-10 epochs, fewer for warm-started
+# VLAs) rather than a raw step count, so they hold as the batch size changes.
+# Phase 2 is short because the target-time embedding is zero-initialised: the
+# model starts phase 2 numerically identical to the phase-1 teacher.
+#
+# See docs/how-to/training/snapflow_distillation.md for the full guide.
+# Paper reference: arXiv:2604.05656 (SnapFlow).
+
+model:
+  class_path: physicalai.policies.Pi05
+  init_args:
+    # Warm-start from the base VLA. Phase 1 is standard flow matching; SnapFlow
+    # is switched on later by the callback, so snapflow_enabled stays false here.
+    pretrained_name_or_path: lerobot/pi05_base
+
+    # Model architecture
+    paligemma_variant: gemma_2b
+    action_expert_variant: gemma_300m
+    dtype: bfloat16
+
+    # Input / output structure
+    n_obs_steps: 1
+    chunk_size: 50
+    n_action_steps: 50
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Image preprocessing
+    image_resolution:
+      - 224
+      - 224
+
+    # Flow matching (multi-step teacher used during phase 1)
+    num_inference_steps: 10
+
+    # Full finetune in phase 1; the callback freezes the VLM for phase 2.
+    freeze_vision_encoder: false
+    train_expert_only: false
+
+    # Memory / throughput
+    gradient_checkpointing: true
+    compile_model: true # disable compile_model if you hit OOM
+
+    # Optimizer
+    optimizer_lr: 2.5e-5
+    optimizer_weight_decay: 0.01
+    optimizer_grad_clip_norm: 1.0
+
+    # Scheduler. decay_steps=null derives the cosine horizon from the real step
+    # budget (trainer.estimated_stepping_batches) instead of a hard-coded 30k,
+    # so the LR lands on scheduler_decay_lr exactly at the end of the run.
+    # Warmup must then be given explicitly; ~5% of the total step budget is a
+    # reasonable target. Compute it as:
+    #   steps_per_epoch = floor(train_frames / (batch_size * devices))
+    #                       / accumulate_grad_batches
+    #   warmup          = 0.05 * max_epochs * steps_per_epoch
+    scheduler_warmup_steps: 100
+    scheduler_decay_steps: null
+    scheduler_decay_lr: 2.5e-6
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    # Example SO-101 pick-and-place dataset. Swap in your own recorded dataset;
+    # the phase budgets below are epoch-based, so they carry over unchanged.
+    repo_id: "Daankrol/pick-and-place-multi-obj"
+    train_batch_size: 16 # change this depending on your GPU memory
+    data_format: "physicalai"
+    revision: "main"
+    val_split: 0.1
+    val_split_seed: 42
+    val_batch_size: 16
+    image_transforms:
+      class_path: physicalai.transforms.RandomChoice
+      init_args:
+        n_subset: 3
+        random_order: false
+        transforms:
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              brightness:
+                - 0.8
+                - 1.2
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              contrast:
+                - 0.8
+                - 1.2
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              saturation:
+                - 0.5
+                - 1.5
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              hue:
+                - -0.05
+                - 0.05
+          - class_path: physicalai.transforms.RandomSharpness
+            init_args:
+              sharpness:
+                - 0.5
+                - 1.5
+          - class_path: torchvision.transforms.v2.RandomAffine
+            init_args:
+              degrees:
+                - -5.0
+                - 5.0
+              translate:
+                - 0.05
+                - 0.05
+
+trainer:
+  # Total budget = phase 1 (epochs 0-4) + phase 2 (epochs 5-7).
+  max_epochs: 8
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 25
+  check_val_every_n_epoch: 1
+  callbacks:
+    # Phase-2 boundary: switch to SnapFlow distillation at the start of epoch 5 (zero-indexed).
+    - class_path: physicalai.train.SnapFlowPhaseCallback
+      init_args:
+        start_epoch: 5
+        alpha: 0.5 # FM-loss weight (paper)
+        lambda_: 0.1 # shortcut-loss scale (paper)
+        num_inference_steps: 1 # 1-NFE inference
+    # Monitored -> best_model_path restores the best phase-1 teacher before
+    # SnapFlow activates, then gets reset to track phase-2's own best (see
+    # snapflow_distillation.md). save_top_k=3 keeps the 3 best per phase.
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/loss
+        mode: min
+        save_top_k: 1
+        filename: "epoch{epoch:03d}"
+        auto_insert_metric_name: false
+        dirpath: ./experiments/snapflow-multi-object-augment-best-ckpt
+  logger:
+    class_path: lightning.pytorch.loggers.WandbLogger
+    init_args:
+      project: "physicalai_snapflow"
+      name: "pi05_finetune_and_snapflow_augment_best_ckpt"
+      log_model: false

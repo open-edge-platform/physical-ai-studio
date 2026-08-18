@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 
-import { Grid, Loading } from '@geti-ui/ui';
+import { Grid, Loading, repeat } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
 import type { SchemaModel } from '../../../api/openapi-spec';
@@ -23,7 +23,7 @@ const ModelDetailsContent = ({ model }: { model: SchemaModel }) => {
                 M: ['model-interface', 'training'],
             }}
             gap='size-200'
-            columns={['auto 1fr']}
+            columns={repeat('auto-fit', 'minmax(var(--spectrum-global-dimension-size-4600), 1fr)')}
         >
             <ModelInterface exports={modelDetail.exports} />
             <TrainingConfiguration summary={modelDetail.training_summary} hparams={modelDetail.hparams} />

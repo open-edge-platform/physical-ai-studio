@@ -14,6 +14,7 @@ from jsonargparse import ActionConfigFile, ArgumentParser, Namespace
 from physicalai.cli._spec import SubcommandSpec  # noqa: PLC2701
 
 from physicalai.cli._help import print_benchmark_help  # noqa: PLC2701
+from physicalai.cli._logging import configure_console_logging  # noqa: PLC2701
 from physicalai.cli._policy import load_policy  # noqa: PLC2701
 
 
@@ -82,6 +83,7 @@ def run(parser: ArgumentParser, cfg: Namespace) -> int:
     Returns:
         Process exit code.
     """
+    configure_console_logging()
     instantiated = cast("Namespace", parser.instantiate_classes(Namespace(benchmark=cfg.benchmark)))
     benchmark = instantiated.benchmark
     policy, device = load_policy(cfg.policy, cfg.ckpt_path)

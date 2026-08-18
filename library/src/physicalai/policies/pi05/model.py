@@ -20,6 +20,7 @@ from transformers.cache_utils import DynamicCache
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES
 from physicalai.policies.base import Model
+from physicalai.policies.mixins import SnapFlowModelMixin
 
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
@@ -536,7 +537,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         return [prefix_output, suffix_output], prefix_past_key_values
 
 
-class Pi05Model(Model):
+class Pi05Model(SnapFlowModelMixin, Model):
     """Core Pi05 PyTorch model for flow matching VLA.
 
     This is the nn.Module that contains the actual model logic,
@@ -623,10 +624,12 @@ class Pi05Model(Model):
         self._image_resolution = image_resolution
         self._tokenizer_max_length = tokenizer_max_length
         self._use_random_input_noise = use_random_input_noise
-        self._snapflow_enabled = snapflow_enabled
-        self._snapflow_alpha = snapflow_alpha
-        self._snapflow_lambda = snapflow_lambda
-        self._snapflow_num_inference_steps = snapflow_num_inference_steps
+        self.init_snapflow_state(
+            enabled=snapflow_enabled,
+            alpha=snapflow_alpha,
+            lambda_=snapflow_lambda,
+            num_inference_steps=snapflow_num_inference_steps,
+        )
 
         paligemma_config = get_gemma_config(paligemma_variant)
         action_expert_config = get_gemma_config(action_expert_variant)
@@ -1072,68 +1075,17 @@ class Pi05Model(Model):
             )
             losses = F.mse_loss(u_t, v_t, reduction="none")
         else:
-            fm_mask = torch.rand(bsize, device=device) < self._snapflow_alpha
-            fm_idx = fm_mask.nonzero(as_tuple=True)[0]
-            cd_idx = (~fm_mask).nonzero(as_tuple=True)[0]
-
-            losses = torch.zeros_like(u_t)
-
-            if fm_idx.numel() > 0:
-                v_fm = self._predict_velocity(
-                    x_t[fm_idx],
-                    time[fm_idx],
-                    time[fm_idx],
-                    prefix_embs[fm_idx],
-                    prefix_pad_masks[fm_idx],
-                    prefix_att_masks[fm_idx],
-                )
-                losses[fm_idx] = F.mse_loss(u_t[fm_idx], v_fm, reduction="none")
-
-            if cd_idx.numel() > 0:
-                cd_actions_shape = (cd_idx.numel(), *actions.shape[1:])
-                x_1 = self.sample_noise(cd_actions_shape, device)
-                cd_prefix_embs = prefix_embs[cd_idx]
-                cd_prefix_pad_masks = prefix_pad_masks[cd_idx]
-                cd_prefix_att_masks = prefix_att_masks[cd_idx]
-
-                with torch.no_grad():
-                    cd_bsize = cd_idx.numel()
-                    t1 = torch.ones(cd_bsize, device=device)
-                    v_1 = self._predict_velocity(
-                        x_1,
-                        t1,
-                        t1,
-                        cd_prefix_embs,
-                        cd_prefix_pad_masks,
-                        cd_prefix_att_masks,
-                    )
-                    x_half = x_1 - 0.5 * v_1
-                    t_half = torch.full((cd_bsize,), 0.5, device=device)
-                    v_half = self._predict_velocity(
-                        x_half,
-                        t_half,
-                        t_half,
-                        cd_prefix_embs,
-                        cd_prefix_pad_masks,
-                        cd_prefix_att_masks,
-                    )
-                    v_target = 0.5 * (v_1 + v_half)
-
-                t1 = torch.ones(cd_idx.numel(), device=device)
-                t_zero = torch.zeros(cd_idx.numel(), device=device)
-                v_pred = self._predict_velocity(
-                    x_1,
-                    t1,
-                    t_zero,
-                    cd_prefix_embs,
-                    cd_prefix_pad_masks,
-                    cd_prefix_att_masks,
-                )
-                losses[cd_idx] = self._snapflow_lambda * F.mse_loss(
-                    v_pred,
-                    v_target.detach(),
-                    reduction="none",
-                )
+            losses = self.snapflow_mixed_loss(
+                u_t=u_t,
+                x_t=x_t,
+                time=time,
+                actions=actions,
+                prefix_embs=prefix_embs,
+                prefix_pad_masks=prefix_pad_masks,
+                prefix_att_masks=prefix_att_masks,
+                sample_noise=self.sample_noise,
+                predict_velocity=self._predict_velocity,
+            )
 
         # Truncate losses to actual action dimensions to avoid dilution from padding
         original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
@@ -1308,10 +1260,8 @@ class Pi05Model(Model):
         Returns:
             Denoised action tensor.
         """
-        if self._snapflow_enabled:
-            num_steps = self._snapflow_num_inference_steps
-        elif num_steps is None:
-            num_steps = self._num_inference_steps
+        default_num_steps = num_steps if num_steps is not None else self._num_inference_steps
+        num_steps = self.snapflow_num_inference_steps(default_num_steps)
 
         bsize = tokens.shape[0]
         device = tokens.device
@@ -1341,7 +1291,7 @@ class Pi05Model(Model):
         for step in range(num_steps):
             time = 1.0 + step * dt
             time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
-            target_time = torch.zeros(bsize, device=device) if self._snapflow_enabled else time_tensor
+            target_time = self.snapflow_target_time(bsize, time_tensor, device)
 
             v_t = self.denoise_step(
                 prefix_pad_masks=prefix_pad_masks,
