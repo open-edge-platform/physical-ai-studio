@@ -241,7 +241,7 @@ WORKDIR /app
 # /home/appuser/.cache must be pre-created so that bind mounts for
 # subdirectories (e.g. huggingface calibration) don't cause Docker
 # to create .cache as root, which blocks uv from writing its cache.
-RUN mkdir -p /app/data /app/storage /app/tmp /home/appuser/.cache/huggingface \
+RUN mkdir -p /app/storage /app/tmp /home/appuser/.cache/huggingface \
     && chown -R "${APP_UID}:${APP_GID}" /app /home/appuser/.cache
 
 # Environment configuration
