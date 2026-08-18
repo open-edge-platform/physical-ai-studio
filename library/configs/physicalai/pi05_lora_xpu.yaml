@@ -1,0 +1,84 @@
+# Pi05 LoRA Policy Training Configuration
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/pi05_lora.yaml
+
+model:
+  class_path: physicalai.policies.Pi05
+  init_args:
+    # Model architecture
+    paligemma_variant: gemma_2b
+    action_expert_variant: gemma_300m
+    dtype: bfloat16
+
+    # Input / output structure
+    n_obs_steps: 1
+    chunk_size: 50
+    n_action_steps: 50
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Image preprocessing
+    image_resolution:
+      - 224
+      - 224
+
+    # Flow matching parameters
+    num_inference_steps: 10
+
+    # Finetuning settings
+    freeze_vision_encoder: false
+    train_expert_only: false
+
+    # LoRA settings
+    lora_rank: 8
+    lora_alpha: 16
+    lora_dropout: 0.1
+
+    # Optimizer
+    optimizer_lr: 2.5e-5
+    optimizer_weight_decay: 0.01
+    optimizer_grad_clip_norm: 1.0
+
+    # Scheduler
+    scheduler_warmup_steps: 1000
+    scheduler_decay_steps: 30000
+    scheduler_decay_lr: 2.5e-6
+
+    # SnapFlow self-distillation (arxiv.org/abs/2604.05656)
+    # Uncomment to enable 1-step inference via progressive self-distillation:
+    # snapflow_enabled: true
+    # snapflow_alpha: 0.5
+    # snapflow_lambda: 1.0
+    # snapflow_num_inference_steps: 1
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "/home/user/Downloads/pickup_dataset"
+    train_batch_size: 8
+    data_format: "physicalai"
+    num_workers: 1
+    val_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+    image_transforms:
+      class_path: torchvision.transforms.v2.Compose
+      init_args:
+        transforms:
+          - class_path: torchvision.transforms.v2.ColorJitter
+            init_args:
+              contrast:
+                - 0.8
+                - 1.2
+              brightness:
+                - 0.7
+                - 1.3
+
+trainer:
+  max_epochs: 100
+  accelerator: xpu
+  strategy: xpu_single
+  devices: 2
+  precision: 32
+  log_every_n_steps: 100
+  check_val_every_n_epoch: 10
