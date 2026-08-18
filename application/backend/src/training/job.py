@@ -89,7 +89,7 @@ class TrainingJobSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    policy: str = Field(description="Policy name, e.g. 'act', 'pi0', 'pi05', 'smolvla', 'groot'.")
+    policy: str = Field(description="Policy name, e.g. 'act', 'pi0', 'pi05', 'smolvla', 'groot', 'xr1'.")
     policy_source: Literal["physicalai", "lerobot"] = Field(
         default="physicalai",
         description="Which implementation of the policy to train.",
