@@ -45,7 +45,7 @@ def _reshape_camera_image(image: np.ndarray, *, for_inference: bool) -> np.ndarr
         image = image[None, ...]
     if not for_inference:
         # B, C, H, W
-        return np.transpose(image, (0, 3, 1, 2)).astype(np.float32) / 255.0
+        return np.transpose(image, (0, 3, 1, 2)).astype(np.float32) / np.float32(255.0)
     return image
 
 

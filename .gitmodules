@@ -1,3 +1,0 @@
-[submodule "library/benchmarks/vla-evaluation-harness/vla-evaluation-harness"]
-	path = library/benchmarks/vla-evaluation-harness/vla-evaluation-harness
-	url = https://github.com/allenai/vla-evaluation-harness
