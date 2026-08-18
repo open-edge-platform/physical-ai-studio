@@ -55,7 +55,7 @@ model:
 data:
   class_path: physicalai.data.lerobot.LeRobotDataModule
   init_args:
-    repo_id: "/home/user/Downloads/pickup_dataset"
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
     train_batch_size: 8
     data_format: "physicalai"
     num_workers: 1
