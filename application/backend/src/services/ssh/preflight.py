@@ -144,15 +144,6 @@ def _failure_detail(result: CommandResult) -> str | None:
     return _detail(result.stderr or result.stdout)
 
 
-# `xpu-smi discovery` renders an ASCII box-drawing table, e.g.:
-#   +-----------+--------------------------------------------------+
-#   | Device ID | Device Information                                |
-#   +-----------+--------------------------------------------------+
-#   | 0         | Device Name: Intel(R) Data Center GPU Max 1100    |
-#   |           | Vendor Name: Intel(R) Corporation                  |
-#   ...
-# `first_line()` would return the top border, not a device name, so this pulls
-# the "Device Name: ..." cell out of the table instead.
 _XPU_DEVICE_NAME_PATTERN: Final = re.compile(r"Device Name:\s*(.+?)\s*\|?\s*$")
 
 
@@ -942,7 +933,11 @@ def _pull_state_paths(image_ref: str) -> tuple[str, str]:
     reference characters into a filename.
     """
     digest = hashlib.sha256(image_ref.encode()).hexdigest()[:16]
-    return f"/tmp/physicalai-pull-{digest}.pid", f"/tmp/physicalai-pull-{digest}.log"  # noqa: S108 - a remote-host path, not a local temp-file access
+    # These are a remote-host path (run over SSH on the target machine), not a local temp-file access.
+    return (
+        f"/tmp/physicalai-pull-{digest}.pid",  # noqa: S108 # nosec B108
+        f"/tmp/physicalai-pull-{digest}.log",  # noqa: S108 # nosec B108
+    )
 
 
 async def _pull_already_running(transport: SshTransport, pidfile: str) -> bool:
