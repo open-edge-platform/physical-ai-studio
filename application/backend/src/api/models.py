@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
@@ -6,12 +7,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
+from physicalai.config import to_yaml
 from physicalai.export.backends import ExportBackend
 from sse_starlette import EventSourceResponse
 from starlette import status
 from starlette.background import BackgroundTask
 
 from api.dependencies import (
+    EnvironmentServiceDep,
+    RobotClientFactoryDep,
     get_dataset_service,
     get_job_service,
     get_model_download_service,
@@ -22,6 +26,13 @@ from api.dependencies import (
 from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
 from internal_datasets.utils import get_internal_read_dataset
+from runtime.config_builder import (
+    RUNTIME_FPS,
+    build_runtime_config,
+    policy_source_fragment,
+    runtime_bundle_readme,
+    runtime_config_change_me,
+)
 from schemas import ModelDetailResponse
 from schemas.job import TrainJob
 from services import DatasetService, JobService, ModelDownloadService, ModelMetricsService, ModelService
@@ -125,6 +136,80 @@ async def download_model_backend(
 
     archive_path = await asyncio.to_thread(model_download_service.create_backend_archive, export_dir, backend.value)
     filename = f"{safe_archive_name(model.name, fallback='model')}_{backend.value}.zip"
+    return FileResponse(
+        archive_path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
+    )
+
+
+@router.get("/{model_id}/runtime-bundle")
+async def download_runtime_bundle(  # noqa: PLR0913
+    model_id: Annotated[UUID, Depends(get_model_id)],
+    environment_id: UUID,
+    backend: ExportBackend,
+    device: str,
+    model_service: Annotated[ModelService, Depends(get_model_service)],
+    environment_service: EnvironmentServiceDep,
+    robot_client_factory: RobotClientFactoryDep,
+    model_download_service: Annotated[ModelDownloadService, Depends(get_model_download_service)],
+    task: str | None = None,
+) -> FileResponse:
+    """Download a runnable physicalai inference bundle for this model."""
+    model = await model_service.get_model_by_id(model_id)
+    if backend.value not in model.available_backends:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Backend '{backend.value}' is not available for this model.",
+        )
+
+    export_dir = Path(model.path) / "exports" / backend.value
+    if not export_dir.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Export directory for backend '{backend.value}' not found on disk.",
+        )
+
+    environment = await environment_service.get_environment_by_id(model.project_id, environment_id)
+    if len(environment.robots) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Runtime export requires exactly one follower robot",
+        )
+
+    fragment = policy_source_fragment(
+        export_dir=f"./exports/{backend.value}",
+        backend=backend.value,
+        device=device,
+        task=(task.strip() or None) if task else None,
+    )
+    try:
+        document = await build_runtime_config(
+            follower=environment.robots[0].robot,
+            leader=None,
+            cameras=environment.cameras,
+            robot_factory=robot_client_factory,
+            fps=RUNTIME_FPS,
+            allow_stored_port=True,
+            action_source=fragment,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    unresolved = runtime_config_change_me(document)
+    comments = "".join(f"# CHANGE_ME: replace machine-specific device path {path}\n" for path in unresolved)
+    runtime_yaml = comments + to_yaml(document)
+    readme = runtime_bundle_readme(document, unresolved=unresolved)
+    archive_path = await asyncio.to_thread(
+        model_download_service.create_runtime_bundle,
+        export_dir,
+        backend.value,
+        runtime_yaml=runtime_yaml,
+        readme=readme,
+    )
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    filename = f"studio-runtime-{safe_archive_name(model.name, fallback='model')}-{stamp}.zip"
     return FileResponse(
         archive_path,
         media_type="application/zip",

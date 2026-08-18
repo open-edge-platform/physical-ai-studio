@@ -9,6 +9,7 @@ from physicalai.inference.constants import IMAGES
 
 from exceptions import BaseException as AppBaseException
 from exceptions import ModelCameraMismatchError
+from runtime.config_builder import policy_source_fragment, policy_source_from_fragment
 from runtime.contract import ErrorEvent, LoadModelCommand
 from settings import get_settings
 
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
 
     from runtime.contract import EventSink
 
-POLICY_REQUEST_THRESHOLD = 0.5
 
 type ObservationSnapshot = tuple[Any, Mapping[str, Any]] | None
 type ObservationProvider = Callable[[], ObservationSnapshot]
@@ -124,25 +124,22 @@ class PolicyLoader:
             return generation != self._generation
 
     def _build_source(self, command: LoadModelCommand) -> PolicySource:
-        from physicalai.inference import InferenceModel
-        from physicalai.runtime import AsyncExecution, ChunkedActionQueue, LerpSmoother, PolicySource
+        from physicalai.runtime import PolicySource
 
         export_dir = self._export_dir(command)
         if not export_dir.exists():
             raise FileNotFoundError(export_dir)
-        model = InferenceModel(
-            export_dir=export_dir,
-            policy_name=None,
-            backend=command.inference_device.backend.value,
-            device=command.inference_device.device,
+        source = policy_source_from_fragment(
+            policy_source_fragment(
+                export_dir=str(export_dir),
+                backend=command.inference_device.backend.value,
+                device=command.inference_device.device,
+            )
         )
-        check_camera_keys(model, self._camera_keys)
-        return PolicySource(
-            model=model,
-            execution=AsyncExecution(request_threshold=POLICY_REQUEST_THRESHOLD),
-            action_queue=ChunkedActionQueue(smoother=LerpSmoother()),
-            task=None,
-        )
+        if not isinstance(source, PolicySource):
+            raise TypeError(f"Expected PolicySource, got {type(source).__name__}")
+        check_camera_keys(source._model, self._camera_keys)
+        return source
 
     def _export_dir(self, command: LoadModelCommand) -> Path:
         models_dir = self._models_dir if self._models_dir is not None else get_settings().models_dir
