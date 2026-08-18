@@ -61,8 +61,9 @@ class XR1(ExportablePolicyMixin, Policy):
 
     Memory: the released configuration is 5.04B parameters, 9.4 GiB of bf16 weights.
     That fits a 24 GB card for inference, but a full AdamW fine-tune needs roughly
-    66 GiB. Set ``freeze_vlm=True`` to train only the action expert and projectors
-    (~0.7B parameters), which does fit.
+    66 GiB, so ``freeze_vlm`` defaults to True and trains only the action expert and
+    projectors (~0.7B parameters), which does fit. Set it to False to reproduce the
+    reference recipe, which trains the backbone, on hardware that can hold it.
 
     Args:
         compile_model: Apply ``torch.compile`` to the action expert only. The Qwen3-VL
@@ -79,7 +80,7 @@ class XR1(ExportablePolicyMixin, Policy):
     Example:
         Training:
 
-        >>> policy = XR1(freeze_vlm=True)
+        >>> policy = XR1()  # freeze_vlm defaults to True; set False to train the backbone
         >>> trainer = physicalai.train.Trainer(max_epochs=100)
         >>> trainer.fit(policy, datamodule)
 
@@ -133,7 +134,7 @@ class XR1(ExportablePolicyMixin, Policy):
         tokenizer_max_length: int = 256,
         # Optimization
         gradient_checkpointing: bool = True,
-        freeze_vlm: bool = False,
+        freeze_vlm: bool = True,
         freeze_vision_encoder: bool = False,
         compile_model: bool = False,
         compile_mode: str = "default",

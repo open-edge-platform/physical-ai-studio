@@ -126,8 +126,13 @@ class XR1Config(Config):
             to 256.
         gradient_checkpointing: Enable gradient checkpointing. Defaults to True.
         freeze_vlm: Freeze the whole VLM and train only the DiT action expert and
-            projectors. Defaults to False. This is the recipe that fits a single
-            24 GB GPU.
+            projectors. Defaults to True: it trains 675M parameters instead of
+            5.04B and is the only configuration that fits a single 24 GB GPU,
+            which is what callers with no way to set it - the Studio training
+            dialog among them - would otherwise get wrong. The reference
+            implementation trains the backbone (only the input embeddings are
+            frozen, ``XR1.py:226``), so set this to False to reproduce it on
+            hardware that can afford roughly 66 GiB of optimizer state.
         freeze_vision_encoder: Freeze only the vision tower. Defaults to False.
         compile_model: Apply ``torch.compile`` to the action expert. Defaults to
             False. Only the DiT is compiled: it is evaluated ``num_inference_steps``
@@ -197,7 +202,7 @@ class XR1Config(Config):
     tokenizer_max_length: int = 256
 
     gradient_checkpointing: bool = True
-    freeze_vlm: bool = False
+    freeze_vlm: bool = True
     freeze_vision_encoder: bool = False
     compile_model: bool = False
     compile_mode: str = "default"

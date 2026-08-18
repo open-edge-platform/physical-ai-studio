@@ -35,14 +35,30 @@ class TestDefaults:
         assert config.n_choices == 5
 
     def test_documented_divergences(self) -> None:
-        """The one default that intentionally differs from the reference.
+        """The two defaults that intentionally differ from the reference.
 
         ``flash_attention_2`` is not a library dependency and is not exportable, so
-        the backbone defaults to ``sdpa`` instead.
+        the backbone defaults to ``sdpa`` instead. ``freeze_vlm`` defaults to True
+        where the reference trains the backbone, because a caller that cannot set it
+        - the Studio training dialog, which constructs policies with no freezing
+        argument - would otherwise get a 5.04B-parameter optimizer state that fits
+        no single consumer GPU.
         """
         config = XR1Config()
 
         assert config.vlm_attn_implementation == "sdpa"
+        assert config.freeze_vlm is True
+
+    def test_default_trains_the_action_expert_only(self) -> None:
+        """The default is the one configuration that fits a 24 GB card.
+
+        Pinned as its own test because the value is load-bearing outside the library:
+        ``build_policy`` in the Studio backend constructs XR-1 with only
+        ``compile_model`` and ``pretrained_name_or_path``, so this default decides
+        what a UI-launched training run asks of the hardware.
+        """
+        assert XR1Config().freeze_vlm is True
+        assert XR1Config(freeze_vlm=False).freeze_vlm is False
 
     def test_reference_training_recipe_is_the_default(self) -> None:
         """Both training-only branches of the reference recipe are on by default."""

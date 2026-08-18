@@ -170,8 +170,13 @@ class TestFreezing:
         assert all(p.requires_grad for p in model.dit.parameters())
 
     def test_freeze_vision_encoder_only(self, tiny_config: XR1Config, tiny_vlm: XR1Qwen3VL) -> None:
-        """The vision tower can be frozen while the language model trains."""
-        model = XR1Model(dataclasses.replace(tiny_config, freeze_vision_encoder=True), vlm=tiny_vlm)
+        """The vision tower can be frozen while the language model trains.
+
+        ``freeze_vlm`` has to be turned off explicitly: it defaults to True, which
+        freezes the language model as well and would make this assertion vacuous.
+        """
+        config = dataclasses.replace(tiny_config, freeze_vlm=False, freeze_vision_encoder=True)
+        model = XR1Model(config, vlm=tiny_vlm)
 
         assert not any(p.requires_grad for p in model.vlm.model.visual.parameters())
         assert any(p.requires_grad for p in model.vlm.model.language_model.parameters())
