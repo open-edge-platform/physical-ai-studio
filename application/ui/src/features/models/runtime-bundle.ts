@@ -13,11 +13,10 @@ export const runtimeBundleUrl = ({
 }): string => {
     const params = new URLSearchParams({
         environment_id: environmentId,
-        backend,
         device,
     });
     if (task !== undefined && task.trim() !== '') {
         params.set('task', task);
     }
-    return `/api/models/${modelId}/runtime-bundle?${params.toString()}`;
+    return `/api/models/${modelId}/exports/${backend}/download?${params.toString()}`;
 };
