@@ -211,3 +211,21 @@ def test_a_single_camera_model_ignores_the_camera_name() -> None:
     model = FakeInferenceModel(input_names=[STATE, IMAGES])
     check_camera_keys(model, ["overhead"])
     check_camera_keys(model, ["wrist"])
+
+
+def test_loader_instantiates_async_execution(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from physicalai.runtime import AsyncExecution
+
+    from runtime.config_builder import POLICY_REQUEST_THRESHOLD
+
+    model_id = uuid4()
+    _export_dir(tmp_path, model_id)
+    monkeypatch.setattr("physicalai.inference.InferenceModel", FakeInferenceModel)
+    source, mailbox, _events, follower = _source(models_dir=tmp_path)
+    mailbox.apply(LoadModelCommand(model_id=model_id, inference_device=_DEVICE))
+    source.update(follower.get_observation(), {}, 0)
+    _wait_until(lambda: source._policy is not None)
+    assert source._policy is not None
+    assert isinstance(source._policy._execution, AsyncExecution)
+    assert source._policy._execution._threshold_frac == POLICY_REQUEST_THRESHOLD
+    source.shutdown_policy()

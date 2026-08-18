@@ -12,13 +12,14 @@ import {
     StatusLight,
     Text,
 } from '@geti-ui/ui';
-import { Back, Pause, Play } from '@geti-ui/ui/icons';
+import { Back, DownloadIcon, Pause, Play } from '@geti-ui/ui/icons';
 
 import { paths } from '../../../router';
 import { useProjectId } from '../../projects/use-project';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
+import { runtimeBundleUrl } from '../runtime-bundle';
 
 interface InferenceViewerProps {
     tasks: string[];
@@ -29,7 +30,19 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
 
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { model, readyForInference, state, startTask, stopTask, environment, observation } = useRuntimeSession();
+    const { model, readyForInference, state, startTask, stopTask, environment, observation, inferenceDevice } =
+        useRuntimeSession();
+
+    const bundleUrl =
+        model?.id !== undefined && inferenceDevice !== undefined
+            ? runtimeBundleUrl({
+                  modelId: model.id,
+                  environmentId: environment.id,
+                  backend: inferenceDevice.backend,
+                  device: inferenceDevice.device,
+                  task,
+              })
+            : undefined;
 
     if (!readyForInference) {
         return (
@@ -63,6 +76,18 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         ))}
                     </ComboBox>
                     <ButtonGroup>
+                        {bundleUrl !== undefined && (
+                            <Button
+                                href={bundleUrl}
+                                aria-label='Download runtime bundle'
+                                variant='secondary'
+                                target='_blank'
+                                rel='noopener noreferrer'
+                            >
+                                <DownloadIcon />
+                                Bundle
+                            </Button>
+                        )}
                         {state.follower_source === 'policy' ? (
                             <Button variant='primary' isPending={stopTask.isPending} onPress={() => stopTask.mutate()}>
                                 <Pause fill='white' />

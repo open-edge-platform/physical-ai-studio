@@ -14,12 +14,14 @@ from utils.camera_factory import build_camera_config, is_migrated
 from utils.device_paths import resolve_camera_device
 
 if TYPE_CHECKING:
+    from physicalai.runtime import PolicySource
     from physicalai_studio_plugin import CatalogRobotFactory, SerialPortInfo
 
     from schemas.project_camera import Camera
     from schemas.robot import Robot
 
 RUNTIME_FPS = 30.0
+POLICY_REQUEST_THRESHOLD = 0.5
 
 
 class _StoredPortFallback:
@@ -72,6 +74,103 @@ def _shared_camera_config(camera: Camera) -> dict[str, Any]:
     return to_config(shared_camera).to_dict()
 
 
+def policy_source_fragment(
+    *,
+    export_dir: str,
+    backend: str,
+    device: str,
+    task: str | None = None,
+) -> dict[str, Any]:
+    """Return the PolicySource recipe both the session and the export instantiate.
+
+    ``PolicySource`` defaults to ``SyncExecution``, which would stall the 30 Hz
+    loop. Studio overrides that with ``AsyncExecution``; the export must too.
+    Omit ``policy_name`` so the manifest is read. Omit ``duration_frames`` so
+    ``LerpSmoother`` keeps its upstream default of 5.
+    """
+    init_args: dict[str, Any] = {
+        "model": Config(
+            "physicalai.inference.InferenceModel",
+            {"export_dir": export_dir, "backend": backend, "device": device},
+        ).to_dict(),
+        "execution": Config(
+            "physicalai.runtime.AsyncExecution",
+            {"request_threshold": POLICY_REQUEST_THRESHOLD},
+        ).to_dict(),
+        "action_queue": Config(
+            "physicalai.runtime.ChunkedActionQueue",
+            {"smoother": Config("physicalai.runtime.LerpSmoother", {}).to_dict()},
+        ).to_dict(),
+    }
+    if task:
+        init_args["task"] = task
+    return Config("physicalai.runtime.PolicySource", init_args).to_dict()
+
+
+def policy_source_from_fragment(fragment: dict[str, Any]) -> PolicySource:
+    """Build the live PolicySource from ``policy_source_fragment``.
+
+    ``instantiate()`` cannot construct ``InferenceModel`` through this path
+    when tests replace it with a local double. Read the fragment and call
+    the same constructors Studio already uses.
+    """
+    from physicalai.inference import InferenceModel
+    from physicalai.runtime import AsyncExecution, ChunkedActionQueue, LerpSmoother, PolicySource
+
+    args = fragment["init_args"]
+    model_args = args["model"]["init_args"]
+    exec_args = args["execution"]["init_args"]
+    return PolicySource(
+        model=InferenceModel(
+            export_dir=model_args["export_dir"],
+            policy_name=None,
+            backend=model_args["backend"],
+            device=model_args["device"],
+        ),
+        execution=AsyncExecution(request_threshold=exec_args["request_threshold"]),
+        action_queue=ChunkedActionQueue(smoother=LerpSmoother()),
+        task=args.get("task"),
+    )
+
+
+def runtime_bundle_readme(document: dict[str, Any], *, unresolved: list[str]) -> str:
+    """README for a portable inference zip, including CHANGE_ME paths."""
+    robot_name = document["init_args"]["robot"]["init_args"]["name"]
+    lines = [
+        "# Studio runtime bundle",
+        "",
+        "Run from this directory so `./exports/<backend>` resolves:",
+        "",
+        "```bash",
+        "physicalai run --config runtime.yaml --run.duration_s=60",
+        "```",
+        "",
+    ]
+    if unresolved:
+        lines.extend(
+            [
+                "## CHANGE_ME",
+                "",
+                "These device paths are machine-specific. Replace them with the",
+                "ports and cameras on this host:",
+                "",
+                *[f"- `{path}`" for path in unresolved],
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "The `device` field on the model is the machine that exported this",
+            "bundle. Change it if this host has no matching accelerator.",
+            "",
+            f"The robot name is `{robot_name}`. Two runs that share it collide on",
+            "one host — that is the intended lock. Stop the other run first.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 async def build_runtime_config(
     *,
     follower: Robot,
@@ -80,6 +179,7 @@ async def build_runtime_config(
     robot_factory: RobotClientFactory,
     fps: float = RUNTIME_FPS,
     allow_stored_port: bool = False,
+    action_source: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble one physicalai runtime recipe from Studio database rows.
 
@@ -87,6 +187,10 @@ async def build_runtime_config(
     unresolvable one raises. Set ``allow_stored_port`` to keep the port stored
     at registration time instead: an exported config has to describe a rig that
     is not plugged in, while a session about to drive that rig must not guess.
+
+    Pass ``action_source`` to pin a PolicySource fragment for a headless
+    export. The live session leaves it unset and wraps TeleopSource itself
+    when a leader is present.
     """
     port_finder: CatalogRobotFactory = _StoredPortFallback(robot_factory) if allow_stored_port else robot_factory
     follower_config = await _shared_robot_config(follower, robot_factory, port_finder)
@@ -104,7 +208,9 @@ async def build_runtime_config(
         "cameras": camera_configs,
         "fps": float(fps),
     }
-    if leader_config is not None:
+    if action_source is not None:
+        init_args["action_source"] = action_source
+    elif leader_config is not None:
         init_args["action_source"] = {
             "class_path": "physicalai.runtime.TeleopSource",
             "init_args": {"leader": leader_config},

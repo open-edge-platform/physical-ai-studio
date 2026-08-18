@@ -10,8 +10,11 @@ from physicalai.runtime import RobotRuntime
 
 from robots.robot_client_factory import RobotClientFactory
 from runtime.config_builder import (
+    POLICY_REQUEST_THRESHOLD,
     RUNTIME_FPS,
     build_runtime_config,
+    policy_source_fragment,
+    runtime_bundle_readme,
     runtime_camera_keys,
     runtime_config_change_me,
     runtime_identity_digest,
@@ -208,3 +211,74 @@ async def test_cameras_validate_on_connect_and_never_overwrite(mocker: Any) -> N
     shared_camera = document["init_args"]["cameras"]["overhead camera"]["init_args"]
     assert shared_camera["validate_on_connect"] is True
     assert shared_camera["overwrite_settings"] is False
+
+
+def test_policy_source_fragment_matches_the_session_recipe() -> None:
+    export = policy_source_fragment(
+        export_dir="./exports/torch",
+        backend="torch",
+        device="cpu",
+        task="pick up the cube",
+    )
+    session = policy_source_fragment(export_dir="/models/abc/exports/torch", backend="torch", device="cpu")
+
+    assert export["class_path"] == "physicalai.runtime.PolicySource"
+    assert export["init_args"]["execution"] == session["init_args"]["execution"]
+    assert export["init_args"]["action_queue"] == session["init_args"]["action_queue"]
+    assert export["init_args"]["execution"]["class_path"] == "physicalai.runtime.AsyncExecution"
+    assert export["init_args"]["execution"]["init_args"]["request_threshold"] == POLICY_REQUEST_THRESHOLD
+    assert "duration_frames" not in export["init_args"]["action_queue"]["init_args"]["smoother"]["init_args"]
+    assert "policy_name" not in export["init_args"]["model"]["init_args"]
+    assert export["init_args"]["model"]["init_args"]["export_dir"] == "./exports/torch"
+    assert export["init_args"]["task"] == "pick up the cube"
+    assert "task" not in session["init_args"]
+
+
+def test_empty_task_is_omitted_from_the_fragment() -> None:
+    fragment = policy_source_fragment(export_dir="./exports/torch", backend="torch", device="cpu", task="")
+    assert "task" not in fragment["init_args"]
+
+
+async def test_inference_export_document_uses_the_policy_fragment(mocker: Any) -> None:
+    _stub_device_paths(mocker)
+    fragment = policy_source_fragment(export_dir="./exports/torch", backend="torch", device="cpu", task="pick")
+    document = await build_runtime_config(
+        follower=_robot("follower"),
+        leader=None,
+        cameras=[_camera()],
+        robot_factory=_robot_factory(),
+        allow_stored_port=True,
+        action_source=fragment,
+    )
+
+    validate_config(document)
+    source = document["init_args"]["action_source"]
+    assert source["init_args"]["execution"] == fragment["init_args"]["execution"]
+    assert source["init_args"]["action_queue"] == fragment["init_args"]["action_queue"]
+    assert source["init_args"]["model"]["init_args"]["export_dir"] == "./exports/torch"
+    assert "leader" not in source["init_args"]
+
+
+def test_runtime_bundle_readme_lists_unresolved_paths() -> None:
+    document = {
+        "init_args": {"robot": {"init_args": {"name": "rt-follower"}}},
+    }
+    text = runtime_bundle_readme(document, unresolved=["/dev/ttyACM0"])
+    assert "physicalai run --config runtime.yaml" in text
+    assert "/dev/ttyACM0" in text
+    assert "rt-follower" in text
+
+
+async def test_inference_export_document_validates_with_a_policy_source(mocker: Any) -> None:
+    _stub_device_paths(mocker)
+    fragment = policy_source_fragment(export_dir="./exports/torch", backend="torch", device="cpu")
+    document = await build_runtime_config(
+        follower=_robot("follower"),
+        leader=None,
+        cameras=[],
+        robot_factory=_robot_factory(),
+        allow_stored_port=True,
+        action_source=fragment,
+    )
+    validate_config(document)
+    assert document["init_args"]["action_source"]["class_path"] == "physicalai.runtime.PolicySource"
