@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -17,7 +18,7 @@ from api.dependencies import (
 from exceptions import ResourceNotFoundError, ResourceType
 from main import app
 from schemas.project_camera import CameraAdapter
-from services.camera_claims import CameraClaimRegistry
+from services.camera_claims import CameraClaim, CameraClaimRegistry
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -156,4 +157,31 @@ def test_a_failed_connect_releases_the_claim(mock_robot_client_factory, claims: 
         app.dependency_overrides.clear()
 
     assert payload["event"] == "error"
+    assert claims.holder_of("cam-front") is None
+
+
+def test_waiter_releases_when_the_owner_dies() -> None:
+    from api.runtime_ws import _release_claims_when_dead
+
+    claims = CameraClaimRegistry()
+    generation = claims.claim(
+        [
+            CameraClaim(
+                fingerprint="cam-front",
+                settings=(640, 480, 30),
+                holder="rt-a",
+                project_id=PROJECT_ID,
+                project_name="Alpha",
+            )
+        ]
+    )
+    owner = MagicMock()
+    owner.is_alive.side_effect = [True, False]
+
+    async def _run() -> None:
+        with patch("api.runtime_ws._CLAIM_POLL_INTERVAL_S", 0):
+            await _release_claims_when_dead(owner, claims, "rt-a", generation)
+
+    asyncio.run(_run())
+
     assert claims.holder_of("cam-front") is None
