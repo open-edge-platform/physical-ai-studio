@@ -225,7 +225,7 @@ class XR1Model(Model):
         )
 
     def _apply_training_flags(self, config: XR1Config) -> None:
-        """Apply freezing and gradient-checkpointing options.
+        """Apply freezing, gradient-checkpointing and compilation options.
 
         Args:
             config: Model configuration.
@@ -237,6 +237,12 @@ class XR1Model(Model):
 
         if config.gradient_checkpointing and not config.freeze_vlm:
             self.vlm.gradient_checkpointing_enable()
+
+        if config.compile_model:
+            # Only the action expert. The backbone runs once per chunk and is not
+            # capturable (graph_export.py pins why); the expert runs once per
+            # denoising step, so it is where compilation pays.
+            self.dit_forward = torch.compile(self.dit_forward, mode=config.compile_mode)  # type: ignore[method-assign]
 
     @property
     def dtype(self) -> torch.dtype:

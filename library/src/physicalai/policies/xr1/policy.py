@@ -65,6 +65,10 @@ class XR1(ExportablePolicyMixin, Policy):
     (~0.7B parameters), which does fit.
 
     Args:
+        compile_model: Apply ``torch.compile`` to the action expert only. The Qwen3-VL
+            backbone is left alone: it runs once per chunk and is not capturable
+            (see :mod:`~physicalai.policies.xr1.graph_export`), while the expert runs
+            ``num_inference_steps`` times.
         pretrained_name_or_path: Local directory or Hugging Face repo id of a released
             XR-1 checkpoint, e.g. ``"XiaomiRobotics/Xiaomi-Robotics-1-RoboCasa"``. The
             checkpoint's architecture sizes and action horizon override the
@@ -131,6 +135,8 @@ class XR1(ExportablePolicyMixin, Policy):
         gradient_checkpointing: bool = True,
         freeze_vlm: bool = False,
         freeze_vision_encoder: bool = False,
+        compile_model: bool = False,
+        compile_mode: str = "default",
         normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "MEAN_STD",
         optimizer_lr: float = 1.0e-4,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
@@ -186,6 +192,8 @@ class XR1(ExportablePolicyMixin, Policy):
             gradient_checkpointing=gradient_checkpointing,
             freeze_vlm=freeze_vlm,
             freeze_vision_encoder=freeze_vision_encoder,
+            compile_model=compile_model,
+            compile_mode=compile_mode,
             normalization_mode=normalization_mode,
             optimizer_lr=optimizer_lr,
             optimizer_betas=tuple(optimizer_betas),  # type: ignore[arg-type]

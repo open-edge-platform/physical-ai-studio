@@ -129,6 +129,12 @@ class XR1Config(Config):
             projectors. Defaults to False. This is the recipe that fits a single
             24 GB GPU.
         freeze_vision_encoder: Freeze only the vision tower. Defaults to False.
+        compile_model: Apply ``torch.compile`` to the action expert. Defaults to
+            False. Only the DiT is compiled: it is evaluated ``num_inference_steps``
+            times per chunk, while the Qwen3-VL backbone runs once and is not
+            capturable (see ``graph_export.py``).
+        compile_mode: ``torch.compile`` mode used when ``compile_model`` is set.
+            Defaults to ``"default"``.
         normalization_mode: Normalization for state/action features.
             ``"QUANTILES"`` maps to [-1, 1] using the 1st and 99th percentiles;
             ``"MEAN_STD"`` uses zero-mean unit-variance. Defaults to
@@ -193,6 +199,8 @@ class XR1Config(Config):
     gradient_checkpointing: bool = True
     freeze_vlm: bool = False
     freeze_vision_encoder: bool = False
+    compile_model: bool = False
+    compile_mode: str = "default"
 
     normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "MEAN_STD"
 
