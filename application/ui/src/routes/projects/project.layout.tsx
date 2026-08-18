@@ -19,8 +19,8 @@ import { Outlet, useLocation } from 'react-router';
 import { AppLogo } from '../../components/app-logo/app-logo';
 import { JobStatus } from '../../features/jobs/footer/job-status';
 import { LogsDialog } from '../../features/logs/logs-dialog';
-import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
-import { useProjectId } from '../../features/projects/use-project';
+import { ProjectMenu } from '../../features/projects/menu/project-menu.component';
+import { useProject, useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { getMainPageInProjectUrl } from './project-navigation';
 
@@ -61,7 +61,7 @@ const Header = ({ project_id }: { project_id: string }) => {
                     ]}
                 </TabList>
                 <Flex alignItems={'center'} height={'100%'} marginStart='auto' gap='size-100'>
-                    <ProjectsListPanel />
+                    <ProjectMenu />
                 </Flex>
             </Flex>
         </View>
@@ -107,6 +107,9 @@ export const ProjectLayout = () => {
     const { project_id } = useProjectId();
     const { pathname } = useLocation();
 
+    // We want to check if the project exists before rendering the layout. If it doesn't, error boundary will catch it.
+    useProject();
+
     const pageName = getMainPageInProjectUrl(pathname);
 
     return (
@@ -123,7 +126,14 @@ export const ProjectLayout = () => {
                 height={'100%'}
             >
                 <Header project_id={project_id} />
-                <View gridArea={'content'} maxHeight={'100vh'} minWidth={0} minHeight={0} height='100%'>
+                <View
+                    gridArea={'content'}
+                    maxHeight={'100vh'}
+                    minWidth={0}
+                    minHeight={0}
+                    height='100%'
+                    backgroundColor={'gray-75'}
+                >
                     <Suspense fallback={<Loading mode='overlay' />}>
                         <Outlet />
                     </Suspense>

@@ -10,11 +10,12 @@ Goal-oriented guides for specific tasks. Each guide assumes you've completed the
 
 ## Training
 
-| Guide                                                  | Description                             |
-| ------------------------------------------------------ | --------------------------------------- |
-| [CLI Training](training/cli.md)                        | Train policies from the command line    |
-| [Image Augmentations](training/image_augmentations.md) | Configure image transforms for training |
-| Distributed Training                                   | TBA - Multi-GPU and multi-node training |
+| Guide                                                      | Description                                               |
+| ---------------------------------------------------------- | --------------------------------------------------------- |
+| [CLI Training](training/cli.md)                            | Train policies from the command line                      |
+| [SnapFlow Distillation](training/snapflow_distillation.md) | Distill a policy to single-step (1-NFE) action generation |
+| [Image Augmentations](training/image_augmentations.md)     | Configure image transforms for training                   |
+| Distributed Training                                       | TBA - Multi-GPU and multi-node training                   |
 
 ## Benchmark
 

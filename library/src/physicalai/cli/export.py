@@ -12,6 +12,7 @@ from jsonargparse import ActionConfigFile, ArgumentParser, Namespace
 from physicalai.cli._spec import SubcommandSpec  # noqa: PLC2701
 
 from physicalai.cli._help import print_export_help  # noqa: PLC2701
+from physicalai.cli._logging import configure_console_logging  # noqa: PLC2701
 from physicalai.cli._policy import load_policy  # noqa: PLC2701
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ def run(parser: ArgumentParser, cfg: Namespace) -> int:
         TypeError: If the loaded policy does not implement ``export()``.
     """
     del parser
+    configure_console_logging()
     policy, device = load_policy(cfg.policy, cfg.ckpt_path)
     if not hasattr(policy, "export"):
         msg = f"Policy '{cfg.policy}' does not support export()."

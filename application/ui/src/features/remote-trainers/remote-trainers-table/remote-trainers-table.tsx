@@ -1,32 +1,29 @@
 import { useState } from 'react';
 
-import { ActionButton, Badge, Flex, Grid, Icon, Item, Key, Menu, MenuTrigger, StatusLight, Text } from '@geti-ui/ui';
-import { ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
+import { ActionButton, Badge, Flex, Item, Key, Menu, MenuTrigger, StatusLight, Text } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
+import { Table, TableColumn } from '../../../components/table/table';
 import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
 import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
 import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 
 import classes from './remote-trainers-table.module.css';
 
-export const REMOTE_TRAINERS_GRID_COLUMNS = 'max-content 1fr 1fr 1fr 1fr auto';
+const REMOTE_TRAINER_COLUMNS: TableColumn[] = [
+    { width: 'max-content' },
+    { width: '1fr', header: 'Name' },
+    { width: '1fr', header: 'Trainer URL' },
+    { width: '1fr', header: 'Status' },
+    { width: '1fr', header: 'Compute' },
+    { width: 'auto', align: 'end' },
+];
 
 const DEVICE_BADGE_CLASSES: Record<string, string> = {
     CUDA: classes.cudaBadge,
     XPU: classes.xpuBadge,
 };
-
-export const RemoteTrainersTableHeader = () => (
-    <div className={classes.tableHeader}>
-        <div />
-        <Text>Name</Text>
-        <Text>Trainer URL</Text>
-        <Text>Status</Text>
-        <Text>Compute</Text>
-        <div />
-    </div>
-);
 
 const REMOTE_TRAINERS_MENU_ACTION_ITEMS = {
     CHECK_STATUS: 'check_status',
@@ -98,27 +95,15 @@ const RemoteTrainerRow = ({
     onDelete,
 }: RemoteTrainerRowProps) => {
     const types = deviceTypes(health);
-    const contentId = `remote-trainer-detail-${remoteTrainer.id}`;
 
     return (
-        <div
-            data-testid={`remote-trainer-row-${remoteTrainer.id}`}
-            onClick={onToggleExpanded}
-            className={`${classes.trainerRow} ${isExpanded ? classes.rowExpanded : ''}`}
+        <Table.ExpandableRow
+            id={`remote-trainer-row-${remoteTrainer.id}`}
+            label={remoteTrainer.name}
+            isExpanded={isExpanded}
+            onExpandedChange={onToggleExpanded}
+            detail={<RemoteTrainerDetail remoteTrainer={remoteTrainer} health={health} isChecking={isChecking} />}
         >
-            <ActionButton
-                isQuiet
-                aria-expanded={isExpanded}
-                aria-controls={contentId}
-                aria-label={`Show details for ${remoteTrainer.name}`}
-                onPress={onToggleExpanded}
-                UNSAFE_className={classes.disclosureButton}
-            >
-                <Icon>
-                    <ChevronRightSmallLight />
-                </Icon>
-            </ActionButton>
-
             <Text>{remoteTrainer.name}</Text>
 
             <Text UNSAFE_className={classes.trainerUrl}>{remoteTrainer.url}</Text>
@@ -138,7 +123,7 @@ const RemoteTrainerRow = ({
                 </Text>
             </Flex>
 
-            <Flex gap='size-100' wrap UNSAFE_className={classes.actionsCell}>
+            <Flex gap='size-100' wrap>
                 <RemoteTrainersMenuActions
                     remoteTrainerName={remoteTrainer.name}
                     onCheck={onCheck}
@@ -147,13 +132,7 @@ const RemoteTrainerRow = ({
                     isChecking={isChecking}
                 />
             </Flex>
-
-            {isExpanded && (
-                <Grid id={contentId} gridColumn={'1/-1'} marginTop={'size-150'}>
-                    <RemoteTrainerDetail remoteTrainer={remoteTrainer} health={health} isChecking={isChecking} />
-                </Grid>
-            )}
-        </div>
+        </Table.ExpandableRow>
     );
 };
 
@@ -169,8 +148,7 @@ export const RemoteTrainersTable = ({ remoteTrainers, onEdit, onDelete }: Remote
     const health = useRemoteTrainersHealth(remoteTrainers.map((remoteTrainer) => remoteTrainer.id));
 
     return (
-        <Grid columns={REMOTE_TRAINERS_GRID_COLUMNS} columnGap='size-100' width='100%'>
-            <RemoteTrainersTableHeader />
+        <Table columns={REMOTE_TRAINER_COLUMNS} isEmphasized>
             {remoteTrainers.map((remoteTrainer) => {
                 const entry = health.get(remoteTrainer.id);
                 const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
@@ -196,6 +174,6 @@ export const RemoteTrainersTable = ({ remoteTrainers, onEdit, onDelete }: Remote
                     />
                 );
             })}
-        </Grid>
+        </Table>
     );
 };

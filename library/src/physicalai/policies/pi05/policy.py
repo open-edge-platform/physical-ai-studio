@@ -28,6 +28,7 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 from physicalai.policies.base import Policy
+from physicalai.policies.mixins import SnapFlowPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Pi05(ExportablePolicyMixin, Policy):
+class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
     """Pi05 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi05 model.
@@ -631,6 +632,26 @@ class Pi05(ExportablePolicyMixin, Policy):
         loss, loss_dict = self(batch)
         self.log("train/loss", loss_dict["loss"], prog_bar=True)
         return loss
+
+    @property
+    def inner_model(self) -> Pi05Model:
+        """The unwrapped Pi05 flow-matching module.
+
+        Raises:
+            RuntimeError: If accessed before ``setup()`` has initialized the model.
+        """
+        if self.model is None:
+            msg = "inner_model accessed before the model was initialized (setup() has not run yet)."
+            raise RuntimeError(msg)
+        return self.model
+
+    def freeze_vlm(self) -> None:
+        """Freeze PaliGemma so only the action expert and target-time embedding train."""
+        inner = self.inner_model
+        object.__setattr__(self.config, "train_expert_only", True)  # noqa: PLC2801
+        inner.paligemma_with_expert.train_expert_only = True
+        inner.paligemma_with_expert._set_requires_grad()  # noqa: SLF001
+        inner.train()
 
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
