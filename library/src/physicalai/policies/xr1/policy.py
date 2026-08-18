@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
@@ -23,9 +24,17 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import XR1Config
 from .preprocessor import XR1Postprocessor, XR1Preprocessor, make_xr1_preprocessors
+from .pretrained_utils import (
+    infer_config_overrides,
+    load_pretrained_weights,
+    load_state_dict,
+    read_embodiment_stats,
+)
 from .vla import XR1Model
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from lightning.pytorch.utilities.types import OptimizerLRSchedulerConfig
 
     from physicalai.data import Observation
@@ -54,6 +63,14 @@ class XR1(ExportablePolicyMixin, Policy):
     That fits a 24 GB card for inference, but a full AdamW fine-tune needs roughly
     66 GiB. Set ``freeze_vlm=True`` to train only the action expert and projectors
     (~0.7B parameters), which does fit.
+
+    Args:
+        pretrained_name_or_path: Local directory or Hugging Face repo id of a released
+            XR-1 checkpoint, e.g. ``"XiaomiRobotics/Xiaomi-Robotics-1-RoboCasa"``. The
+            checkpoint's architecture sizes and action horizon override the
+            corresponding arguments, because the weights cannot be loaded into a
+            differently shaped model. ``None`` builds a randomly initialized action
+            expert on top of the pretrained backbone.
 
     Example:
         Training:
@@ -89,6 +106,7 @@ class XR1(ExportablePolicyMixin, Policy):
         dit_head_dim: int = 128,
         dit_kv_heads: int = 8,
         *,
+        pretrained_name_or_path: str | Path | None = None,
         vlm_pretrained: bool = True,
         vlm_config_overrides: dict[str, Any] | None = None,
         # Flow matching
@@ -179,7 +197,14 @@ class XR1(ExportablePolicyMixin, Policy):
             scheduler_decay_lr=scheduler_decay_lr,
         )
 
-        self.save_hyperparameters(ignore=["config"])
+        self._pretrained_weights: dict[str, torch.Tensor] | None = None
+        if pretrained_name_or_path is not None:
+            self.config, self._pretrained_weights = self._resolve_pretrained(pretrained_name_or_path, self.config)
+
+        # ``pretrained_name_or_path`` is deliberately not a hyperparameter: a
+        # checkpoint already carries the weights, and keeping it would make every
+        # reload re-download several gigabytes to overwrite them.
+        self.save_hyperparameters(ignore=["config", "pretrained_name_or_path"])
         self._set_hparam_keys()
 
         self.model: XR1Model | None = None
@@ -189,6 +214,43 @@ class XR1(ExportablePolicyMixin, Policy):
 
         if dataset_stats is not None:
             self._initialize_model(dataset_stats)
+
+    @staticmethod
+    def _resolve_pretrained(
+        pretrained_name_or_path: str | Path,
+        config: XR1Config,
+    ) -> tuple[XR1Config, dict[str, torch.Tensor]]:
+        """Read a released checkpoint and reconcile the config with it.
+
+        The released weights fix the architecture - action-expert depth and width,
+        the padded action and state widths - and the accompanying
+        ``preprocessor_config.json`` fixes the action horizon. Applying those before
+        the model is built turns what would otherwise be an unreadable shape error
+        deep inside ``load_state_dict`` into a configuration that simply matches.
+
+        Args:
+            pretrained_name_or_path: Local checkpoint directory or Hub repo id.
+            config: The configuration built from the constructor arguments.
+
+        Returns:
+            ``(config, state_dict)`` with the checkpoint's sizes applied.
+        """
+        state_dict = load_state_dict(pretrained_name_or_path)
+
+        stats = None
+        try:
+            stats = read_embodiment_stats(pretrained_name_or_path)
+        except (FileNotFoundError, KeyError, ValueError) as error:
+            # The 5B base ships no processor metadata, so the horizon cannot be read
+            # back; the configured chunk_size stands.
+            logger.info("No embodiment statistics in %s (%s)", pretrained_name_or_path, error)
+
+        overrides = infer_config_overrides(state_dict, stats)
+        logger.info("XR-1 checkpoint implies %s", overrides)
+        # replace is typed per dataclass field, so a dynamically built mapping
+        # cannot be checked against it; the keys come from infer_config_overrides,
+        # which only ever names real XR1Config fields.
+        return replace(config, **cast("dict[str, Any]", overrides)), state_dict
 
     def _set_hparam_keys(self) -> None:
         """Sync checkpoint hparams from the resolved policy config."""
@@ -240,6 +302,11 @@ class XR1(ExportablePolicyMixin, Policy):
         """
         features = self.features_from_stats(dataset_stats)
         self.model = XR1Model(self.config)
+        if self._pretrained_weights is not None:
+            report = load_pretrained_weights(self.model, self._pretrained_weights)
+            logger.info("XR-1 pretrained weights: %s", report.summary())
+            # Several gigabytes; the model owns them now.
+            self._pretrained_weights = None
         self._preprocessor, self._postprocessor = make_xr1_preprocessors(self.config, features)
         self._dataset_stats = dataset_stats
 

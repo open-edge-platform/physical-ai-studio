@@ -19,7 +19,10 @@ from physicalai.data import FeatureType, Observation
 from physicalai.export import ExportBackend
 from physicalai.inference import InferenceModel
 from physicalai.policies import get_policy
+from physicalai.policies import xr1 as _xr1_package  # noqa: F401 - ensures submodule import
 from physicalai.policies.xr1 import XR1, XR1Config
+from physicalai.policies.xr1 import policy as xr1_policy
+from physicalai.policies.xr1.pretrained_utils import EmbodimentStats
 from physicalai.policies.xr1.preprocessor import XR1Preprocessor
 
 if TYPE_CHECKING:
@@ -346,3 +349,75 @@ class TestTorchExportRoundTrip:
         actions = [np.asarray(model.select_action(observation)) for _ in range(3)]
 
         assert [a.shape for a in actions] == [(ACTION_DIM,)] * 3
+
+class TestPretrainedInitialization:
+    """Loading a released checkpoint through the constructor, as Pi05 does."""
+
+    @staticmethod
+    def _released_state_dict() -> dict[str, torch.Tensor]:
+        """Return a miniature checkpoint with the released key names.
+
+        Returns:
+            Tensors whose shapes imply a 2-layer, 64-wide expert over 12 action slots.
+        """
+        return {
+            "sink.weight": torch.zeros(1, 64),
+            "action_projector.layers.0.weight": torch.zeros(64, 12),
+            "state_projector.layers.0.weight": torch.zeros(64, 10),
+            "dit.layers.0.attn.q_norm.weight": torch.zeros(32),
+            "dit.layers.1.attn.q_norm.weight": torch.zeros(32),
+        }
+
+    def test_checkpoint_sizes_override_the_arguments(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The weights fix the architecture, so the config must yield to them."""
+        monkeypatch.setattr(xr1_policy, "load_state_dict", lambda _path: self._released_state_dict())
+        monkeypatch.setattr(
+            xr1_policy,
+            "read_embodiment_stats",
+            lambda _path: EmbodimentStats(
+                name="robocasa_mg",
+                chunk_size=10,
+                mean=torch.zeros(10, 12),
+                std=torch.zeros(10, 12),
+                active_slots=(0, 1, 2),
+            ),
+        )
+
+        policy = XR1(**{**TINY_KWARGS, "pretrained_name_or_path": "XiaomiRobotics/Xiaomi-Robotics-1-RoboCasa"})
+
+        assert policy.config.dit_num_layers == 2
+        assert policy.config.dit_hidden_size == 64
+        assert policy.config.max_action_dim == 12
+        assert policy.config.max_state_dim == 10
+        # From preprocessor_config.json, which the tensor shapes cannot supply.
+        assert policy.config.chunk_size == 10
+        assert policy.config.n_action_steps == 10
+
+    def test_missing_statistics_leave_the_horizon_alone(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The 5B base ships no processor metadata; the configured horizon stands."""
+        monkeypatch.setattr(xr1_policy, "load_state_dict", lambda _path: self._released_state_dict())
+
+        def no_stats(_path: str) -> EmbodimentStats:
+            msg = "No preprocessor_config.json"
+            raise FileNotFoundError(msg)
+
+        monkeypatch.setattr(xr1_policy, "read_embodiment_stats", no_stats)
+
+        policy = XR1(**{**TINY_KWARGS, "pretrained_name_or_path": "XiaomiRobotics/Xiaomi-Robotics-1-5B"})
+
+        assert policy.config.chunk_size == TINY_KWARGS["chunk_size"]
+
+    def test_not_saved_as_a_hyperparameter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A checkpoint carries the weights; reloading must not re-download them."""
+        monkeypatch.setattr(xr1_policy, "load_state_dict", lambda _path: self._released_state_dict())
+        monkeypatch.setattr(xr1_policy, "read_embodiment_stats", lambda _path: None)
+
+        policy = XR1(**{**TINY_KWARGS, "pretrained_name_or_path": "some/repo"})
+
+        assert "pretrained_name_or_path" not in policy.hparams
+
+    def test_absent_by_default(self) -> None:
+        """Without the argument nothing is downloaded and no weights are pending."""
+        policy = XR1(**TINY_KWARGS)
+
+        assert policy._pretrained_weights is None  # noqa: SLF001 - asserting no pending load
