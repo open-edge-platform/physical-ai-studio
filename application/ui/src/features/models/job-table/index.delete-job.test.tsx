@@ -2,11 +2,11 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
-import { http } from '../../api/utils';
-import { server } from '../../msw-node-setup';
-import { render } from '../../test-utils/render';
-import { Index } from './index';
-import { SchemaTrainJob } from './train-model-dialog';
+import { http } from '../../../api/utils';
+import { server } from '../../../msw-node-setup';
+import { Index } from '../../../routes/models';
+import { render } from '../../../test-utils/render';
+import { SchemaTrainJob } from '../train-model-dialog/train-model-dialog';
 
 const projectId = 'b8b28d4f-e78f-48ad-afb8-03d060178a3c';
 const jobId = 'f1b3f8f0-1c1a-4b1a-9c1a-1c1a1c1a1c1a';

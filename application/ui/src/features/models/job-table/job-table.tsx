@@ -18,7 +18,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { $api } from '../../../api/client';
 import { ElapsedDuration } from '../../../components/elapsed-duration.component';
-import { notify } from '../../components/notification/notification.component';
+import { notify } from '../../../components/notification/notification.component';
 import { CollapsableRow } from '../shared/collapsable-row';
 import { durationBetween } from '../shared/duration';
 import { SingleBadge, SplitBadge } from '../shared/split-badge';
