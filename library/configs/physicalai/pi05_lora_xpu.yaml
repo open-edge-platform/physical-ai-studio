@@ -1,7 +1,7 @@
 # Pi05 LoRA Policy Training Configuration
 #
 # Usage:
-#   physicalai fit --config configs/physicalai/pi05_lora.yaml
+#   physicalai fit --config configs/physicalai/pi05_lora_xpu.yaml
 
 model:
   class_path: physicalai.policies.Pi05
