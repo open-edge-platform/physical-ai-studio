@@ -19,11 +19,12 @@ is the seventh joint of a 7-DoF arm. Setting
 dataset dimension to the slot the checkpoint expects instead.
 
 Only the state mapping can be given for a dataset such as ALOHA. Its actions are
-absolute joint targets, while XR1's action slots are relative end-effector poses,
-so no index permutation relates the two - see ``DIFFERENCES.md`` in the workspace
-notes. The generic
+absolute joint targets, while XR1's action slots are relative end-effector poses; the
+two are related by forward kinematics and a finite difference, not by any permutation
+of indices, so no ``action_slot_map`` can express it. The generic
 :attr:`~physicalai.policies.xr1.config.XR1Config.action_slot_map` mechanism is
-provided for embodiments where such a relation does exist.
+provided for embodiments where such a relation does exist - LIBERO, whose actions are
+already end-effector deltas, is one.
 """
 
 from __future__ import annotations
