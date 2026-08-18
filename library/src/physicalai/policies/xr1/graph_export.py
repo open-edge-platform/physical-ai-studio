@@ -404,26 +404,40 @@ class XR1ActionTrimmer(Postprocessor):
         return f"{self.__class__.__name__}(action_dim={self.action_dim})"
 
 
-def export_hybrid(policy: Any, output_dir: Path | str, *, compress_to_fp16: bool = False) -> Path:  # noqa: ANN401 - an XR1
-    """Write a hybrid export: Torch backbone plus an OpenVINO action expert.
+def export_hybrid(
+    policy: Any,  # noqa: ANN401 - an XR1
+    output_dir: Path | str,
+    *,
+    backend: str = "openvino",
+    compress_to_fp16: bool = False,
+) -> Path:
+    """Write a hybrid export: Torch backbone plus a graph-executed action expert.
 
     The result is a normal export directory that Runtime's ``InferenceModel`` loads
     unchanged. Its manifest declares two artifacts and a ``two_stage`` runner, so the
-    backbone runs through the Torch adapter and the action expert through the
-    OpenVINO one.
+    backbone runs through the Torch adapter and the action expert through the graph
+    adapter named by ``backend``.
 
     Args:
         policy: An initialized :class:`~physicalai.policies.xr1.policy.XR1`.
         output_dir: Directory for the artifacts and the manifest.
-        compress_to_fp16: Store the OpenVINO weights as fp16.
+        backend: Adapter for the second stage, ``"openvino"`` or ``"onnx"``. Both come
+            from the same exported graph - OpenVINO is converted from the ONNX one - so
+            they differ in which runtime executes it, not in what is executed.
+        compress_to_fp16: Store the OpenVINO weights as fp16. Ignored for ONNX.
 
     Returns:
         The export directory.
 
     Raises:
-        ValueError: If the policy has not been initialized with dataset statistics,
-            which the manifest needs for its feature schema and denormalization.
+        ValueError: If ``backend`` is not one the action expert supports, or if the
+            policy has not been initialized with dataset statistics, which the manifest
+            needs for its feature schema and denormalization.
     """
+    if backend not in {"onnx", "openvino"}:
+        msg = f"A hybrid export supports 'onnx' and 'openvino', got {backend!r}"
+        raise ValueError(msg)
+
     from physicalai.inference.manifest import (  # noqa: PLC0415  # heavy import, deferred
         ComponentSpec,
         Manifest,
@@ -445,7 +459,7 @@ def export_hybrid(policy: Any, output_dir: Path | str, *, compress_to_fp16: bool
         policy.model,
         directory,
         inputs,
-        backend="openvino",
+        backend=backend,
         compress_to_fp16=compress_to_fp16,
     )
 
@@ -467,10 +481,10 @@ def export_hybrid(policy: Any, output_dir: Path | str, *, compress_to_fp16: bool
             # off the spec rather than a runner argument.
             runner=ComponentSpec(
                 class_path="physicalai.inference.runners.TwoStage",
-                init_args={"backend": "openvino", "artifact": expert_path.name},
+                init_args={"backend": backend, "artifact": expert_path.name},
                 chunk_size=policy.config.chunk_size,
             ),
-            artifacts={"torch": f"{policy.__class__.__name__.lower()}.pt", "openvino": expert_path.name},
+            artifacts={"torch": f"{policy.__class__.__name__.lower()}.pt", backend: expert_path.name},
             preprocessors=[ComponentSpec(type="to_float_tensor")],
             postprocessors=[
                 ComponentSpec(

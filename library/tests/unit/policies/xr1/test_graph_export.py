@@ -309,36 +309,45 @@ class TestBackboneExportBlockers:
 
 
 @pytest.mark.slow
+@pytest.mark.parametrize("backend", ["openvino", "onnx"])
 class TestHybridExport:
-    """Milestone 8: an export directory Runtime loads and partly runs on OpenVINO."""
+    """Milestone 8: an export directory Runtime loads and partly runs on a graph runtime.
+
+    Parametrized over both graph backends because they are the same exported graph -
+    OpenVINO is converted from the ONNX one - executed by different runtimes. Running
+    only one of them would leave the other claimed but unmeasured.
+    """
 
     @pytest.fixture
-    def exported(self, policy: Any, tmp_path: Path, stub_processor: Any) -> Path:
+    def exported(self, policy: Any, tmp_path: Path, stub_processor: Any, backend: str) -> Path:
         """Write a hybrid export and keep the reload path offline.
 
         Args:
             policy: An initialized policy.
             tmp_path: Export directory.
             stub_processor: Processor stand-in, reused by the reloaded policy.
+            backend: Graph backend for the second stage.
 
         Returns:
             The export directory.
         """
-        pytest.importorskip("openvino")
+        pytest.importorskip("openvino" if backend == "openvino" else "onnxruntime")
 
-        directory = export_hybrid(policy, tmp_path / "hybrid")
+        directory = export_hybrid(policy, tmp_path / f"hybrid-{backend}", backend=backend)
         XR1Preprocessor.processor = property(lambda _self: stub_processor)  # type: ignore[method-assign, assignment]
         return directory
 
-    def test_manifest_declares_both_stages(self, exported: Path) -> None:
+    def test_manifest_declares_both_stages(self, exported: Path, backend: str) -> None:
         """Runtime picks the primary adapter and the runner out of the manifest."""
         manifest = json.loads((exported / "manifest.json").read_text())
+        artifact = "xr1_action_expert.xml" if backend == "openvino" else "xr1_action_expert.onnx"
 
-        assert manifest["model"]["artifacts"] == {"torch": "xr1.pt", "openvino": "xr1_action_expert.xml"}
+        assert manifest["model"]["artifacts"] == {"torch": "xr1.pt", backend: artifact}
         # Torch is listed first, so it is the primary adapter Runtime loads.
         assert next(iter(manifest["model"]["artifacts"])) == "torch"
         assert manifest["model"]["runner"]["class_path"].endswith("TwoStage")
-        assert manifest["model"]["runner"]["init_args"]["artifact"] == "xr1_action_expert.xml"
+        assert manifest["model"]["runner"]["init_args"]["artifact"] == artifact
+        assert manifest["model"]["runner"]["init_args"]["backend"] == backend
         assert manifest["policy"]["source"]["class_path"].endswith("XR1BackboneStage")
 
     def test_reports_the_real_chunk_size(self, policy: Any, exported: Path) -> None:
@@ -347,8 +356,8 @@ class TestHybridExport:
 
         assert model.chunk_size == policy.config.chunk_size
 
-    def test_runs_end_to_end_through_inference_model(self, policy: Any, exported: Path) -> None:
-        """The action expert executes on OpenVINO inside a normal InferenceModel call."""
+    def test_runs_end_to_end_through_inference_model(self, policy: Any, exported: Path, backend: str) -> None:
+        """The action expert executes on the graph runtime inside a normal InferenceModel call."""
         model = InferenceModel(exported, device="cpu")
         rng = np.random.RandomState(0)
         shapes = {feature.name: feature.shape for feature in policy.inputs_schema or []}
@@ -361,7 +370,7 @@ class TestHybridExport:
         chunk = np.asarray(model.predict_action_chunk(observation))
 
         assert isinstance(model.runner, TwoStage)
-        assert model.runner.backend == "openvino"
+        assert model.runner.backend == backend
         # Trimmed to the dataset's action width, not the padded architecture width.
         assert chunk.shape == (policy.config.chunk_size, ACTION_DIM)
         assert np.isfinite(chunk).all()
