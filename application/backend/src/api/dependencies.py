@@ -29,7 +29,6 @@ from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
 from services.job_service import JobService
 from services.log_service import LogService
-from services.remote_server_service import RemoteServerService
 from services.robot_catalog_service import RobotCatalogService
 from services.snapshot_service import SnapshotService
 from services.system_service import SystemService

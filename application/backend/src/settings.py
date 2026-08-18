@@ -184,19 +184,6 @@ class Settings(BaseSettings):
     # Proxy settings
     no_proxy: str = Field(default="localhost,127.0.0.1,::1", alias="no_proxy")
 
-    # SSH-provisioned remote training
-    # Path to the user's SSH client config. The read-only config reader parses
-    # it to resolve a saved `ssh_host_alias` into its effective hostname/port/
-    # user for display and submission-time validation; Studio never reads key
-    # material from it.
-    ssh_config_path: Path = Field(default=Path("~/.ssh/config"), alias="SSH_CONFIG_PATH")
-
-    @field_validator("ssh_config_path", mode="before")
-    @classmethod
-    def expand_ssh_config_path(cls, value: Path | str) -> Path:
-        """Expand `~` so the default resolves to the running user's SSH config."""
-        return Path(value).expanduser()
-
     @property
     def database_url(self) -> str:
         """Get database URL"""
