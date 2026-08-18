@@ -269,7 +269,15 @@ def test_ready_state_can_be_recovered_from_metadata_when_publication_is_dropped(
 
         assert client.get_nowait().model_dump() == {
             "event": "state",
-            "data": {"connected": True, "follower_source": "hold", "model_loaded": None, "task": None},
+            "data": {
+                "connected": True,
+                "follower_source": "hold",
+                "model_loaded": None,
+                "task": None,
+                "dataset_loaded": None,
+                "is_recording": None,
+                "episodes_recorded": None,
+            },
         }
     finally:
         server.close()

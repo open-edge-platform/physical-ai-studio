@@ -14,7 +14,9 @@ from loguru import logger
 from pydantic import ValidationError
 
 from api.dependencies import (
+    CameraClaimRegistryDep,
     ProjectCameraServiceDep,
+    ProjectServiceDep,
     RobotClientFactoryDep,
     SettingsDep,
     get_camera_id,
@@ -27,10 +29,12 @@ from exceptions import RobotPluginUnavailableError
 from runtime.config_builder import RUNTIME_FPS, build_runtime_config
 from runtime.contract import CommandAdapter, DisconnectCommand
 from runtime.owner import RuntimeSessionOwner
+from runtime.session import RECORDING_TEARDOWN_TIMEOUT_S
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.ids import runtime_session_name
 from schemas.robot import ReadableRobot, UnavailableRobot
 from services import ProjectCameraService, RobotService
+from services.camera_claims import CameraClaim, settings_from_camera
 
 if TYPE_CHECKING:
     from schemas.project_camera import Camera
@@ -83,7 +87,17 @@ async def handle_outgoing(
         pass
 
 
-_RUNTIME_COMMANDS = frozenset({"set_follower_source", "load_model", "start_task", "stop_task"})
+_RUNTIME_PUBLICATIONS = frozenset(
+    {
+        "set_follower_source",
+        "load_model",
+        "start_task",
+        "stop_task",
+        "load_dataset",
+        "start_recording",
+    }
+)
+_RUNTIME_REQUESTS = frozenset({"save_episode", "discard_episode"})
 
 
 async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) -> None:
@@ -95,7 +109,7 @@ async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) ->
             if event == "disconnect":
                 client.apply(DisconnectCommand(request_id=message.get("request_id")))
                 return
-            if event not in _RUNTIME_COMMANDS:
+            if event not in _RUNTIME_PUBLICATIONS and event not in _RUNTIME_REQUESTS:
                 continue
             payload = dict(message.get("data") or {})
             payload["command"] = event
@@ -105,6 +119,10 @@ async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) ->
                 command = CommandAdapter.validate_python(payload)
             except ValidationError as exc:
                 logger.warning("Rejected malformed {} payload {}: {}", event, payload, exc)
+                continue
+            if event in _RUNTIME_REQUESTS:
+                ack = await asyncio.to_thread(client.request, command, RECORDING_TEARDOWN_TIMEOUT_S)
+                client.deliver(ack)
                 continue
             client.apply(command)
     except WebSocketDisconnect:
@@ -152,6 +170,25 @@ async def _devices_from_handshake(
     return follower, leader, cameras
 
 
+def _camera_claims(
+    *,
+    cameras: list[Camera],
+    session_name: str,
+    project_id: UUID,
+    project_name: str,
+) -> list[CameraClaim]:
+    return [
+        CameraClaim(
+            fingerprint=camera.fingerprint,
+            settings=settings_from_camera(camera),
+            holder=session_name,
+            project_id=project_id,
+            project_name=project_name,
+        )
+        for camera in cameras
+    ]
+
+
 @router.get("/ws", tags=["WebSocket"], summary="Runtime session (WebSocket)", status_code=426)
 async def runtime_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
     """This endpoint requires a WebSocket connection. Use `wss://` to connect."""
@@ -159,11 +196,13 @@ async def runtime_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG0
 
 
 @router.websocket("/ws")
-async def runtime_websocket(
+async def runtime_websocket(  # noqa: PLR0913, PLR0915, PLR0912
     project_id: Annotated[UUID, Depends(get_project_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     camera_service: ProjectCameraServiceDep,
+    project_service: ProjectServiceDep,
     robot_client_factory: RobotClientFactoryDep,
+    claims: CameraClaimRegistryDep,
     settings: SettingsDep,
     websocket: WebSocket,
 ) -> None:
@@ -174,6 +213,8 @@ async def runtime_websocket(
     incoming_task: asyncio.Task[None] | None = None
     outgoing_task: asyncio.Task[None] | None = None
     startup_task: asyncio.Task[None] | None = None
+    session_name: str | None = None
+    claimed = False
     try:
         handshake = await websocket.receive_json("text")
         follower, leader, cameras = await _devices_from_handshake(handshake, project_id, robot_service, camera_service)
@@ -184,25 +225,41 @@ async def runtime_websocket(
             fps=RUNTIME_FPS,
             robot_factory=robot_client_factory,
         )
-        session_name = runtime_session_name(follower.id)
-        client = RuntimeSessionClient(session_name)
+        name = runtime_session_name(follower.id)
+        session_name = name
+        project = await project_service.get_project_by_id(project_id)
+        claims.claim(
+            _camera_claims(
+                cameras=cameras,
+                session_name=name,
+                project_id=project_id,
+                project_name=project.name,
+            )
+        )
+        claimed = True
+        client = RuntimeSessionClient(name)
         await asyncio.to_thread(client.open)
         owner = RuntimeSessionOwner(
             client,
-            session_name=session_name,
+            session_name=name,
             document=document,
             follower_name=follower.name,
             leader_name=None if leader is None else leader.name,
             idle_timeout_s=settings.runtime_idle_timeout_s,
         )
         incoming_task = asyncio.create_task(handle_incoming(websocket, client))
-        startup_task = asyncio.create_task(
-            start_runtime_session(client, owner, replace=handshake.get("restart") is True)
-        )
-        done, _ = await asyncio.wait(
-            {incoming_task, startup_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
+        try:
+            startup_task = asyncio.create_task(
+                start_runtime_session(client, owner, replace=handshake.get("restart") is True)
+            )
+            done, _ = await asyncio.wait(
+                {incoming_task, startup_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        except Exception:
+            claims.release(name)
+            claimed = False
+            raise
         if incoming_task in done:
             incoming_task.result()
             # Interrupt a spawn that is not yet discoverable. Once /metadata is
@@ -241,3 +298,5 @@ async def runtime_websocket(
         await asyncio.gather(*tasks, return_exceptions=True)
         if client is not None:
             client.close()
+        if claimed and session_name is not None and (owner is None or not owner.is_alive()):
+            claims.release(session_name)

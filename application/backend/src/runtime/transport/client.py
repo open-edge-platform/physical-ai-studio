@@ -162,6 +162,10 @@ class RuntimeSessionClient:
             return ack
         raise TimeoutError(f"Runtime request {command.command} received no reply")
 
+    def deliver(self, event: RuntimeEvent) -> None:
+        """Enqueue a locally produced event, such as a request ack, for the websocket pump."""
+        self._events.emit(event)
+
     def get_nowait(self) -> RuntimeEvent:
         return self._events.get_nowait()
 

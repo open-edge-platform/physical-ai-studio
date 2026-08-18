@@ -47,11 +47,13 @@ def _watch_subscribers(
     """
     subscribers_present = True
     idle_since: float | None = None
+    recording_idle_logged = False
 
     while not stop.wait(_IDLE_POLL_INTERVAL_S):
         if server.has_matching_subscribers():
             subscribers_present = True
             idle_since = None
+            recording_idle_logged = False
             continue
         if subscribers_present:
             subscribers_present = False
@@ -61,6 +63,13 @@ def _watch_subscribers(
             except Exception:
                 logger.exception("Failed to switch runtime session to hold after losing subscribers")
         now = time.monotonic()
+        if session.is_recording:
+            if not recording_idle_logged:
+                logger.info("Runtime session is recording; idle countdown paused")
+                recording_idle_logged = True
+            idle_since = None
+            continue
+        recording_idle_logged = False
         if idle_since is None:
             idle_since = now
         elif now - idle_since > idle_timeout_s:
@@ -72,9 +81,9 @@ def _watch_subscribers(
             logger.info("Runtime session idle for {}s; shutting down", idle_timeout_s)
             server.emit(LifecycleEvent(data=LifecycleData(event="shutdown", reason="idle_timeout")))
             # Setting stop ends session.run(...), which returns through
-            # session.teardown() in main(). B4 extends that teardown with
-            # RecordingMutation.teardown so an idle exit during recording
-            # still saves the episode.
+            # session.teardown() in main(). That teardown shuts the command
+            # worker and runs RecordingMutation.teardown so an idle exit
+            # after a save still copies the cache back.
             stop.set()
             return
 
@@ -225,7 +234,7 @@ def _open_locked_session(
         leader_name=payload.leader_name,
     )
     phase[0] = "endpoint_collision"
-    server.open(session.apply)
+    server.open(session.apply, session.handle_request)
     server.wait_for_client()
     phase[0] = "setup_failed"
     loop.run_until_complete(session.setup())
@@ -269,9 +278,8 @@ def main() -> int:
 
         completed = False
         try:
-            # session.run() returns through session.teardown() below. B4 extends
-            # that teardown with RecordingMutation.teardown so an idle exit
-            # during recording still saves the episode.
+            # session.run() returns through session.teardown() below, which
+            # finalizes any open recording mutation so saved episodes survive.
             session.run(stop)
             completed = True
         except Exception as exc:

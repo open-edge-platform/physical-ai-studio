@@ -124,10 +124,6 @@ describe('fetchClient.PATH', () => {
             expect(fetchClient.PATH('/api/jobs/ws')).toBe('/api/jobs/ws');
         });
 
-        it('resolves /api/record/robot_control/ws without params', () => {
-            expect(fetchClient.PATH('/api/record/robot_control/ws')).toBe('/api/record/robot_control/ws');
-        });
-
         it('resolves /api/projects/{project_id}/runtime/ws with params', () => {
             expect(
                 fetchClient.PATH('/api/projects/{project_id}/runtime/ws', {
