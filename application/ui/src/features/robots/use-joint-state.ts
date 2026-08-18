@@ -36,9 +36,7 @@ export const useSynchronizeModelJoints = (joints: JointsState, robotType: Schema
     }, [model, joints, jointMap]);
 };
 
-// Mirrors the backend's runtime.contract.FollowerSource. 'policy' is not sent by
-// this websocket yet (reserved for Phase B inference), but the union must match
-// the backend contract so a future value doesn't silently narrow to 'hold'.
+// Mirrors runtime.contract.FollowerSource. Inference uses 'policy'.
 export type FollowerSource = 'hold' | 'teleop' | 'policy';
 
 const RECOVERABLE_ERROR_CODES = new Set(['leader_connection_lost']);

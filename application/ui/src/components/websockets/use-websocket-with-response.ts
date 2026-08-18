@@ -14,12 +14,24 @@ interface AckMessage {
     };
 }
 
+interface ErrorMessage {
+    event?: string;
+    message?: string;
+}
+
 const isAckFor = (message: unknown, requestId: string): message is AckMessage => {
     if (typeof message !== 'object' || message === null) {
         return false;
     }
     const payload = message as AckMessage;
     return payload.event === 'ack' && payload.data?.request_id === requestId;
+};
+
+const isErrorEvent = (message: unknown): message is ErrorMessage => {
+    if (typeof message !== 'object' || message === null) {
+        return false;
+    }
+    return (message as ErrorMessage).event === 'error';
 };
 
 export default function useWebSocketWithResponse(
@@ -63,6 +75,11 @@ export default function useWebSocketWithResponse(
                     } else {
                         reject(new Error(messageData.data?.error || 'Runtime request failed.'));
                     }
+                    return;
+                }
+                if (matcher !== undefined && isErrorEvent(messageData)) {
+                    messagePromises.current.delete(requestId);
+                    reject(new Error(messageData.message || 'Runtime request failed.'));
                     return;
                 }
                 if (matcher?.(messageData)) {
