@@ -105,12 +105,15 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             ? remoteServers.map((remoteServer) => {
                   const entry = remoteServerStatusById.get(remoteServer.id);
                   const isChecking = entry?.isChecking ?? false;
+                  const isVerified = remoteServer.last_check_status === 'healthy';
                   return {
                       id: `ssh:${remoteServer.id}`,
                       label: remoteServer.name,
                       kind: 'ssh' as const,
-                      statusVariant: remoteServerStatusVariant(entry?.status, isChecking),
-                      statusLabel: remoteServerStatusLabel(entry?.status, isChecking),
+                      statusVariant: isVerified
+                          ? remoteServerStatusVariant(entry?.status, isChecking)
+                          : ('negative' as const),
+                      statusLabel: isVerified ? remoteServerStatusLabel(entry?.status, isChecking) : 'Not verified',
                   };
               })
             : []),
@@ -160,7 +163,23 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         const rawId = targetRawId(selectedTarget.id);
         return remoteServers.find((server) => server.id === rawId) ?? null;
     }, [isSshTarget, remoteServers, selectedTarget]);
-    const sshUnavailable = isSshTarget && selectedSshServer?.last_check_status !== 'healthy';
+    // Live Tier-1 status for the selected server, polled independently of the
+    // persisted `last_check_status`. A server can be verified (last_check_status
+    // === "healthy") yet go unreachable/degraded before the next explicit
+    // verification, so gate on both rather than trusting the persisted flag alone.
+    const selectedSshStatusEntry = selectedSshServer ? remoteServerStatusById.get(selectedSshServer.id) : undefined;
+    const sshVerified = selectedSshServer?.last_check_status === 'healthy';
+    const sshLiveStatus = selectedSshStatusEntry?.status?.status;
+    const sshUnavailable =
+        isSshTarget && (!sshVerified || (sshLiveStatus !== undefined && sshLiveStatus !== 'healthy'));
+    // Human-readable reason for the warning banner below, falling back to an
+    // explicit label rather than rendering `undefined` when the server isn't
+    // found in `remoteServers` yet (e.g. still loading).
+    const sshStatusMessage = !selectedSshServer
+        ? 'not loaded yet'
+        : !sshVerified
+          ? selectedSshServer.last_check_status
+          : remoteServerStatusLabel(selectedSshStatusEntry?.status, selectedSshStatusEntry?.isChecking ?? false);
     // The device actually driving this job: the local GPU when training locally,
     // the remote trainer's reported GPU once its health check resolves, or the
     // configured accelerator for an SSH-provisioned server (no live VRAM probe,
@@ -209,8 +228,16 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             }
         }
 
-        if (isSshTarget && sshUnavailable) {
-            return;
+        if (isSshTarget) {
+            if (sshUnavailable) {
+                return;
+            }
+            // Final guard: the server may have gone unreachable/degraded since the
+            // last poll, so re-check its Tier-1 status right before submitting.
+            const latestStatus = await selectedSshStatusEntry?.checkStatus();
+            if (!latestStatus || latestStatus.status !== 'healthy') {
+                return;
+            }
         }
 
         const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
@@ -264,8 +291,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
                     {sshUnavailable && (
                         <InlineAlert variant='warning'>
-                            This remote server isn&apos;t ready for training (status:{' '}
-                            {selectedSshServer?.last_check_status}). Verify the server before submitting a job.
+                            This remote server isn&apos;t ready for training (status: {sshStatusMessage}). Verify the
+                            server before submitting a job.
                         </InlineAlert>
                     )}
 
