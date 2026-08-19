@@ -9,6 +9,8 @@ service. The active backend is selected per job from its persisted execution
 target.
 """
 
+from uuid import UUID
+
 from schemas.job import TrainJobPayload
 from services.training_backends.base import (
     ProgressReporter,
@@ -19,16 +21,24 @@ from services.training_backends.base import (
 )
 
 
-def get_training_backend(payload: TrainJobPayload) -> TrainingBackend:
-    """Return the backend selected by a job's persisted execution target."""
+async def get_training_backend(payload: TrainJobPayload, job_id: UUID) -> TrainingBackend:
+    """Return the backend selected by a job's persisted execution target.
+
+    ``job_id`` is only used by the SSH target, to key its provisioning record;
+    the local and direct-URL remote targets ignore it.
+    """
     from schemas.job import TrainingTarget
 
     if payload.training_target is TrainingTarget.SSH:
-        # SSH provisioning (PR7/PR8) is not wired in yet. JobService rejects SSH
-        # submissions before a job reaches this factory (see submit_train_job),
-        # so this should be unreachable; fail loudly rather than silently
-        # falling through to local training if it ever is reached.
-        raise NotImplementedError("SSH-provisioned training backend is not yet implemented")
+        from db import get_async_db_session_ctx
+        from services.remote_server_service import RemoteServerService
+        from services.training_backends.ssh import SshTrainingBackend
+
+        if payload.remote_server_id is None:
+            raise ValueError("SSH training job is missing its selected remote server")
+        async with get_async_db_session_ctx() as session:
+            server = await RemoteServerService(session).get_remote_server(payload.remote_server_id)
+        return SshTrainingBackend(job_id, server)
 
     if payload.training_target is TrainingTarget.REMOTE:
         from services.training_backends.remote import RemoteTrainingBackend
