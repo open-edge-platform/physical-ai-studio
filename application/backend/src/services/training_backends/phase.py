@@ -14,10 +14,17 @@ can render a stepper while the plain bar still drives unaware consumers.
 Local and direct-URL backends are untouched by this module: they keep their
 own ``SNAPSHOT_UPLOAD_PROGRESS`` / ``TRAINING_PROGRESS_END`` windows in
 ``services.training_backends.remote`` and never attach a ``phase`` descriptor.
-This table is selected only by the (not-yet-implemented) SSH backend.
+This table is selected only by ``services.training_backends.ssh.SshTrainingBackend``.
 
 ``PHASE_TABLE_VERSION`` and ``PhaseKey`` must stay in lockstep with whatever
 the UI consumes, so both sides drift together rather than silently apart.
+
+Window order deliberately follows `SshProvisioningService.provision`'s real
+execution order (verify the image's signature *before* ever pulling it, so an
+unsigned/tampered image is never fetched at all) rather than the earlier,
+purely descriptive "image pull, then verification" ordering: image
+verification runs, then the (indeterminate) pull, then the trainer container
+is launched.
 """
 
 from __future__ import annotations
@@ -40,8 +47,8 @@ class PhaseKey(StrEnum):
     """Ordered stages of an SSH-provisioned training job."""
 
     CONNECT = "connect"
-    IMAGE_PULL = "image_pull"
     IMAGE_VERIFY = "image_verify"
+    IMAGE_PULL = "image_pull"
     TRAINER_START = "trainer_start"
     UPLOAD = "upload"
     TRAIN = "train"
@@ -78,8 +85,8 @@ class PhaseWindow:
 # and force rewriting their existing progress assertions for no gain.
 SSH_PHASE_WINDOWS: tuple[PhaseWindow, ...] = (
     PhaseWindow(PhaseKey.CONNECT, "Connect & preflight", 0, 2),
-    PhaseWindow(PhaseKey.IMAGE_PULL, "Image pull", 2, 5),
-    PhaseWindow(PhaseKey.IMAGE_VERIFY, "Image verification", 5, 7),
+    PhaseWindow(PhaseKey.IMAGE_VERIFY, "Image verification", 2, 4),
+    PhaseWindow(PhaseKey.IMAGE_PULL, "Image pull", 4, 7),
     PhaseWindow(PhaseKey.TRAINER_START, "Trainer start", 7, 9),
     PhaseWindow(PhaseKey.UPLOAD, "Dataset upload", 9, 17),
     PhaseWindow(PhaseKey.TRAIN, "Training", 17, 96),

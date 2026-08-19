@@ -34,6 +34,7 @@ from services.ssh.docker_ops import JOB_LABEL, LIBRARY_VERSION_LABEL, MANAGED_LA
 from services.ssh.preflight import PROTOCOL_LABEL
 from services.ssh.provisioning import SshProvisioningService
 from services.ssh.transport import CommandResult
+from services.training_backends.phase import PhaseKey
 from settings import Settings
 
 if TYPE_CHECKING:
@@ -270,6 +271,30 @@ async def test_provision_waits_out_a_busy_gpu(_patch_transport_and_tunnel, repos
     )
 
     assert waited == [1.0]
+
+
+async def test_provision_reports_phases_in_verify_pull_start_order(_patch_transport_and_tunnel, repository) -> None:
+    """`on_phase` fires image_verify before image_pull before trainer_start,
+    matching the order the image is actually verified then pulled (never
+    pulling an unverified image) then the container is launched."""
+    _set_script(_patch_transport_and_tunnel, _healthy_script())
+    service = SshProvisioningService(repository)
+    reported: list[PhaseKey] = []
+
+    async def fake_ready(base_url, server_name):
+        return {"protocol_version": _PROTOCOL_VERSION, "library_version": "1.0.0"}
+
+    service._await_ready = fake_ready  # type: ignore[method-assign]
+
+    await service.provision(
+        uuid4(),
+        _server(),
+        protocol_version=_PROTOCOL_VERSION,
+        snapshot_size_bytes=1,
+        on_phase=reported.append,
+    )
+
+    assert reported == [PhaseKey.IMAGE_VERIFY, PhaseKey.IMAGE_PULL, PhaseKey.TRAINER_START]
 
 
 async def test_provision_cleans_up_container_on_protocol_mismatch(_patch_transport_and_tunnel, repository) -> None:
