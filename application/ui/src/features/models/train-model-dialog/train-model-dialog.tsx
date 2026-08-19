@@ -41,24 +41,45 @@ interface TrainModelDialogProps {
     defaultMaxEpochs?: number;
 }
 
+export type TrainingTargetKind = 'local' | 'trainer' | 'ssh';
+
 type TrainingTargetOption = {
     id: string;
     label: string;
+    /** `local`, `trainer:<remote_trainer_id>`, or `ssh:<remote_server_id>`. */
+    kind: TrainingTargetKind;
 };
+
+const LOCAL_TARGET_ID = 'local';
+
+/** Strip the `trainer:`/`ssh:` prefix off a training-target option id. */
+const targetRawId = (id: string): string => id.split(':', 2)[1] ?? id;
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+    const { data: remoteServers = [] } = $api.useQuery('get', '/api/remote-servers');
     // Continuing an existing model needs its checkpoint, which only this machine
     // has: the trainer protocol can receive a dataset but not a base checkpoint.
     // So a resumed run offers local training only.
     const canTrainRemotely = baseModel === undefined;
+    // One control lists every target type (local, direct-URL trainer, SSH
+    // server) rather than a separate remote-server dropdown or a local/remote
+    // mode toggle, so the derived `training_target` is always unambiguous.
     const trainingTargetOptions: TrainingTargetOption[] = [
-        { id: 'local', label: 'This machine (local)' },
+        { id: LOCAL_TARGET_ID, label: 'This machine (local)', kind: 'local' },
         ...(canTrainRemotely
             ? remoteTrainers.map((remoteTrainer) => ({
-                  id: remoteTrainer.id,
+                  id: `trainer:${remoteTrainer.id}`,
                   label: remoteTrainer.name,
+                  kind: 'trainer' as const,
+              }))
+            : []),
+        ...(canTrainRemotely
+            ? remoteServers.map((remoteServer) => ({
+                  id: `ssh:${remoteServer.id}`,
+                  label: remoteServer.name,
+                  kind: 'ssh' as const,
               }))
             : []),
     ];
@@ -76,13 +97,15 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
     const [precision, setPrecision] = useState<Key | null>(bestDevice?.type === 'cuda' ? 'bf16-mixed' : '32-true');
     const [compileModel, setCompileModel] = useState<boolean>(false);
-    const [remoteTrainerId, setRemoteTrainerId] = useState<Key | null>('local');
-    const isRemoteTarget = remoteTrainerId !== null && remoteTrainerId !== 'local';
+    const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
+    const selectedTarget = trainingTargetOptions.find((option) => option.id === targetId) ?? null;
+    const isRemoteTarget = selectedTarget?.kind === 'trainer';
+    const isSshTarget = selectedTarget?.kind === 'ssh';
     const {
         health: remoteTrainerHealth,
         isChecking: isCheckingRemoteTrainer,
         checkHealth: checkRemoteTrainerHealth,
-    } = useRemoteTrainerHealth(isRemoteTarget ? (remoteTrainerId?.toString() ?? null) : null);
+    } = useRemoteTrainerHealth(isRemoteTarget ? targetRawId(selectedTarget.id) : null);
     const remoteUnavailable = isRemoteTarget && remoteTrainerHealth?.status === 'unreachable';
     const { data: policyAccess, isLoading: isCheckingPolicyAccess } = $api.useQuery(
         'get',
@@ -98,12 +121,29 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 requirement.required && (requirement.status === 'missing_token' || requirement.status === 'denied')
         ) === true;
     const bestRemoteDevice = useMemo(() => pickBestDevice(remoteTrainerHealth?.devices ?? []), [remoteTrainerHealth]);
+    const selectedSshServer = useMemo(() => {
+        if (!isSshTarget) {
+            return null;
+        }
+        const rawId = targetRawId(selectedTarget.id);
+        return remoteServers.find((server) => server.id === rawId) ?? null;
+    }, [isSshTarget, remoteServers, selectedTarget]);
+    const sshUnavailable = isSshTarget && selectedSshServer?.last_check_status !== 'healthy';
     // The device actually driving this job: the local GPU when training locally,
-    // or the remote trainer's reported GPU once its health check resolves. Auto
-    // scale/precision defaults and the disabled state below should track whichever
-    // one is currently in play, the same way they did when there was only ever a
-    // single active device to consider.
-    const activeDevice = isRemoteTarget ? bestRemoteDevice : bestDevice;
+    // the remote trainer's reported GPU once its health check resolves, or the
+    // configured accelerator for an SSH-provisioned server (no live VRAM probe,
+    // since Studio never dials Tier 2 verification from this dialog). Auto
+    // scale/precision defaults and the disabled state below should track
+    // whichever one is currently in play.
+    const activeDevice = useMemo(() => {
+        if (isRemoteTarget) {
+            return bestRemoteDevice;
+        }
+        if (isSshTarget && selectedSshServer) {
+            return { type: selectedSshServer.device_type, name: selectedSshServer.name };
+        }
+        return bestDevice;
+    }, [isRemoteTarget, isSshTarget, bestRemoteDevice, selectedSshServer, bestDevice]);
 
     useEffect(() => {
         if (activeDevice?.type === 'cuda') {
@@ -124,7 +164,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const save = async () => {
         const dataset_id = selectedDataset?.toString();
 
-        if (!dataset_id || !selectedPolicy || remoteTrainerId === null) {
+        if (!dataset_id || !selectedPolicy || selectedTarget === null) {
             return;
         }
 
@@ -137,9 +177,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             }
         }
 
+        if (isSshTarget && sshUnavailable) {
+            return;
+        }
+
         const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
 
-        const commonPayload = {
+        const payload: SchemaJob['payload'] = {
             dataset_id,
             project_id: projectId,
             model_name: name,
@@ -151,19 +195,12 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
             compile_model: compileModel,
             val_split: 0.1,
+            training_target: isRemoteTarget ? 'remote' : isSshTarget ? 'ssh' : 'local',
+            ...(isRemoteTarget ? { remote_trainer_id: targetRawId(selectedTarget.id) } : {}),
+            ...(isSshTarget ? { remote_server_id: targetRawId(selectedTarget.id) } : {}),
             ...extraPayload,
-        } as const;
+        };
 
-        const payload: SchemaJob['payload'] = isRemoteTarget
-            ? {
-                  ...commonPayload,
-                  training_target: 'remote',
-                  remote_trainer_id: remoteTrainerId?.toString() ?? '',
-              }
-            : {
-                  ...commonPayload,
-                  training_target: 'local',
-              };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
             close(response as SchemaTrainJob | undefined);
         });
@@ -176,9 +213,10 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     <Text> Train model</Text>
 
                     <TrainingDeviceInfo
-                        isRemoteTarget={isRemoteTarget}
+                        targetKind={selectedTarget?.kind ?? 'local'}
                         remoteHealth={remoteTrainerHealth ?? null}
                         isCheckingRemote={isCheckingRemoteTrainer}
+                        sshServer={selectedSshServer}
                     />
                 </Flex>
             </Heading>
@@ -189,6 +227,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                         <InlineAlert variant='warning'>
                             Can&apos;t reach the remote trainer, so training can&apos;t start. Make sure it&apos;s
                             running, then try again.
+                        </InlineAlert>
+                    )}
+
+                    {sshUnavailable && (
+                        <InlineAlert variant='warning'>
+                            This remote server isn&apos;t ready for training (status:{' '}
+                            {selectedSshServer?.last_check_status}). Verify the server before submitting a job.
                         </InlineAlert>
                     )}
 
@@ -205,8 +250,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
                     <Picker
                         label='Run on'
-                        selectedKey={remoteTrainerId}
-                        onSelectionChange={setRemoteTrainerId}
+                        selectedKey={targetId}
+                        onSelectionChange={setTargetId}
                         width='100%'
                         items={trainingTargetOptions}
                     >
@@ -261,8 +306,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     isDisabled={
                         !selectedDataset ||
                         !selectedPolicy ||
-                        remoteTrainerId === null ||
+                        selectedTarget === null ||
                         remoteUnavailable ||
+                        sshUnavailable ||
                         policyAccessBlocksTraining
                     }
                 >

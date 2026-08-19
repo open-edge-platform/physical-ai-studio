@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
-import { SchemaModel } from '../../../api/openapi-spec';
+import { SchemaModel, SchemaRemoteServer } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { render } from '../../../test-utils/render';
@@ -17,6 +17,16 @@ const remoteTrainer = {
     name: 'managed-trainer',
     url: 'https://trainer.example.test/api',
     created_at: '2026-07-14T12:00:00Z',
+};
+
+const remoteServerId = 'c5c3a1a2-2f0d-4c6b-9c7c-9a1a2b3c4d5e';
+
+const healthyRemoteServer: SchemaRemoteServer = {
+    id: remoteServerId,
+    name: 'lab-gpu-box',
+    ssh_host_alias: 'gpu-box',
+    device_type: 'cuda',
+    last_check_status: 'healthy',
 };
 
 const healthyRemoteTrainer = {
@@ -35,7 +45,7 @@ const baseModel = {
     policy: 'act',
 } as SchemaModel;
 
-const mockProjectWithRemoteTrainer = () => {
+const mockProjectWithRemoteTrainer = (options: { remoteServers?: (typeof healthyRemoteServer)[] } = {}) => {
     server.use(
         http.get('/api/projects/{project_id}', () =>
             HttpResponse.json({
@@ -92,7 +102,8 @@ const mockProjectWithRemoteTrainer = () => {
                               },
                           ],
             });
-        })
+        }),
+        http.get('/api/remote-servers', () => HttpResponse.json(options.remoteServers ?? []))
     );
 };
 
@@ -214,6 +225,70 @@ describe('TrainModelDialog', () => {
         await user.click(screen.getByLabelText('Select Pi0.5 policy'));
 
         expect(await screen.findByText(/does not have access to this policy/i)).toBeInTheDocument();
+    });
+
+    it('lists a configured SSH server alongside local and direct-URL trainers in a single control', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer({ remoteServers: [healthyRemoteServer] });
+
+        renderDialog();
+
+        // Exactly one "Run on" control: no second remote-server dropdown.
+        expect(await screen.findByRole('button', { name: /this machine \(local\)/i })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+
+        expect(await screen.findByRole('option', { name: remoteTrainer.name })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: healthyRemoteServer.name })).toBeInTheDocument();
+        expect(screen.getAllByRole('listbox', { name: 'Run on' })).toHaveLength(1);
+    });
+
+    it('submits an SSH job with remote_server_id when a healthy remote server is selected', async () => {
+        const user = userEvent.setup();
+        let submittedPayload: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer({ remoteServers: [healthyRemoteServer] });
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedPayload = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submittedPayload).not.toBeNull());
+        expect(submittedPayload).toMatchObject({
+            training_target: 'ssh',
+            remote_server_id: remoteServerId,
+        });
+        expect(submittedPayload).not.toHaveProperty('remote_trainer_id');
+    });
+
+    it('disables Train and shows a warning for a remote server that is not ready', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer({
+            remoteServers: [{ ...healthyRemoteServer, last_check_status: 'unreachable' }],
+        });
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
+
+        expect(
+            await screen.findByText(
+                (_, element) =>
+                    element?.children.length === 0 && (element?.textContent ?? '').includes("isn't ready for training")
+            )
+        ).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
     });
 });
