@@ -15,6 +15,7 @@ otherwise progressing fine.
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from time import monotonic
 from typing import TYPE_CHECKING, Self
 
@@ -85,12 +86,38 @@ class SshTunnel:
         self._watchdog_task = asyncio.create_task(self._watch())
 
     async def _connect_and_forward(self) -> None:
+        """Connect a fresh transport and forward, closing whatever this replaces.
+
+        Tears down any previously-open transport/listener before assigning the
+        new ones (a reconnect must never leak the connection it is replacing),
+        and closes the newly-connected transport itself if `forward_local_port`
+        fails (a half-open connect must never leak either).
+        """
+        await self._close_current_connection()
+
         transport = self._open_transport()
-        await transport.connect()
-        listener = await transport.forward_local_port(self._remote_host, self._remote_port)
+        try:
+            await transport.connect()
+            listener = await transport.forward_local_port(self._remote_host, self._remote_port)
+        except BaseException:
+            await transport.close()
+            raise
+
         self._transport = transport
         self._listener = listener
         self._local_port = listener.get_port()
+
+    async def _close_current_connection(self) -> None:
+        """Close and clear whatever transport/listener are currently held."""
+        listener, self._listener = self._listener, None
+        if listener is not None:
+            listener.close()
+            with suppress(Exception):
+                await listener.wait_closed()
+
+        transport, self._transport = self._transport, None
+        if transport is not None:
+            await transport.close()
 
     async def _watch(self) -> None:
         """Reconnect the tunnel if the underlying connection drops.

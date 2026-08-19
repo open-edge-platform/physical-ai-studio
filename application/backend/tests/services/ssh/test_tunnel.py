@@ -124,3 +124,45 @@ async def test_reconnect_gives_up_after_budget_exhausted() -> None:
 
     # The tunnel gave up quietly (logged, not raised) - closing it must still be safe.
     await tunnel.close()
+
+
+async def test_reconnect_closes_the_previous_transport_it_replaces(settings) -> None:
+    """A reconnect must never leak the connection it is replacing."""
+    first_listener = FakeListener(port=1111)
+    second_listener = FakeListener(port=2222)
+    first_transport = FakeTransport(first_listener)
+    second_transport = FakeTransport(second_listener)
+    transports = iter([first_transport, second_transport])
+
+    tunnel = SshTunnel(lambda: next(transports), "127.0.0.1", 8080, settings)
+    await tunnel.open()
+    assert tunnel.local_port == 1111
+
+    first_listener.drop()
+    for _ in range(50):
+        if tunnel.local_port == 2222:
+            break
+        await asyncio.sleep(0.01)
+
+    assert tunnel.local_port == 2222
+    # The dropped connection's transport must have been closed, not left open.
+    assert first_transport.closed
+
+    await tunnel.close()
+
+
+async def test_forward_failure_closes_the_newly_connected_transport(settings) -> None:
+    """A transport that connects but fails to forward must not be leaked."""
+
+    class _FailingForwardTransport(FakeTransport):
+        async def forward_local_port(self, remote_host: str, remote_port: int):
+            raise RuntimeError("simulated forward failure")
+
+    transport = _FailingForwardTransport(FakeListener(port=1111))
+
+    tunnel = SshTunnel(lambda: transport, "127.0.0.1", 8080, settings)
+    with pytest.raises(RuntimeError):
+        await tunnel.open()
+
+    assert transport.connected
+    assert transport.closed

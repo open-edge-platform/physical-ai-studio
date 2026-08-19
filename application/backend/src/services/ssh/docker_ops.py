@@ -204,6 +204,23 @@ async def resolve_protocol_image(
         raise TrainerImageResolutionError(
             tag_ref, protocol_version, detail="the resolved image advertises no trainer protocol version"
         )
+    try:
+        reported_protocol_int = int(str(reported_protocol))
+    except ValueError:
+        raise TrainerImageResolutionError(
+            tag_ref,
+            protocol_version,
+            detail=f"the resolved image advertises an unparseable protocol version: {reported_protocol!r}",
+        ) from None
+    if reported_protocol_int != protocol_version:
+        raise TrainerImageResolutionError(
+            tag_ref,
+            protocol_version,
+            detail=(
+                f"the resolved image advertises protocol {reported_protocol_int}, "
+                f"but '{tag_ref}' was resolved for protocol {protocol_version}"
+            ),
+        )
 
     repository = tag_ref.rsplit(":", 1)[0]
     raw_library_version = labels.get(LIBRARY_VERSION_LABEL)
@@ -300,8 +317,14 @@ def check_library_version(
         reported_parsed = Version(reported)
         minimum_parsed = Version(minimum_version)
     except InvalidVersion:
+        # `reported_version` stays `None`, not the unparseable string:
+        # `SshProvisioningService.provision()` treats any non-`None`
+        # `reported_version` as authoritative against `/health`'s real
+        # version, and would otherwise raise `TrainerLibraryVersionMismatchError`
+        # on every image whose label isn't a valid PEP 440 version (e.g. the
+        # Dockerfile's `PHYSICALAI_TRAIN_VERSION=unknown` default).
         return LibraryVersionCheck(
-            reported_version=reported,
+            reported_version=None,
             minimum_version=minimum_version,
             warning=f"Could not parse trainer library version '{reported}'; proceeding without a version check.",
         )
