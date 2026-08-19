@@ -1,7 +1,7 @@
 import { useId } from 'react';
 
 import { Flex, View } from '@geti-ui/ui';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { Box } from '../shared/box';
 
@@ -78,6 +78,17 @@ export const MetricGraph = ({
                                     strokeWidth={2}
                                     fill={`url(#${gradientId})`}
                                     dot={false}
+                                />
+                                <Tooltip
+                                    labelFormatter={(label) => `${xAxisLabel}: ${label}`}
+                                    cursor={{
+                                        stroke: 'var(--metric-graph-color)',
+                                    }}
+                                    contentStyle={{
+                                        backgroundColor: 'var(--spectrum-global-color-gray-50)',
+                                        borderColor: 'var(--color-border-2)',
+                                        borderRadius: 'var(--spectrum-alias-border-radius-regular)',
+                                    }}
                                 />
                             </AreaChart>
                         </ResponsiveContainer>
