@@ -1,19 +1,55 @@
 import { useMemo } from 'react';
 
-import { Grid, Heading, IllustratedMessage } from '@geti-ui/ui';
+import { Grid, Heading, IllustratedMessage, Loading } from '@geti-ui/ui';
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
 import { fetchClient } from '../../../api/client';
 import { fetchSSE } from '../../../api/fetch-sse';
+import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
-import { MetricGraph } from './metric-graph';
+import { MetricGraph, type MetricGraphPoint } from './metric-graph';
 
-export const NoMetricsAvailable = () => {
+const NoMetricsAvailable = () => {
     return (
         <IllustratedMessage marginY='size-400'>
             <EmptyIllustration height='250px' />
             <Heading>No metrics available yet</Heading>
         </IllustratedMessage>
+    );
+};
+
+interface MetricSeries {
+    title: string;
+    xLabel: string;
+    yLabel: string;
+    data: MetricGraphPoint[];
+}
+
+interface MetricsViewProps {
+    series: MetricSeries[];
+    isLoading: boolean;
+}
+
+const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
+    if (isLoading) {
+        return <Loading mode='inline' />;
+    }
+
+    const seriesReadyToRender = series.filter((metric) => metric.data.length > 0);
+
+    if (seriesReadyToRender.length === 0) {
+        return <NoMetricsAvailable />;
+    }
+
+    return (
+        <Grid
+            columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
+            gap='size-200'
+        >
+            {seriesReadyToRender.map(({ title, xLabel, yLabel, data }) => (
+                <MetricGraph key={title} title={title} yAxisLabel={yLabel} xAxisLabel={xLabel} data={data} />
+            ))}
+        </Grid>
     );
 };
 
@@ -26,38 +62,22 @@ interface MetricsEntry {
     val_loss: number | null | undefined;
 }
 
-const filterLossStepMetrics = (data?: MetricsEntry[]) => {
-    if (!data) return [];
-    return data.flatMap((entry) => {
-        // Prefer the per-step train/loss. Fall back to train/loss_step, which ACT
-        // logged per-step historically, so jobs still streaming from older runs
-        // keep charting.
-        const y = entry.train_loss ?? entry.train_loss_step;
-        return y == null ? [] : [{ x: entry.step, y }];
-    });
-};
-
-const filterValidationLossMetrics = (data?: MetricsEntry[]) => {
+const selectSeries = (
+    data: MetricsEntry[] | undefined,
+    getX: (metricsEntry: MetricsEntry) => number,
+    getY: (metricsEntry: MetricsEntry) => number | null | undefined
+) => {
     if (data == null) return [];
 
     return data.flatMap((entry) => {
-        const y = entry.val_loss;
-        return y == null ? [] : [{ x: entry.step, y }];
+        const y = getY(entry);
+        return y == null ? [] : [{ x: getX(entry), y }];
     });
 };
 
-const filterLearningRateMetrics = (data?: MetricsEntry[]) => {
-    if (data == null) return [];
-
-    return data.flatMap((entry) => {
-        const y = entry['lr-AdamW'];
-        return y == null ? [] : [{ x: entry.step, y }];
-    });
-};
-
-export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
-    const query = useQuery({
-        queryKey: ['get', '/api/models/{job_id}/model_metrics', jobId],
+const useJobMetrics = (jobId: string) => {
+    return useQuery({
+        queryKey: getQueryKey(['get', '/api/jobs/{job_id}/model_metrics', { params: { path: { job_id: jobId } } }]),
         queryFn: streamedQuery({
             streamFn: (context) => {
                 const url = fetchClient.PATH('/api/jobs/{job_id}/model_metrics', {
@@ -69,24 +89,34 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
         }),
         staleTime: Infinity,
     });
+};
+
+export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
+    const query = useJobMetrics(jobId);
 
     const lossStepMetrics = useMemo(() => {
-        return filterLossStepMetrics(query.data);
+        return selectSeries(
+            query.data,
+            (entry) => entry.step,
+            (entry) => entry.train_loss ?? entry.train_loss_step
+        );
     }, [query.data]);
 
     const validationLossStepMetrics = useMemo(() => {
-        return filterValidationLossMetrics(query.data);
+        return selectSeries(
+            query.data,
+            (entry) => entry.step,
+            (entry) => entry.val_loss
+        );
     }, [query.data]);
 
     const learningRateStepMetrics = useMemo(() => {
-        return filterLearningRateMetrics(query.data);
+        return selectSeries(
+            query.data,
+            (entry) => entry.step,
+            (entry) => entry['lr-AdamW']
+        );
     }, [query.data]);
-
-    if (
-        [learningRateStepMetrics, validationLossStepMetrics, lossStepMetrics].every((metrics) => metrics.length === 0)
-    ) {
-        return <NoMetricsAvailable />;
-    }
 
     const metrics = [
         { title: 'Training loss', xLabel: 'Step', yLabel: 'Loss', data: lossStepMetrics },
@@ -94,23 +124,12 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
         { title: 'Learning rate', xLabel: 'Step', yLabel: 'Learning rate', data: learningRateStepMetrics },
     ];
 
-    const metricsReadyToRender = metrics.filter((metric) => metric.data.length > 0);
-
-    return (
-        <Grid
-            columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
-            gap='size-200'
-        >
-            {metricsReadyToRender.map(({ title, xLabel, yLabel, data }) => (
-                <MetricGraph key={title} title={title} yAxisLabel={yLabel} xAxisLabel={xLabel} data={data} />
-            ))}
-        </Grid>
-    );
+    return <MetricsView series={metrics} isLoading={query.isLoading} />;
 };
 
-export const MetricsContent = ({ modelId }: { modelId: string }) => {
-    const query = useQuery({
-        queryKey: ['get', '/api/models/{model_id}/metrics', modelId],
+const useModelMetrics = (modelId: string) => {
+    return useQuery({
+        queryKey: getQueryKey(['get', '/api/models/{model_id}/metrics', { params: { path: { model_id: modelId } } }]),
         queryFn: streamedQuery({
             streamFn: (context) => {
                 const url = fetchClient.PATH('/api/models/{model_id}/metrics', {
@@ -122,24 +141,34 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
         }),
         staleTime: Infinity,
     });
+};
+
+export const MetricsContent = ({ modelId }: { modelId: string }) => {
+    const query = useModelMetrics(modelId);
 
     const lossStepMetrics = useMemo(() => {
-        return filterLossStepMetrics(query.data);
+        return selectSeries(
+            query.data,
+            (entry) => entry.step,
+            (entry) => entry.train_loss ?? entry.train_loss_step
+        );
     }, [query.data]);
 
     const validationLossStepMetrics = useMemo(() => {
-        return filterValidationLossMetrics(query.data);
+        return selectSeries(
+            query.data,
+            (entry) => entry.step,
+            (entry) => entry.val_loss
+        );
     }, [query.data]);
 
     const learningRateStepMetrics = useMemo(() => {
-        return filterLearningRateMetrics(query.data);
+        return selectSeries(
+            query.data,
+            (entry) => entry.step,
+            (entry) => entry['lr-AdamW']
+        );
     }, [query.data]);
-
-    if (
-        [learningRateStepMetrics, validationLossStepMetrics, lossStepMetrics].every((metrics) => metrics.length === 0)
-    ) {
-        return <NoMetricsAvailable />;
-    }
 
     const metrics = [
         { title: 'Training loss', xLabel: 'Step', yLabel: 'Loss', data: lossStepMetrics },
@@ -147,16 +176,5 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
         { title: 'Learning rate', xLabel: 'Step', yLabel: 'Learning rate', data: learningRateStepMetrics },
     ];
 
-    const metricsReadyToRender = metrics.filter((metric) => metric.data.length > 0);
-
-    return (
-        <Grid
-            columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
-            gap='size-200'
-        >
-            {metricsReadyToRender.map(({ title, xLabel, yLabel, data }) => (
-                <MetricGraph key={title} title={title} yAxisLabel={yLabel} xAxisLabel={xLabel} data={data} />
-            ))}
-        </Grid>
-    );
+    return <MetricsView series={metrics} isLoading={query.isLoading} />;
 };
