@@ -143,10 +143,9 @@ def run_training_job(
     """Train one policy end to end: fit, checkpoint, and export.
 
     On success ``output_dir`` holds the best checkpoint (:data:`CHECKPOINT_NAME`,
-    written by the ``ModelCheckpoint`` callback during ``fit`` — this function
-    does not save a checkpoint of its own, so it never overwrites that best
-    checkpoint with the final-epoch weights), the Lightning CSV logs, and an
-    :data:`EXPORTS_DIRNAME` directory per successful export backend.
+    written by the ``ModelCheckpoint`` callback during ``fit``, the Lightning 
+    CSV logs, and an :data:`EXPORTS_DIRNAME` directory per successful export 
+    backend.
 
     Cancellation is cooperative. ``should_stop`` is polled throughout training
     via :class:`~physicalai.train.callbacks.ProgressReportingCallback`; when it
