@@ -245,6 +245,19 @@ def runtime_camera_keys(document: dict[str, Any]) -> list[str]:
     return sorted(document["init_args"].get("cameras", {}))
 
 
+def _is_unstable_host_path(key: str, item: object) -> bool:
+    """True when ``port`` or ``device`` is a machine-specific filesystem path.
+
+    Accelerator names (``cpu``, ``CPU``, ``GPU``) also live under ``device``.
+    Those are not host paths and must not be listed as CHANGE_ME ports.
+    """
+    if key not in {"port", "device"} or not isinstance(item, str):
+        return False
+    if item.startswith(("/dev/serial/by-id/", "/dev/v4l/by-id/")):
+        return False
+    return "/" in item or "\\" in item or item.upper().startswith("COM")
+
+
 def runtime_config_change_me(document: dict[str, Any]) -> list[str]:
     """List unstable device paths that need editing on another machine."""
     paths: list[str] = []
@@ -252,11 +265,7 @@ def runtime_config_change_me(document: dict[str, Any]) -> list[str]:
     def visit(value: object) -> None:
         if isinstance(value, dict):
             for key, item in value.items():
-                if (
-                    key in {"port", "device"}
-                    and isinstance(item, str)
-                    and not item.startswith(("/dev/serial/by-id/", "/dev/v4l/by-id/"))
-                ):
+                if _is_unstable_host_path(key, item):
                     paths.append(item)
                 visit(item)
         elif isinstance(value, list):
