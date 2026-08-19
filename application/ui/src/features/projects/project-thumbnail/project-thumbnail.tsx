@@ -30,7 +30,7 @@ export const ProjectThumbnail = ({ projectId, name, size }: ProjectThumbnailProp
                     width={placeholderSize}
                     height={placeholderSize}
                     className={classes.placeholder}
-                    alt={`Project thumbnail placeholder for ${name}`}
+                    alt=''
                     aria-hidden
                 />
             </Flex>
