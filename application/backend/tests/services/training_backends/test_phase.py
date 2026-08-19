@@ -26,6 +26,21 @@ def test_ssh_phase_windows_are_contiguous_and_span_0_to_100() -> None:
         assert previous.end == current.start
 
 
+def test_ssh_phase_windows_verify_before_pull_before_trainer_start() -> None:
+    """Windows follow the real provisioning order: verify an image's signature
+    before ever pulling it, then launch the container."""
+    keys = [window.key for window in SSH_PHASE_WINDOWS]
+    assert keys == [
+        PhaseKey.CONNECT,
+        PhaseKey.IMAGE_VERIFY,
+        PhaseKey.IMAGE_PULL,
+        PhaseKey.TRAINER_START,
+        PhaseKey.UPLOAD,
+        PhaseKey.TRAIN,
+        PhaseKey.DOWNLOAD,
+    ]
+
+
 def test_phase_window_rejects_an_inverted_range() -> None:
     with pytest.raises(ValueError, match="Invalid phase window"):
         PhaseWindow(PhaseKey.CONNECT, "Connect", start=10, end=5)

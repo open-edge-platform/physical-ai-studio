@@ -39,6 +39,7 @@ from services.ssh import docker_ops
 from services.ssh.docker_ops import LibraryVersionCheck, ResolvedImage
 from services.ssh.transport import SshTransport, open_transport
 from services.ssh.tunnel import SshTunnel
+from services.training_backends.phase import PhaseKey
 from settings import get_settings
 
 if TYPE_CHECKING:
@@ -104,7 +105,11 @@ class SshProvisioningService:
         self._repository = repository
         self._settings = settings or get_settings()
 
-    async def provision(
+    # PLR0913/PLR0915: one keyword-only parameter per tunable/callback and one
+    # statement per orchestration step; splitting either up would obscure the
+    # single, carefully-ordered happy path this method exists to document (see
+    # the module and class docstrings).
+    async def provision(  # noqa: PLR0913, PLR0915
         self,
         job_id: UUID,
         server: RemoteServer,
@@ -114,6 +119,7 @@ class SshProvisioningService:
         min_library_version: str | None = None,
         library_version_policy_name: str = "default",
         on_gpu_wait: Callable[[float], Awaitable[None]] | None = None,
+        on_phase: Callable[[PhaseKey], None] | None = None,
     ) -> ProvisionedTrainer:
         """Provision a fresh trainer container for one job.
 
@@ -133,6 +139,11 @@ class SshProvisioningService:
                 fatal-below-minimum check (e.g. a specific model family).
             on_gpu_wait: Awaited while waiting out a busy GPU, so a caller can
                 report a `waiting` phase state.
+            on_phase: Called synchronously as provisioning enters each new
+                stage (image verification, image pull, trainer start), so a
+                caller can drive the SSH phase stepper. `connect` is reported
+                by the caller before this method is invoked at all, since the
+                job provisioning row is already persisted by then.
 
         Returns:
             A running, tunnel-reachable trainer.
@@ -141,6 +152,10 @@ class SshProvisioningService:
         minimum_version = min_library_version or settings.ssh_min_library_version
         backend_instance_id = get_backend_instance_id()
         name = docker_ops.container_name(str(job_id))
+
+        def _phase(key: PhaseKey) -> None:
+            if on_phase is not None:
+                on_phase(key)
 
         await self._repository.save(
             JobProvisioning(
@@ -164,8 +179,10 @@ class SshProvisioningService:
                 )
                 if library_check.warning:
                     logger.warning(library_check.warning)
+                _phase(PhaseKey.IMAGE_VERIFY)
                 await docker_ops.verify_image_signature(transport, image, settings)
                 await docker_ops.check_disk_for_job(transport, snapshot_size_bytes, server.name)
+                _phase(PhaseKey.IMAGE_PULL)
                 await docker_ops.pull_image(transport, image, settings)
 
                 await self._repository.update_by_job_id(
@@ -180,6 +197,7 @@ class SshProvisioningService:
                 on_wait=on_gpu_wait,
             )
 
+            _phase(PhaseKey.TRAINER_START)
             async with SshTransport(server.ssh_host_alias, settings) as transport:
                 render_gid = (
                     None
