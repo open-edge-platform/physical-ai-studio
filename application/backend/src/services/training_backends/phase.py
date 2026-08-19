@@ -72,8 +72,7 @@ class PhaseWindow:
             raise ValueError(f"Invalid phase window for {self.key}: [{self.start}, {self.end}]")
 
 
-# The SSH phase table (see docs/feature_plans/remote-ssh-trainer-plan.md,
-# "Progress Reporting for SSH Train Jobs"). Local and direct-URL backends keep
+# The SSH phase table for an SSH-provisioned training job. Local and direct-URL backends keep
 # their own SNAPSHOT_UPLOAD_PROGRESS/TRAINING_PROGRESS_END windows unchanged;
 # retuning those shared constants to fit this table would shift their curves
 # and force rewriting their existing progress assertions for no gain.
