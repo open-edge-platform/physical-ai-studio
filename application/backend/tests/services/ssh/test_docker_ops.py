@@ -112,6 +112,45 @@ async def test_resolve_protocol_image_rejects_missing_protocol_label(settings) -
         await docker_ops.resolve_protocol_image(transport, DeviceType.CUDA, 1, settings)
 
 
+async def test_resolve_protocol_image_rejects_mismatched_protocol_label(settings) -> None:
+    """A `protocol-1` tag whose manifest actually advertises protocol 2 must fail.
+
+    A mis-tagged image, or a tag moved to the wrong manifest, must never
+    proceed to a pull/run just because *some* protocol label is present.
+    """
+    labels = {PROTOCOL_LABEL: "2", LIBRARY_VERSION_LABEL: "0.5.0"}
+    transport = FakeTransport(
+        {
+            f"docker buildx imagetools inspect {_CUDA_TAG_REF} --format {{{{json .Manifest.Digest}}}}": _ok(
+                json.dumps(_DIGEST)
+            ),
+            f"docker buildx imagetools inspect {_CUDA_TAG_REF} --format {{{{json .Image.Config.Labels}}}}": _ok(
+                json.dumps(labels)
+            ),
+        }
+    )
+
+    with pytest.raises(TrainerImageResolutionError):
+        await docker_ops.resolve_protocol_image(transport, DeviceType.CUDA, 1, settings)
+
+
+async def test_resolve_protocol_image_rejects_unparseable_protocol_label(settings) -> None:
+    labels = {PROTOCOL_LABEL: "not-a-number"}
+    transport = FakeTransport(
+        {
+            f"docker buildx imagetools inspect {_CUDA_TAG_REF} --format {{{{json .Manifest.Digest}}}}": _ok(
+                json.dumps(_DIGEST)
+            ),
+            f"docker buildx imagetools inspect {_CUDA_TAG_REF} --format {{{{json .Image.Config.Labels}}}}": _ok(
+                json.dumps(labels)
+            ),
+        }
+    )
+
+    with pytest.raises(TrainerImageResolutionError):
+        await docker_ops.resolve_protocol_image(transport, DeviceType.CUDA, 1, settings)
+
+
 # --------------------------------------------------------------------------- #
 # verify_image_signature                                                      #
 # --------------------------------------------------------------------------- #
@@ -196,6 +235,21 @@ def test_check_library_version_below_named_policy_minimum_fails() -> None:
     image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="0.9.0")
     with pytest.raises(TrainerLibraryVersionError):
         docker_ops.check_library_version(image, minimum_version="1.0.0", policy_name="pi05")
+
+
+def test_check_library_version_unparseable_label_is_treated_as_unreported() -> None:
+    """An unparseable label (e.g. the Dockerfile's `unknown` default) must warn, not raise.
+
+    `reported_version` must come back `None`, not the raw unparseable string:
+    `SshProvisioningService.provision()` treats any non-`None` `reported_version`
+    as authoritative against `/health`'s real version, and would otherwise raise
+    `TrainerLibraryVersionMismatchError` on every image whose label isn't a
+    valid PEP 440 version string.
+    """
+    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="unknown")
+    result = docker_ops.check_library_version(image, minimum_version="1.0.0")
+    assert result.reported_version is None
+    assert result.warning is not None
 
 
 # --------------------------------------------------------------------------- #
