@@ -45,7 +45,7 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                                 <XAxis
                                     dataKey='x'
                                     type='number'
-                                    domain={['dataMin', 'dataMax']}
+                                    domain={[0, 'dataMax']}
                                     label={{ value: xAxisLabel ?? 'x', position: 'bottom', fill: '#666', offset: 12 }}
                                     tickCount={X_AXIS_TICK_COUNT}
                                     tickMargin={12}
