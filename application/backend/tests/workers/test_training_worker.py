@@ -190,7 +190,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService"),
@@ -228,7 +228,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -267,7 +267,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -303,7 +303,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -341,7 +341,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -381,7 +381,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -426,7 +426,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,

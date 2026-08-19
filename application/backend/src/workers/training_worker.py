@@ -218,7 +218,7 @@ class TrainingWorker(BaseProcessWorker):
                 should_cancel_job=lambda: bool(self.job_interrupt_flags.get(str(job.id), False)),
             )
 
-            backend = get_training_backend(payload)
+            backend = await get_training_backend(payload, job.id)
             await backend.train(context)
             # The local backend stops cooperatively without raising; treat a
             # completed-but-interrupted run as a cancellation, not a success.
