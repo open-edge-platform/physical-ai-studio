@@ -8,7 +8,7 @@ import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { render } from '../../../test-utils/render';
 import { durationBetween } from '../shared/duration';
-import { ModelRow } from './model-table';
+import { ModelRow } from './model-row';
 
 /**
  * jsdom does not implement `EventSource`, and MSW does not intercept it (no

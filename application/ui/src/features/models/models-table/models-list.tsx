@@ -2,7 +2,7 @@ import { $api } from '../../../api/client';
 import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
 import { Table, TableColumn } from '../../../components/table/table';
 import { useProjectId } from '../../projects/use-project';
-import { ModelRow } from './model-table';
+import { ModelRow } from './model-row';
 
 const MODEL_COLUMNS: TableColumn[] = [
     { width: 'max-content' },
@@ -14,14 +14,14 @@ const MODEL_COLUMNS: TableColumn[] = [
     { width: 'auto', align: 'end' },
 ];
 
-interface ModelListProps {
+interface ModelsListProps {
     models: SchemaModel[];
     jobs: SchemaJob[];
     onRetrain: (model: SchemaModel) => void;
     onViewLogs: (model: SchemaModel) => void;
 }
 
-export const ModelList = ({ models, jobs, onRetrain, onViewLogs }: ModelListProps) => {
+export const ModelsList = ({ models, jobs, onRetrain, onViewLogs }: ModelsListProps) => {
     const sortedModels = models.toSorted(
         (a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime()
     );

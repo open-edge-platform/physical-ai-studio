@@ -7,7 +7,7 @@ import { SchemaModel } from '../../api/openapi-spec';
 import { LogsDialog } from '../logs/logs-dialog';
 import { useProjectId } from '../projects/use-project';
 import { JobList } from './job-table/job-list';
-import { ModelList } from './model-table/model-list';
+import { ModelsList } from './models-table/models-list';
 import { NoModelsPlaceholder } from './no-models-placeholder';
 import { TrainModelDialog } from './train-model-dialog/train-model-dialog';
 import { useJobUpdates } from './use-job-updates';
@@ -76,7 +76,7 @@ export const ModelsPage = () => {
                                 }}
                             />
                             {hasModels && (
-                                <ModelList
+                                <ModelsList
                                     models={models}
                                     jobs={jobs}
                                     onRetrain={setRetrainModel}
