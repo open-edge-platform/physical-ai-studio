@@ -170,7 +170,11 @@ jobs:
             sleep 2
           done
           test -s health.json
-          python -c 'import json, os; health = json.load(open("health.json")); assert health == {"status": "healthy", "protocol_version": 1, "device_type": os.environ["DEVICE"], "build_revision": os.environ["GITHUB_SHA"], "build_date": os.environ["BUILD_DATE"], "application_version": os.environ["VERSION"]}'
+
+          # Read the installed library version from the image itself so this
+          # check never drifts from what /health actually reports.
+          library_version="$(docker run --rm --entrypoint python "$IMAGE" -c 'from importlib.metadata import version; print(version("physicalai-train"))')"
+          LIBRARY_VERSION="$library_version" python -c 'import json, os; health = json.load(open("health.json")); assert health == {"status": "healthy", "protocol_version": 1, "device_type": os.environ["DEVICE"], "build_revision": os.environ["GITHUB_SHA"], "build_date": os.environ["BUILD_DATE"], "application_version": os.environ["VERSION"], "library_version": os.environ["LIBRARY_VERSION"]}'
 
   publish:
     name: Publish, attest, scan, and sign (${{ matrix.device }})
