@@ -214,10 +214,11 @@ class TestRunTrainingJob:
         assert (kwargs["train_batch_size"], kwargs["num_workers"], kwargs["val_split"]) == (16, 2, 0.25)
 
     def test_completed_run_publishes_the_cache_as_the_model_directory(self, tmp_path: Path) -> None:
+        """The final checkpoint comes solely from the ModelCheckpoint callback, not an explicit save."""
         trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path)
 
         trainer = trainer_class.return_value
-        trainer.save_checkpoint.assert_called_once_with(tmp_path / "cache" / "job" / CHECKPOINT_NAME)
+        trainer.save_checkpoint.assert_not_called()
         assert (tmp_path / "model").is_dir()
         assert not (tmp_path / "cache" / "job").exists()
 
