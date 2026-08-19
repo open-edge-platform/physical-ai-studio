@@ -171,9 +171,7 @@ class Settings(BaseSettings):
     ssh_connect_timeout_s: float = Field(default=10.0, alias="SSH_CONNECT_TIMEOUT_S")
     # Per-command budget for the cheap Tier 1 probes (docker version, nvidia-smi).
     ssh_command_timeout_s: float = Field(default=15.0, alias="SSH_COMMAND_TIMEOUT_S")
-    # Budget for `docker pull` of the (multi-gigabyte) trainer image. Far larger
-    # than `ssh_command_timeout_s`, which is sized for cheap probes, not a full
-    # image transfer over the network.
+    # Budget for `docker pull` of the (multi-gigabyte) trainer image.
     ssh_image_pull_timeout_s: float = Field(default=1800.0, alias="SSH_IMAGE_PULL_TIMEOUT_S")
     # Overall budget for a full Tier 1 preflight, so a save can never hang.
     ssh_preflight_timeout_s: float = Field(default=30.0, alias="SSH_PREFLIGHT_TIMEOUT_S")
