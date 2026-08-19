@@ -15,16 +15,30 @@ type MetricGraphProps = {
     data?: MetricGraphPoint[];
     xAxisLabel?: string;
     yAxisLabel: string;
+    color?: string;
 };
 
 const X_AXIS_TICK_COUNT = 8;
 const Y_AXIS_TICK_COUNT = 4;
 
-export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraphProps) => {
+export const MetricGraph = ({
+    title,
+    data,
+    xAxisLabel,
+    yAxisLabel,
+    color = 'var(--energy-blue)',
+}: MetricGraphProps) => {
     const gradientId = useId();
 
     return (
-        <Flex flex={1} direction={'column'} minWidth={'size-5000'}>
+        <Flex
+            flex={1}
+            direction={'column'}
+            minWidth={'size-5000'}
+            UNSAFE_style={{
+                '--metric-graph-color': color,
+            }}
+        >
             <Box
                 title={title}
                 content={
@@ -37,8 +51,8 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                             >
                                 <defs>
                                     <linearGradient id={gradientId} x1='0' y1='0' x2='0' y2='1'>
-                                        <stop offset='5%' stopColor='var(--energy-blue)' stopOpacity={0.3} />
-                                        <stop offset='95%' stopColor='var(--energy-blue)' stopOpacity={0} />
+                                        <stop offset='5%' stopColor='var(--metric-graph-color)' stopOpacity={0.3} />
+                                        <stop offset='95%' stopColor='var(--metric-graph-color)' stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid />
@@ -60,11 +74,10 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                                     type='linear'
                                     dataKey='y'
                                     name={yAxisLabel}
-                                    stroke='var(--energy-blue)'
+                                    stroke='var(--metric-graph-color)'
                                     strokeWidth={2}
                                     fill={`url(#${gradientId})`}
                                     dot={false}
-                                    isAnimationActive={false}
                                 />
                             </AreaChart>
                         </ResponsiveContainer>

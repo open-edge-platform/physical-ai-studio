@@ -23,6 +23,7 @@ interface MetricSeries {
     xLabel: string;
     yLabel: string;
     data: MetricGraphPoint[];
+    color?: string;
 }
 
 interface MetricsViewProps {
@@ -46,8 +47,15 @@ const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
             columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
             gap='size-200'
         >
-            {seriesReadyToRender.map(({ title, xLabel, yLabel, data }) => (
-                <MetricGraph key={title} title={title} yAxisLabel={yLabel} xAxisLabel={xLabel} data={data} />
+            {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color }) => (
+                <MetricGraph
+                    key={title}
+                    title={title}
+                    yAxisLabel={yLabel}
+                    xAxisLabel={xLabel}
+                    data={data}
+                    color={color}
+                />
             ))}
         </Grid>
     );
@@ -171,8 +179,14 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
     }, [query.data]);
 
     const metrics = [
-        { title: 'Training loss', xLabel: 'Step', yLabel: 'Loss', data: lossStepMetrics },
-        { title: 'Validation loss', xLabel: 'Step', yLabel: 'Loss', data: validationLossStepMetrics },
+        { title: 'Training loss', xLabel: 'Step', yLabel: 'Loss', data: lossStepMetrics, color: 'var(--moss-tint-1)' },
+        {
+            title: 'Validation loss',
+            xLabel: 'Step',
+            yLabel: 'Loss',
+            data: validationLossStepMetrics,
+            color: 'var(--coral)',
+        },
         { title: 'Learning rate', xLabel: 'Step', yLabel: 'Learning rate', data: learningRateStepMetrics },
     ];
 
