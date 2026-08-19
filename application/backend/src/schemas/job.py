@@ -23,15 +23,7 @@ class TrainingPrecision(StrEnum):
 
 
 class TrainingTarget(StrEnum):
-    """Where a training job executes.
-
-    ``SSH`` is a distinct target from ``REMOTE`` rather than an overload of it:
-    an SSH job is discriminated by ``remote_server_id`` (an SSH-provisioned
-    server), while ``REMOTE`` keeps its existing ``remote_trainer_id`` /
-    pinned ``remote_trainer_url`` (a direct-URL registry entry). Keeping them
-    as separate enum members is what lets the payload validator reject a job
-    that tries to express both at once.
-    """
+    """Where a training job executes."""
 
     LOCAL = "local"
     REMOTE = "remote"
