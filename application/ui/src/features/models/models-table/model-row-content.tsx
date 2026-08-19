@@ -1,4 +1,4 @@
-import { Heading, IllustratedMessage, Item, TabList, TabPanels, Tabs, View } from '@geti-ui/ui';
+import { Item, TabList, TabPanels, Tabs, View } from '@geti-ui/ui';
 
 import { SchemaModel } from '../../../api/openapi-spec';
 import { MetricsContent } from '../metrics/metrics';
