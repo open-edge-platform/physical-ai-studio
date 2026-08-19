@@ -145,6 +145,32 @@ async def test_export_keeps_the_stored_port_when_the_robot_is_absent(mocker: Any
     assert runtime_config_change_me(document) == ["/dev/ttyACM0"]
 
 
+async def test_change_me_lists_unstable_ports_not_the_accelerator(mocker: Any) -> None:
+    mocker.patch("robots.robot_client_factory.resolve_serial_device", side_effect=lambda device: device)
+    mocker.patch("runtime.config_builder.resolve_camera_device", side_effect=lambda device: device)
+    document = await build_runtime_config(
+        follower=_robot("follower"),
+        leader=None,
+        cameras=[_camera()],
+        fps=30,
+        robot_factory=_robot_factory(discovers=False),
+        allow_stored_port=True,
+        action_source=policy_source_fragment(
+            export_dir="./exports/openvino",
+            backend="openvino",
+            device="cpu",
+        ),
+    )
+
+    unresolved = runtime_config_change_me(document)
+    assert "/dev/ttyACM0" in unresolved
+    assert "/dev/video0" in unresolved
+    assert "cpu" not in unresolved
+    for accelerator in ("CPU", "GPU", "gpu"):
+        document["init_args"]["action_source"]["init_args"]["model"]["init_args"]["device"] = accelerator
+        assert accelerator not in runtime_config_change_me(document)
+
+
 def _identity_document(
     *,
     fps: float = 30.0,
