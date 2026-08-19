@@ -191,6 +191,9 @@ class RemoteServerService:
 
             task.add_done_callback(_clear_inflight)
 
-        result = await task
+        # Shield so a cancelled caller (e.g. an HTTP request cancelled on
+        # client disconnect) never cancels the shared Task out from under
+        # every other concurrent poller relying on the same in-flight probe.
+        result = await asyncio.shield(task)
         _status_cache[server.id] = (monotonic(), result)
         return result

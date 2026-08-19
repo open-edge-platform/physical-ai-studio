@@ -167,12 +167,11 @@ async def _reattach_one_row(
 
     try:
         outcome = await provisioning_service.verify_reattach(row, server)
-    except Exception as error:  # one job's failure must not abort recovery of the rest
-        logger.error(
-            "Reattach check for job {} on server '{}' raised unexpectedly; leaving pending for retry: {}",
+    except Exception:  # one job's failure must not abort recovery of the rest
+        logger.exception(
+            "Reattach check for job {} on server '{}' raised unexpectedly; leaving pending for retry",
             row.job_id,
             server.name,
-            error,
         )
         return "transient", server.id, None
 
