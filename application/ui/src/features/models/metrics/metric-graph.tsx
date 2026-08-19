@@ -33,7 +33,7 @@ export const MetricGraph = ({ title, data, xAxisLabel, yAxisLabel }: MetricGraph
                             <AreaChart
                                 style={{ aspectRatio: 1.6 }}
                                 data={data}
-                                margin={{ top: 35, bottom: 35, left: 35 }}
+                                margin={{ top: 35, bottom: 35, left: 35, right: 35 }}
                             >
                                 <defs>
                                     <linearGradient id={gradientId} x1='0' y1='0' x2='0' y2='1'>
