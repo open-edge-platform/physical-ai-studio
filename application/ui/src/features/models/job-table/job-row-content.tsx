@@ -14,7 +14,7 @@ export const JobRowContent = ({ job }: JobRowContentProps) => {
     return (
         <View UNSAFE_className={classes.modelRowContent}>
             <Tabs>
-                <TabList>
+                <TabList marginBottom={'size-200'}>
                     <Item key='metrics'>Model Metrics</Item>
                     <Item key='datasets'>Training Datasets</Item>
                 </TabList>

@@ -16,7 +16,7 @@ export const ModelRowContent = ({ model }: ModelRowContentProps) => {
     return (
         <View UNSAFE_className={classes.modelRowContent}>
             <Tabs>
-                <TabList>
+                <TabList marginBottom={'size-200'}>
                     <Item key='model_formats'>Model formats</Item>
                     <Item key='metrics'>Model Metrics</Item>
                     <Item key='datasets'>Training Datasets</Item>
