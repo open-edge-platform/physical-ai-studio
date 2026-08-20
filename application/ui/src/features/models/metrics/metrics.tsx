@@ -127,8 +127,14 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
     }, [query.data]);
 
     const metrics = [
-        { title: 'Training loss', xLabel: 'Step', yLabel: 'Loss', data: lossStepMetrics },
-        { title: 'Validation loss', xLabel: 'Step', yLabel: 'Loss', data: validationLossStepMetrics },
+        { title: 'Training loss', xLabel: 'Step', yLabel: 'Loss', data: lossStepMetrics, color: 'var(--moss-tint-1)' },
+        {
+            title: 'Validation loss',
+            xLabel: 'Step',
+            yLabel: 'Loss',
+            data: validationLossStepMetrics,
+            color: 'var(--coral)',
+        },
         { title: 'Learning rate', xLabel: 'Step', yLabel: 'Learning rate', data: learningRateStepMetrics },
     ];
 
