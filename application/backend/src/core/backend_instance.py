@@ -13,6 +13,7 @@ database between machines - copying the data directory copies this file too,
 which is exactly the "same installation" case the orphan sweep needs to widen.
 """
 
+import os
 import uuid
 from pathlib import Path
 from threading import Lock
@@ -42,6 +43,25 @@ def _read_existing(path: Path) -> str | None:
         return None
 
 
+def _write_atomic(path: Path, content: str) -> None:
+    """Write `content` to `path` via a temp file and atomic replace.
+
+    A crash mid-write must never leave a partial file at `path`: `_read_existing`
+    treats unparseable content as absent and would otherwise mint a fresh id on
+    the next start, orphaning this installation's own containers.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temp_path.open("w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 def get_backend_instance_id() -> str:
     """Return this installation's stable backend instance id, creating it once.
 
@@ -64,8 +84,7 @@ def get_backend_instance_id() -> str:
             return _cached_id
 
         generated = str(uuid.uuid4())
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(generated, encoding="utf-8")
+        _write_atomic(path, generated)
         _cached_id = generated
         return _cached_id
 

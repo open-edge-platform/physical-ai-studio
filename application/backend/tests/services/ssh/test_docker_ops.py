@@ -252,6 +252,13 @@ def test_check_library_version_unparseable_label_is_treated_as_unreported() -> N
     assert result.warning is not None
 
 
+def test_check_library_version_invalid_minimum_version_fails_fast() -> None:
+    """A misconfigured minimum is config, not untrusted image data: it must raise."""
+    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="1.0.0")
+    with pytest.raises(ValueError):
+        docker_ops.check_library_version(image, minimum_version="not-a-version")
+
+
 # --------------------------------------------------------------------------- #
 # GPU-busy wait                                                               #
 # --------------------------------------------------------------------------- #
@@ -362,6 +369,7 @@ def test_build_run_argv_security_properties() -> None:
         device_type=DeviceType.CUDA,
         name="physicalai-trainer-abc",
         labels={"a": "b"},
+        data_volume="physicalai-trainer-data-abc",
         remote_container_port=8080,
         stop_timeout_s=30,
     )
@@ -375,6 +383,23 @@ def test_build_run_argv_security_properties() -> None:
     assert not any(":latest" in part or part.endswith(":protocol-1") for part in argv)
 
 
+def test_build_run_argv_mounts_disk_backed_data_volume_not_tmpfs() -> None:
+    """The trainer's storage dir is a named volume (disk), never a RAM tmpfs."""
+    argv = docker_ops.build_run_argv(
+        image_digest_ref=f"{_REGISTRY}/physicalai-trainer-cuda@{_DIGEST}",
+        device_type=DeviceType.CUDA,
+        name="physicalai-trainer-abc",
+        labels={"a": "b"},
+        data_volume="physicalai-trainer-data-abc",
+        remote_container_port=8080,
+        stop_timeout_s=30,
+    )
+
+    assert "type=volume,src=physicalai-trainer-data-abc,dst=/var/lib/physicalai-trainer" in argv
+    assert any(part.startswith("/tmp:size=2g") for part in argv)
+    assert not any("size=64g" in part for part in argv)
+
+
 def test_build_run_argv_xpu_adds_group_add_for_render_gid() -> None:
     # Without --group-add the container's fixed non-root user cannot open the
     # render node even though --device /dev/dri passes it through, and
@@ -384,6 +409,7 @@ def test_build_run_argv_xpu_adds_group_add_for_render_gid() -> None:
         device_type=DeviceType.XPU,
         name="physicalai-trainer-abc",
         labels={"a": "b"},
+        data_volume="physicalai-trainer-data-abc",
         remote_container_port=8080,
         stop_timeout_s=30,
         render_gid="44",
@@ -400,6 +426,7 @@ def test_build_run_argv_xpu_without_render_gid_omits_group_add() -> None:
         device_type=DeviceType.XPU,
         name="physicalai-trainer-abc",
         labels={"a": "b"},
+        data_volume="physicalai-trainer-data-abc",
         remote_container_port=8080,
         stop_timeout_s=30,
     )
@@ -451,3 +478,58 @@ async def test_list_managed_containers_parses_docker_ps_json_lines() -> None:
     assert len(containers) == 1
     assert containers[0].container_id == "abc123"
     assert containers[0].job_id == "job1"
+
+
+# --------------------------------------------------------------------------- #
+# Data volume lifecycle                                                       #
+# --------------------------------------------------------------------------- #
+
+
+def test_data_volume_name_is_deterministic() -> None:
+    assert docker_ops.data_volume_name("abc") == "physicalai-trainer-data-abc"
+
+
+async def test_create_data_volume_labels_the_volume() -> None:
+    transport = FakeTransport({"docker volume create": _ok("")})
+
+    await docker_ops.create_data_volume(transport, "physicalai-trainer-data-abc", {"a": "b"}, "gpu-box")
+
+    assert transport.ran("--label=a=b")
+    assert transport.ran("physicalai-trainer-data-abc")
+
+
+async def test_create_data_volume_tolerates_existing_volume() -> None:
+    transport = FakeTransport({"docker volume create": _fail("volume with name already exists")})
+
+    await docker_ops.create_data_volume(transport, "physicalai-trainer-data-abc", {"a": "b"}, "gpu-box")
+
+
+async def test_create_data_volume_raises_on_other_failure() -> None:
+    transport = FakeTransport({"docker volume create": _fail("permission denied")})
+
+    with pytest.raises(TrainerContainerLaunchError):
+        await docker_ops.create_data_volume(transport, "physicalai-trainer-data-abc", {"a": "b"}, "gpu-box")
+
+
+async def test_remove_volume_tolerates_missing_volume() -> None:
+    transport = FakeTransport({"docker volume rm": _fail("no such volume")})
+
+    await docker_ops.remove_volume(transport, "physicalai-trainer-data-abc")
+
+    assert transport.ran("docker volume rm physicalai-trainer-data-abc")
+
+
+async def test_list_managed_volumes_parses_docker_volume_ls_json_lines() -> None:
+    line = json.dumps(
+        {
+            "Name": "physicalai-trainer-data-job1",
+            "Labels": f"{docker_ops.MANAGED_LABEL}=true,{docker_ops.JOB_LABEL}=job1",
+        }
+    )
+    transport = FakeTransport({"docker volume ls": _ok(line + "\n")})
+
+    volumes = await docker_ops.list_managed_volumes(transport, backend_instance_id="instance-1")
+
+    assert len(volumes) == 1
+    assert volumes[0].name == "physicalai-trainer-data-job1"
+    assert volumes[0].job_id == "job1"

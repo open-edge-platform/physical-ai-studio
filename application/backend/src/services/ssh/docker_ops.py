@@ -64,6 +64,11 @@ INSTANCE_LABEL: Final = "org.open-edge-platform.physicalai.backend-instance-id"
 
 _CONTAINER_NAME_PREFIX: Final = "physicalai-trainer-"
 
+# Named volume backing the trainer's writable storage directory
+# (`/var/lib/physicalai-trainer`). Disk-backed, unlike the `/tmp` tmpfs, so
+# uploaded datasets and model artifacts consume disk rather than RAM.
+_DATA_VOLUME_NAME_PREFIX: Final = "physicalai-trainer-data-"
+
 # Fraction of device memory in use above which an accelerator counts as busy.
 # Mirrors the (advisory) preflight heuristic for XPU, which has no
 # per-process attribution comparable to `nvidia-smi --query-compute-apps`.
@@ -122,6 +127,16 @@ class ManagedContainer:
         self.job_id = labels.get(JOB_LABEL)
 
 
+class ManagedVolume:
+    """One data volume carrying Studio's management labels, as reported by `docker volume ls`."""
+
+    __slots__ = ("job_id", "name")
+
+    def __init__(self, name: str, job_id: str | None) -> None:
+        self.name = name
+        self.job_id = job_id
+
+
 def container_name(job_id: str) -> str:
     """Return the deterministic container name for one job.
 
@@ -129,6 +144,18 @@ def container_name(job_id: str) -> str:
     by name without having persisted anything beyond the job id itself.
     """
     return f"{_CONTAINER_NAME_PREFIX}{job_id}"
+
+
+def data_volume_name(job_id: str) -> str:
+    """Return the deterministic data-volume name for one job.
+
+    Deterministic for the same reason `container_name` is: teardown and the
+    orphan sweep can find the volume by name without persisting anything beyond
+    the job id itself. Job ids are UUIDs, so names never collide between
+    installations, but the sweep still requires the volume's management labels
+    to match this installation (see `list_managed_volumes`).
+    """
+    return f"{_DATA_VOLUME_NAME_PREFIX}{job_id}"
 
 
 def management_labels(*, job_id: str, server_id: str, backend_instance_id: str) -> dict[str, str]:
@@ -308,14 +335,22 @@ def check_library_version(
     Raises:
         TrainerLibraryVersionError: The image's version does not meet
             `minimum_version` and `policy_name` names a required minimum.
+        ValueError: `minimum_version` is not a valid PEP 440 version.
     """
     reported = image.library_version
     if reported is None:
         return LibraryVersionCheck(reported_version=None, minimum_version=minimum_version)
 
     try:
-        reported_parsed = Version(reported)
         minimum_parsed = Version(minimum_version)
+    except InvalidVersion:
+        # `minimum_version` is operator configuration, not untrusted image data:
+        # a misconfigured minimum must fail fast, not silently disable the
+        # version policy by swallowing its parse error alongside the label's.
+        raise ValueError(f"minimum_version '{minimum_version}' is not a valid PEP 440 version") from None
+
+    try:
+        reported_parsed = Version(reported)
     except InvalidVersion:
         # `reported_version` stays `None`, not the unparseable string:
         # `SshProvisioningService.provision()` treats any non-`None`
@@ -494,12 +529,13 @@ def _device_run_args(device_type: DeviceType, render_gid: str | None = None) -> 
     return args
 
 
-def build_run_argv(
+def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security property
     *,
     image_digest_ref: str,
     device_type: DeviceType,
     name: str,
     labels: dict[str, str],
+    data_volume: str,
     remote_container_port: int,
     stop_timeout_s: int,
     render_gid: str | None = None,
@@ -515,18 +551,21 @@ def build_run_argv(
       restart silently out from under a job that already moved on.
     * Non-root, every Linux capability dropped, no `--privileged`, and only the
       device nodes the configured accelerator needs are passed through.
-    * `--read-only` plus one bounded `--tmpfs` gives the container a writable
-      scratch area without unbounded writable storage.
+    * `--read-only` root filesystem, one bounded `--tmpfs` for `/tmp` scratch,
+      and a single job-scoped data volume mounted at the trainer's storage
+      directory (`/var/lib/physicalai-trainer`) for datasets and model
+      artifacts - disk-backed so large uploads consume disk, not RAM.
 
     `render_gid`, from `resolve_render_group_gid`, is required for a working
     XPU container: without it `--device /dev/dri` passes the render node
     through but the fixed non-root user cannot open it, and
     `torch.xpu.is_available()` reports zero devices. Ignored for CUDA.
 
-    Each `--tmpfs` carries explicit `uid=`/`gid=` mount options matching
+    The `/tmp` tmpfs carries explicit `uid=`/`gid=` mount options matching
     `--user`: an unqualified `--tmpfs` mounts root-owned, and the trainer's
-    fixed non-root user cannot create its own storage subdirectories under it,
-    crashing on startup before it ever binds its port.
+    fixed non-root user cannot write it. The data volume needs no such options:
+    Docker initializes a fresh volume with the image's directory ownership
+    (`trainer:trainer` from `Dockerfile.trainer`).
     """
     tmpfs_owner = f"uid={_TRAINER_UID},gid={_TRAINER_GID}"
     return [
@@ -549,8 +588,8 @@ def build_run_argv(
         "--read-only",
         "--tmpfs",
         f"/tmp:size=2g,{tmpfs_owner}",  # noqa: S108  # nosec B108 - a `docker run` mount spec, not a local temp-file access
-        "--tmpfs",
-        f"/var/lib/physicalai-trainer:size=64g,{tmpfs_owner}",
+        "--mount",
+        f"type=volume,src={data_volume},dst=/var/lib/physicalai-trainer",
         *_device_run_args(device_type, render_gid),
         image_digest_ref,
     ]
@@ -616,6 +655,41 @@ async def stop_and_remove_container(transport: SshTransport, name_or_id: str, st
         logger.warning("docker rm reported a failure for container '{}': {}", name_or_id, remove.stderr)
 
 
+async def create_data_volume(transport: SshTransport, name: str, labels: dict[str, str], server_name: str) -> None:
+    """Create the job's data volume with management labels, tolerating an existing one.
+
+    Created explicitly rather than letting `docker run --mount` auto-create it,
+    so the volume carries the management labels the orphan sweep relies on to
+    attribute it to this installation. `docker run` then mounts the already
+    labeled volume.
+
+    Raises:
+        TrainerContainerLaunchError: The volume could not be created.
+    """
+    label_args = [f"--label={key}={value}" for key, value in labels.items()]
+    result = await transport.run_command(["docker", "volume", "create", *label_args, name])
+    if result.ok or "already exists" in (result.stderr or "").lower():
+        return
+    raise TrainerContainerLaunchError(server_name, detail=result.stderr or result.stdout or None)
+
+
+async def remove_volume(transport: SshTransport, name: str) -> None:
+    """Remove a data volume by name. Best-effort, tolerating a missing volume."""
+    result = await transport.run_command(["docker", "volume", "rm", name])
+    if not result.ok and "no such volume" not in (result.stderr or "").lower():
+        logger.warning("docker volume rm reported a failure for volume '{}': {}", name, result.stderr)
+
+
+def _parse_label_map(raw_labels: str) -> dict[str, str]:
+    """Parse a Docker `Labels` string (`k1=v1,k2=v2`) into a mapping."""
+    labels: dict[str, str] = {}
+    for entry in raw_labels.split(","):
+        key, sep, value = entry.partition("=")
+        if sep:
+            labels[key] = value
+    return labels
+
+
 def _parse_managed_container_line(line: str) -> ManagedContainer | None:
     parsed = _parse_json(line)
     if not isinstance(parsed, dict):
@@ -625,12 +699,18 @@ def _parse_managed_container_line(line: str) -> ManagedContainer | None:
     raw_labels = parsed.get("Labels", "")
     if not isinstance(container_id, str) or not isinstance(name, str) or not isinstance(raw_labels, str):
         return None
-    labels: dict[str, str] = {}
-    for entry in raw_labels.split(","):
-        key, sep, value = entry.partition("=")
-        if sep:
-            labels[key] = value
-    return ManagedContainer(container_id=container_id, name=name, labels=labels)
+    return ManagedContainer(container_id=container_id, name=name, labels=_parse_label_map(raw_labels))
+
+
+def _parse_managed_volume_line(line: str) -> ManagedVolume | None:
+    parsed = _parse_json(line)
+    if not isinstance(parsed, dict):
+        return None
+    name = parsed.get("Name")
+    raw_labels = parsed.get("Labels", "")
+    if not isinstance(name, str) or not isinstance(raw_labels, str):
+        return None
+    return ManagedVolume(name=name, job_id=_parse_label_map(raw_labels).get(JOB_LABEL))
 
 
 async def list_managed_containers(transport: SshTransport, backend_instance_id: str) -> list[ManagedContainer]:
@@ -657,3 +737,29 @@ async def list_managed_containers(transport: SshTransport, backend_instance_id: 
         return []
     containers = (_parse_managed_container_line(line) for line in result.stdout.splitlines() if line.strip())
     return [container for container in containers if container is not None]
+
+
+async def list_managed_volumes(transport: SshTransport, backend_instance_id: str) -> list[ManagedVolume]:
+    """List data volumes this installation provably owns.
+
+    Filters on both `MANAGED_LABEL` and `INSTANCE_LABEL`, exactly like
+    `list_managed_containers`, so a volume left by a different Studio
+    installation on a shared host is never swept by this one.
+    """
+    result = await transport.run_command(
+        [
+            "docker",
+            "volume",
+            "ls",
+            "--filter",
+            f"label={MANAGED_LABEL}=true",
+            "--filter",
+            f"label={INSTANCE_LABEL}={backend_instance_id}",
+            "--format",
+            "{{json .}}",
+        ]
+    )
+    if not result.ok:
+        return []
+    volumes = (_parse_managed_volume_line(line) for line in result.stdout.splitlines() if line.strip())
+    return [volume for volume in volumes if volume is not None]

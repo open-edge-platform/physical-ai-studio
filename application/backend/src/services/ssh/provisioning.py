@@ -67,6 +67,8 @@ class ProvisionedTrainer:
     _tunnel: SshTunnel
     _server_alias: str
     _stop_timeout_s: int
+    _data_volume: str
+    _settings: Settings
 
     async def __aenter__(self) -> Self:
         return self
@@ -80,15 +82,16 @@ class ProvisionedTrainer:
         await self.teardown()
 
     async def teardown(self) -> None:
-        """Tear down the tunnel and stop/remove the container.
+        """Tear down the tunnel, then stop/remove the container and its data volume.
 
         Best-effort: a teardown must never itself raise and mask whatever
         caused it, so any failure here is logged, not propagated.
         """
         await self._tunnel.close()
         try:
-            async with SshTransport(self._server_alias) as transport:
+            async with SshTransport(self._server_alias, self._settings) as transport:
                 await docker_ops.stop_and_remove_container(transport, self.container_name, self._stop_timeout_s)
+                await docker_ops.remove_volume(transport, self._data_volume)
         except Exception as error:
             logger.warning("Failed to tear down trainer container '{}': {}", self.container_name, error)
 
@@ -104,7 +107,7 @@ class SshProvisioningService:
         self._repository = repository
         self._settings = settings or get_settings()
 
-    async def provision(
+    async def provision(  # noqa: PLR0915 - top-level orchestrator; its teardown path must stay inlined
         self,
         job_id: UUID,
         server: RemoteServer,
@@ -141,6 +144,10 @@ class SshProvisioningService:
         minimum_version = min_library_version or settings.ssh_min_library_version
         backend_instance_id = get_backend_instance_id()
         name = docker_ops.container_name(str(job_id))
+        data_volume = docker_ops.data_volume_name(str(job_id))
+        labels = docker_ops.management_labels(
+            job_id=str(job_id), server_id=str(server.id), backend_instance_id=backend_instance_id
+        )
 
         await self._repository.save(
             JobProvisioning(
@@ -154,6 +161,7 @@ class SshProvisioningService:
 
         tunnel: SshTunnel | None = None
         launched = False
+        volume_created = False
         try:
             async with SshTransport(server.ssh_host_alias, settings) as transport:
                 image = await docker_ops.resolve_protocol_image(
@@ -186,13 +194,14 @@ class SshProvisioningService:
                     if server.device_type is DeviceType.CUDA
                     else await docker_ops.resolve_render_group_gid(transport)
                 )
+                await docker_ops.create_data_volume(transport, data_volume, labels, server.name)
+                volume_created = True
                 argv = docker_ops.build_run_argv(
                     image_digest_ref=image.digest_reference,
                     device_type=server.device_type,
                     name=name,
-                    labels=docker_ops.management_labels(
-                        job_id=str(job_id), server_id=str(server.id), backend_instance_id=backend_instance_id
-                    ),
+                    labels=labels,
+                    data_volume=data_volume,
                     remote_container_port=TRAINER_CONTAINER_PORT,
                     stop_timeout_s=settings.ssh_container_stop_timeout_s,
                     render_gid=render_gid,
@@ -259,16 +268,21 @@ class SshProvisioningService:
                 _tunnel=tunnel,
                 _server_alias=server.ssh_host_alias,
                 _stop_timeout_s=settings.ssh_container_stop_timeout_s,
+                _data_volume=data_volume,
+                _settings=settings,
             )
         except BaseException:
             if tunnel is not None:
                 await tunnel.close()
-            if launched:
+            if launched or volume_created:
                 try:
                     async with SshTransport(server.ssh_host_alias, settings) as transport:
-                        await docker_ops.stop_and_remove_container(
-                            transport, name, settings.ssh_container_stop_timeout_s
-                        )
+                        if launched:
+                            await docker_ops.stop_and_remove_container(
+                                transport, name, settings.ssh_container_stop_timeout_s
+                            )
+                        if volume_created:
+                            await docker_ops.remove_volume(transport, data_volume)
                 except Exception as cleanup_error:
                     logger.warning(
                         "Failed to clean up container '{}' after a failed provision: {}", name, cleanup_error
@@ -370,6 +384,8 @@ class SshProvisioningService:
             _tunnel=tunnel,
             _server_alias=server.ssh_host_alias,
             _stop_timeout_s=settings.ssh_container_stop_timeout_s,
+            _data_volume=docker_ops.data_volume_name(str(job_provisioning.job_id)),
+            _settings=settings,
         )
 
     async def teardown(self, job_id: UUID, server: RemoteServer) -> None:
@@ -385,12 +401,13 @@ class SshProvisioningService:
             await docker_ops.stop_and_remove_container(
                 transport, job_provisioning.container_name, self._settings.ssh_container_stop_timeout_s
             )
+            await docker_ops.remove_volume(transport, docker_ops.data_volume_name(str(job_id)))
         await self._repository.delete_by_job_id(job_id)
 
     async def sweep_orphans(self, server: RemoteServer, active_job_ids: set[UUID]) -> list[str]:
-        """Remove containers this installation owns but no job claims anymore.
+        """Remove containers and data volumes this installation owns but no job claims.
 
-        Requires every management label to match *and* the container's
+        Requires every management label to match *and* the resource's
         `backend_instance_id` label to match this installation's own id *and*
         its job id to be absent from `active_job_ids` - a job that is still
         `PENDING`/`RUNNING` has an active reattach claim and must never be
@@ -398,13 +415,13 @@ class SshProvisioningService:
         reattach.
 
         Returns:
-            Names of the containers removed.
+            Names of the containers and volumes removed.
         """
         backend_instance_id = get_backend_instance_id()
         removed: list[str] = []
         async with SshTransport(server.ssh_host_alias, self._settings) as transport:
-            containers = await docker_ops.list_managed_containers(transport, backend_instance_id)
             active_ids = {str(job_id) for job_id in active_job_ids}
+            containers = await docker_ops.list_managed_containers(transport, backend_instance_id)
             for container in containers:
                 if container.job_id is not None and container.job_id in active_ids:
                     continue
@@ -412,4 +429,10 @@ class SshProvisioningService:
                     transport, container.container_id, self._settings.ssh_container_stop_timeout_s
                 )
                 removed.append(container.name)
+            volumes = await docker_ops.list_managed_volumes(transport, backend_instance_id)
+            for volume in volumes:
+                if volume.job_id is not None and volume.job_id in active_ids:
+                    continue
+                await docker_ops.remove_volume(transport, volume.name)
+                removed.append(volume.name)
         return removed

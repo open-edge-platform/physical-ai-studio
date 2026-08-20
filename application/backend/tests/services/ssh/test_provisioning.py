@@ -30,10 +30,11 @@ from schemas.job_provisioning import JobProvisioning, JobProvisioningUpdate
 from schemas.remote_server import RemoteServer
 from services.ssh import docker_ops
 from services.ssh import provisioning as provisioning_module
-from services.ssh.docker_ops import JOB_LABEL, LIBRARY_VERSION_LABEL, MANAGED_LABEL
+from services.ssh.docker_ops import JOB_LABEL, LIBRARY_VERSION_LABEL, MANAGED_LABEL, LibraryVersionCheck, ResolvedImage
 from services.ssh.preflight import PROTOCOL_LABEL
 from services.ssh.provisioning import SshProvisioningService
 from services.ssh.transport import CommandResult
+from settings import Settings
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -70,10 +71,13 @@ def _healthy_script(container_id: str = "abc123", published_port: int = 54321) -
         ),
         "docker pull": _ok("Status: Downloaded"),
         "nvidia-smi --query-compute-apps": _ok("\n"),  # GPU free
+        "docker volume create": _ok(""),
         "docker run": _ok(f"{container_id}\n"),
         "docker port": _ok(f"127.0.0.1:{published_port}\n"),
         "docker stop": _ok(""),
         "docker rm": _ok(""),
+        "docker volume rm": _ok(""),
+        "docker volume ls": _ok(""),
         "docker inspect": _ok("true\n"),
     }
 
@@ -210,7 +214,9 @@ async def test_provision_happy_path(_patch_transport_and_tunnel, repository) -> 
     assert persisted.trainer_protocol_version == _PROTOCOL_VERSION
 
     await trainer.teardown()
-    assert any(cmd[:2] == ("docker", "stop") for cmd in _commands(_patch_transport_and_tunnel))
+    commands = _commands(_patch_transport_and_tunnel)
+    assert any(cmd[:2] == ("docker", "stop") for cmd in commands)
+    assert any(cmd[:3] == ("docker", "volume", "rm") for cmd in commands)
 
 
 async def test_provision_fails_with_no_fallback_tag(_patch_transport_and_tunnel, repository) -> None:
@@ -306,8 +312,11 @@ async def test_provision_launch_failure_needs_no_cleanup(_patch_transport_and_tu
     with pytest.raises(TrainerContainerLaunchError):
         await service.provision(uuid4(), _server(), protocol_version=_PROTOCOL_VERSION, snapshot_size_bytes=1)
 
-    # docker run never produced a container id, so there is nothing to stop.
-    assert not any(cmd[:2] == ("docker", "stop") for cmd in _commands(_patch_transport_and_tunnel))
+    # docker run never produced a container id, so there is nothing to stop,
+    # but the already-created data volume is still removed.
+    commands = _commands(_patch_transport_and_tunnel)
+    assert not any(cmd[:2] == ("docker", "stop") for cmd in commands)
+    assert any(cmd[:3] == ("docker", "volume", "rm") for cmd in commands)
 
 
 async def test_reattach_returns_none_when_container_not_running(_patch_transport_and_tunnel, repository) -> None:
@@ -375,3 +384,69 @@ async def test_sweep_orphans_never_touches_active_or_foreign_containers(
     removed = await service.sweep_orphans(server, active_job_ids={active_job_id})
 
     assert removed == [docker_ops.container_name(str(orphan_job_id))]
+
+
+async def test_sweep_orphans_removes_orphaned_volumes_but_not_active(_patch_transport_and_tunnel, repository) -> None:
+    server = _server()
+    active_job_id = uuid4()
+    orphan_job_id = uuid4()
+    script = _healthy_script()
+    script["docker ps"] = _ok("")  # no orphaned containers this sweep
+    volume_lines = "\n".join(
+        json.dumps(
+            {
+                "Name": docker_ops.data_volume_name(str(job_id)),
+                "Labels": f"{MANAGED_LABEL}=true,{JOB_LABEL}={job_id}",
+            }
+        )
+        for job_id in (active_job_id, orphan_job_id)
+    )
+    script["docker volume ls"] = _ok(volume_lines + "\n")
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    removed = await service.sweep_orphans(server, active_job_ids={active_job_id})
+
+    assert removed == [docker_ops.data_volume_name(str(orphan_job_id))]
+
+
+async def test_provisioned_trainer_teardown_uses_provisioning_settings(monkeypatch) -> None:
+    """Teardown must reconnect with the same settings used to provision, not `get_settings()`."""
+    settings = Settings()
+    captured: dict[str, object] = {}
+
+    class _Transport:
+        def __init__(self, alias, settings=None):
+            captured["alias"] = alias
+            captured["settings"] = settings
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def run_command(self, argv, timeout=None):  # noqa: ASYNC109
+            return _ok("")
+
+    class _Tunnel:
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(provisioning_module, "SshTransport", _Transport)
+    trainer = provisioning_module.ProvisionedTrainer(
+        base_url="http://127.0.0.1:1",
+        container_name="physicalai-trainer-job1",
+        image=ResolvedImage(tag_reference="t", digest_reference="d", digest="sha256:" + "a" * 64, library_version=None),
+        library_version_check=LibraryVersionCheck(reported_version=None, minimum_version="0.1.0"),
+        _tunnel=_Tunnel(),
+        _server_alias="gpu-box",
+        _stop_timeout_s=30,
+        _data_volume="physicalai-trainer-data-job1",
+        _settings=settings,
+    )
+
+    await trainer.teardown()
+
+    assert captured["alias"] == "gpu-box"
+    assert captured["settings"] is settings
