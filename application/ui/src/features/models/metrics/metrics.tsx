@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 
 import { Grid, Heading, IllustratedMessage, Loading } from '@geti-ui/ui';
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
@@ -7,7 +7,8 @@ import { fetchClient } from '../../../api/client';
 import { fetchSSE } from '../../../api/fetch-sse';
 import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
-import { MetricGraph, type MetricGraphPoint } from './metric-graph';
+import { MetricGraph } from './metric-graph';
+import { MetricsEntry } from './types';
 
 const NoMetricsAvailable = () => {
     return (
@@ -22,8 +23,10 @@ interface MetricSeries {
     title: string;
     xLabel: string;
     yLabel: string;
-    data: MetricGraphPoint[];
+    data: MetricsEntry[];
     color?: string;
+    getX: (metricsEntry: MetricsEntry) => number;
+    getY: (metricsEntry: MetricsEntry) => number | null | undefined;
 }
 
 interface MetricsViewProps {
@@ -32,6 +35,8 @@ interface MetricsViewProps {
 }
 
 const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
+    const syncId = useId();
+
     if (isLoading) {
         return <Loading mode='inline' />;
     }
@@ -47,40 +52,21 @@ const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
             columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
             gap='size-200'
         >
-            {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color }) => (
+            {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color, getX, getY }) => (
                 <MetricGraph
                     key={title}
+                    syncId={syncId}
                     title={title}
                     yAxisLabel={yLabel}
                     xAxisLabel={xLabel}
                     data={data}
                     color={color}
+                    getX={getX}
+                    getY={getY}
                 />
             ))}
         </Grid>
     );
-};
-
-interface MetricsEntry {
-    epoch: number | null;
-    step: number;
-    train_loss: number | null | undefined;
-    train_loss_step: number | null | undefined;
-    'lr-AdamW': number | null | undefined;
-    val_loss: number | null | undefined;
-}
-
-const selectSeries = (
-    data: MetricsEntry[] | undefined,
-    getX: (metricsEntry: MetricsEntry) => number,
-    getY: (metricsEntry: MetricsEntry) => number | null | undefined
-) => {
-    if (data == null) return [];
-
-    return data.flatMap((entry) => {
-        const y = getY(entry);
-        return y == null ? [] : [{ x: getX(entry), y }];
-    });
 };
 
 const useJobMetrics = (jobId: string) => {
@@ -95,47 +81,44 @@ const useJobMetrics = (jobId: string) => {
                 return fetchSSE<MetricsEntry>(url, { signal: context.signal });
             },
         }),
+
         staleTime: Infinity,
     });
 };
 
 export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
     const query = useJobMetrics(jobId);
-
-    const lossStepMetrics = useMemo(() => {
-        return selectSeries(
-            query.data,
-            (entry) => entry.step,
-            (entry) => entry.train_loss ?? entry.train_loss_step
-        );
+    const metricsData = useMemo(() => {
+        return query.data ?? [];
     }, [query.data]);
 
-    const validationLossStepMetrics = useMemo(() => {
-        return selectSeries(
-            query.data,
-            (entry) => entry.step,
-            (entry) => entry.val_loss
-        );
-    }, [query.data]);
-
-    const learningRateStepMetrics = useMemo(() => {
-        return selectSeries(
-            query.data,
-            (entry) => entry.step,
-            (entry) => entry['lr-AdamW']
-        );
-    }, [query.data]);
-
-    const metrics = [
-        { title: 'Training loss', xLabel: 'Step', yLabel: 'Loss', data: lossStepMetrics, color: 'var(--moss-tint-1)' },
+    const metrics: MetricSeries[] = [
+        {
+            title: 'Training loss',
+            xLabel: 'Step',
+            yLabel: 'Loss',
+            data: metricsData,
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.train_loss ?? entry.train_loss_step,
+            color: 'var(--moss-tint-1)'
+        },
         {
             title: 'Validation loss',
             xLabel: 'Step',
             yLabel: 'Loss',
-            data: validationLossStepMetrics,
+            data: metricsData,
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.val_loss,
             color: 'var(--coral)',
         },
-        { title: 'Learning rate', xLabel: 'Step', yLabel: 'Learning rate', data: learningRateStepMetrics },
+        {
+            title: 'Learning rate',
+            xLabel: 'Step',
+            yLabel: 'Learning rate',
+            data: metricsData,
+            getX: (entry) => entry.step,
+            getY: (entry) => entry['lr-AdamW'],
+        },
     ];
 
     return <MetricsView series={metrics} isLoading={query.isLoading} />;
@@ -160,40 +143,37 @@ const useModelMetrics = (modelId: string) => {
 export const MetricsContent = ({ modelId }: { modelId: string }) => {
     const query = useModelMetrics(modelId);
 
-    const lossStepMetrics = useMemo(() => {
-        return selectSeries(
-            query.data,
-            (entry) => entry.step,
-            (entry) => entry.train_loss ?? entry.train_loss_step
-        );
+    const metricsData = useMemo(() => {
+        return query.data ?? [];
     }, [query.data]);
 
-    const validationLossStepMetrics = useMemo(() => {
-        return selectSeries(
-            query.data,
-            (entry) => entry.step,
-            (entry) => entry.val_loss
-        );
-    }, [query.data]);
-
-    const learningRateStepMetrics = useMemo(() => {
-        return selectSeries(
-            query.data,
-            (entry) => entry.step,
-            (entry) => entry['lr-AdamW']
-        );
-    }, [query.data]);
-
-    const metrics = [
-        { title: 'Training loss', xLabel: 'Step', yLabel: 'Loss', data: lossStepMetrics, color: 'var(--moss-tint-1)' },
+    const metrics: MetricSeries[] = [
+        {
+            title: 'Training loss',
+            xLabel: 'Step',
+            yLabel: 'Loss',
+            data: metricsData,
+            color: 'var(--moss-tint-1)',
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.train_loss ?? entry.train_loss_step,
+        },
         {
             title: 'Validation loss',
             xLabel: 'Step',
             yLabel: 'Loss',
-            data: validationLossStepMetrics,
+            data: metricsData,
             color: 'var(--coral)',
+            getX: (entry) => entry.step,
+            getY: (entry) => entry.val_loss,
         },
-        { title: 'Learning rate', xLabel: 'Step', yLabel: 'Learning rate', data: learningRateStepMetrics },
+        {
+            title: 'Learning rate',
+            xLabel: 'Step',
+            yLabel: 'Learning rate',
+            data: metricsData,
+            getX: (entry) => entry.step,
+            getY: (entry) => entry['lr-AdamW'],
+        },
     ];
 
     return <MetricsView series={metrics} isLoading={query.isLoading} />;

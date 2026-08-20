@@ -4,6 +4,7 @@ import { Flex, View } from '@geti-ui/ui';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { Box } from '../shared/box';
+import { MetricsEntry } from './types';
 
 export type MetricGraphPoint = {
     x: number;
@@ -11,21 +12,27 @@ export type MetricGraphPoint = {
 };
 
 type MetricGraphProps = {
+    syncId?: string;
     title: string;
-    data?: MetricGraphPoint[];
+    data?: MetricsEntry[];
     xAxisLabel?: string;
     yAxisLabel: string;
     color?: string;
+    getX: (metricsEntry: MetricsEntry) => number;
+    getY: (metricsEntry: MetricsEntry) => number | null | undefined;
 };
 
 const X_AXIS_TICK_COUNT = 8;
 const Y_AXIS_TICK_COUNT = 4;
 
 export const MetricGraph = ({
+    syncId,
     title,
     data,
     xAxisLabel,
     yAxisLabel,
+    getY,
+    getX,
     color = 'var(--energy-blue)',
 }: MetricGraphProps) => {
     const gradientId = useId();
@@ -45,6 +52,7 @@ export const MetricGraph = ({
                     <View backgroundColor={'gray-50'} minHeight={'size-3000'}>
                         <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>
                             <AreaChart
+                                syncId={syncId}
                                 style={{ aspectRatio: 1.6 }}
                                 data={data}
                                 margin={{ top: 35, bottom: 35, left: 35, right: 35 }}
@@ -57,7 +65,7 @@ export const MetricGraph = ({
                                 </defs>
                                 <CartesianGrid />
                                 <XAxis
-                                    dataKey='x'
+                                    dataKey={getX}
                                     type='number'
                                     domain={[0, 'dataMax']}
                                     label={{ value: xAxisLabel ?? 'x', position: 'bottom', fill: '#666', offset: 12 }}
@@ -72,15 +80,42 @@ export const MetricGraph = ({
                                 />
                                 <Area
                                     type='linear'
-                                    dataKey='y'
+                                    dataKey={getY}
                                     name={yAxisLabel}
                                     stroke='var(--metric-graph-color)'
                                     strokeWidth={2}
                                     fill={`url(#${gradientId})`}
                                     dot={false}
+                                    connectNulls
                                 />
                                 <Tooltip
+                                    filterNull={false}
                                     labelFormatter={(label) => `${xAxisLabel}: ${label}`}
+                                    content={({ active, payload, label }) => {
+                                        console.log({ payload });
+                                        if (active && payload && payload.length) {
+                                            const value = payload[0].value;
+                                            return (
+                                                <div
+                                                    style={{
+                                                        padding: 'var(--spectrum-global-dimension-size-100)',
+                                                        color: 'var(--spectrum-global-color-gray-900)',
+                                                        fontSize: 'var(--spectrum-global-dimension-font-size-75)',
+                                                        backgroundColor: 'var(--spectrum-global-color-gray-50)',
+                                                        borderColor: 'var(--color-border-2)',
+                                                        borderRadius: 'var(--spectrum-alias-border-radius-regular)',
+                                                    }}
+                                                >
+                                                    <div>
+                                                        {xAxisLabel}: {label}
+                                                    </div>
+                                                    <div>
+                                                        {yAxisLabel}: {value}
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                    }}
                                     cursor={{
                                         stroke: 'var(--metric-graph-color)',
                                     }}
