@@ -149,21 +149,39 @@ def list_host_aliases(config_path: Path) -> list[SshHostAliasOption]:
     literal ``Host`` name, not a pattern that happens to match one. When
     ``HostName`` is unset, the alias itself is the effective hostname - real
     ssh behavior, not an invented default.
+
+    If an alias is defined by more than one stanza (common with ``Include``),
+    the stanzas are merged field-by-field with the same last-stanza-wins rule
+    as ``resolve_alias``, so each alias appears exactly once and both
+    functions agree on its resolved fields.
     """
-    options: list[SshHostAliasOption] = []
+    merged: dict[str, _HostBlock] = {}
+    order: list[str] = []
     for block in _iter_blocks(config_path):
         for pattern in block.patterns:
             if not _is_literal_pattern(pattern):
                 continue
-            options.append(
-                SshHostAliasOption(
-                    alias=pattern,
-                    hostname=block.hostname or pattern,
-                    port=block.port,
-                    user=block.user,
-                )
-            )
-    return options
+            existing = merged.get(pattern)
+            if existing is None:
+                order.append(pattern)
+                existing = _HostBlock(patterns=[pattern])
+                merged[pattern] = existing
+            if block.hostname is not None:
+                existing.hostname = block.hostname
+            if block.port is not None:
+                existing.port = block.port
+            if block.user is not None:
+                existing.user = block.user
+
+    return [
+        SshHostAliasOption(
+            alias=alias,
+            hostname=merged[alias].hostname or alias,
+            port=merged[alias].port,
+            user=merged[alias].user,
+        )
+        for alias in order
+    ]
 
 
 def resolve_alias(config_path: Path, alias: str) -> ResolvedSshHost:
@@ -175,10 +193,11 @@ def resolve_alias(config_path: Path, alias: str) -> ResolvedSshHost:
 
     If the alias is defined by more than one stanza (common with ``Include``),
     every matching stanza is scanned in file order and a later one overrides an
-    earlier one field-by-field, mirroring real ssh's "first obtained value is
-    used, but Included files are read in-place" semantics as they apply to
-    later stanzas overriding earlier ones - only a field the later stanza
-    actually sets is overridden, not the whole result.
+    earlier one field-by-field - only a field the later stanza actually sets is
+    overridden, not the whole result. This is last-stanza-wins, the opposite of
+    real ssh's first-obtained-value-wins rule: it is deliberate here so an
+    ``Include``d override file takes effect, since display-only resolution has
+    no reason to replicate ssh's actual precedence.
     """
     found = False
     hostname: str | None = None

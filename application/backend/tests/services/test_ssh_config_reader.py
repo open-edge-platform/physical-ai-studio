@@ -192,10 +192,10 @@ def test_resolve_alias_follows_include_one_level_deep(tmp_path: Path) -> None:
 def test_resolve_alias_later_stanza_overrides_earlier_one(tmp_path: Path) -> None:
     """A later ``Host`` stanza with the same alias overrides earlier fields.
 
-    This mirrors real ssh behavior where later-declared values win, which
-    matters most for ``Include``d configs that redefine the same alias.
-    Fields the later stanza does not set (here, ``User``) keep the earlier
-    stanza's value rather than being cleared.
+    This is last-stanza-wins, deliberately the opposite of real ssh's
+    first-obtained-value-wins rule, so an ``Include``d override file takes
+    effect. Fields the later stanza does not set (here, ``User``) keep the
+    earlier stanza's value rather than being cleared.
     """
     config_path = _write_config(
         tmp_path,
@@ -216,6 +216,35 @@ def test_resolve_alias_later_stanza_overrides_earlier_one(tmp_path: Path) -> Non
     assert result.hostname == "10.0.0.9"
     assert result.port == 2222
     assert result.user == "trainer"
+
+
+def test_list_host_aliases_merges_duplicate_alias_last_stanza_wins(tmp_path: Path) -> None:
+    """A duplicate ``Host`` alias must be listed once, merged like ``resolve_alias``.
+
+    Mirrors ``test_resolve_alias_later_stanza_overrides_earlier_one``: the two
+    functions must agree on the resolved fields for the same alias, and the
+    alias must not appear twice just because two stanzas define it.
+    """
+    config_path = _write_config(
+        tmp_path,
+        """
+        Host my-gpu-box
+            HostName 10.0.0.5
+            Port 2222
+            User trainer
+
+        Host my-gpu-box
+            HostName 10.0.0.9
+        """,
+    )
+
+    aliases = list_host_aliases(config_path)
+
+    assert [option.alias for option in aliases] == ["my-gpu-box"]
+    option = aliases[0]
+    assert option.hostname == "10.0.0.9"
+    assert option.port == 2222
+    assert option.user == "trainer"
 
 
 def test_list_host_aliases_follows_include_one_level_deep(tmp_path: Path) -> None:
