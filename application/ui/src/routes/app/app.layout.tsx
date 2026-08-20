@@ -42,7 +42,7 @@ export const AppLayout = () => {
                     gridArea='content'
                     minHeight={0}
                     height='100%'
-                    backgroundColor={'gray-50'}
+                    backgroundColor={'gray-75'}
                     position={'relative'}
                     padding={'size-300'}
                 >

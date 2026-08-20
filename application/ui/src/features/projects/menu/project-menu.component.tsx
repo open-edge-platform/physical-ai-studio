@@ -20,8 +20,8 @@ const SelectedProjectButton = ({ projectId, name }: SelectedProjectProps) => {
             staticColor='white'
             UNSAFE_className={classes.selectedProjectButton}
         >
-            <View marginEnd='size-50' UNSAFE_className={classes.thumbnailWrapper}>
-                <ProjectThumbnail projectId={projectId} name={name} size={35} />
+            <View marginEnd='size-100' UNSAFE_className={classes.thumbnailWrapper}>
+                <ProjectThumbnail projectId={projectId} name={name} size={40} />
             </View>
             <View margin={'size-50'}>{name}</View>
         </ActionButton>

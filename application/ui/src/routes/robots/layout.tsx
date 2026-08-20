@@ -27,7 +27,7 @@ export const Layout = () => {
                     <RobotsList />
                 </Suspense>
             </View>
-            <View gridArea='controls' backgroundColor={'gray-50'} minHeight={0} minWidth={0} overflow='auto'>
+            <View gridArea='controls' backgroundColor={'gray-75'} minHeight={0} minWidth={0} overflow='auto'>
                 <Suspense fallback={<CenteredLoading />}>
                     <Outlet />
                 </Suspense>

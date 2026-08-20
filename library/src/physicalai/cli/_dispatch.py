@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Final, cast
 
 from jsonargparse import ActionConfigFile, ArgumentParser, Namespace
 
+from physicalai.cli._logging import configure_console_logging  # noqa: PLC2701
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -51,6 +53,11 @@ def _build_lightning_parser(method_name: str) -> ArgumentParser:
 def _dispatch(method_name: str) -> Callable[[ArgumentParser, Namespace], int]:
     """Create a dispatcher that instantiates and invokes ``Trainer.<method_name>``.
 
+    The method-level arguments registered by :func:`_build_lightning_parser`
+    (``--fit.ckpt_path``, ``--validate.verbose``, ...) live in a namespace keyed
+    by ``method_name`` and are forwarded verbatim, so warm-starting or resuming
+    from a checkpoint works from the CLI.
+
     Args:
         method_name: Trainer method to invoke.
 
@@ -59,9 +66,17 @@ def _dispatch(method_name: str) -> Callable[[ArgumentParser, Namespace], int]:
     """
 
     def _run(parser: ArgumentParser, cfg: Namespace) -> int:
+        configure_console_logging()
         cfg_init = cast("Namespace", parser.instantiate_classes(cfg))
         trainer = cfg_init.trainer
-        getattr(trainer, method_name)(model=cfg_init.model, datamodule=cfg_init.data)
+        method_ns = getattr(cfg_init, method_name, None)
+        # Drop unset options so Trainer's own defaults win over jsonargparse Nones.
+        method_args = (
+            {key: value for key, value in vars(method_ns).items() if value is not None}
+            if isinstance(method_ns, Namespace)
+            else {}
+        )
+        getattr(trainer, method_name)(model=cfg_init.model, datamodule=cfg_init.data, **method_args)
         return 0
 
     return _run

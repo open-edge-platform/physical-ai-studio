@@ -120,10 +120,17 @@ physicalai fit \
 
 ```bash
 physicalai fit --config CONFIG_PATH
-physicalai validate --config CONFIG_PATH --ckpt_path CHECKPOINT
-physicalai test --config CONFIG_PATH --ckpt_path CHECKPOINT
-physicalai predict --config CONFIG_PATH --ckpt_path CHECKPOINT
+physicalai fit --config CONFIG_PATH --fit.ckpt_path CHECKPOINT       # resume training
+physicalai validate --config CONFIG_PATH --validate.ckpt_path CHECKPOINT
+physicalai test --config CONFIG_PATH --test.ckpt_path CHECKPOINT
+physicalai predict --config CONFIG_PATH --predict.ckpt_path CHECKPOINT
 ```
+
+Arguments belonging to the `Trainer` method itself (`ckpt_path`, `weights_only`,
+`verbose`) are namespaced under the subcommand name, so they do not collide with
+`--trainer.*` constructor arguments. `physicalai benchmark` and
+`physicalai export` use a bare `--ckpt_path` because they are not
+`Trainer`-backed.
 
 ## Examples
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import gc
 import weakref
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,9 +23,6 @@ from pydantic import ValidationError
 
 from training import TrainingJobSpec
 from training.job import CHECKPOINT_NAME, EXPORTS_DIRNAME, PRETRAINED_BASE_CHECKPOINTS, build_policy, run_training_job
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 JOB = "training.job"
 
@@ -144,22 +141,41 @@ def _run(
     policy: object | None = None,
     should_stop: bool = False,
     report: MagicMock | None = None,
+    write_checkpoint: bool = True,
 ) -> MagicMock:
     """Run a job with the datamodule and Lightning trainer mocked out.
+
+    ``Trainer`` is mocked, so its real ``ModelCheckpoint`` callback never runs
+    and never writes a checkpoint on its own; ``write_checkpoint`` simulates
+    that side effect of a successful ``fit`` so callers don't have to.
+    ``trainer.save_checkpoint`` is wired to write the file too, so tests that
+    exercise the fallback (``write_checkpoint=False``) still end up with a
+    real checkpoint on disk once the runner calls it.
 
     Returns:
         The patched ``Trainer`` class, so tests can assert how it was configured.
     """
+    cache_dir = tmp_path / "cache" / "job"
+
+    def fake_fit(*_args: object, **_kwargs: object) -> None:
+        if write_checkpoint:
+            (cache_dir / CHECKPOINT_NAME).write_text("checkpoint")
+
+    def fake_save_checkpoint(path: str | Path, *_args: object, **_kwargs: object) -> None:
+        Path(path).write_text("checkpoint")
+
     with (
         patch("physicalai.data.LeRobotDataModule"),
         patch(f"{JOB}.build_policy", return_value=policy if policy is not None else MagicMock()),
         patch("physicalai.train.trainer.Trainer") as trainer_class,
     ):
+        trainer_class.return_value.fit.side_effect = fake_fit
+        trainer_class.return_value.save_checkpoint.side_effect = fake_save_checkpoint
         run_training_job(
             spec,
             dataset_root=tmp_path / "snapshot",
             output_dir=tmp_path / "model",
-            cache_dir=tmp_path / "cache" / "job",
+            cache_dir=cache_dir,
             report=report or MagicMock(),
             should_stop=lambda: should_stop,
         )
@@ -194,17 +210,19 @@ class TestRunTrainingJob:
 
     def test_dataset_is_loaded_from_the_local_root(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(policy="act", batch_size=16, num_workers=2, val_split=0.25)
+        cache_dir = tmp_path / "cache" / "job"
 
         with (
             patch("physicalai.data.LeRobotDataModule") as datamodule,
             patch(f"{JOB}.build_policy"),
-            patch("physicalai.train.trainer.Trainer"),
+            patch("physicalai.train.trainer.Trainer") as trainer_class,
         ):
+            trainer_class.return_value.fit.side_effect = lambda *a, **k: (cache_dir / CHECKPOINT_NAME).write_text("x")
             run_training_job(
                 spec,
                 dataset_root=tmp_path / "snapshot",
                 output_dir=tmp_path / "model",
-                cache_dir=tmp_path / "cache" / "job",
+                cache_dir=cache_dir,
                 report=MagicMock(),
                 should_stop=lambda: False,
             )
@@ -214,12 +232,35 @@ class TestRunTrainingJob:
         assert (kwargs["train_batch_size"], kwargs["num_workers"], kwargs["val_split"]) == (16, 2, 0.25)
 
     def test_completed_run_publishes_the_cache_as_the_model_directory(self, tmp_path: Path) -> None:
+        """The final checkpoint comes solely from the ModelCheckpoint callback, not an explicit save."""
         trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path)
 
         trainer = trainer_class.return_value
-        trainer.save_checkpoint.assert_called_once_with(tmp_path / "cache" / "job" / CHECKPOINT_NAME)
+        trainer.save_checkpoint.assert_not_called()
         assert (tmp_path / "model").is_dir()
+        assert (tmp_path / "model" / CHECKPOINT_NAME).is_file()
         assert not (tmp_path / "cache" / "job").exists()
+
+    def test_a_model_checkpoint_callback_is_configured_to_keep_the_best_epoch(self, tmp_path: Path) -> None:
+        """The callback is the sole source of the published checkpoint; assert it stays configured that way."""
+        from lightning.pytorch.callbacks import ModelCheckpoint
+
+        trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path)
+
+        callbacks = trainer_class.call_args.kwargs["callbacks"]
+        checkpoint_callbacks = [c for c in callbacks if isinstance(c, ModelCheckpoint)]
+        assert len(checkpoint_callbacks) == 1
+        callback = checkpoint_callbacks[0]
+        assert callback.dirpath == str(tmp_path / "cache" / "job")
+        assert (callback.monitor, callback.mode, callback.save_top_k) == ("val/loss", "min", 1)
+
+    def test_missing_checkpoint_from_the_callback_falls_back_to_an_explicit_save(self, tmp_path: Path) -> None:
+        """A run with nothing for the callback to monitor (e.g. no validation split) still gets a checkpoint."""
+        trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path, write_checkpoint=False)
+
+        trainer = trainer_class.return_value
+        trainer.save_checkpoint.assert_called_once_with(tmp_path / "cache" / "job" / CHECKPOINT_NAME)
+        assert (tmp_path / "model" / CHECKPOINT_NAME).is_file()
 
     def test_completed_run_replaces_an_existing_model_directory(self, tmp_path: Path) -> None:
         """Retraining into the same directory must not merge with the old model."""
@@ -280,6 +321,7 @@ class TestRunTrainingJob:
         cycle is left in place instead of explicitly detached before export.
         """
         policy = _ExportablePolicy([ExportBackend.TORCH])
+        cache_dir = tmp_path / "cache" / "job"
 
         with (
             patch("physicalai.data.LeRobotDataModule") as datamodule_class,
@@ -288,7 +330,9 @@ class TestRunTrainingJob:
         ):
             trainer_instance = trainer_class.return_value
             datamodule_instance = datamodule_class.return_value
-            # Simulate what Lightning's real `trainer.fit(policy, datamodule)` wires up.
+            # Simulate what Lightning's real `trainer.fit(policy, datamodule)` wires up,
+            # including writing the checkpoint via the ModelCheckpoint callback.
+            trainer_instance.fit.side_effect = lambda *a, **k: (cache_dir / CHECKPOINT_NAME).write_text("x")
             policy._trainer = trainer_instance
             trainer_instance.datamodule = datamodule_instance
             trainer_instance.strategy._lightning_module = policy
@@ -300,7 +344,7 @@ class TestRunTrainingJob:
                 TrainingJobSpec(policy="act"),
                 dataset_root=tmp_path / "snapshot",
                 output_dir=tmp_path / "model",
-                cache_dir=tmp_path / "cache" / "job",
+                cache_dir=cache_dir,
                 report=MagicMock(),
                 should_stop=lambda: False,
             )

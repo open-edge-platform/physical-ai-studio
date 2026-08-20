@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Flex } from '@geti-ui/ui';
 
 import { fetchClient } from '../../../api/client';
-import { ReactComponent as ProjectThumbnailPlaceholder } from '../../../assets/icons/physicalai-studio-logo.svg';
+import projectThumbnailPlaceholder from '../../../assets/project-thumbnail-placeholder.webp';
 
 import classes from './project-thumbnail.module.css';
 
@@ -21,14 +21,16 @@ export const ProjectThumbnail = ({ projectId, name, size }: ProjectThumbnailProp
     });
 
     if (hasThumbnailError) {
-        const placeholderSize = Math.round(size * 0.6);
+        const placeholderSize = Math.round(size * 0.8);
 
         return (
             <Flex width={size} height={size} justifyContent={'center'} alignItems={'center'}>
-                <ProjectThumbnailPlaceholder
+                <img
+                    src={projectThumbnailPlaceholder}
                     width={placeholderSize}
                     height={placeholderSize}
                     className={classes.placeholder}
+                    alt=''
                     aria-hidden
                 />
             </Flex>

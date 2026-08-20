@@ -15,7 +15,7 @@ import { isNumber } from 'lodash-es';
 
 import { $api } from '../../../api/client';
 import { SchemaDatasetImportJob, SchemaManifestCameraEntry, SchemaManifestRobotEntry } from '../../../api/openapi-spec';
-import { formatDuration } from '../../models/utils';
+import { formatDuration } from '../../../utils';
 import type { FinalizeFields } from './use-dataset-import-job-state';
 
 const RobotsSummary = ({ robots }: { robots: Array<SchemaManifestRobotEntry> }) => {

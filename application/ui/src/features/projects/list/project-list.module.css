@@ -20,7 +20,11 @@
 .imgWrapper {
     position: relative;
     display: inline-block;
-    background: var(--spectrum-global-color-gray-100);
+    background-image: linear-gradient(
+        to top right,
+        var(--spectrum-global-color-gray-50),
+        var(--spectrum-global-color-gray-400)
+    );
 }
 
 /* Darken the baseline image naturally */

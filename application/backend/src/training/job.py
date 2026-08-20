@@ -142,9 +142,14 @@ def run_training_job(
 ) -> None:
     """Train one policy end to end: fit, checkpoint, and export.
 
-    On success ``output_dir`` holds the final checkpoint
-    (:data:`CHECKPOINT_NAME`), the Lightning CSV logs, and an
-    :data:`EXPORTS_DIRNAME` directory per successful export backend.
+    On success ``output_dir`` holds a checkpoint (:data:`CHECKPOINT_NAME`),
+    the Lightning CSV logs, and an :data:`EXPORTS_DIRNAME` directory per
+    successful export backend. That checkpoint is normally the best epoch,
+    written by the ``ModelCheckpoint`` callback during ``fit``; this function
+    only saves a checkpoint of its own as a fallback when the callback did
+    not produce one (e.g. the monitored metric never logged), so it never
+    overwrites a best checkpoint with the final-epoch weights (see
+    :func:`_ensure_checkpoint_exists`).
 
     Cancellation is cooperative. ``should_stop`` is polled throughout training
     via :class:`~physicalai.train.callbacks.ProgressReportingCallback`; when it
@@ -195,7 +200,13 @@ def run_training_job(
     trainer = Trainer(
         logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
         callbacks=[
-            ModelCheckpoint(dirpath=cache_dir, filename="model", save_top_k=1, monitor="val/loss", mode="min"),
+            ModelCheckpoint(
+                dirpath=cache_dir,
+                filename=Path(CHECKPOINT_NAME).stem,
+                save_top_k=1,
+                monitor="val/loss",
+                mode="min",
+            ),
             ProgressReportingCallback(report=report, should_stop=should_stop),
         ],
         accelerator=accelerator,
@@ -213,7 +224,7 @@ def run_training_job(
         logger.info("Training canceled; skipping checkpoint and export")
         return
 
-    trainer.save_checkpoint(cache_dir / CHECKPOINT_NAME)
+    _ensure_checkpoint_exists(trainer, cache_dir)
     _publish(cache_dir, output_dir)
 
     export_policy = _export_policy(spec, policy, output_dir)
@@ -248,6 +259,22 @@ def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Pol
         compile_mode = getattr(policy.config, "compile_mode", "default")
         policy.forward = torch.compile(policy.forward, mode=compile_mode)  # type: ignore[method-assign]
     return policy
+
+
+def _ensure_checkpoint_exists(trainer: Any, cache_dir: Path) -> None:
+    """Save a final checkpoint only if the ``ModelCheckpoint`` callback did not already write one.
+
+    The callback is the preferred source of :data:`CHECKPOINT_NAME`: it tracks
+    the best monitored epoch, not just the last one. But it only saves when
+    its monitored metric was actually logged (e.g. a run with no validation
+    split never logs ``val/loss``), so this is a fallback for that case —
+    saving the trainer's current (final-epoch) weights — rather than a second
+    source of truth that could overwrite the callback's best checkpoint.
+    """
+    checkpoint = cache_dir / CHECKPOINT_NAME
+    if not checkpoint.is_file():
+        logger.warning("ModelCheckpoint callback did not write a checkpoint; saving final weights instead")
+        trainer.save_checkpoint(checkpoint)
 
 
 def _publish(cache_dir: Path, output_dir: Path) -> None:

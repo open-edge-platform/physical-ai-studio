@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { formatDuration } from '../routes/models/utils';
+import { formatDuration } from '../utils';
 
 export const elapsedSince = (dateString: string): string => {
     const normalized = /Z|[+-]\d\d:\d\d$/.test(dateString) ? dateString : `${dateString}Z`;

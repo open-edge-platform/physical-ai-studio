@@ -1,0 +1,15 @@
+script: model_servers/physicalai.py
+port: 8000
+args:
+  policy:
+    class_path: physicalai.inference.InferenceModel
+    init_args:
+      export_dir: pi05_libero_torch
+      backend: torch
+      device: cuda # xpu cpu etc
+      # compile_model: True
+  image_keys:
+    agentview: image
+    wrist: image2
+  state_key: observation.state
+  chunk_size: 10

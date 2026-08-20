@@ -211,3 +211,14 @@ __marimo__/
 tmp*
 lightning_logs
 .DS_Store
+
+# Training artifacts (checkpoints, logs) written by `physicalai fit` / benchmark runs
+experiments/
+library/experiments/
+library/results/
+
+# Knowledge-graph cache produced by the graphify tooling
+graphify-out/
+
+# Local-only SnapFlow verification script (kept out of PRs, not a supported CLI tool)
+library/scripts/benchmark_snapflow_libero.py

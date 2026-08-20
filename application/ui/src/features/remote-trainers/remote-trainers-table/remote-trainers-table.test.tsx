@@ -189,4 +189,14 @@ describe('RemoteTrainersTable', () => {
         const healthyRow = await screen.findByTestId(`remote-trainer-row-${remoteTrainer.id}`);
         expect(await within(healthyRow).findAllByText('Healthy')).not.toHaveLength(0);
     });
+
+    it('renders the detail panel as a sibling of the row, not a descendant', async () => {
+        render(<RemoteTrainersTable remoteTrainers={[remoteTrainer]} onEdit={vi.fn()} onDelete={vi.fn()} />);
+
+        const row = await screen.findByTestId(`remote-trainer-row-${remoteTrainer.id}`);
+        const detailHeading = await screen.findByText('Trainer health endpoint');
+
+        expect(row).not.toContainElement(detailHeading);
+        expect(row.parentElement).toContainElement(detailHeading);
+    });
 });
