@@ -1,14 +1,53 @@
 import { useId } from 'react';
 
-import { Flex, View } from '@geti-ui/ui';
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Flex, Text, View } from '@geti-ui/ui';
+import {
+    Area,
+    AreaChart,
+    CartesianGrid,
+    ResponsiveContainer,
+    Tooltip,
+    TooltipContentProps,
+    XAxis,
+    YAxis,
+} from 'recharts';
 
 import { Box } from '../shared/box';
 import { MetricsEntry } from './types';
 
-export type MetricGraphPoint = {
-    x: number;
-    y: number;
+type CustomTooltipContentProps = Partial<TooltipContentProps> & {
+    xAxisLabel?: string;
+    yAxisLabel?: string;
+};
+
+const CustomTooltipContent = ({ active, payload, label, xAxisLabel, yAxisLabel }: CustomTooltipContentProps) => {
+    if (!active || !payload?.length) {
+        return null;
+    }
+
+    const value = payload[0].value;
+
+    return (
+        <View
+            padding={'size-200'}
+            backgroundColor={'gray-50'}
+            borderRadius={'regular'}
+            borderWidth={'thin'}
+            borderColor={'gray-400'}
+            UNSAFE_style={{
+                padding: 'var(--spectrum-global-dimension-size-100)',
+                color: 'var(--spectrum-global-color-gray-900)',
+                fontSize: 'var(--spectrum-global-dimension-font-size-75)',
+            }}
+        >
+            <div>
+                {xAxisLabel}: {label}
+            </div>
+            <Text UNSAFE_style={{ color: 'var(--metric-graph-color)' }}>
+                {yAxisLabel}: {value ?? 'Not available'}
+            </Text>
+        </View>
+    );
 };
 
 type MetricGraphProps = {
@@ -90,39 +129,9 @@ export const MetricGraph = ({
                                 />
                                 <Tooltip
                                     filterNull={false}
-                                    labelFormatter={(label) => `${xAxisLabel}: ${label}`}
-                                    content={({ active, payload, label }) => {
-                                        console.log({ payload });
-                                        if (active && payload && payload.length) {
-                                            const value = payload[0].value;
-                                            return (
-                                                <div
-                                                    style={{
-                                                        padding: 'var(--spectrum-global-dimension-size-100)',
-                                                        color: 'var(--spectrum-global-color-gray-900)',
-                                                        fontSize: 'var(--spectrum-global-dimension-font-size-75)',
-                                                        backgroundColor: 'var(--spectrum-global-color-gray-50)',
-                                                        borderColor: 'var(--color-border-2)',
-                                                        borderRadius: 'var(--spectrum-alias-border-radius-regular)',
-                                                    }}
-                                                >
-                                                    <div>
-                                                        {xAxisLabel}: {label}
-                                                    </div>
-                                                    <div>
-                                                        {yAxisLabel}: {value}
-                                                    </div>
-                                                </div>
-                                            );
-                                        }
-                                    }}
+                                    content={<CustomTooltipContent xAxisLabel={xAxisLabel} yAxisLabel={yAxisLabel} />}
                                     cursor={{
                                         stroke: 'var(--metric-graph-color)',
-                                    }}
-                                    contentStyle={{
-                                        backgroundColor: 'var(--spectrum-global-color-gray-50)',
-                                        borderColor: 'var(--color-border-2)',
-                                        borderRadius: 'var(--spectrum-alias-border-radius-regular)',
                                     }}
                                 />
                             </AreaChart>

@@ -7,6 +7,7 @@ import { fetchClient } from '../../../api/client';
 import { fetchSSE } from '../../../api/fetch-sse';
 import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
+import { mergeMetricsByStep } from './merge-metrics-by-step';
 import { MetricGraph } from './metric-graph';
 import { MetricsEntry } from './types';
 
@@ -81,7 +82,7 @@ const useJobMetrics = (jobId: string) => {
                 return fetchSSE<MetricsEntry>(url, { signal: context.signal });
             },
         }),
-
+        select: mergeMetricsByStep,
         staleTime: Infinity,
     });
 };
@@ -99,7 +100,7 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
             yLabel: 'Loss',
             data: metricsData,
             getX: (entry) => entry.step,
-            getY: (entry) => entry.train_loss ?? entry.train_loss_step,
+            getY: (entry) => entry.train_loss,
             color: 'var(--moss-tint-1)'
         },
         {
@@ -136,6 +137,7 @@ const useModelMetrics = (modelId: string) => {
                 return fetchSSE<MetricsEntry>(url, { signal: context.signal });
             },
         }),
+        select: mergeMetricsByStep,
         staleTime: Infinity,
     });
 };
@@ -155,7 +157,7 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
             data: metricsData,
             color: 'var(--moss-tint-1)',
             getX: (entry) => entry.step,
-            getY: (entry) => entry.train_loss ?? entry.train_loss_step,
+            getY: (entry) => entry.train_loss,
         },
         {
             title: 'Validation loss',
