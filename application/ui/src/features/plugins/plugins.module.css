@@ -1,0 +1,66 @@
+.container {
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+    overflow: hidden;
+}
+
+.pluginDescription {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-600);
+}
+
+.robotCount {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.robotChip {
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-100);
+    background-color: var(--spectrum-global-color-gray-50);
+}
+
+.robotName {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-800);
+    padding: 0 var(--spectrum-global-dimension-size-25);
+}
+
+.roleBadge {
+    text-transform: capitalize;
+    font-size: var(--spectrum-global-dimension-font-size-25);
+    padding: var(--spectrum-global-dimension-size-10) var(--spectrum-global-dimension-size-25);
+}
+
+.roleFollower {
+    background-color: #0071c5;
+}
+
+.roleLeader {
+    background-color: #8e2de2;
+}
+
+.extensionRow {
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-100);
+    background-color: var(--spectrum-global-color-gray-50);
+}
+
+.extensionDescription {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+}
+
+.extensionHint {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-600);
+}
+
+.inUse {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-orange-600);
+}
+
+.emptyList {
+    display: block;
+    padding: var(--spectrum-global-dimension-size-150);
+    color: var(--spectrum-global-color-gray-700);
+}

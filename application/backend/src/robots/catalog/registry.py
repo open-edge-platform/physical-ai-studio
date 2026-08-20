@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import importlib
 from importlib.metadata import entry_points
 from pathlib import Path
+import sys
 from typing import Annotated, Any, Literal, cast
 
 from loguru import logger
@@ -19,6 +21,22 @@ CATALOG_PLUGIN_ENTRYPOINT_GROUP = "physicalai.studio.catalog_plugins"
 RegisterPluginCallable = Callable[["RobotCatalogRegistry"], None]
 
 
+def _install_lerobot_types_backcompat_alias() -> None:
+    """Alias ``lerobot.lerobot_types`` to ``lerobot.types`` when needed.
+
+    Some third-party LeRobot plugins still import the old module path.
+    """
+    if "lerobot.lerobot_types" in sys.modules:
+        return
+
+    try:
+        lerobot_types = importlib.import_module("lerobot.types")
+    except Exception:
+        return
+
+    sys.modules["lerobot.lerobot_types"] = lerobot_types
+
+
 def _build_union(types: list[type]) -> Any:
     """Dynamically build Union[T1, T2, ...] from a list of types."""
     if not types:
@@ -31,9 +49,12 @@ def _build_union(types: list[type]) -> Any:
 
 class RobotCatalogRegistry(RobotCatalogRegistryProtocol):
     def __init__(self) -> None:
+        _install_lerobot_types_backcompat_alias()
+
         self._definitions: dict[str, RobotCatalogDefinition] = {}
         self._robot_models: dict[str, type[BaseRobot]] = {}
         self._robot_adapter: TypeAdapter | None = None
+        self._plugin_distributions: dict[str, str] = {}
 
         for definition in so101.get_definitions() + widowxai.get_definitions():
             self.register_robot(definition)
@@ -45,6 +66,14 @@ class RobotCatalogRegistry(RobotCatalogRegistryProtocol):
 
     def get_definition(self, robot_type: str) -> RobotCatalogDefinition | None:
         return self._definitions.get(robot_type)
+
+    def get_plugin_distribution(self, robot_type: str) -> str | None:
+        """Return the distribution name that contributed a robot type, if any."""
+        return self._plugin_distributions.get(robot_type)
+
+    def robot_types_for_distribution(self, distribution: str) -> list[str]:
+        """Return robot types registered by the given distribution name."""
+        return [type_ for type_, owner in self._plugin_distributions.items() if owner == distribution]
 
     def register_robot(self, definition: RobotCatalogDefinition | Any) -> None:
         definition = self._coerce_definition(definition)
@@ -67,6 +96,11 @@ class RobotCatalogRegistry(RobotCatalogRegistryProtocol):
                 urdf_relative_path=Path(plugin_asset.urdf_relative_path),
                 packages={package: Path(path) for package, path in plugin_asset.packages.items()},
                 joint_map=plugin_asset.joint_map,
+                preview_thumbnail=(
+                    Path(plugin_asset.preview_thumbnail)
+                    if getattr(plugin_asset, "preview_thumbnail", None) is not None
+                    else None
+                ),
                 root_resolver=plugin_asset.root_resolver,
             )
         else:
@@ -90,6 +124,8 @@ class RobotCatalogRegistry(RobotCatalogRegistryProtocol):
         return RobotCatalogDefinition(
             type=definition.type,
             display_name=definition.display_name,
+            category=getattr(definition, "category", "Other"),
+            source=getattr(definition, "source", "external"),
             role=definition.role,
             robot_builder=definition.robot_builder,
             robot_payload=robot_payload,
@@ -149,6 +185,10 @@ class RobotCatalogRegistry(RobotCatalogRegistryProtocol):
                 )
                 continue
 
+            distribution = getattr(discovered_entry_point, "dist", None)
+            distribution_name = getattr(distribution, "name", None)
+
+            definitions_before = set(self._definitions)
             plugin_callable: RegisterPluginCallable = cast("RegisterPluginCallable", register_plugin)
             try:
                 plugin_callable(self)
@@ -157,6 +197,19 @@ class RobotCatalogRegistry(RobotCatalogRegistryProtocol):
                     "Catalog plugin entry point '{}' failed during registration",
                     discovered_entry_point.name,
                 )
+                continue
+
+            if distribution_name is None:
+                logger.warning(
+                    "Catalog plugin entry point '{}' has no owning distribution; robot types cannot be attributed",
+                    discovered_entry_point.name,
+                )
+                continue
+
+            for robot_type in self._definitions:
+                if robot_type in definitions_before:
+                    continue
+                self._plugin_distributions[robot_type] = distribution_name
 
     def get_robot_adapter(self) -> TypeAdapter:
         if self._robot_adapter is None:

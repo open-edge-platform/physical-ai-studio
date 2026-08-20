@@ -3,14 +3,20 @@ import { useState } from 'react';
 import { Button, ButtonGroup, Flex, Grid, View } from '@geti-ui/ui';
 
 import { JointControls } from '../../features/robots/controller/joint-controls';
-import { RobotViewer } from '../../features/robots/controller/robot-viewer';
+import { RobotViewer, UnavailableRobotViewer } from '../../features/robots/controller/robot-viewer';
 import { useCatalogIdentifyMutation } from '../../features/robots/robot-catalog.hooks';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { useRobot } from '../../features/robots/use-robot';
 
 export const Robot = () => {
     const robot = useRobot();
+    const isUnavailable = 'unavailable' in robot && robot.unavailable;
 
+    return isUnavailable ? <UnavailableRobotViewer robotType={robot.type} /> : <AvailableRobot />;
+};
+
+const AvailableRobot = () => {
+    const robot = useRobot();
     const identifyMutation = useCatalogIdentifyMutation();
 
     const onIdentify = identifyMutation.isPending

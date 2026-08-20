@@ -2,11 +2,12 @@ from physicalai.config import to_config
 from physicalai.robot import SharedRobot
 from physicalai_studio_plugin import shared_robot_name
 
+from exceptions import RobotPluginUnavailableError
 from robots.catalog.registry import RobotCatalogRegistry
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
 from robots.robot_client import RobotClient
 from schemas import SerialPortInfo
-from schemas.robot import Robot
+from schemas.robot import ReadableRobot, UnavailableRobot
 from utils.serial_robot_tools import RobotConnectionManager
 
 
@@ -22,7 +23,10 @@ class RobotClientFactory:
         self.robot_manager = robot_manager
         self.catalog_registry = catalog_registry or RobotCatalogRegistry()
 
-    async def build(self, robot: Robot) -> RobotClient:
+    async def build(self, robot: ReadableRobot) -> RobotClient:
+        if isinstance(robot, UnavailableRobot):
+            raise RobotPluginUnavailableError(robot.name, robot.type)
+
         definition = self.catalog_registry.get_definition(robot.type)
 
         if definition is None:
@@ -38,7 +42,9 @@ class RobotClientFactory:
         # the hardware. The driver itself is discarded — only its recipe is sent,
         # and the owner rebuilds it. The name keys the owner's Zenoh topics, so
         # it must come from the id, never the free-form display name.
+        # logger.info("Creating shared robot")
         shared_robot = SharedRobot.from_config(to_config(robot_driver), name=shared_robot_name(robot.id))
+        # shared_robot = robot_driver
         adapter_options = definition.adapter_options
         return PhysicalAIRobotAdapter(
             robot=shared_robot,

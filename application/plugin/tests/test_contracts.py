@@ -13,6 +13,8 @@ from physicalai_studio_plugin import (
     RobotCatalogDefinition,
     RobotProbe,
     SerialPortInfo,
+    robot_field_ui,
+    robot_payload_ui,
 )
 
 
@@ -186,3 +188,43 @@ def test_no_payload_model_returns_raw_dict() -> None:
     raw = {"some": "data"}
     result = raw if definition.robot_payload is None else definition.robot_payload.model_validate(raw)
     assert result == raw
+
+
+def test_robot_field_ui_supports_required_option() -> None:
+    assert robot_field_ui({"required": True}) == {"x-physicalai-ui": {"required": True}}
+
+
+def test_robot_payload_ui_supports_recursive_items() -> None:
+    assert robot_payload_ui(
+        [
+            {
+                "kind": "section",
+                "id": "connection",
+                "title": "Connection",
+                "description": "Pick a detected device or enter one manually.",
+                "items": [
+                    {"kind": "info", "text": "USB hubs can rename ports after reboot.", "variant": "warning"},
+                    {
+                        "kind": "connection",
+                        "bind": {"connection": "connection_string", "serial_number": "serial_number"},
+                    },
+                ],
+            }
+        ]
+    ) == {
+        "x-physicalai-ui": [
+            {
+                "kind": "section",
+                "id": "connection",
+                "title": "Connection",
+                "description": "Pick a detected device or enter one manually.",
+                "items": [
+                    {"kind": "info", "text": "USB hubs can rename ports after reboot.", "variant": "warning"},
+                    {
+                        "kind": "connection",
+                        "bind": {"connection": "connection_string", "serial_number": "serial_number"},
+                    },
+                ],
+            }
+        ]
+    }

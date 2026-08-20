@@ -19,13 +19,15 @@
         &[class*='is-selected'] {
             background-color: var(--spectrum-global-color-gray-300);
 
-            .sidebarListItemIcon {
-                fill: var(--energy-blue);
+            .sidebarListItemIcon,
+            .sidebarListItemIcon path {
+                fill: var(--energy-blue) !important;
             }
         }
     }
 }
 
-.sidebarListItemIcon {
-    fill: var(--spectrum-global-color-gray-700);
+.sidebarListItemIcon,
+.sidebarListItemIcon path {
+    fill: var(--spectrum-global-color-gray-700) !important;
 }

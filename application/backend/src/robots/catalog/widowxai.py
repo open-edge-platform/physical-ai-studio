@@ -6,7 +6,13 @@ from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from physicalai.robot import BimanualWidowXAI, WidowXAI
-from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
+from physicalai.robot.trossen import BimanualWidowXAI, WidowXAI
+from physicalai_studio_plugin import (
+    RobotAdapterOptions,
+    RobotAsset,
+    RobotCatalogDefinition,
+    robot_payload_ui,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.robot_type import BaseRobot
@@ -30,6 +36,16 @@ class TrossenSingleArmPayload(BaseModel):
             "example": {
                 "connection_string": "192.168.1.100",
             },
+            **robot_payload_ui(
+                [
+                    {
+                        "kind": "section",
+                        "id": "connection",
+                        "title": "Connection",
+                        "items": [{"kind": "field", "name": "connection_string"}],
+                    }
+                ]
+            ),
         },
     )
 
@@ -46,6 +62,19 @@ class TrossenBimanualPayload(BaseModel):
                 "connection_string_left": "192.168.1.100",
                 "connection_string_right": "192.168.1.101",
             },
+            **robot_payload_ui(
+                [
+                    {
+                        "kind": "section",
+                        "id": "connection",
+                        "title": "Connection",
+                        "items": [
+                            {"kind": "field", "name": "connection_string_left"},
+                            {"kind": "field", "name": "connection_string_right"},
+                        ],
+                    }
+                ]
+            ),
         },
     )
 
@@ -255,6 +284,8 @@ def get_definitions() -> list[RobotCatalogDefinition]:
         RobotCatalogDefinition(
             type="Trossen_WidowXAI_Follower",
             display_name="Trossen WidowX AI Follower",
+            category="Trossen",
+            source="internal",
             role="follower",
             robot_builder=_build_trossen_single_arm_driver,
             robot_payload=TrossenSingleArmPayload,
@@ -265,6 +296,8 @@ def get_definitions() -> list[RobotCatalogDefinition]:
         RobotCatalogDefinition(
             type="Trossen_WidowXAI_Leader",
             display_name="Trossen WidowX AI Leader",
+            category="Trossen",
+            source="internal",
             role="leader",
             robot_builder=_build_trossen_single_arm_driver,
             robot_payload=TrossenSingleArmPayload,
@@ -275,6 +308,8 @@ def get_definitions() -> list[RobotCatalogDefinition]:
         RobotCatalogDefinition(
             type="Trossen_Bimanual_WidowXAI_Follower",
             display_name="Trossen Bimanual WidowX AI Follower",
+            category="Trossen",
+            source="internal",
             role="follower",
             robot_builder=_build_trossen_bimanual_driver,
             robot_payload=TrossenBimanualPayload,
@@ -285,6 +320,8 @@ def get_definitions() -> list[RobotCatalogDefinition]:
         RobotCatalogDefinition(
             type="Trossen_Bimanual_WidowXAI_Leader",
             display_name="Trossen Bimanual WidowX AI Leader",
+            category="Trossen",
+            source="internal",
             role="leader",
             robot_builder=_build_trossen_bimanual_driver,
             robot_payload=TrossenBimanualPayload,

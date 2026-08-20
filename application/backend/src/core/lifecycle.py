@@ -6,6 +6,7 @@ from loguru import logger
 
 from core.logging import setup_logging, setup_uvicorn_logging
 from services.event_processor import EventProcessor
+from services.health_service import HealthService
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     settings = get_settings()
     app.state.settings = settings
+    app.state.health_service = HealthService()
 
     # Camera fingerprints locked by an active recording/teleop session.
     # Mutated by the robot_control WS handler; checked by camera CRUD and

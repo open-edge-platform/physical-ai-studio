@@ -2,8 +2,9 @@ import { Flex, ProgressCircle, Switch, View } from '@geti-ui/ui';
 
 import { $api } from '../../../../api/client';
 import { getRobotConnectionErrorTitle } from '../../../../api/errors';
+import { SchemaRobot } from '../../../../api/openapi-spec';
 import { useProjectId } from '../../../projects/use-project';
-import { RobotViewer } from '../../controller/robot-viewer';
+import { RobotViewer, UnavailableRobotViewer } from '../../controller/robot-viewer';
 import { RobotModelsProvider } from '../../robot-models-context';
 import { InlineAlert } from '../../setup-wizard/shared/inline-alert';
 import { RobotActionReadState, useJointState, useSynchronizeModelJoints } from '../../use-joint-state';
@@ -14,8 +15,26 @@ const InnerCell = ({ follower_id, leader_id }: { follower_id: string; leader_id?
     const { data: robot } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots/{robot_id}', {
         params: { path: { project_id, robot_id: follower_id } },
     });
+    const isUnavailable = 'unavailable' in robot && robot.unavailable;
 
-    const { joints, state, error, errorCode, setFollowerSource } = useJointState(project_id, follower_id, leader_id);
+    if (isUnavailable) {
+        return <UnavailableRobotViewer robotType={robot.type} />;
+    }
+
+    return <AvailableRobotCell robot={robot} followerId={follower_id} leaderId={leader_id} />;
+};
+
+const AvailableRobotCell = ({
+    robot,
+    followerId,
+    leaderId,
+}: {
+    robot: SchemaRobot;
+    followerId: string;
+    leaderId?: string;
+}) => {
+    const { project_id } = useProjectId();
+    const { joints, state, error, errorCode, setFollowerSource } = useJointState(project_id, followerId, leaderId);
     useSynchronizeModelJoints(joints, robot.type);
 
     const isTeleoperating = state.follower_source === RobotActionReadState.Teleoperation;
@@ -52,7 +71,7 @@ const InnerCell = ({ follower_id, leader_id }: { follower_id: string; leader_id?
             position={'relative'}
         >
             <RobotViewer robot={robot} />
-            {leader_id !== undefined && (
+            {leaderId !== undefined && (
                 <View position={'absolute'} right={0} top={0}>
                     <Switch
                         isSelected={isTeleoperating}

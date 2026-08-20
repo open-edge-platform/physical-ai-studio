@@ -40,6 +40,7 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
 
     const editPath = paths.project.robots.edit({ project_id, robot_id: robot.id });
     const isSO101 = robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader';
+    const isUnavailable = 'unavailable' in robot && robot.unavailable;
 
     return (
         <MenuTrigger>
@@ -81,9 +82,11 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                     }
                 }}
             >
-                <Item key='edit' href={editPath}>
-                    Edit
-                </Item>
+                {isUnavailable ? null : (
+                    <Item key='edit' href={editPath}>
+                        Edit
+                    </Item>
+                )}
                 {isSO101 ? <Item key='export-calibration'>Export calibration</Item> : null}
                 <Item key='delete'>Delete</Item>
             </Menu>
@@ -122,6 +125,7 @@ const RobotListItem = ({
             ? `${payload.connection_string_left} | ${payload.connection_string_right}`
             : undefined);
     const serialNumber = 'serial_number' in robot.payload ? robot.payload.serial_number : undefined;
+    const isUnavailable = 'unavailable' in robot && robot.unavailable;
 
     return (
         <View
@@ -141,6 +145,7 @@ const RobotListItem = ({
                     </Heading>
                     <View gridArea='type' UNSAFE_style={{ fontSize: '14px' }}>
                         {robot.type.replaceAll('_', ' ')}
+                        {isUnavailable ? ' (plugin unavailable)' : ''}
                     </View>
                     <View gridArea='status'>
                         <ConnectionStatus status={status} />

@@ -7,6 +7,11 @@ requires-python = ">=3.12,<3.14"
 
 dependencies = [
   "opencv-python",
+  # "physicalai-bimanual-so101-plugin",
+  # "physicalai-lekiwi-plugin",
+  # "physicalai-rebot-b601-plugin",
+  # "physicalai-lerobot-plugin",
+  # "physicalai-mujoco-so101-plugin",
   "cv2-enumerate-cameras",
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
@@ -35,6 +40,13 @@ dependencies = [
   "huggingface-hub>=0.27",
   "psutil~=7.2",
   "physicalai-studio-plugin",
+  # "lerobot-robot-so101-slider",
+  # "lerobot-teleoperator-so101-with-slider",
+  # "lerobot-robot-so101-slider-pos",
+  # "lerobot-teleoperator-so101-with-slider-pos",
+  # "lerobot-teleoperator-spacemouse>=0.1.4",
+  # "lerobot-yam>=0.1.1",
+  # "lerobot-robot-xarm>=0.0.3",
 ]
 
 [project.scripts]
@@ -118,9 +130,10 @@ url = "https://download.pytorch.org/whl/xpu"
 explicit = false
 
 [tool.uv.sources]
-physicalai-train = { path = "../../library", editable = true }
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "2528309e55ab6a5f7f71c6dc23b8baae21f80108" }
+physicalai-train = { path = "../../library", editable = true }
 physicalai-studio-plugin = { path = "../plugin", editable = true }
+
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
 # be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),

@@ -10,6 +10,7 @@ import {
 import { createMemoryRouter, RouterProvider } from 'react-router';
 
 import { createQueryClient } from '../query-client/query-client';
+import { RestartStateProvider } from '../features/plugins/restart-state';
 
 type RenderOptions = RTLRenderOptions & {
     /** The URL the memory router starts at, e.g. '/projects/abc/environments/new'. */
@@ -23,7 +24,9 @@ type RenderOptions = RTLRenderOptions & {
 const TestProviders = ({ children, queryClient }: { children: ReactNode; queryClient: QueryClient }) => (
     <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-            <Suspense>{children}</Suspense>
+            <RestartStateProvider>
+                <Suspense>{children}</Suspense>
+            </RestartStateProvider>
         </ThemeProvider>
     </QueryClientProvider>
 );

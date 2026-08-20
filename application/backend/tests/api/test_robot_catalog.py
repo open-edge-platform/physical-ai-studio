@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
+from physicalai_studio_plugin import RobotCatalogDefinition
 
 import robots.catalog.assets as assets
+from api.robot_catalog import _to_response
 from main import app
 
 
@@ -29,12 +31,41 @@ def test_list_robot_catalog_returns_definitions_without_internal_fields() -> Non
 
     assert payload
     first = payload[0]
-    assert set(first.keys()) == {"type", "display_name", "role", "urdf_path", "package_map", "joint_map"}
+    assert set(first.keys()) == {
+        "type",
+        "display_name",
+        "category",
+        "source",
+        "role",
+        "preview_thumbnail",
+        "urdf_path",
+        "package_map",
+        "joint_map",
+    }
     assert "urdf_relative_path" not in first
 
     so101 = next(definition for definition in payload if definition["type"] == "SO101_Follower")
     assert so101["urdf_path"] == "/api/robots/catalog/SO101_Follower/urdf"
     assert so101["package_map"] == {"SO101": "/api/robots/catalog/SO101_Follower"}
+    assert so101["category"] == "SO101"
+    assert so101["source"] == "internal"
+    assert so101["preview_thumbnail"] is None
+
+
+def test_assetless_catalog_entry_has_no_urdf_url() -> None:
+    response = _to_response(
+        RobotCatalogDefinition(
+            type="Example_Follower",
+            display_name="Example Follower",
+            category="Example",
+            source="external",
+            role="follower",
+        )
+    )
+
+    assert response.urdf_path is None
+    assert response.package_map == {}
+    assert response.joint_map == {}
 
 
 def test_get_robot_catalog_schema_returns_pydantic_schema() -> None:

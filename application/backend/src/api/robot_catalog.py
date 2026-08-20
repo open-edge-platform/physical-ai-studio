@@ -8,15 +8,22 @@ from pydantic import BaseModel, Field
 
 from api.dependencies import RobotCatalogServiceDep, RobotConnectionManagerDep
 from exceptions import ResourceNotFoundError, ResourceType
-from robots.catalog.assets import resolve_robot_relative_asset_path, resolve_robot_urdf_path
+from robots.catalog.assets import (
+    resolve_robot_relative_asset_path,
+    resolve_robot_thumbnail_path,
+    resolve_robot_urdf_path,
+)
 from schemas import SerialPortInfo
 
 
 class RobotCatalogDefinitionResponse(BaseModel):
     type: str = Field(..., description="Stable backend robot type identifier")
     display_name: str = Field(..., description="Human-readable robot type label")
+    category: str = Field(..., description="Human-readable robot category")
+    source: Literal["internal", "first_party", "external"] = Field(..., description="Catalog entry ownership")
     role: Literal["follower", "leader"] = Field(..., description="Default robot role")
-    urdf_path: str = Field(description="URDF URL used by the UI model loader")
+    preview_thumbnail: str | None = Field(default=None, description="Optional robot preview image URL")
+    urdf_path: str | None = Field(default=None, description="URDF URL used by the UI model loader")
     package_map: dict[str, str] = Field(default_factory=dict, description="URDF package name to URL prefix map")
     joint_map: dict[str, list[str]] = Field(
         description="Observation joint name to URDF joint(s) mapping",
@@ -28,15 +35,21 @@ def _to_response(definition: RobotCatalogDefinition) -> RobotCatalogDefinitionRe
 
     package_map = {}
     joint_map = {}
+    preview_thumbnail = None
     if definition.asset is not None:
         package_map = dict.fromkeys(definition.asset.packages, f"{catalog_root}")
         joint_map = definition.asset.joint_map
+        if definition.asset.preview_thumbnail is not None:
+            preview_thumbnail = f"{catalog_root}/thumbnail"
 
     return RobotCatalogDefinitionResponse(
         type=definition.type,
         display_name=definition.display_name,
+        category=definition.category,
+        source=definition.source,
         role=definition.role,
-        urdf_path=f"{catalog_root}/urdf",
+        preview_thumbnail=preview_thumbnail,
+        urdf_path=f"{catalog_root}/urdf" if definition.asset is not None else None,
         package_map=package_map,
         joint_map=joint_map,
     )
@@ -116,6 +129,22 @@ async def get_robot_catalog_urdf(
 ) -> FileResponse:
     """Return the URDF file for a catalog robot type."""
     resolved_path = resolve_robot_urdf_path(definition)
+    return FileResponse(resolved_path)
+
+
+@router.get("/{robot_type}/thumbnail")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition
+async def get_robot_catalog_thumbnail(
+    definition: RobotDefinitionDep,
+) -> FileResponse:
+    """Return the optional preview thumbnail for a catalog robot type."""
+    asset = definition.asset
+    if asset is None or asset.preview_thumbnail is None:
+        raise ResourceNotFoundError(
+            resource_type=ResourceType.ROBOT,
+            resource_id=definition.type,
+            message=f"Robot type {definition.type} has no preview thumbnail.",
+        )
+    resolved_path = resolve_robot_thumbnail_path(definition)
     return FileResponse(resolved_path)
 
 

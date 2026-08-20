@@ -1,0 +1,113 @@
+.content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-global-dimension-size-300);
+    max-height: 65vh;
+    overflow-y: auto;
+}
+
+.robotRow {
+    margin-top: var(--spectrum-global-dimension-size-150);
+    overflow-x: auto;
+    padding-bottom: var(--spectrum-global-dimension-size-100);
+}
+
+.card {
+    position: relative;
+    flex: 0 0 200px;
+    width: 200px;
+    height: 200px;
+    padding: 0;
+    overflow: hidden;
+}
+
+.cardContent {
+    position: relative;
+    display: grid;
+    width: 100%;
+    height: 100%;
+}
+
+.thumbnailArea {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: var(--spectrum-global-color-gray-200);
+}
+
+.thumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.thumbnailFallback {
+    display: grid;
+    place-items: center;
+    color: var(--spectrum-global-color-static-white);
+}
+
+.cardDetails {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: var(--spectrum-global-dimension-size-200) var(--spectrum-global-dimension-size-150);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-800);
+    background-color: rgb(36 37 40 / 70%);
+}
+
+.role {
+    position: absolute;
+    top: var(--spectrum-global-dimension-size-150);
+    right: var(--spectrum-global-dimension-size-150);
+    z-index: 1;
+    display: inline-block;
+    --size: 12px;
+    width: var(--size);
+    height: var(--size);
+    border-radius: 50%;
+    background-color: var(--role-color);
+}
+
+.follower {
+    --role-color: #0071c5;
+
+    color: var(--role-color);
+}
+
+.leader {
+    --role-color: #8e2de2;
+
+    color: var(--role-color);
+}
+
+.filterRole::before {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: var(--spectrum-global-dimension-size-75);
+    border-radius: 50%;
+    background-color: var(--role-color);
+    content: '';
+}
+
+.availableCard {
+    opacity: 0.6;
+}
+
+.availableCard:hover {
+    opacity: 0.9;
+}
+
+.notInstalled {
+    display: block;
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    color: var(--spectrum-global-color-yellow-400);
+}

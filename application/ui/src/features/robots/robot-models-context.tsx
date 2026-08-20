@@ -6,7 +6,6 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import URDFLoader, { URDFRobot } from 'urdf-loader';
 
 import { useRobotCatalogDefinitionQuery } from './robot-catalog.hooks';
-import { SchemaRobotType } from './robot-types';
 
 export const mapJointToURDFJoint = (
     joint: { name: string; value: number },
@@ -89,28 +88,31 @@ export const useRobotModels = () => {
     return useContext(RobotModelsContext)!;
 };
 
-export const useLoadModelQuery = (robotType: SchemaRobotType) => {
+export const useLoadModelQuery = (robotType: string) => {
     const { getModel, setModel } = useRobotModels();
 
     const { data: definition } = useRobotCatalogDefinitionQuery(robotType);
     const path = definition.urdf_path;
     const packageMap = definition.package_map ?? {};
 
-    const cachedModel = getModel(path);
+    const cachedModel = path == null ? undefined : getModel(path);
 
     const query = useQuery({
         queryKey: ['robotModel', robotType, path],
         queryFn: () => {
+            if (path == null) {
+                return undefined;
+            }
             return cachedModel ?? loadURDFModel(packageMap, path);
         },
         initialData: cachedModel,
         staleTime: Infinity,
         gcTime: 1000 * 60 * 30,
-        enabled: !cachedModel,
+        enabled: path != null && !cachedModel,
     });
 
     useEffect(() => {
-        if (query.data && getModel(path) !== query.data) {
+        if (path != null && query.data && getModel(path) !== query.data) {
             setModel(path, query.data);
         }
     }, [getModel, path, query.data, setModel]);

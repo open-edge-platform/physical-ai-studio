@@ -1,6 +1,6 @@
 import { View } from '@geti-ui/ui';
 
-import { RobotViewer } from '../controller/robot-viewer';
+import { RobotViewer, UnavailableRobotViewer } from '../controller/robot-viewer';
 import { Observation, useRobotControl } from '../robot-control-provider';
 import { RobotModelsProvider } from '../robot-models-context';
 
@@ -24,13 +24,20 @@ const InnerCell = ({ robot_id }: { robot_id: string }) => {
         return <></>;
     }
 
+    const environmentRobot = environment.robots.find((robot) => robot.robot.id === robot_id)?.robot;
+    if (environmentRobot === undefined) return <></>;
+
+    if ('unavailable' in environmentRobot && environmentRobot.unavailable) {
+        return <UnavailableRobotViewer robotType={environmentRobot.type} />;
+    }
+
     return (
         <View minWidth='size-4000' minHeight='size-4000' width='100%' height='100%' backgroundColor={'gray-600'}>
             <RobotViewer
                 key={robot_id}
                 featureValues={action_values}
                 featureNames={action_keys}
-                robot={environment.robots[0].robot}
+                robot={environmentRobot}
             />
         </View>
     );

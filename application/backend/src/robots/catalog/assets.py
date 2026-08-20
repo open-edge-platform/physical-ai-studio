@@ -56,6 +56,16 @@ def resolve_robot_relative_asset_path(definition: RobotCatalogDefinition, asset_
     )
 
 
+def resolve_robot_thumbnail_path(definition: RobotCatalogDefinition) -> Path:
+    """Resolve the optional catalog thumbnail from the asset root."""
+    asset = definition.asset
+    if asset is None or asset.preview_thumbnail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preview thumbnail is unavailable.")
+    if asset.preview_thumbnail.is_absolute() or ".." in asset.preview_thumbnail.parts:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access to the requested file is forbidden.")
+    return _resolve_robot_path(asset_path=asset.preview_thumbnail, definition=definition)
+
+
 def _resolve_robot_path(asset_path: Path, definition: RobotCatalogDefinition) -> Path:
     asset = definition.asset
     if asset is None:

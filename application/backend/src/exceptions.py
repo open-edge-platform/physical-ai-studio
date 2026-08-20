@@ -15,6 +15,7 @@ class ResourceType(StrEnum):
     REMOTE_TRAINER = "Remote trainer"
     JOB = "JOB"
     JOB_FILE = "JOB_FILE"
+    PLUGIN = "Plugin"
 
 
 class BaseException(Exception):
@@ -71,6 +72,20 @@ class ResourceInUseError(BaseException):
         super().__init__(
             message=msg,
             error_code=f"{resource_type}_in_use",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotPluginUnavailableError(BaseException):
+    """Raised when a robot's catalog plugin is not installed."""
+
+    def __init__(self, robot_name: str, robot_type: str) -> None:
+        super().__init__(
+            message=(
+                f"Robot '{robot_name}' requires unavailable plugin type '{robot_type}'. "
+                "Reinstall the plugin before connecting."
+            ),
+            error_code="robot_plugin_unavailable",
             http_status=http.HTTPStatus.CONFLICT,
         )
 
@@ -296,5 +311,16 @@ class RobotIdentifyError(BaseException):
         super().__init__(
             message=message,
             error_code="robot_identify_error",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class PluginOperationError(BaseException):
+    """Raised when installing or uninstalling a robot plugin fails."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            error_code="plugin_operation_failed",
             http_status=http.HTTPStatus.BAD_REQUEST,
         )

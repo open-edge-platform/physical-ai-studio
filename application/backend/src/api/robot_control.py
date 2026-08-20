@@ -9,6 +9,8 @@ from loguru import logger
 
 from api.dependencies import RobotClientFactoryDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
 from exceptions import BaseException as AppBaseException
+from exceptions import RobotPluginUnavailableError
+from schemas.robot import ReadableRobot, UnavailableRobot
 from services import RobotService
 from workers.base import run_at_frequency
 from workers.teleoperate_worker import TeleoperateWorker
@@ -38,6 +40,11 @@ def _build_robot_control_state(worker: TeleoperateWorker) -> dict:
     return {"connected": worker.loaded_event.is_set(), "follower_source": worker.get_action_read_state()}
 
 
+def _ensure_robot_available(robot: ReadableRobot) -> None:
+    if isinstance(robot, UnavailableRobot):
+        raise RobotPluginUnavailableError(robot.name, robot.type)
+
+
 async def handle_outgoing(
     websocket: WebSocket, worker: TeleoperateWorker, features: list[str], update_frequency: int
 ) -> None:
@@ -59,16 +66,48 @@ async def handle_incoming(websocket: WebSocket, worker: TeleoperateWorker) -> No
     try:
         while not worker.should_stop():
             data = await websocket.receive_json("text")
+            if not isinstance(data, dict):
+                logger.warning("Ignoring non-object robot control message")
+                await websocket.send_json(
+                    {
+                        "event": "error",
+                        "message": "Robot control messages must be JSON objects.",
+                        "error_code": "invalid_message",
+                    }
+                )
+                continue
+
+            event = data.get("event")
+            if not isinstance(event, str):
+                logger.warning("Ignoring robot control message without an event")
+                await websocket.send_json(
+                    {
+                        "event": "error",
+                        "message": "Robot control message is missing an event.",
+                        "error_code": "invalid_message",
+                    }
+                )
+                continue
+
             payload = data.get("data", {})
-            match data["event"]:
+            match event:
                 case "set_follower_source":
                     worker.set_action_read_state(payload)
+                case _:
+                    logger.warning("Ignoring unknown robot control event: {}", event)
+                    await websocket.send_json(
+                        {
+                            "event": "error",
+                            "message": f"Unknown robot control event: {event}.",
+                            "error_code": "invalid_message",
+                        }
+                    )
+                    continue
             await websocket.send_json({"event": "state", "data": _build_robot_control_state(worker)})
     except WebSocketDisconnect:
-        pass
+        logger.info("Robot control client disconnected")
     except Exception as e:
         logger.error(f"Incoming task stopped: {type(e).__name__} - {e}")
-        logger.info("Except: disconnected!")
 
 
 @router.websocket("/ws")
@@ -94,14 +133,29 @@ async def robot_websocket(
     """
     await websocket.accept()
     worker = None
+    leader_id = None
     try:
         settings = await websocket.receive_json("text")
+        if not isinstance(settings, dict):
+            raise ValueError("Robot connection settings must be a JSON object.")
+        if "follower_id" not in settings:
+            raise ValueError("Robot connection settings must include follower_id.")
+
         follower_id = get_robot_id(settings["follower_id"])
         follower = await robot_service.get_robot_by_id(project_id, follower_id)
+        _ensure_robot_available(follower)
         leader = None
-        if "leader_id" in settings:
+        if settings.get("leader_id") is not None:
             leader_id = get_robot_id(settings["leader_id"])
             leader = await robot_service.get_robot_by_id(project_id, leader_id)
+            _ensure_robot_available(leader)
+
+        logger.info(
+            "Starting robot control session for project {} with follower {} and leader {}",
+            project_id,
+            follower_id,
+            leader_id if leader is not None else None,
+        )
 
         # Create worker
         worker = TeleoperateWorker(
@@ -115,6 +169,7 @@ async def robot_websocket(
 
         await worker.wait_until_loaded()
         features = worker.features
+        logger.info("Robot control session connected with {} observation features", len(features))
         await websocket.send_json({"event": "state", "data": _build_robot_control_state(worker)})
 
         incoming_task = asyncio.create_task(handle_incoming(websocket, worker))
@@ -128,7 +183,7 @@ async def robot_websocket(
         for task in pending:
             task.cancel()
     except WebSocketDisconnect:
-        pass
+        logger.info("Robot control client disconnected during setup")
     except Exception as e:
         if isinstance(e, AppBaseException):
             logger.warning("Robot websocket error: {} ({})", e.message, e.error_code)
@@ -142,4 +197,5 @@ async def robot_websocket(
 
     finally:
         if worker:
+            logger.info("Stopping robot control session")
             worker.stop()

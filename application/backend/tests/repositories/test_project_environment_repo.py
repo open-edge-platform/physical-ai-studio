@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 from repositories.project_environment_repo import ProjectEnvironmentRepository
+from robots.catalog.registry import RobotCatalogRegistry
 
 
 def _make_robot_db_model(*, robot_id: UUID | None = None, name: str = "Robot") -> MagicMock:
@@ -117,7 +118,7 @@ def test_get_by_id_with_relations_skips_missing_camera_and_logs_warning() -> Non
     db_session = MagicMock()
     db_session.execute = AsyncMock(return_value=execute_result)
 
-    repo = ProjectEnvironmentRepository(db_session, project_id)
+    repo = ProjectEnvironmentRepository(db_session, project_id, RobotCatalogRegistry())
 
     with patch("repositories.project_environment_repo.logger.warning") as warning_mock:
         environment = asyncio.run(repo.get_by_id_with_relations(environment_id))

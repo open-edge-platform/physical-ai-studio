@@ -55,6 +55,11 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
     const [error, setError] = useState<string | null>(null);
     const [errorCode, setErrorCode] = useState<string | null>(null);
     const hasFatalError = useRef(false);
+    const connectionSettings = useRef({ follower_id, leader_id });
+
+    useEffect(() => {
+        connectionSettings.current = { follower_id, leader_id };
+    }, [follower_id, leader_id]);
 
     const handleMessage = useCallback((event: WebSocketEventMap['message']) => {
         try {
@@ -96,10 +101,9 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
                 }
                 setError(null);
                 setErrorCode(null);
-                socket.sendJsonMessage({
-                    follower_id,
-                    leader_id,
-                });
+                // The server consumes this as the connection handshake before
+                // it starts processing control commands.
+                socket.sendJsonMessage(connectionSettings.current);
             },
             onMessage: handleMessage,
             onError: (wsError) => console.error('WebSocket error:', wsError),

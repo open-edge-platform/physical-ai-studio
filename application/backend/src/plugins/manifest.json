@@ -1,0 +1,147 @@
+[
+  {
+    "id": "physicalai-rebot-b601-plugin",
+    "name": "ReBot Robot Plugin",
+    "description": "ReBot B601 and Arm102 robot integrations.",
+    "category": "ReBot",
+    "source": "first_party",
+    "repo_url": "https://github.com/MarkRedeman/physicalai-rebot-b601-plugin",
+    "install_source": "git+https://github.com/MarkRedeman/physicalai-rebot-b601-plugin.git@mark/rebase-lerobot-plugin#subdirectory=packages/physicalai-rebot-b601-plugin",
+    "robots": [
+      {
+        "type": "ReBot_B601_DM_Follower",
+        "display_name": "ReBot B601 DM Follower",
+        "role": "follower"
+      },
+      {
+        "type": "ReBot_Arm102_Leader",
+        "display_name": "ReBot Arm102 Leader",
+        "role": "leader"
+      }
+    ]
+  },
+  {
+    "id": "physicalai-bimanual-so101-plugin",
+    "name": "Bimanual SO-101 Robot Plugin",
+    "description": "Bimanual twin SO-101 arms for learning from demonstration.",
+    "category": "SO101",
+    "source": "first_party",
+    "repo_url": "https://github.com/MarkRedeman/physicalai-rebot-b601-plugin",
+    "install_source": "git+https://github.com/MarkRedeman/physicalai-rebot-b601-plugin.git@mark/rebase-lerobot-plugin#subdirectory=packages/physicalai-bimanual-so101-plugin",
+    "robots": [
+      {
+        "type": "BimanualSO101_Follower",
+        "display_name": "Bimanual SO101 Follower",
+        "role": "follower"
+      },
+      {
+        "type": "BimanualSO101_Leader",
+        "display_name": "Bimanual SO101 Leader",
+        "role": "leader"
+      }
+    ]
+  },
+  {
+    "id": "physicalai-lekiwi-plugin",
+    "name": "LeKiwi Robot Plugin",
+    "description": "LeKiwi mobile manipulator integration.",
+    "category": "LeKiwi",
+    "source": "first_party",
+    "repo_url": "https://github.com/MarkRedeman/physicalai-rebot-b601-plugin",
+    "install_source": "git+https://github.com/MarkRedeman/physicalai-rebot-b601-plugin.git@mark/rebase-lerobot-plugin#subdirectory=packages/physicalai-lekiwi-plugin",
+    "robots": [
+      {
+        "type": "LeKiwi_Follower",
+        "display_name": "LeKiwi Follower",
+        "role": "follower"
+      },
+      {
+        "type": "LeKiwi_Leader",
+        "display_name": "LeKiwi Leader",
+        "role": "leader"
+      }
+    ]
+  },
+  {
+    "id": "physicalai-lerobot-plugin",
+    "name": "LeRobot Robot Plugin",
+    "description": "Robot and teleoperator configurations discovered from LeRobot.",
+    "category": "LeRobot",
+    "source": "first_party",
+    "repo_url": "https://github.com/MarkRedeman/physicalai-rebot-b601-plugin",
+    "install_source": "git+https://github.com/MarkRedeman/physicalai-rebot-b601-plugin.git@mark/rebase-lerobot-plugin#subdirectory=packages/physicalai-lerobot-plugin",
+    "robots": [],
+    "extensions": [
+      {
+        "id": "lerobot-robot-so101-slider",
+        "name": "SO101 Slider Robot",
+        "description": "Adds the LeRobot SO-101 slider follower robot.",
+        "repo_url": "https://github.com/pham-tuan-binh/leslider",
+        "install_source": "git+https://github.com/pham-tuan-binh/leslider.git@main#subdirectory=packages/lerobot_robot_so101_slider"
+      },
+      {
+        "id": "lerobot-teleoperator-so101-with-slider",
+        "name": "SO101 Slider Teleoperator",
+        "description": "Adds the LeRobot SO-101-with-slider leader teleoperator.",
+        "repo_url": "https://github.com/pham-tuan-binh/leslider",
+        "install_source": "git+https://github.com/pham-tuan-binh/leslider.git@main#subdirectory=packages/lerobot_teleoperator_so101_with_slider"
+      },
+      {
+        "id": "lerobot-robot-so101-slider-pos",
+        "name": "SO101 Slider Pos Robot",
+        "description": "Adds the LeRobot SO-101 slider-pos follower robot.",
+        "repo_url": "https://github.com/pham-tuan-binh/leslider",
+        "install_source": "git+https://github.com/pham-tuan-binh/leslider.git@main#subdirectory=packages/lerobot_robot_so101_slider_pos"
+      },
+      {
+        "id": "lerobot-teleoperator-so101-with-slider-pos",
+        "name": "SO101 Slider Pos Teleoperator",
+        "description": "Adds the LeRobot SO-101-with-slider-pos leader teleoperator.",
+        "repo_url": "https://github.com/pham-tuan-binh/leslider",
+        "install_source": "git+https://github.com/pham-tuan-binh/leslider.git@main#subdirectory=packages/lerobot_teleoperator_so101_with_slider_pos"
+      },
+      {
+        "id": "lerobot-teleoperator-spacemouse",
+        "name": "SpaceMouse Teleoperator",
+        "description": "Adds the LeRobot SpaceMouse leader teleoperator.",
+        "repo_url": "https://github.com/huggingface/lerobot",
+        "install_source": "lerobot-teleoperator-spacemouse"
+      },
+      {
+        "id": "lerobot-yam",
+        "name": "Yam Robot",
+        "description": "Adds the LeRobot YAMAHA YM2P60 follower robot.",
+        "repo_url": "https://github.com/huggingface/lerobot",
+        "install_source": "lerobot-yam"
+      },
+      {
+        "id": "lerobot-robot-xarm",
+        "name": "xArm Robot",
+        "description": "Adds the LeRobot UFACTORY xArm follower robot.",
+        "repo_url": "https://github.com/huggingface/lerobot",
+        "install_source": "lerobot-robot-xarm"
+      }
+    ]
+  },
+  {
+    "id": "physicalai-mujoco-so101-plugin",
+    "name": "MuJoCo Robot Plugin",
+    "description": "MuJoCo-backed SO-101 simulation integration.",
+    "category": "MuJoCo",
+    "source": "first_party",
+    "repo_url": "https://github.com/MarkRedeman/physicalai-rebot-b601-plugin",
+    "install_source": "git+https://github.com/MarkRedeman/physicalai-rebot-b601-plugin.git@mark/rebase-lerobot-plugin#subdirectory=packages/physicalai-mujoco-so101-plugin",
+    "robots": [
+      {
+        "type": "MuJoCo_SO101_Follower",
+        "display_name": "MuJoCo SO101 Follower",
+        "role": "follower"
+      },
+      {
+        "type": "MuJoCo_SO101_Bimanual_Follower",
+        "display_name": "MuJoCo SO101 Bimanual Follower",
+        "role": "follower"
+      }
+    ]
+  }
+]
