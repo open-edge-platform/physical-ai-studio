@@ -1,14 +1,16 @@
 import { Flex, Heading, Key, Text, View } from '@geti-ui/ui';
 import { clsx } from 'clsx';
-import { NavLink } from 'react-router-dom';
+import { NavLink } from 'react-router';
 
 import { $api } from '../../../api/client';
 import { SchemaProjectInput } from '../../../api/openapi-spec';
-import thumbnailUrl from '../../../assets/mocked-project-thumbnail.png';
 import { paths } from '../../../router';
+import { ProjectThumbnail } from '../project-thumbnail/project-thumbnail';
 import { MenuActions } from './menu-actions.component';
 
-import classes from './project-list.module.scss';
+import classes from './project-list.module.css';
+
+const IMAGE_SIZE = 132;
 
 type ProjectCardProps = {
     item: SchemaProjectInput;
@@ -37,8 +39,8 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
     return (
         <NavLink to={paths.project.robots.index({ project_id: item.id! })}>
             <Flex UNSAFE_className={clsx({ [classes.card]: true, [classes.activeCard]: isActive })}>
-                <View aria-label={'project thumbnail'}>
-                    <img src={thumbnailUrl} alt={item.name} />
+                <View aria-label={'project thumbnail'} UNSAFE_className={classes.imgWrapper}>
+                    <ProjectThumbnail projectId={item.id!} name={item.name} size={IMAGE_SIZE} />
                 </View>
 
                 <View width={'100%'} padding={'size-200'}>
@@ -47,13 +49,15 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
                         <MenuActions onAction={onAction} />
                     </Flex>
 
-                    <Flex alignItems={'center'} gap={'size-100'} direction={'row'} wrap='wrap'>
+                    <Flex alignItems={'start'} gap={'size-100'} direction={'column'} wrap='wrap' marginTop='size-100'>
                         {item.updated_at !== undefined && (
                             <Text>• Edited: {new Date(item.updated_at!).toLocaleString()}</Text>
                         )}
-                        {item.datasets.length > 0 && (
-                            <Text>• Datasets: {item.datasets.map((d) => d.name).join(', ')}</Text>
-                        )}
+                        <Flex alignItems={'center'} gap={'size-100'} direction={'row'} wrap='wrap'>
+                            {item.datasets.length > 0 && (
+                                <Text>• Datasets: {item.datasets.map((d) => d.name).join(', ')}</Text>
+                            )}
+                        </Flex>
                     </Flex>
                 </View>
             </Flex>

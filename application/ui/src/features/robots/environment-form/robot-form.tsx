@@ -5,10 +5,10 @@ import { Add, Close } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { useProjectId } from '../../../features/projects/use-project';
-import { isFollower, isLeader } from '../robots-configuration';
+import { useIsRobotRole } from '../robot-catalog.hooks';
 import { RobotConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
-import classes from './form.module.scss';
+import classes from './form.module.css';
 
 const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemove: () => void }) => {
     const { project_id } = useProjectId();
@@ -22,12 +22,9 @@ const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemov
         return <li>{robot.robot_id} - unknown</li>;
     }
 
-    const leaderRobot = robotsQuery.data.find(
-        ({ id }) => robot.teleoperator.type === 'robot' && robot.teleoperator.robot_id === id
-    );
-    if (leaderRobot === undefined) {
-        return <li>Unknown leader robot</li>;
-    }
+    const teleoperator = robot.teleoperator;
+    const leaderRobot =
+        teleoperator.type === 'robot' ? robotsQuery.data.find(({ id }) => id === teleoperator.robot_id) : undefined;
 
     return (
         <li>
@@ -40,7 +37,9 @@ const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemov
                         </Flex>
                         <Flex gap='size-200'>
                             <span>Tele operator</span>
-                            <span>{leaderRobot.name}</span>
+                            <span>
+                                {teleoperator.type === 'none' ? 'None' : (leaderRobot?.name ?? 'Unknown leader robot')}
+                            </span>
                         </Flex>
                     </Flex>
 
@@ -71,6 +70,7 @@ export const AddRobotForm = ({
     const robotsQuery = $api.useSuspenseQuery('get', '/api/projects/{project_id}/robots', {
         params: { path: { project_id } },
     });
+    const { isFollower, isLeader } = useIsRobotRole();
     const environment = useEnvironmentForm();
 
     const availableRobots = robotsQuery.data.filter((robot) => {
@@ -117,7 +117,7 @@ export const AddRobotForm = ({
             </Picker>
 
             <Picker
-                label='Robot (Leader)'
+                label='Robot (Leader, optional)'
                 width='100%'
                 selectedKey={selectedTeleoperatorRobotId}
                 onSelectionChange={(key) => {
@@ -139,10 +139,12 @@ export const AddRobotForm = ({
                 <Button
                     variant='secondary'
                     onPress={() => {
-                        if (selectedRobotId && selectedTeleoperatorRobotId) {
+                        if (selectedRobotId) {
                             onAddRobot({
                                 robot_id: selectedRobotId,
-                                teleoperator: { robot_id: selectedTeleoperatorRobotId, type: 'robot' },
+                                teleoperator: selectedTeleoperatorRobotId
+                                    ? { robot_id: selectedTeleoperatorRobotId, type: 'robot' }
+                                    : { type: 'none' },
                             });
                         }
                     }}

@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from physicalai.config import Config
+
 from physicalai.data import Feature  # noqa: TC001 - Needed at runtime for type hint resolution
 
 
@@ -87,7 +88,7 @@ class ACTConfig(Config):
     vision_backbone: str = "resnet18"
     pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
     replace_final_stride_with_dilation: bool = False
-    max_image_size: int = 768
+    image_size: tuple[int, int] = (512, 512)
     # Transformer layers.
     pre_norm: bool = False
     dim_model: int = 512
@@ -112,8 +113,8 @@ class ACTConfig(Config):
     dropout: float = 0.1
     kl_weight: float = 10.0
 
-    optimizer_lr: float = 1e-5
+    optimizer_lr: float = 1e-4
     optimizer_weight_decay: float = 1e-4
-    optimizer_grad_clip_norm: float = 10
+    optimizer_grad_clip_norm: float = 10000
 
     compile_model: bool = False

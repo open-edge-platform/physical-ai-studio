@@ -106,7 +106,10 @@ Or from the command line:
 physicalai --help
 ```
 
-You should see the CLI help menu with available commands.
+You should see the shared CLI help menu. When studio and runtime are installed
+together, it lists both runtime and studio subcommands.
+
+This requires the coordinated runtime release that ships the shared CLI host.
 
 ## GPU Support
 

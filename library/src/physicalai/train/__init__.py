@@ -7,9 +7,15 @@ from importlib.metadata import version
 
 import physicalai.devices.xpu  # noqa: F401 - ensure xpu device is registered if available
 
-from .callbacks import IterationTimer
+from .callbacks import IterationTimer, ProgressReportingCallback, SnapFlowPhaseCallback
 from .trainer import Trainer
 
 __version__ = version("physicalai-train")
 
-__all__ = ["IterationTimer", "Trainer", "__version__"]
+__all__ = [
+    "IterationTimer",
+    "ProgressReportingCallback",
+    "SnapFlowPhaseCallback",
+    "Trainer",
+    "__version__",
+]

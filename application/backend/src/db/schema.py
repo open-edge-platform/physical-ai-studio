@@ -1,15 +1,29 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
-
-from schemas.robot import RobotType
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class RemoteTrainerDB(Base):
+    """A direct trainer endpoint configured for reuse across projects."""
+
+    __tablename__ = "remote_trainers"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
 
 
 class ProjectDB(Base):
@@ -56,59 +70,12 @@ class ProjectRobotDB(Base):
     id: Mapped[UUID] = mapped_column(Text, primary_key=True, default=uuid4)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
-    type: Mapped[RobotType] = mapped_column(Enum(RobotType))
+    type: Mapped[str] = mapped_column(String(64))
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
-    # A robot may have 1 active calibration at a time
-    active_calibration_id: Mapped[str | None] = mapped_column(
-        ForeignKey("robot_calibrations.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-
     project: Mapped["ProjectDB"] = relationship(back_populates="robots")
-
-
-class RobotCalibrationDB(Base):
-    __tablename__ = "robot_calibrations"
-
-    id: Mapped[UUID] = mapped_column(Text, primary_key=True, default=uuid4)
-    # TODO: consider making this more structured, possibly via another `calibration_values` table
-    # Atm this json is considered to be a dict with joint name as key and value
-    # values: Mapped[JSON] = mapped_column(JSON(), nullable=False)
-
-    file_path: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    # A robot may have multiple stored calibrations, but only 1 is considered active via robot.calibration_id
-    robot_id: Mapped[UUID] = mapped_column(ForeignKey("project_robots.id", ondelete="CASCADE"))
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-
-    values: Mapped[list["CalibrationValuesDB"]] = relationship(
-        "CalibrationValuesDB",
-        back_populates="calibration",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-
-
-class CalibrationValuesDB(Base):
-    __tablename__ = "calibration_values"
-    id: Mapped[int] = mapped_column(Integer, nullable=False, primary_key=True)  # Motor ID
-    joint_name: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    calibration_id: Mapped[UUID] = mapped_column(
-        ForeignKey("robot_calibrations.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-
-    drive_mode: Mapped[int] = mapped_column(Integer, nullable=False)
-    homing_offset: Mapped[int] = mapped_column(Integer, nullable=False)
-    range_min: Mapped[int] = mapped_column(Integer, nullable=False)
-    range_max: Mapped[int] = mapped_column(Integer, nullable=False)
-
-    calibration: Mapped["RobotCalibrationDB"] = relationship(back_populates="values")
 
 
 class ProjectCameraDB(Base):
@@ -133,8 +100,6 @@ class ProjectEnvironmentDB(Base):
     id: Mapped[UUID] = mapped_column(Text, primary_key=True, default=uuid4)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
-    robots: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    camera_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
@@ -143,6 +108,57 @@ class ProjectEnvironmentDB(Base):
         "DatasetDB",
         back_populates="environment",
     )
+    robot_links: Mapped[list["EnvironmentRobotDB"]] = relationship(
+        "EnvironmentRobotDB",
+        back_populates="environment",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    camera_links: Mapped[list["EnvironmentCameraDB"]] = relationship(
+        "EnvironmentCameraDB",
+        back_populates="environment",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class EnvironmentRobotDB(Base):
+    """Join table linking an environment to a robot, with its teleoperator configuration."""
+
+    __tablename__ = "environment_robots"
+
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("project_environments.id", ondelete="CASCADE"), primary_key=True
+    )
+    # NO ACTION (not CASCADE): a robot in use by an environment cannot be deleted. The check is
+    # deferred to end-of-statement so project deletion (which cascades both environments and robots
+    # in one statement) still succeeds.
+    robot_id: Mapped[str] = mapped_column(ForeignKey("project_robots.id", ondelete="NO ACTION"), primary_key=True)
+    tele_operator_type: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
+    tele_operator_robot_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_robots.id", ondelete="NO ACTION"), nullable=True
+    )
+
+    environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="robot_links")
+    robot: Mapped["ProjectRobotDB"] = relationship("ProjectRobotDB", foreign_keys=[robot_id], lazy="selectin")
+    tele_operator_robot: Mapped["ProjectRobotDB | None"] = relationship(
+        "ProjectRobotDB", foreign_keys=[tele_operator_robot_id], lazy="selectin"
+    )
+
+
+class EnvironmentCameraDB(Base):
+    """Join table linking an environment to a camera."""
+
+    __tablename__ = "environment_cameras"
+
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("project_environments.id", ondelete="CASCADE"), primary_key=True
+    )
+    # NO ACTION (not CASCADE): a camera in use by an environment cannot be deleted. See EnvironmentRobotDB.
+    camera_id: Mapped[str] = mapped_column(ForeignKey("project_cameras.id", ondelete="NO ACTION"), primary_key=True)
+
+    environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="camera_links")
+    camera: Mapped["ProjectCameraDB"] = relationship("ProjectCameraDB", lazy="selectin")
 
 
 class DatasetDB(Base):

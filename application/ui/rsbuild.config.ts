@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv } from '@rsbuild/core';
+import { pluginBabel } from '@rsbuild/plugin-babel';
 import { pluginReact } from '@rsbuild/plugin-react';
-import { pluginSass } from '@rsbuild/plugin-sass';
 import { pluginSvgr } from '@rsbuild/plugin-svgr';
 
 const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
@@ -8,8 +8,13 @@ const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
 export default defineConfig({
     plugins: [
         pluginReact(),
-
-        pluginSass(),
+        pluginBabel({
+            include: /\.[jt]sx?$/,
+            exclude: [/[\\/]node_modules[\\/]/],
+            babelLoaderOptions(opts) {
+                opts.plugins?.unshift('babel-plugin-react-compiler');
+            },
+        }),
 
         pluginSvgr({
             svgrOptions: {
@@ -33,7 +38,7 @@ export default defineConfig({
     },
     html: {
         title: 'Physical AI Studio',
-        favicon: './src/assets/icons/build-icon.svg',
+        favicon: './src/assets/icons/physicalai-studio-logo.svg',
     },
     tools: {
         rspack: {

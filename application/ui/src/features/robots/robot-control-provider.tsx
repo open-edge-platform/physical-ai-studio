@@ -3,10 +3,17 @@ import { createContext, ReactNode, RefObject, useContext, useRef, useState } fro
 import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
 
 import { fetchClient } from '../../api/client';
-import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaModel } from '../../api/openapi-spec';
+import {
+    SchemaDatasetOutput,
+    SchemaEnvironmentWithRelations,
+    SchemaInferenceDeviceInfo,
+    SchemaModel,
+} from '../../api/openapi-spec';
 import useWebSocketWithResponse from '../../components/websockets/use-websocket-with-response';
 
 type FollowerSource = 'teleoperation' | 'model' | null;
+
+type InferenceDevice = Pick<SchemaInferenceDeviceInfo, 'backend' | 'device'>;
 
 interface RobotControlState {
     model_loaded: boolean;
@@ -34,7 +41,9 @@ const createRobotControlState = (): RobotControlState => {
 
 interface RobotControlApiJsonResponse<T> {
     event: string;
-    data: T;
+    data?: T;
+    message?: string;
+    error_code?: string;
 }
 export interface Observation {
     timestamp: number;
@@ -48,8 +57,13 @@ interface useRobotControlProps {
     environment: SchemaEnvironmentWithRelations;
     model?: SchemaModel;
     dataset?: SchemaDatasetOutput;
-    backend?: string;
+    inferenceDevice?: InferenceDevice;
     onError: (error: string) => void;
+}
+
+interface LoadModelPayload {
+    model: SchemaModel;
+    inference_device: InferenceDevice;
 }
 
 type MutationResult<TVariables = void> = UseMutationResult<
@@ -62,11 +76,11 @@ type RobotControlContextValue = null | {
     observation: RefObject<Observation | undefined>;
     environment: SchemaEnvironmentWithRelations;
     model: SchemaModel | undefined;
-    backend: string | undefined;
+    inferenceDevice: InferenceDevice | undefined;
     dataset: SchemaDatasetOutput | undefined;
     state: RobotControlState;
     loadEnvironment: MutationResult<SchemaEnvironmentWithRelations>;
-    loadModel: MutationResult<{ model: SchemaModel; backend: string }>;
+    loadModel: MutationResult<LoadModelPayload>;
     loadDataset: MutationResult<SchemaDatasetOutput>;
     startTask: MutationResult<string>;
     stopTask: MutationResult;
@@ -105,14 +119,14 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
     const observation = useRef<Observation | undefined>(undefined);
 
     const [model, setModel] = useState<SchemaModel | undefined>(props.model);
-    const [backend, setBackend] = useState<string | undefined>(props.backend);
+    const [inferenceDevice, setInferenceDevice] = useState<InferenceDevice | undefined>(props.inferenceDevice);
     const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(props.dataset);
     const [environment, setEnvironment] = useState<SchemaEnvironmentWithRelations>(props.environment);
 
     const onOpen = () => {
         loadEnvironment.mutate(props.environment);
-        if (model && backend) {
-            loadModel.mutate({ model, backend });
+        if (model && inferenceDevice) {
+            loadModel.mutate({ model, inference_device: inferenceDevice });
         }
         if (dataset) {
             loadDataset.mutate(dataset);
@@ -146,7 +160,13 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         }
 
         if (message['event'] === 'error') {
-            props.onError(message['data'] as string);
+            const errorMessage =
+                typeof message['message'] === 'string'
+                    ? message['message']
+                    : typeof message['data'] === 'string'
+                      ? message['data']
+                      : 'An unexpected error occurred.';
+            props.onError(errorMessage);
         }
     };
 
@@ -155,7 +175,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (datasetConfig: SchemaDatasetOutput) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_dataset', data: { dataset: datasetConfig } },
-                (data) => data['data']['dataset_loaded']
+                (data) => data.data?.dataset_loaded === true
             );
             setDataset(datasetConfig);
             return result;
@@ -167,7 +187,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (env: SchemaEnvironmentWithRelations) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_environment', data: { environment: env } },
-                (data) => data['data']['environment_loaded']
+                (data) => data.data?.environment_loaded === true
             );
             setEnvironment(env);
             return result;
@@ -176,13 +196,13 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
 
     const loadModel = useMutation({
         meta: { skipInvalidation: true },
-        mutationFn: async (properties: { model: SchemaModel; backend: string }) => {
+        mutationFn: async (properties: LoadModelPayload) => {
             const result = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'load_model', data: properties },
-                ({ data }) => data['model_loaded']
+                ({ data }) => data?.model_loaded === true
             );
             setModel(properties.model);
-            setBackend(properties.backend);
+            setInferenceDevice(properties.inference_device);
             return result;
         },
     });
@@ -192,7 +212,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (task: string) =>
             await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'start_task', data: { task } },
-                ({ data }) => data['follower_source'] === 'model'
+                ({ data }) => data?.follower_source === 'model'
             ),
     });
 
@@ -201,7 +221,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async () =>
             await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'stop_task', data: {} },
-                ({ data }) => data['follower_source'] === null
+                ({ data }) => data?.follower_source === null
             ),
     });
 
@@ -210,7 +230,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (task: string) => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'start_recording', data: { task } },
-                ({ data }) => data['is_recording'] == true
+                ({ data }) => data?.is_recording === true
             );
             return message;
         },
@@ -221,7 +241,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async () => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'save_episode', data: {} },
-                ({ data }) => data['is_recording'] == false
+                ({ data }) => data?.is_recording === false
             );
             return message;
         },
@@ -232,7 +252,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async () => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'discard_episode', data: {} },
-                ({ data }) => data['is_recording'] == false
+                ({ data }) => data?.is_recording === false
             );
             return message;
         },
@@ -243,7 +263,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
         mutationFn: async (follower_source: FollowerSource) => {
             const message = await sendJsonMessageAndWait<RobotControlApiJsonResponse<RobotControlState>>(
                 { event: 'set_follower_source', data: { follower_source } },
-                ({ data }) => data['follower_source'] == follower_source
+                ({ data }) => data?.follower_source === follower_source
             );
             return message;
         },
@@ -260,7 +280,7 @@ export const RobotControlProvider = (props: useRobotControlProps) => {
                 environment,
                 dataset,
                 model,
-                backend,
+                inferenceDevice,
                 state,
                 loadEnvironment,
                 loadModel,

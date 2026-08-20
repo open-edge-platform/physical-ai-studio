@@ -88,16 +88,34 @@ def extract_dataset_stats(
     # extra info with normalization
     processing_stats = pi05_extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
 
+    def same_kind(feature_name: str, candidate_name: str) -> bool:
+        if STATE in feature_name.lower() and STATE in candidate_name.lower():
+            return True
+        return ACTION in feature_name.lower() and ACTION in candidate_name.lower()
+
+    def stat_vector_len(stat: dict[str, Any]) -> int | None:
+        for key in ("mean", "std", "q01", "q99", "min", "max"):
+            value = stat.get(key)
+            if isinstance(value, list):
+                return len(value)
+        return None
+
     for f_name in config_features:
-        if STATE in f_name.lower():
-            for proc_f_name in processing_stats:
-                if STATE in proc_f_name.lower():
-                    config_features[f_name]["mean"] = processing_stats[proc_f_name]["mean"]
-                    config_features[f_name]["std"] = processing_stats[proc_f_name]["std"]
-        elif ACTION in f_name.lower():
-            for proc_f_name in processing_stats:
-                if ACTION in proc_f_name.lower():
-                    config_features[f_name]["mean"] = processing_stats[proc_f_name]["mean"]
-                    config_features[f_name]["std"] = processing_stats[proc_f_name]["std"]
+        feature_shape = config_features[f_name].get("shape")
+        expected_dim = feature_shape[0] if isinstance(feature_shape, tuple) and feature_shape else None
+
+        for proc_f_name, proc_stats in processing_stats.items():
+            if not same_kind(f_name, proc_f_name):
+                continue
+
+            actual_dim = stat_vector_len(proc_stats)
+            if expected_dim is not None and actual_dim is not None and actual_dim != expected_dim:
+                continue
+
+            if "mean" in proc_stats:
+                config_features[f_name]["mean"] = proc_stats["mean"]
+            if "std" in proc_stats:
+                config_features[f_name]["std"] = proc_stats["std"]
+            break
 
     return config_features

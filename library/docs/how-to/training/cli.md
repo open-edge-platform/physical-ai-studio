@@ -1,6 +1,6 @@
 # CLI Guide
 
-Train policies using the command-line interface built on PyTorch Lightning CLI.
+Train policies using the shared `physicalai` command and studio's jsonargparse subcommands.
 
 ## Features
 
@@ -8,6 +8,9 @@ Train policies using the command-line interface built on PyTorch Lightning CLI.
 - Type-safe configuration (dataclasses, Pydantic)
 - Dynamic class loading (`class_path` pattern)
 - Full PyTorch Lightning features (callbacks, loggers, distributed training)
+
+The runtime package owns the top-level `physicalai` executable. Studio contributes
+the training subcommands through the `physicalai.cli.subcommands` entry-point group.
 
 ## Basic Usage
 
@@ -117,10 +120,17 @@ physicalai fit \
 
 ```bash
 physicalai fit --config CONFIG_PATH
-physicalai validate --config CONFIG_PATH --ckpt_path CHECKPOINT
-physicalai test --config CONFIG_PATH --ckpt_path CHECKPOINT
-physicalai predict --config CONFIG_PATH --ckpt_path CHECKPOINT
+physicalai fit --config CONFIG_PATH --fit.ckpt_path CHECKPOINT       # resume training
+physicalai validate --config CONFIG_PATH --validate.ckpt_path CHECKPOINT
+physicalai test --config CONFIG_PATH --test.ckpt_path CHECKPOINT
+physicalai predict --config CONFIG_PATH --predict.ckpt_path CHECKPOINT
 ```
+
+Arguments belonging to the `Trainer` method itself (`ckpt_path`, `weights_only`,
+`verbose`) are namespaced under the subcommand name, so they do not collide with
+`--trainer.*` constructor arguments. `physicalai benchmark` and
+`physicalai export` use a bare `--ckpt_path` because they are not
+`Trainer`-backed.
 
 ## Examples
 

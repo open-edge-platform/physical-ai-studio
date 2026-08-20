@@ -13,7 +13,7 @@ import numpy as np
 import torch
 
 
-@dataclass(frozen=True)
+@dataclass
 class Observation:
     """A single observation or batch of observations from an imitation learning dataset.
 
@@ -165,7 +165,20 @@ class Observation:
         """
         # Filter to only known fields
         field_names = {f.name for f in fields(cls)}
-        filtered_data = {k: v for k, v in data.items() if k in field_names}
+        filtered_data: dict[str, Any] = {}
+        nested: dict[str, dict[str, Any]] = {}
+        for key, value in data.items():
+            if key in field_names:
+                filtered_data[key] = value
+                continue
+            if key.startswith("_") and key.endswith("_keys"):
+                continue
+            if "." in key:
+                head, sub = key.split(".", 1)
+                if head in field_names:
+                    nested.setdefault(head, {})[sub] = value
+        for head, sub_map in nested.items():
+            filtered_data.setdefault(head, sub_map)
         return cls(**filtered_data)
 
     @classmethod

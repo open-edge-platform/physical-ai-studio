@@ -171,7 +171,7 @@ Lightning `.ckpt` files are loaded via the standard Lightning entry point:
 policy = ACT.load_from_checkpoint("path/to/model.ckpt")
 ```
 
-### LightningCLI / YAML
+### CLI / YAML
 
 ```yaml
 # configs/lerobot/act.yaml

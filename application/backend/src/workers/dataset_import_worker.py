@@ -3,8 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from loguru import logger
+from physicalai.data.archive_safety import SafeZipArchive
 
 from core.logging.utils import job_logging_ctx
+from db import get_async_db_session_ctx
+from schemas import Dataset
 from schemas.base_job import JobStatus
 from schemas.dataset_import_job import (
     DatasetImportJobPayload,
@@ -13,7 +16,6 @@ from schemas.dataset_import_job import (
     ImportValidationSeverity,
 )
 from schemas.job import DatasetImportJob
-from services.archive_safety import SafeZipArchive, cleanup_staged_archive
 from services.dataset_import.adapters import (
     DatasetImportAdapter,
     get_registered_dataset_import_adapters,
@@ -21,8 +23,10 @@ from services.dataset_import.adapters import (
 )
 from services.dataset_import.service import DatasetImportService
 from services.dataset_import.staging import resolve_payload_archive_path
+from services.dataset_service import DatasetService
 from services.event_processor import EventType
 from services.job_service import JobService
+from services.staged_archive import cleanup_staged_archive
 from settings import get_settings
 from workers.base import BaseProcessWorker
 
@@ -44,7 +48,8 @@ class DatasetImportWorker(BaseProcessWorker):
     async def run_loop(self) -> None:
         logger.info("Dataset Import Worker is running")
         while not self.should_stop():
-            job = await DatasetImportService.claim_pending_dataset_import_job()
+            async with get_async_db_session_ctx() as session:
+                job = await DatasetImportService(session).claim_pending_dataset_import_job()
             if isinstance(job, DatasetImportJob):
                 await self._process_job(job)
 
@@ -99,7 +104,7 @@ class DatasetImportWorker(BaseProcessWorker):
         archive is removed after the job is persisted.
         """
         payload.validation_report = report if report.messages else None
-        failed_job = await JobService.update_job_payload(
+        failed_job = await self._update_job_payload(
             job_id=job_id,
             payload=payload,
             status=JobStatus.FAILED,
@@ -119,7 +124,7 @@ class DatasetImportWorker(BaseProcessWorker):
             archive_path,
         )
         payload.step = ImportStep.DETECTING_FORMAT
-        job = await JobService.update_job_payload(
+        job = await self._update_job_payload(
             job_id=job_id,
             payload=payload,
             status=JobStatus.RUNNING,
@@ -174,7 +179,7 @@ class DatasetImportWorker(BaseProcessWorker):
         )
 
         payload.step = ImportStep.BUILDING_MANIFEST_DRAFT
-        job = await JobService.update_job_payload(
+        job = await self._update_job_payload(
             job_id=job_id,
             payload=payload,
             status=JobStatus.RUNNING,
@@ -206,7 +211,7 @@ class DatasetImportWorker(BaseProcessWorker):
         payload.validation_report = report if has_issues else None
         payload.step = ImportStep.AWAITING_USER_REVIEW
 
-        job = await JobService.update_job_payload(
+        job = await self._update_job_payload(
             job_id=job_id,
             payload=payload,
             status=JobStatus.PENDING,
@@ -249,7 +254,7 @@ class DatasetImportWorker(BaseProcessWorker):
                 msg.message for msg in pre_commit_report.messages if msg.severity == ImportValidationSeverity.ERROR
             )
             payload.validation_report = pre_commit_report
-            failed_job = await JobService.update_job_payload(
+            failed_job = await self._update_job_payload(
                 job_id=job_id,
                 payload=payload,
                 status=JobStatus.FAILED,
@@ -266,7 +271,7 @@ class DatasetImportWorker(BaseProcessWorker):
 
         try:
             payload.step = ImportStep.IMPORTING_DATASET
-            job = await JobService.update_job_payload(
+            job = await self._update_job_payload(
                 job_id=job_id,
                 payload=payload,
                 status=JobStatus.RUNNING,
@@ -279,7 +284,12 @@ class DatasetImportWorker(BaseProcessWorker):
                 archive_path,
                 max_uncompressed_bytes=get_settings().data_import_max_uncompressed_bytes,
             )
-            dataset = await adapter.commit(payload, project_id=project_id, archive=archive)
+            dataset = await adapter.commit(
+                payload,
+                project_id=project_id,
+                archive=archive,
+                persist_dataset=self._persist_dataset,
+            )
             logger.info(
                 "Adapter commit completed for job_id='{}': dataset_id='{}', dataset_path='{}'",
                 job_id,
@@ -289,7 +299,7 @@ class DatasetImportWorker(BaseProcessWorker):
 
             payload.result_dataset_id = dataset.id
             payload.step = ImportStep.COMPLETED
-            completed = await JobService.update_job_payload(
+            completed = await self._update_job_payload(
                 job_id=job_id,
                 payload=payload,
                 status=JobStatus.COMPLETED,
@@ -303,3 +313,27 @@ class DatasetImportWorker(BaseProcessWorker):
             return False
         finally:
             cleanup_staged_archive(archive_path)
+
+    @staticmethod
+    async def _persist_dataset(dataset: Dataset) -> Dataset:
+        async with get_async_db_session_ctx() as session:
+            return await DatasetService(session).create_dataset(dataset)
+
+    @staticmethod
+    async def _update_job_payload(
+        job_id: UUID,
+        payload: DatasetImportJobPayload,
+        *,
+        status: JobStatus,
+        message: str,
+        progress: int | None = None,
+    ) -> DatasetImportJob:
+        async with get_async_db_session_ctx() as session:
+            job = await JobService(session).update_job_payload(
+                job_id=job_id,
+                payload=payload,
+                status=status,
+                message=message,
+                progress=progress,
+            )
+        return DatasetImportJob.model_validate(job)

@@ -19,7 +19,7 @@ concurrency:
 jobs:
   check-paths:
     name: Check if workflow should run
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       run_workflow: ${{ steps.check_paths.outputs.run }}
     permissions:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - &harden-runner
         name: Harden the runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -55,25 +55,29 @@ jobs:
             storage.googleapis.com:443
             nodejs.org:443
             registry.npmjs.org:443
+            utexas.box.com:443
+            public.boxcloud.com:443
+            dl.boxcloud.com:443
 
       - &checkout
         name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Check paths
         id: check_paths
-        uses: open-edge-platform/geti-ci/actions/check-paths@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/check-paths@2ed3ce382d1dbd6db52c7c6b93ffdae280a1c06f # check-paths/v0.1.0
         with:
           files_yaml: |
             test:
               - library/**
-              - physicalai/**
-              - .github/**
+              - .github/workflows/library.yml
+              - '!**/*.md'
+              - '!**/docs/**'
 
   code-quality:
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
@@ -85,24 +89,24 @@ jobs:
 
       - &set-up-python
         name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version-file: "./library/.python-version"
 
       - &set-up-uv
         name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.10.4"
 
       - name: Run prek
-        uses: j178/prek-action@6ad80277337ad479fe43bd70701c3f7f8aa74db3 # v2
+        uses: j178/prek-action@e98a699c41eb69ab013a45817a0406469a748f8d # v2
         with:
           extra-args: --all-files
           working-directory: library
 
   unit-tests:
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
     permissions:
@@ -129,7 +133,7 @@ jobs:
         working-directory: library
         run: |
           # Note: We install 'tests', 'pi0', and 'libero' extras, not 'groot' which requires CUDA/flash-attn
-          uv sync --frozen --extra tests --extra pi0 --extra libero --extra smolvla --extra cpu
+          uv sync --frozen --extra tests --extra pi0 --extra libero --extra smolvla --extra cpu --extra loggers
 
       - name: Run python unit tests
         working-directory: library
@@ -140,13 +144,191 @@ jobs:
         run: |
           uv run --no-sync pytest tests/unit
 
+  integration-tests:
+    runs-on: [self-hosted, Linux, X64, gpu]
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read
+    steps:
+      - *harden-runner
+
+      - *checkout
+
+      - *set-up-python
+
+      - name: Install system dependencies for headless rendering
+        run: |
+          sudo apt-get update
+          # OSMesa = pure-CPU software GL. Works without a functioning NVIDIA
+          # driver/EGL stack, so it sidesteps the runner's broken EGL/NVML.
+          # libosmesa6 ships libOSMesa.so.8, which mujoco's osmesa backend loads
+          # via PyOpenGL. This is the ONLY hard dependency; we avoid libgl1-mesa-glx
+          # (removed on Ubuntu 24.04) so the install can't break across runner OSes.
+          sudo apt-get install -y libosmesa6 libosmesa6-dev
+
+      - name: GPU / EGL preflight diagnostics
+        continue-on-error: true
+        run: |
+          echo "== nvidia-smi (EGL path is broken on this runner; OSMesa bypasses it) =="
+          nvidia-smi || echo "nvidia-smi unavailable"
+          echo "== libOSMesa present? (required) =="
+          ldconfig -p | grep -i osmesa || echo "WARNING: libOSMesa NOT found"
+          echo "== EGL vendor ICDs (for reference) =="
+          ls -l /usr/share/glvnd/egl_vendor.d/ 2>/dev/null || true
+
+      - *set-up-uv
+
+      - name: Verify lock file
+        working-directory: library
+        run: uv lock --check
+
+      - name: Install dependencies
+        working-directory: library
+        run: |
+          uv sync --frozen --extra tests --extra pi05 --extra libero --extra smolvla --extra cu128
+
+      - name: OSMesa render self-test
+        continue-on-error: true
+        working-directory: library
+        env:
+          MUJOCO_GL: osmesa
+          PYOPENGL_PLATFORM: osmesa
+        run: |
+          uv run --no-sync python - <<'PY'
+          import mujoco
+          print("mujoco", mujoco.__version__)
+          m = mujoco.MjModel.from_xml_string(
+              "<mujoco><worldbody><light pos='0 0 2'/>"
+              "<geom type='box' size='.1 .1 .1' rgba='1 0 0 1'/></worldbody></mujoco>")
+          d = mujoco.MjData(m)
+          r = mujoco.Renderer(m, 64, 64)
+          mujoco.mj_forward(m, d)
+          r.update_scene(d)
+          img = r.render()
+          print("OSMesa RENDER OK", img.shape, "nonzero=", int((img > 0).sum()))
+          PY
+
+      - name: Run python integration tests
+        working-directory: library
+        env:
+          # Headless rendering for MuJoCo/OpenGL (must be set before any imports).
+          # Use OSMesa (CPU software rendering) instead of EGL: the GPU runner's
+          # NVIDIA EGL/NVML stack is broken (EGL_BAD_DISPLAY / "Can't initialize
+          # NVML"), and the driver can't be repaired from CI. OSMesa needs no GPU.
+          MUJOCO_GL: osmesa
+          PYOPENGL_PLATFORM: osmesa
+        run: |
+          uv run --no-sync pytest tests/integration -m "not slow"
+
+  integration-tests-robocasa:
+    runs-on: [self-hosted, Linux, X64, gpu]
+    needs: check-paths
+    if: needs.check-paths.outputs.run_workflow == 'true'
+    permissions:
+      contents: read
+    steps:
+      - *harden-runner
+
+      - *checkout
+
+      - *set-up-python
+
+      - name: Install system dependencies for headless rendering
+        run: |
+          sudo apt-get update
+          # OSMesa = pure-CPU software GL. Works without a functioning NVIDIA
+          # driver/EGL stack, so it sidesteps the runner's broken EGL/NVML.
+          # libosmesa6 ships libOSMesa.so.8, which mujoco's osmesa backend loads
+          # via PyOpenGL. This is the ONLY hard dependency; we avoid libgl1-mesa-glx
+          # (removed on Ubuntu 24.04) so the install can't break across runner OSes.
+          sudo apt-get install -y libosmesa6 libosmesa6-dev
+
+      - name: GPU / EGL preflight diagnostics
+        continue-on-error: true
+        run: |
+          echo "== nvidia-smi (EGL path is broken on this runner; OSMesa bypasses it) =="
+          nvidia-smi || echo "nvidia-smi unavailable"
+          echo "== libOSMesa present? (required) =="
+          ldconfig -p | grep -i osmesa || echo "WARNING: libOSMesa NOT found"
+          echo "== EGL vendor ICDs (for reference) =="
+          ls -l /usr/share/glvnd/egl_vendor.d/ 2>/dev/null || true
+
+      - *set-up-uv
+
+      - name: Verify lock file
+        working-directory: library
+        run: uv lock --check
+
+      - name: Create isolated RoboCasa environment
+        working-directory: library
+        run: |
+          uv venv .venv-robocasa
+          source .venv-robocasa/bin/activate
+          uv sync --active --frozen --extra tests --extra pi05 --extra smolvla --extra cu128
+
+      - name: Install RoboCasa and robosuite
+        working-directory: library
+        run: |
+          source .venv-robocasa/bin/activate
+          bash scripts/benchmark/install_robocasa.sh
+
+      - name: OSMesa render self-test
+        continue-on-error: true
+        working-directory: library
+        env:
+          MUJOCO_GL: osmesa
+          PYOPENGL_PLATFORM: osmesa
+        run: |
+          source .venv-robocasa/bin/activate
+          python - <<'PY'
+          import mujoco
+          print("mujoco", mujoco.__version__)
+          m = mujoco.MjModel.from_xml_string(
+              "<mujoco><worldbody><light pos='0 0 2'/>"
+              "<geom type='box' size='.1 .1 .1' rgba='1 0 0 1'/></worldbody></mujoco>")
+          d = mujoco.MjData(m)
+          r = mujoco.Renderer(m, 64, 64)
+          mujoco.mj_forward(m, d)
+          r.update_scene(d)
+          img = r.render()
+          print("OSMesa RENDER OK", img.shape, "nonzero=", int((img > 0).sum()))
+          PY
+
+      - name: Run RoboCasa unit gym tests
+        working-directory: library
+        run: |
+          source .venv-robocasa/bin/activate
+          python -m pytest tests/unit/gyms/test_robocasa.py
+
+      - name: Download RoboCasa kitchen assets
+        working-directory: library
+        run: |
+          source .venv-robocasa/bin/activate
+          yes y | python -m robocasa.scripts.download_kitchen_assets \
+            --type tex tex_generative fixtures_lw objs_lw
+
+      - name: Run RoboCasa integration test
+        working-directory: library
+        env:
+          # OSMesa (CPU software rendering) instead of EGL: the GPU runner's NVIDIA
+          # EGL/NVML stack is broken (EGL_BAD_DISPLAY / "Can't initialize NVML") and
+          # cannot be repaired from CI. OSMesa needs no GPU driver.
+          MUJOCO_GL: osmesa
+          PYOPENGL_PLATFORM: osmesa
+        run: |
+          source .venv-robocasa/bin/activate
+          python -m pytest tests/integration/gyms/test_robocasa_e2e.py
+
   required-check:
     name: Required Check library
     needs:
       - check-paths
       - code-quality
       - unit-tests
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+      - integration-tests
+      - integration-tests-robocasa
+    runs-on: ubuntu-latest
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}
     if: always() && !cancelled()

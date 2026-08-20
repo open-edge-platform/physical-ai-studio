@@ -1,10 +1,12 @@
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 
 import { Content, Flex, Heading, IllustratedMessage, Loading, Text, View } from '@geti-ui/ui';
 import { DockviewApi, IDockviewPanelProps } from 'dockview';
 import { DockviewReact, DockviewReadyEvent, IDockviewReactProps } from 'dockview-react';
 
+import { $api } from '../../../api/client';
 import { physicalAiTheme } from '../../dockview';
+import { useProjectId } from '../../projects/use-project';
 import { ReactComponent as RobotIllustration } from './../../../assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { CameraCell } from './cells/camera-cell';
 import { RobotCell } from './cells/robot-cell';
@@ -29,11 +31,8 @@ const EmptyPreview = () => {
 };
 
 const components = {
-    leader: (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
-        return <RobotCell robot_id={props.params.robot_id} />;
-    },
-    follower: (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
-        return <RobotCell robot_id={props.params.robot_id} />;
+    follower: (props: IDockviewPanelProps<{ title: string; follower_id: string; leader_id: string | undefined }>) => {
+        return <RobotCell follower_id={props.params.follower_id} leader_id={props.params.leader_id} />;
     },
     camera: (props: IDockviewPanelProps<{ camera_id: string }>) => {
         return <CameraCell camera_id={props.params.camera_id} />;
@@ -43,23 +42,26 @@ const components = {
     },
 } satisfies IDockviewReactProps['components'];
 
-// Builds up all panels that we should add to Dockview
-// also removes any panels that are no longer part of the environment
-const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: EnvironmentFormState) => {
+const buildDockviewPanels = (
+    api: DockviewReadyEvent['api'],
+    environment: EnvironmentFormState,
+    cameraNameMap: Record<string, string>
+) => {
     if (environment === null) {
         return api;
     }
 
     const panels = new Set<string>();
 
-    environment.camera_ids.forEach((camera_id, idx) => {
+    environment.cameras.forEach(({ camera_id }) => {
         panels.add(camera_id);
         if (!api.panels.some((panel) => panel.id === camera_id)) {
             api.addPanel({
                 id: camera_id,
+                title: cameraNameMap[camera_id] ?? camera_id,
                 component: 'camera',
                 params: {
-                    title: `Camera ${idx}`,
+                    title: cameraNameMap[camera_id] ?? camera_id,
                     camera_id,
                 },
                 position: {
@@ -71,11 +73,16 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Enviro
     });
 
     environment.robots.forEach((robot) => {
+        const teleoperator_id = robot.teleoperator.type === 'robot' ? robot.teleoperator.robot_id : undefined;
         panels.add(robot.robot_id);
         if (!api.panels.some((panel) => panel.id === robot.robot_id)) {
             api.addPanel({
                 id: robot.robot_id,
-                params: { title: 'Follower', robot_id: robot.robot_id },
+                params: {
+                    title: 'Follower',
+                    follower_id: robot.robot_id,
+                    leader_id: teleoperator_id,
+                },
                 title: 'Follower',
                 component: 'follower',
 
@@ -84,25 +91,6 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Enviro
                     referencePanel: '',
                 },
             });
-        }
-
-        if (robot.teleoperator.type === 'robot') {
-            const teleoperator_id = robot.teleoperator.robot_id;
-            panels.add(teleoperator_id);
-
-            if (!api.panels.some((panel) => panel.id === teleoperator_id)) {
-                api.addPanel({
-                    id: teleoperator_id,
-                    params: { title: 'Leader', robot_id: robot.teleoperator.robot_id },
-                    component: 'leader',
-                    title: 'Leader',
-
-                    position: {
-                        direction: 'right',
-                        referencePanel: robot.robot_id,
-                    },
-                });
-            }
         }
     });
 
@@ -118,10 +106,26 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Enviro
 
 const ActualPreview = () => {
     const environment = useEnvironmentForm();
+    const { project_id } = useProjectId();
     const api = useRef<DockviewApi>(null);
 
+    const camerasQuery = $api.useSuspenseQuery('get', '/api/projects/{project_id}/cameras', {
+        params: { path: { project_id } },
+    });
+
+    const cameraNameMap: Record<string, string> = useMemo(() => {
+        const map: Record<string, string> = {};
+        for (const camera of camerasQuery.data) {
+            if (camera.id == undefined) {
+                continue;
+            }
+            map[camera.id] = camera.name;
+        }
+        return map;
+    }, [camerasQuery.data]);
+
     const onReady = (event: DockviewReadyEvent): void => {
-        api.current = buildDockviewPanels(event.api, environment);
+        api.current = buildDockviewPanels(event.api, environment, cameraNameMap);
     };
 
     useEffect(() => {
@@ -129,8 +133,8 @@ const ActualPreview = () => {
             return;
         }
 
-        buildDockviewPanels(api.current, environment);
-    }, [environment]);
+        buildDockviewPanels(api.current, environment, cameraNameMap);
+    }, [environment, cameraNameMap]);
 
     return <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />;
 };
@@ -147,7 +151,7 @@ export const Preview = () => {
     const environment = useEnvironmentForm();
 
     const hasRobots = environment.robots.length > 0;
-    const hasCameras = environment.camera_ids.length > 0;
+    const hasCameras = environment.cameras.length > 0;
 
     if (hasRobots || hasCameras) {
         return (

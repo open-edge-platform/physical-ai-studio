@@ -1,61 +1,35 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""LeRobot policies integration.
+"""LeRobot policy wrappers.
 
-Lightning-compatible wrappers around `LeRobot <https://github.com/huggingface/lerobot>`_
-policies. Each first-class supported policy is exposed as a thin
-:class:`NamedLeRobotPolicy` subclass that binds a single ``POLICY_NAME``;
-configuration flows through LeRobot's own ``PreTrainedConfig`` dataclasses
-rather than hand-mirrored constructor kwargs.
+This package exposes thin :class:`NamedLeRobotPolicy` wrappers for curated
+LeRobot policies, plus :class:`LeRobotPolicy` as a dynamic escape hatch for
+any LeRobot-registered policy name.
 
-Two access tiers:
+Installation:
 
-- **Named wrappers** (the eight in :data:`SUPPORTED_POLICIES`) get one-line
-  factory classes for ergonomic use. The subset listed in
-  :data:`VALIDATED_EQUIVALENCE_POLICIES` carries a hard equivalence guarantee
-  enforced by the test suite; the remainder (currently ``groot``, ``xvla``)
-  are named for API parity but cannot be validated end-to-end yet (see the
-  ``Known limitations`` section in their alias docstrings).
-- **Universal escape hatch** — :class:`LeRobotPolicy` accepts any
-  ``policy_name`` that LeRobot's ``PreTrainedConfig`` registry knows
-  (``vqbet``, ``tdmpc``, ``sac``, …). These work best-effort: a one-time
-  :class:`UserWarning` is emitted and no equivalence is asserted. LeRobot's
-  own validation runs only when the policy is eagerly constructed (e.g. via
-  :meth:`LeRobotPolicy.from_dataset` or Lightning's ``setup`` hook).
-
-Note:
-    LeRobot must be installed::
+    Install LeRobot support with::
 
         pip install physicalai-train[lerobot]
 
-    See https://github.com/huggingface/lerobot for upstream documentation and
-    the per-policy ``PreTrainedConfig`` dataclasses that define every tunable
-    field (e.g. :class:`lerobot.policies.act.configuration_act.ACTConfig`).
-
 Examples:
-    Load a pretrained checkpoint from the HuggingFace Hub::
+    Load a named wrapper from the HuggingFace Hub::
 
         >>> from physicalai.policies.lerobot import ACT
         >>> policy = ACT.from_pretrained("lerobot/act_aloha_sim_transfer_cube_human")
 
-    Construct from a dataset (features are inferred)::
+    Use a recent VLA wrapper directly::
+
+        >>> from physicalai.policies.lerobot import PI05
+        >>> policy = PI05(dtype="bfloat16")
+
+    Construct a wrapper from dataset metadata::
 
         >>> from physicalai.policies.lerobot import Diffusion
         >>> policy = Diffusion.from_dataset("lerobot/pusht", optimizer_lr=1e-4)
 
-    Override individual config fields at construction time::
-
-        >>> from physicalai.policies.lerobot import ACT
-        >>> policy = ACT(
-        ...     input_features=input_features,
-        ...     output_features=output_features,
-        ...     dim_model=512,
-        ...     chunk_size=10,
-        ...     optimizer_lr=1e-5,
-        ... )
-
-    Dispatch dynamically by policy name (named or escape-hatch)::
+    Dispatch dynamically by policy name::
 
         >>> from physicalai.policies.lerobot import get_lerobot_policy
         >>> policy = get_lerobot_policy("act", optimizer_lr=1e-4)
@@ -90,44 +64,14 @@ SUPPORTED_POLICIES: tuple[str, ...] = (
     "smolvla",
     "xvla",
 )
-"""First-class LeRobot policies exposed as named :class:`NamedLeRobotPolicy` subclasses.
-
-Membership implies a wrapper class exists in :mod:`physicalai.policies.lerobot.aliases`
-and the policy is in scope for the equivalence test suite. Other policies in
-LeRobot's ``PreTrainedConfig`` registry remain reachable through
-:class:`LeRobotPolicy` directly with no equivalence guarantee.
-"""
+"""First-class LeRobot policies exposed as named wrappers."""
 
 VALIDATED_EQUIVALENCE_POLICIES: tuple[str, ...] = (
     "act",
     "diffusion",
     "smolvla",
-    "pi0",
-    "pi05",
-    "pi0_fast",
 )
-"""Subset of :data:`SUPPORTED_POLICIES` with measured wrapper-vs-native numerical equivalence.
-
-A policy listed here passes the equivalence test suite under tier-appropriate
-tolerances:
-
-- Unit tier (CPU, fp32, manual forward/backward): ``rtol=atol=1e-6`` for forward,
-  gradient, and post-step weight comparisons. Applies to ``act``, ``diffusion``,
-  ``smolvla``.
-- Integration tier (Lightning Trainer, CUDA/XPU + bf16-mixed for VLAs): ``rtol=1e-5``
-  for loss trajectories and ``rtol=5e-5`` for post-training weights (calibrated
-  from observed float32-accumulation drift; see test docstrings). Applies to all
-  six entries.
-
-Membership implies a hard guarantee: any wrapper change that breaks equivalence
-must show up as a failing test in ``library/tests/unit/policies/test_lerobot.py``
-or ``library/tests/integration/test_lerobot_wrapper_equivalence.py``.
-
-Policies in :data:`SUPPORTED_POLICIES` but not here (``groot``, ``xvla``) are
-named for API ergonomics but cannot currently be validated end-to-end — see the
-``Known limitations`` section in their alias docstrings and the
-``_EQUIVALENCE_XFAIL_REASONS`` table in the integration test for details.
-"""
+"""Named wrappers covered by the generic wrapper-vs-native equivalence suite."""
 
 _NAMED_WRAPPERS: tuple[type[NamedLeRobotPolicy], ...] = (
     ACT,

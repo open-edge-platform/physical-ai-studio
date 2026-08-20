@@ -124,7 +124,8 @@ export type SetupEvent =
 interface UseSetupWebSocketOptions {
     projectId: string;
     robotType: string;
-    serialNumber: string;
+    serialNumber?: string;
+    connectionString?: string;
     enabled?: boolean;
 }
 
@@ -157,7 +158,13 @@ export interface SetupWebSocketState {
     isConnected: boolean;
 }
 
-export function useSetupWebSocket({ projectId, robotType, serialNumber, enabled = true }: UseSetupWebSocketOptions) {
+export function useSetupWebSocket({
+    projectId,
+    robotType,
+    serialNumber,
+    connectionString,
+    enabled = true,
+}: UseSetupWebSocketOptions) {
     const [state, setState] = useState<SetupWebSocketState>({
         phase: null,
         statusMessage: null,
@@ -237,12 +244,21 @@ export function useSetupWebSocket({ projectId, robotType, serialNumber, enabled 
         }
     }, []);
 
-    const url =
-        enabled && robotType && serialNumber
-            ? `/api/projects/${projectId}/robots/setup/ws` +
-              `?robot_type=${encodeURIComponent(robotType)}` +
-              `&serial_number=${encodeURIComponent(serialNumber)}`
-            : null;
+    const searchParams = new URLSearchParams({
+        robot_type: robotType,
+    });
+
+    if (serialNumber) {
+        searchParams.set('serial_number', serialNumber);
+    }
+
+    if (connectionString) {
+        searchParams.set('connection_string', connectionString);
+    }
+
+    const query = `?${searchParams.toString()}`;
+
+    const url = enabled && robotType ? `/api/projects/${projectId}/robots/setup/ws${query}` : null;
 
     const { sendJsonMessage, readyState } = useWebSocket(url, {
         onMessage: handleMessage,

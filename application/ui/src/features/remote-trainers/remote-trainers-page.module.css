@@ -1,0 +1,27 @@
+.container {
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+    overflow: hidden;
+}
+
+.addButton {
+    margin-bottom: var(--spectrum-global-dimension-size-100);
+
+    /*
+     * Spectrum's .spectrum-Button applies an asymmetric vertical padding
+     * (`size-50 - 1px` top / `size-50 + 1px` bottom) as an optical correction
+     * calibrated for its own `adobe-clean` typeface. That font is not loaded
+     * here, so the label renders in the `-apple-system` fallback, whose
+     * cap-height/ascent ratio differs — the correction then overshoots and
+     * lifts the content ~1px above the button's centre. Restoring the symmetric
+     * `size-50` padding lets the button's own `align-items: center` centre the
+     * content, matching every ActionButton/FieldButton in the app.
+     */
+    padding-block: var(--spectrum-global-dimension-size-50);
+}
+
+.emptyList {
+    display: block;
+    padding: var(--spectrum-global-dimension-size-150);
+    color: var(--spectrum-global-color-gray-700);
+}

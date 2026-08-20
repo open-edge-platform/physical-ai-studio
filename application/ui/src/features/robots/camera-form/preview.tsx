@@ -39,18 +39,7 @@ export const Preview = () => {
     const key = `${camera.driver}-${camera.fingerprint}-${camera.payload?.fps}-${camera.payload?.height}-${camera.payload?.width}`;
 
     return (
-        <View
-            backgroundColor={'gray-200'}
-            height={'100%'}
-            padding='size-200'
-            UNSAFE_style={{
-                borderRadius: 'var(--spectrum-alias-border-radius-regular)',
-                borderColor: 'var(--spectrum-global-color-gray-700)',
-                borderWidth: '1px',
-                borderStyle: 'dashed',
-            }}
-            position={'relative'}
-        >
+        <View height={'100%'} position={'relative'}>
             {isValid(camera) ? <CameraFeed key={key} camera={camera} /> : <EmptyPreview />}
         </View>
     );

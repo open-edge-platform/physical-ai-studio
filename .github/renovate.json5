@@ -90,6 +90,15 @@
       schedule: ["* * 1,15 * *"], // twice a month
     },
 
+    // Custom semver versioning for geti-ci actions to support tags like zizmor/v0.1.0
+    {
+      groupName: "GitHub Actions",
+      matchManagers: ["github-actions"],
+      matchPackageNames: ["open-edge-platform/geti-ci"],
+      schedule: ["* * 1,15 * *"], // twice a month
+      versioning: "regex:^(?<compatibility>[^/]+)/v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+    },
+
     // uv version used in GitHub Actions is updated manually
     {
       enabled: false,
@@ -151,6 +160,14 @@
       enabled: false,
       matchDatasources: ["docker"],
       matchDepNames: ["docker/dockerfile"],
+    },
+
+    // Disable digest updates for physicalai git dependency
+    {
+      enabled: false,
+      matchDatasources: ["git-refs"],
+      matchDepNames: ["physicalai"],
+      matchUpdateTypes: ["digest"],
     },
 
     // Disable non-security upgrades for npm, except lock file update

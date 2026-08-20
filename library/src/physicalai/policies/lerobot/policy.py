@@ -18,20 +18,22 @@ in configs.
 
 from __future__ import annotations
 
+import dataclasses
+import importlib
 import logging
 import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import IO, TYPE_CHECKING, Any, ClassVar
+from typing import IO, TYPE_CHECKING, Any, ClassVar, cast
 
 import torch
 from lightning_utilities import module_available
-
 from physicalai.config.serializable import dataclass_to_dict, dict_to_dataclass
+
 from physicalai.data import Observation
 from physicalai.data.lerobot import FormatConverter
 from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
-from physicalai.export.mixin_policy import CONFIG_KEY, DATASET_STATS_KEY, POLICY_NAME_KEY
+from physicalai.export.mixin_policy import CONFIG_KEY, DATASET_STATS_KEY, POLICY_NAME_KEY, ExportablePolicyMixin
 from physicalai.policies.base import Policy
 from physicalai.policies.lerobot.mixin import LeRobotFromConfig
 
@@ -49,7 +51,6 @@ if TYPE_CHECKING:
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.configs.types import FeatureType
-    from lerobot.datasets.feature_utils import dataset_to_policy_features
     from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
     from lerobot.policies.factory import get_policy_class, make_policy_config, make_pre_post_processors
 
@@ -66,7 +67,73 @@ else:
     LEROBOT_AVAILABLE = False
 
 
+def _load_dataset_to_policy_features() -> Any:  # noqa: ANN401
+    if not LEROBOT_AVAILABLE:
+        return None
+    try:
+        module = importlib.import_module("lerobot.utils.feature_utils")
+    except ImportError:  # pragma: no cover - lerobot <0.5.2 fallback
+        module = importlib.import_module("lerobot.datasets.feature_utils")
+    return module.dataset_to_policy_features
+
+
+dataset_to_policy_features = _load_dataset_to_policy_features()
+
+
 _WARNED_UNSUPPORTED_NAMES: set[str] = set()
+
+
+def _coerce_policy_config_kwargs(
+    policy_name: str,
+    policy_config: dict[str, Any],
+) -> tuple[dict[str, Any], torch.dtype | None]:
+    """Map physical-ai conveniences (``dtype``) to LeRobot config field names.
+
+    Training configs and integration tests often pass ``dtype="bfloat16"`` for
+    VLA policies. LeRobot configs may name this field ``dtype`` or omit it
+    entirely (SmolVLA).
+    When the target config has no matching field, the dtype is applied to the
+    underlying ``nn.Module`` after construction instead.
+
+    Returns:
+        A pair of ``(policy_config, module_cast_dtype)`` where the first value
+        contains config kwargs compatible with the target LeRobot config class
+        and the second is an optional post-construction module dtype cast.
+
+    Raises:
+        ValueError: If ``dtype`` is supplied with an unsupported string value.
+    """
+    if not LEROBOT_AVAILABLE or get_policy_class is None:
+        return policy_config, None
+
+    policy_cls = get_policy_class(policy_name)
+    config_cls = getattr(policy_cls, "config_class", None)
+    if config_cls is None:
+        return policy_config, None
+    field_names = {field.name for field in dataclasses.fields(config_cls)}
+    coerced = dict(policy_config)
+    module_cast: torch.dtype | None = None
+
+    if "dtype" in coerced:
+        dtype_value = coerced.pop("dtype")
+        if "dtype" in field_names:
+            coerced["dtype"] = dtype_value
+        elif "model_dtype" in field_names:
+            coerced["model_dtype"] = dtype_value
+        elif isinstance(dtype_value, torch.dtype):
+            module_cast = dtype_value
+        else:
+            dtype_aliases = {
+                "float32": torch.float32,
+                "float16": torch.float16,
+                "bfloat16": torch.bfloat16,
+            }
+            if dtype_value not in dtype_aliases:
+                msg = f"Unsupported policy dtype {dtype_value!r}; expected one of {sorted(dtype_aliases)}"
+                raise ValueError(msg)
+            module_cast = dtype_aliases[dtype_value]
+
+    return coerced, module_cast
 
 
 def _warn_if_unsupported_policy(policy_name: str) -> None:
@@ -92,7 +159,7 @@ def _warn_if_unsupported_policy(policy_name: str) -> None:
     )
 
 
-class LeRobotPolicy(Policy, LeRobotFromConfig):
+class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
     """Dynamic Lightning wrapper around any registered LeRobot policy.
 
     Dispatches to the LeRobot policy identified by ``policy_name`` and
@@ -464,10 +531,13 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
                 msg = f"Checkpoint missing '{POLICY_NAME_KEY}'. Cannot determine which LeRobot policy to reconstruct."
                 raise KeyError(msg)
 
+        config_dict = dict(config_dict)
+        config_dict.pop("type", None)
+
         # Reconstruct LeRobot config from dict
         policy_cls = get_policy_class(policy_name)
         config_cls = policy_cls.config_class  # type: ignore[attr-defined]
-        config = dict_to_dataclass(config_cls, config_dict)
+        config = dict_to_dataclass(config_cls, config_dict, strict=False)
         dataset_stats = checkpoint.get(DATASET_STATS_KEY)
 
         # All wrappers (LeRobotPolicy and every NamedLeRobotPolicy subclass)
@@ -634,6 +704,10 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
             # Remove dataset_stats from policy_config if present
             # (it should be passed to policy constructor, not config)
             clean_policy_config = {k: v for k, v in self._policy_config.items() if k != "dataset_stats"}
+            clean_policy_config, module_cast_dtype = _coerce_policy_config_kwargs(
+                self.policy_name,
+                clean_policy_config,
+            )
 
             # Create config dynamically using LeRobot's factory
             config = make_policy_config(
@@ -642,16 +716,22 @@ class LeRobotPolicy(Policy, LeRobotFromConfig):
                 output_features=output_features,
                 **clean_policy_config,
             )
+        else:
+            module_cast_dtype = None
 
         # Get the policy class dynamically
         policy_cls = get_policy_class(self.policy_name)
 
         # Instantiate the LeRobot policy
         policy = policy_cls(config)
+        if module_cast_dtype is not None:
+            policy = policy.to(dtype=module_cast_dtype)
         self.add_module("_lerobot_policy", policy)
 
         # Create preprocessor/postprocessor for normalization
-        self._preprocessor, self._postprocessor = make_pre_post_processors(config, dataset_stats=dataset_stats)
+        preprocessor, postprocessor = make_pre_post_processors(config, dataset_stats=dataset_stats)
+        self._preprocessor = cast("torch.nn.Module", preprocessor)
+        self._postprocessor = cast("torch.nn.Module", postprocessor)
 
         # Expose framework info
         self._framework = "lerobot"

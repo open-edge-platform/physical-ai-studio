@@ -1,4 +1,3 @@
-import base64
 import copy
 import shutil
 from pathlib import Path
@@ -9,13 +8,14 @@ import cv2
 import numpy as np
 import torch
 from lerobot.datasets.dataset_tools import delete_episodes as lerobot_delete_episodes
-from lerobot.datasets.feature_utils import build_dataset_frame
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.processor import make_default_processors
 from lerobot.processor.pipeline import RobotProcessorPipeline
 from lerobot.utils.constants import ACTION, OBS_STR
+from lerobot.utils.feature_utils import build_dataset_frame
 from loguru import logger
 
+from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.dataset_client import DatasetClient
 from internal_datasets.lerobot.streaming_encoding_settings import StreamingEncodingSettings
 from internal_datasets.mutations.recording_mutation import RecordingMutation
@@ -34,15 +34,18 @@ class InternalLeRobotDataset(DatasetClient):
     _robot_action_processor: RobotProcessorPipeline
     _robot_observation_processor: RobotProcessorPipeline
     _streaming_encoding_settings: StreamingEncodingSettings
+    _access_mode: DatasetAccessMode
 
     def __init__(
         self,
         dataset_path: Path,
         *,
         streaming_encoding_settings: StreamingEncodingSettings = StreamingEncodingSettings(),
+        access_mode: DatasetAccessMode = DatasetAccessMode.READ_ONLY,
     ):
         self.path = dataset_path
-        self._streaming_encoding_settings = streaming_encoding_settings.with_resolved_vcodec()
+        self._streaming_encoding_settings = streaming_encoding_settings
+        self._access_mode = access_mode
         self.load_dataset()
 
         self._teleop_action_processor, self._robot_action_processor, self._robot_observation_processor = (
@@ -52,12 +55,40 @@ class InternalLeRobotDataset(DatasetClient):
     def load_dataset(self) -> None:
         """Load dataset."""
         if self._check_repository_exists(self.path):
-            self._dataset = LeRobotDataset(
-                str(uuid4()),
-                self.path,
-                **self._streaming_encoding_settings.model_dump(),
-            )
+            if self._access_mode is DatasetAccessMode.RECORDING_MUTATION:
+                self._dataset = LeRobotDataset.resume(
+                    repo_id=str(uuid4()),
+                    root=self.path,
+                    **self._resolved_streaming_encoding_settings_write(),
+                )
+            else:
+                self._dataset = LeRobotDataset(
+                    str(uuid4()),
+                    self.path,
+                )
             self.has_episodes = self._dataset.num_episodes > 0
+
+    def _resolved_streaming_encoding_settings_write(self) -> dict:
+        settings = self._streaming_encoding_settings.with_resolved_vcodec()
+        return settings.to_lerobot_write_kwargs()
+
+    def _resume_for_writing(self, repo_id: str | None = None) -> None:
+        if not self._check_repository_exists(self.path):
+            raise ValueError(f"Cannot resume non-existing dataset at {self.path}")
+
+        resolved_repo_id = repo_id or getattr(getattr(self, "_dataset", None), "repo_id", str(uuid4()))
+        self._dataset = LeRobotDataset.resume(
+            repo_id=resolved_repo_id,
+            root=self.path,
+            **self._resolved_streaming_encoding_settings_write(),
+        )
+        self.has_episodes = self._dataset.num_episodes > 0
+
+    def resume_dataset(self) -> None:
+        """Load dataset in write mode for appending episodes."""
+        if self._access_mode is not DatasetAccessMode.RECORDING_MUTATION:
+            raise ValueError("Cannot resume dataset in write mode unless access_mode is RECORDING_MUTATION")
+        self._resume_for_writing()
 
     def create(
         self,
@@ -75,7 +106,7 @@ class InternalLeRobotDataset(DatasetClient):
             features=features,
             robot_type=robot_type,
             use_videos=True,
-            **self._streaming_encoding_settings.model_dump(),
+            **self._resolved_streaming_encoding_settings_write(),
         )
         self.has_episodes = False
 
@@ -240,7 +271,7 @@ class InternalLeRobotDataset(DatasetClient):
         )
         if self.exists_on_disk:
             shutil.copytree(self.path, cache_dir)
-            cache_dataset.load_dataset()
+            cache_dataset._resume_for_writing(getattr(self._dataset, "repo_id", None))
         else:
             cache_dataset.create(fps=fps, features=features, robot_type=robot_type)
 
@@ -294,7 +325,7 @@ class InternalLeRobotDataset(DatasetClient):
         if self._dataset is None:
             raise Exception("No dataset loaded.")
 
-        episode_buffer = copy.deepcopy(self._dataset.writer.episode_buffer)
+        episode_buffer = self._get_episode_buffer_snapshot()
         if episode_buffer is None:
             raise Exception("Attempting to save episode, but no episode in buffer.")
 
@@ -362,15 +393,19 @@ class InternalLeRobotDataset(DatasetClient):
 
     def _build_thumbnail_png_bytes(self, episode: dict, image_key: str, width: int, height: int) -> bytes | None:
         if image_key not in self._dataset.meta.camera_keys:
+            logger.warning("Unknown thumbnail camera key '{}'", image_key)
             return None
 
         from_idx = int(episode["dataset_from_index"])
+        item = self._read_dataset_item_for_thumbnail(from_idx)
+        if item is None:
+            logger.warning("Could not read dataset item for thumbnail at index {}", from_idx)
+            return None
+
         try:
-            reader = self._dataset._ensure_reader()
-            if reader.hf_dataset is None:
-                reader.load_and_activate()
-            image = reader.get_item(from_idx)[image_key].permute(1, 2, 0).detach().numpy()
+            image = item[image_key].permute(1, 2, 0).detach().numpy()
         except Exception:
+            logger.exception("Could not extract image '{}' for thumbnail", image_key)
             return None
 
         rescaled = (image * 255).clip(0, 255).astype(np.uint8)
@@ -378,17 +413,41 @@ class InternalLeRobotDataset(DatasetClient):
         bgr_image = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
         encoded, imagebytes = cv2.imencode(".png", bgr_image)
         if not encoded:
+            logger.warning("Failed to encode thumbnail PNG for image key '{}'", image_key)
             return None
 
         return imagebytes.tobytes()
 
-    def _build_thumbnail(self, episode: dict, image_key: str) -> str:
-        thumbnail_size = (320, 240)
+    def _get_episode_buffer_snapshot(self) -> dict | None:
+        writer = self._dataset.writer
+        if writer is None:
+            return None
+        return copy.deepcopy(writer.episode_buffer)
 
-        from_idx = episode["dataset_from_index"]
-        image = self._dataset[from_idx][image_key].permute(1, 2, 0).detach().numpy()
-        rescaled = (image * 255).clip(0, 255).astype(np.uint8)
-        resized = cv2.resize(rescaled, thumbnail_size)
-        thumbnail = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        _, imagebytes = cv2.imencode(".jpg", thumbnail)
-        return base64.b64encode(imagebytes).decode()
+    def _read_dataset_item_for_thumbnail(self, index: int) -> dict | None:
+        try:
+            return self._dataset[index]
+        except RuntimeError as exc:
+            if "Cannot read from a dataset that is being recorded" not in str(exc):
+                logger.exception("Could not read dataset item for thumbnail")
+                return None
+
+            logger.warning("Dataset is in recording mode during thumbnail read; using reader fallback")
+            try:
+                if self._dataset.reader is None:
+                    _ = self._dataset.hf_dataset
+
+                reader = self._dataset.reader
+                if reader is None:
+                    return None
+
+                if reader.hf_dataset is None:
+                    reader.load_and_activate()
+
+                return reader.get_item(index)
+            except Exception:
+                logger.exception("Could not read dataset item from reader fallback")
+                return None
+        except Exception:
+            logger.exception("Could not read dataset item for thumbnail")
+            return None

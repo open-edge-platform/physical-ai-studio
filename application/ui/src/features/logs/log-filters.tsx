@@ -20,7 +20,7 @@ import { Copy, Filter } from '@geti-ui/ui/icons';
 
 import { LOG_LEVEL_COLORS, LOG_LEVELS, type LogFilters as LogFiltersType, type LogLevelName } from './log-types';
 
-import styles from './log-viewer.module.scss';
+import styles from './log-viewer.module.css';
 
 const LevelCheckboxItem = ({
     level,

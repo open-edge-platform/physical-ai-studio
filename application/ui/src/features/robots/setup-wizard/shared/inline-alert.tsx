@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import { Text } from '@geti-ui/ui';
 
-import classes from './setup-wizard.module.scss';
+import classes from './setup-wizard.module.css';
 
 const VARIANT_CLASS = {
     error: classes.errorBox,

@@ -29,7 +29,7 @@ export const useDeleteEpisodeQuery = (dataset_id: string) => {
     });
 
     const deleteEpisodes = (episodeIndices: number[]) => {
-        mutation.mutate({
+        return mutation.mutateAsync({
             params: {
                 path: {
                     dataset_id,

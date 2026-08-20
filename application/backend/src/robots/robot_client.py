@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 
-from schemas.robot import RobotType
-
 
 class RobotClient(ABC):
     """Abstract interface for robot communication (commands only)."""
@@ -11,7 +9,7 @@ class RobotClient(ABC):
 
     @property
     @abstractmethod
-    def robot_type(self) -> RobotType:
+    def robot_type(self) -> str:
         """Specify the RobotType"""
 
     @property
@@ -20,39 +18,39 @@ class RobotClient(ABC):
         """Check if robot is connected."""
 
     @abstractmethod
-    async def connect(self) -> None:
+    def connect(self) -> None:
         """Connect to the robot."""
 
     @abstractmethod
-    async def disconnect(self) -> None:
+    def disconnect(self) -> None:
         """Disconnect from the robot."""
 
     @abstractmethod
-    async def ping(self) -> dict:
+    def ping(self) -> dict:
         """Send ping command. Returns event dict with timestamp."""
 
     @abstractmethod
-    async def set_joints_state(self, joints: dict, goal_time: float) -> dict:
+    def set_joints_state(self, joints: dict, goal_time: float) -> dict:
         """Set joint positions. Returns event dict with timestamp."""
 
     @abstractmethod
-    async def enable_torque(self) -> dict:
+    def enable_torque(self) -> dict:
         """Enable torque. Returns event dict with timestamp."""
 
     @abstractmethod
-    async def disable_torque(self) -> dict:
+    def disable_torque(self) -> dict:
         """Disable torque. Returns event dict with timestamp."""
 
     @abstractmethod
-    async def read_state(self, *, normalize: bool = True) -> dict:
+    def read_state(self, *, normalize: bool = True) -> dict:
         """Read current robot state. Returns state dict with timestamp."""
 
     @abstractmethod
-    async def read_forces(self) -> dict | None:
+    def read_forces(self) -> dict | None:
         """Read current robot forces. Returns state dict with timestamp."""
 
     @abstractmethod
-    async def set_forces(self, forces: dict) -> dict:
+    def set_forces(self, forces: dict) -> dict:
         """Set current robot forces. Returns event dict with timestamp."""
 
     @abstractmethod

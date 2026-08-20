@@ -20,6 +20,7 @@ from transformers.cache_utils import DynamicCache
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES
 from physicalai.policies.base import Model
+from physicalai.policies.mixins import SnapFlowModelMixin
 
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
@@ -329,17 +330,19 @@ class PaliGemmaWithExpertModel(nn.Module):
         vlm_config_hf.vision_config.dtype = "float32"
 
         action_expert_config_hf = CONFIG_MAPPING["gemma"](
-            head_dim=action_expert_config.head_dim,
-            hidden_size=action_expert_config.width,
-            intermediate_size=action_expert_config.mlp_dim,
-            num_attention_heads=action_expert_config.num_heads,
-            num_hidden_layers=action_expert_config.depth,
-            num_key_value_heads=action_expert_config.num_kv_heads,
-            vocab_size=257152,
-            hidden_activation="gelu_pytorch_tanh",
+            head_dim=action_expert_config.head_dim,  # pyrefly: ignore[unexpected-keyword]
+            hidden_size=action_expert_config.width,  # pyrefly: ignore[unexpected-keyword]
+            intermediate_size=action_expert_config.mlp_dim,  # pyrefly: ignore[unexpected-keyword]
+            num_attention_heads=action_expert_config.num_heads,  # pyrefly: ignore[unexpected-keyword]
+            num_hidden_layers=action_expert_config.depth,  # pyrefly: ignore[unexpected-keyword]
+            num_key_value_heads=action_expert_config.num_kv_heads,  # pyrefly: ignore[unexpected-keyword]
+            vocab_size=257152,  # pyrefly: ignore[unexpected-keyword]
+            hidden_act="gelu_pytorch_tanh",  # pyrefly: ignore[unexpected-keyword]
             dtype="float32",
-            use_adarms=use_adarms[1],
-            adarms_cond_dim=action_expert_config.width if use_adarms[1] else None,
+            use_adarms=use_adarms[1],  # pyrefly: ignore[unexpected-keyword]
+            adarms_cond_dim=action_expert_config.width  # pyrefly: ignore[unexpected-keyword]
+            if use_adarms[1]
+            else None,
         )
 
         self.paligemma = PaliGemmaForConditionalGenerationWithPiGemma(
@@ -412,9 +415,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         image_outputs = self.paligemma.model.get_image_features(image)
         if not isinstance(image_outputs, torch.Tensor):
             image_outputs = image_outputs.pooler_output
-        features = (
-            image_outputs * self.paligemma.config.text_config.hidden_size**0.5  # pyrefly: ignore[missing-attribute]
-        )
+        features = image_outputs
         if features.dtype != out_dtype:
             features = features.to(out_dtype)
         return features
@@ -425,7 +426,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         Returns:
             Language token embedding tensor.
         """
-        return self.paligemma.model.language_model.embed_tokens(tokens)
+        return self.paligemma.model.language_model.get_input_embeddings()(tokens)
 
     def forward(
         self,
@@ -536,7 +537,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         return [prefix_output, suffix_output], prefix_past_key_values
 
 
-class Pi05Model(Model):
+class Pi05Model(SnapFlowModelMixin, Model):
     """Core Pi05 PyTorch model for flow matching VLA.
 
     This is the nn.Module that contains the actual model logic,
@@ -560,6 +561,10 @@ class Pi05Model(Model):
         time_sampling_offset: float = 0.001,
         min_period: float = 4e-3,
         max_period: float = 4.0,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
         image_resolution: tuple[int, int] = (224, 224),
         tokenizer_max_length: int = 200,
         freeze_vision_encoder: bool = False,
@@ -586,6 +591,12 @@ class Pi05Model(Model):
             time_sampling_offset: Offset for time sampling.
             min_period: Minimum period for sine-cosine positional encoding.
             max_period: Maximum period for sine-cosine positional encoding.
+            snapflow_enabled: Whether to enable SnapFlow self-distillation during training.
+            snapflow_alpha: Probability of replacing flow-matching loss with SnapFlow
+                consistency loss on each training step.
+            snapflow_lambda: Weight multiplier for the SnapFlow consistency loss term.
+            snapflow_num_inference_steps: Number of Euler steps used during SnapFlow
+                inference at test time.
             image_resolution: Target image resolution (height, width). Must be square.
             tokenizer_max_length: Maximum token length for the tokenizer.
             freeze_vision_encoder: Whether to freeze the vision encoder during training.
@@ -613,6 +624,12 @@ class Pi05Model(Model):
         self._image_resolution = image_resolution
         self._tokenizer_max_length = tokenizer_max_length
         self._use_random_input_noise = use_random_input_noise
+        self.init_snapflow_state(
+            enabled=snapflow_enabled,
+            alpha=snapflow_alpha,
+            lambda_=snapflow_lambda,
+            num_inference_steps=snapflow_num_inference_steps,
+        )
 
         paligemma_config = get_gemma_config(paligemma_variant)
         action_expert_config = get_gemma_config(action_expert_variant)
@@ -636,6 +653,10 @@ class Pi05Model(Model):
 
         self.time_mlp_in = nn.Linear(action_expert_config.width, action_expert_config.width)
         self.time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
+        self.target_time_mlp_in = nn.Linear(action_expert_config.width, action_expert_config.width)
+        self.target_time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
+        nn.init.zeros_(self.target_time_mlp_out.weight)
+        nn.init.zeros_(self.target_time_mlp_out.bias)
 
         self.enable_rtc = False
 
@@ -824,8 +845,7 @@ class Pi05Model(Model):
             att_masks += [0] * num_img_embs
 
         def lang_embed_func(tokens: Tensor) -> Tensor:
-            lang_emb = self.paligemma_with_expert.embed_language_tokens(tokens)
-            return lang_emb * math.sqrt(lang_emb.shape[-1])
+            return self.paligemma_with_expert.embed_language_tokens(tokens)
 
         lang_emb = lang_embed_func(tokens) if use_batched else self._apply_checkpoint(lang_embed_func, tokens)
 
@@ -844,6 +864,7 @@ class Pi05Model(Model):
         self,
         noisy_actions: Tensor,
         timestep: Tensor,
+        target_time: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
         """Embed noisy_actions and timestep for Expert Gemma processing.
 
@@ -875,6 +896,23 @@ class Pi05Model(Model):
             return F.silu(x)
 
         time_emb = self._apply_checkpoint(time_mlp_func, time_emb)
+        if target_time is not None and self._snapflow_enabled:
+            target_time_emb = _create_sinusoidal_pos_embedding(
+                target_time,
+                self.action_in_proj.out_features,
+                min_period=self._min_period,
+                max_period=self._max_period,
+                device=target_time.device,
+            )
+            target_time_emb = target_time_emb.type(dtype=timestep.dtype)
+
+            def target_time_mlp_func(emb: Tensor) -> Tensor:
+                x = self.target_time_mlp_in(emb)
+                x = F.silu(x)
+                return self.target_time_mlp_out(x)
+
+            target_time_emb = self._apply_checkpoint(target_time_mlp_func, target_time_emb)
+            time_emb += target_time_emb
         action_time_emb = action_emb
         adarms_cond = time_emb
 
@@ -892,79 +930,33 @@ class Pi05Model(Model):
 
         return embs, pad_masks, att_masks, adarms_cond
 
-    def forward(
+    def _predict_velocity(
         self,
-        batch: dict[str, Any],
-    ) -> tuple[Tensor, dict[str, float]] | Tensor:
-        """Forward pass through the model.
+        x_t: Tensor,
+        timestep: Tensor,
+        target_time: Tensor,
+        prefix_embs: Tensor,
+        prefix_pad_masks: Tensor,
+        prefix_att_masks: Tensor,
+    ) -> Tensor:
+        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(
+            x_t,
+            timestep,
+            target_time=target_time,
+        )
 
-        Training mode: computes flow matching loss (with gradients).
-        Eval mode: returns predicted action chunk via denoising.
-
-        Args:
-            batch: Preprocessed batch dict.
-
-        Returns:
-            Training: (loss tensor, loss dict).  Eval: action tensor.
-        """
-        if self.training:
-            return self.compute_loss(batch)
-        return self.predict_action_chunk(batch)
-
-    def compute_loss(self, batch: dict[str, Any]) -> tuple[Tensor, dict[str, float]]:
-        """Compute flow matching training loss.
-
-        Delegates to :meth:`_flow_matching_loss`.
-
-        Returns:
-            Tuple of (loss tensor, loss dict with ``"loss"`` key).
-        """
-        return self._flow_matching_loss(batch)
-
-    def _flow_matching_loss(self, batch: dict[str, Any]) -> tuple[Tensor, dict[str, float]]:  # noqa: PLR0914
-        """Compute flow matching training loss.
-
-        Samples random noise and timesteps, interpolates noisy actions,
-        predicts the velocity field, and returns the MSE between predicted
-        and target velocities.  Gradient checkpointing is applied when the
-        model is in training mode.
-
-        Args:
-            batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
-                TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK, and ACTION.
-
-        Returns:
-            Tuple of (mean loss tensor, loss dict with ``"loss"`` key).
-        """
-        images = batch[IMAGES]
-        img_masks = batch[IMAGE_MASKS]
-        tokens = batch[TOKENIZED_PROMPT]
-        masks = batch[TOKENIZED_PROMPT_MASK]
-        actions = batch[ACTION]
-
-        noise = self.sample_noise(actions.shape, actions.device)
-        time = self.sample_time(actions.shape[0], actions.device)
-
-        time_expanded = time[:, None, None]
-        x_t = time_expanded * noise + (1 - time_expanded) * actions
-        u_t = noise - actions
-
-        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, time)
-
+        local_prefix_embs = prefix_embs
         if (
             self.paligemma_with_expert.paligemma.model.language_model.layers[0].self_attn.q_proj.weight.dtype
             == torch.bfloat16
         ):
             suffix_embs = suffix_embs.to(dtype=torch.bfloat16)
-            prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
+            local_prefix_embs = prefix_embs.to(dtype=torch.bfloat16)
 
-        pad_masks_combined = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
-        att_masks_combined = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
-
-        att_2d_masks = _make_att_2d_masks(pad_masks_combined, att_masks_combined)
-        position_ids = torch.cumsum(pad_masks_combined, dim=1) - 1
-
+        pad_masks = torch.cat([prefix_pad_masks, suffix_pad_masks], dim=1)
+        att_masks = torch.cat([prefix_att_masks, suffix_att_masks], dim=1)
+        att_2d_masks = _make_att_2d_masks(pad_masks, att_masks)
+        position_ids = torch.cumsum(pad_masks, dim=1) - 1
         att_2d_masks_4d = self._prepare_attention_masks_4d(att_2d_masks)
 
         def forward_func(
@@ -984,14 +976,23 @@ class Pi05Model(Model):
             )
             return suffix_out
 
-        suffix_out = self._apply_checkpoint(
-            forward_func,
-            prefix_embs,
-            suffix_embs,
-            att_2d_masks_4d,
-            position_ids,
-            adarms_cond,
-        )
+        if torch.is_grad_enabled():
+            suffix_out = self._apply_checkpoint(
+                forward_func,
+                local_prefix_embs,
+                suffix_embs,
+                att_2d_masks_4d,
+                position_ids,
+                adarms_cond,
+            )
+        else:
+            suffix_out = forward_func(
+                local_prefix_embs,
+                suffix_embs,
+                att_2d_masks_4d,
+                position_ids,
+                adarms_cond,
+            )
 
         suffix_out = suffix_out[:, -self._chunk_size :]
         suffix_out = suffix_out.to(dtype=torch.float32)
@@ -999,19 +1000,103 @@ class Pi05Model(Model):
         def action_out_proj_func(suffix_out: Tensor) -> Tensor:
             return self.action_out_proj(suffix_out)
 
-        v_t = self._apply_checkpoint(action_out_proj_func, suffix_out)
+        if torch.is_grad_enabled():
+            return self._apply_checkpoint(action_out_proj_func, suffix_out)
+        return action_out_proj_func(suffix_out)
 
-        losses = F.mse_loss(u_t, v_t, reduction="none")
+    def forward(
+        self,
+        batch: dict[str, Any],
+    ) -> tuple[Tensor, dict[str, Tensor | float]] | Tensor:
+        """Forward pass through the model.
+
+        Training mode: computes flow matching loss (with gradients).
+        Eval mode: returns predicted action chunk via denoising.
+
+        Args:
+            batch: Preprocessed batch dict.
+
+        Returns:
+            Training: (loss tensor, loss dict).  Eval: action tensor.
+        """
+        if self.training:
+            return self.compute_loss(batch)
+        return self.predict_action_chunk(batch)
+
+    def compute_loss(self, batch: dict[str, Any]) -> tuple[Tensor, dict[str, Tensor | float]]:
+        """Compute flow matching training loss.
+
+        Delegates to :meth:`_flow_matching_loss`.
+
+        Returns:
+            Tuple of (loss tensor, loss dict with ``"loss"`` key).
+        """
+        return self._flow_matching_loss(batch)
+
+    def _flow_matching_loss(self, batch: dict[str, Any]) -> tuple[Tensor, dict[str, Tensor | float]]:  # noqa: PLR0914
+        """Compute flow matching training loss.
+
+        Samples random noise and timesteps, interpolates noisy actions,
+        predicts the velocity field, and returns the MSE between predicted
+        and target velocities.  When SnapFlow is enabled, uses a mixture
+        of standard FM loss and consistency distillation loss.
+
+        Args:
+            batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
+                TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK, and ACTION.
+
+        Returns:
+            Tuple of (mean loss tensor, loss dict with ``"loss"`` key).
+        """
+        images = batch[IMAGES]
+        img_masks = batch[IMAGE_MASKS]
+        tokens = batch[TOKENIZED_PROMPT]
+        masks = batch[TOKENIZED_PROMPT_MASK]
+        actions = batch[ACTION]
+
+        bsize = actions.shape[0]
+        device = actions.device
+        noise = self.sample_noise(actions.shape, device)
+        time = self.sample_time(bsize, device)
+
+        time_expanded = time[:, None, None]
+        x_t = time_expanded * noise + (1 - time_expanded) * actions
+        u_t = noise - actions
+
+        prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
+        if not self._snapflow_enabled:
+            v_t = self._predict_velocity(
+                x_t,
+                time,
+                time,
+                prefix_embs,
+                prefix_pad_masks,
+                prefix_att_masks,
+            )
+            losses = F.mse_loss(u_t, v_t, reduction="none")
+        else:
+            losses = self.snapflow_mixed_loss(
+                u_t=u_t,
+                x_t=x_t,
+                time=time,
+                actions=actions,
+                prefix_embs=prefix_embs,
+                prefix_pad_masks=prefix_pad_masks,
+                prefix_att_masks=prefix_att_masks,
+                sample_noise=self.sample_noise,
+                predict_velocity=self._predict_velocity,
+            )
 
         # Truncate losses to actual action dimensions to avoid dilution from padding
         original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
         losses = losses[:, :, :original_action_dim]
 
         loss = losses.mean()
-        return loss, {"loss": loss.item()}
+        # Detached tensor, not `.item()` float: see Model.compute_loss docstring.
+        return loss, {"loss": loss.detach()}
 
     @torch.no_grad()
-    def compute_val_loss(self, batch: dict[str, Any]) -> tuple[Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: dict[str, Any]) -> tuple[Tensor, dict[str, Tensor | float]]:
         """Compute validation loss: MSE between predicted and ground-truth actions.
 
         Runs the full denoising loop (same as inference) and compares the
@@ -1175,8 +1260,8 @@ class Pi05Model(Model):
         Returns:
             Denoised action tensor.
         """
-        if num_steps is None:
-            num_steps = self._num_inference_steps
+        default_num_steps = num_steps if num_steps is not None else self._num_inference_steps
+        num_steps = self.snapflow_num_inference_steps(default_num_steps)
 
         bsize = tokens.shape[0]
         device = tokens.device
@@ -1206,12 +1291,14 @@ class Pi05Model(Model):
         for step in range(num_steps):
             time = 1.0 + step * dt
             time_tensor = torch.tensor(time, dtype=torch.float32, device=device).expand(bsize)
+            target_time = self.snapflow_target_time(bsize, time_tensor, device)
 
             v_t = self.denoise_step(
                 prefix_pad_masks=prefix_pad_masks,
                 past_key_values=past_key_values,
                 x_t=x_t,
                 timestep=time_tensor,
+                target_time=target_time,
             )
 
             if rtc_prev_action_chunk is not None:
@@ -1238,13 +1325,18 @@ class Pi05Model(Model):
         past_key_values: DynamicCache | None,
         x_t: Tensor,
         timestep: Tensor,
+        target_time: Tensor | None = None,
     ) -> Tensor:
         """Apply one denoising step of noise x_t at a given timestep.
 
         Returns:
             Velocity prediction tensor for this denoising step.
         """
-        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(x_t, timestep)
+        suffix_embs, suffix_pad_masks, suffix_att_masks, adarms_cond = self.embed_suffix(
+            x_t,
+            timestep,
+            target_time=target_time,
+        )
 
         suffix_len = suffix_pad_masks.shape[1]
         batch_size = prefix_pad_masks.shape[0]

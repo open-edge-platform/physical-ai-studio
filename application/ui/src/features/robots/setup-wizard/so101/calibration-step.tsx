@@ -6,7 +6,7 @@ import { InlineAlert } from '../shared/inline-alert';
 import { StatusBadge } from '../shared/status-badge';
 import { CalibrationPhase, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
 
-import classes from '../shared/setup-wizard.module.scss';
+import classes from '../shared/setup-wizard.module.css';
 
 const MOTOR_NAMES = ['shoulder_pan', 'shoulder_lift', 'elbow_flex', 'wrist_flex', 'wrist_roll', 'gripper'];
 

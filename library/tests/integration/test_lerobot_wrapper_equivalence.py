@@ -57,6 +57,9 @@ def _empty_accelerator_cache(device: torch.device) -> None:
 _EQUIVALENCE_XFAIL_REASONS: dict[str, str] = {
     "groot": "hardcodes flash_attention_2 in eagle2_hg_model (upstream lerobot)",
     "xvla": "requires explicit `vision_config` kwarg, not derivable from dataset",
+    "pi05": "model repo is gated",
+    "pi0_fast": "model repo is gated",
+    "pi0": "model repo is gated",
 }
 
 
@@ -657,3 +660,305 @@ class TestRegressionTraining:
 
         assert len(wrapper_losses) == self.NUM_STEPS
         _assert_trajectories_match(wrapper_losses, native_losses, rtol=1e-3, atol=1e-3)
+
+
+# ---------------------------------------------------------------------------- #
+# Inference equivalence — wrapper vs direct LeRobot calls (synthetic batches).
+# Moved from the unit suite: these exercise select_action / predict_action_chunk
+# against a real ACT policy built from a real dataset, so they belong here.
+# ---------------------------------------------------------------------------- #
+def _make_training_batch(config: Any, device: torch.device) -> dict[str, torch.Tensor]:
+    """Build a synthetic training batch with correct shapes for any LeRobot policy.
+
+    Action temporal dimension resolution (in order):
+    - ACT / VLA family: ``chunk_size``
+    - Diffusion: ``horizon``
+    - Fallback: ``(B, action_dim)`` for non-temporal policies.
+
+    Tokenized policies (smolvla, …) detect a tokenizer in the preprocessor
+    pipeline via the presence of language-related config attributes and
+    receive a synthetic ``task`` string.
+    """
+    batch: dict[str, torch.Tensor] = {}
+
+    n_obs_steps = getattr(config, "n_obs_steps", 1)
+    for key, feature in config.input_features.items():
+        if n_obs_steps > 1:
+            batch[key] = torch.randn(1, n_obs_steps, *feature.shape, device=device)
+        else:
+            batch[key] = torch.randn(1, *feature.shape, device=device)
+
+    action_dim = config.output_features["action"].shape[0]
+
+    chunk = getattr(config, "chunk_size", None)
+    horizon = getattr(config, "horizon", None)
+    temporal_len = chunk or horizon
+
+    if temporal_len is not None:
+        batch["action"] = torch.randn(1, temporal_len, action_dim, device=device)
+        batch["action_is_pad"] = torch.zeros(1, temporal_len, dtype=torch.bool, device=device)
+    else:
+        batch["action"] = torch.randn(1, action_dim, device=device)
+        batch["action_is_pad"] = torch.zeros(1, dtype=torch.bool, device=device)
+
+    if any(hasattr(config, attr) for attr in ("tokenizer_max_length", "max_state_dim", "vlm_model_name")):
+        batch["task"] = ["pick up the block"]
+
+    return batch
+
+
+@pytest.fixture(scope="module")
+def pusht_dataset() -> Any:
+    """Load pusht dataset once per module for inference-equivalence tests."""
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    return LeRobotDataset("lerobot/pusht")
+
+
+class TestLeRobotPolicyNumericalEquivalence:
+    """Tests verifying wrapper produces identical results to direct LeRobot calls.
+
+    These tests ensure our wrapper's predict_action_chunk and select_action
+    produce numerically equivalent outputs to calling the underlying LeRobot
+    policy methods directly.
+
+    Uses synthetic mock data to avoid FFmpeg/torchcodec dependency during inference.
+    """
+
+    @pytest.fixture
+    def policy_and_batch(self, pusht_dataset: Any) -> tuple[LeRobotPolicy, dict[str, torch.Tensor]]:
+        """Create policy and matching synthetic batch on same device.
+
+        Uses ``_make_training_batch`` so the shapes are correct for both
+        inference *and* training (ACT's VAE encoder requires temporal dims).
+        """
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        policy = LeRobotPolicy.from_dataset("act", pusht_dataset)
+        policy = policy.to(device)
+        policy.eval()
+
+        batch = _make_training_batch(policy._config, device)
+
+        return policy, batch
+
+    def test_select_action_matches_lerobot_directly(self, policy_and_batch):
+        """Verify wrapper.select_action == lerobot_policy.select_action."""
+        policy, batch = policy_and_batch
+
+        policy.reset()
+
+        preprocessed = policy._preprocessor(_clone_batch(batch))
+        lerobot_action = policy.lerobot_policy.select_action(preprocessed)
+
+        policy.reset()
+
+        wrapper_action = policy.select_action(_clone_batch(batch))
+
+        # Should be numerically identical
+        torch.testing.assert_close(
+            wrapper_action,
+            policy._postprocessor(lerobot_action),
+            rtol=1e-5,
+            atol=1e-5,
+            msg="Wrapper select_action should match LeRobot select_action",
+        )
+
+    def test_predict_action_chunk_matches_lerobot_directly(self, policy_and_batch):
+        """Verify wrapper.predict_action_chunk == lerobot_policy.predict_action_chunk."""
+        policy, batch = policy_and_batch
+
+        policy.reset()
+
+        preprocessed = policy._preprocessor(_clone_batch(batch))
+        lerobot_chunk = policy.lerobot_policy.predict_action_chunk(preprocessed)
+
+        policy.reset()
+
+        wrapper_chunk = policy.predict_action_chunk(_clone_batch(batch))
+
+        # Should be numerically identical
+        torch.testing.assert_close(
+            wrapper_chunk,
+            policy._postprocessor(lerobot_chunk),
+            rtol=1e-5,
+            atol=1e-5,
+            msg="Wrapper predict_action_chunk should match LeRobot predict_action_chunk",
+        )
+
+    def test_select_action_shape_is_single_action(self, policy_and_batch):
+        """Verify select_action returns single action per batch item."""
+        policy, batch = policy_and_batch
+
+        policy.eval()
+        policy.reset()
+        action = policy.select_action(_clone_batch(batch))
+
+        # select_action returns (batch, action_dim) - one action per batch item
+        # LeRobot's select_action preserves the batch dimension
+        action_dim = policy._config.output_features["action"].shape[0]
+        assert action.dim() == 2, f"Expected 2D tensor, got shape {action.shape}"
+        assert action.shape[0] == 1  # batch size
+        assert action.shape[1] == action_dim  # action_dim
+
+    def test_predict_action_chunk_shape_is_full_chunk(self, policy_and_batch):
+        """Verify predict_action_chunk returns full chunk."""
+        policy, batch = policy_and_batch
+
+        policy.eval()
+        policy.reset()
+        chunk = policy.predict_action_chunk(_clone_batch(batch))
+
+        # predict_action_chunk should return (batch, chunk_size, action_dim)
+        action_dim = policy._config.output_features["action"].shape[0]
+        assert chunk.dim() == 3, f"Expected 3D tensor, got shape {chunk.shape}"
+        assert chunk.shape[0] == 1  # batch size
+        assert chunk.shape[1] == policy._config.chunk_size  # chunk_size
+        assert chunk.shape[2] == action_dim  # action_dim
+
+    def test_multiple_select_action_uses_cached_chunk(self, pusht_dataset: Any) -> None:
+        """Verify select_action uses internal queue correctly."""
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        policy = LeRobotPolicy.from_dataset("act", pusht_dataset, n_action_steps=3)
+        policy = policy.to(device)
+        policy.eval()
+
+        batch = _make_training_batch(policy._config, device)
+
+        policy.reset()
+
+        full_chunk = policy.predict_action_chunk(_clone_batch(batch))
+
+        policy.reset()
+        actions = []
+        for _ in range(3):
+            action = policy.select_action(_clone_batch(batch))
+            actions.append(action)
+
+        for action in actions:
+            assert action.shape == (1, full_chunk.shape[2])
+
+
+_TRAINING_POLICY_NAMES = ["act", "diffusion", "smolvla"]
+"""Policies validated end-to-end on the accelerator with the pusht dataset fixture.
+
+Excluded with reason:
+- ``vlas`` (pi0/pi05/pi0_fast/groot): require GPU + bf16; covered by the Trainer tiers above.
+- ``xvla``: requires explicit ``vision_config`` kwarg, not derivable from the dataset.
+"""
+
+
+class TestTrainingForwardContract:
+    """Contract checks for a single wrapper.forward on the accelerator with synthetic batches.
+
+    Complements the Trainer-driven equivalence tiers above. These verify the
+    structure of the wrapper's forward output (loss/loss_dict shape, gradient
+    flow, optimizer effect, preprocessing) without spinning up a Lightning
+    Trainer. Synthetic batches keep them FFmpeg/torchcodec-free.
+    """
+
+    @pytest.fixture(params=_TRAINING_POLICY_NAMES)
+    def training_policy_and_batch(self, request, pusht_dataset):
+        policy_name = request.param
+
+        device = get_device()
+
+        # Let LeRobot autodetect the accelerator for the config, then move the
+        # wrapper onto it so weights and the synthetic batch share one device.
+        policy = LeRobotPolicy.from_dataset(policy_name, pusht_dataset)
+        policy = policy.to(device)
+        policy.train()
+
+        batch = _make_training_batch(policy._config, device)
+
+        return policy, batch, policy_name
+
+    def test_wrapper_forward_produces_loss_and_dict(self, training_policy_and_batch):
+        policy, batch, _ = training_policy_and_batch
+
+        output = policy(batch)
+
+        assert isinstance(output, tuple)
+        assert len(output) == 2
+        loss, _ = output
+        assert isinstance(loss, torch.Tensor)
+        assert loss.ndim == 0
+        assert loss.requires_grad
+
+    def test_act_loss_dict_contains_expected_keys(self, training_policy_and_batch):
+        policy, batch, policy_name = training_policy_and_batch
+        if policy_name != "act":
+            pytest.skip("ACT-specific: loss_dict structure")
+
+        _, loss_dict = policy(batch)
+
+        assert loss_dict is not None
+        assert "l1_loss" in loss_dict
+
+    def test_diffusion_loss_dict_is_none(self, training_policy_and_batch):
+        policy, batch, policy_name = training_policy_and_batch
+        if policy_name != "diffusion":
+            pytest.skip("Diffusion-specific: loss_dict is None")
+
+        _, loss_dict = policy(batch)
+
+        assert loss_dict is None
+
+    def test_gradient_flows_through_wrapper(self, training_policy_and_batch):
+        policy, batch, _ = training_policy_and_batch
+
+        loss, _ = policy(batch)
+        loss.backward()
+
+        params_with_grad = [
+            name for name, p in policy.lerobot_policy.named_parameters() if p.requires_grad and p.grad is not None
+        ]
+        total_params = [name for name, p in policy.lerobot_policy.named_parameters() if p.requires_grad]
+
+        assert len(params_with_grad) > 0
+        assert len(params_with_grad) == len(total_params)
+
+    def test_optimizer_step_updates_weights(self, training_policy_and_batch):
+        policy, batch, _ = training_policy_and_batch
+
+        optimizer = policy.configure_optimizers()
+
+        before = {n: p.clone() for n, p in policy.lerobot_policy.named_parameters() if p.requires_grad}
+
+        optimizer.zero_grad()
+        loss, _ = policy(batch)
+        loss.backward()
+        optimizer.step()
+
+        changed = 0
+        for name, p in policy.lerobot_policy.named_parameters():
+            if p.requires_grad and not torch.equal(p, before[name]):
+                changed += 1
+
+        assert changed > 0
+
+    def test_preprocessing_modifies_values(self, training_policy_and_batch):
+        policy, batch, _ = training_policy_and_batch
+
+        if policy._dataset_stats is None:
+            pytest.skip("No dataset_stats; preprocessor cannot normalize")
+
+        raw_batch = _clone_batch(batch)
+        preprocessed = policy._preprocessor(_clone_batch(batch))
+
+        modified_keys = [
+            key for key in policy._config.input_features if not torch.equal(raw_batch[key], preprocessed[key])
+        ]
+        assert modified_keys, (
+            f"Preprocessing did not modify any input feature; expected at least one of "
+            f"{list(policy._config.input_features)} to be normalized."
+        )
+
+    def test_loss_finite_and_positive(self, training_policy_and_batch):
+        policy, batch, _ = training_policy_and_batch
+
+        loss, _ = policy(batch)
+
+        assert torch.isfinite(loss)
+        assert loss.item() >= 0

@@ -1,35 +1,19 @@
-import { Suspense } from 'react';
-
-import { Flex, Grid, Loading, minmax, View } from '@geti-ui/ui';
-
+import { FormPreviewLayout } from '../../components/form-preview-layout';
 import { CameraForm } from '../../features/robots/camera-form/form';
 import { Preview } from '../../features/robots/camera-form/preview';
 import { CameraFormProvider } from '../../features/robots/camera-form/provider';
 import { useCamera } from '../../features/robots/use-camera';
-
-const CenteredLoading = () => {
-    return (
-        <Flex width='100%' height='100%' alignItems={'center'} justifyContent={'center'}>
-            <Loading mode='inline' />
-        </Flex>
-    );
-};
 
 export const Edit = () => {
     const camera = useCamera();
 
     return (
         <CameraFormProvider camera={camera}>
-            <Grid areas={['robot controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
-                <View gridArea='robot' backgroundColor={'gray-100'} padding='size-400'>
-                    <Suspense fallback={<CenteredLoading />}>
-                        <CameraForm isEdit />
-                    </Suspense>
-                </View>
-                <View gridArea='controls' backgroundColor={'gray-50'} padding='size-400'>
-                    <Preview />
-                </View>
-            </Grid>
+            <FormPreviewLayout
+                form={<CameraForm isEdit />}
+                preview={<Preview />}
+                previewProps={{ backgroundColor: 'gray-50', padding: 'size-400' }}
+            />
         </CameraFormProvider>
     );
 };

@@ -1,6 +1,6 @@
 import type { DockviewTheme } from 'dockview-react';
 
-import styles from './theme.module.scss';
+import styles from './theme.module.css';
 
 /**
  * Physical AI Studio custom DockView theme
@@ -15,7 +15,7 @@ import styles from './theme.module.scss';
  * - Compact layout with no gaps between panels
  * - Hover-visible sash/splitters for resizing
  *
- * To customize colors, edit theme.module.scss
+ * To customize colors, edit theme.module.css
  */
 export const physicalAiTheme: DockviewTheme = {
     name: 'physical-ai',

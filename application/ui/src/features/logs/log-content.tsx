@@ -9,7 +9,7 @@ import { LogEntry } from './log-entry';
 import { LogFilters } from './log-filters';
 import { DEFAULT_LOG_FILTERS, type LogEntry as LogEntryType, type LogFilters as LogFiltersType } from './log-types';
 
-import styles from './log-viewer.module.scss';
+import styles from './log-viewer.module.css';
 
 const formatLogForCopy = (log: LogEntryType): string => {
     const timestamp = new Date(log.record.time.timestamp * 1000).toISOString();

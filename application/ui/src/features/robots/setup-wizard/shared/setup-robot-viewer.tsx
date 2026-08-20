@@ -1,8 +1,8 @@
 /* eslint-disable react/no-unknown-property */
 
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useMemo, useRef } from 'react';
 
-import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
@@ -10,9 +10,9 @@ import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../../components/zoom/use-container-size';
-import { useLoadModelMutation, useRobotModels } from '../../robot-models-context';
+import { useLoadModelQuery } from '../../robot-models-context';
 import { SchemaRobotType } from '../../robot-types';
-import { urdfPathForType } from '../../robots-configuration';
+import { RobotViewerScene, useConfigureModelShadows } from '../../robot-viewer-scene';
 import { JointHighlight, useJointHighlight } from './use-joint-highlight';
 
 // ---------------------------------------------------------------------------
@@ -24,6 +24,7 @@ const ActualURDFModel = ({ model, highlights }: { model: URDFRobot; highlights: 
     const scale = [3, 3, 3] as const;
 
     useJointHighlight(model, highlights);
+    useConfigureModelShadows(model);
 
     return (
         <group rotation={rotation} scale={scale}>
@@ -122,25 +123,6 @@ const CameraController = ({ controlsRef, model, highlights }: CameraControllerPr
 };
 
 // ---------------------------------------------------------------------------
-// URDF loading hook (same as robot-viewer.tsx)
-// ---------------------------------------------------------------------------
-
-const useLoadURDF = (robotType: SchemaRobotType) => {
-    const loadModelMutation = useLoadModelMutation();
-    const { hasModel } = useRobotModels();
-
-    const PATH = urdfPathForType(robotType);
-
-    useEffect(() => {
-        if (hasModel(PATH)) {
-            return;
-        }
-
-        loadModelMutation.mutate(PATH);
-    }, [PATH, hasModel, loadModelMutation]);
-};
-
-// ---------------------------------------------------------------------------
 // Public component
 // ---------------------------------------------------------------------------
 
@@ -160,32 +142,20 @@ interface SetupRobotViewerProps {
  */
 export const SetupRobotViewer = ({ robotType, highlights = [] }: SetupRobotViewerProps) => {
     const angle = degToRad(-45);
+    const { data: model } = useLoadModelQuery(robotType);
 
-    const PATH = urdfPathForType(robotType);
-    useLoadURDF(robotType);
     const ref = useRef<HTMLDivElement>(null);
     const controlsRef = useRef<OrbitControlsImpl>(null);
     const size = useContainerSize(ref);
-    const { getModel } = useRobotModels();
-    const model = getModel(PATH);
 
     return (
         <div ref={ref} style={{ width: '100%', height: '100%' }}>
             <div className='canvas-container' style={{ height: `${size.height}px`, width: `${size.width}px` }}>
                 <Canvas shadows>
-                    <color attach='background' args={['#242528']} />
-                    <ambientLight intensity={0.5} />
-                    <directionalLight
-                        position={[10, 10, 5]}
-                        intensity={1}
-                        castShadow
-                        shadow-mapSize-width={1024}
-                        shadow-mapSize-height={1024}
-                    />
+                    <RobotViewerScene />
                     <PerspectiveCamera makeDefault position={[2.0, 1, 1]} />
-                    <OrbitControls ref={controlsRef} />
+                    <OrbitControls ref={controlsRef} enableDamping={false} />
                     <CameraController controlsRef={controlsRef} model={model} highlights={highlights} />
-                    <Grid infiniteGrid cellSize={0.25} sectionColor={'rgb(0, 199, 253)'} fadeDistance={10} />
                     {model && (
                         <group key={model.uuid} position={[0, 0, 0]} rotation={[0, angle, 0]}>
                             <Suspense fallback={null}>

@@ -6,7 +6,8 @@ import json
 import zipfile
 from typing import TYPE_CHECKING
 
-from services.archive_safety import SafeZipArchive
+from physicalai.data.archive_safety import SafeZipArchive
+
 from services.dataset_import.adapters import (
     DatasetAdapterSelectionResult,
     get_registered_dataset_import_adapters,

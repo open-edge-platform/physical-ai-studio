@@ -4,7 +4,7 @@ import { clsx } from 'clsx';
 import { EpisodeSummary } from '../../../routes/datasets/dataset-provider';
 import { toMMSS } from '../../../utils';
 
-import classes from './episode-tag.module.scss';
+import classes from './episode-tag.module.css';
 
 interface EpisodeTagProps {
     episode: EpisodeSummary;

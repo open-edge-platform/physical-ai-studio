@@ -6,27 +6,27 @@ import { Add, Close } from '@geti-ui/ui/icons';
 import { $api } from '../../../api/client';
 import { SchemaProjectCamera } from '../../../api/types';
 import { useProjectId } from '../../../features/projects/use-project';
-import { useEnvironmentForm, useSetEnvironmentForm } from './provider';
+import { CameraConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
-import classes from './form.module.scss';
+import classes from './form.module.css';
 
-export const CameraListItem = ({ cameraId, onRemove }: { cameraId: string; onRemove: () => void }) => {
+export const CameraListItem = ({ camera, onRemove }: { camera: CameraConfiguration; onRemove: () => void }) => {
     const { project_id } = useProjectId();
     const camerasQuery = $api.useSuspenseQuery('get', '/api/projects/{project_id}/cameras', {
         params: { path: { project_id } },
     });
 
-    const camera = camerasQuery.data.find(({ id }) => id === cameraId);
+    const projectCamera = camerasQuery.data.find(({ id }) => id === camera.camera_id);
 
-    if (camera === undefined) {
-        return <li>{cameraId} - unknown</li>;
+    if (projectCamera === undefined) {
+        return <li>{camera.camera_id} - unknown</li>;
     }
 
     return (
         <li>
             <View backgroundColor={'gray-50'} padding='size-200' borderColor='gray-200' borderWidth='thick'>
                 <Flex justifyContent='space-between' alignItems={'center'}>
-                    {camera.name}
+                    {projectCamera.name}
 
                     <ActionButton onPress={onRemove} UNSAFE_className={classes.actionButton}>
                         <Icon>
@@ -39,19 +39,12 @@ export const CameraListItem = ({ cameraId, onRemove }: { cameraId: string; onRem
     );
 };
 
-const getAvailableCameras = (environmentCameraIds: Array<string>, cameras: Array<SchemaProjectCamera>) => {
-    const environmentCameras = environmentCameraIds.map((id) => {
-        return cameras.find((camera) => camera.id === id);
-    });
+const getAvailableCameras = (environmentCameras: Array<CameraConfiguration>, cameras: Array<SchemaProjectCamera>) => {
+    const environmentCameraIds = environmentCameras.map(({ camera_id }) => camera_id);
 
     return cameras.filter((camera) => {
         // Don't allow adding the same camera twice
-        if (environmentCameraIds.includes(camera.id!)) {
-            return false;
-        }
-
-        // Don't allow adding duplicated camera names
-        return environmentCameras.some((environmentCamera) => environmentCamera?.name === camera.name) === false;
+        return environmentCameraIds.includes(camera.id!) === false;
     });
 };
 
@@ -59,7 +52,7 @@ export const AddCameraForm = ({
     onAddCamera,
     onCancel,
 }: {
-    onAddCamera: (cameraId: string) => void;
+    onAddCamera: (camera: CameraConfiguration) => void;
     onCancel?: () => void;
 }) => {
     const { project_id } = useProjectId();
@@ -68,7 +61,7 @@ export const AddCameraForm = ({
     });
     const environment = useEnvironmentForm();
 
-    const availableCameras = getAvailableCameras(environment.camera_ids, camerasQuery.data);
+    const availableCameras = getAvailableCameras(environment.cameras, camerasQuery.data);
 
     const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
 
@@ -104,7 +97,7 @@ export const AddCameraForm = ({
                     variant='secondary'
                     onPress={() => {
                         if (selectedCameraId) {
-                            onAddCamera(selectedCameraId);
+                            onAddCamera({ camera_id: selectedCameraId });
                         }
                     }}
                 >
@@ -124,23 +117,25 @@ export const CameraForm = () => {
     const environmentForm = useEnvironmentForm();
     const setEnvironmentForm = useSetEnvironmentForm();
 
-    const hasNoCameras = environmentForm.camera_ids.length === 0;
+    const hasNoCameras = environmentForm.cameras.length === 0;
     const [isAdding, setIsAdding] = useState(hasNoCameras);
 
     return (
         <>
-            {environmentForm.camera_ids.length > 0 && (
+            {environmentForm.cameras.length > 0 && (
                 <ul style={{ width: '100%' }}>
                     <Flex direction='column' gap='size-100' width='100%'>
-                        {environmentForm.camera_ids.map((id) => (
+                        {environmentForm.cameras.map((camera) => (
                             <CameraListItem
-                                key={id}
-                                cameraId={id}
+                                key={camera.camera_id}
+                                camera={camera}
                                 onRemove={() => {
                                     setEnvironmentForm((oldForm) => {
                                         return {
                                             ...oldForm,
-                                            camera_ids: oldForm.camera_ids.filter((cameraId) => cameraId !== id),
+                                            cameras: oldForm.cameras.filter(
+                                                ({ camera_id }) => camera_id !== camera.camera_id
+                                            ),
                                         };
                                     });
                                 }}
@@ -158,9 +153,9 @@ export const CameraForm = () => {
                     }}
                 >
                     <AddCameraForm
-                        onAddCamera={(cameraId) => {
+                        onAddCamera={(camera) => {
                             setEnvironmentForm((oldForm) => {
-                                return { ...oldForm, camera_ids: [...oldForm.camera_ids, cameraId] };
+                                return { ...oldForm, cameras: [...oldForm.cameras, camera] };
                             });
                             setIsAdding(false);
                         }}

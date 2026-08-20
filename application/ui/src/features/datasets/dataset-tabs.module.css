@@ -1,0 +1,73 @@
+.tabBar {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    border-bottom: var(--spectrum-alias-border-size-thick) solid var(--spectrum-global-color-gray-300);
+}
+
+.tabList {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-color: var(--spectrum-global-color-gray-500) transparent;
+    scrollbar-width: thin;
+}
+
+.tabList::-webkit-scrollbar {
+    height: 6px;
+}
+
+.tabList::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tabList::-webkit-scrollbar-thumb {
+    background: var(--spectrum-global-color-gray-500);
+    border-radius: 999px;
+}
+
+.tab {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-height: var(--spectrum-global-dimension-size-600);
+    padding: 0 var(--spectrum-global-dimension-size-50);
+    color: var(--spectrum-global-color-gray-700);
+    white-space: nowrap;
+    cursor: pointer;
+    border-bottom: var(--spectrum-alias-border-size-thick) solid transparent;
+}
+
+.tab[data-hovered] {
+    color: var(--spectrum-global-color-gray-900);
+}
+
+.tab:not([data-selected])::after {
+    width: var(--spectrum-global-dimension-size-200);
+    height: var(--spectrum-global-dimension-size-200);
+    content: '';
+    flex: 0 0 auto;
+    margin-inline-start: var(--spectrum-global-dimension-size-50);
+}
+
+.tab[data-selected] {
+    color: var(--spectrum-global-color-gray-900);
+    border-bottom-color: white;
+}
+
+.tab[data-focus-visible] {
+    outline: 2px solid var(--energy-blue);
+    outline-offset: -2px;
+}
+
+.addActions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 var(--spectrum-global-dimension-size-100);
+    background: var(--spectrum-global-color-gray-100);
+}

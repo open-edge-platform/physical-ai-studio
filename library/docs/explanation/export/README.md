@@ -254,7 +254,7 @@ policy.to_onnx("model.onnx", input_sample=input_sample)
 
 ## Related Documentation
 
-- [Configuration System](../config/README.md) - Configuration serialization
+- [Configuration (Runtime)](https://github.com/openvinotoolkit/physicalai/blob/main/docs/explanation/configuration.md) — shared `physicalai.config` serialization
 - [Policy Base Class](../policy/README.md) - Policy interface
 
 This design provides a consistent, flexible interface for model export across

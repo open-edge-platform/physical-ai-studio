@@ -13,21 +13,22 @@ import {
     Menu,
     MenuTrigger,
     minmax,
+    toast,
     View,
 } from '@geti-ui/ui';
 import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { NavLink, Outlet, useParams } from 'react-router-dom';
+import { NavLink, Outlet, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
-import { isRecordingLockedError } from '../../api/errors';
+import { getApiErrorMessage, isRecordingLockedError, isResourceInUseError } from '../../api/errors';
 import { SchemaProjectCamera } from '../../api/types';
 import { useProjectId } from '../../features/projects/use-project';
 import { ConnectionStatus } from '../../features/robots/robots-list';
 import { paths } from '../../router';
 import { ReactComponent as CameraIcon } from './../../assets/camera.svg';
 
-import classes from './../../features/robots/robots-list.module.scss';
+import classes from './../../features/robots/robots-list.module.css';
 
 const MenuActions = ({ camera_id }: { camera_id: string }) => {
     const { project_id } = useProjectId();
@@ -51,8 +52,16 @@ const MenuActions = ({ camera_id }: { camera_id: string }) => {
                             {
                                 onError: (error) => {
                                     if (isRecordingLockedError(error)) {
-                                        alert('Cannot delete camera while a recording session is active.');
+                                        toast.negative('Cannot delete camera while a recording session is active.');
+                                        return;
                                     }
+                                    if (isResourceInUseError(error)) {
+                                        toast.info(
+                                            getApiErrorMessage(error) ?? 'This camera is in use and cannot be deleted.'
+                                        );
+                                        return;
+                                    }
+                                    toast.negative(getApiErrorMessage(error) ?? 'Failed to delete camera.');
                                 },
                             }
                         );
@@ -188,11 +197,24 @@ export const CamerasList = () => {
 
 export const Layout = () => {
     return (
-        <Grid areas={['camera controls']} columns={[minmax('size-6000', 'auto'), '1fr']} height={'100%'}>
+        <Grid
+            areas={['camera controls']}
+            columns={['size-6000', minmax(0, '1fr')]}
+            rows={[minmax(0, '1fr')]}
+            height={'100%'}
+            minHeight={0}
+        >
             <View gridArea='camera' backgroundColor={'gray-100'} padding='size-400'>
                 <CamerasList />
             </View>
-            <View gridArea='controls' backgroundColor={'gray-50'} minHeight={0}>
+            <View
+                gridArea='controls'
+                backgroundColor={'gray-50'}
+                height='100%'
+                minHeight={0}
+                minWidth={0}
+                overflow='auto'
+            >
                 <Suspense
                     fallback={
                         <Grid width='100%' height='100%'>

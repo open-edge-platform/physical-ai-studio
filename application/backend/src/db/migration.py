@@ -7,6 +7,8 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime import migration
 from alembic.script import ScriptDirectory
+from alembic.script.revision import ResolutionError
+from alembic.util.exc import CommandError
 from db import sync_engine
 from settings import Settings
 
@@ -63,6 +65,12 @@ class MigrationManager:
             command.upgrade(alembic_cfg, "head")
             logger.info("✓ Database migrations completed successfully")
             return True
+        except CommandError as e:
+            if self.settings.allow_unknown_db_revision and isinstance(e.__cause__, ResolutionError):
+                logger.warning(f"{e} Continuing because ALLOW_UNKNOWN_DB_REVISION is enabled.")
+                return True
+            logger.error(f"✗ Database migration failed: {e}")
+            return False
         except Exception as e:
             logger.error(f"✗ Database migration failed: {e}")
             return False
@@ -78,11 +86,21 @@ class MigrationManager:
                 context = migration.MigrationContext.configure(conn)
                 current_rev = context.get_current_revision()
 
-            # Check if current_rev is in Alembic's tracked revisions
-            if current_rev and current_rev not in script.get_heads() + script.get_bases():
-                raise RevisionNotFoundError(
-                    f"Current revision '{current_rev}' not found in Alembic history. Please, recreate the database."
-                )
+            # Check if current_rev exists anywhere in Alembic's revision map.
+            # A valid database can sit on an intermediate revision, not only
+            # on a base or the current head.
+            if current_rev:
+                try:
+                    resolved_revision = script.get_revision(current_rev)
+                except ResolutionError as e:
+                    raise RevisionNotFoundError(
+                        f"Current revision '{current_rev}' not found in Alembic history. Please, recreate the database."
+                    ) from e
+
+                if resolved_revision is None:
+                    raise RevisionNotFoundError(
+                        f"Current revision '{current_rev}' not found in Alembic history. Please, recreate the database."
+                    )
 
             needs_migration = current_rev != current_head
             status = f"Current: {current_rev or 'None'}, Head: {current_head or 'None'}"
@@ -117,6 +135,9 @@ class MigrationManager:
             return True
 
         except RevisionNotFoundError as e:
+            if self.settings.allow_unknown_db_revision:
+                logger.warning(f"{e} Attempting migrations because ALLOW_UNKNOWN_DB_REVISION is enabled.")
+                return self.run_migrations()
             logger.error(f"Revision not found: {e}")
             return False
         except Exception as e:

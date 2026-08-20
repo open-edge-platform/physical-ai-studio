@@ -1,11 +1,12 @@
 import asyncio
 import base64
+import re
 from typing import Any
 
 import numpy as np
-from lerobot.datasets.feature_utils import combine_feature_dicts
 from lerobot.datasets.pipeline_features import aggregate_pipeline_dataset_features, create_initial_features
 from lerobot.processor import make_default_processors
+from lerobot.utils.feature_utils import combine_feature_dicts
 from loguru import logger
 from physicalai.capture import SharedCamera
 from physicalai.capture.errors import CaptureError
@@ -17,6 +18,17 @@ from schemas.environment import EnvironmentWithRelations, TeleoperatorRobotWithR
 from schemas.project_camera import Camera
 from utils.camera_factory import build_shared_camera
 from utils.jpeg import encode_jpeg_rgb
+
+
+def sanitize_camera_name(name: str) -> str:
+    """Turn a camera name into a safe video feature key.
+
+    Preserve lowercase letters, spaces, ``_``, and ``-`` for compatibility;
+    replace other characters because feature keys become dataset paths and
+    single-quoted ffconcat entries during recording, where they can invalidate
+    ffmpeg parsing.
+    """
+    return re.sub(r"[^a-z0-9 _-]+", "_", name.lower())
 
 
 class EnvironmentIntegration:
@@ -35,34 +47,42 @@ class EnvironmentIntegration:
         self.frame_captures = {}
 
     async def setup(self) -> None:
-        robot = self.environment.robots[0]  # TODO: Handle multiple robots?
+        try:
+            robot = self.environment.robots[0]  # TODO: Handle multiple robots?
 
-        self.follower = await self.robot_client_factory.build(robot.robot)
-        if isinstance(robot.tele_operator, TeleoperatorRobotWithRobot) and robot.tele_operator.robot is not None:
-            self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
-        self.action_keys = self.follower.features()
+            self.follower = await self.robot_client_factory.build(robot.robot)
+            if isinstance(robot.tele_operator, TeleoperatorRobotWithRobot) and robot.tele_operator.robot is not None:
+                self.leader = await self.robot_client_factory.build(robot.tele_operator.robot)
 
-        self.frame_captures = {}
-        loop = asyncio.get_running_loop()
-        for cam_cfg in self.environment.cameras:
-            cam_id = str(cam_cfg.id)
-            cam = build_shared_camera(
-                config=cam_cfg,
-                validate_on_connect=True,
-                overwrite_settings=True,
-            )
-            logger.info(f"Camera {cam_id} initialized: {cam_cfg}")
-            try:
-                await loop.run_in_executor(None, cam.connect)
-            except CaptureError as exc:
-                logger.error(f"Camera {cam_cfg.name}: failed to acquire with requested config: {exc}")
-                raise
-            self.frame_captures[cam_id] = cam
+            # Connect robots before reading features
+            if self.leader:
+                await asyncio.to_thread(self.leader.connect)
+            await asyncio.to_thread(self.follower.connect)
 
-        await asyncio.sleep(1)  # sleep for camera warmup
-        await self.follower.connect()
-        if self.leader:
-            await self.leader.connect()
+            # Now safe to read features
+            self.action_keys = self.follower.features()
+
+            self.frame_captures = {}
+            loop = asyncio.get_running_loop()
+            for cam_cfg in self.environment.cameras:
+                cam_id = str(cam_cfg.id)
+                cam = build_shared_camera(
+                    config=cam_cfg,
+                    validate_on_connect=True,
+                    overwrite_settings=True,
+                )
+                logger.info(f"Camera {cam_id} initialized: {cam_cfg}")
+                try:
+                    await loop.run_in_executor(None, cam.connect)
+                except CaptureError as exc:
+                    logger.error(f"Camera {cam_cfg.name}: failed to acquire with requested config: {exc}")
+                    raise
+                self.frame_captures[cam_id] = cam
+
+            await asyncio.sleep(1)  # sleep for camera warmup
+        except Exception:
+            await self.teardown()
+            raise
 
     def build_lerobot_dataset_features(self, use_videos: bool = True) -> dict:
         """Build lerobot dataset features."""
@@ -77,7 +97,7 @@ class EnvironmentIntegration:
             observation_features[feature] = float
 
         for camera in self.environment.cameras:
-            observation_features[camera.name.lower()] = self._get_camera_features(camera)
+            observation_features[sanitize_camera_name(camera.name)] = self._get_camera_features(camera)
 
         return combine_feature_dicts(
             aggregate_pipeline_dataset_features(
@@ -95,11 +115,11 @@ class EnvironmentIntegration:
     async def set_joints_state(self, actions: dict, goal_time: float) -> None:
         """Set joints on robot"""
         if self.follower:
-            await self.follower.set_joints_state(actions, goal_time)
+            self.follower.set_joints_state(actions, goal_time)
 
     async def get_observation(self) -> dict | None:
         if self.follower and self.frame_captures:
-            observation = (await self.follower.read_state())["state"]
+            observation = (self.follower.read_state())["state"]
 
             for cam_id, cam in self.frame_captures.items():
                 frame = cam.read_latest()  # read_lastest is not blocking
@@ -112,13 +132,13 @@ class EnvironmentIntegration:
     async def set_follower_position_from_leader(self, goal_time: float) -> dict | None:
         """Directly set the follower position based on leader."""
         if self.leader is not None:
-            actions = (await self.leader.read_state())["state"]
+            actions = (self.leader.read_state())["state"]
             await self.set_joints_state(actions, goal_time)
 
             if self.follower and self.leader:
-                forces = await self.follower.read_forces()
+                forces = self.follower.read_forces()
                 if forces and forces["state"] is not None:
-                    await self.leader.set_forces(forces["state"])
+                    self.leader.set_forces(forces["state"])
 
             return actions
         return None
@@ -139,7 +159,7 @@ class EnvironmentIntegration:
         state = np.array([[observation[k] for k in self.action_keys]], dtype=np.float32)
         images: dict = {}
         for camera in self.environment.cameras:
-            camera_name = camera.name.lower()
+            camera_name = sanitize_camera_name(camera.name)
             # SWAP HWC, RGB2BGR and in float 0..1 range.
             images[camera_name] = np.ascontiguousarray(
                 observation[camera_name][..., ::-1].transpose(2, 0, 1).astype(np.float32)[np.newaxis] / 255
@@ -161,10 +181,10 @@ class EnvironmentIntegration:
         return base64.b64encode(encode_jpeg_rgb(observation)).decode()
 
     def _remap_camera_observations(self, observations: dict) -> dict:
-        """Remap camera observations from camera ID keys to lowercase camera name keys."""
+        """Remap camera observations from camera ID keys to sanitized camera name keys."""
         lerobot_observations = dict(observations)
         for camera in self.environment.cameras:
-            lerobot_observations[camera.name.lower()] = lerobot_observations.pop(str(camera.id))
+            lerobot_observations[sanitize_camera_name(camera.name)] = lerobot_observations.pop(str(camera.id))
         return lerobot_observations
 
     @staticmethod
@@ -179,10 +199,12 @@ class EnvironmentIntegration:
 
     async def teardown(self) -> None:
         if self.follower:
-            await self.follower.disconnect()
+            await asyncio.to_thread(self.follower.disconnect)
+            self.follower = None
 
         if self.leader:
-            await self.leader.disconnect()
+            await asyncio.to_thread(self.leader.disconnect)
+            self.leader = None
 
         loop = asyncio.get_running_loop()
         for cam in self.frame_captures.values():
@@ -190,3 +212,4 @@ class EnvironmentIntegration:
                 await loop.run_in_executor(None, cam.disconnect)
             except Exception:
                 logger.info("Failed stopping a camera thread. Ignoring")
+        self.frame_captures.clear()

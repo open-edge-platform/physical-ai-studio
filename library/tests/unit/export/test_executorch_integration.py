@@ -44,6 +44,7 @@ class _ExportWrapper(ExportablePolicyMixin):
         self.model = model
         # Identity preprocessor: returns the sample dict unchanged.
         self._preprocessor = torch.nn.Identity()
+        self.device = torch.device("cpu")
 
     @property
     def sample_input(self) -> dict[str, torch.Tensor] | None:

@@ -139,6 +139,5 @@ def get_physicalai_policy_class(policy_name: str) -> type[Policy]:
         return Pi05
     if policy_name == "smolvla":
         return SmolVLA
-
     msg = f"Unknown physicalai policy: {policy_name}. Supported policies: act, dummy, groot, pi0, pi05, smolvla"
     raise ValueError(msg)

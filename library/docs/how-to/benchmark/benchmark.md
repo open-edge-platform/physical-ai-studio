@@ -2,6 +2,9 @@
 
 Evaluate trained policies on standardized environments.
 
+The `benchmark` command is a studio entry-point subcommand loaded by the shared
+runtime CLI host, while the user-facing invocation stays `physicalai benchmark ...`.
+
 ## Quick Start
 
 ### CLI

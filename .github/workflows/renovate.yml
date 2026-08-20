@@ -53,10 +53,10 @@ jobs:
   renovate:
     permissions:
       contents: read
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -64,33 +64,57 @@ jobs:
           allowed-endpoints: >
             api.github.com:443
             auth.docker.io:443
-            eastus.data.mcr.microsoft.com:443
+            *.data.mcr.microsoft.com:443
+            endoflife.date:443
             ghcr.io:443
             github.com:443
             hub.docker.com:443
+            index.crates.io:443
             index.docker.io:443
             mcr.microsoft.com:443
             pkg-containers.githubusercontent.com:443
             production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
+            static.rust-lang.org:443
+            download-r2.pytorch.org:443
+            download.pytorch.org:443
+            files.pythonhosted.org:443
+            pypi.org:443
+            registry.npmjs.org:443
             release-assets.githubusercontent.com:443
-
+            www.python.org:443
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Get token
         id: get-github-app-token
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ secrets.RENOVATE_APP_ID }}
+          client-id: ${{ secrets.RENOVATE_APP_ID }}
           private-key: ${{ secrets.RENOVATE_APP_PEM }}
+          repositories: ${{ github.event.repository.name }}
+          owner: ${{ github.repository_owner }}
+          # Repository permissions
+          permission-administration: read
+          permission-checks: write
+          permission-statuses: write
+          permission-contents: write
+          permission-vulnerability-alerts: read
+          permission-issues: write
+          permission-metadata: read
+          permission-pull-requests: write
+          permission-workflows: write
+          # Organization permissions
+          permission-organization-administration: read
+          permission-members: read
 
       - name: Self-hosted Renovate
-        uses: renovatebot/github-action@f66d8679fcfcfa051abde6e7a623007173bf5164 # v46.1.12
+        uses: renovatebot/github-action@1a96852b0384df1837619d04c60b2d10d1f9ff08 # v46.1.21
         with:
           # renovate: datasource=github-releases depName=renovatebot/renovate
-          renovate-version: 43.160.2
+          renovate-version: 43.286.1
           configurationFile: .github/renovate.json5
           token: "${{ steps.get-github-app-token.outputs.token }}"
         env:

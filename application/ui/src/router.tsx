@@ -1,17 +1,17 @@
 import { Suspense } from 'react';
 
-import { Content, Grid, Heading, IllustratedMessage, Loading, View } from '@geti-ui/ui';
-import { Outlet, redirect } from 'react-router';
-import { createBrowserRouter } from 'react-router-dom';
+import { Content, Grid, Heading, IllustratedMessage, Loading, minmax, View } from '@geti-ui/ui';
+import { createBrowserRouter, Outlet, redirect } from 'react-router';
 import { path } from 'static-path';
 
+import { fetchClient } from './api/client';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
+import { AppLayout } from './routes/app/app.layout';
 import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
 import { Layout as CamerasLayout } from './routes/cameras/layout';
 import { New as CamerasNew } from './routes/cameras/new';
-import { CameraWebcam } from './routes/cameras/webcam';
 import { Index as Datasets } from './routes/datasets/index';
 import { Index as RecordingPage } from './routes/datasets/record/index';
 import { Edit as EnvironmentEdit } from './routes/environments/edit';
@@ -30,8 +30,10 @@ import { NewRobotLayout } from './routes/robots/new-layout';
 import { Robot } from './routes/robots/robot';
 import { SO101Setup } from './routes/robots/so101-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
+import { Settings } from './routes/settings';
 
 const root = path('/');
+const settings = root.path('/settings');
 const projects = root.path('/projects');
 const project = root.path('/projects/:project_id');
 const robots = project.path('robots');
@@ -39,12 +41,19 @@ const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
 const dataset = datasets.path(':dataset_id');
 const models = project.path('/models');
+const remoteServers = project.path('/remote-servers');
 const cameras = project.path('cameras');
 const environments = project.path('environments');
 const environment = environments.path(':environment_id');
 
 export const paths = {
     root,
+    settings: {
+        index: settings,
+        compute: settings.path('/compute'),
+        storage: settings.path('/storage'),
+        about: settings.path('/about'),
+    },
     openapi: root.path('/openapi'),
     projects: {
         index: projects,
@@ -65,7 +74,6 @@ export const paths = {
         },
         cameras: {
             index: cameras,
-            webcam: cameras.path('/webcam'),
             new: cameras.path('/new'),
             edit: cameras.path(':camera_id/edit'),
             show: cameras.path(':camera_id'),
@@ -82,6 +90,9 @@ export const paths = {
         models: {
             index: models,
             inference: models.path('/:model_id/inference/:backend'),
+        },
+        remoteServers: {
+            index: remoteServers,
         },
     },
 };
@@ -113,11 +124,24 @@ export const router = createBrowserRouter([
                 },
             },
             {
-                path: paths.projects.index.pattern,
+                element: <AppLayout />,
                 children: [
                     {
-                        index: true,
+                        path: paths.projects.index.pattern,
                         element: <Projects />,
+                    },
+                    {
+                        path: paths.settings.index.pattern,
+                        children: [
+                            {
+                                index: true,
+                                element: <Settings />,
+                            },
+                            {
+                                path: paths.settings.compute.pattern,
+                                element: <Settings />,
+                            },
+                        ],
                     },
                 ],
             },
@@ -148,6 +172,31 @@ export const router = createBrowserRouter([
                         children: [
                             {
                                 index: true,
+                                loader: async ({ params }) => {
+                                    const project_id = params.project_id;
+
+                                    if (project_id === undefined) {
+                                        return redirect(paths.projects.index({}));
+                                    }
+
+                                    const { data: projectData, error } = await fetchClient.GET(
+                                        '/api/projects/{project_id}',
+                                        {
+                                            params: { path: { project_id } },
+                                        }
+                                    );
+
+                                    if (error !== undefined || projectData?.datasets[0]?.id === undefined) {
+                                        return null;
+                                    }
+
+                                    return redirect(
+                                        paths.project.datasets.show({
+                                            project_id,
+                                            dataset_id: projectData.datasets[0].id,
+                                        })
+                                    );
+                                },
                                 element: <Datasets />,
                             },
                             {
@@ -175,7 +224,7 @@ export const router = createBrowserRouter([
                             <Grid
                                 areas={['header', 'content']}
                                 UNSAFE_style={{
-                                    gridTemplateRows: 'min-content auto',
+                                    gridTemplateRows: `min-content ${minmax(0, '1fr')}`,
                                 }}
                                 minHeight={0}
                                 height={'100%'}
@@ -250,10 +299,6 @@ export const router = createBrowserRouter([
                                     {
                                         path: paths.project.cameras.show.pattern,
                                         element: <Camera />,
-                                    },
-                                    {
-                                        path: paths.project.cameras.webcam.pattern,
-                                        element: <CameraWebcam />,
                                     },
                                 ],
                             },

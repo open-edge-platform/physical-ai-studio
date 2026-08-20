@@ -5,12 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from tests.queue_utils import clear_queue, thread_flush, wait_until_message_from_queue
+from tests.queue_utils import clear_queue, wait_until_message_from_queue
 
 from control.environment_integration import EnvironmentIntegration
 from control.sync_mixed_model_integration import SyncMixedModelIntegration
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.recording_mutation import RecordingMutation
+from schemas import InferenceBackend, InferenceDevice
 from schemas.environment import EnvironmentWithRelations
 from workers.robot_control_worker import RobotControlWorker
 
@@ -82,6 +83,11 @@ def recording_mutation():
 
 
 @pytest.fixture
+def inference_device():
+    return InferenceDevice(backend=InferenceBackend.TORCH, device="cpu")
+
+
+@pytest.fixture
 def test_dataset_impl(recording_mutation):
     mock = MagicMock(spec=InternalLeRobotDataset)
     mock.start_recording_mutation = MagicMock(return_value=recording_mutation)
@@ -112,10 +118,10 @@ def robot_control_worker(mock_robot_client_factory):
 
 @pytest.fixture
 def loaded_inference_worker(
-    robot_control_worker, environment_integration, model_integration, test_model, test_environment
+    robot_control_worker, environment_integration, model_integration, test_model, test_environment, inference_device
 ):
     with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
-        robot_control_worker.load_model(test_model, "torch")
+        robot_control_worker.load_model(test_model, inference_device)
         with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=environment_integration):
             robot_control_worker.load_environment(test_environment)
         model_integration.allow_setup()
@@ -138,11 +144,10 @@ def loaded_teleoperation_worker(
     environment_integration.allow_setup()
     with patch("workers.robot_control_worker.InternalLeRobotDataset", return_value=test_dataset_impl):
         robot_control_worker.load_dataset(test_dataset)
-    thread_flush()
-    clear_queue(robot_control_worker.queue)
-    state = wait_until_message_from_queue(robot_control_worker.queue, "state")["data"]
+    state = _wait_until_state(robot_control_worker.queue, environment_loaded=True, dataset_loaded=True)
     assert state["environment_loaded"]
     assert state["dataset_loaded"]
+    clear_queue(robot_control_worker.queue)
 
     return robot_control_worker
 
@@ -178,6 +183,51 @@ class TestRobotControlWorker:
         assert report["event"] == "state"
         assert report["data"]["environment_loaded"]
 
+    def test_environment_setup_failure_reports_error_and_keeps_worker_alive(
+        self, robot_control_worker: RobotControlWorker, test_environment
+    ):
+        failing_integration = MagicMock(spec=EnvironmentIntegration)
+        failing_integration.setup = AsyncMock(side_effect=RuntimeError("robot connect failed"))
+        failing_integration.teardown = AsyncMock()
+
+        environment = EnvironmentWithRelations.model_validate(test_environment)
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=failing_integration):
+            robot_control_worker.load_environment(environment)
+
+        error_report = wait_until_message_from_queue(robot_control_worker.queue, "error")
+        assert error_report["message"] == "robot connect failed"
+        assert error_report["error_code"] == "robot_control_error"
+        assert robot_control_worker.is_alive()
+
+        succeeding_integration = MagicMock(spec=EnvironmentIntegration)
+        succeeding_integration.setup = AsyncMock()
+        succeeding_integration.get_observation = AsyncMock(return_value=None)
+
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=succeeding_integration):
+            robot_control_worker.load_environment(environment)
+
+        state_report = _wait_until_state(robot_control_worker.queue, environment_loaded=True)
+        assert state_report["environment_loaded"]
+        assert robot_control_worker.is_alive()
+
+    def test_environment_setup_reports_app_exception_fields(
+        self, robot_control_worker: RobotControlWorker, test_environment
+    ):
+        from exceptions import RobotDeviceAlreadyOwnedError
+
+        failing_integration = MagicMock(spec=EnvironmentIntegration)
+        failing_integration.setup = AsyncMock(side_effect=RobotDeviceAlreadyOwnedError(device_ids=("serial:ttyACM0",)))
+        failing_integration.teardown = AsyncMock()
+
+        environment = EnvironmentWithRelations.model_validate(test_environment)
+        with patch("workers.robot_control_worker.EnvironmentIntegration", return_value=failing_integration):
+            robot_control_worker.load_environment(environment)
+
+        error_report = wait_until_message_from_queue(robot_control_worker.queue, "error")
+        assert error_report["error_code"] == "robot_device_already_owned"
+        assert "serial:ttyACM0" in error_report["message"]
+        assert robot_control_worker.is_alive()
+
     def test_get_observations_once_environment_loaded(
         self, robot_control_worker: RobotControlWorker, environment_integration, test_environment
     ):
@@ -192,14 +242,20 @@ class TestRobotControlWorker:
         assert observation["event"] == "observations"
         assert observation["data"] == {"foo": "bar"}
 
-    def test_load_model(self, robot_control_worker: RobotControlWorker, model_integration, test_model):
+    def test_load_model(
+        self,
+        robot_control_worker: RobotControlWorker,
+        model_integration,
+        test_model,
+        inference_device,
+    ):
         report = wait_until_message_from_queue(robot_control_worker.queue, "state")
         assert report["event"] == "state"
 
         # Keep patch active until after allow_setup(): _handle_new_model_load creates
         # SyncMixedModelIntegration asynchronously, so the patch must outlive load_model().
         with patch("workers.robot_control_worker.SyncMixedModelIntegration", return_value=model_integration):
-            robot_control_worker.load_model(test_model, "torch")
+            robot_control_worker.load_model(test_model, inference_device)
             report = wait_until_message_from_queue(robot_control_worker.queue, "state")
             assert report["event"] == "state"
             assert not report["data"]["model_loaded"]

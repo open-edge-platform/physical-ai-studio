@@ -21,9 +21,11 @@ from typing import Literal
 
 from physicalai.config import Config
 
+from physicalai.policies.mixins import SnapFlowConfigMixin
+
 
 @dataclass(frozen=True)
-class Pi05Config(Config):
+class Pi05Config(SnapFlowConfigMixin, Config):
     """Configuration for Pi05 flow matching model.
 
     Attributes:
@@ -68,6 +70,9 @@ class Pi05Config(Config):
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to False.
+
+    See :class:`~physicalai.policies.mixins.SnapFlowConfigMixin` for the
+    inherited ``snapflow_*`` attributes.
     """
 
     paligemma_variant: Literal["gemma_300m", "gemma_2b"] = "gemma_2b"
@@ -137,3 +142,5 @@ class Pi05Config(Config):
         if self.dtype not in {"bfloat16", "float32"}:
             msg = f"Invalid dtype: {self.dtype}"
             raise ValueError(msg)
+
+        self._validate_snapflow()

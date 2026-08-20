@@ -2,34 +2,33 @@ import { useState } from 'react';
 
 import { Button, ButtonGroup, Flex, Grid, View } from '@geti-ui/ui';
 
-import { $api } from '../../api/client';
 import { JointControls } from '../../features/robots/controller/joint-controls';
 import { RobotViewer } from '../../features/robots/controller/robot-viewer';
+import { useCatalogIdentifyMutation } from '../../features/robots/robot-catalog.hooks';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { useRobot } from '../../features/robots/use-robot';
 
 export const Robot = () => {
     const robot = useRobot();
 
-    const identifyMutation = $api.useMutation('post', '/api/hardware/identify', {
-        meta: { skipInvalidation: true },
-    });
+    const identifyMutation = useCatalogIdentifyMutation();
 
     const onIdentify = identifyMutation.isPending
         ? undefined
         : () => {
-              identifyMutation.mutate({ body: robot });
+              identifyMutation.mutate({
+                  params: { path: { robot_type: robot.type } },
+                  body: robot.payload,
+              });
           };
 
     const [isConnected, setIsConnected] = useState(false);
 
     return (
-        <View padding='size-400' height='100%' minHeight='0'>
+        <View height='100%' minHeight='0'>
             <RobotModelsProvider>
                 <Grid
-                    gap='size-200'
-                    UNSAFE_style={{ padding: 'var(--spectrum-global-dimension-size-100)' }}
-                    areas={['actions', 'robot-viewer', 'controls ']}
+                    areas={['actions', 'robot-viewer', 'controls']}
                     rows={['auto', '1fr', 'min-content']}
                     height='100%'
                     maxHeight={'100vh'}
@@ -37,18 +36,11 @@ export const Robot = () => {
                     minHeight={0}
                     minWidth={0}
                 >
-                    <View gridArea='actions'>
-                        <Flex justifyContent={'end'}>
-                            <ButtonGroup>
-                                <Button variant='secondary' onPress={onIdentify}>
-                                    Identify
-                                </Button>
-                            </ButtonGroup>
-                        </Flex>
-                    </View>
                     <View
-                        gridArea='robot-viewer'
+                        gridColumn='1/-1'
+                        gridRow='1/-1'
                         overflow='auto'
+                        zIndex={0}
                         minHeight={0}
                         UNSAFE_style={
                             isConnected
@@ -60,6 +52,15 @@ export const Robot = () => {
                         }
                     >
                         <RobotViewer robot={robot} />
+                    </View>
+                    <View gridArea='actions' zIndex={1} margin='size-400'>
+                        <Flex justifyContent={'end'}>
+                            <ButtonGroup>
+                                <Button variant='secondary' onPress={onIdentify}>
+                                    Identify
+                                </Button>
+                            </ButtonGroup>
+                        </Flex>
                     </View>
                     <JointControls isConnected={isConnected} setIsConnected={setIsConnected} />
                 </Grid>

@@ -72,7 +72,9 @@ Write clear, concise messages. Reference issue numbers when applicable.
 
 ## Coding Standards
 
-See [.github/copilot-instructions.md](./.github/copilot-instructions.md) for detailed coding standards, style guides, and best practices.
+See [docs/development/coding-standards.md](./docs/development/coding-standards.md) for repo-wide coding standards.
+
+For `library/` code, also follow [library/docs/development/security.md](./library/docs/development/security.md).
 
 ---
 

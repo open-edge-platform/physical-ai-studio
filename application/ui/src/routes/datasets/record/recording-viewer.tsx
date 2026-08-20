@@ -19,7 +19,7 @@ import { RobotControlView } from '../../../features/robots/robot-control/robot-c
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { paths } from '../../../router';
 
-import classes from './recording-viewer.module.scss';
+import classes from './recording-viewer.module.css';
 
 export const RecordingViewer = () => {
     const { dataset, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl();

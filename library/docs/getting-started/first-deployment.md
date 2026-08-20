@@ -53,7 +53,7 @@ policy_export/
 from physicalai.inference import InferenceModel
 
 # Load exported model (auto-detects backend)
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 ```
 
 The same code works regardless of which backend you exported to.
@@ -66,7 +66,7 @@ The same code works regardless of which backend you exported to.
 from physicalai.inference import InferenceModel
 
 # Load model
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 
 # Initialize environment (your robot or simulation)
 obs, info = env.reset()
@@ -94,7 +94,7 @@ from physicalai.inference import InferenceModel
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 
 try:
     obs, info = env.reset()
@@ -152,7 +152,7 @@ You don't need to manage this—just call `select_action()` every step.
 First inference is slower due to compilation:
 
 ```python test="skip" reason="requires exported model and environment"
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 
 # Warm-up with dummy observation
 dummy_obs = get_dummy_observation()  # Match your observation format
@@ -169,7 +169,7 @@ obs, _ = env.reset()
 ```python test="skip" reason="requires exported model"
 import time
 
-policy = InferenceModel.load("./policy_export")
+policy = InferenceModel("./policy_export")
 obs = get_observation()
 
 # Warm-up

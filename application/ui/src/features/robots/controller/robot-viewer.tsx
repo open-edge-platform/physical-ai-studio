@@ -2,29 +2,29 @@
 
 import { Suspense, useEffect, useRef } from 'react';
 
-import { Grid, OrbitControls, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera } from '@react-three/drei';
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import { degToRad } from 'three/src/math/MathUtils.js';
 import { URDFRobot } from 'urdf-loader';
 
 import { useContainerSize } from '../../../components/zoom/use-container-size';
-import { SchemaRobot, SchemaRobotType } from '../robot-types';
-import { urdfPathForType } from '../robots-configuration';
-import { mapJointToURDFJoint, useLoadModelMutation, useRobotModels } from './../robot-models-context';
+import { useRobotCatalogDefinitionQuery } from '../robot-catalog.hooks';
+import { SchemaRobot } from '../robot-types';
+import { mapJointToURDFJoint, useLoadModelQuery } from './../robot-models-context';
+import { RobotViewerScene, SCENE_COLORS, useConfigureModelShadows } from './../robot-viewer-scene';
+
+import classes from './robot-viewer.module.css';
 
 /** Material name used by the dark parts in the Trossen URDF. */
 const TROSSEN_DARK_MATERIAL = 'trossen_black';
-
-/** Replacement color for dark Trossen materials. */
-const TROSSEN_REPLACEMENT_COLOR = new THREE.Color('#585858');
 
 /**
  * Find the shared `trossen_black` material on the model and replace its dark
  * texture with a solid color.
  *
  * The model is guaranteed to have all its STL meshes loaded before it enters
- * React state (see `useLoadModelMutation` which resolves on
+ * React state (see `useLoadModelQuery` which resolves on
  * `LoadingManager.onLoad`), so a plain `useEffect` is sufficient here.
  *
  * Because urdf-loader uses a shared material instance for each named material,
@@ -65,7 +65,7 @@ const useBrightenDarkMaterials = (model: URDFRobot | undefined, enabled: boolean
                 saved.push({ mat: phong, map: phong.map, color: phong.color.clone() });
 
                 phong.map = null;
-                phong.color.copy(TROSSEN_REPLACEMENT_COLOR);
+                phong.color.copy(SCENE_COLORS.trossenReplacement);
                 phong.needsUpdate = true;
             }
         });
@@ -87,27 +87,13 @@ const ActualURDFModel = ({ model, isTrossen }: { model: URDFRobot; isTrossen: bo
     const scale = [3, 3, 3] as const;
 
     useBrightenDarkMaterials(model, isTrossen);
+    useConfigureModelShadows(model);
 
     return (
         <group rotation={rotation} scale={scale}>
             <primitive object={model} />
         </group>
     );
-};
-
-const useLoadURDF = (robotType: SchemaRobotType) => {
-    const loadModelMutation = useLoadModelMutation();
-    const { hasModel } = useRobotModels();
-
-    const PATH = urdfPathForType(robotType);
-
-    useEffect(() => {
-        if (hasModel(PATH)) {
-            return;
-        }
-
-        loadModelMutation.mutate(PATH);
-    }, [PATH, hasModel, loadModelMutation]);
 };
 
 interface RobotViewerProps {
@@ -119,12 +105,12 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
     const angle = degToRad(-45);
     const isTrossen = robot.type.toLowerCase().includes('trossen');
 
-    const PATH = urdfPathForType(robot.type);
-    useLoadURDF(robot.type);
+    const { data: definition } = useRobotCatalogDefinitionQuery(robot.type);
+    const jointMap = definition.joint_map;
+
+    const { data: model, error, isPending } = useLoadModelQuery(robot.type);
     const ref = useRef<HTMLDivElement>(null);
     const size = useContainerSize(ref);
-    const { getModel } = useRobotModels();
-    const model = getModel(PATH);
 
     useEffect(() => {
         if (featureValues !== undefined && featureNames !== undefined && model !== undefined) {
@@ -135,30 +121,19 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
                         value: featureValues[index],
                     },
                     model,
-                    robot.type
+                    jointMap
                 );
             });
         }
-    }, [featureValues, featureNames, model, robot.type]);
+    }, [featureValues, featureNames, model, jointMap]);
 
     return (
-        <div ref={ref} style={{ width: '100%', height: '100%' }}>
-            <div className='canvas-container' style={{ height: `${size.height}px`, width: `${size.width}px` }}>
+        <div ref={ref} className={classes.viewer}>
+            <div className={classes.canvas} style={{ height: `${size.height}px`, width: `${size.width}px` }}>
                 <Canvas shadows>
-                    <color attach='background' args={['#242528']} />
-                    <ambientLight intensity={0.4} />
-                    <directionalLight
-                        position={[10, 10, 5]}
-                        intensity={1}
-                        castShadow
-                        shadow-mapSize-width={1024}
-                        shadow-mapSize-height={1024}
-                    />
-                    <directionalLight position={[-5, 5, -5]} intensity={0.3} />
-                    <directionalLight position={[0, -3, 5]} intensity={0.2} />
+                    <RobotViewerScene />
                     <PerspectiveCamera makeDefault position={[2.0, 1, 1]} />
-                    <OrbitControls />
-                    <Grid infiniteGrid cellSize={0.25} sectionColor={'rgb(0, 199, 253)'} fadeDistance={10} />
+                    <OrbitControls enableDamping={false} />
                     {model && (
                         <group key={model.uuid} position={[0, 0, 0]} rotation={[0, angle, 0]}>
                             <Suspense fallback={null}>
@@ -167,6 +142,12 @@ export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues,
                         </group>
                     )}
                 </Canvas>
+                {isPending && <div className={classes.loadingOverlay}>Loading robot model...</div>}
+                {error && (
+                    <div className={classes.errorOverlay} role='alert'>
+                        Failed to load robot model: {error instanceof Error ? error.message : String(error)}
+                    </div>
+                )}
             </div>
         </div>
     );

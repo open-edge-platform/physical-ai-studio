@@ -1,23 +1,10 @@
 # syntax=docker/dockerfile:1@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
 
 # Build arguments
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.13
 
 # ===========================================================================
-# Stage 1: Clone Geti UI packages and URDF robot models
-# ===========================================================================
-FROM node:24-alpine3.22@sha256:191c9f0080fcbbc6547a85dc0ff7988072214a355aabdc1d2ec55a7dae5eea8a AS ui-packages
-
-WORKDIR /home/app/web_ui/
-RUN apk add --no-cache git
-COPY --link ./application/ui/package.json ./
-
-# Clone URDF files
-RUN npm run clone-so101
-RUN npm run clone-widowx
-
-# ===========================================================================
-# Stage 2: Build Web UI
+# Stage 1: Build Web UI
 # ===========================================================================
 FROM node:24-alpine3.22@sha256:191c9f0080fcbbc6547a85dc0ff7988072214a355aabdc1d2ec55a7dae5eea8a AS web-ui
 
@@ -25,7 +12,6 @@ WORKDIR /home/app/web_ui/
 
 COPY --link application/ui/package.json ./
 COPY --link application/ui/package-lock.json ./
-COPY --from=ui-packages /home/app/web_ui/public/ /home/app/web_ui/public/
 RUN npm ci --audit=false --ignore-scripts
 
 COPY --link application/ui/tsconfig.base.json ./
@@ -47,14 +33,22 @@ FROM scratch AS app-source
 # Root workspace manifests (needed by uv run for workspace resolution)
 COPY --link pyproject.toml uv.lock LICENSE README.md /app/
 
-# Backend source, entrypoint, and manifests
+# Application-level README (needed by the hatch build hook to transform
+# relative URLs to absolute GitHub URLs for the PyPI description)
+COPY --link application/README.md /app/application/README.md
+
+# Backend source, entrypoint, manifests, and build hook
 COPY --link application/backend/src /app/application/backend/src
+COPY --link application/backend/scripts /app/application/backend/scripts
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
+COPY --link application/backend/README.md /app/application/backend/README.md
 COPY --link application/backend/run.sh /app/application/backend/run.sh
+COPY --link application/backend/scripts/hatch_build.py \
+    /app/application/backend/scripts/hatch_build.py
 
-# Built UI assets
-COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
+# Built UI assets (subdirectory matches the hatch hook's expected path: ../ui/dist/)
+COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/dist
 
 # ===========================================================================
 # Stage 4: Python builder base
@@ -64,7 +58,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
@@ -101,6 +95,12 @@ COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
 
+# Local plugin dependency manifest (required by backend's tool.uv.sources path).
+# Keep source out of builder-base so source-only changes do not invalidate
+# the shared hardware-independent sync layer.
+COPY --link --from=plugin ./pyproject.toml \
+    /app/application/plugin/pyproject.toml
+
 WORKDIR /app/application/backend
 
 # Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
@@ -112,6 +112,13 @@ WORKDIR /app/application/backend
 RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --no-install-local
 
+# FIXME: Remove this block after upgrading lerobot to >=0.5.2.
+# lerobot==0.5.1 declares wandb <0.25.0 as an unconditional runtime dependency, which
+# pulls in wandb-core a Go binary with several CVEs.
+# Until the pin in application/backend/pyproject.toml is bumped to >=0.5.2,
+# we delete the binary here to keep it out of the runtime image.
+RUN find .venv -name "wandb-core" -delete
+
 # ===========================================================================
 # Stage 4a: CPU builder
 # ===========================================================================
@@ -119,7 +126,16 @@ FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    uv sync --frozen --no-dev --no-editable --extra cpu
+    --mount=type=bind,from=plugin,target=/app/application/plugin \
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
+
+# Remove test-only packages that executorch ships as unconditional runtime dependencies.
+RUN uv pip uninstall --python .venv/bin/python \
+    pytest pluggy iniconfig \
+    pytest-xdist execnet \
+    pytest-json-report pytest-metadata \
+    pytest-rerunfailures \
+    expecttest hypothesis sortedcontainers kgb parameterized
 
 # ===========================================================================
 # Stage 4b: XPU builder
@@ -128,7 +144,27 @@ FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    uv sync --frozen --no-dev --no-editable --extra xpu
+    --mount=type=bind,from=plugin,target=/app/application/plugin \
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
+
+# Remove test-only packages that executorch ships as unconditional runtime dependencies.
+RUN uv pip uninstall --python .venv/bin/python \
+    pytest pluggy iniconfig \
+    pytest-xdist execnet \
+    pytest-json-report pytest-metadata \
+    pytest-rerunfailures \
+    expecttest hypothesis sortedcontainers kgb parameterized
+
+# Remove redundant for XPU container image Triton GPU backends (NVIDIA and AMD)
+# that also contains non-redistributable files
+# Based on: https://docs.nvidia.com/cuda/eula/index.html
+RUN set -eu; \
+    CLEANUP_ROOT="$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    [ -n "$CLEANUP_ROOT" ] && [ -d "$CLEANUP_ROOT" ]; \
+    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/nvidia" \
+        -exec rm -rf {} + 2>/dev/null || true; \
+    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/amd" \
+        -exec rm -rf {} + 2>/dev/null || true
 
 # ===========================================================================
 # Stage 4c: CUDA builder
@@ -137,7 +173,31 @@ FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    uv sync --frozen --no-dev --no-editable --extra cuda
+    --mount=type=bind,from=plugin,target=/app/application/plugin \
+    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
+
+# Remove test-only packages that executorch ships as unconditional runtime dependencies.
+RUN uv pip uninstall --python .venv/bin/python \
+    pytest pluggy iniconfig \
+    pytest-xdist execnet \
+    pytest-json-report pytest-metadata \
+    pytest-rerunfailures \
+    expecttest hypothesis sortedcontainers kgb parameterized
+
+# ===========================================================================
+# Stage 4d: Robot assets builder
+#
+# Sync backend-owned robot assets once so all runtime targets can copy the
+# exact same files before the backend wheel install step.
+# ===========================================================================
+FROM builder-base AS robot-assets
+
+COPY --link --from=app-source /app/application/backend/src /app/application/backend/src
+
+RUN --mount=type=bind,from=plugin,target=/app/application/plugin \
+    PYTHONPATH=/app/application/backend/src:/app/application/plugin/src \
+    /app/application/backend/.venv/bin/python -c \
+    "from robots.catalog.sync_robot_assets import sync_robot_assets; sync_robot_assets()"
 
 # ===========================================================================
 # Stage 5: Runtime base — shared across all hardware targets
@@ -146,7 +206,7 @@ RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:090ba77e2958f6af52a5341f788b50b032dd4ca28377d2893dcf1ecbdfdfe203 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -164,10 +224,16 @@ RUN groupadd --gid "${APP_GID}" appuser \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ffmpeg \
+        git \
         libgl1 \
         libglib2.0-0 \
         libusb-1.0-0 \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Strip packaging tools, uv manages the pre-built venv, pip is never used at runtime.
+RUN python -m pip uninstall -y setuptools pip \
+    && rm -rf /root/.cache/pip
 
 WORKDIR /app
 
@@ -175,7 +241,7 @@ WORKDIR /app
 # /home/appuser/.cache must be pre-created so that bind mounts for
 # subdirectories (e.g. huggingface calibration) don't cause Docker
 # to create .cache as root, which blocks uv from writing its cache.
-RUN mkdir -p /app/data /app/storage /app/tmp /home/appuser/.cache/huggingface \
+RUN mkdir -p /app/storage /app/tmp /home/appuser/.cache/huggingface \
     && chown -R "${APP_UID}:${APP_GID}" /app /home/appuser/.cache
 
 # Environment configuration
@@ -185,11 +251,12 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     PYTHONFAULTHANDLER=1 \
     CC=/usr/bin/gcc \
     CXX=/usr/bin/g++ \
+    SYNC=false \
     UV_NO_SYNC=1 \
-    STATIC_FILES_DIR="/app/application/ui/" \
-    DATA_DIR="/app/data" \
+    STATIC_FILES_DIR="/app/application/ui/dist/" \
     STORAGE_DIR="/app/storage" \
-    PYTHONPATH="/app/application/backend"
+    AUTO_MIGRATE_STORAGE_DIR="true" \
+    PYTHONPATH="/app/application/backend/src:/app/application/backend"
 
 EXPOSE 8000
 
@@ -210,6 +277,9 @@ ARG APP_GID=1000
 COPY --link --from=builder-cpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend
 USER appuser
@@ -262,6 +332,9 @@ ARG APP_GID=1000
 COPY --link --from=builder-xpu --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend
 USER appuser
@@ -291,7 +364,7 @@ RUN echo "deb [arch=amd64 trusted=yes] https://developer.download.nvidia.com/com
 SHELL ["/bin/sh", "-c"]
 
 # ---------------------------------------------------------------------------
-# EULA compliance cleanup — remove non-redistributable CUDA components.
+# EULA compliance cleanup — remove non-redistributable CUDA system components.
 # Keeps only the runtime shared libraries needed for inference.
 # Based on: https://docs.nvidia.com/cuda/eula/index.html
 # ---------------------------------------------------------------------------
@@ -333,6 +406,9 @@ ARG APP_GID=1000
 COPY --link --from=builder-cuda --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/.venv /app/application/backend/.venv
 COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
 WORKDIR /app/application/backend
 USER appuser

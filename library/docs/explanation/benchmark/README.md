@@ -5,6 +5,7 @@ Policy evaluation and benchmarking infrastructure.
 ## Documents
 
 - **[Overview](overview.md)** - Architecture and components
+- **[VLA Evaluation Harness](vla-evaluation-harness.md)** - External benchmark model-server integration
 
 ## Components
 

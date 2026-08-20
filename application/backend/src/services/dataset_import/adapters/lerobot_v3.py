@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import re
 import shutil
+from collections.abc import Iterable
 from io import BytesIO
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import pandas as pd
 from loguru import logger
+from physicalai.data.archive_safety import (
+    InvalidArchiveError,
+    SafeZipArchive,
+    check_disk_headroom,
+    flatten_single_root_directory,
+)
 
-from exceptions import InvalidArchiveError
 from schemas import Dataset
 from schemas.dataset_import_job import (
     DatasetImportJobPayload,
@@ -17,12 +24,13 @@ from schemas.dataset_import_job import (
     DatasetManifestStatistics,
     ImportValidationReport,
 )
-from services.archive_safety import SafeZipArchive, check_disk_headroom, flatten_single_root_directory
-from services.dataset_service import DatasetService
 from settings import get_settings
 
 from .base import DatasetImportAdapter
 from .recording_schema import extract_recording_schema
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 class LeRobotV3Adapter(DatasetImportAdapter):
@@ -36,14 +44,15 @@ class LeRobotV3Adapter(DatasetImportAdapter):
             return {}
         return raw_info
 
-    def _load_episode_counts(  # noqa: C901, PLR0912, PLR0915
+    def _load_episode_metadata(  # noqa: C901, PLR0912, PLR0915
         self,
         archive: SafeZipArchive,
         report: ImportValidationReport,
         info: dict | None = None,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, set[str]]:
         episode_count = 0
         frame_count = 0
+        tasks: set[str] = set()
 
         episode_shards: list[tuple[int, int, str]] = []
         for name in archive.iter_normalized_names():
@@ -52,7 +61,7 @@ class LeRobotV3Adapter(DatasetImportAdapter):
 
         if not episode_shards:
             report.add_error("No episode parquet found under 'meta/episodes/chunk-*/file-*.parquet'.")
-            return episode_count, frame_count
+            return episode_count, frame_count, tasks
 
         episode_shards.sort(key=lambda item: (item[0], item[1], item[2]))
 
@@ -96,9 +105,17 @@ class LeRobotV3Adapter(DatasetImportAdapter):
             else:
                 shard_count_without_length += 1
 
+            if "tasks" in episodes_df.columns:
+                for episode_tasks in episodes_df["tasks"]:
+                    if isinstance(episode_tasks, str) or not isinstance(episode_tasks, Iterable):
+                        continue
+                    for task in episode_tasks:
+                        if isinstance(task, str):
+                            tasks.add(task)
+
         if readable_shard_count == 0:
             report.add_error("No readable episode parquet found under 'meta/episodes/chunk-*/file-*.parquet'.")
-            return 0, 0
+            return 0, 0, tasks
 
         if shard_count_with_episode_index == 0:
             episode_count = episode_rows_total
@@ -134,7 +151,10 @@ class LeRobotV3Adapter(DatasetImportAdapter):
                     f"{expected_frame_count}, parsed episode shards report {frame_count}."
                 )
 
-        return episode_count, frame_count
+        if not tasks:
+            report.add_warning("Could not infer tasks from episode metadata.")
+
+        return episode_count, frame_count, tasks
 
     def detect(self, archive: SafeZipArchive) -> tuple[bool, ImportValidationReport]:
         """Return (matched, report) for LeRobot v3 archives.
@@ -208,10 +228,11 @@ class LeRobotV3Adapter(DatasetImportAdapter):
         info: dict = {}
         episode_count = 0
         frame_count = 0
+        tasks: set[str] = set()
 
         try:
             info = self._load_info(archive=archive, report=report)
-            episode_count, frame_count = self._load_episode_counts(archive=archive, report=report, info=info)
+            episode_count, frame_count, tasks = self._load_episode_metadata(archive=archive, report=report, info=info)
 
             if archive.read_json("meta/stats.json") is None:
                 report.add_warning("No global stats metadata found in 'meta/stats.json'.")
@@ -245,7 +266,7 @@ class LeRobotV3Adapter(DatasetImportAdapter):
                 episode_count=episode_count,
                 frame_count=frame_count,
             ),
-            dataset_schema=recording_schema,
+            dataset_schema=recording_schema.model_copy(update={"tasks": sorted(tasks)}),
         )
 
         return manifest, report
@@ -258,7 +279,13 @@ class LeRobotV3Adapter(DatasetImportAdapter):
 
         return report
 
-    async def commit(self, payload: DatasetImportJobPayload, project_id: UUID, archive: SafeZipArchive) -> Dataset:
+    async def commit(
+        self,
+        payload: DatasetImportJobPayload,
+        project_id: UUID,
+        archive: SafeZipArchive,
+        persist_dataset: Callable[[Dataset], Awaitable[Dataset]],
+    ) -> Dataset:
         if payload.finalize_input is None:
             raise ValueError("Cannot commit dataset import without finalize input")
 
@@ -300,13 +327,12 @@ class LeRobotV3Adapter(DatasetImportAdapter):
             dataset = Dataset(
                 id=dataset_id,
                 name=payload.dataset_name or "Imported Dataset",
-                path=str(destination_dir),
                 default_task=payload.finalize_input.default_task,
                 project_id=project_id,
                 environment_id=payload.finalize_input.environment_id,
             )
 
-            saved = await DatasetService.create_dataset(dataset)
+            saved = await persist_dataset(dataset)
             logger.info(
                 "LeRobotV3Adapter dataset persisted: dataset_id='{}', project_id='{}', environment_id='{}', path='{}'",
                 saved.id,

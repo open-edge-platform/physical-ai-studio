@@ -6,12 +6,24 @@ Docker container with support for CPU, Intel XPU, and NVIDIA CUDA hardware.
 
 ## Prerequisites
 
-- [**Docker Engine**](https://docs.docker.com/engine/install/ubuntu/) 24+ with **Docker Compose** v2
+- [**Docker Engine**](https://docs.docker.com/engine/install/ubuntu/) 24.0+ with **Docker Compose** v2.24.0+
 - A supported hardware backend:
   - **CPU** — any x86_64 system (default)
   - **Intel XPU** — Intel discrete/integrated GPU with Level Zero drivers on the host
   - **NVIDIA CUDA** — NVIDIA GPU with the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed
 - Robot hardware (optional): USB serial ports (`/dev/ttyACM*`), USB cameras (`/dev/video*`), or Intel RealSense cameras
+
+Check your installed versions with:
+
+```bash
+docker version
+docker compose version
+```
+
+Docker Compose v2.24.0+ is required because `docker-compose.yaml` uses long-form
+`env_file` entries with `required: false`. Older Compose versions may not pass
+`.env` values into the running container, which can break proxy-dependent model
+training even when `.env` looks correct on the host.
 
 ## Quick Start
 
@@ -21,13 +33,10 @@ All commands should be run from the `application/docker/` directory.
 # 1. Create your local environment file
 cp .env.example .env
 
-# 2. (Optional) Set your hardware profile in .env
-#    Edit COMPOSE_PROFILES to: cpu (default), xpu, or cuda
+# 2. Auto-detect host device GIDs for non-Debian systems and setup training hardware
+./setup-devices.sh --xpu # or use --cuda, --cpu
 
-# 3. (Optional) Auto-detect host device GIDs for non-Debian systems
-./setup-devices.sh
-
-# 4. Start Physical AI Studio
+# 3. Start Physical AI Studio
 docker compose up
 ```
 
@@ -61,7 +70,7 @@ All configuration is done through the `.env` file. Copy `.env.example` to get st
 | `COMPOSE_PROFILES` | `cpu`                         | Hardware profile: `cpu`, `xpu`, or `cuda`                |
 | `PORT`             | `7860`                        | Host port to expose the web UI and API                   |
 | `REGISTRY`         | `ghcr.io/open-edge-platform/` | Container image registry                                 |
-| `IMAGE_TAG`        | `latest`                      | Image version tag                                        |
+| `IMAGE_TAG`        | `main`                        | Image version tag (`latest` is release-only; use `main` for the newest dev build) |
 | `APP_UID`          | `1000`                        | UID for the in-container user (match your host user)     |
 | `APP_GID`          | `1000`                        | GID for the in-container user (match your host user)     |
 | `VIDEO_GID`        | `video` (group name)          | Host GID for the `video` group (cameras)                 |
@@ -172,19 +181,19 @@ sudo usermod -aG render $USER   # Intel XPU only
 
 ## Volumes and Data Persistence
 
-The compose file defines two named volumes and one bind mount:
+The compose file defines one named volume:
 
-| Volume                       | Container path                                         | Purpose                                       |
-|------------------------------|--------------------------------------------------------|-----------------------------------------------|
-| `physical-ai-studio-data`    | `/app/data`                                            | Application database and runtime data         |
-| `physical-ai-studio-storage` | `/app/storage`                                         | Trained models, datasets, and other artifacts |
-| *(bind mount)*               | `~/.cache/huggingface/lerobot/calibration` (read-only) | Shared robot calibration data from the host   |
+| Volume                       | Container path                                         | Purpose                                              |
+|------------------------------|--------------------------------------------------------|------------------------------------------------------|
+| `physical-ai-studio-storage` | `/app/storage`                                         | Persistent storage, including app data and artifacts |
+
+Runtime defaults use `STORAGE_DIR=/app/storage`; the application database is stored under `$STORAGE_DIR/data`.
 
 To inspect volume contents:
 
 ```bash
 # List files in a volume
-docker run --rm -v docker_physical-ai-studio-data:/data alpine ls -la /data
+docker run --rm -v docker_physical-ai-studio-storage:/storage alpine ls -la /storage
 
 # Back up a volume
 docker run --rm -v docker_physical-ai-studio-storage:/storage -v $(pwd):/backup alpine \
@@ -193,9 +202,9 @@ docker run --rm -v docker_physical-ai-studio-storage:/storage -v $(pwd):/backup 
 
 > [!NOTE]
 > Docker Compose prefixes volume names with the project name (the directory name
-> by default). When running from `application/docker/`, the actual volume names
-> are `docker_physical-ai-studio-data` and `docker_physical-ai-studio-storage`.
-> You can verify the exact volume names with `docker volume ls | grep physical-ai-studio`.
+> by default). When running from `application/docker/`, the actual volume name
+> is `docker_physical-ai-studio-storage`.
+> You can verify the exact volume name with `docker volume ls | grep physical-ai-studio`.
 
 To reset all data:
 
@@ -225,6 +234,16 @@ The Dockerfile uses a multi-stage build. The build context is the repository
 root. Each profiled service targets the corresponding Dockerfile stage
 (e.g. `physical-ai-studio-cuda`). Proxy environment variables from `.env`
 are passed as build arguments automatically.
+
+## Remote training service (trainer)
+
+`docker-compose.trainer.yaml` in this directory is a separate, standalone
+Compose file for the remote training service under
+`application/backend/src/trainer/`.
+It does not start the Studio backend/UI images above, and this
+`docker-compose.yaml` does not reference the trainer images. See
+[`application/backend/docs/remote-trainer.md`](../backend/docs/remote-trainer.md) for setup, security
+notes, and the manual container-startup guide.
 
 ## Troubleshooting
 
@@ -272,3 +291,33 @@ NO_PROXY=localhost,127.0.0.1
 ```
 
 These are passed to both the Docker build process and the running container.
+
+If training fails with a network error such as `urlopen error [Errno 99] Cannot assign requested address`, first verify that the proxy settings are visible to Docker Compose and to the running container:
+
+```bash
+# Run from application/docker/
+grep -i proxy .env
+docker compose --profile cuda config | grep -i proxy
+docker exec physical-ai-studio-cuda env | grep -i proxy
+```
+
+Use the matching service name for your profile: `physical-ai-studio-cpu`, `physical-ai-studio-xpu`, or `physical-ai-studio-cuda`.
+
+If the values appear in `.env` but not in `docker compose ... config`, check your Docker Compose version and upgrade to v2.24.0+.
+
+If the values appear in `docker compose ... config` but not inside the running container, recreate the container after upgrading Docker Compose:
+
+```bash
+docker compose --profile cuda up -d --force-recreate
+```
+
+For corporate proxies, configure both uppercase and lowercase variables when required by your environment:
+
+```bash
+HTTP_PROXY=http://proxy.example.com:8080
+HTTPS_PROXY=http://proxy.example.com:8080
+NO_PROXY=localhost,127.0.0.1,::1
+http_proxy=http://proxy.example.com:8080
+https_proxy=http://proxy.example.com:8080
+no_proxy=localhost,127.0.0.1,::1
+```

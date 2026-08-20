@@ -166,7 +166,6 @@ class LiberoGym(Gym):
         observation_height: int = 256,
         observation_width: int = 256,
         init_states: bool = True,
-        episode_index: int = 0,
         num_steps_wait: int = 10,
         control_mode: str = "relative",
     ) -> None:
@@ -180,7 +179,6 @@ class LiberoGym(Gym):
             observation_height: Image height in pixels (default: 256)
             observation_width: Image width in pixels (default: 256)
             init_states: Whether to use pre-defined init states for reproducibility
-            episode_index: Which init state to use (when init_states=True)
             num_steps_wait: Steps to wait after reset for stabilization (default: 10)
             control_mode: "relative" for delta actions, "absolute" for absolute control
         """
@@ -197,7 +195,6 @@ class LiberoGym(Gym):
         self.observation_height = observation_height
         self.observation_width = observation_width
         self.init_states = init_states
-        self.episode_index = episode_index
         self.num_steps_wait = num_steps_wait
         self.control_mode = control_mode
 
@@ -211,7 +208,6 @@ class LiberoGym(Gym):
 
         # Load init states if requested
         self._init_states: np.ndarray | None = None
-        self._init_state_id = episode_index
         if self.init_states:
             self._init_states = self._load_init_states(task)
 
@@ -347,6 +343,7 @@ class LiberoGym(Gym):
         self,
         *,
         seed: int | None = None,
+        episode_index: int = 0,
         **reset_kwargs: Any,  # noqa: ANN401, ARG002
     ) -> tuple[Observation, dict[str, Any]]:
         """Reset environment with optional init state.
@@ -355,6 +352,7 @@ class LiberoGym(Gym):
 
         Args:
             seed: Random seed for reproducibility
+            episode_index: Index of the episode being reset. Defaults to 0.
             **reset_kwargs: Additional reset options (unused, for base class compatibility)
 
         Returns:
@@ -363,11 +361,12 @@ class LiberoGym(Gym):
         if seed is not None:
             self.env.seed(seed)
 
+        raw_obs = self.env.reset()
+
         # Apply init state if available
         if self.init_states and self._init_states is not None:
-            self.env.set_init_state(self._init_states[self._init_state_id])
-
-        raw_obs = self.env.reset()
+            init_state_id = episode_index % len(self._init_states)
+            raw_obs = self.env.set_init_state(self._init_states[init_state_id])
 
         # After reset, objects may be unstable (slightly floating, intersecting, etc.).
         # Step the simulator with a no-op action for a few frames so everything settles.

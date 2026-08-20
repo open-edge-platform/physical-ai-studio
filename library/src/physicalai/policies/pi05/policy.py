@@ -28,6 +28,7 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 from physicalai.policies.base import Policy
+from physicalai.policies.mixins import SnapFlowPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Pi05(ExportablePolicyMixin, Policy):
+class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
     """Pi05 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi05 model.
@@ -132,6 +133,10 @@ class Pi05(ExportablePolicyMixin, Policy):
         min_period: float = 4e-3,
         max_period: float = 4.0,
         use_random_input_noise: bool = True,
+        snapflow_enabled: bool = False,
+        snapflow_alpha: float = 0.5,
+        snapflow_lambda: float = 1.0,
+        snapflow_num_inference_steps: int = 1,
         # Image preprocessing
         image_resolution: tuple[int, int] = (224, 224),
         empty_cameras: int = 0,
@@ -184,6 +189,10 @@ class Pi05(ExportablePolicyMixin, Policy):
                 scheduler_warmup_steps=scheduler_warmup_steps,
                 scheduler_decay_steps=scheduler_decay_steps,
                 scheduler_decay_lr=scheduler_decay_lr,
+                snapflow_enabled=snapflow_enabled,
+                snapflow_alpha=snapflow_alpha,
+                snapflow_lambda=snapflow_lambda,
+                snapflow_num_inference_steps=snapflow_num_inference_steps,
             )
         else:
             self.config = Pi05Config(
@@ -202,6 +211,10 @@ class Pi05(ExportablePolicyMixin, Policy):
                 time_sampling_offset=time_sampling_offset,
                 min_period=min_period,
                 max_period=max_period,
+                snapflow_enabled=snapflow_enabled,
+                snapflow_alpha=snapflow_alpha,
+                snapflow_lambda=snapflow_lambda,
+                snapflow_num_inference_steps=snapflow_num_inference_steps,
                 image_resolution=image_resolution,
                 empty_cameras=empty_cameras,
                 tokenizer_max_length=tokenizer_max_length,
@@ -221,9 +234,10 @@ class Pi05(ExportablePolicyMixin, Policy):
                 scheduler_decay_steps=scheduler_decay_steps,
                 scheduler_decay_lr=scheduler_decay_lr,
             )
-
+        # captures raw init args
         self.save_hyperparameters(ignore=["config", "pretrained_name_or_path", "compile_model"])
-        self.hparams["config"] = self.config.to_dict()
+        # overwrites with resolved self.config values
+        self._set_hparam_keys()
 
         self.model: Pi05Model | None = None
 
@@ -234,6 +248,14 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         if dataset_stats is not None:
             self._initialize_model(dataset_stats, weight_file)
+
+    def _set_hparam_keys(self) -> None:
+        """Sync top-level checkpoint hparams from the resolved policy config."""
+        for key, value in self.config.__dict__.items():
+            if key == "compile_model" or key not in self.hparams:
+                continue
+            self.hparams[key] = value
+        self.hparams["config"] = self.config.to_dict()
 
     def _initialize_model(
         self,
@@ -259,6 +281,10 @@ class Pi05(ExportablePolicyMixin, Policy):
             time_sampling_offset=self.config.time_sampling_offset,
             min_period=self.config.min_period,
             max_period=self.config.max_period,
+            snapflow_enabled=self.config.snapflow_enabled,
+            snapflow_alpha=self.config.snapflow_alpha,
+            snapflow_lambda=self.config.snapflow_lambda,
+            snapflow_num_inference_steps=self.config.snapflow_num_inference_steps,
             image_resolution=self.config.image_resolution,
             tokenizer_max_length=self.config.tokenizer_max_length,
             freeze_vision_encoder=self.config.freeze_vision_encoder,
@@ -304,7 +330,7 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301, PLR0913, PLR0915
+    def _from_hf(  # noqa: PLR6301, PLR0913, PLR0912, PLR0915
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -313,6 +339,10 @@ class Pi05(ExportablePolicyMixin, Policy):
         max_state_dim: int | None = None,
         num_inference_steps: int | None = None,
         use_random_input_noise: bool = True,
+        snapflow_enabled: bool | None = None,
+        snapflow_alpha: float | None = None,
+        snapflow_lambda: float | None = None,
+        snapflow_num_inference_steps: int | None = None,
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
         compile_mode: str | None = "max-autotune",
@@ -347,6 +377,10 @@ class Pi05(ExportablePolicyMixin, Policy):
             max_state_dim: Override maximum state dimension.
             num_inference_steps: Override denoising steps for inference.
             use_random_input_noise: Override whether to use random noise as initial denoising input.
+            snapflow_enabled: Override whether to enable SnapFlow self-distillation.
+            snapflow_alpha: Override SnapFlow consistency loss probability.
+            snapflow_lambda: Override SnapFlow consistency loss weight.
+            snapflow_num_inference_steps: Override SnapFlow Euler steps at test time.
             gradient_checkpointing: Override gradient checkpointing.
             compile_model: Override whether to use torch.compile.
             compile_mode: Override torch compile mode.
@@ -424,6 +458,14 @@ class Pi05(ExportablePolicyMixin, Policy):
         if num_inference_steps is not None:
             hf_config["num_inference_steps"] = num_inference_steps
         hf_config["use_random_input_noise"] = use_random_input_noise
+        if snapflow_enabled is not None:
+            hf_config["snapflow_enabled"] = snapflow_enabled
+        if snapflow_alpha is not None:
+            hf_config["snapflow_alpha"] = snapflow_alpha
+        if snapflow_lambda is not None:
+            hf_config["snapflow_lambda"] = snapflow_lambda
+        if snapflow_num_inference_steps is not None:
+            hf_config["snapflow_num_inference_steps"] = snapflow_num_inference_steps
         hf_config["gradient_checkpointing"] = gradient_checkpointing
         hf_config["compile_model"] = compile_model
         if compile_mode is not None:
@@ -446,8 +488,8 @@ class Pi05(ExportablePolicyMixin, Policy):
             if detected is not None:
                 hf_config["normalization_mode"] = detected
 
-        # from_dict skips unknown keys and coerces lists→tuples via type hints
-        config = Pi05Config.from_dict(hf_config)
+        # strict=False: ignore legacy config.json keys not present in Pi05Config
+        config = Pi05Config.from_dict(hf_config, strict=False)
 
         # --- build dataset_stats from HF artefacts ---
         dataset_stats = _extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
@@ -515,7 +557,7 @@ class Pi05(ExportablePolicyMixin, Policy):
         if self.model is not None:
             self.model.set_dataset_stats(dataset_stats)
 
-    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, float]]:
+    def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Forward pass through the model.
 
         Training mode: returns flow matching (loss, loss_dict) with gradients.
@@ -535,7 +577,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             return self.model(processed_batch)
         return self.predict_action_chunk(batch)
 
-    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, float]]:
+    def compute_val_loss(self, batch: Observation) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute action prediction MSE on a batch (for validation).
 
         Runs the full denoising loop and compares predicted actions to
@@ -590,6 +632,26 @@ class Pi05(ExportablePolicyMixin, Policy):
         loss, loss_dict = self(batch)
         self.log("train/loss", loss_dict["loss"], prog_bar=True)
         return loss
+
+    @property
+    def inner_model(self) -> Pi05Model:
+        """The unwrapped Pi05 flow-matching module.
+
+        Raises:
+            RuntimeError: If accessed before ``setup()`` has initialized the model.
+        """
+        if self.model is None:
+            msg = "inner_model accessed before the model was initialized (setup() has not run yet)."
+            raise RuntimeError(msg)
+        return self.model
+
+    def freeze_vlm(self) -> None:
+        """Freeze PaliGemma so only the action expert and target-time embedding train."""
+        inner = self.inner_model
+        object.__setattr__(self.config, "train_expert_only", True)  # noqa: PLC2801
+        inner.paligemma_with_expert.train_expert_only = True
+        inner.paligemma_with_expert._set_requires_grad()  # noqa: SLF001
+        inner.train()
 
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
@@ -682,9 +744,12 @@ class Pi05(ExportablePolicyMixin, Policy):
 
         schema: list[InferenceFeature] = []
 
-        num_image_features = sum(1 for key in dataset_stats if str(FeatureType.VISUAL) in dataset_stats[key]["type"])
+        num_image_features = sum(
+            1 for feature in dataset_stats.values() if str(FeatureType.VISUAL) in str(feature.get("type", ""))
+        )
 
         for feature_id, feature in dataset_stats.items():
+            feature_type = str(feature.get("type", ""))
             if STATE in feature_id:
                 schema.append(
                     InferenceFeature(
@@ -694,8 +759,11 @@ class Pi05(ExportablePolicyMixin, Policy):
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                 )
-            elif str(FeatureType.VISUAL) in feature["type"]:
-                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature['name']}"
+            elif str(FeatureType.VISUAL) in feature_type:
+                feature_name = (
+                    str(feature.get("name", feature_id)).removeprefix("observation.").removeprefix(f"{IMAGES}.")
+                )
+                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature_name}"
                 schema.append(
                     InferenceFeature(
                         ftype=InferenceFeatureType.VISUAL,
@@ -747,6 +815,30 @@ class Pi05(ExportablePolicyMixin, Policy):
         return schema
 
     @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's model output for export.
+
+        Returns:
+            A list with a single ``action`` feature of shape
+            ``(chunk_size, *action_dim)``, where ``action_dim`` is the actual
+            action dimension taken from the dataset stats. Returns ``None`` if the
+            underlying model or dataset stats have not been initialized yet.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
+
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.ACTION,
+                shape=(self.config.chunk_size, *action_shape),
+                name=ACTION,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+    @property
     def extra_export_args(self) -> dict[str, ExportParameters]:
         """Additional export arguments for model conversion.
 
@@ -792,9 +884,10 @@ class Pi05(ExportablePolicyMixin, Policy):
             torch_postproc_specs.append(chunk_trimmer)
 
         extra_args: dict[str, ExportParameters] = {}
+        output_names = [feature.name for feature in (self.outputs_schema or [])]
         extra_args["onnx"] = ONNXExportParameters(
             exporter_kwargs={
-                "output_names": [ACTION],
+                "output_names": output_names,
             },
             export_tokenizer=False,
             preprocessors_specs=[
@@ -809,7 +902,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             postprocessors_specs=postproc_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
-            outputs=[ACTION],
+            outputs=output_names,
             compress_to_fp16=True,
             via_onnx=True,
             export_tokenizer=True,
@@ -824,6 +917,7 @@ class Pi05(ExportablePolicyMixin, Policy):
             postprocessors_specs=postproc_specs,
         )
         extra_args["torch"] = TorchExportParameters(
+            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
             postprocessors_specs=torch_postproc_specs,
         )
 

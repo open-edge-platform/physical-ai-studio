@@ -1,6 +1,9 @@
 import logging
 from fractions import Fraction
+from functools import cache
+from typing import Any
 
+from lerobot.configs import RGBEncoderConfig
 from pydantic import BaseModel
 
 
@@ -12,21 +15,20 @@ class StreamingEncodingSettings(BaseModel):
 
     def with_resolved_vcodec(self) -> "StreamingEncodingSettings":
         # - If vcodec is already explicit (or streaming is disabled),
-        #   _resolve_vcodec returns the original value.
-        # - If vcodec is "auto", _resolve_vcodec probes candidates and picks
-        #   the first usable encoder.
-        return self.model_copy(update={"vcodec": self._resolve_vcodec()})
+        #   resolve_vcodec returns the original value.
+        # - If vcodec is "auto", resolve_vcodec probes candidates once and
+        #   picks the first usable encoder.
+        return self.model_copy(update={"vcodec": _resolve_vcodec(self.vcodec, self.streaming_encoding)})
 
-    def _resolve_vcodec(self) -> str:
-        if not self.streaming_encoding or self.vcodec != "auto":
-            return self.vcodec
-
-        for candidate in self._vcodec_candidates():
-            if self._is_vcodec_usable(candidate):
-                logging.info(f"Auto-selected vcodec '{candidate}'")
-                return candidate
-
-        raise RuntimeError("No usable video encoder found for streaming encoding")
+    def to_lerobot_write_kwargs(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            "streaming_encoding": self.streaming_encoding,
+            "encoder_threads": self.encoder_threads,
+            "encoder_queue_maxsize": self.encoder_queue_maxsize,
+        }
+        if self.vcodec != "auto":
+            kwargs["rgb_encoder"] = RGBEncoderConfig(vcodec=self.vcodec, g=None)
+        return kwargs
 
     @staticmethod
     def _vcodec_candidates() -> list[str]:
@@ -60,3 +62,17 @@ class StreamingEncodingSettings(BaseModel):
         except Exception as exc:
             logging.warning(f"Skipping unavailable vcodec '{vcodec}': {exc}")
             return False
+
+
+@cache
+def _resolve_vcodec(vcodec: str, streaming_encoding: bool) -> str:
+    """Probe usable vcodec once per process; result is cached."""
+    if not streaming_encoding or vcodec != "auto":
+        return vcodec
+
+    for candidate in StreamingEncodingSettings._vcodec_candidates():
+        if StreamingEncodingSettings._is_vcodec_usable(candidate):
+            logging.info(f"Auto-selected vcodec '{candidate}'")
+            return candidate
+
+    raise RuntimeError("No usable video encoder found for streaming encoding")

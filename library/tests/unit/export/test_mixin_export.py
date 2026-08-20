@@ -3,6 +3,7 @@
 
 """Unit tests for mixin_export module."""
 
+import logging
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
@@ -16,7 +17,11 @@ from physicalai.export.backends import (
     OpenVINOExportParameters,
     TorchExportParameters,
 )
-from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
+from physicalai.export.mixin_policy import (
+    ExportablePolicyMixin,
+    ExportBackend,
+    _quiet_onnx_export_logs,  # noqa: PLC2701
+)
 from physicalai.inference.data import (
     InferenceFeature,
     InferenceFeatureDtype,
@@ -149,6 +154,7 @@ class ExportWrapper(ExportablePolicyMixin):
     def __init__(self, model: torch.nn.Module):
         self.model = model
         self._preprocessor = IdentityPreprocessor()
+        self.device = torch.device("cpu")
         self._extra_export_args = {
             ExportBackend.ONNX: ONNXExportParameters(),
             ExportBackend.OPENVINO: OpenVINOExportParameters(),
@@ -296,6 +302,50 @@ class TestToOnnx:
         # Verify the ONNX model can be loaded
         onnx_model = onnx.load(str(output_path))
         onnx.checker.check_model(onnx_model)
+
+    def test_to_onnx_suppresses_per_node_exporter_logs(self, tmp_path, caplog):
+        """Test that the exporter's per-node INFO chatter is not propagated."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        with caplog.at_level(logging.INFO):
+            wrapper.to_onnx(tmp_path / "model.onnx")
+
+        noisy = [
+            record
+            for record in caplog.records
+            if record.levelno <= logging.INFO and record.name.split(".")[0] in {"onnxscript", "onnx_ir"}
+        ]
+        assert noisy == []
+
+
+class TestQuietOnnxExportLogs:
+    """Tests for the _quiet_onnx_export_logs context manager."""
+
+    def test_levels_restored_on_exception(self):
+        """Test that original levels are restored even when the block raises."""
+        onnxscript_logger = logging.getLogger("onnxscript")
+        onnxscript_logger.setLevel(logging.DEBUG)
+
+        try:
+            with pytest.raises(ValueError, match="boom"), _quiet_onnx_export_logs():
+                assert onnxscript_logger.level == logging.WARNING
+                raise ValueError("boom")
+
+            assert onnxscript_logger.level == logging.DEBUG
+        finally:
+            onnxscript_logger.setLevel(logging.NOTSET)
+
+    def test_explicitly_quieter_logger_left_untouched(self):
+        """Test that a logger already above WARNING keeps its configured level."""
+        onnxscript_logger = logging.getLogger("onnxscript")
+        onnxscript_logger.setLevel(logging.ERROR)
+
+        try:
+            with _quiet_onnx_export_logs():
+                assert onnxscript_logger.level == logging.ERROR
+        finally:
+            onnxscript_logger.setLevel(logging.NOTSET)
 
 
 class TestToOpenVINO:
@@ -566,6 +616,7 @@ class TorchExportWrapper(ExportablePolicyMixin):
     def __init__(self, model: torch.nn.Module, chunk_size: int, n_action_steps: int):
         self.model = model
         self._preprocessor = IdentityPreprocessor()
+        self.device = torch.device("cpu")
         self.chunk_size = chunk_size
         self.n_action_steps = n_action_steps
 
@@ -579,7 +630,12 @@ class TorchExportWrapper(ExportablePolicyMixin):
                     n_action_steps=self.n_action_steps,
                 ),
             )
-        return {ExportBackend.TORCH: TorchExportParameters(postprocessors_specs=postproc_specs)}
+        return {
+            ExportBackend.TORCH: TorchExportParameters(
+                preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+                postprocessors_specs=postproc_specs,
+            )
+        }
 
     @staticmethod
     def get_supported_export_backends() -> list[str | ExportBackend]:
@@ -613,6 +669,17 @@ class TestToTorch:
         manifest = Manifest.load(tmp_path / "manifest.json")
         postproc_types = [spec.type for spec in manifest.model.postprocessors]
         assert "action_chunk_trimmer" not in postproc_types
+
+    def test_to_torch_records_to_float_tensor_preprocessor(self, tmp_path):
+        """The ``to_float_tensor`` preprocessor spec is recorded in the manifest."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = TorchExportWrapper(model, chunk_size=5, n_action_steps=5)
+
+        wrapper.to_torch(tmp_path)
+
+        manifest = Manifest.load(tmp_path / "manifest.json")
+        preproc_types = [spec.type for spec in manifest.model.preprocessors]
+        assert "to_float_tensor" in preproc_types
 
 
 class TestSampleInputFromSchema:
@@ -669,3 +736,26 @@ class TestSampleInputFromSchema:
         assert sample["step"].dtype == torch.int64
 
         assert sample["task"] == "Example prompt string"
+
+
+class TestDefaultExportInputSample:
+    """Tests for ``_get_default_export_input_sample``."""
+
+    def test_tensors_moved_to_policy_device(self):
+        """Processed sample tensors are moved to the policy's ``device``."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+        # ``meta`` device works without GPU hardware and is easy to assert on.
+        wrapper.device = torch.device("meta")
+
+        sample = wrapper._get_default_export_input_sample()
+
+        assert sample is not None
+        assert all(tensor.device.type == "meta" for tensor in sample.values())
+
+    def test_returns_none_without_sample_input(self):
+        """``None`` is returned when the policy provides no ``sample_input``."""
+        model = SimpleModel(SimpleConfig())
+        wrapper = ExportWrapper(model)
+
+        assert wrapper._get_default_export_input_sample() is None

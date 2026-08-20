@@ -17,13 +17,15 @@ Example (API):
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from physicalai.config import Config
 
+from physicalai.policies.mixins import SnapFlowConfigMixin
+
 
 @dataclass(frozen=True)
-class SmolVLAConfig(Config):
+class SmolVLAConfig(SnapFlowConfigMixin, Config):
     """Configuration for SmolVLA flow matching model.
 
     Attributes:
@@ -34,8 +36,11 @@ class SmolVLAConfig(Config):
         max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded. Defaults to 32.
         resize_imgs_with_padding: Target size (height, width) for image preprocessing with padding.
             Defaults to (512, 512).
-        empty_cameras: Number of empty camera images to add. Used by smolvla_aloha_sim for adding empty wrist cameras.
-            Defaults to 0.
+        image_key_reorder_map: Optional mapping from dataset camera keys to policy camera indices.
+            This is applied in preprocessing before image stacking. Defaults to {}.
+        num_cameras: Total number of camera slots expected by the policy. Slots not covered by the batch
+            image keys (or by ``image_key_reorder_map``) are filled with masked empty cameras. Values <= 0
+            keep only the batch cameras. Defaults to 0.
         adapt_to_pi_aloha: Whether to convert joint and gripper values from standard Aloha space to pi internal
             runtime space. Defaults to False.
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 48.
@@ -68,6 +73,9 @@ class SmolVLAConfig(Config):
         max_period: Maximum period for sine-cosine positional encoding of timesteps. Defaults to 4.0.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to True.
+
+    See :class:`~physicalai.policies.mixins.SnapFlowConfigMixin` for the
+    inherited ``snapflow_*`` attributes.
     """
 
     n_obs_steps: int = 1
@@ -79,7 +87,9 @@ class SmolVLAConfig(Config):
 
     resize_imgs_with_padding: tuple[int, int] = (512, 512)
 
-    empty_cameras: int = 0
+    image_key_reorder_map: dict[str, int] = field(default_factory=dict)
+
+    num_cameras: int = 0
 
     adapt_to_pi_aloha: bool = False
 
@@ -135,7 +145,8 @@ class SmolVLAConfig(Config):
         as the chunk size represents the upper bound for action steps per model invocation.
 
         Raises:
-            ValueError: If n_action_steps is greater than chunk_size.
+            ValueError: If n_action_steps is greater than chunk_size, or if a
+                SnapFlow flag falls outside its valid range.
         """
         if self.n_action_steps > self.chunk_size:
             msg = (
@@ -143,3 +154,5 @@ class SmolVLAConfig(Config):
                 f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`."
             )
             raise ValueError(msg)
+
+        self._validate_snapflow()

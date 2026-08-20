@@ -41,9 +41,13 @@ For users who prefer a visual interface for end-to-end workflow:
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
-  <img src="docs/assets/application.gif" alt="Application demo" width="100%">
+  <a href="docs/assets/physical_ai_studio_full_overview.mp4">
+    <img src="docs/assets/physical_ai_studio_overview.gif" alt="Application demo" width="100%">
+  </a>
 </p>
 <!-- markdownlint-enable MD033 -->
+
+[Download the full demo video →](docs/assets/physical_ai_studio_full_overview.mp4)
 
 [Application Documentation →](./application/README.md)
 
@@ -58,11 +62,11 @@ cd physical-ai-studio
 
 # Setup and run docker services
 cd application/docker
-./setup-devices.sh
-docker compose --profile xpu up # or use --profile cuda, --profile cpu
+./setup-devices.sh --xpu # or use --cuda, --cpu
+docker compose up -d
 ```
 
-Application runs at http://localhost:7860. See the [Docker README](./application/docker/README.md) for
+Application runs at <http://localhost:7860>. See the [Docker README](./application/docker/README.md) for
 hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
 If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
@@ -75,7 +79,7 @@ Run the application in development mode, using [uv package manager](https://docs
 
 Note: native setup requires additional OS-level libraries (OpenCV/video/USB and Python
 build dependencies). See the **Prerequisites** section in
-[Application Documentation](./application/README.md#prerequisites).
+[Application Installation](./application/docs/01-installation.md#prerequisites).
 
 ```bash
 # Clone the repository
@@ -83,10 +87,10 @@ git clone https://github.com/open-edge-platform/physical-ai-studio.git
 cd physical-ai-studio
 
 # Install and run backend
-cd application/backend && uv sync --extra xpu # or --extra cpu, --extra cuda
+cd application/backend
 
-# Start the backend
-./run.sh
+# Start the backend, or use --extra cpu, --extra cuda
+uv run --extra xpu physicalai-studio serve  # or: ./run.sh
 ```
 
 ```bash
@@ -98,7 +102,7 @@ npm install
 npm run start
 ```
 
-Open http://localhost:3000 in your browser.
+Open <http://localhost:3000> in your browser.
 
 If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
 and others), configure `HF_TOKEN` in your backend environment. See
@@ -166,7 +170,7 @@ policy.export("./policy", backend="openvino")
 ```python test="skip" reason="requires exported model and environment"
 from physicalai.inference import InferenceModel
 
-policy = InferenceModel.load("./policy")
+policy = InferenceModel("./policy")
 obs, info = env.reset()
 done = False
 

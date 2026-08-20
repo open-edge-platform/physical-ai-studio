@@ -18,7 +18,7 @@ concurrency:
 jobs:
   check-paths:
     name: Check if workflow should run
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       run_workflow: ${{ steps.check_paths.outputs.run }}
     permissions:
@@ -26,13 +26,15 @@ jobs:
     steps:
       - &harden-runner
         name: Harden the runner
-        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           disable-sudo: false
           disable-telemetry: true
           egress-policy: block
           allowed-endpoints: >
+            api.github.com:443
             azure.archive.ubuntu.com:80
+            centralus.data.mcr.microsoft.com:443
             dl.google.com:443
             download.pytorch.org:443
             download-r2.pytorch.org:443
@@ -43,6 +45,7 @@ jobs:
             index.crates.io:443
             nodejs.org:443
             packages.microsoft.com:443
+            production.cloudfront.docker.com:443
             pypi.org:443
             raw.githubusercontent.com:443
             registry.npmjs.org:443
@@ -52,43 +55,47 @@ jobs:
 
       - &checkout
         name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Check paths
         id: check_paths
-        uses: open-edge-platform/geti-ci/actions/check-paths@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/check-paths@2ed3ce382d1dbd6db52c7c6b93ffdae280a1c06f # check-paths/v0.1.0
         with:
           files_yaml: |
             test:
               - application/ui/**
-              - application/backend/**
-              - .github/**
+              - application/backend/app/**
+              - application/backend/pyproject.toml
+              - application/backend/uv.lock
+              - .github/workflows/ui.yml
+              - '!**/*.md'
+              - '!**/docs/**'
 
   generate-openapi-spec:
     name: Generate OpenAPI Spec
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
       - *harden-runner
 
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version-file: "./application/backend/.python-version"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.10.4"
 
@@ -106,8 +113,7 @@ jobs:
       - name: Get OpenAPI spec
         working-directory: application/backend
         run: |
-          export PYTHONPATH=.
-          uv run src/cli.py gen-api --target-path openapi-spec.json
+          uv run physicalai-studio gen-api --target-path openapi-spec.json
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -118,7 +124,7 @@ jobs:
     name: Build UI
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
@@ -127,7 +133,7 @@ jobs:
       - *checkout
 
       - &setup-node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         id: setup-node
         with:
           node-version-file: application/ui/.nvmrc
@@ -173,7 +179,7 @@ jobs:
     name: Eslint checks
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
@@ -211,7 +217,7 @@ jobs:
     name: Unit tests
     needs:
       - generate-openapi-spec
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read # to checkout code
     steps:
@@ -241,9 +247,9 @@ jobs:
     permissions:
       contents: read # to checkout code
     timeout-minutes: 60
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.60.0-jammy@sha256:e1529a04087193966ea15d4a1617345bdaa0791690a24ab2c42b65f9ce5b2cdc
+      image: mcr.microsoft.com/playwright:v1.62.0-jammy@sha256:b012874f829d298730411256666afcaeaeebaf505a0cf4c2f668d6dedb3d1e80
     steps:
       - *harden-runner
 
@@ -289,7 +295,7 @@ jobs:
       - lint
       - unit-tests
       - playwright-tests
-    runs-on: ${{ github.repository_owner == 'open-edge-platform' && 'overflow' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     env:
       CHECKS: ${{ join(needs.*.result, ' ') }}
     if: always() && !cancelled()

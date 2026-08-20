@@ -1,10 +1,11 @@
-import asyncio
 from unittest.mock import MagicMock
 
+import pytest
+from physicalai.robot import RobotDeviceAlreadyOwned, RobotNameConflict
 from physicalai.robot.so101.constants import SO101_JOINT_ORDER
 
+from exceptions import RobotDeviceAlreadyOwnedError, RobotNameConflictError
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
-from schemas.robot import RobotType
 
 
 def _make_mock_robot() -> MagicMock:
@@ -23,10 +24,12 @@ def _make_adapter(
     mode: str = "follower",
 ) -> tuple[PhysicalAIRobotAdapter, MagicMock]:
     robot = _make_mock_robot()
-    robot_type = RobotType.SO101_FOLLOWER if mode == "follower" else RobotType.SO101_LEADER
+    robot_type = "SO101_Follower" if mode == "follower" else "SO101_Leader"
+    robot_role = "follower" if mode == "follower" else "leader"
     adapter = PhysicalAIRobotAdapter(
         robot=robot,
         robot_type=robot_type,
+        robot_role=robot_role,
         config=PhysicalAIRobotAdapterConfig(
             include_velocities=False,
             goal_time_scale=1.0,
@@ -43,11 +46,11 @@ class TestProperties:
 
     def test_robot_type_follower(self):
         adapter, _ = _make_adapter(mode="follower")
-        assert adapter.robot_type == RobotType.SO101_FOLLOWER
+        assert adapter.robot_type == "SO101_Follower"
 
     def test_robot_type_teleoperator(self):
         adapter, _ = _make_adapter(mode="teleoperator")
-        assert adapter.robot_type == RobotType.SO101_LEADER
+        assert adapter.robot_type == "SO101_Leader"
 
     def test_is_connected_delegates_to_robot(self):
         adapter, robot = _make_adapter()
@@ -66,27 +69,52 @@ class TestConnect:
     def test_connect_calls_robot_connect(self):
         adapter, robot = _make_adapter()
         robot.connect = MagicMock()
-        asyncio.run(adapter.connect())
+        adapter.connect()
         robot.connect.assert_called_once()
 
     def test_connect_sets_is_controlled_for_follower(self):
         adapter, robot = _make_adapter(mode="follower")
         robot.connect = MagicMock()
-        asyncio.run(adapter.connect())
+        adapter.connect()
         assert adapter.is_controlled is True
 
     def test_connect_does_not_set_controlled_for_teleoperator(self):
         adapter, robot = _make_adapter(mode="teleoperator")
         robot.connect = MagicMock()
-        asyncio.run(adapter.connect())
+        adapter.connect()
         assert adapter.is_controlled is False
+
+    def test_connect_translates_device_already_owned(self):
+        adapter, robot = _make_adapter()
+        robot.connect = MagicMock(side_effect=RobotDeviceAlreadyOwned("device locked"))
+        with pytest.raises(RobotDeviceAlreadyOwnedError) as exc_info:
+            adapter.connect()
+        assert exc_info.value.error_code == "robot_device_already_owned"
+
+    def test_connect_error_reports_display_name_not_transport_name(self):
+        robot = _make_mock_robot()
+        # The driver's own name is the transport identifier (the robot's id).
+        robot.name = "8b1f1c4e-0b6a-4c1e-9d3a-2f5b7c9e0a11"
+        adapter = PhysicalAIRobotAdapter(
+            robot=robot,
+            robot_type="SO101_Follower",
+            robot_role="follower",
+            display_name="Left Arm",
+        )
+        robot.connect = MagicMock(side_effect=RobotNameConflict("name taken"))
+
+        with pytest.raises(RobotNameConflictError) as exc_info:
+            adapter.connect()
+
+        assert "Left Arm" in exc_info.value.message
+        assert "8b1f1c4e" not in exc_info.value.message
 
 
 class TestDisconnect:
     def test_disconnect_calls_robot_disconnect(self):
         adapter, robot = _make_adapter()
         robot.disconnect = MagicMock()
-        asyncio.run(adapter.disconnect())
+        adapter.disconnect()
         robot.disconnect.assert_called_once()
 
 
@@ -98,7 +126,7 @@ class TestReadState:
         obs.sensor_data = None
         robot.get_observation.return_value = obs
 
-        result = asyncio.run(adapter.read_state())
+        result = adapter.read_state()
 
         assert result["event"] == "state_was_updated"
         assert "state" in result
@@ -115,7 +143,7 @@ class TestSetJointsState:
         adapter, robot = _make_adapter()
 
         joints = {f"{name}.pos": 0.0 for name in SO101_JOINT_ORDER}
-        result = asyncio.run(adapter.set_joints_state(joints, goal_time=0.033))
+        result = adapter.set_joints_state(joints, goal_time=0.033)
 
         assert result["event"] == "joints_state_was_set"
         robot.send_action.assert_called_once()
@@ -125,7 +153,7 @@ class TestSetJointsState:
 
         far_joints = {f"{name}.pos": 1000.0 for name in SO101_JOINT_ORDER}
         goal_time = 0.033
-        asyncio.run(adapter.set_joints_state(far_joints, goal_time=goal_time))
+        adapter.set_joints_state(far_joints, goal_time=goal_time)
         robot.send_action.assert_called_once()
 
 
@@ -133,7 +161,7 @@ class TestTorque:
     def test_enable_torque(self):
         adapter, robot = _make_adapter()
         robot.set_torque = MagicMock()
-        result = asyncio.run(adapter.enable_torque())
+        result = adapter.enable_torque()
         robot.set_torque.assert_called_once_with(enabled=True)
         assert result["event"] == "torque_was_enabled"
         assert adapter.is_controlled is True
@@ -141,7 +169,7 @@ class TestTorque:
     def test_disable_torque(self):
         adapter, robot = _make_adapter()
         robot.set_torque = MagicMock()
-        result = asyncio.run(adapter.disable_torque())
+        result = adapter.disable_torque()
         robot.set_torque.assert_called_once_with(enabled=False)
         assert result["event"] == "torque_was_disabled"
         assert adapter.is_controlled is False
@@ -151,8 +179,8 @@ class TestTorque:
         if hasattr(robot, "set_torque"):
             delattr(robot, "set_torque")
 
-        enable = asyncio.run(adapter.enable_torque())
-        disable = asyncio.run(adapter.disable_torque())
+        enable = adapter.enable_torque()
+        disable = adapter.disable_torque()
 
         assert enable["event"] == "torque_was_enabled"
         assert disable["event"] == "torque_was_disabled"
@@ -161,7 +189,7 @@ class TestTorque:
 class TestPing:
     def test_ping_returns_pong(self):
         adapter, _ = _make_adapter()
-        result = asyncio.run(adapter.ping())
+        result = adapter.ping()
         assert result["event"] == "pong"
         assert "timestamp" in result
 
@@ -173,7 +201,7 @@ class TestReadForces:
         obs.joint_positions = [0.0] * len(SO101_JOINT_ORDER)
         obs.sensor_data = None
         robot.get_observation.return_value = obs
-        result = asyncio.run(adapter.read_forces())
+        result = adapter.read_forces()
         assert result is not None
         assert result["event"] == "force_was_updated"
         assert result["state"] is None
@@ -183,6 +211,6 @@ class TestSetForces:
     def test_noops_if_force_method_missing(self):
         adapter, robot = _make_adapter()
         forces = {"shoulder_pan.eff": 1.0}
-        result = asyncio.run(adapter.set_forces(forces))
+        result = adapter.set_forces(forces)
 
         assert result == forces

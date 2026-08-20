@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from loguru import logger
 
-from schemas import Model
+from schemas import InferenceDevice, Model
 
 from .model_worker import ModelWorker
 
@@ -49,7 +49,7 @@ class ModelWorkerRegistry:
             self._idle.add(worker_id)
             logger.info(f"Model worker pre-spawned: {worker_id} (pid={worker.pid})")
 
-    async def acquire(self, model: Model, backend: str) -> tuple[UUID, ModelWorker]:
+    async def acquire(self, model: Model, inference_device: InferenceDevice) -> tuple[UUID, ModelWorker]:
         """
         Assign an idle worker to load the given model.
 
@@ -63,8 +63,14 @@ class ModelWorkerRegistry:
             self._busy.add(worker_id)
 
         worker = self._workers[worker_id]
-        worker.load_model(model, backend)
-        logger.info(f"Model worker {worker_id} acquired for model '{model.name}' ({backend})")
+        worker.load_model(model, inference_device)
+        logger.info(
+            "Model worker {} acquired for model '{}' ({} on {})",
+            worker_id,
+            model.name,
+            inference_device.backend,
+            inference_device.device,
+        )
         return worker_id, worker
 
     async def release(self, worker_id: UUID) -> None:

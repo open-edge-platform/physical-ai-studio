@@ -6,6 +6,7 @@
 import numpy as np
 import pytest
 import torch
+from lightning_utilities.core.apply_func import apply_to_collection
 
 from physicalai.data.lerobot import FormatConverter
 from physicalai.data.observation import IMAGES, Observation
@@ -68,12 +69,11 @@ class TestObservationCreation:
         assert obs.frame_index.item() == 10
         assert obs.index.item() == 100
 
-    def test_frozen_dataclass(self):
-        """Test that Observation is immutable."""
+    def test_field_assignment_allowed(self):
+        """Test that Observation fields are mutable."""
         obs = Observation(action=torch.tensor([1.0, 2.0]))
-
-        with pytest.raises(AttributeError):
-            obs.action = torch.tensor([3.0, 4.0])
+        obs.action = torch.tensor([3.0, 4.0])
+        assert torch.equal(obs.action, torch.tensor([3.0, 4.0]))
 
 
 class TestObservationToDict:
@@ -190,7 +190,8 @@ class TestObservationFromDict:
         assert "top" in obs.images
         assert "wrist" in obs.images
 
-    def test_roundtrip_to_dict_from_dict(self):
+    @pytest.mark.parametrize("flatten", [True, False])
+    def test_roundtrip_to_dict_from_dict(self, flatten):
         """Test to_dict → from_dict roundtrip."""
         original = Observation(
             action=torch.tensor([1.0, 2.0]),
@@ -199,12 +200,29 @@ class TestObservationFromDict:
             episode_index=torch.tensor(5),
         )
 
-        obs_dict = original.to_dict()
+        obs_dict = original.to_dict(flatten=flatten)
         restored = Observation.from_dict(obs_dict)
 
         assert torch.equal(restored.action, original.action)
         assert torch.equal(restored.state, original.state)
         assert torch.equal(restored.episode_index, original.episode_index)
+        assert restored.images is not None
+        assert torch.equal(restored.images["top"], original.images["top"])
+
+    def test_from_dict_restores_flattened_image_keys(self):
+        """Test from_dict rebuilds nested image mappings from flattened keys."""
+        top = torch.rand(3, 64, 64)
+        wrist = torch.rand(3, 64, 64)
+
+        obs = Observation.from_dict({
+            "images.top": top,
+            "images.wrist": wrist,
+            "_images_keys": ["images.top", "images.wrist"],
+        })
+
+        assert obs.images is not None
+        assert torch.equal(obs.images["top"], top)
+        assert torch.equal(obs.images["wrist"], wrist)
 
 
 class TestObservationBatching:
@@ -827,6 +845,34 @@ class TestObservationNumpyTensorConversion:
         obs_torch = obs_np.to_torch()
         assert obs_torch.next_success is True
         assert obs_torch.info["key"] == "value"
+
+
+class TestObservationLightningApplyToCollection:
+    """Regression tests for Lightning apply_to_collection interoperability."""
+
+    def test_apply_to_collection_returns_observation_with_bfloat16_tensors(self):
+        """apply_to_collection should cast tensors to bfloat16 and preserve Observation type."""
+        observation = Observation(
+            action=torch.tensor([[2.0, 4.0]]),
+            state=torch.tensor([[6.0, 8.0]]),
+            images={"top": torch.tensor([[[[10.0, 12.0]]]])},
+            info={"source": "unit-test"},
+        )
+
+        transformed = apply_to_collection(
+            observation,
+            dtype=torch.Tensor,
+            function=lambda tensor: tensor.to(torch.bfloat16),
+        )
+
+        assert isinstance(transformed, Observation)
+        assert transformed.action.dtype == torch.bfloat16
+        assert transformed.state.dtype == torch.bfloat16
+        assert transformed.images["top"].dtype == torch.bfloat16
+        torch.testing.assert_close(transformed.action.float(), torch.tensor([[2.0, 4.0]]))
+        torch.testing.assert_close(transformed.state.float(), torch.tensor([[6.0, 8.0]]))
+        torch.testing.assert_close(transformed.images["top"].float(), torch.tensor([[[[10.0, 12.0]]]]))
+        assert transformed.info == {"source": "unit-test"}
 
 
 class TestObservationIndexing:

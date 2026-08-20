@@ -166,6 +166,35 @@ class TestTorchAdapter:
             with pytest.raises(RuntimeError, match="Failed to load"):
                 adapter.load(model_path)
 
+    def test_load_rejects_non_policy_class(self, tmp_path: Path) -> None:
+        """Test adapter rejects metadata without checkpoint-loading interface."""
+        model_path = self._write_policy_manifest(tmp_path)
+        manifest_path = tmp_path / "manifest.json"
+        with manifest_path.open() as f:
+            manifest = json.load(f)
+        manifest["policy"]["source"]["class_path"] = "builtins.dict"
+        with manifest_path.open("w") as f:
+            json.dump(manifest, f)
+
+        adapter = TorchAdapter()
+        with pytest.raises(RuntimeError, match="does not define callable load_from_checkpoint"):
+            adapter.load(model_path)
+
+    def test_load_accepts_class_with_checkpoint_loader(self, tmp_path: Path) -> None:
+        """Test interface validation accepts classes with load_from_checkpoint."""
+        model_path = self._write_policy_manifest(tmp_path)
+
+        mock_model = MagicMock()
+        mock_model.return_value = torch.tensor([[1.0, 2.0]])
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
+
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
+            adapter = TorchAdapter()
+            adapter.load(model_path)
+            assert adapter.output_names == ["action"]
+
     def test_device_selection(self) -> None:
         """Test device selection for Torch adapter."""
         adapter_cpu = TorchAdapter(device="cpu")
@@ -181,6 +210,22 @@ class TestTorchAdapter:
 
         assert adapter.input_names == []
         assert adapter.output_names == []
+
+    def test_compile_model_passed_to_load_from_checkpoint(self, tmp_path: Path) -> None:
+        """Test compile_model flag is forwarded to load_from_checkpoint()."""
+        model_path = self._write_policy_manifest(tmp_path)
+
+        mock_model = MagicMock()
+        mock_model.eval.return_value = mock_model
+        mock_model.to.return_value = mock_model
+        mock_model.extra_export_args = {"torch": TorchExportParameters()}
+
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model) as mock_load:
+            adapter = TorchAdapter(device="cpu", compile_model=True)
+            assert adapter.compile_model is True
+
+            adapter.load(model_path)
+            assert mock_load.call_args.kwargs["compile_model"] is True
 
 
 class TestExecuTorchAdapter:

@@ -6,12 +6,14 @@
 
 model:
   class_path: physicalai.policies.ACT
+  init_args:
+    optimizer_lr: 1e-4
 
 data:
   class_path: physicalai.data.lerobot.LeRobotDataModule
   init_args:
     repo_id: "lerobot/pusht"
-    train_batch_size: 64
+    train_batch_size: 32
     data_format: "physicalai"
     val_gym:
       class_path: physicalai.gyms.pusht.PushTGym
@@ -29,7 +31,7 @@ data:
                 - 1.3
 
 trainer:
-  max_epochs: 100
+  max_steps: 70000
   accelerator: xpu
   strategy: xpu_single
   devices: 1

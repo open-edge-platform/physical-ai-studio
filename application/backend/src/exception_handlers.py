@@ -8,28 +8,42 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from loguru import logger
+from physicalai.data.archive_safety import InsufficientDiskSpaceError as ArchiveInsufficientDiskSpaceError
+from physicalai.data.archive_safety import InvalidArchiveError as ArchiveInvalidArchiveError
+from physicalai.data.archive_safety import ZipBombDetectedError as ArchiveZipBombDetectedError
 from serial.serialutil import SerialException
 
 from exceptions import BaseException
+
+_ARCHIVE_ERROR_DETAILS: dict[type[Exception], tuple[str, int]] = {
+    ArchiveInvalidArchiveError: ("invalid_archive", http.HTTPStatus.BAD_REQUEST),
+    ArchiveZipBombDetectedError: ("zip_bomb_detected", http.HTTPStatus.REQUEST_ENTITY_TOO_LARGE),
+    ArchiveInsufficientDiskSpaceError: ("insufficient_disk_space", http.HTTPStatus.INSUFFICIENT_STORAGE),
+}
 
 
 def handle_base_exception(request: Request, exception: Exception) -> Response:
     """
     Base exception handler
     """
-    if not isinstance(exception, BaseException):
+    if isinstance(exception, BaseException):
+        error_code = exception.error_code
+        message = exception.message
+        http_status = exception.http_status
+    elif details := _ARCHIVE_ERROR_DETAILS.get(type(exception)):
+        error_code, http_status = details
+        message = str(exception)
+    else:
         raise exception
 
-    response = jsonable_encoder(
-        {"error_code": exception.error_code, "message": exception.message, "http_status": exception.http_status}
-    )
+    response = jsonable_encoder({"error_code": error_code, "message": message, "http_status": http_status})
     headers: dict[str, str] | None = None
     # 204 skipped as No Content needs to be revalidated
-    if exception.http_status not in [200, 201, 202, 203, 205, 206, 207, 208, 226] and request.method == "GET":
+    if http_status not in [200, 201, 202, 203, 205, 206, 207, 208, 226] and request.method == "GET":
         headers = {"Cache-Control": "no-cache"}  # always revalidate
-    if exception.http_status in [204, 304] or exception.http_status < 200:
-        return Response(status_code=int(exception.http_status), headers=headers)
-    return JSONResponse(content=response, status_code=int(exception.http_status), headers=headers)
+    if http_status in [204, 304] or http_status < 200:
+        return Response(status_code=int(http_status), headers=headers)
+    return JSONResponse(content=response, status_code=int(http_status), headers=headers)
 
 
 async def handle_error(_request: Request, exception: Exception) -> JSONResponse:
@@ -168,6 +182,9 @@ def register_application_exception_handlers(app: FastAPI) -> None:
     Register application exception handlers
     """
     app.add_exception_handler(BaseException, handle_base_exception)
+    app.add_exception_handler(ArchiveInvalidArchiveError, handle_base_exception)
+    app.add_exception_handler(ArchiveZipBombDetectedError, handle_base_exception)
+    app.add_exception_handler(ArchiveInsufficientDiskSpaceError, handle_base_exception)
 
     app.add_exception_handler(500, handle_error)
     app.add_exception_handler(404, handle_not_found)

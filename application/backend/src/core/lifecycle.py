@@ -9,9 +9,7 @@ from services.event_processor import EventProcessor
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.camera_worker_registry import CameraWorkerRegistry
 from workers.model_worker_registry import ModelWorkerRegistry
-from workers.robot_worker_registry import RobotWorkerRegistry
 
 from .scheduler import Scheduler
 
@@ -31,17 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # camera-stream WS endpoints. Keyed by fingerprint (not ProjectCamera ID)
     # so aliased project rows for the same physical device share one lock.
     app.state.recording_locked_camera_fingerprints = set()
-
-    app.state.camera_registry = CameraWorkerRegistry(
-        max_workers=10,
-        shutdown_timeout_s=10.0,
-    )
-    app.state.robot_registry = RobotWorkerRegistry(
-        max_workers=10,
-        shutdown_timeout_s=10.0,
-    )
-
-    logger.info("Starting %s application...", settings.app_name)
+    logger.info(f"Starting {settings.app_name} application...")
     ensure_spawn_start_method()
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
@@ -61,13 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     yield
 
     # Shutdown
-    logger.info("Shutting down %s application...", settings.app_name)
-
-    camera_registry: CameraWorkerRegistry = app.state.camera_registry
-    await camera_registry.shutdown_all()
-
-    robot_registry: RobotWorkerRegistry = app.state.robot_registry
-    await robot_registry.shutdown_all()
+    logger.info(f"Shutting down {settings.app_name} application...")
 
     # We might want to shutdown the hardware manager too, though releasing workers should handle it.
     # But a global cleanup is safe.

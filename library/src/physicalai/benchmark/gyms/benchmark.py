@@ -30,7 +30,7 @@ Example:
     Evaluate exported inference models:
 
         from physicalai.inference import InferenceModel
-        model = InferenceModel.load("./exports/act_policy")
+        model = InferenceModel("./exports/act_policy")
         results = benchmark.evaluate(model)
 """
 
@@ -147,7 +147,7 @@ class Benchmark:
 
             Exported inference model:
                 >>> from physicalai.inference import InferenceModel
-                >>> model = InferenceModel.load("./exports/act_policy")
+                >>> model = InferenceModel("./exports/act_policy")
                 >>> results = benchmark.evaluate(model)
 
         Raises:

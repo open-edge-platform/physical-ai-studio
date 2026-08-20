@@ -4,8 +4,9 @@ import { ActionButton, Flex, Grid, Heading, minmax, repeat, Slider, Switch, View
 import { ChevronDownSmallLight } from '@geti-ui/ui/icons';
 import { radToDeg } from 'three/src/math/MathUtils.js';
 
-import { useRobotModels } from '../robot-models-context';
-import { urdfPathForType } from '../robots-configuration';
+import { getRobotConnectionErrorTitle } from '../../../api/errors';
+import { useLoadModelQuery } from '../robot-models-context';
+import { InlineAlert } from '../setup-wizard/shared/inline-alert';
 import { useJointState, useSynchronizeModelJoints } from '../use-joint-state';
 import { useRobot, useRobotId } from '../use-robot';
 
@@ -58,10 +59,8 @@ const Joints = ({ joints }: { joints: JointsState }) => {
 
 // Get the default stationary joint setting with min and max range based on the urdf model
 const useModelJoints = (): JointsState => {
-    const { getModel } = useRobotModels();
-
     const robot = useRobot();
-    const model = getModel(urdfPathForType(robot.type));
+    const { data: model } = useLoadModelQuery(robot.type);
 
     const modelJoints = Object.values(model?.joints ?? {});
     const joints: JointsState = modelJoints
@@ -78,25 +77,39 @@ const useModelJoints = (): JointsState => {
 };
 
 // Combine the joint range of the urdf model with actual joint state from robot
-const useRobotJointsState = (): JointsState => {
+const useRobotJointsState = (): { joints: JointsState; error: string | null; errorCode: string | null } => {
     const robot = useRobot();
     const modelJoints = useModelJoints();
 
     const { project_id, robot_id } = useRobotId();
-    const { joints } = useJointState(project_id, robot_id);
+    const { joints, error, errorCode } = useJointState(project_id, robot_id);
     useSynchronizeModelJoints(joints, robot.type);
 
-    return joints.map((joint) => {
-        const modelJoint = modelJoints.find(({ name }) => name === joint.name);
-        const rangeMax = modelJoint === undefined ? 180 : radToDeg(modelJoint.rangeMax);
-        const rangeMin = modelJoint === undefined ? -180 : radToDeg(modelJoint.rangeMin);
+    return {
+        joints: joints.map((joint) => {
+            const modelJoint = modelJoints.find(({ name }) => name === joint.name);
+            const rangeMax = modelJoint === undefined ? 180 : radToDeg(modelJoint.rangeMax);
+            const rangeMin = modelJoint === undefined ? -180 : radToDeg(modelJoint.rangeMin);
 
-        return { ...joint, rangeMin, rangeMax };
-    });
+            return { ...joint, rangeMin, rangeMax };
+        }),
+        error,
+        errorCode,
+    };
 };
 
 const EnabledJointControls = ({ isExpanded }: { isExpanded: boolean }) => {
-    const joints = useRobotJointsState();
+    const { joints, error, errorCode } = useRobotJointsState();
+
+    if (error) {
+        return (
+            <InlineAlert variant='error'>
+                <strong>{getRobotConnectionErrorTitle(errorCode)}</strong>
+                <br />
+                {error}
+            </InlineAlert>
+        );
+    }
 
     if (isExpanded) {
         return <Joints joints={joints} />;
@@ -127,8 +140,10 @@ export const JointControls = ({
     return (
         <View
             gridArea='controls'
+            zIndex={1}
             backgroundColor={'gray-100'}
             padding='size-100'
+            margin='size-400'
             UNSAFE_style={{
                 border: '1px solid var(--spectrum-global-color-gray-200)',
                 borderRadius: '8px',

@@ -27,7 +27,7 @@ const TrainingJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                         color: 'var(--spectrum-global-color-gray-800)',
                     }}
                 >
-                    Training {job.payload.model_name}
+                    {job.message ? `${job.message} (${job.payload.model_name})` : `Training ${job.payload.model_name}`}
                 </Text>
                 <Text
                     UNSAFE_style={{

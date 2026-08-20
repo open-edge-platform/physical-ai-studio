@@ -1,8 +1,8 @@
 import { Flex, Header as SpectrumHeader, View } from '@geti-ui/ui';
 import { ApiReferenceReact } from '@scalar/api-reference-react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
-import classes from './openapi.module.scss';
+import classes from './openapi.module.css';
 
 import './openapi.css';
 import '@scalar/api-reference-react/style.css';

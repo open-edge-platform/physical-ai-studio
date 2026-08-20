@@ -75,6 +75,38 @@ class TestDataModuleBatchSizeAlias:
         assert dm.batch_size == 64
 
 
+class TestDataModuleValBatchSize:
+    """Tests for the val_batch_size lazy resolution."""
+
+    def test_defaults_to_train_batch_size(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), train_batch_size=32)
+        assert dm.val_batch_size == 32
+
+    def test_explicit_value_overrides(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), train_batch_size=32, val_batch_size=4)
+        assert dm.val_batch_size == 4
+
+    def test_tracks_auto_scaled_batch_size(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        # auto_scale_batch_size mutates train_batch_size at fit time via the
+        # `batch_size` setter; an unset val_batch_size must follow.
+        dm = DataModule(train_dataset=dummy_dataset(), train_batch_size=16)
+        dm.batch_size = 128
+        assert dm.val_batch_size == 128
+
+    def test_explicit_value_ignores_auto_scaling(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), train_batch_size=16, val_batch_size=4)
+        dm.batch_size = 128
+        assert dm.val_batch_size == 4
+
+
 class TestDataModuleValidation:
     """Tests for DataModule validation functionality."""
 

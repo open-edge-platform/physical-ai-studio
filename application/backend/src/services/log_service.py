@@ -33,7 +33,7 @@ STATIC_SOURCES: dict[str, StaticLogSource] = {
     "application": StaticLogSource(name="Application", filename="app.log", type="application"),
     "training": StaticLogSource(name="Training", filename="training.log", type="worker"),
     "inference": StaticLogSource(name="Inference", filename="inference.log", type="worker"),
-    "teleoperate": StaticLogSource(name="Teleoperate", filename="teleoperate.log", type="worker"),
+    "robot-control": StaticLogSource(name="Robot Control", filename="robot_control.log", type="worker"),
     "dataset-import": StaticLogSource(name="Dataset Import", filename="dataset_import.log", type="worker"),
 }
 

@@ -50,9 +50,9 @@ def _clone_kv_cache(cache: DynamicCache) -> DynamicCache:
 
     cloned = DynamicCache()
     for layer_idx, layer in enumerate(cache.layers):
-        if layer.keys is None or layer.values is None:
+        if layer.keys is None or layer.values is None:  # pyrefly: ignore[missing-attribute]
             continue
-        cloned.update(layer.keys.clone(), layer.values.clone(), layer_idx)
+        cloned.update(layer.keys.clone(), layer.values.clone(), layer_idx)  # pyrefly: ignore[missing-attribute]
     return cloned
 
 
@@ -467,9 +467,11 @@ class Pi0Model(Model):
         loss_per_sample = self._compute_loss(observation, actions)
 
         loss = loss_per_sample.mean()
+        # Detached tensors, not `.item()`/`.tolist()` values: see
+        # Model.compute_loss docstring.
         loss_dict = {
-            "loss": loss.item(),
-            "loss_per_dim": loss_per_sample.mean(dim=(0, 1)).detach().cpu().tolist(),
+            "loss": loss.detach(),
+            "loss_per_dim": loss_per_sample.mean(dim=(0, 1)).detach(),
         }
 
         return loss, loss_dict

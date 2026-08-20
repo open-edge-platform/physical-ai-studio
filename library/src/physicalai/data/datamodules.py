@@ -139,7 +139,7 @@ class DataModule(LightningDataModule):
         val_gym: Gym | None = None,
         num_rollouts_val: int = 10,
         val_eval_dataset: Dataset | None = None,
-        val_batch_size: int = 1,
+        val_batch_size: int | None = None,
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
@@ -155,7 +155,9 @@ class DataModule(LightningDataModule):
             num_rollouts_val (int): Number of rollouts to run for validation environments.
             val_eval_dataset (Dataset | None): Validation dataset for computing eval loss.
                 When provided, validation computes loss on this dataset instead of gym rollouts.
-            val_batch_size (int): Batch size for the eval-loss validation DataLoader. Defaults to 1.
+            val_batch_size (int | None): Batch size for the eval-loss validation DataLoader.
+                ``None`` (default) tracks ``train_batch_size``, including any value chosen by
+                ``auto_scale_batch_size``.
             test_gym (Gym | None): Test environment.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
@@ -170,7 +172,7 @@ class DataModule(LightningDataModule):
 
         # eval-loss validation dataset
         self.val_eval_dataset: Dataset | None = val_eval_dataset
-        self.val_batch_size: int = val_batch_size
+        self._val_batch_size: int | None = val_batch_size
 
         # gym environments
         self.val_gym: Gym | None = val_gym
@@ -197,6 +199,20 @@ class DataModule(LightningDataModule):
     @batch_size.setter
     def batch_size(self, value: int) -> None:
         self.train_batch_size = value
+
+    @property
+    def val_batch_size(self) -> int:
+        """Effective eval-loss validation batch size.
+
+        Resolves to ``train_batch_size`` when not set explicitly. Read lazily so it
+        reflects a value chosen by ``auto_scale_batch_size``, which mutates
+        ``train_batch_size`` at fit time after ``__init__``.
+        """
+        return self._val_batch_size if self._val_batch_size is not None else self.train_batch_size
+
+    @val_batch_size.setter
+    def val_batch_size(self, value: int | None) -> None:
+        self._val_batch_size = value
 
     def setup(self, stage: str) -> None:
         """Set up datasets depending on the stage (fit or test).

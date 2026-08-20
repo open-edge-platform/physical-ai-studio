@@ -3,12 +3,34 @@
 
 """Application configuration management"""
 
+import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def get_default_storage_dir() -> Path:
+    """Return the platform-appropriate directory for persistent app data."""
+    if sys.platform == "darwin":
+        return Path("~/Library/Application Support/physicalai").expanduser()
+
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return Path(local_app_data).expanduser() / "physicalai"
+        return Path("~/AppData/Local/physicalai").expanduser()
+
+    xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    if xdg_data_home:
+        xdg_data_home_path = Path(xdg_data_home).expanduser()
+        if xdg_data_home_path.is_absolute():
+            return xdg_data_home_path / "physicalai"
+
+    return Path("~/.local/share/physicalai").expanduser()
 
 
 class Settings(BaseSettings):
@@ -27,9 +49,14 @@ class Settings(BaseSettings):
     openapi_url: str = "/api/openapi.json"
     debug: bool = Field(default=False, alias="DEBUG")
     environment: Literal["dev", "prod"] = "dev"
-    data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
-    storage_dir: Path = Field(default=Path("~/.cache/physicalai").expanduser(), alias="STORAGE_DIR")
+    storage_dir: Path = Field(default_factory=get_default_storage_dir, alias="STORAGE_DIR")
     static_files_dir: str | None = Field(default=None, alias="STATIC_FILES_DIR")
+
+    @field_validator("storage_dir", mode="before")
+    @classmethod
+    def expand_storage_dir(cls, value: Path | str) -> Path:
+        """Expand user-provided storage directories like ~/.local/share."""
+        return Path(value).expanduser()
 
     # Data import/upload safety (shared for dataset/model/project imports)
     data_import_max_uncompressed_bytes: int = Field(
@@ -53,6 +80,11 @@ class Settings(BaseSettings):
     def datasets_dir(self) -> Path:
         """Storage directory for datasets."""
         return self.storage_dir / "datasets"
+
+    @property
+    def data_dir(self) -> Path:
+        """Storage directory for application data."""
+        return self.storage_dir / "data"
 
     @property
     def snapshot_dir(self) -> Path:
@@ -79,6 +111,18 @@ class Settings(BaseSettings):
         """Storage directory for logs."""
         return self.storage_dir / "logs"
 
+    # Remote training
+    # Seconds to wait for trainer HTTP requests (excludes long-poll/SSE streams).
+    trainer_request_timeout_s: float = Field(default=30.0, alias="TRAINER_REQUEST_TIMEOUT_S")
+    # Seconds to wait between chunks while streaming the model artifact. A stalled
+    # transfer (e.g. a proxy holding the connection open) must fail instead of
+    # hanging the job forever; this is a per-read gap, not a total transfer cap.
+    trainer_download_read_timeout_s: float = Field(default=120.0, alias="TRAINER_DOWNLOAD_READ_TIMEOUT_S")
+    # Stop reconnecting after this continuous trainer outage.
+    trainer_stream_reconnect_max_s: float = Field(default=900.0, alias="TRAINER_STREAM_RECONNECT_MAX_S")
+    # Upper bound on the exponential backoff between event-stream reconnect attempts.
+    trainer_stream_reconnect_backoff_max_s: float = Field(default=30.0, alias="TRAINER_STREAM_RECONNECT_BACKOFF_MAX_S")
+
     # Server
     host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104
     port: int = Field(default=7860, alias="PORT")
@@ -86,10 +130,11 @@ class Settings(BaseSettings):
     # Database
     database_file: str = Field(default="physicalai.db", alias="DATABASE_FILE", description="Database filename")
     db_echo: bool = Field(default=False, alias="DB_ECHO")
+    allow_unknown_db_revision: bool = Field(default=False, alias="ALLOW_UNKNOWN_DB_REVISION")
 
     # Alembic
-    alembic_config_path: str = "src/alembic.ini"
-    alembic_script_location: str = "src/alembic"
+    alembic_config_path: str = Field(default="src/alembic.ini", alias="ALEMBIC_CONFIG_PATH")
+    alembic_script_location: str = Field(default="src/alembic", alias="ALEMBIC_SCRIPT_LOCATION")
 
     # Proxy settings
     no_proxy: str = Field(default="localhost,127.0.0.1,::1", alias="no_proxy")

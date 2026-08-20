@@ -1,0 +1,22 @@
+.cardMetaText {
+    color: var(--spectrum-global-color-gray-600);
+    font-size: var(--spectrum-global-dimension-font-size-50);
+}
+
+.healthStatus::before {
+    margin-left: 0;
+}
+
+.trainerUrl {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.cudaBadge {
+    color: var(--spectrum-global-color-static-green-500);
+    background: color-mix(in srgb, var(--spectrum-global-color-static-green-500) 16%, transparent);
+}
+
+.xpuBadge {
+    color: var(--energy-blue);
+    background: color-mix(in srgb, var(--energy-blue) 16%, transparent);
+}

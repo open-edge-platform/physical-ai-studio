@@ -26,11 +26,28 @@ def test_resolve_source_path_for_static_and_job(tmp_path) -> None:
     job_id = str(uuid4())
 
     assert service.resolve_source_path("application") == tmp_path / "app.log"
+    assert service.resolve_source_path("inference") == tmp_path / "inference.log"
+    assert service.resolve_source_path("robot-control") == tmp_path / "robot_control.log"
     job_log_path = service.resolve_source_path(f"job-{job_id}")
     assert job_log_path is not None
     assert job_log_path.name == f"{job_id}.log"
     assert job_log_path.parent.name == "jobs"
     assert service.resolve_source_path("does-not-exist") is None
+
+
+@pytest.mark.anyio
+async def test_get_log_sources_includes_current_static_workers(tmp_path) -> None:
+    service = _build_service(tmp_path)
+
+    sources = await service.get_log_sources()
+
+    assert [(source.id, source.name, source.type) for source in sources] == [
+        ("application", "Application", "application"),
+        ("training", "Training", "worker"),
+        ("inference", "Inference", "worker"),
+        ("robot-control", "Robot Control", "worker"),
+        ("dataset-import", "Dataset Import", "worker"),
+    ]
 
 
 @pytest.mark.anyio

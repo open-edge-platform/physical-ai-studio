@@ -11,6 +11,7 @@ import {
     Icon,
     Link,
     Loading,
+    minmax,
     Text,
     ToastQueue,
     View,
@@ -23,7 +24,7 @@ import { RobotControlProvider, useRobotControl } from '../../../features/robots/
 import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
-import classes from './index.module.scss';
+import classes from './index.module.css';
 
 const TotalRecordedEpisodes = () => {
     const { dataset_id } = useDatasetId();
@@ -93,7 +94,7 @@ const RecordingPage = () => {
             <Grid
                 areas={['header', 'content']}
                 UNSAFE_style={{
-                    gridTemplateRows: 'var(--spectrum-global-dimension-size-800, 4rem) auto',
+                    gridTemplateRows: `var(--spectrum-global-dimension-size-800, 4rem) ${minmax(0, '1fr')}`,
                 }}
                 minHeight={0}
                 height={'100%'}
