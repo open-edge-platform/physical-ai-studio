@@ -15,20 +15,34 @@ const mergeFields = (current: MetricsEntry, incoming: MetricsEntry): MergedField
     'lr-AdamW': coalesce(current['lr-AdamW'], incoming['lr-AdamW']),
 });
 
-export const mergeMetricsByStep = (entries: MetricsEntry[]): MetricsEntry[] => {
-    const byStep = new Map<number, MetricsEntry>();
+/**
+ * Folds a batch of raw metric entries into an existing step -> entry map,
+ * without reprocessing entries that were already folded in on a previous
+ * call. Always returns a new `Map` (never mutates `byStep`) so that callers
+ * relying on referential equality to detect changes (e.g. TanStack Query)
+ * observe the update.
+ */
+export const foldMetricsBatch = (
+    byStep: ReadonlyMap<number, MetricsEntry>,
+    batch: readonly MetricsEntry[]
+): Map<number, MetricsEntry> => {
+    const next = new Map(byStep);
 
-    for (const entry of entries) {
-        const current = byStep.get(entry.step);
+    for (const entry of batch) {
+        const current = next.get(entry.step);
 
-        byStep.set(entry.step, {
+        next.set(entry.step, {
             step: entry.step,
             ...mergeFields(current ?? entry, entry),
         });
     }
 
-    return byStep
+    return next;
+};
+
+/** Converts a step -> entry map into an array sorted by step, ascending. */
+export const sortMetricsByStep = (byStep: ReadonlyMap<number, MetricsEntry>): MetricsEntry[] =>
+    byStep
         .values()
         .toArray()
         .toSorted((a, b) => a.step - b.step);
-};

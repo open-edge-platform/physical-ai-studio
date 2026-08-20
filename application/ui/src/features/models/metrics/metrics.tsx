@@ -3,11 +3,12 @@ import { useId, useMemo } from 'react';
 import { Grid, Heading, IllustratedMessage, Loading } from '@geti-ui/ui';
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
+import { batchAsyncIterable } from '../../../api/batch-async-iterable';
 import { fetchClient } from '../../../api/client';
 import { fetchSSE } from '../../../api/fetch-sse';
 import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
-import { mergeMetricsByStep } from './merge-metrics-by-step';
+import { foldMetricsBatch, sortMetricsByStep } from './merge-metrics-by-step';
 import { MetricGraph } from './metric-graph';
 import { MetricsEntry } from './types';
 
@@ -70,6 +71,11 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
     );
 };
 
+// Flush interval for batching incoming SSE metric rows into a single query-data
+// update, so the UI re-renders/re-merges on a bounded cadence (regardless of how
+// many rows a job/model produced) instead of once per raw row.
+const METRICS_BATCH_INTERVAL_MS = 200;
+
 const useJobMetrics = (jobId: string) => {
     return useQuery({
         queryKey: getQueryKey(['get', '/api/jobs/{job_id}/model_metrics', { params: { path: { job_id: jobId } } }]),
@@ -79,10 +85,15 @@ const useJobMetrics = (jobId: string) => {
                     params: { path: { job_id: jobId } },
                 });
 
-                return fetchSSE<MetricsEntry>(url, { signal: context.signal });
+                return batchAsyncIterable(
+                    fetchSSE<MetricsEntry>(url, { signal: context.signal }),
+                    METRICS_BATCH_INTERVAL_MS
+                );
             },
+            reducer: foldMetricsBatch,
+            initialValue: new Map<number, MetricsEntry>(),
         }),
-        select: mergeMetricsByStep,
+        select: sortMetricsByStep,
         staleTime: Infinity,
     });
 };
@@ -101,7 +112,7 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
             data: metricsData,
             getX: (entry) => entry.step,
             getY: (entry) => entry.train_loss,
-            color: 'var(--moss-tint-1)'
+            color: 'var(--moss-tint-1)',
         },
         {
             title: 'Validation loss',
@@ -134,10 +145,15 @@ const useModelMetrics = (modelId: string) => {
                     params: { path: { model_id: modelId } },
                 });
 
-                return fetchSSE<MetricsEntry>(url, { signal: context.signal });
+                return batchAsyncIterable(
+                    fetchSSE<MetricsEntry>(url, { signal: context.signal }),
+                    METRICS_BATCH_INTERVAL_MS
+                );
             },
+            reducer: foldMetricsBatch,
+            initialValue: new Map<number, MetricsEntry>(),
         }),
-        select: mergeMetricsByStep,
+        select: sortMetricsByStep,
         staleTime: Infinity,
     });
 };
