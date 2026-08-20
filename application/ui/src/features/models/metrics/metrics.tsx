@@ -20,7 +20,7 @@ const NoMetricsAvailable = () => {
     );
 };
 
-interface MetricSeries {
+export interface MetricSeries {
     title: string;
     xLabel: string;
     yLabel: string;
@@ -35,14 +35,14 @@ interface MetricsViewProps {
     isLoading: boolean;
 }
 
-const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
+export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
     const syncId = useId();
 
     if (isLoading) {
         return <Loading mode='inline' />;
     }
 
-    const seriesReadyToRender = series.filter((metric) => metric.data.length > 0);
+    const seriesReadyToRender = series.filter((metric) => metric.data.some((entry) => metric.getY(entry) != null));
 
     if (seriesReadyToRender.length === 0) {
         return <NoMetricsAvailable />;

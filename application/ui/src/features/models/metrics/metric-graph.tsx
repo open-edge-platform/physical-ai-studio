@@ -126,6 +126,7 @@ export const MetricGraph = ({
                                     fill={`url(#${gradientId})`}
                                     dot={false}
                                     connectNulls
+                                    isAnimationActive={false}
                                 />
                                 <Tooltip
                                     filterNull={false}
