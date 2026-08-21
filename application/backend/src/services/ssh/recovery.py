@@ -18,6 +18,15 @@ non-terminal job with a persisted `JobProvisioningDB` row, `recover_ssh_jobs`:
 
 Step order matters: sweeping runs last, and only after every non-terminal
 job's container has had a chance to be recognized as still claimed.
+
+Every job with a provisioning row is explicitly resolved here - confirmed,
+left pending for retry, or failed - so the caller must skip all of them
+(`SshRecoveryReport.handled_job_ids`) when it runs the generic orphan abort
+right after. That generic pass only inspects a job's own persisted
+``remote_job_id``, which an SSH job may not have recorded yet even though its
+container was just confirmed healthy (e.g. a crash between provisioning and
+the trainer job actually being submitted); without the exclusion it would
+re-judge and incorrectly fail a job this module already decided to keep.
 """
 
 from __future__ import annotations
@@ -59,7 +68,13 @@ _ACTIONABLE_MESSAGES: dict[ReattachFailureReason, str] = {
 # Outcomes left for the normal per-job reattach path to retry, rather than
 # failed outright: each is either transient (a slow-starting trainer, a flaky
 # network path) or an outcome this pass could not evaluate at all.
-_TRANSIENT_REASONS = frozenset({ReattachFailureReason.HEALTH_NEVER_READY, ReattachFailureReason.PORT_UNREACHABLE})
+_TRANSIENT_REASONS = frozenset(
+    {
+        ReattachFailureReason.HEALTH_NEVER_READY,
+        ReattachFailureReason.PORT_UNREACHABLE,
+        ReattachFailureReason.INSPECTION_FAILED,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +87,10 @@ class SshRecoveryReport:
     stale_rows_cleaned: int = 0
     orphans_removed: int = 0
     failures_by_reason: dict[str, int] = field(default_factory=dict)
+    # Every job id this pass rendered a verdict for (confirmed, left pending
+    # for retry, or explicitly failed). The caller must exclude these from the
+    # generic orphan abort that follows - see the module docstring.
+    handled_job_ids: frozenset[UUID] = field(default_factory=frozenset)
 
 
 async def _reconcile_stale_rows(
@@ -213,6 +232,7 @@ async def recover_ssh_jobs(
         stale_rows_cleaned=stale_cleaned,
         orphans_removed=orphans_removed,
         failures_by_reason=dict(failures_by_reason),
+        handled_job_ids=frozenset(row.job_id for row in active_rows),
     )
 
 

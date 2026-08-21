@@ -133,6 +133,9 @@ async def test_confirmed_job_is_excluded_from_orphan_sweep() -> None:
     assert report.failed == 0
     assert job_service.status_updates == []
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
+    # Excluded from the generic orphan abort that follows, even though its
+    # own job payload may not have persisted a remote_job_id yet.
+    assert report.handled_job_ids == frozenset({row.job_id})
 
 
 async def test_unrecoverable_outcome_fails_the_job_and_is_excluded_from_active_set() -> None:
@@ -155,6 +158,10 @@ async def test_unrecoverable_outcome_fails_the_job_and_is_excluded_from_active_s
     # Excluded from the active set the sweep is told about, so its container
     # (if this installation still owns one) is reclaimed by the sweep.
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset())]
+    # Already explicitly failed here; still reported handled so the generic
+    # pass's separate query for it (which would find it already FAILED, i.e.
+    # not RUNNING) is a redundant, harmless no-op rather than a re-judgment.
+    assert report.handled_job_ids == frozenset({row.job_id})
 
 
 async def test_transient_outcome_leaves_job_pending_but_still_excludes_it_from_sweep() -> None:
@@ -172,6 +179,27 @@ async def test_transient_outcome_leaves_job_pending_but_still_excludes_it_from_s
     assert report.failed == 0
     assert job_service.status_updates == []
     # Still claimed - a transient outcome does not lose its exclusion from the sweep.
+    assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
+    # And is excluded from the generic orphan abort: it has no persisted
+    # remote_job_id, so that pass alone would otherwise fail it outright.
+    assert report.handled_job_ids == frozenset({row.job_id})
+
+
+async def test_inspection_failed_outcome_is_also_treated_as_transient() -> None:
+    """`INSPECTION_FAILED` (an operational `docker inspect` error) is retried,
+    never conflated with a confirmed-gone container."""
+    server = _server()
+    row = _row(server)
+    FakeProvisioningService.verify_outcomes[row.job_id] = ReattachVerification(
+        ok=False, reason=ReattachFailureReason.INSPECTION_FAILED
+    )
+
+    job_service = FakeJobService()
+    report = await recover_ssh_jobs(job_service, FakeProvisioningRepository([row]), FakeRemoteServerService([server]))
+
+    assert report.transient == 1
+    assert report.failed == 0
+    assert job_service.status_updates == []
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
 
 

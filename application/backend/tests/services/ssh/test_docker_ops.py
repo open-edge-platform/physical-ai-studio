@@ -565,6 +565,17 @@ async def test_inspect_container_returns_none_when_container_is_gone() -> None:
     assert result is None
 
 
+async def test_inspect_container_raises_when_the_inspect_command_itself_fails() -> None:
+    """An operational failure (daemon down, permission denied, ...) must never be
+    conflated with the container legitimately not existing."""
+    transport = FakeTransport(
+        {"docker inspect --format {{.State.Running}}": _fail("Cannot connect to the Docker daemon")}
+    )
+
+    with pytest.raises(docker_ops.ContainerInspectionError):
+        await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+
 async def test_inspect_container_reports_running_state_and_labels() -> None:
     labels = {docker_ops.INSTANCE_LABEL: "instance-1", docker_ops.JOB_LABEL: "job1"}
     transport = FakeTransport(

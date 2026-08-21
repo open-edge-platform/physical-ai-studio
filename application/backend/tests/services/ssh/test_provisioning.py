@@ -639,6 +639,60 @@ async def test_verify_reattach_reports_digest_mismatch_and_allows_teardown(
     assert result.safe_to_teardown
 
 
+async def test_verify_reattach_reports_digest_mismatch_when_running_container_has_no_digest_label(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    """A persisted digest with no running label to compare against fails closed.
+
+    A container launched by an older Studio build (before `IMAGE_DIGEST_LABEL`
+    existed) must never be silently treated as a confirmed match just because
+    there is nothing to compare against.
+    """
+    monkeypatch.setattr(provisioning_module, "get_backend_instance_id", lambda: "this-instance")
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id, image_digest=_DIGEST)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script.update(
+        _inspection_script(
+            running=True,
+            labels={docker_ops.INSTANCE_LABEL: "this-instance", docker_ops.JOB_LABEL: str(job_id)},
+        )
+    )
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.DIGEST_MISMATCH
+    assert result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_inspection_failed_when_docker_inspect_errors(
+    _patch_transport_and_tunnel, repository
+) -> None:
+    """An operational `docker inspect` failure must never be conflated with the
+    container being confirmed gone."""
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script["docker inspect --format {{.State.Running}}"] = _fail("Cannot connect to the Docker daemon")
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.INSPECTION_FAILED
+    assert not result.safe_to_teardown
+
+
 async def test_verify_reattach_reports_health_never_ready_as_transient(
     _patch_transport_and_tunnel, repository, monkeypatch
 ) -> None:

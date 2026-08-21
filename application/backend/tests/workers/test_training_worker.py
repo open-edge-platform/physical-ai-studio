@@ -514,12 +514,15 @@ class TestSetupRecovery:
         from workers.training_worker import TrainingWorker
 
         calls: list[str] = []
+        handled_job_id = uuid4()
 
-        async def fake_recover_ssh_jobs() -> None:
+        async def fake_recover_ssh_jobs() -> frozenset[UUID]:
             calls.append("recover_ssh_jobs")
+            return frozenset({handled_job_id})
 
-        async def fake_abort_orphan_jobs() -> None:
+        async def fake_abort_orphan_jobs(*, exclude_job_ids: frozenset[UUID] | None = None) -> None:
             calls.append("abort_orphan_jobs")
+            assert exclude_job_ids == frozenset({handled_job_id})
 
         with (
             patch.object(TrainingWorker, "_recover_ssh_jobs", staticmethod(fake_recover_ssh_jobs)),

@@ -153,8 +153,11 @@ class TrainingWorker(BaseProcessWorker):
             # SSH recovery must run before the generic orphan abort: it confirms
             # or fails each SSH job's container explicitly, so the generic pass
             # only ever needs to catch a job this one somehow failed to reach.
-            await self._recover_ssh_jobs()
-            await self._abort_orphan_jobs()
+            # Every job id it rendered a verdict for is excluded from the
+            # generic pass, which otherwise judges solely on `remote_job_id`
+            # and could re-fail a job SSH recovery just confirmed healthy.
+            handled_job_ids = await self._recover_ssh_jobs()
+            await self._abort_orphan_jobs(exclude_job_ids=handled_job_ids)
 
     async def teardown(self) -> None:
         await super().teardown()
@@ -162,13 +165,20 @@ class TrainingWorker(BaseProcessWorker):
             await self._abort_orphan_jobs()
 
     @staticmethod
-    async def _abort_orphan_jobs() -> None:
+    async def _abort_orphan_jobs(*, exclude_job_ids: frozenset[UUID] | None = None) -> None:
         async with get_async_db_session_ctx() as session:
-            await TrainingService.abort_orphan_jobs(JobService(session, RemoteTrainerService(session)))
+            await TrainingService.abort_orphan_jobs(
+                JobService(session, RemoteTrainerService(session)), exclude_job_ids=exclude_job_ids
+            )
 
     @staticmethod
-    async def _recover_ssh_jobs() -> None:
-        """Reattach or fail every SSH-provisioned job left non-terminal by a restart."""
+    async def _recover_ssh_jobs() -> frozenset[UUID]:
+        """Reattach or fail every SSH-provisioned job left non-terminal by a restart.
+
+        Returns:
+            Every job id SSH recovery rendered a verdict for, so the caller can
+            exclude them from the generic orphan abort that follows.
+        """
         async with get_async_db_session_ctx() as session:
             provisioning_repo = JobProvisioningRepository(session)
             remote_server_service = RemoteServerService(session)
@@ -183,6 +193,7 @@ class TrainingWorker(BaseProcessWorker):
             report.stale_rows_cleaned,
             report.orphans_removed,
         )
+        return report.handled_job_ids
 
     @staticmethod
     async def _update_training_progress(

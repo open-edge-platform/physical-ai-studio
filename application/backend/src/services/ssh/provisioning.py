@@ -90,6 +90,10 @@ class ReattachFailureReason(StrEnum):
     # Connected before, but the host or the tunnel could not be reached this
     # time. Transient; leave it for the next attempt.
     PORT_UNREACHABLE = "port_unreachable"
+    # `docker inspect` itself failed for a reason other than the container
+    # being absent (daemon unavailable, permission denied, ...). Ownership
+    # could not be checked at all; transient, leave it for the next attempt.
+    INSPECTION_FAILED = "inspection_failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,14 +509,17 @@ class SshProvisioningService:
                     )
 
                 digest_label = inspection.labels.get(docker_ops.IMAGE_DIGEST_LABEL)
-                if job_provisioning.image_digest and digest_label and digest_label != job_provisioning.image_digest:
+                if job_provisioning.image_digest and digest_label != job_provisioning.image_digest:
+                    detail = (
+                        f"running image digest '{digest_label}' does not match persisted "
+                        f"'{job_provisioning.image_digest}'"
+                        if digest_label
+                        else "running container carries no image digest label to compare against the persisted digest"
+                    )
                     return ReattachVerification(
                         ok=False,
                         reason=ReattachFailureReason.DIGEST_MISMATCH,
-                        detail=(
-                            f"running image digest '{digest_label}' does not match "
-                            f"persisted '{job_provisioning.image_digest}'"
-                        ),
+                        detail=detail,
                         safe_to_teardown=True,
                     )
         except SshHostAliasNotFoundError as error:
@@ -521,6 +528,8 @@ class SshProvisioningService:
             return ReattachVerification(ok=False, reason=ReattachFailureReason.HOST_KEY_FAILURE, detail=str(error))
         except SshConnectionError as error:
             return ReattachVerification(ok=False, reason=ReattachFailureReason.PORT_UNREACHABLE, detail=str(error))
+        except docker_ops.ContainerInspectionError as error:
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.INSPECTION_FAILED, detail=str(error))
 
         # Ownership and digest are confirmed; open a throwaway tunnel just long
         # enough to confirm `/health` answers, then close it. The real reattach

@@ -1,6 +1,6 @@
 import asyncio
 import multiprocessing as mp
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from multiprocessing.synchronize import Event
 from queue import Empty
 from uuid import UUID
@@ -72,7 +72,7 @@ class TrainingService:
     """
 
     @staticmethod
-    async def abort_orphan_jobs(job_service: JobService) -> None:
+    async def abort_orphan_jobs(job_service: JobService, *, exclude_job_ids: Collection[UUID] | None = None) -> None:
         """
         Reconcile RUNNING training jobs left behind by a previous process.
 
@@ -82,10 +82,24 @@ class TrainingService:
         reattach and mirror progress on the next pickup -- this is what lets a run
         survive the studio restarting (e.g. the laptop was closed overnight). Any
         other orphaned RUNNING training job cannot resume and is marked FAILED.
+
+        Args:
+            job_service: Used to list and update RUNNING training jobs.
+            exclude_job_ids: Job ids to skip entirely, because another
+                recovery pass (e.g. `services.ssh.recovery.recover_ssh_jobs`)
+                already rendered an explicit verdict for them. Without this,
+                an SSH job that pass just confirmed healthy but that hasn't
+                yet persisted its own ``remote_job_id`` (a crash between
+                provisioning and the trainer job being submitted) would be
+                re-judged here using only ``remote_job_id`` and incorrectly
+                failed.
         """
+        excluded = frozenset(exclude_job_ids) if exclude_job_ids is not None else frozenset()
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}
         running_jobs = await job_service.get_job_list(extra_filters=query)
         for job in running_jobs:
+            if job.id in excluded:
+                continue
             remote_job_id = TrainingService._reattachable_remote_job_id(job)
             if remote_job_id is not None:
                 logger.info(

@@ -49,6 +49,8 @@ from settings import Settings
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from services.ssh.transport import CommandResult
+
 # Label carrying the `physicalai-train` version baked into the image, read
 # from the registry manifest before any pull.
 LIBRARY_VERSION_LABEL: Final = "org.open-edge-platform.physicalai.trainer.library-version"
@@ -188,16 +190,54 @@ class ContainerInspection:
     labels: dict[str, str]
 
 
+class ContainerInspectionError(Exception):
+    """`docker inspect` failed for a reason other than the container being absent.
+
+    Raised instead of folding into `inspect_container`'s ``None`` return, so a
+    caller can never mistake an operational failure (docker daemon unavailable,
+    permission denied, an unexpected inspect error) for the container
+    legitimately not existing - the two demand very different recovery
+    responses (see `services.ssh.provisioning.ReattachFailureReason`).
+    """
+
+    def __init__(self, name_or_id: str, detail: str | None = None) -> None:
+        self.name_or_id = name_or_id
+        self.detail = detail
+        message = f"docker inspect failed for container '{name_or_id}'"
+        super().__init__(f"{message}: {detail}" if detail else message)
+
+
+# Substrings docker's own CLI/daemon use to report that the named object truly
+# does not exist, across the docker versions this module targets. Any other
+# failure (permission denied, daemon unavailable, a malformed name) is
+# inconclusive and must not be treated the same as "gone".
+_NOT_FOUND_MARKERS: Final = ("no such object", "no such container")
+
+
+def _container_not_found(result: CommandResult) -> bool:
+    """True when a failed `docker inspect` means the container does not exist."""
+    stderr = (result.stderr or "").lower()
+    return any(marker in stderr for marker in _NOT_FOUND_MARKERS)
+
+
 async def inspect_container(transport: SshTransport, name_or_id: str) -> ContainerInspection | None:
     """Inspect a container's running state and labels.
 
     Returns:
-        ``None`` when the container does not exist at all. A container that
-        exists but is stopped is still returned, with ``running=False``.
+        ``None`` when `docker inspect` confirms the container does not exist
+        at all (its stderr reports "No such object"/"No such container"). A
+        container that exists but is stopped is still returned, with
+        ``running=False``.
+
+    Raises:
+        ContainerInspectionError: The inspect command failed for some other
+            reason - the container's existence could not be determined.
     """
     running_result = await transport.run_command(["docker", "inspect", "--format", "{{.State.Running}}", name_or_id])
     if not running_result.ok:
-        return None
+        if _container_not_found(running_result):
+            return None
+        raise ContainerInspectionError(name_or_id, detail=running_result.stderr or running_result.stdout or None)
 
     labels_result = await transport.run_command(
         ["docker", "inspect", "--format", "{{json .Config.Labels}}", name_or_id]
