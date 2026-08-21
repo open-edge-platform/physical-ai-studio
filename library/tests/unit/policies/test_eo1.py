@@ -34,7 +34,7 @@ from physicalai.policies.eo1.components.qwen_interface import (
 )
 from physicalai.policies.eo1.model import EO1ActionProjector, EO1Model
 from physicalai.policies.eo1.preprocessor import make_eo1_preprocessors
-from physicalai.policies.eo1.pretrained_utils import fix_state_dict_keys
+from physicalai.policies.eo1.pretrained_utils import drop_tied_missing_keys, fix_state_dict_keys
 
 ACTION_DIM = 3
 STATE_DIM = 4
@@ -321,6 +321,15 @@ class TestConversationTemplate:
         once = to_uint8_image(torch.rand(3, 4, 4))
         assert torch.equal(to_uint8_image(once), once)
 
+    def test_to_uint8_image_returns_cpu_tensors(self) -> None:
+        """Test the PIL-backed image processor never receives an accelerator tensor."""
+        assert to_uint8_image(torch.rand(3, 4, 4)).device.type == "cpu"
+
+    @pytest.mark.skipif(not torch.backends.mps.is_available(), reason="needs an accelerator")
+    def test_to_uint8_image_moves_accelerator_tensors_to_cpu(self) -> None:
+        """Test observations arriving on the policy's device are brought back for tokenization."""
+        assert to_uint8_image(torch.rand(3, 4, 4, device="mps")).device.type == "cpu"
+
 
 # ============================================================================ #
 # Pre/Postprocessing                                                           #
@@ -415,6 +424,22 @@ class TestPretrainedUtils:
             "vlm_backbone.model.language_model.layers.0.weight",
             "already_bare.weight",
         }
+
+    def test_tied_missing_keys_are_ignored(self) -> None:
+        """Test the weight Qwen ties to the embedding table is not reported as missing.
+
+        safetensors refuses shared storage, so a published checkpoint carries only one of the pair.
+        """
+        shared = torch.zeros(4)
+        current = {"embed.weight": shared, "lm_head.weight": shared, "other.weight": torch.zeros(2)}
+        kept = drop_tied_missing_keys(["lm_head.weight", "other.weight"], {"embed.weight"}, current)
+        assert kept == ["other.weight"]
+
+    def test_untied_missing_keys_are_kept(self) -> None:
+        """Test a genuinely absent weight is still reported when nothing shares its storage."""
+        current = {"embed.weight": torch.zeros(4), "lm_head.weight": torch.zeros(4)}
+        kept = drop_tied_missing_keys(["lm_head.weight"], {"embed.weight"}, current)
+        assert kept == ["lm_head.weight"]
 
 
 # ============================================================================ #
