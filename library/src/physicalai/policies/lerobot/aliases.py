@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from physicalai.policies.lerobot.policy import NamedLeRobotPolicy
 
-__all__ = ["ACT", "PI0", "PI05", "XVLA", "Diffusion", "Groot", "PI0Fast", "SmolVLA"]
+__all__ = ["ACT", "PI0", "PI05", "VLAJEPA", "XVLA", "Diffusion", "Groot", "PI0Fast", "SmolVLA"]
 
 
 class ACT(NamedLeRobotPolicy):
@@ -87,3 +87,17 @@ class XVLA(NamedLeRobotPolicy):
     """
 
     POLICY_NAME = "xvla"
+
+
+class VLAJEPA(NamedLeRobotPolicy):
+    """LeRobot VLA-JEPA policy.
+
+    Known limitations:
+        The world-model branch expects a multi-frame observation window, which
+        upstream derives from ``observation_delta_indices``. Wrapper users must
+        therefore supply ``delta_timestamps`` themselves when
+        ``enable_world_model`` is on; the first-party
+        :class:`physicalai.policies.VLAJEPA` wires this automatically.
+    """
+
+    POLICY_NAME = "vla_jepa"
