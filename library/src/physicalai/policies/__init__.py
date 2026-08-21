@@ -8,6 +8,7 @@ from __future__ import annotations
 from . import lerobot
 from .act import ACT, ACTConfig, ACTModel
 from .base import Policy
+from .eo1 import EO1, EO1Config, EO1Model
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
 from .pi0 import Pi0, Pi0Config, Pi0Model
@@ -17,8 +18,13 @@ from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
 __all__ = [
     # ACT
     "ACT",
+    # EO-1 (all-caps entry sorts ahead of the CamelCase ones below)
+    "EO1",
     "ACTConfig",
     "ACTModel",
+    # EO-1
+    "EO1Config",
+    "EO1Model",
     # Groot
     "Groot",
     "GrootConfig",
@@ -51,7 +57,7 @@ def get_policy(policy_name: str, *, source: str = "physicalai", **kwargs) -> Pol
 
     Args:
         policy_name: Name of the policy to create. Supported values depend on source:
-            - physicalai: "act", "dummy", "groot", "pi0", "pi05", "smolvla"
+            - physicalai: "act", "dummy", "eo1", "groot", "pi0", "pi05", "smolvla"
             - lerobot: "act", "diffusion", "smolvla", "pi0", "pi05", "pi0_fast", "groot", "xvla"
         source: Where the policy implementation comes from. Options:
             - "physicalai": First-party implementations (default)
@@ -127,17 +133,18 @@ def get_physicalai_policy_class(policy_name: str) -> type[Policy]:
     Raises:
         ValueError: If the policy name is unknown.
     """
-    policy_name = policy_name.lower()
+    policies: dict[str, type[Policy]] = {
+        "act": ACT,
+        "eo1": EO1,
+        "groot": Groot,
+        "pi0": Pi0,
+        "pi05": Pi05,
+        "smolvla": SmolVLA,
+    }
 
-    if policy_name == "act":
-        return ACT
-    if policy_name == "groot":
-        return Groot
-    if policy_name == "pi0":
-        return Pi0
-    if policy_name == "pi05":
-        return Pi05
-    if policy_name == "smolvla":
-        return SmolVLA
-    msg = f"Unknown physicalai policy: {policy_name}. Supported policies: act, dummy, groot, pi0, pi05, smolvla"
-    raise ValueError(msg)
+    policy_class = policies.get(policy_name.lower())
+    if policy_class is None:
+        supported = ", ".join(sorted([*policies, "dummy"]))
+        msg = f"Unknown physicalai policy: {policy_name}. Supported policies: {supported}"
+        raise ValueError(msg)
+    return policy_class
