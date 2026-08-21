@@ -28,7 +28,7 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import EO1Config
 from .model import EO1Model
-from .pretrained_utils import extract_dataset_stats, fix_state_dict_keys
+from .pretrained_utils import drop_tied_missing_keys, extract_dataset_stats, fix_state_dict_keys
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
@@ -317,8 +317,10 @@ class EO1(ExportablePolicyMixin, Policy):
             weights_file: Path to the ``model.safetensors`` file.
         """
         state_dict = fix_state_dict_keys(load_file(str(weights_file)))
+        current = self.model.state_dict()
 
         missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
+        missing = drop_tied_missing_keys(missing, set(state_dict), current)
         if missing:
             logger.warning("Missing keys when loading pretrained weights: %d keys", len(missing))
             for key in missing[:10]:
