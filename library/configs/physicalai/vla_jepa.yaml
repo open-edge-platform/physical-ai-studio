@@ -1,0 +1,52 @@
+# VLA-JEPA Policy Training Configuration
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/vla_jepa.yaml
+#
+# VLA-JEPA pairs a Qwen3-VL backbone with a flow-matching DiT action head. The Qwen3-VL-2B
+# backbone is downloaded on first run and dominates the memory footprint; drop the batch size
+# before touching anything else.
+
+model:
+  class_path: physicalai.policies.VLAJEPA
+  init_args:
+    chunk_size: 8
+    n_action_steps: 8
+    # The V-JEPA2 world model is a training-only auxiliary loss. It pulls a second backbone
+    # (facebook/vjepa2-vitl-fpc64-256) and makes the dataloader decode `num_video_frames` frames
+    # per camera per sample, so it is off by default. Enable it for the full recipe:
+    # enable_world_model: true
+    # num_video_frames: 8
+    # world_model_loss_weight: 0.1
+    enable_world_model: false
+    # Qwen sees native frames unless they are resized; large cameras blow up the patch count.
+    resize_images_to: [224, 224]
+    # Fine-tuning a published checkpoint onto a robot with different action/state dims:
+    # pretrained_name_or_path: ginwind/VLA-JEPA
+    # reinit_modules:
+    #   - model.action_model.action_encoder
+    #   - model.action_model.action_decoder
+    #   - model.action_model.state_encoder
+    # LIBERO-only action conventions, off by default (see the policy docstring):
+    # pre_snap_gripper_action: true
+    # binarize_gripper_action: true
+    optimizer_lr: 1.0e-4
+    scheduler_warmup_steps: 1000
+    scheduler_decay_steps: 30000
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/pusht"
+    train_batch_size: 2
+    data_format: "physicalai"
+    val_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 100
+  check_val_every_n_epoch: 10
