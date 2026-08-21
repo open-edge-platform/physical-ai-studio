@@ -60,6 +60,8 @@ RUN groupadd --gid "${TRAINER_GID}" trainer \
     && useradd --uid "${TRAINER_UID}" --gid "${TRAINER_GID}" --create-home --shell /usr/sbin/nologin trainer \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+        build-essential \
+        g++ \
         ffmpeg \
         libgl1 \
         libglib2.0-0 \
