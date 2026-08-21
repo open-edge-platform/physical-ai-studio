@@ -5,7 +5,7 @@ import { screen } from '@testing-library/react';
 
 import { render } from '../../../test-utils/render';
 import { MetricSeries, MetricsView } from './metrics';
-import { MetricsEntry } from './types';
+import type { MetricsEntry } from './types';
 
 const entry = (overrides: Partial<MetricsEntry>): MetricsEntry => ({
     step: 0,

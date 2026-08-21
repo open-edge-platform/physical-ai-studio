@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 
 import { Box } from '../shared/box';
-import { MetricsEntry } from './types';
+import type { MetricsEntry } from './types';
 
 type CustomTooltipContentProps = Partial<TooltipContentProps> & {
     xAxisLabel?: string;

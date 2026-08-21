@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { foldMetricsBatch, sortMetricsByStep } from './merge-metrics-by-step';
-import { MetricsEntry } from './types';
+import type { MetricsEntry } from './types';
 
 const entry = (overrides: Partial<MetricsEntry>): MetricsEntry => ({
     step: 0,

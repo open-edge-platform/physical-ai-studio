@@ -10,7 +10,7 @@ import { getQueryKey } from '../../../query-client/query-client.interface';
 import { ReactComponent as EmptyIllustration } from './../../../assets/illustration.svg';
 import { foldMetricsBatch, sortMetricsByStep } from './merge-metrics-by-step';
 import { MetricGraph } from './metric-graph';
-import { MetricsEntry } from './types';
+import type { MetricsEntry } from './types';
 
 const NoMetricsAvailable = () => {
     return (
