@@ -19,7 +19,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from physicalai.config import instantiate, to_config
+from physicalai.config import Config, instantiate
 
 from robots.catalog.so101 import _build_so101_driver
 from robots.catalog.widowxai import _build_trossen_bimanual_driver, _build_trossen_single_arm_driver
@@ -88,7 +88,7 @@ class TestSO101Builder:
     async def test_exports_driver_recipe_for_the_owner(self) -> None:
         driver = await _build_so101_driver(_so101_robot(), _StubFactory())
 
-        recipe = to_config(driver)
+        recipe = Config.from_instance(driver).to_dict()
         assert recipe["class_path"] == "physicalai.robot.SO101"
         assert recipe["init_args"]["port"] == "/dev/ttyACM0"
         assert recipe["init_args"]["role"] == "follower"
@@ -99,13 +99,13 @@ class TestSO101Builder:
         """The owner process instantiates the recipe; it must yield a usable driver."""
         driver = await _build_so101_driver(_so101_robot(), _StubFactory())
 
-        rebuilt = instantiate(to_config(driver))
+        rebuilt = instantiate(Config.from_instance(driver))
         assert rebuilt.joint_names == list(JOINT_NAMES)
 
     async def test_leader_role_is_exported(self) -> None:
         driver = await _build_so101_driver(_so101_robot("SO101_Leader"), _StubFactory())
 
-        assert to_config(driver)["init_args"]["role"] == "leader"
+        assert Config.from_instance(driver).to_dict()["init_args"]["role"] == "leader"
 
     async def test_uncalibrated_builds_in_ticks_mode(self) -> None:
         """Without calibration the driver must report raw ticks.
@@ -116,11 +116,11 @@ class TestSO101Builder:
         driver = await _build_so101_driver(_so101_robot(calibrated=False), _StubFactory())
 
         assert driver.unit == "ticks"
-        recipe = to_config(driver)
+        recipe = Config.from_instance(driver).to_dict()
         assert recipe["init_args"]["calibration"] is None
         assert recipe["init_args"]["unit"] == "ticks"
         # The owner process must be able to rebuild it.
-        assert instantiate(recipe).joint_names == list(JOINT_NAMES)
+        assert instantiate(Config.from_dict(recipe)).joint_names == list(JOINT_NAMES)
 
     async def test_calibrated_builds_in_normalized_mode(self) -> None:
         driver = await _build_so101_driver(_so101_robot(), _StubFactory())
@@ -144,7 +144,7 @@ class TestTrossenBuilders:
 
         driver = await _build_trossen_single_arm_driver(robot, _StubFactory())
 
-        assert to_config(driver) == {
+        assert Config.from_instance(driver).to_dict() == {
             "class_path": "physicalai.robot.WidowXAI",
             "init_args": {"ip": "192.168.1.2", "role": "follower"},
         }
@@ -154,7 +154,7 @@ class TestTrossenBuilders:
 
         driver = await _build_trossen_single_arm_driver(robot, _StubFactory())
 
-        assert to_config(driver)["init_args"]["role"] == "leader"
+        assert Config.from_instance(driver).to_dict()["init_args"]["role"] == "leader"
 
     async def test_bimanual_is_one_driver_holding_both_arms(self) -> None:
         robot = _robot(
@@ -165,7 +165,7 @@ class TestTrossenBuilders:
         driver = await _build_trossen_bimanual_driver(robot, _StubFactory())
 
         # A single owner holds both arms, rather than one SharedRobot per arm.
-        recipe = to_config(driver)
+        recipe = Config.from_instance(driver).to_dict()
         assert recipe["class_path"] == "physicalai.robot.BimanualWidowXAI"
         assert recipe["init_args"]["left"]["init_args"]["ip"] == "192.168.1.2"
         assert recipe["init_args"]["right"]["init_args"]["ip"] == "192.168.1.3"
@@ -178,7 +178,7 @@ class TestTrossenBuilders:
 
         driver = await _build_trossen_bimanual_driver(robot, _StubFactory())
 
-        joint_names = instantiate(to_config(driver)).joint_names
+        joint_names = instantiate(Config.from_instance(driver)).joint_names
         assert any(name.startswith("left_") for name in joint_names)
         assert any(name.startswith("right_") for name in joint_names)
 
