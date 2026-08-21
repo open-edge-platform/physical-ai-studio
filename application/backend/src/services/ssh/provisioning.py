@@ -466,10 +466,10 @@ class SshProvisioningService:
             _settings=settings,
         )
 
-    # PLR0911: one return per classified outcome (see `ReattachFailureReason`) -
-    # a lookup table would obscure which branch establishes ownership and which
-    # never connects at all, and that distinction is what a caller relies on to
-    # decide what is safe to clean up.
+    # PLR0911/PLR0912: one return/branch per classified outcome (see
+    # `ReattachFailureReason`) - a lookup table would obscure which branch
+    # establishes ownership and which never connects at all, and that
+    # distinction is what a caller relies on to decide what is safe to clean up.
     async def verify_reattach(  # noqa: PLR0911
         self, job_provisioning: JobProvisioning, server: RemoteServer
     ) -> ReattachVerification:
