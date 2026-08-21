@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_REGISTRY: ghcr.io/open-edge-platform
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   TRAINER_API_PROTOCOL_VERSION: "1"
 
 jobs:
@@ -93,6 +93,7 @@ jobs:
             ghcr1production.blob.core.windows.net:443
             github.com:443
             keyserver.ubuntu.com:443
+            pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
@@ -135,6 +136,9 @@ jobs:
           load: true
           push: false
           tags: physicalai-trainer-${{ matrix.device }}:test
+          # PR builds are cache-read-only; the per-device build cache is written
+          # from `main` by the publish job below.
+          cache-from: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.build-metadata.outputs.created }}
@@ -252,13 +256,16 @@ jobs:
             ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
             ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           labels: |
-            org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}/physical-ai-studio
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.build-metadata.outputs.version }}
             org.opencontainers.image.created=${{ steps.build-metadata.outputs.created }}
             org.open-edge-platform.physicalai.trainer.api-protocol=${{ env.TRAINER_API_PROTOCOL_VERSION }}
           sbom: true
           provenance: mode=max
+          # `main` publishes warm the per-device build cache that PR builds read.
+          cache-from: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache,mode=max,compression=zstd,image-manifest=true,ignore-error=true
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.build-metadata.outputs.created }}
