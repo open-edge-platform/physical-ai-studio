@@ -78,7 +78,9 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     TRAINER_STORAGE_DIR=/var/lib/physicalai-trainer \
     HF_HOME=/var/lib/physicalai-trainer/huggingface \
     TORCH_HOME=/var/lib/physicalai-trainer/torch \
-    XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache
+    XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache \
+    HOME=/var/lib/physicalai-trainer \
+    TRITON_CACHE_DIR=/var/lib/physicalai-trainer/cache/triton
 
 # Only the trainer and training packages, never the rest of the backend: no
 # studio API, robots, database, or UI assets reach this image.
