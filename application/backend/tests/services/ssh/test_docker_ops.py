@@ -604,4 +604,3 @@ async def test_inspect_container_reports_stopped_state() -> None:
 
     assert result is not None
     assert result.running is False
-
