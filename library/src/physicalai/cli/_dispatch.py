@@ -67,7 +67,7 @@ def _dispatch(method_name: str) -> Callable[[ArgumentParser, Namespace], int]:
 
     def _run(parser: ArgumentParser, cfg: Namespace) -> int:
         configure_console_logging()
-        cfg_init = cast("Namespace", parser.instantiate_classes(cfg))
+        cfg_init = cast("Namespace", parser.instantiate(cfg))
         trainer = cfg_init.trainer
         method_ns = getattr(cfg_init, method_name, None)
         # Drop unset options so Trainer's own defaults win over jsonargparse Nones.

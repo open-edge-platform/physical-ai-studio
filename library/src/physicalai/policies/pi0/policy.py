@@ -12,7 +12,6 @@ import math
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
-from physicalai.config.mixin import FromConfig
 
 from physicalai.export.mixin_policy import ExportablePolicyMixin
 from physicalai.policies.base import Policy
@@ -28,7 +27,7 @@ if TYPE_CHECKING:
     from .preprocessor import Pi0Postprocessor, Pi0Preprocessor
 
 
-class Pi0(ExportablePolicyMixin, Policy, FromConfig):
+class Pi0(ExportablePolicyMixin, Policy):
     """Pi0 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi0 model.

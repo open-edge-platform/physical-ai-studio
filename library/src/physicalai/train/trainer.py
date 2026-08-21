@@ -15,7 +15,7 @@ import torch
 from lightning.pytorch.callbacks import BatchSizeFinder, LearningRateMonitor
 from lightning.pytorch.loggers import Logger  # noqa: TC002
 from lightning.pytorch.strategies import DDPStrategy
-from physicalai.config.loading import instantiate_obj_from_dict
+from physicalai.config import instantiate
 
 from physicalai.train.callbacks import PolicyDatasetInteraction
 
@@ -179,7 +179,7 @@ class Trainer(lightning.Trainer):
         normalized_callbacks: list[Any] = []
         for callback in user_callbacks:
             if isinstance(callback, dict) and "class_path" in callback:
-                normalized_callbacks.append(instantiate_obj_from_dict(callback))
+                normalized_callbacks.append(instantiate(callback))
             else:
                 normalized_callbacks.append(callback)
 

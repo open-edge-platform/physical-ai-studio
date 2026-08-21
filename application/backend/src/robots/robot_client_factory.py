@@ -1,4 +1,4 @@
-from physicalai.config import to_config
+from physicalai.config import Config
 from physicalai.robot import SharedRobot
 from physicalai_studio_plugin import shared_robot_name
 
@@ -38,7 +38,7 @@ class RobotClientFactory:
         # the hardware. The driver itself is discarded — only its recipe is sent,
         # and the owner rebuilds it. The name keys the owner's Zenoh topics, so
         # it must come from the id, never the free-form display name.
-        shared_robot = SharedRobot.from_config(to_config(robot_driver), name=shared_robot_name(robot.id))
+        shared_robot = SharedRobot.from_config(Config.from_instance(robot_driver), name=shared_robot_name(robot.id))
         adapter_options = definition.adapter_options
         return PhysicalAIRobotAdapter(
             robot=shared_robot,
