@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from .preprocessor import Pi0Postprocessor, Pi0Preprocessor
 
 
-class Pi0(ExportablePolicyMixin, Policy, FromConfigMixin):
+class Pi0(FromConfigMixin, ExportablePolicyMixin, Policy):
     """Pi0 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi0 model.
