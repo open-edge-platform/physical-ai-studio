@@ -14,9 +14,15 @@ from physicalai.policies.smolvla.pretrained_utils import parse_config_features
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import torch
+
 logger = logging.getLogger(__name__)
 
 STAT_KEYS = ("mean", "std", "min", "max", "q01", "q99")
+
+# `Tensor.data_ptr()` is 0 for tensors with no storage (meta tensors, empty tensors); those must not
+# be treated as sharing memory with one another.
+_NO_STORAGE = 0
 
 
 def fix_state_dict_keys(state_dict: dict[str, Any]) -> dict[str, Any]:
@@ -32,6 +38,38 @@ def fix_state_dict_keys(state_dict: dict[str, Any]) -> dict[str, Any]:
         The remapped state dict.
     """
     return {key.removeprefix("model."): value for key, value in state_dict.items()}
+
+
+def drop_tied_missing_keys(
+    missing: list[str],
+    loaded: set[str],
+    current: dict[str, torch.Tensor],
+) -> list[str]:
+    """Drop reported-missing keys that are tied to a tensor the checkpoint did provide.
+
+    Qwen ties ``lm_head.weight`` to ``embed_tokens.weight``, and safetensors refuses to serialize
+    shared storage, so every published checkpoint omits one of the pair. The model already ties them
+    at construction, so loading the survivor fills both - reporting the other as missing is noise
+    that would fire on every load.
+
+    Sharing is detected by storage identity rather than by a hard-coded key list, so it holds for
+    whatever the backbone happens to tie.
+
+    Args:
+        missing: Keys ``load_state_dict`` reported as missing.
+        loaded: Keys the checkpoint actually provided.
+        current: The model's own ``state_dict()``.
+
+    Returns:
+        The genuinely missing keys.
+    """
+    loaded_storage = {
+        current[key].data_ptr() for key in loaded if key in current and current[key].data_ptr() != _NO_STORAGE
+    }
+    kept = [key for key in missing if key not in current or current[key].data_ptr() not in loaded_storage]
+    if dropped := len(missing) - len(kept):
+        logger.debug("Ignored %d missing key(s) tied to weights the checkpoint provided.", dropped)
+    return kept
 
 
 def extract_dataset_stats(
