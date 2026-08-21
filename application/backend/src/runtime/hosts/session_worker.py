@@ -114,10 +114,25 @@ def _error_event(exc: Exception) -> ErrorEvent:
 
 
 def signal_ready() -> None:
-    """Send the successful startup handshake and close stdout permanently."""
+    """Send the startup handshake, then make the closed stdout safe to write to.
+
+    The handshake pipe must close so the parent stops waiting, but a closed
+    ``sys.stdout`` makes every later write raise ``ValueError``. tqdm flushes
+    stdout while building a progress bar, so ``datasets`` crashed
+    ``save_episode()``. The ``/dev/null`` handle covers any library that writes
+    to stdout and is held for the process lifetime, never closed.
+
+    Disabling progress bars is a separate concern: tqdm renders to *stderr*,
+    which is the session's log sink, so leaving them on spams the logs with
+    ``Map: 100%|...`` on every episode.
+    """
+    from datasets.utils import disable_progress_bars
+
     sys.stdout.write("READY\n")
     sys.stdout.flush()
     sys.stdout.close()
+    sys.stdout = open(os.devnull, "w")  # noqa: SIM115
+    disable_progress_bars()
 
 
 def signal_error(exc: Exception, *, phase: str | None = None) -> None:
