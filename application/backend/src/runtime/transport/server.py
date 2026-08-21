@@ -76,9 +76,14 @@ class RuntimeZenohServer:
                 logger.warning("Runtime session {} port is taken: {}", self._name, exc)
                 raise RobotDeviceAlreadyOwnedError from exc
             raise
+        # FIFO rather than a ring: commands are a sequence, not a latest-value
+        # signal. A ring evicts the oldest on overflow, which drops load_dataset
+        # and keeps the set_follower_source that depends on it. FIFO yields a
+        # contiguous prefix instead. The pump cannot drain mid-burst, so the
+        # capacity has to cover a whole client flush, not just the arrival rate.
         self._command_sub = self._session.declare_subscriber(
             command_key(self._name),
-            zenoh.handlers.RingChannel(1),
+            zenoh.handlers.FifoChannel(64),
         )
         self._request_queryable = self._session.declare_queryable(
             request_key(self._name),

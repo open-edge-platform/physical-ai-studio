@@ -35,7 +35,7 @@ class RuntimeSessionClient:
         self._metadata_ready = threading.Event()
         self._hardware_ready = threading.Event()
         self._shutdown_received = threading.Event()
-        self._pending_command: Command | None = None
+        self._pending_commands: list[Command] = []
         self._lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._last_state: StateEvent | None = None
@@ -106,7 +106,7 @@ class RuntimeSessionClient:
             except queue.Empty:
                 break
         self._metadata_ready.set()
-        self._flush_pending_command()
+        self._flush_pending_commands()
 
     def connect(self, timeout: float = 10.0, *, process: Any = None) -> dict[str, Any]:
         """Wait for metadata before allowing any command publication."""
@@ -131,10 +131,10 @@ class RuntimeSessionClient:
             time.sleep(min(0.05, remaining))
 
     def apply(self, command: Command) -> None:
-        """Publish now when metadata is ready, otherwise retain the newest command."""
+        """Publish now when metadata is ready, otherwise queue until attach flushes."""
         with self._lock:
             if not self._metadata_ready.is_set():
-                self._pending_command = command
+                self._pending_commands.append(command)
                 return
             self._command_pub.put(encode_command(command, instance_id=self._instance_id))
 
@@ -203,11 +203,11 @@ class RuntimeSessionClient:
             except Exception:
                 logger.debug("Failed to close runtime Zenoh session", exc_info=True)
 
-    def _flush_pending_command(self) -> None:
+    def _flush_pending_commands(self) -> None:
         with self._lock:
-            if self._pending_command is not None:
-                self._command_pub.put(encode_command(self._pending_command, instance_id=self._instance_id))
-                self._pending_command = None
+            for command in self._pending_commands:
+                self._command_pub.put(encode_command(command, instance_id=self._instance_id))
+            self._pending_commands.clear()
 
     def _receive_event(self, sample: Any) -> None:
         try:

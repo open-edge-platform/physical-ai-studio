@@ -9,7 +9,15 @@ from uuid import UUID
 import pytest
 import zenoh
 
-from runtime.contract import Command, ErrorEvent, SaveEpisodeCommand, SetFollowerSourceCommand, StateData, StateEvent
+from runtime.contract import (
+    Command,
+    ErrorEvent,
+    LoadDatasetCommand,
+    SaveEpisodeCommand,
+    SetFollowerSourceCommand,
+    StateData,
+    StateEvent,
+)
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.codec import encode_event
 from runtime.transport.ids import (
@@ -137,24 +145,26 @@ def test_session_config_is_peer_only_without_scouting_and_uses_loopback(listen: 
 def test_server_declares_required_qos(monkeypatch: pytest.MonkeyPatch) -> None:
     name = runtime_session_name(UUID("be2781f9-b165-4ffc-a78d-f77f258f4235"))
     fake_session = _FakeSession()
-    ring_channels: list[int] = []
+    fifo_channels: list[int] = []
     monkeypatch.setattr("runtime.transport.server.open_session", lambda name, listen: fake_session)
-    original_ring_channel = zenoh.handlers.RingChannel
+    original_fifo_channel = zenoh.handlers.FifoChannel
 
-    def record_ring_channel(capacity: int) -> object:
-        ring_channels.append(capacity)
-        return original_ring_channel(capacity)
+    def record_fifo_channel(capacity: int) -> object:
+        fifo_channels.append(capacity)
+        return original_fifo_channel(capacity)
 
     monkeypatch.setattr(
         zenoh.handlers,
-        "RingChannel",
-        record_ring_channel,
+        "FifoChannel",
+        record_fifo_channel,
     )
     server = RuntimeZenohServer(name)
     try:
         server.open(lambda command: None)
 
-        assert ring_channels == [1]
+        # Commands are a sequence: a ring would evict the oldest on overflow.
+        assert fifo_channels == [64]
+        assert isinstance(fake_session.subscribers[command_key(name)], original_fifo_channel)
         for key in (tick_key(name), state_key(name), error_key(name)):
             assert fake_session.publishers[key]["reliability"] == zenoh.Reliability.BEST_EFFORT
             assert fake_session.publishers[key]["congestion_control"] == zenoh.CongestionControl.DROP
@@ -212,6 +222,30 @@ def test_client_buffers_command_until_metadata_answers() -> None:
 
         assert connect_error == []
         assert received == [command]
+    finally:
+        server.close()
+        client.close()
+
+
+def test_client_buffers_multiple_commands_until_metadata_answers() -> None:
+    name = runtime_session_name(UUID("2ee32ff5-d880-4c20-be57-fe5733450012"))
+    received: list = []
+    client = RuntimeSessionClient(name)
+    client.open()
+    load_command = LoadDatasetCommand(dataset_id=UUID("e8454e0c-f962-492e-878c-f7367f5ae73f"))
+    teleop_command = SetFollowerSourceCommand(follower_source="teleop")
+    client.apply(load_command)
+    client.apply(teleop_command)
+
+    server = RuntimeZenohServer(name)
+    try:
+        server.open(received.append)
+        client.connect(timeout=3)
+        deadline = time.monotonic() + 2
+        while len(received) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert received == [load_command, teleop_command]
     finally:
         server.close()
         client.close()
