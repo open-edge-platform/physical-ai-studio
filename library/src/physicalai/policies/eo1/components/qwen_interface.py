@@ -80,18 +80,24 @@ def to_uint8_image(image: torch.Tensor) -> torch.Tensor:
     what the published EO-1 checkpoints were trained on. Already-integer tensors pass through, so
     the conversion is idempotent.
 
+    The result is always on the CPU: the default (PIL-backed) Qwen image processor calls
+    ``.numpy()`` on what it is handed, which throws for accelerator tensors. Observations reach the
+    model on the policy's device, so without this an EO-1 policy moved off the CPU fails at the
+    first prediction. The copy is a few hundred KB of uint8 per camera, next to nothing beside the
+    backbone forward it feeds.
+
     Works for any channels-first layout (the channel dim is -3): ``[C, H, W]``, ``[B, C, H, W]``.
 
     Args:
         image: Channels-first image tensor.
 
     Returns:
-        A uint8 tensor with a single channel expanded to three.
+        A uint8 CPU tensor with a single channel expanded to three.
     """
     if not image.is_floating_point():
-        converted = image.to(torch.uint8)
+        converted = image.to(device="cpu", dtype=torch.uint8)
     else:
-        converted = image.detach().clamp(0, 1).mul(_UINT8_MAX).round().to(torch.uint8)
+        converted = image.detach().clamp(0, 1).mul(_UINT8_MAX).round().to(device="cpu", dtype=torch.uint8)
     if converted.shape[-3] == _GRAYSCALE_CHANNELS:
         repeats = [1] * converted.ndim
         repeats[-3] = 3
