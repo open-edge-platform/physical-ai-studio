@@ -8,8 +8,11 @@
 
 from __future__ import annotations
 
+import functools
+import inspect
 import json
 import logging
+from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -36,6 +39,8 @@ from .pretrained_utils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from physicalai.data import Observation
 
     from .preprocessor import VLAJEPAPostprocessor, VLAJEPAPreprocessor
@@ -70,6 +75,31 @@ _PRETRAINED_ARCHITECTURE_FIELDS = frozenset({
 })
 
 
+def _track_explicit_args(init: Callable[..., None]) -> Callable[..., None]:
+    """Record which ``__init__`` arguments the caller actually passed.
+
+    By the time ``__init__`` runs, every unspecified argument already holds its default, which
+    erases the difference between "the caller asked for this value" and "the caller said nothing".
+    :meth:`VLAJEPA._from_hf` needs that difference: a default must never silently overwrite what a
+    published checkpoint recorded for the same field.
+
+    Args:
+        init: The ``__init__`` to wrap.
+
+    Returns:
+        The wrapped ``__init__``, which sets ``self._explicit_args`` before delegating.
+    """
+    signature = inspect.signature(init)
+
+    @functools.wraps(init)
+    def wrapper(self: VLAJEPA, *args: object, **kwargs: object) -> None:
+        bound = signature.bind_partial(self, *args, **kwargs)
+        self._explicit_args = frozenset(bound.arguments) - {"self"}
+        init(self, *args, **kwargs)
+
+    return wrapper
+
+
 class VLAJEPA(ExportablePolicyMixin, Policy):
     """VLA-JEPA Policy - Qwen3-VL backbone, flow-matching action head and a V-JEPA2 world model.
 
@@ -86,8 +116,9 @@ class VLAJEPA(ExportablePolicyMixin, Policy):
 
     Args:
         pretrained_name_or_path: HuggingFace repo id or local path holding a published VLA-JEPA
-            ``config.json`` / ``model.safetensors``. Architecture fields are read from it; runtime
-            and training fields still come from this constructor.
+            ``config.json`` / ``model.safetensors``. Every field it records is used as-is;
+            architecture fields cannot be overridden, and the remaining runtime and training
+            fields are overridden only by arguments passed explicitly to this constructor.
         dataset_stats: Dataset normalization statistics for eager initialization.
 
     See :class:`~physicalai.policies.vla_jepa.VLAJEPAConfig` for every other argument.
@@ -107,7 +138,9 @@ class VLAJEPA(ExportablePolicyMixin, Policy):
 
     model: Any
     _preprocessor: Any
+    _explicit_args: frozenset[str]
 
+    @_track_explicit_args
     def __init__(  # noqa: PLR0913
         self,
         pretrained_name_or_path: str | Path | None = None,
@@ -253,7 +286,16 @@ class VLAJEPA(ExportablePolicyMixin, Policy):
 
         weights_file = None
         if pretrained_name_or_path is not None:
-            self.config, dataset_stats, weights_file = self._from_hf(pretrained_name_or_path, config_kwargs)
+            self.config, dataset_stats, weights_file = self._from_hf(
+                pretrained_name_or_path,
+                config_kwargs,
+                self._explicit_args,
+            )
+            # `super().__init__` above ran on the caller's `n_action_steps`; the checkpoint may
+            # carry a different one, and the action queue is sized from it.
+            if self.config.n_action_steps != self._n_action_steps:
+                self._n_action_steps = self.config.n_action_steps
+                self._action_queue = deque(maxlen=self._n_action_steps)
         else:
             self.config = VLAJEPAConfig(**config_kwargs)
 
@@ -284,17 +326,26 @@ class VLAJEPA(ExportablePolicyMixin, Policy):
     def _from_hf(
         pretrained_name_or_path: str | Path,
         config_kwargs: dict[str, Any],
+        explicit_args: frozenset[str],
     ) -> tuple[VLAJEPAConfig, dict[str, dict[str, list[float] | str | tuple]] | None, Path | None]:
         """Load a pretrained VLA-JEPA config, dataset stats and weights.
 
-        Architecture fields (backbone ids, chunk size, head and predictor geometry, prompt tokens)
-        come from the checkpoint, since they are baked into its tensor shapes. Everything else -
-        training presets, inference settings, gripper and relative-action handling - comes from the
-        caller.
+        The checkpoint is the source of truth for every field it records. Architecture fields
+        (backbone ids, chunk size, head and predictor geometry, prompt tokens) are baked into its
+        tensor shapes and cannot be overridden at all; every other field - training presets,
+        inference settings, gripper and relative-action handling - is overridden only when the
+        caller passed it explicitly.
+
+        Constructor defaults must not participate in that merge: they describe a from-scratch
+        VLA-JEPA, not the published one. Letting them through silently replaced the LIBERO
+        checkpoint's `resize_images_to`, `binarize_gripper_action` and `pre_snap_gripper_action`
+        with from-scratch values, which fed the backbones the wrong input resolution and emitted
+        the gripper in the wrong action space.
 
         Args:
             pretrained_name_or_path: HuggingFace repo id or local directory.
-            config_kwargs: Constructor arguments, applied on top of the pretrained config.
+            config_kwargs: Constructor arguments, keyed like the config fields.
+            explicit_args: Names of the constructor arguments the caller actually passed.
 
         Returns:
             Tuple of (config, dataset_stats, weights_file).
@@ -318,9 +369,22 @@ class VLAJEPA(ExportablePolicyMixin, Policy):
         with Path(config_file).open(encoding="utf-8") as f:
             hf_config = json.load(f)
 
-        hf_config.update({
-            key: value for key, value in config_kwargs.items() if key not in _PRETRAINED_ARCHITECTURE_FIELDS
-        })
+        overrides = {
+            key: value
+            for key, value in config_kwargs.items()
+            if key in explicit_args and key not in _PRETRAINED_ARCHITECTURE_FIELDS
+        }
+        ignored = sorted(explicit_args & _PRETRAINED_ARCHITECTURE_FIELDS)
+        if ignored:
+            logger.warning(
+                "Ignoring %d explicitly passed argument(s) baked into the shapes of %s: %s",
+                len(ignored),
+                pretrained_name_or_path,
+                ", ".join(ignored),
+            )
+        if overrides:
+            logger.info("Overriding %s config with: %s", pretrained_name_or_path, ", ".join(sorted(overrides)))
+        hf_config.update(overrides)
 
         dataset_stats = extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
 
