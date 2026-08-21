@@ -27,8 +27,8 @@ from tempfile import TemporaryDirectory
 from typing import IO, TYPE_CHECKING, Any, ClassVar, cast
 
 import torch
+from jsonargparse import ArgumentParser
 from lightning_utilities import module_available
-from physicalai.config.serializable import dataclass_to_dict, dict_to_dataclass
 
 from physicalai.data import Observation
 from physicalai.data.lerobot import FormatConverter
@@ -78,6 +78,34 @@ def _load_dataset_to_policy_features() -> Any:  # noqa: ANN401
 
 
 dataset_to_policy_features = _load_dataset_to_policy_features()
+
+
+def _to_plain(value: object) -> object:  # noqa: PLR0911
+    """Convert nested dataclasses and tensors to checkpoint-safe plain values."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {field.name: _to_plain(getattr(value, field.name)) for field in dataclasses.fields(value)}
+    if isinstance(value, dict):
+        return {_to_plain(key): _to_plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_plain(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, torch.Tensor):
+        return value.tolist()
+    if hasattr(value, "value"):
+        return _to_plain(value.value)
+    return value
+
+
+def _parse_dataclass(config_cls: type[Any], values: dict[str, Any]) -> Any:  # noqa: ANN401
+    """Parse a dataclass through jsonargparse, including nested dataclasses."""
+    field_names = {field.name for field in dataclasses.fields(config_cls)}
+    parser = ArgumentParser(exit_on_error=False)
+    parser.add_class_arguments(config_cls, "object")
+    namespace = parser.parse_object({"object": {key: value for key, value in values.items() if key in field_names}})
+    return parser.instantiate(namespace).object
 
 
 _WARNED_UNSUPPORTED_NAMES: set[str] = set()
@@ -313,12 +341,12 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
             checkpoint: Lightning checkpoint dictionary to modify in-place.
         """
         if self._config is not None:
-            config_dict = dataclass_to_dict(self._config)
+            config_dict = cast("dict[str, Any]", _to_plain(self._config))
             config_dict["type"] = self.policy_name
             checkpoint[CONFIG_KEY] = config_dict
             checkpoint[POLICY_NAME_KEY] = self.policy_name
             if self._dataset_stats is not None:
-                checkpoint[DATASET_STATS_KEY] = dataclass_to_dict(self._dataset_stats)
+                checkpoint[DATASET_STATS_KEY] = _to_plain(self._dataset_stats)
 
     def save_pretrained(
         self,
@@ -537,7 +565,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         # Reconstruct LeRobot config from dict
         policy_cls = get_policy_class(policy_name)
         config_cls = policy_cls.config_class  # type: ignore[attr-defined]
-        config = dict_to_dataclass(config_cls, config_dict, strict=False)
+        config = _parse_dataclass(config_cls, config_dict)
         dataset_stats = checkpoint.get(DATASET_STATS_KEY)
 
         # All wrappers (LeRobotPolicy and every NamedLeRobotPolicy subclass)
