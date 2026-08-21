@@ -10,7 +10,9 @@ pre/postprocessing pipeline are exercised directly on synthetic tensors.
 
 from __future__ import annotations
 
+import json
 import logging
+from typing import TYPE_CHECKING
 
 import pytest
 import torch
@@ -24,6 +26,9 @@ from physicalai.policies.vla_jepa.preprocessor import (
     prepare_images,
 )
 from physicalai.policies.vla_jepa.components.world_model import ActionConditionedVideoPredictor
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 ACTION_DIM = 3
 STATE_DIM = 4
@@ -430,6 +435,81 @@ class TestVLAJEPAPolicy:
         first = policy._queue_actions(chunk)  # noqa: SLF001
         assert torch.equal(first, chunk[:, 0])
         assert len(policy._action_queue) == 2  # noqa: SLF001
+
+
+# ============================================================================ #
+# Pretrained config merge                                                      #
+# ============================================================================ #
+
+
+class TestPretrainedConfigMerge:
+    """Tests for how `_from_hf` merges a published config with constructor arguments.
+
+    A published checkpoint records inference-critical settings - input resolution and gripper
+    handling - that differ from the from-scratch defaults. Letting those defaults through silently
+    reconfigured the LIBERO checkpoint's preprocessing and drove its success rate to zero, so the
+    merge must ignore every argument the caller did not pass explicitly.
+    """
+
+    @staticmethod
+    def _checkpoint(tmp_path: Path) -> Path:
+        """Write a minimal published-checkpoint directory.
+
+        Args:
+            tmp_path: Directory the checkpoint files are written into.
+
+        Returns:
+            The checkpoint directory, ready to pass to `_from_hf`.
+        """
+        config = {
+            "type": "vla_jepa",
+            "input_features": {"observation.state": {"type": "STATE", "shape": [8]}},
+            "output_features": {"action": {"type": "ACTION", "shape": [7]}},
+            "chunk_size": 7,
+            "n_action_steps": 7,
+            "resize_images_to": [224, 224],
+            "binarize_gripper_action": True,
+            "pre_snap_gripper_action": True,
+            "optimizer_lr": 1e-4,
+        }
+        (tmp_path / "config.json").write_text(json.dumps(config), encoding="utf-8")
+        (tmp_path / "model.safetensors").touch()
+        return tmp_path
+
+    def test_defaults_do_not_override_checkpoint(self, tmp_path: Path) -> None:
+        """Test unpassed constructor arguments leave the checkpoint's values intact."""
+        config, _, _ = VLAJEPA._from_hf(  # noqa: SLF001
+            self._checkpoint(tmp_path),
+            {"resize_images_to": None, "binarize_gripper_action": False, "pre_snap_gripper_action": False},
+            frozenset({"pretrained_name_or_path"}),
+        )
+        assert config.resize_images_to == (224, 224)
+        assert config.binarize_gripper_action is True
+        assert config.pre_snap_gripper_action is True
+
+    def test_explicit_argument_overrides_checkpoint(self, tmp_path: Path) -> None:
+        """Test an explicitly passed argument still wins, even when it equals the default."""
+        config, _, _ = VLAJEPA._from_hf(  # noqa: SLF001
+            self._checkpoint(tmp_path),
+            {"binarize_gripper_action": False, "optimizer_lr": 3e-5},
+            frozenset({"binarize_gripper_action", "optimizer_lr"}),
+        )
+        assert config.binarize_gripper_action is False
+        assert config.optimizer_lr == pytest.approx(3e-5)
+
+    def test_architecture_field_cannot_be_overridden(self, tmp_path: Path) -> None:
+        """Test shape-baked fields keep the checkpoint's value even when passed explicitly."""
+        config, _, _ = VLAJEPA._from_hf(  # noqa: SLF001
+            self._checkpoint(tmp_path),
+            {"chunk_size": 99},
+            frozenset({"chunk_size"}),
+        )
+        assert config.chunk_size == 7
+
+    def test_explicit_args_are_tracked(self) -> None:
+        """Test the constructor records exactly which arguments the caller passed."""
+        policy = VLAJEPA(chunk_size=8, n_action_steps=4, enable_world_model=False)
+        assert policy._explicit_args == frozenset({"chunk_size", "n_action_steps", "enable_world_model"})  # noqa: SLF001
 
 
 # ============================================================================ #
