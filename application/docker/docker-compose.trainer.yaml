@@ -99,7 +99,7 @@ services:
     devices:
       - "${RENDER_NODE:-/dev/dri/renderD128}:${RENDER_NODE:-/dev/dri/renderD128}"
     group_add:
-      - "${RENDER_GID:?RENDER_GID must be set to the host's render node GID; see .env.trainer.example}"
+      - "${RENDER_GID:-render}"
 
 volumes:
   physicalai-trainer-data:
