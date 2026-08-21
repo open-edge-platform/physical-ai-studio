@@ -105,6 +105,15 @@ smolvla = [
     "safetensors>=0.4.3,<1.0.0",
 ]
 
+# VLA-JEPA foundation model
+# Qwen3-VL backbone + flow-matching DiT action head + V-JEPA2 video world model
+vla_jepa = [
+    "transformers>=5.5.0,<5.6.0",
+    "diffusers>=0.38.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
+
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
 
@@ -119,6 +128,7 @@ all = [
     "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
+    "physicalai-train[vla_jepa]",
 ]
 
 # Contribute Torch and ExecuTorch as inference backends to the registry
