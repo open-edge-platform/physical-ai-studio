@@ -43,6 +43,7 @@ from physicalai.policies.lerobot.aliases import (
     ACT,
     PI0,
     PI05,
+    VLAJEPA,
     XVLA,
     Diffusion,
     Groot,
@@ -62,6 +63,7 @@ SUPPORTED_POLICIES: tuple[str, ...] = (
     "pi05",
     "pi0_fast",
     "smolvla",
+    "vla_jepa",
     "xvla",
 )
 """First-class LeRobot policies exposed as named wrappers."""
@@ -81,6 +83,7 @@ _NAMED_WRAPPERS: tuple[type[NamedLeRobotPolicy], ...] = (
     PI05,
     PI0Fast,
     SmolVLA,
+    VLAJEPA,
     XVLA,
 )
 
@@ -93,6 +96,7 @@ __all__ = [
     "PI05",
     "SUPPORTED_POLICIES",
     "VALIDATED_EQUIVALENCE_POLICIES",
+    "VLAJEPA",
     "XVLA",
     "Diffusion",
     "Groot",
