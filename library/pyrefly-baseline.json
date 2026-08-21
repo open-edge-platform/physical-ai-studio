@@ -1475,6 +1475,18 @@
       "severity": "error"
     },
     {
+      "line": 500,
+      "column": 9,
+      "stop_line": 500,
+      "stop_column": 29,
+      "path": "src/physicalai/policies/eo1/policy.py",
+      "code": -2,
+      "name": "bad-override",
+      "description": "Class member `EO1.configure_optimizers` overrides parent class `Policy` in an inconsistent manner\n  `EO1.configure_optimizers` has type `(self: EO1) -> dict[str, Any]`, which is not assignable to `(self: EO1) -> OptimizerLRScheduler`, the type of `Policy.configure_optimizers`\n  Signature mismatch:\n  expected: def configure_optimizers(self: EO1) -> OptimizerLRScheduler: ...\n                                                   ^^^^^^^^^^^^^^^^^^^^ return type\n  found:    def configure_optimizers(self: EO1) -> dict[str, Any]: ...\n                                                   ^^^^^^^^^^^^^^ return type",
+      "concise_description": "Class member `EO1.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
       "line": 218,
       "column": 25,
       "stop_line": 218,
