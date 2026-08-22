@@ -17,6 +17,8 @@ import torch
 # Skip all tests if lerobot not installed
 pytest.importorskip("lerobot", reason="LeRobot not installed")
 
+from physicalai.data import Observation  # noqa: E402
+
 
 # Module-level fixtures for expensive operations (shared across all tests)
 @pytest.fixture(scope="module")
@@ -24,6 +26,7 @@ def lerobot_imports():
     """Import LeRobot modules once per test module."""
     pytest.importorskip("lerobot")
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
     from physicalai.policies.lerobot import LeRobotPolicy
 
     return {"LeRobotPolicy": LeRobotPolicy, "LeRobotDataset": LeRobotDataset}
@@ -41,6 +44,47 @@ def pusht_act_policy(lerobot_imports, pusht_dataset):
     """Create ACT policy from pusht dataset once per module."""
     LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
     return LeRobotPolicy.from_dataset("act", pusht_dataset)
+
+
+class _FakeLeRobotPolicy(torch.nn.Module):
+    """Minimal LeRobot-like policy used to exercise wrapper dispatch."""
+
+    def __init__(
+        self,
+        loss_output: torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float] | None],
+    ) -> None:
+        super().__init__()
+        self.loss_output = loss_output
+        self.loss_batches: list[dict[str, torch.Tensor]] = []
+        self.predict_action_chunk_calls = 0
+        self.select_action_calls = 0
+        self.reset_calls = 0
+
+    def forward(
+        self,
+        batch: dict[str, torch.Tensor],
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float] | None]:
+        self.loss_batches.append(batch)
+        return self.loss_output
+
+    def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        self.predict_action_chunk_calls += 1
+        return torch.ones(1, 3, 2, device=batch["observation.state"].device)
+
+    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        self.select_action_calls += 1
+        return torch.ones(1, 2, device=batch["observation.state"].device)
+
+    def reset(self) -> None:
+        self.reset_calls += 1
+
+
+def _attach_fake_lerobot_policy(lerobot_policy: Any, fake_policy: _FakeLeRobotPolicy) -> Any:  # noqa: ANN401
+    """Attach a fake initialized LeRobot module without invoking LeRobot factories."""
+    lerobot_policy._preprocessor = torch.nn.Identity()
+    lerobot_policy._postprocessor = torch.nn.Identity()
+    lerobot_policy._lerobot_policy = fake_policy
+    return lerobot_policy
 
 
 class TestLeRobotPolicyLazyInit:
@@ -155,6 +199,71 @@ class TestLeRobotPolicyMethods:
         assert hasattr(policy, "training_step")
         assert callable(policy.training_step)
 
+    def test_compute_val_loss_adds_loss_key_for_diffusion_style_loss(self, lerobot_imports):
+        """Diffusion-style LeRobot losses may return only a scalar loss tensor."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+        loss = torch.tensor(1.25)
+        fake_policy = _FakeLeRobotPolicy(loss)
+        policy = _attach_fake_lerobot_policy(LeRobotPolicy(policy_name="diffusion"), fake_policy)
+        batch = {"observation.state": torch.zeros(1, 2)}
+
+        val_loss, loss_dict = policy.compute_val_loss(batch)
+
+        assert val_loss is loss
+        assert loss_dict["loss"] is loss
+        assert fake_policy.loss_batches[-1] is batch
+
+    def test_validation_step_logs_observation_loss(self, lerobot_imports):
+        """Observation validation batches should log val/loss like first-party policies."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+        policy = LeRobotPolicy(policy_name="diffusion")
+        batch = Observation(action=torch.zeros(1, 2))
+        loss = torch.tensor(2.0)
+        aux_loss = torch.tensor(0.5)
+
+        with (
+            patch.object(policy, "compute_val_loss", return_value=(loss, {"loss": loss, "aux": aux_loss})),
+            patch.object(policy, "log") as log,
+        ):
+            result = policy.validation_step(batch, 0)
+
+        assert result is loss
+        logged_names = [call.args[0] for call in log.call_args_list]
+        assert "val/loss" in logged_names
+        assert "val/aux" in logged_names
+
+    def test_validation_step_preserves_gym_rollout_path(self, lerobot_imports):
+        """Non-data validation batches should still use gym rollout evaluation."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+        policy = LeRobotPolicy(policy_name="diffusion")
+        gym = object()
+        metrics = {"val/gym/success_rate": 1.0}
+
+        with patch.object(policy, "evaluate_gym", return_value=metrics) as evaluate_gym:
+            result = policy.validation_step(gym, 3)
+
+        assert result == metrics
+        evaluate_gym.assert_called_once_with(gym, 3, stage="val")
+
+    def test_diffusion_action_methods_dispatch_to_lerobot_policy(self, lerobot_imports):
+        """Diffusion wrapper keeps chunk prediction, single-action selection, and reset wired."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+        fake_policy = _FakeLeRobotPolicy(torch.tensor(0.0))
+        policy = _attach_fake_lerobot_policy(LeRobotPolicy(policy_name="diffusion"), fake_policy)
+        batch = {"observation.state": torch.zeros(1, 2)}
+
+        policy.train()
+        chunk = policy.predict_action_chunk(batch)
+        action = policy.select_action(batch)
+        policy.reset()
+
+        assert chunk.shape == (1, 3, 2)
+        assert action.shape == (1, 2)
+        assert fake_policy.predict_action_chunk_calls == 1
+        assert fake_policy.select_action_calls == 1
+        assert fake_policy.reset_calls == 1
+        assert policy.training
+
 
 class TestLeRobotPolicyConfigureOptimizers:
     """Tests for optimizer configuration using LeRobot presets."""
@@ -230,6 +339,16 @@ class TestLeRobotPolicyUniversalWrapper:
         LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
 
         policy = LeRobotPolicy.from_dataset("diffusion", pusht_dataset)
+        assert policy._config is not None
+        assert "diffusion" in policy._config.__class__.__name__.lower()
+
+    def test_supports_diffusion_policy_from_repo_id_metadata(self, lerobot_imports):
+        """Test Diffusion construction from lightweight dataset metadata."""
+        LeRobotPolicy = lerobot_imports["LeRobotPolicy"]
+
+        policy = LeRobotPolicy.from_dataset("diffusion", "lerobot/pusht")
+
+        assert policy.policy_name == "diffusion"
         assert policy._config is not None
         assert "diffusion" in policy._config.__class__.__name__.lower()
 
@@ -854,8 +973,9 @@ class TestCheckpointConverter:
         """ValueError when policy_name is None and config has no 'type' field."""
         import json
 
-        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
         from safetensors.torch import save_file
+
+        from physicalai.policies.lerobot.utils.checkpoint_converter import lerobot_to_lightning
 
         no_type_dir = tmp_path / "no_type"
         no_type_dir.mkdir()
