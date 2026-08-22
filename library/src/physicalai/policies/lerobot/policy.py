@@ -29,10 +29,14 @@ from typing import IO, TYPE_CHECKING, Any, ClassVar, cast
 import torch
 from lightning_utilities import module_available
 from physicalai.config.serializable import dataclass_to_dict, dict_to_dataclass
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
+from physicalai.inference.manifest import ComponentSpec
 
 from physicalai.data import Observation
 from physicalai.data.lerobot import FormatConverter
 from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter  # noqa: PLC2701
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
+from physicalai.export.backends import ExportParameters, TorchExportParameters
 from physicalai.export.mixin_policy import CONFIG_KEY, DATASET_STATS_KEY, POLICY_NAME_KEY, ExportablePolicyMixin
 from physicalai.policies.base import Policy
 from physicalai.policies.lerobot.mixin import LeRobotFromConfig
@@ -157,6 +161,67 @@ def _warn_if_unsupported_policy(policy_name: str) -> None:
         UserWarning,
         stacklevel=3,
     )
+
+
+def _feature_type_name(feature: object) -> str:
+    """Normalize a LeRobot feature type name.
+
+    Returns:
+        Uppercase LeRobot feature type name, or an empty string when absent.
+    """
+    value = feature.get("type") if isinstance(feature, dict) else getattr(feature, "type", None)
+    if value is None:
+        return ""
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value).rsplit(".", 1)[-1].upper()
+
+
+def _feature_shape(feature: object) -> tuple[int, ...] | None:
+    """Normalize a LeRobot feature shape as a tuple.
+
+    Returns:
+        Feature shape tuple, or ``None`` when the feature has no shape.
+    """
+    shape = feature.get("shape") if isinstance(feature, dict) else getattr(feature, "shape", None)
+    if shape is None:
+        return None
+    if isinstance(shape, int):
+        return (shape,)
+    return tuple(int(dim) for dim in shape)
+
+
+def _runtime_input_name(feature_id: str, feature_type: str) -> str | None:
+    """Map LeRobot feature keys to Runtime observation input names.
+
+    Returns:
+        Runtime input name, or ``None`` when the feature type is unsupported.
+    """
+    if feature_type == "STATE":
+        return STATE
+    if feature_type == "VISUAL":
+        images_prefix = "observation.images."
+        if feature_id.startswith(images_prefix):
+            return f"{IMAGES}.{feature_id.removeprefix(images_prefix)}"
+        return IMAGES
+    if feature_type == "LANGUAGE":
+        return TASK
+    if feature_type == "ENV":
+        return feature_id
+    return None
+
+
+def _action_chunk_size(config: object) -> int:
+    """Resolve the executable action chunk size for a LeRobot config.
+
+    Returns:
+        Number of action steps produced by the policy.
+    """
+    for attr in ("n_action_steps", "chunk_size"):
+        value = getattr(config, attr, None)
+        if value is not None:
+            return int(value)
+    return 1
 
 
 class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
@@ -832,7 +897,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         """
         del batch_idx  # Unused argument
 
-        total_loss, loss_dict = self(batch)
+        total_loss, loss_dict = self._compute_lerobot_loss(batch)
 
         # Log individual loss components if available (skip non-scalar values and 'loss' key)
         if loss_dict is not None:
@@ -849,20 +914,63 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         self.log("train/loss", total_loss, prog_bar=True)
         return total_loss
 
-    def validation_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
+    def validation_step(
+        self,
+        batch: Gym | Observation | dict[str, torch.Tensor],
+        batch_idx: int,
+    ) -> dict[str, float] | torch.Tensor:
         """Validation step for Lightning.
 
-        Runs gym-based validation by executing rollouts in the environment.
-        The DataModule's val_dataloader returns Gym environment instances directly.
+        Supports both eval-loss validation on data batches and gym-based
+        rollout validation.
 
         Args:
-            batch: Gym environment to evaluate.
+            batch: Observation/LeRobot-format batch or Gym environment.
             batch_idx: Batch index.
 
         Returns:
-            Metrics dict from gym rollout evaluation.
+            Eval-loss tensor for data batches, or metrics dict from gym rollout evaluation.
         """
+        if isinstance(batch, (Observation, dict)):
+            loss, loss_dict = self.compute_val_loss(batch)
+            for key, value in loss_dict.items():
+                if key == "loss":
+                    continue
+                if isinstance(value, (int, float, torch.Tensor)) and (
+                    not isinstance(value, torch.Tensor) or value.numel() == 1
+                ):
+                    self.log(f"val/{key}", value, prog_bar=False, on_step=False, on_epoch=True, sync_dist=True)
+
+            self.log("val/loss", loss_dict["loss"], prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+            return loss
+
         return self.evaluate_gym(batch, batch_idx, stage="val")
+
+    def compute_val_loss(
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
+        """Compute validation loss on a LeRobot data batch.
+
+        LeRobot policies compute supervised losses through their regular
+        policy forward pass. This method keeps the wrapper in eval mode while
+        still calling the underlying LeRobot loss path directly, so validation
+        batches can produce ``val/loss`` without being mistaken for action
+        inference.
+
+        Args:
+            batch: PhysicalAI Observation or native LeRobot dictionary batch.
+
+        Returns:
+            Tuple of total loss and a loss dictionary containing at least
+            ``"loss"``.
+        """
+        loss, loss_dict = self._compute_lerobot_loss(batch)
+        if loss_dict is None:
+            return loss, {"loss": loss}
+        if "loss" not in loss_dict:
+            return loss, {**loss_dict, "loss": loss}
+        return loss, loss_dict
 
     def test_step(self, batch: Gym, batch_idx: int) -> dict[str, float]:
         """Test step for Lightning.
@@ -882,39 +990,44 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
     def forward(  # type: ignore[override]
         self,
         batch: Observation | dict[str, torch.Tensor],
-    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor] | None]:
+    ) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float] | None]:
         """Forward pass for the LeRobot policy.
 
         Handles both training and inference modes:
         - Training: Returns (loss, loss_dict) for backpropagation
-        - Inference: Returns denormalized actions for prediction/export
+        - Inference: Returns denormalized action chunks for prediction/export
 
         Args:
             batch: Input batch (Observation or LeRobot dict).
 
         Returns:
             - Training mode: Tuple of (loss, loss_dict or None)
-            - Inference mode: Action tensor
+            - Inference mode: Action chunk tensor
         """
-        # Convert to LeRobot format if needed
-        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
-
-        # Apply preprocessor for normalization, padding to max_action_dim, etc.
-        # This is required for policies like Groot that expect padded actions
-        batch_dict = self._preprocessor(batch_dict)
-
         if self.training:
             # Training mode: compute loss
-            output = self.lerobot_policy(batch_dict)
+            return self._compute_lerobot_loss(batch)
+        return self.predict_action_chunk(batch)
 
-            # Handle different return formats (some policies return tuple, some just loss)
-            if isinstance(output, tuple):
-                return output
-            return output, None
+    def _compute_lerobot_loss(
+        self,
+        batch: Observation | dict[str, torch.Tensor],
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float] | None]:
+        """Run the wrapped LeRobot policy's supervised loss path.
 
-        # Inference mode: predict actions and denormalize
-        action = self.lerobot_policy.select_action(batch_dict)
-        return self._postprocessor(action)
+        Returns:
+            Total loss and an optional LeRobot loss dictionary.
+        """
+        batch_dict = FormatConverter.to_lerobot_dict(batch) if isinstance(batch, Observation) else batch
+        batch_dict = self._preprocessor(batch_dict)
+        output = self.lerobot_policy(batch_dict)
+
+        # Handle different return formats: some policies return
+        # ``(loss, loss_dict)``, while diffusion-style policies return only loss.
+        if isinstance(output, tuple):
+            loss, loss_dict = output
+            return cast("torch.Tensor", loss), cast("dict[str, torch.Tensor | float] | None", loss_dict)
+        return cast("torch.Tensor", output), None
 
     def predict_action_chunk(self, batch: Observation | dict[str, torch.Tensor]) -> torch.Tensor:
         """Predict full action chunk using the wrapped LeRobot policy.
@@ -968,6 +1081,79 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         """
         super().reset()
         self.lerobot_policy.reset()
+
+    @property
+    def export_policy_name(self) -> str:
+        """LeRobot registry name used for exported artifacts."""
+        return self.policy_name.lower()
+
+    @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected Runtime inputs for export metadata."""
+        if self._config is None:
+            return None
+
+        schema: list[InferenceFeature] = []
+        for feature_id, feature in self._config.input_features.items():
+            feature_type = _feature_type_name(feature)
+            name = _runtime_input_name(feature_id, feature_type)
+            shape = _feature_shape(feature)
+            if name is None or shape is None:
+                continue
+
+            if feature_type == "STATE":
+                inference_type = InferenceFeatureType.STATE
+            elif feature_type == "VISUAL":
+                inference_type = InferenceFeatureType.VISUAL
+            elif feature_type == "LANGUAGE":
+                inference_type = InferenceFeatureType.LANGUAGE
+            else:
+                inference_type = InferenceFeatureType.COMMON
+
+            schema.append(
+                InferenceFeature(
+                    ftype=inference_type,
+                    shape=shape,
+                    name=name,
+                    dtype=InferenceFeatureDtype.STRING
+                    if inference_type is InferenceFeatureType.LANGUAGE
+                    else InferenceFeatureDtype.FLOAT32,
+                ),
+            )
+
+        return schema
+
+    @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's action chunk output for export metadata."""
+        if self._config is None:
+            return None
+
+        for feature in self._config.output_features.values():
+            if _feature_type_name(feature) != "ACTION":
+                continue
+            shape = _feature_shape(feature)
+            if shape is None:
+                continue
+            return [
+                InferenceFeature(
+                    ftype=InferenceFeatureType.ACTION,
+                    shape=(_action_chunk_size(self._config), *shape),
+                    name=ACTION,
+                    dtype=InferenceFeatureDtype.FLOAT32,
+                ),
+            ]
+
+        return None
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Torch Runtime export metadata for LeRobot policies."""
+        return {
+            "torch": TorchExportParameters(
+                preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+            ),
+        }
 
     @property
     def config(self) -> PreTrainedConfig:

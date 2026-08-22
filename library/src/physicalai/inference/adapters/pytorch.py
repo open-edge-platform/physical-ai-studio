@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+import numpy as np
 import torch
 from physicalai.config import import_class
 from physicalai.inference.adapters.base import RuntimeAdapter
@@ -26,12 +27,25 @@ from physicalai.export.backends import TorchExportParameters
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import numpy as np
-
     from physicalai.policies.base import Policy
 
 
 logger = logging.getLogger(__name__)
+
+
+def _to_torch_input(value: object, device: str) -> object:
+    """Recursively convert numpy arrays to torch tensors.
+
+    Returns:
+        The converted input value.
+    """
+    if isinstance(value, dict):
+        return {key: _to_torch_input(item, device) for key, item in value.items()}
+    if isinstance(value, np.ndarray):
+        return torch.from_numpy(value).to(device)
+    if isinstance(value, torch.Tensor):
+        return value.to(device)
+    return value
 
 
 @adapter_registry.register("torch", extensions=(".ckpt", ".pt"))
@@ -159,6 +173,12 @@ class TorchAdapter(RuntimeAdapter):
         try:
             # Build Observation from numpy dict and convert to torch tensors on device
             observation = Observation.from_dict(inputs).to_torch(self.device)
+            extra_inputs = self._extra_inputs(inputs)
+            if extra_inputs:
+                observation.extra = {
+                    **(observation.extra or {}),
+                    **extra_inputs,
+                }
 
             torch_outputs = self._policy(observation)
             return self._convert_outputs_to_numpy(torch_outputs)
@@ -166,6 +186,17 @@ class TorchAdapter(RuntimeAdapter):
         except Exception as e:
             msg = f"Inference failed: {e}"
             raise RuntimeError(msg) from e
+
+    def _extra_inputs(self, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Return inputs that do not map to first-class ``Observation`` fields."""
+        observation_fields = set(Observation.keys())
+        extras = {}
+        for key, value in inputs.items():
+            head = key.split(".", 1)[0]
+            if key in observation_fields or head in observation_fields:
+                continue
+            extras[key] = _to_torch_input(value, self.device)
+        return extras
 
     def _convert_outputs_to_numpy(self, torch_outputs: torch.Tensor | dict | list | tuple) -> dict[str, np.ndarray]:
         """Convert model outputs to numpy format.

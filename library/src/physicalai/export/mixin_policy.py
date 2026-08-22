@@ -170,6 +170,11 @@ class ExportablePolicyMixin:
         """
         return {}
 
+    @property
+    def export_policy_name(self) -> str:
+        """Policy name used for exported artifacts and manifests."""
+        return self.__class__.__name__.lower()
+
     @contextmanager
     def _scoped_rtc(self, *, enable: bool) -> Generator[None, None, None]:
         """Temporarily set enable_rtc on the model, restoring the previous value on exit."""
@@ -204,7 +209,7 @@ class ExportablePolicyMixin:
             **extras: Additional keyword arguments to forward to the manifest.
         """
         policy_class = f"{self.__class__.__module__}.{self.__class__.__name__}"
-        policy_name = self.__class__.__name__.lower()
+        policy_name = self.export_policy_name
         artifact_filename = f"{policy_name}{backend.extension}"
 
         if input_names is not None:
@@ -274,7 +279,7 @@ class ExportablePolicyMixin:
         # If path is a directory or doesn't have a valid extension, add filename
         if path.is_dir() or (not path.suffix or path.suffix not in valid_extensions):
             # Use policy name for filename
-            policy_name = self.__class__.__name__.lower()
+            policy_name = self.export_policy_name
             path /= f"{policy_name}{extension}"
 
         # Create parent directory
