@@ -94,8 +94,14 @@ class XVLAConfig(Config):
             XVLA checkpoints. Empty means the ``transformers`` defaults (Florence-2 base).
         tokenizer_name: HuggingFace tokenizer for the language prompt. Defaults to
             "facebook/bart-large", the tokenizer Florence-2's BART text stack was trained with.
-        tokenizer_max_length: Prompt length, padded and truncated to a fixed size so the
-            sequence length the transformer sees does not vary. Defaults to 64.
+        tokenizer_max_length: Fixed prompt length every call pads and truncates to. Every
+            token after the prompt in the sequence (auxiliary camera views, soft prompts)
+            sits at a position that shifts with this length, since the transformer's
+            positional embedding is a learned, absolute table -- so this must match what a
+            given checkpoint was actually trained with, not merely bound the prompt length.
+            When loading a pretrained checkpoint, its published preprocessor manifest
+            supplies this value; ``config.json``'s own field is not reliably it. Defaults
+            to 64.
         dtype: Precision of the model weights. Defaults to "float32".
 
         n_obs_steps: Number of observation steps consumed per inference call. Defaults to 1.
@@ -112,8 +118,8 @@ class XVLAConfig(Config):
         dim_time: Width of the sinusoidal flow-matching timestep features. Defaults to 32.
         max_len_seq: Longest sequence the learned positional embedding covers. The sequence
             is ``chunk_size`` action tokens + the Florence-2 encoder output (image tokens of
-            the primary view + ``tokenizer_max_length``) + the pooled auxiliary views.
-            Defaults to 512.
+            the primary view + ``tokenizer_max_length`` prompt tokens) + the pooled
+            auxiliary views. Defaults to 512.
         use_hetero_proj: Project the visual streams per domain rather than globally.
             Defaults to False.
 
