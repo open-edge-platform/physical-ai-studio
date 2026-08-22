@@ -41,7 +41,7 @@ pytest.importorskip("lerobot", reason="LeRobot not installed")
 DATASET_REPO_ID = "lerobot/aloha_sim_insertion_human"
 
 # VLA policies that need smaller batch/episode counts for GPU memory
-_VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot"}
+_VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot", "eo1"}
 
 
 def _empty_accelerator_cache(device: torch.device) -> None:
@@ -55,6 +55,7 @@ def _empty_accelerator_cache(device: torch.device) -> None:
 # Named (in SUPPORTED_POLICIES) but not yet validated end-to-end: registered as
 # xfail so test output stays honest and any future fix raises XPASS.
 _EQUIVALENCE_XFAIL_REASONS: dict[str, str] = {
+    "eo1": "wrapper-vs-native equivalence not yet validated (new Qwen2.5-VL-based VLA wrapper)",
     "groot": "hardcodes flash_attention_2 in eagle2_hg_model (upstream lerobot)",
     "xvla": "requires explicit `vision_config` kwarg, not derivable from dataset",
     "pi05": "model repo is gated",
