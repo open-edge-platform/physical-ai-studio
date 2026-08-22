@@ -39,7 +39,7 @@ dependencies = [
     "openvino>=2026.3",
     "openvino_tokenizers>=2026.3",
     "onnxscript",
-    "jsonargparse[signatures]>=4.27.0", # This could be extra
+    "jsonargparse[signatures]>=4.50,<5", # This could be extra
     "pydantic",                         # This could be extra
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
@@ -195,7 +195,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "2528309e55ab6a5f7f71c6dc23b8baae21f80108" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "5215b843fa6440b129688d331f3386342a3847a4" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

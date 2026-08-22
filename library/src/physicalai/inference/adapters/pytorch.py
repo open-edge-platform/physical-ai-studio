@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
-from physicalai.config import import_class
+from physicalai.inference._importing import import_dotted_path  # noqa: PLC2701
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.manifest import Manifest
@@ -84,7 +84,7 @@ class TorchAdapter(RuntimeAdapter):
             raise KeyError(msg)
 
         try:
-            policy_class = import_class(policy_class_path)
+            policy_class = import_dotted_path(policy_class_path)
             load_from_checkpoint = getattr(policy_class, "load_from_checkpoint", None)
             if not callable(load_from_checkpoint):
                 msg = f"Imported class '{policy_class_path}' does not define callable load_from_checkpoint()."

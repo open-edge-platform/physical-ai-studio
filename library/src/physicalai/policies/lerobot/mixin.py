@@ -3,7 +3,7 @@
 
 """Configuration mixin specialized for LeRobot policies.
 
-This module extends the base FromConfig mixin to handle LeRobot-specific
+This module extends jsonargparse's FromConfigMixin to handle LeRobot-specific
 configuration patterns, particularly LeRobot's PreTrainedConfig dataclasses.
 """
 
@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self
 
-from physicalai.config.mixin import FromConfig
+from jsonargparse import FromConfigMixin
 
 if TYPE_CHECKING:
     from lerobot.configs.policies import PreTrainedConfig
@@ -45,10 +45,10 @@ def _has_processor_file(pretrained_name_or_path: str) -> bool:
         return False
 
 
-class LeRobotFromConfig(FromConfig):
-    """Extended FromConfig mixin for LeRobot policies.
+class LeRobotFromConfig(FromConfigMixin):
+    """Extended jsonargparse configuration mixin for LeRobot policies.
 
-    This mixin extends the base FromConfig functionality to support LeRobot's
+    This mixin extends jsonargparse's FromConfigMixin functionality to support LeRobot's
     PreTrainedConfig dataclasses, which are used by all LeRobot policies.
 
     The key feature is the ability to pass a LeRobot ``PreTrainedConfig``
@@ -348,8 +348,8 @@ class LeRobotFromConfig(FromConfig):
     ) -> Self:
         """Generic method to instantiate from any configuration format.
 
-        This method extends the base FromConfig.from_config() to additionally
-        support LeRobot's PreTrainedConfig dataclasses.
+        This method extends jsonargparse's ``FromConfigMixin.from_config`` to
+        additionally support LeRobot's PreTrainedConfig dataclasses.
 
         Args:
             config: Configuration in any supported format:
@@ -363,6 +363,10 @@ class LeRobotFromConfig(FromConfig):
 
         Returns:
             An instance of the class.
+
+        Raises:
+            TypeError: If a keyed configuration is not a mapping or overrides
+                are supplied for a non-mapping configuration.
 
         Examples:
             Auto-detect LeRobot config:
@@ -387,8 +391,36 @@ class LeRobotFromConfig(FromConfig):
             # This is likely a LeRobot PreTrainedConfig
             return cls.from_lerobot_config(config, **kwargs)  # type: ignore[arg-type]
 
-        # Fall back to base FromConfig logic for other types
-        return super().from_config(config, key=key, **kwargs)  # type: ignore[misc]
+        # Generic dataclasses are handled here because jsonargparse's public
+        # ``from_config`` API accepts mappings and files, not dataclass objects.
+        if dataclasses.is_dataclass(config) and not isinstance(config, type):
+            return cls.from_dataclass(config, key=key, **kwargs)
+
+        # Fall back to jsonargparse for dictionaries and config files. Its
+        # public API does not accept constructor overrides, so merge those
+        # explicitly for the dictionary form.
+        if isinstance(config, dict):
+            values: Any = dict(config)
+            if key is not None:
+                values = values[key]
+            if not isinstance(values, dict):
+                msg = f"Configuration at key {key!r} must be a mapping, got {type(values)}"
+                raise TypeError(msg)
+            values.update(kwargs)
+            return super().from_config(values)
+        if key is not None or kwargs:
+            msg = "key and constructor overrides are supported only for mapping configs"
+            raise TypeError(msg)
+        return super().from_config(config)
+
+    @classmethod
+    def from_dict(cls, config: dict[str, Any], **kwargs: Any) -> Self:  # noqa: ANN401
+        """Instantiate from a parameter dictionary.
+
+        Returns:
+            An instance of the class.
+        """
+        return cls.from_config(config, **kwargs)
 
     @classmethod
     def from_dataclass(
@@ -433,5 +465,11 @@ class LeRobotFromConfig(FromConfig):
         if hasattr(config, "input_features") and hasattr(config, "output_features"):
             return cls.from_lerobot_config(config, **kwargs)  # type: ignore[arg-type]
 
-        # Fall back to base FromConfig logic
-        return super().from_dataclass(config, key=key)  # type: ignore[misc]
+        values: Any = dataclasses.asdict(config)
+        if key is not None:
+            values = values[key]
+        if not isinstance(values, dict):
+            msg = f"Configuration at key {key!r} must be a mapping, got {type(values)}"
+            raise TypeError(msg)
+        values.update(kwargs)
+        return cls.from_config(values)

@@ -14,7 +14,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from physicalai.config import to_config
+from physicalai.config import Config
 from physicalai.robot import SharedRobot
 
 from robots.physicalai_adapter import PhysicalAIRobotAdapter
@@ -94,7 +94,7 @@ class TestBuild:
         """The owner process rebuilds the driver from this nested recipe."""
         client = await _factory().build(_so101_robot("SO101_Leader"))
 
-        recipe = to_config(client._robot)["init_args"]["robot"]
+        recipe = Config.from_instance(client._robot).to_dict()["init_args"]["robot"]
         assert recipe["class_path"] == "physicalai.robot.SO101"
         assert recipe["init_args"]["port"] == "/dev/ttyACM0"
         assert recipe["init_args"]["role"] == "leader"

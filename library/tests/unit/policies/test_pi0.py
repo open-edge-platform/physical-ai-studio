@@ -124,6 +124,15 @@ class TestPi0Config:
 class TestPi0Policy:
     """Tests for Pi0 Lightning policy wrapper."""
 
+    def test_from_config(self) -> None:
+        """Test Pi0 retains the non-deprecated jsonargparse config API."""
+        policy = Pi0.from_config({"chunk_size": 100, "learning_rate": 1e-4})
+
+        assert isinstance(policy, Pi0)
+        assert policy.config.chunk_size == 100
+        assert policy.config.learning_rate == 1e-4
+        assert policy.model is None
+
     def test_lazy_initialization(self) -> None:
         """Test lazy initialization doesn't create model."""
         policy = Pi0()

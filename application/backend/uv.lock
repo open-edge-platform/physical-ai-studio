@@ -54,7 +54,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-08-10T09:40:54.561052Z"
+exclude-newer = "2026-08-14T12:06:50.860017077Z"
 exclude-newer-span = "P7D"
 
 [manifest]
@@ -2497,8 +2497,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.1.2.dev58+g2528309e5"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=2528309e55ab6a5f7f71c6dc23b8baae21f80108#2528309e55ab6a5f7f71c6dc23b8baae21f80108" }
+version = "0.1.2.dev62+g5215b843f"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=5215b843fa6440b129688d331f3386342a3847a4#5215b843fa6440b129688d331f3386342a3847a4" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2635,7 +2635,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=2528309e55ab6a5f7f71c6dc23b8baae21f80108" },
+    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=5215b843fa6440b129688d331f3386342a3847a4" },
     { name = "physicalai-studio-plugin", editable = "../plugin" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
@@ -2693,7 +2693,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=2528309e55ab6a5f7f71c6dc23b8baae21f80108" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=5215b843fa6440b129688d331f3386342a3847a4" },
     { name = "pydantic", specifier = ">=2.12" },
 ]
 
@@ -2767,7 +2767,7 @@ requires-dist = [
     { name = "gymnasium", specifier = ">=0.29.1" },
     { name = "hf-libero", marker = "extra == 'libero'", specifier = ">=0.1.3,<0.2.0" },
     { name = "httpx", marker = "extra == 'tests'" },
-    { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.27.0" },
+    { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.50,<5" },
     { name = "lerobot", extras = ["dataset"], specifier = "==0.6.0" },
     { name = "lightning" },
     { name = "lightning-utilities" },
@@ -2781,7 +2781,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.3" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=2528309e55ab6a5f7f71c6dc23b8baae21f80108" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=5215b843fa6440b129688d331f3386342a3847a4" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },

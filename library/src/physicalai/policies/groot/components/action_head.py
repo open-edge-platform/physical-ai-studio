@@ -8,13 +8,14 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import torch
 import torch.nn.functional as F  # noqa: N812
-from physicalai.config.mixin import FromConfig
+from jsonargparse import FromConfigMixin
 from torch import nn
 from torch.distributions import Beta
 
@@ -29,10 +30,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FlowMatchingActionHeadConfig:
-    """Configuration for FlowMatchingActionHead (for FromConfig mixin).
+    """Configuration for FlowMatchingActionHead (for jsonargparse FromConfigMixin).
 
     This dataclass mirrors the explicit constructor arguments for config-based
-    instantiation via the FromConfig mixin.
+    instantiation via jsonargparse's ``FromConfigMixin``.
 
     Attributes:
         action_dim: Action vector dimension.
@@ -86,14 +87,14 @@ class FlowMatchingActionHeadConfig:
     vl_self_attention_cfg: dict[str, Any] | None = None
 
 
-class FlowMatchingActionHead(nn.Module, FromConfig):
+class FlowMatchingActionHead(FromConfigMixin, nn.Module):
     """Flow Matching Action Head for diffusion-based action generation.
 
     Uses a Diffusion Transformer (DiT) conditioned on vision-language features
     to generate action trajectories via flow matching.
 
     All constructor arguments are explicit for clarity and testability.
-    Supports config-based instantiation via the FromConfig mixin.
+    Supports config-based instantiation via jsonargparse's FromConfigMixin.
 
     Args:
         action_dim: Action vector dimension.
@@ -131,6 +132,26 @@ class FlowMatchingActionHead(nn.Module, FromConfig):
         >>> config = FlowMatchingActionHeadConfig(action_dim=32, action_horizon=50)
         >>> action_head = FlowMatchingActionHead.from_config(config)
     """
+
+    @classmethod
+    def from_config(cls, config: str | dict[str, Any] | FlowMatchingActionHeadConfig) -> FlowMatchingActionHead:
+        """Instantiate from a jsonargparse config or this class's dataclass.
+
+        Returns:
+            A configured action head.
+        """
+        if dataclasses.is_dataclass(config) and not isinstance(config, type):
+            config = dataclasses.asdict(config)
+        return super().from_config(config)  # type: ignore[arg-type]
+
+    @classmethod
+    def from_dict(cls, config: dict[str, Any]) -> FlowMatchingActionHead:
+        """Instantiate from a parameter dictionary.
+
+        Returns:
+            A configured action head.
+        """
+        return cls.from_config(config)
 
     def __init__(  # noqa: PLR0913
         self,
