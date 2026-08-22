@@ -15,6 +15,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+import lightning
 import pytest
 import torch
 from physicalai.config import Config
@@ -524,6 +525,72 @@ class TestPretrainedConfigMerge:
         assert spec.varkw is None
         assert spec.varargs is None
         assert "pretrained_name_or_path" in spec.args
+
+
+# ============================================================================ #
+# Checkpoint round-trip                                                        #
+# ============================================================================ #
+
+
+class TestCheckpointRoundTrip:
+    """Tests for restoring a policy through Lightning's `load_from_checkpoint`.
+
+    This is the path `TorchAdapter` takes when `InferenceModel` opens a torch-backend export, and
+    the one a resumed training run takes. It stayed uncovered while every other policy test passed,
+    which let a constructor change that broke it through unnoticed.
+    """
+
+    @staticmethod
+    def _save(policy: VLAJEPA, path: Path) -> Path:
+        """Write the policy to a Lightning-shaped checkpoint, the way `to_torch` does.
+
+        Args:
+            policy: The policy whose state and hyperparameters are saved.
+            path: File the checkpoint is written to.
+
+        Returns:
+            The checkpoint path, ready to pass to `load_from_checkpoint`.
+        """
+        torch.save(
+            {
+                "state_dict": policy.state_dict(),
+                "hyper_parameters": dict(policy.hparams),
+                "pytorch-lightning_version": lightning.__version__,
+                "epoch": 0,
+                "global_step": 0,
+                "loops": {},
+            },
+            path,
+        )
+        return path
+
+    def test_round_trip_restores_the_resolved_config(self, tmp_path: Path) -> None:
+        """Test a saved policy reloads with the config it resolved at construction time."""
+        policy = VLAJEPA(chunk_size=8, n_action_steps=4, enable_world_model=False, optimizer_lr=3e-5)
+        checkpoint = self._save(policy, tmp_path / "policy.ckpt")
+
+        restored = VLAJEPA.load_from_checkpoint(checkpoint, map_location="cpu", weights_only=False)
+
+        assert restored.config.chunk_size == 8
+        assert restored.config.n_action_steps == 4
+        assert restored.config.enable_world_model is False
+        assert restored.config.optimizer_lr == pytest.approx(3e-5)
+
+    def test_round_trip_tolerates_the_saved_config_key(self, tmp_path: Path) -> None:
+        """Test the `config` hyperparameter does not reach the constructor, which never declares it.
+
+        `_set_hparam_keys` stores the resolved config under `config`, so every checkpoint carries a
+        key `__init__` cannot accept. Lightning drops it only while the constructor's signature
+        reports no `**kwargs`; when it did, loading raised `TypeError: got an unexpected keyword
+        argument 'config'`.
+        """
+        policy = VLAJEPA(chunk_size=8, n_action_steps=4, enable_world_model=False)
+        checkpoint = self._save(policy, tmp_path / "policy.ckpt")
+
+        assert "config" in torch.load(checkpoint, map_location="cpu", weights_only=False)["hyper_parameters"]
+
+        restored = VLAJEPA.load_from_checkpoint(checkpoint, map_location="cpu", weights_only=False)
+        assert restored.config.chunk_size == 8
 
 
 # ============================================================================ #
