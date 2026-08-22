@@ -105,6 +105,16 @@ smolvla = [
     "safetensors>=0.4.3,<1.0.0",
 ]
 
+# VLA-Adapter tiny-scale VLA (Prismatic DINOv2+SigLIP -> Qwen2.5-0.5B + Bridge-Attention head)
+# The released checkpoints store their vision towers in timm layout, so timm is
+# required alongside transformers for the Qwen2 language model.
+vla_adapter = [
+    "transformers>=5.5.0,<5.6.0",
+    "timm>=1.0.0,<1.1.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
+
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
 
@@ -119,6 +129,7 @@ all = [
     "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
+    "physicalai-train[vla_adapter]",
 ]
 
 # Contribute Torch and ExecuTorch as inference backends to the registry
