@@ -105,6 +105,19 @@ class TestLiberoBenchmark:
         with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock()]):
             assert "libero_10" in repr(LiberoBenchmark(task_suite="libero_10"))
 
+    def test_control_mode_defaults_to_relative(self):
+        """The default matches ``LiberoGym``'s own default, so existing callers are unaffected."""
+        with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock()]) as create:
+            LiberoBenchmark(task_suite="libero_10")
+        assert create.call_args.kwargs["control_mode"] == "relative"
+
+    def test_control_mode_is_forwarded_to_the_gyms(self):
+        """A policy trained on absolute targets (e.g. XVLA's ee6d) can opt into absolute control."""
+        with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock()]) as create:
+            b = LiberoBenchmark(task_suite="libero_10", control_mode="absolute")
+        assert b.control_mode == "absolute"
+        assert create.call_args.kwargs["control_mode"] == "absolute"
+
 
 class TestWrapPolicy:
     """Tests for _wrap_policy with InferenceModel input."""
