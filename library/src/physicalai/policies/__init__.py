@@ -58,7 +58,7 @@ def get_policy(policy_name: str, *, source: str = "physicalai", **kwargs) -> Pol
     Args:
         policy_name: Name of the policy to create. Supported values depend on source:
             - physicalai: "act", "dummy", "eo1", "groot", "pi0", "pi05", "smolvla"
-            - lerobot: "act", "diffusion", "smolvla", "pi0", "pi05", "pi0_fast", "groot", "xvla"
+            - lerobot: "act", "diffusion", "eo1", "smolvla", "pi0", "pi05", "pi0_fast", "groot", "xvla"
         source: Where the policy implementation comes from. Options:
             - "physicalai": First-party implementations (default)
             - "lerobot": LeRobot framework wrappers
