@@ -66,7 +66,11 @@ _LEROBOT_ONLY_KEYS = frozenset({
     "tags",
     "license",
     "pretrained_path",
-    # Prompt padding is fixed in Studio (right-padded to `tokenizer_max_length`).
+    # Padding side/strategy are always "right"/"max_length" in Studio -- padding must stay
+    # fixed-length (see XVLAPreprocessor._tokenize), and right-padding is the only side that
+    # keeps a prompt's own tokens at the same positions regardless of padded length.
+    # `tokenizer_max_length` is NOT dropped here: unlike these two, its value is load-bearing
+    # (see extract_tokenizer_max_length) and must come from the checkpoint's own manifest.
     "tokenizer_padding_side",
     "pad_language_to",
     # Upstream soft-prompt LR warmup, which Studio folds into its scheduler.
@@ -152,9 +156,17 @@ def load_config(config_file: Path, overrides: dict[str, Any] | None = None) -> X
     coerced by the dataclass. Caller overrides are applied last, so training-time settings
     always win over the published values.
 
-    When the checkpoint does not pin ``num_image_views``, it is derived from the number of
-    visual input features it declares -- the same rule upstream applies when it validates
-    its features -- so a checkpoint keeps the camera count it was trained with.
+    ``num_image_views`` is always recomputed as ``max(published value, declared visual
+    features + empty_cameras)`` -- the same formula upstream's own ``validate_features()``
+    applies, unconditionally, every time a config is loaded. This matters because a
+    checkpoint's ``input_features`` can itself already include an ``empty_camera_N`` entry
+    baked in from a *previous* validation pass (training scripts commonly re-save a config
+    after running ``validate_features()`` once), so reapplying the formula on load adds
+    ``empty_cameras`` again on top of that already-padded count -- e.g. 2 real cameras + 1
+    baked-in empty one declared, plus ``empty_cameras=1`` published, resolves to 4 views,
+    not 3. Only reproducing this exactly (rather than treating a published
+    ``num_image_views`` as final) keeps the camera count -- and therefore every downstream
+    sequence position -- aligned with what a checkpoint actually trained with.
 
     Args:
         config_file: Path to the checkpoint's ``config.json``.
@@ -167,10 +179,10 @@ def load_config(config_file: Path, overrides: dict[str, Any] | None = None) -> X
     raw = _read_json(config_file)
 
     config_kwargs = {k: v for k, v in raw.items() if k not in _LEROBOT_ONLY_KEYS}
-    if not config_kwargs.get("num_image_views"):
-        num_cameras = _count_visual_features(raw.get("input_features") or {})
-        if num_cameras:
-            config_kwargs["num_image_views"] = num_cameras + int(raw.get("empty_cameras", 0) or 0)
+    num_cameras = _count_visual_features(raw.get("input_features") or {})
+    if num_cameras:
+        from_features = num_cameras + int(raw.get("empty_cameras", 0) or 0)
+        config_kwargs["num_image_views"] = max(int(config_kwargs.get("num_image_views") or 0), from_features)
 
     config_kwargs.update({key: value for key, value in (overrides or {}).items() if value is not None})
 
@@ -233,6 +245,62 @@ def extract_dataset_stats(
                 entry[stat_name] = tensor.cpu().tolist()
 
     return stats
+
+
+def extract_domain_id(processor_files: tuple[Path, ...] | list[Path]) -> int | None:
+    """Read the domain index a checkpoint was published with.
+
+    Upstream adds ``domain_id`` to the batch via a dedicated preprocessor step
+    (``xvla_add_domain_id``) rather than storing it in ``config.json``, so a checkpoint
+    trained on a domain other than 0 -- for example a single-embodiment finetune sharing a
+    multi-domain base checkpoint's ``num_domains`` -- would otherwise silently run with the
+    wrong domain's action decoder and soft prompts.
+
+    Args:
+        processor_files: Published processor manifests.
+
+    Returns:
+        The domain index, or ``None`` when no manifest declares one.
+    """
+    for processor_file in processor_files:
+        if not Path(processor_file).exists():
+            continue
+        for step in _read_json(Path(processor_file)).get("steps", []):
+            if "domain_id" in step.get("registry_name", "").lower():
+                domain_id = step.get("config", {}).get("domain_id")
+                if domain_id is not None:
+                    return int(domain_id)
+    return None
+
+
+def extract_tokenizer_max_length(processor_files: tuple[Path, ...] | list[Path]) -> int | None:
+    """Read the fixed prompt length a checkpoint's tokenizer step actually pads to.
+
+    ``config.json``'s own ``tokenizer_max_length`` field is not reliably the value the
+    published processor pipeline used -- it can be a stale default left over from an
+    earlier training configuration -- while the ``tokenizer_processor`` step in
+    ``policy_preprocessor.json`` records the exact length every training and evaluation
+    prompt was actually padded to. Because the transformer's positional embedding is a
+    learned, absolute (not relative or rotary) table, every token after the prompt sits at
+    whatever index that padded length pushes it to; a mismatch here silently feeds the
+    model camera and soft-prompt tokens at positions it was never trained to interpret
+    there, even though the prompt's own tokens look identical either way.
+
+    Args:
+        processor_files: Published processor manifests.
+
+    Returns:
+        The tokenizer's padded length, or ``None`` when no manifest declares one.
+    """
+    for processor_file in processor_files:
+        if not Path(processor_file).exists():
+            continue
+        for step in _read_json(Path(processor_file)).get("steps", []):
+            if "tokenizer" in step.get("registry_name", "").lower():
+                max_length = step.get("config", {}).get("max_length")
+                if max_length is not None:
+                    return int(max_length)
+    return None
 
 
 def detect_normalization_mode(processor_files: tuple[Path, ...] | list[Path]) -> str | None:
@@ -394,6 +462,8 @@ __all__ = [
     "CheckpointFiles",
     "detect_normalization_mode",
     "extract_dataset_stats",
+    "extract_domain_id",
+    "extract_tokenizer_max_length",
     "is_vendored_florence_state_dict",
     "load_config",
     "load_xvla_weights",
