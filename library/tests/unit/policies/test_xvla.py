@@ -532,6 +532,28 @@ class TestXVLAPreprocessing:
         batch = policy._preprocess(observation)  # noqa: SLF001
         assert torch.equal(batch["domain_id"], torch.tensor([2, 2]))
 
+    def test_domain_id_actually_changes_the_prediction(self) -> None:
+        """Domain-aware layers really select different weights per domain, end to end.
+
+        Regression guard: it is easy for a domain id to reach the config but never actually
+        make it into the batch the model sees (e.g. if the preprocessor were rebuilt without
+        it). This confirms the value threaded from the checkpoint's manifest actually moves
+        the prediction, not just that some field got set.
+        """
+        policy_a = build_policy(domain_id=0)
+        policy_b = build_policy(domain_id=1)
+        observation = make_observation(batch_size=1)
+
+        policy_a.eval()
+        torch.manual_seed(0)
+        action_a = policy_a.predict_action_chunk(observation)
+
+        policy_b.eval()
+        torch.manual_seed(0)
+        action_b = policy_b.predict_action_chunk(observation)
+
+        assert not torch.allclose(action_a, action_b)
+
     def test_prompt_is_tokenized_to_a_fixed_length(self) -> None:
         """The prompt is padded and truncated so the sequence length never varies."""
         policy = build_policy()
@@ -934,6 +956,117 @@ class TestXVLACheckpointLoading:
         write_fake_checkpoint(tmp_path, action_dim=5)
         assert read_action_dim(tmp_path / "config.json") == 5
 
+    def test_extract_domain_id(self, tmp_path: Any) -> None:
+        """The domain index is read from the preprocessor manifest, not config.json.
+
+        Upstream stores it in a dedicated ``xvla_add_domain_id`` processor step rather than
+        in ``config.json``; getting this wrong silently selects a different domain's action
+        decoder and soft prompts.
+        """
+        from physicalai.policies.xvla.pretrained_utils import extract_domain_id  # noqa: PLC0415
+
+        write_fake_checkpoint(tmp_path)
+        preprocessor_file = tmp_path / "policy_preprocessor.json"
+        preprocessor_file.write_text(
+            json.dumps({
+                "name": "policy_preprocessor",
+                "steps": [{"registry_name": "xvla_add_domain_id", "config": {"domain_id": 3}}],
+            }),
+            encoding="utf-8",
+        )
+        assert extract_domain_id((preprocessor_file,)) == 3
+
+    def test_extract_domain_id_absent(self, tmp_path: Any) -> None:
+        """A checkpoint that publishes no domain step reports no domain id."""
+        from physicalai.policies.xvla.pretrained_utils import extract_domain_id  # noqa: PLC0415
+
+        write_fake_checkpoint(tmp_path)
+        assert extract_domain_id(()) is None
+
+    def test_pretrained_load_picks_up_the_published_domain_id(self, tmp_path: Any) -> None:
+        """Loading a checkpoint applies its published domain id, not the default of 0."""
+        write_fake_checkpoint(tmp_path)
+        (tmp_path / "policy_preprocessor.json").write_text(
+            json.dumps({
+                "name": "policy_preprocessor",
+                "steps": [{"registry_name": "xvla_add_domain_id", "config": {"domain_id": 3}}],
+            }),
+            encoding="utf-8",
+        )
+
+        policy = XVLA(pretrained_name_or_path=tmp_path)
+        assert policy.config.domain_id == 3
+
+    def test_explicit_domain_id_overrides_the_published_one(self, tmp_path: Any) -> None:
+        """A caller-supplied domain id wins over the checkpoint's published value."""
+        write_fake_checkpoint(tmp_path)
+        (tmp_path / "policy_preprocessor.json").write_text(
+            json.dumps({
+                "name": "policy_preprocessor",
+                "steps": [{"registry_name": "xvla_add_domain_id", "config": {"domain_id": 3}}],
+            }),
+            encoding="utf-8",
+        )
+
+        policy = XVLA(pretrained_name_or_path=tmp_path, domain_id=1)
+        assert policy.config.domain_id == 1
+
+    def test_extract_tokenizer_max_length(self, tmp_path: Any) -> None:
+        """The tokenizer's padded length is read from the preprocessor manifest.
+
+        ``config.json``'s own field can be a stale value the published processor pipeline
+        never actually used; only the manifest is authoritative, since a mismatch shifts
+        every token after the prompt into positions the model was never trained to see them
+        at.
+        """
+        from physicalai.policies.xvla.pretrained_utils import extract_tokenizer_max_length  # noqa: PLC0415
+
+        write_fake_checkpoint(tmp_path)
+        preprocessor_file = tmp_path / "policy_preprocessor.json"
+        preprocessor_file.write_text(
+            json.dumps({
+                "name": "policy_preprocessor",
+                "steps": [{"registry_name": "tokenizer_processor", "config": {"max_length": 50}}],
+            }),
+            encoding="utf-8",
+        )
+        assert extract_tokenizer_max_length((preprocessor_file,)) == 50
+
+    def test_extract_tokenizer_max_length_absent(self, tmp_path: Any) -> None:
+        """A checkpoint that publishes no tokenizer step reports no length."""
+        from physicalai.policies.xvla.pretrained_utils import extract_tokenizer_max_length  # noqa: PLC0415
+
+        write_fake_checkpoint(tmp_path)
+        assert extract_tokenizer_max_length(()) is None
+
+    def test_pretrained_load_picks_up_the_published_tokenizer_max_length(self, tmp_path: Any) -> None:
+        """Loading a checkpoint applies its published length, not config.json's stale one."""
+        write_fake_checkpoint(tmp_path)
+        (tmp_path / "policy_preprocessor.json").write_text(
+            json.dumps({
+                "name": "policy_preprocessor",
+                "steps": [{"registry_name": "tokenizer_processor", "config": {"max_length": 50}}],
+            }),
+            encoding="utf-8",
+        )
+
+        policy = XVLA(pretrained_name_or_path=tmp_path)
+        assert policy.config.tokenizer_max_length == 50
+
+    def test_explicit_tokenizer_max_length_overrides_the_published_one(self, tmp_path: Any) -> None:
+        """A caller-supplied length wins over the checkpoint's published value."""
+        write_fake_checkpoint(tmp_path)
+        (tmp_path / "policy_preprocessor.json").write_text(
+            json.dumps({
+                "name": "policy_preprocessor",
+                "steps": [{"registry_name": "tokenizer_processor", "config": {"max_length": 50}}],
+            }),
+            encoding="utf-8",
+        )
+
+        policy = XVLA(pretrained_name_or_path=tmp_path, tokenizer_max_length=16)
+        assert policy.config.tokenizer_max_length == 16
+
     def test_end_to_end_pretrained_load(self, tmp_path: Any) -> None:
         """A published checkpoint builds a ready-to-run policy in one call."""
         write_fake_checkpoint(tmp_path, action_dim=3)
@@ -1005,3 +1138,115 @@ class TestXVLACheckpointLoading:
         assert not any("final_logits_bias" in key for key in remapped)
         # Keys outside the VLM pass through untouched.
         assert "transformer.pos_emb" in remapped
+
+
+# ============================================================================ #
+# Export                                                                       #
+# ============================================================================ #
+
+
+class TestXVLAExport:
+    """Tests for the Torch export path.
+
+    XVLA exports through ``to_torch()``, which serializes the state dict and the
+    hyper-parameters rather than a traced graph -- so it works for a backbone the caller
+    sized themselves through ``florence_config``, as every test here does.
+    """
+
+    def test_only_the_torch_backend_is_supported(self) -> None:
+        """The graph backends stay out: masked camera views make traced shapes data-dependent."""
+        from physicalai.export import ExportBackend, ExportablePolicyMixin  # noqa: PLC0415
+
+        policy = build_policy()
+        assert isinstance(policy, ExportablePolicyMixin)
+        assert policy.get_supported_export_backends() == [ExportBackend.TORCH]
+
+    def test_graph_backends_are_refused(self, tmp_path: Any) -> None:
+        """Asking for ONNX names the backends that are actually available."""
+        policy = build_policy()
+        with pytest.raises(NotImplementedError, match="not implemented for this policy"):
+            policy.to_onnx(tmp_path)
+
+    def test_schemas_need_an_initialized_model(self) -> None:
+        """Before ``setup()`` there is no camera set (nor action width) to describe."""
+        policy = XVLA(**tiny_kwargs())
+        assert policy.inputs_schema is None
+        assert policy.outputs_schema is None
+
+    def test_inputs_schema_follows_the_dataset(self) -> None:
+        """Every camera, the state and the prompt are declared."""
+        schema = build_policy().inputs_schema
+        assert schema is not None
+        assert [feature.name for feature in schema] == ["state", "images.top", "images.wrist", "task"]
+        assert [feature.shape for feature in schema] == [
+            (STATE_DIM,),
+            (3, IMAGE_SIZE, IMAGE_SIZE),
+            (3, IMAGE_SIZE, IMAGE_SIZE),
+            (),
+        ]
+
+    def test_single_camera_drops_the_view_suffix(self) -> None:
+        """One camera is named plainly, matching the runtime's single-image input."""
+        stats = {key: value for key, value in DATASET_STATS.items() if key != "observation.images.wrist"}
+        schema = build_policy(stats).inputs_schema
+        assert schema is not None
+        assert [feature.name for feature in schema] == ["state", "images", "task"]
+
+    def test_inputs_schema_omits_state_without_proprioception(self) -> None:
+        """A policy that ignores the state does not ask the runtime for one."""
+        schema = build_policy(use_proprio=False).inputs_schema
+        assert schema is not None
+        assert [feature.name for feature in schema] == ["images.top", "images.wrist", "task"]
+
+    def test_outputs_schema_uses_the_emitted_action_width(self) -> None:
+        """``action_mode="auto"`` emits the dataset's width, not the model's padded one."""
+        schema = build_policy().outputs_schema
+        assert schema is not None
+        assert len(schema) == 1
+        assert schema[0].name == "action"
+        assert schema[0].shape == (CHUNK_SIZE, ACTION_DIM)
+
+    def test_extra_export_args_declare_the_chunk_trimmer(self) -> None:
+        """Trimming is only declared when the runner actually has to trim."""
+        trimmed = build_policy(n_action_steps=2).extra_export_args["torch"]
+        assert [spec.type for spec in trimmed.postprocessors_specs] == ["action_chunk_trimmer"]
+        assert trimmed.postprocessors_specs[0].n_action_steps == 2
+        assert [spec.type for spec in trimmed.preprocessors_specs] == ["to_float_tensor"]
+
+        whole = build_policy().extra_export_args["torch"]
+        assert whole.postprocessors_specs == []
+
+    def test_to_torch_writes_a_reloadable_checkpoint(self, tmp_path: Any) -> None:
+        """The exported artifacts round-trip back into an equivalent policy."""
+        policy = build_policy(n_action_steps=2)
+        policy.eval()
+        policy.to_torch(tmp_path)
+
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["manifest.json", "xvla.pt"]
+
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        checkpoint = torch.load(str(tmp_path / "xvla.pt"), map_location="cpu", weights_only=False)  # nosec B614
+        assert checkpoint["hyper_parameters"]["florence_config"] == TINY_FLORENCE
+
+        reloaded = XVLA.load_from_checkpoint(str(tmp_path / "xvla.pt"))
+        assert reloaded.config == policy.config
+        original = policy.state_dict()
+        assert all(torch.equal(value, original[key]) for key, value in reloaded.state_dict().items())
+
+    def test_manifest_describes_the_policy(self, tmp_path: Any) -> None:
+        """The manifest names the runner, the artifact and the model's features."""
+        build_policy(n_action_steps=2).to_torch(tmp_path)
+        manifest = json.loads((tmp_path / "manifest.json").read_text())
+
+        assert manifest["policy"]["name"] == "xvla"
+        assert manifest["policy"]["source"]["class_path"] == "physicalai.policies.xvla.policy.XVLA"
+        assert manifest["model"]["artifacts"] == {"torch": "xvla.pt"}
+        assert [spec["type"] for spec in manifest["model"]["preprocessors"]] == ["to_float_tensor"]
+        assert [spec["type"] for spec in manifest["model"]["postprocessors"]] == ["action_chunk_trimmer"]
+        assert [feature["init_args"]["name"] for feature in manifest["model"]["input_features"]] == [
+            "state",
+            "images.top",
+            "images.wrist",
+            "task",
+        ]
+        assert manifest["model"]["output_features"][0]["init_args"]["shape"] == [CHUNK_SIZE, ACTION_DIM]
