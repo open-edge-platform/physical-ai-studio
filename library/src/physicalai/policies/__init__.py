@@ -18,11 +18,10 @@ from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
 __all__ = [
     # ACT
     "ACT",
-    # EO-1 (all-caps entry sorts ahead of the CamelCase ones below)
-    "EO1",
     "ACTConfig",
     "ACTModel",
     # EO-1
+    "EO1",
     "EO1Config",
     "EO1Model",
     # Groot
