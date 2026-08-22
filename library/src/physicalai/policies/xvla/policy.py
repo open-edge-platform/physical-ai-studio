@@ -3,24 +3,30 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""XVLA policy - Lightning wrapper for training and inference.
+"""XVLA policy - Lightning wrapper for training, inference and Torch export.
 
-Export is intentionally **not** supported for this family, so
-:class:`~physicalai.export.ExportablePolicyMixin` is not mixed in: the Florence-2 encoder
-runs only the camera views a per-batch mask marks valid, which makes the traced shapes
-depend on the data rather than the config. Deploy XVLA through the training-side policy
-API until that path is made static.
+Only the Torch backend is supported. ``to_torch()`` serializes the policy's state dict and
+hyper-parameters, so it needs no traced graph and works for any XVLA the caller can build --
+including one whose Florence-2 backbone comes from a caller-supplied ``florence_config``
+(``{"vision_config": ..., "text_config": ...}``) rather than a downloaded checkpoint. The
+graph backends (ONNX, OpenVINO, ExecuTorch) stay unsupported: the Florence-2 encoder runs
+only the camera views a per-batch mask marks valid, which makes the traced shapes depend on
+the data rather than on the config.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
+from physicalai.inference.manifest import ComponentSpec
 
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
+from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.export.backends import ExportParameters, TorchExportParameters
 from physicalai.policies.base import Policy
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
@@ -31,6 +37,8 @@ from .preprocessor import make_xvla_preprocessors, resolve_num_image_views
 from .pretrained_utils import (
     detect_normalization_mode,
     extract_dataset_stats,
+    extract_domain_id,
+    extract_tokenizer_max_length,
     load_config,
     load_xvla_weights,
     read_action_dim,
@@ -50,7 +58,7 @@ _VLM_PARAM_PREFIX = "model.vlm."
 _SOFT_PROMPT_MARKER = "soft_prompt"
 
 
-class XVLA(Policy):
+class XVLA(ExportablePolicyMixin, Policy):
     """XVLA - a cross-embodiment flow-matching vision-language-action policy.
 
     A Florence-2 encoder conditions a soft-prompted transformer that denoises a whole
@@ -67,6 +75,9 @@ class XVLA(Policy):
     - **Eager path**: ``XVLA(pretrained_name_or_path=...)`` or ``XVLA.load_from_checkpoint(...)``
       - the model is built immediately.
 
+    Export covers the Torch backend only; see
+    :meth:`get_supported_export_backends` for why the graph backends are excluded.
+
     Args:
         pretrained_name_or_path: HuggingFace repo id or local directory of a published XVLA
             checkpoint. Its ``config.json`` supplies the architecture; the arguments below
@@ -75,7 +86,10 @@ class XVLA(Policy):
             ``transformers`` format or the legacy remote-code format used by published
             checkpoints. Empty means the ``transformers`` defaults (Florence-2 base).
         tokenizer_name: HuggingFace tokenizer for the language prompt. Default: "facebook/bart-large".
-        tokenizer_max_length: Fixed prompt length. Default: 64.
+        tokenizer_max_length: Fixed prompt length every call pads to. When loading a
+            pretrained checkpoint, its published preprocessor manifest overrides this value
+            rather than the checkpoint's own ``config.json`` field, which is not reliably
+            the length its processor pipeline actually used. Default: 64.
         dtype: Model precision. Default: "float32".
         n_obs_steps: Number of observation steps. Default: 1.
         chunk_size: Action steps predicted per forward pass. Default: 32.
@@ -129,6 +143,14 @@ class XVLA(Policy):
 
         >>> policy = XVLA(pretrained_name_or_path="lerobot/xvla_libero")  # doctest: +SKIP
         >>> action = policy.select_action(observation)  # doctest: +SKIP
+
+        Exporting, including a backbone the caller sized themselves:
+
+        >>> policy = XVLA(  # doctest: +SKIP
+        ...     florence_config={"vision_config": {"projection_dim": 32}},
+        ...     dataset_stats=dataset_stats,
+        ... )
+        >>> policy.to_torch("exported/")  # doctest: +SKIP
     """
 
     def __init__(  # noqa: PLR0913
@@ -250,7 +272,7 @@ class XVLA(Policy):
         self._set_hparam_keys()
 
         self.model: XVLAModel | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
-        self._preprocessor: XVLAPreprocessor | None = None
+        self._preprocessor: XVLAPreprocessor | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
         self._postprocessor: XVLAPostprocessor | None = None
         self._dataset_stats = dataset_stats
         self._action_dim = action_dim
@@ -297,6 +319,20 @@ class XVLA(Policy):
         detected = detect_normalization_mode(files.processor_files)
         if detected is not None and "normalization_mode" not in explicit:
             explicit["normalization_mode"] = detected
+
+        # Upstream stores this in a preprocessor step, not config.json: getting it wrong
+        # silently selects a different domain's action decoder and soft prompts.
+        detected_domain_id = extract_domain_id(files.processor_files)
+        if detected_domain_id is not None and "domain_id" not in explicit:
+            explicit["domain_id"] = detected_domain_id
+
+        # config.json's own tokenizer_max_length can be a stale value the published
+        # processor pipeline never actually used; the preprocessor manifest is authoritative
+        # (see extract_tokenizer_max_length -- getting this wrong desyncs every token after
+        # the prompt from the position the model was trained to see it at).
+        detected_max_length = extract_tokenizer_max_length(files.processor_files)
+        if detected_max_length is not None and "tokenizer_max_length" not in explicit:
+            explicit["tokenizer_max_length"] = detected_max_length
 
         config = load_config(files.config_file, explicit)
         if dataset_stats is None:
@@ -575,6 +611,121 @@ class XVLA(Policy):
             msg = "Model is not initialized"
             raise ValueError(msg)
         return self._preprocessor(batch.to(self.device).to_dict())
+
+    # ------------------------------------------------------------------ #
+    # Export                                                              #
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
+        """List the export backends XVLA supports.
+
+        Only Torch: ``to_torch()`` writes the state dict and the hyper-parameters, which
+        needs no traced graph, so it works for any XVLA that can be built at all -- a
+        published checkpoint, a finetune, or a backbone the caller sized themselves through
+        ``florence_config``. The graph backends are excluded because the Florence-2 encoder
+        runs only the camera views the per-batch mask marks valid, which makes the traced
+        shapes depend on the data rather than on the config.
+
+        Returns:
+            The supported backends.
+        """
+        return [ExportBackend.TORCH]
+
+    @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the observations the exported policy consumes.
+
+        Returns:
+            One feature per camera the dataset statistics declare, the proprioceptive state
+            (when ``use_proprio`` is set) and the language prompt. ``None`` before the model
+            and its statistics exist, since the camera set is only known then.
+        """
+        if self.model is None or not self._dataset_stats:
+            return None
+
+        schema: list[InferenceFeature] = []
+        num_cameras = sum(
+            1 for stat in self._dataset_stats.values() if str(FeatureType.VISUAL) in str(stat.get("type", ""))
+        )
+
+        for feature_id, stat in self._dataset_stats.items():
+            if str(FeatureType.VISUAL) in str(stat.get("type", "")):
+                camera = str(stat.get("name", feature_id)).removeprefix("observation.").removeprefix(f"{IMAGES}.")
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=cast("tuple", tuple(stat["shape"])),
+                        name=IMAGES if num_cameras == 1 else f"{IMAGES}.{camera}",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+            elif STATE in feature_id and self.config.use_proprio:
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.STATE,
+                        shape=cast("tuple", tuple(stat["shape"])),
+                        name=STATE,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
+        return schema
+
+    @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the action chunk the exported policy emits.
+
+        Returns:
+            A single ``action`` feature of shape ``(chunk_size, action_dim)``, where
+            ``action_dim`` is the width the configured action space emits -- the dataset's
+            own width under ``action_mode="auto"``. ``None`` before the model exists.
+        """
+        if self.model is None:
+            return None
+
+        action_space = self.inner_model.action_space
+        action_dim = getattr(action_space, "real_dim", 0) or self.inner_model.dim_action
+
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.ACTION,
+                shape=(self.config.chunk_size, action_dim),
+                name=ACTION,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Describe the pre/post-processing the Torch runner has to reproduce.
+
+        The exported checkpoint carries XVLA's own pre/postprocessor, so the manifest only
+        has to declare the camera conversion in front of it and the chunk trimming behind
+        it, which the runner applies outside the policy.
+
+        Returns:
+            The export parameters, keyed by backend name.
+        """
+        postprocessors_specs = []
+        if self.config.chunk_size != self.config.n_action_steps:
+            postprocessors_specs.append(
+                ComponentSpec(type="action_chunk_trimmer", n_action_steps=self.config.n_action_steps),
+            )
+
+        return {
+            "torch": TorchExportParameters(
+                preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+                postprocessors_specs=postprocessors_specs,
+            ),
+        }
 
 
 def _action_dim_from_stats(stats: dict[str, dict[str, Any]] | None) -> int | None:
