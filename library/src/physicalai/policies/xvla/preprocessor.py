@@ -8,7 +8,9 @@
 The preprocessor turns a Studio ``Observation`` batch into the tensors
 :class:`~physicalai.policies.xvla.model.XVLAModel` consumes:
 
-- the language prompt, tokenized to a fixed length with Florence-2's BART tokenizer;
+- the language prompt, tokenized with Florence-2's BART tokenizer and padded to a fixed
+  ``tokenizer_max_length``, so every token after it in the sequence keeps the position the
+  model was trained to see it at;
 - the cameras, ImageNet-normalized and stacked into one ``[B, V, C, H, W]`` tensor with a
   per-view validity mask, so a checkpoint trained with more cameras than the dataset
   carries still lines up;
@@ -108,7 +110,9 @@ class XVLAPreprocessor(torch.nn.Module):
         max_state_dim: Width the proprioceptive state is padded or truncated to. ``0``
             disables proprioception.
         tokenizer_name: HuggingFace tokenizer for the language prompt.
-        tokenizer_max_length: Fixed prompt length, padded and truncated.
+        tokenizer_max_length: Fixed prompt length every call pads and truncates to. Must
+            match what a given checkpoint actually trained with; see the ``_tokenize``
+            docstring for why.
         domain_id: Domain index used when the batch carries none.
         domain_feature_key: Batch key holding a per-sample domain index.
         normalization_mode: ``"IDENTITY"`` (default), ``"MEAN_STD"`` or ``"QUANTILES"``.
@@ -277,6 +281,20 @@ class XVLAPreprocessor(torch.nn.Module):
 
     def _tokenize(self, task: Any, batch_size: int, device: torch.device) -> torch.Tensor:  # noqa: ANN401
         """Tokenize the language prompt to a fixed length.
+
+        Padding must be fixed, not dynamic: the transformer's positional embedding
+        (``pos_emb``) is a learned, absolute (not relative or rotary) table, so every token
+        after the prompt -- the auxiliary camera views, the soft prompts -- sits at whatever
+        index the prompt's padded length pushes it to. A checkpoint is trained with the
+        prompt always padded out to one specific length; feeding a shorter, content-only
+        sequence shifts everything downstream into positions the model was never trained to
+        interpret there, even though the prompt's own tokens look identical either way.
+        ``tokenizer_max_length`` must therefore be the exact length a given checkpoint was
+        trained with, not merely a large-enough truncation ceiling -- see
+        :func:`~physicalai.policies.xvla.pretrained_utils.extract_tokenizer_max_length`,
+        which reads it from the checkpoint's published preprocessor manifest rather than
+        from ``config.json``, whose own ``tokenizer_max_length`` field is not reliably the
+        value the checkpoint's processor pipeline actually padded to.
 
         Args:
             task: The batch's task strings, a single string, or ``None``.
@@ -460,7 +478,7 @@ def make_xvla_preprocessors(
             dataset's resolution.
         max_state_dim: Width the proprioceptive state is padded to; ``0`` disables it.
         tokenizer_name: HuggingFace tokenizer for the language prompt.
-        tokenizer_max_length: Fixed prompt length.
+        tokenizer_max_length: Fixed prompt length every call pads and truncates to.
         domain_id: Domain index used when the batch carries none.
         domain_feature_key: Batch key holding a per-sample domain index.
         normalization_mode: ``"IDENTITY"`` (default), ``"MEAN_STD"`` or ``"QUANTILES"``.
