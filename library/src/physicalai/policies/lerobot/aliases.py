@@ -21,13 +21,19 @@ from __future__ import annotations
 
 from physicalai.policies.lerobot.policy import NamedLeRobotPolicy
 
-__all__ = ["ACT", "PI0", "PI05", "XVLA", "Diffusion", "Groot", "PI0Fast", "SmolVLA"]
+__all__ = ["ACT", "EO1", "PI0", "PI05", "XVLA", "Diffusion", "Groot", "PI0Fast", "SmolVLA"]
 
 
 class ACT(NamedLeRobotPolicy):
     """LeRobot ACT (Action Chunking Transformer) policy."""
 
     POLICY_NAME = "act"
+
+
+class EO1(NamedLeRobotPolicy):
+    """LeRobot EO-1 policy."""
+
+    POLICY_NAME = "eo1"
 
 
 class Diffusion(NamedLeRobotPolicy):
