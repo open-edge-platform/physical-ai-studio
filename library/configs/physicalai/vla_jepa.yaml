@@ -12,13 +12,14 @@ model:
   init_args:
     chunk_size: 8
     n_action_steps: 8
-    # The V-JEPA2 world model is a training-only auxiliary loss. It pulls a second backbone
-    # (facebook/vjepa2-vitl-fpc64-256) and makes the dataloader decode `num_video_frames` frames
-    # per camera per sample, so it is off by default. Enable it for the full recipe:
-    # enable_world_model: true
-    # num_video_frames: 8
-    # world_model_loss_weight: 0.1
-    enable_world_model: false
+    # The V-JEPA2 world model is a training-only auxiliary loss, and part of the full recipe. It
+    # pulls a second backbone (facebook/vjepa2-vitl-fpc64-256) and makes the dataloader decode
+    # `num_video_frames` frames per camera per sample; set `enable_world_model: false` to train the
+    # action head alone on a smaller memory and IO budget. Note `freeze_qwen: true` turns it off
+    # regardless, since no gradient would reach it.
+    enable_world_model: true
+    num_video_frames: 8
+    world_model_loss_weight: 0.1
     # Qwen sees native frames unless they are resized; large cameras blow up the patch count.
     resize_images_to: [224, 224]
     # Fine-tuning a published checkpoint onto a robot with different action/state dims:
