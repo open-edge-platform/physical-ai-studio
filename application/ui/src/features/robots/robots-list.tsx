@@ -9,7 +9,7 @@ import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
 import RobotArm from './../../assets/robot-arm.webp';
-import { SchemaRobot } from './robot-types';
+import { isUnavailableRobot, SchemaRobot } from './robot-types';
 
 import classes from './robots-list.module.css';
 
@@ -40,6 +40,7 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
 
     const editPath = paths.project.robots.edit({ project_id, robot_id: robot.id });
     const isSO101 = robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader';
+    const isUnavailable = isUnavailableRobot(robot);
 
     return (
         <MenuTrigger>
@@ -81,9 +82,11 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                     }
                 }}
             >
-                <Item key='edit' href={editPath}>
-                    Edit
-                </Item>
+                {isUnavailable ? null : (
+                    <Item key='edit' href={editPath}>
+                        Edit
+                    </Item>
+                )}
                 {isSO101 ? <Item key='export-calibration'>Export calibration</Item> : null}
                 <Item key='delete'>Delete</Item>
             </Menu>
@@ -91,17 +94,29 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
     );
 };
 
-export const ConnectionStatus = ({ status }: { status: 'online' | 'offline' | 'unknown' }) => {
+export const ConnectionStatus = ({
+    status,
+    isUnavailable = false,
+}: {
+    status: 'online' | 'offline' | 'unknown';
+    isUnavailable?: boolean;
+}) => {
     const Capitalize = (str: string) => {
         return str.charAt(0).toUpperCase() + str.slice(1);
     };
 
     return (
         <StatusLight
-            variant={status === 'online' ? 'positive' : status == 'unknown' ? 'notice' : 'negative'}
+            variant={status === 'online' ? 'positive' : status === 'unknown' ? 'notice' : 'negative'}
             UNSAFE_className={classes.connectionStatus}
         >
-            {status === 'unknown' ? <View>Loading...</View> : <View>{Capitalize(status)}</View>}
+            {isUnavailable ? (
+                <View>Unavailable</View>
+            ) : status === 'unknown' ? (
+                <View>Loading...</View>
+            ) : (
+                <View>{Capitalize(status)}</View>
+            )}
         </StatusLight>
     );
 };
@@ -115,13 +130,14 @@ const RobotListItem = ({
     status: 'online' | 'offline' | 'unknown';
     isActive: boolean;
 }) => {
-    const payload = robot.payload;
-    const connectionString =
-        ('connection_string' in payload ? payload.connection_string : undefined) ??
-        ('connection_string_left' in payload && 'connection_string_right' in payload
-            ? `${payload.connection_string_left} | ${payload.connection_string_right}`
-            : undefined);
-    const serialNumber = 'serial_number' in robot.payload ? robot.payload.serial_number : undefined;
+    const isUnavailable = isUnavailableRobot(robot);
+    const connectionString = isUnavailable
+        ? undefined
+        : (('connection_string' in robot.payload ? robot.payload.connection_string : undefined) ??
+          ('connection_string_left' in robot.payload && 'connection_string_right' in robot.payload
+              ? `${robot.payload.connection_string_left} | ${robot.payload.connection_string_right}`
+              : undefined));
+    const serialNumber = !isUnavailable && 'serial_number' in robot.payload ? robot.payload.serial_number : undefined;
 
     return (
         <View
@@ -141,9 +157,10 @@ const RobotListItem = ({
                     </Heading>
                     <View gridArea='type' UNSAFE_style={{ fontSize: '14px' }}>
                         {robot.type.replaceAll('_', ' ')}
+                        {isUnavailable ? ' (plugin unavailable)' : ''}
                     </View>
                     <View gridArea='status'>
-                        <ConnectionStatus status={status} />
+                        <ConnectionStatus status={status} isUnavailable={isUnavailable} />
                     </View>
                 </Grid>
                 <Flex direction={'row'} justifyContent={'space-between'}>

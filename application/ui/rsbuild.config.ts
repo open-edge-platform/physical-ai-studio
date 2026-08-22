@@ -3,7 +3,8 @@ import { pluginBabel } from '@rsbuild/plugin-babel';
 import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginSvgr } from '@rsbuild/plugin-svgr';
 
-const { publicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
+const { publicVars, rawPublicVars } = loadEnv({ prefixes: ['PUBLIC_'] });
+const apiProxyTarget = rawPublicVars.PUBLIC_API_PROXY_TARGET ?? 'http://localhost:7860';
 
 export default defineConfig({
     plugins: [
@@ -50,8 +51,7 @@ export default defineConfig({
     server: {
         proxy: {
             '/api': {
-                target: 'http://localhost:7860',
-                //target: 'http://192.168.2.117:7860',
+                target: apiProxyTarget,
                 changeOrigin: true,
                 ws: true,
                 //pathRewrite: { '^/api': '' }, // strip the /api prefix

@@ -13,15 +13,16 @@ is mocked out; it is not under test.
 from __future__ import annotations
 
 import gc
+import os
 import weakref
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from physicalai.export import ExportablePolicyMixin, ExportBackend
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
-from training import TrainingJobSpec
+from training import RunOptions, TrainingJobSpec
 from training.job import CHECKPOINT_NAME, EXPORTS_DIRNAME, PRETRAINED_BASE_CHECKPOINTS, build_policy, run_training_job
 
 JOB = "training.job"
@@ -183,6 +184,14 @@ def _run(
 
 
 class TestRunTrainingJob:
+    def test_run_options_export_huggingface_token(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        spec = TrainingJobSpec(policy="act", run_options=RunOptions(hf_token=SecretStr("hf-secret")))
+
+        _run(spec, tmp_path)
+
+        assert os.environ["HF_TOKEN"] == "hf-secret"
+
     def test_trainer_is_configured_from_the_spec(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(
             policy="act",

@@ -20,7 +20,7 @@ from services.training_service import TrainingTrackingDispatcher
 
 def _settings() -> MagicMock:
     settings = MagicMock()
-    settings.trainer_request_timeout_s = 5.0
+    settings.trainer.request_timeout_s = 5.0
     return settings
 
 

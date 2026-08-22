@@ -9,6 +9,8 @@ from loguru import logger
 
 from api.dependencies import RobotClientFactoryDep, SchedulerDep, get_project_id, get_robot_id, get_robot_service
 from exceptions import BaseException as AppBaseException
+from exceptions import RobotPluginUnavailableError
+from schemas.robot import ReadableRobot, UnavailableRobot
 from services import RobotService
 from workers.base import run_at_frequency
 from workers.teleoperate_worker import TeleoperateWorker
@@ -36,6 +38,11 @@ async def robot_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG001
 
 def _build_robot_control_state(worker: TeleoperateWorker) -> dict:
     return {"connected": worker.loaded_event.is_set(), "follower_source": worker.get_action_read_state()}
+
+
+def _ensure_robot_available(robot: ReadableRobot) -> None:
+    if isinstance(robot, UnavailableRobot):
+        raise RobotPluginUnavailableError(robot.name, robot.type)
 
 
 async def handle_outgoing(
@@ -98,10 +105,12 @@ async def robot_websocket(
         settings = await websocket.receive_json("text")
         follower_id = get_robot_id(settings["follower_id"])
         follower = await robot_service.get_robot_by_id(project_id, follower_id)
+        _ensure_robot_available(follower)
         leader = None
         if "leader_id" in settings:
             leader_id = get_robot_id(settings["leader_id"])
             leader = await robot_service.get_robot_by_id(project_id, leader_id)
+            _ensure_robot_available(leader)
 
         # Create worker
         worker = TeleoperateWorker(

@@ -26,6 +26,76 @@ class RemoteTrainerDB(Base):
     )
 
 
+class RemoteServerDB(Base):
+    """An SSH-provisioned training server, identified by an SSH config alias.
+
+    Holds no credential. ``ssh_host_alias`` names a ``Host`` stanza in the user's
+    own SSH config; the SSH client library resolves it and authenticates, so
+    Studio never receives a key, password, or passphrase. Hostname, port, and
+    user are derived from the SSH config at read time rather than persisted, so a
+    stored record can never silently disagree with the config that defines it.
+    """
+
+    __tablename__ = "remote_servers"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Unique: a second record for the same alias describes the same machine.
+    ssh_host_alias: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    device_type: Mapped[str] = mapped_column(String, nullable=False)
+    # Summary of the most recent preflight. A transient failure updates these
+    # columns instead of destroying the record.
+    last_check_status: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    last_check_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_check_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_check_reason_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
+class JobProvisioningDB(Base):
+    """What Studio provisioned on a remote server for one job.
+
+    Keyed by ``job_id`` in its own table rather than stored in the job payload
+    JSON, so a restarted backend can sweep or reclaim an orphaned container with
+    a query instead of parsing every job's payload.
+    """
+
+    __tablename__ = "job_provisioning"
+
+    job_id: Mapped[str] = mapped_column(Text, ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
+    # RESTRICT, not CASCADE: deleting a server while one of its jobs is still
+    # running would drop the only record of the container to clean up.
+    remote_server_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("remote_servers.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    ssh_host_alias: Mapped[str] = mapped_column(String(255), nullable=False)
+    image_ref: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_fallback_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_digest: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    container_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    remote_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    local_tunnel_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Ownership marker for the orphan sweep: two Studio instances can target the
+    # same host, so a sweep must prove the container is its own.
+    backend_instance_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trainer_build_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trainer_protocol_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+
 class ProjectDB(Base):
     __tablename__ = "projects"
 

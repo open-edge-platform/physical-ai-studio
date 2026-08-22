@@ -55,7 +55,18 @@ const mockProjectWithRemoteTrainer = () => {
         http.get('/api/system/devices/training', () =>
             HttpResponse.json({ mode: 'local', remote_available: true, devices: [] })
         ),
-        http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer]))
+        http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])),
+        http.get('/api/settings', () =>
+            HttpResponse.json({
+                trainer: {
+                    request_timeout_s: 30,
+                    download_read_timeout_s: 120,
+                    stream_reconnect_max_s: 900,
+                    stream_reconnect_backoff_max_s: 30,
+                },
+                huggingface: { hf_token: null },
+            })
+        )
     );
 };
 
@@ -122,5 +133,30 @@ describe('TrainModelDialog', () => {
 
         expect(await screen.findByRole('option', { name: /this machine \(local\)/i })).toBeInTheDocument();
         expect(screen.queryByRole('option', { name: remoteTrainer.name })).not.toBeInTheDocument();
+    });
+
+    it('warns when SmolVLA is selected without a Hugging Face token', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+
+        await user.click(await screen.findByLabelText('Select SmolVLA policy'));
+
+        expect(screen.getByText(/SmolVLA downloads pretrained assets from Hugging Face/i)).toBeInTheDocument();
+        expect(screen.queryByText(/Pi0.5 requires a Hugging Face token/i)).not.toBeInTheDocument();
+    });
+
+    it('blocks Pi0.5 training without a Hugging Face token', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        expect(screen.getByText(/Pi0.5 requires a Hugging Face token/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
     });
 });

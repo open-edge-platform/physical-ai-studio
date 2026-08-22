@@ -125,4 +125,26 @@ describe('RobotsList', () => {
         expect(click).toHaveBeenCalledOnce();
         expect(revokeObjectUrl).toHaveBeenCalledWith('blob:calibration');
     });
+
+    it('shows unavailable robots without treating their status as loading', async () => {
+        const unavailableRobot = {
+            id: 'unavailable-id',
+            name: 'Removed plugin robot',
+            type: 'Removed_Plugin_Robot',
+            payload: { connection_string: '/dev/ttyUSB0' },
+            unavailable: true as const,
+        };
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([unavailableRobot])),
+            http.get(ONLINE_ROBOTS_PATH, () =>
+                HttpResponse.json([{ ...unavailableRobot, connection_status: 'unknown' as const }])
+            )
+        );
+
+        renderRobotsList();
+
+        expect(await screen.findByText('Unavailable')).toBeInTheDocument();
+        expect(screen.getByText(/plugin unavailable/)).toBeInTheDocument();
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    });
 });

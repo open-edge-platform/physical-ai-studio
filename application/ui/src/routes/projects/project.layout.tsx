@@ -1,24 +1,10 @@
 import { Suspense } from 'react';
 
-import {
-    ActionButton,
-    DialogTrigger,
-    Divider,
-    Flex,
-    Grid,
-    Icon,
-    Item,
-    Loading,
-    TabList,
-    Tabs,
-    View,
-} from '@geti-ui/ui';
-import { Manifest } from '@geti-ui/ui/icons';
+import { Flex, Grid, Item, Loading, TabList, Tabs, View } from '@geti-ui/ui';
 import { Outlet, useLocation } from 'react-router';
 
+import { AppFooter } from '../../components/app-footer/app-footer';
 import { AppLogo } from '../../components/app-logo/app-logo';
-import { JobStatus } from '../../features/jobs/footer/job-status';
-import { LogsDialog } from '../../features/logs/logs-dialog';
 import { ProjectMenu } from '../../features/projects/menu/project-menu.component';
 import { useProject, useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
@@ -68,41 +54,6 @@ const Header = ({ project_id }: { project_id: string }) => {
     );
 };
 
-const Footer = () => {
-    return (
-        <View
-            gridArea={'footer'}
-            borderTopColor={'gray-300'}
-            borderTopWidth={'thin'}
-            borderBottomColor={'gray-75'}
-            borderBottomWidth={'thin'}
-            paddingX='size-100'
-            paddingY='size-25'
-        >
-            <Flex alignItems={'center'} height='100%' gap='size-100'>
-                <View overflow={'hidden'}>
-                    <DialogTrigger type='fullscreen'>
-                        <ActionButton
-                            isQuiet
-                            UNSAFE_style={{
-                                paddingRight: 'var(--spectrum-global-dimension-size-100)',
-                            }}
-                        >
-                            <Icon>
-                                <Manifest />
-                            </Icon>
-                            Logs
-                        </ActionButton>
-                        {(close) => <LogsDialog close={close} />}
-                    </DialogTrigger>
-                </View>
-                <Divider orientation='vertical' size='S' />
-                <JobStatus />
-            </Flex>
-        </View>
-    );
-};
-
 export const ProjectLayout = () => {
     const { project_id } = useProjectId();
     const { pathname } = useLocation();
@@ -138,7 +89,7 @@ export const ProjectLayout = () => {
                         <Outlet />
                     </Suspense>
                 </View>
-                <Footer />
+                <AppFooter />
             </Grid>
         </Tabs>
     );

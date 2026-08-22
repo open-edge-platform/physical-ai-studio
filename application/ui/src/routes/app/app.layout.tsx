@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { Grid, Loading, Tabs, View } from '@geti-ui/ui';
 import { Outlet, useLocation } from 'react-router';
 
+import { AppFooter } from '../../components/app-footer/app-footer';
 import { AppSidebar } from './app-sidebar';
 import { disabledNavItemKeys } from './nav-items';
 
@@ -30,8 +31,8 @@ export const AppLayout = () => {
             width={'100%'}
         >
             <Grid
-                areas={['sidebar content']}
-                rows={['minmax(0, 1fr)']}
+                areas={['sidebar content', 'footer footer']}
+                rows={['minmax(0, 1fr)', 'size-400']}
                 columns={['size-3000', 'minmax(0, 1fr)']}
                 minHeight={0}
                 height='100%'
@@ -50,6 +51,7 @@ export const AppLayout = () => {
                         <Outlet />
                     </Suspense>
                 </View>
+                <AppFooter />
             </Grid>
         </Tabs>
     );

@@ -20,7 +20,9 @@ REMOTE = "services.training_backends.remote"
 
 
 def _backend() -> RemoteTrainingBackend:
-    with patch(f"{REMOTE}.get_settings", return_value=MagicMock(trainer_request_timeout_s=5.0)):
+    settings = MagicMock()
+    settings.trainer.request_timeout_s = 5.0
+    with patch(f"{REMOTE}.get_settings", return_value=settings):
         return RemoteTrainingBackend("https://trainer.test", trainer_name="trainer")
 
 

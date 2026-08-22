@@ -16,9 +16,11 @@ import {
     Picker,
     Text,
 } from '@geti-ui/ui';
+import { Link } from 'react-router';
 
 import { $api } from '../../../api/client';
 import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
+import { paths } from '../../../router';
 import { useProject } from '../../projects/use-project';
 import { useRemoteTrainerHealth } from '../../remote-trainers/use-remote-trainer-health';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
@@ -48,6 +50,7 @@ type TrainingTargetOption = {
 export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+    const { data: settings } = $api.useQuery('get', '/api/settings');
     // Continuing an existing model needs its checkpoint, which only this machine
     // has: the trainer protocol can receive a dataset but not a base checkpoint.
     // So a resumed run offers local training only.
@@ -83,6 +86,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         checkHealth: checkRemoteTrainerHealth,
     } = useRemoteTrainerHealth(isRemoteTarget ? (remoteTrainerId?.toString() ?? null) : null);
     const remoteUnavailable = isRemoteTarget && remoteTrainerHealth?.status === 'unreachable';
+    const hasHuggingFaceToken = settings?.huggingface.hf_token != null;
+    const smolVlaMissingToken = selectedPolicy === 'smolvla' && !hasHuggingFaceToken;
+    const pi05MissingToken = selectedPolicy === 'pi05' && !hasHuggingFaceToken;
     const bestRemoteDevice = useMemo(() => pickBestDevice(remoteTrainerHealth?.devices ?? []), [remoteTrainerHealth]);
     // The device actually driving this job: the local GPU when training locally,
     // or the remote trainer's reported GPU once its health check resolves. Auto
@@ -196,6 +202,28 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                         isDisabled={baseModel !== undefined}
                         trainingDevice={activeDevice}
                     />
+                    {smolVlaMissingToken && (
+                        <InlineAlert variant='warning'>
+                            <Flex direction='column' gap='size-100'>
+                                <span>
+                                    SmolVLA downloads pretrained assets from Hugging Face. Configure a token in Settings
+                                    to avoid download failures.
+                                </span>
+                                <Link to={paths.settings.index.pattern}>Open Settings</Link>
+                            </Flex>
+                        </InlineAlert>
+                    )}
+                    {pi05MissingToken && (
+                        <InlineAlert variant='error'>
+                            <Flex direction='column' gap='size-100'>
+                                <span>
+                                    Pi0.5 requires a Hugging Face token to download its gated base model. Configure one
+                                    in Settings before training.
+                                </span>
+                                <Link to={paths.settings.index.pattern}>Open Settings</Link>
+                            </Flex>
+                        </InlineAlert>
+                    )}
 
                     <Disclosure
                         isQuiet
@@ -234,7 +262,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 <Button
                     variant='accent'
                     onPress={save}
-                    isDisabled={!selectedDataset || !selectedPolicy || remoteTrainerId === null || remoteUnavailable}
+                    isDisabled={
+                        !selectedDataset ||
+                        !selectedPolicy ||
+                        remoteTrainerId === null ||
+                        remoteUnavailable ||
+                        pi05MissingToken
+                    }
                 >
                     Train
                 </Button>

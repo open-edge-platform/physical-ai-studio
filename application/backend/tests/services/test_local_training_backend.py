@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from pydantic import SecretStr
 
 from schemas.dataset import Snapshot
 from schemas.job import _DEFAULT_MAX_EPOCHS, TrainingDevice, TrainingPrecision, TrainJobPayload
@@ -138,11 +139,11 @@ class TestLocalTrainingBackend:
 
         mock_run.assert_called_once()
         spec, kwargs = mock_run.call_args.args[0], mock_run.call_args.kwargs
-        assert spec == build_spec(context)
+        assert spec.model_dump(exclude={"run_options"}) == build_spec(context).model_dump(exclude={"run_options"})
         assert kwargs["dataset_root"] == context.snapshot.path
         assert kwargs["output_dir"] == context.output_dir
         assert kwargs["cache_dir"] == context.cache_dir
-        assert kwargs["resume_from"] is None
+        assert spec.run_options.resume_from is None
 
     @pytest.mark.anyio
     async def test_train_resumes_from_the_base_models_checkpoint(self, tmp_path):
@@ -154,7 +155,43 @@ class TestLocalTrainingBackend:
         with patch("training.run_training_job") as mock_run:
             await LocalTrainingBackend().train(context)
 
-        assert mock_run.call_args.kwargs["resume_from"] == base_dir / CHECKPOINT_NAME
+        assert mock_run.call_args.args[0].run_options.resume_from == base_dir / CHECKPOINT_NAME
+
+    @pytest.mark.anyio
+    async def test_train_passes_the_persisted_huggingface_token(self, tmp_path):
+        context = _context(tmp_path, _payload())
+        settings = MagicMock()
+        settings.huggingface.hf_token = SecretStr("hf-secret")
+
+        with (
+            patch("training.run_training_job") as mock_run,
+            patch(f"{LOCAL}.get_settings", return_value=settings),
+        ):
+            await LocalTrainingBackend().train(context)
+
+        token = mock_run.call_args.args[0].run_options.hf_token
+        assert token is not None
+        assert token.get_secret_value() == "hf-secret"
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("configured_token", [None, SecretStr("")])
+    async def test_train_falls_back_to_huggingface_token_environment_variable(
+        self, tmp_path, monkeypatch, configured_token
+    ):
+        context = _context(tmp_path, _payload())
+        settings = MagicMock()
+        settings.huggingface.hf_token = configured_token
+        monkeypatch.setenv("HF_TOKEN", "hf-legacy")
+
+        with (
+            patch("training.run_training_job") as mock_run,
+            patch(f"{LOCAL}.get_settings", return_value=settings),
+        ):
+            await LocalTrainingBackend().train(context)
+
+        token = mock_run.call_args.args[0].run_options.hf_token
+        assert token is not None
+        assert token.get_secret_value() == "hf-legacy"
 
     @pytest.mark.anyio
     async def test_train_without_a_snapshot_is_rejected(self, tmp_path):

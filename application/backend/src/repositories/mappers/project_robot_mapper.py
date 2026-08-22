@@ -1,9 +1,10 @@
 from db.schema import ProjectRobotDB
 from repositories.mappers.base_mapper_interface import IBaseMapper
-from schemas.robot import Robot, RobotAdapter
+from robots.catalog.registry import RobotCatalogRegistry
+from schemas.robot import Robot, UnavailableRobot
 
 
-class ProjectRobotMapper(IBaseMapper):
+class ProjectRobotMapper(IBaseMapper[ProjectRobotDB, Robot | UnavailableRobot]):
     """Mapper for Robot schema entity <-> DB entity conversions."""
 
     @staticmethod
@@ -17,15 +18,20 @@ class ProjectRobotMapper(IBaseMapper):
         )
 
     @staticmethod
-    def from_schema(model: ProjectRobotDB) -> Robot:
+    def from_schema(
+        model: ProjectRobotDB,
+        catalog_registry: RobotCatalogRegistry | None = None,
+    ) -> Robot | UnavailableRobot:
         """Convert Robot db entity to schema."""
-        return RobotAdapter.validate_python(
-            {
-                "id": model.id,
-                "name": model.name,
-                "type": model.type,
-                "payload": model.payload,
-                "created_at": model.created_at,
-                "updated_at": model.updated_at,
-            }
-        )
+        catalog_registry = catalog_registry or RobotCatalogRegistry()
+        robot = {
+            "id": model.id,
+            "name": model.name,
+            "type": model.type,
+            "payload": model.payload,
+            "created_at": model.created_at,
+            "updated_at": model.updated_at,
+        }
+        if catalog_registry.get_definition(model.type) is None:
+            return UnavailableRobot.model_validate(robot)
+        return catalog_registry.get_robot_adapter().validate_python(robot)

@@ -1,16 +1,17 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Application configuration management"""
+"""Application configuration management."""
 
+import json
 import os
 import sys
-from functools import lru_cache
+import tempfile
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, JsonConfigSettingsSource, PydanticBaseSettingsSource, SettingsConfigDict
 
 
 def get_default_storage_dir() -> Path:
@@ -31,6 +32,48 @@ def get_default_storage_dir() -> Path:
             return xdg_data_home_path / "physicalai"
 
     return Path("~/.local/share/physicalai").expanduser()
+
+
+def get_settings_file_path() -> Path:
+    """Return the user-configurable settings file path."""
+    override = os.environ.get("SETTINGS_FILE")
+    if override:
+        return Path(override).expanduser()
+    return get_default_storage_dir() / "settings.json"
+
+
+class TrainerClientSettings(BaseModel):
+    """Client-side timeouts for talking to a remote trainer service."""
+
+    request_timeout_s: float = Field(default=30.0)
+    download_read_timeout_s: float = Field(default=120.0)
+    stream_reconnect_max_s: float = Field(default=900.0)
+    stream_reconnect_backoff_max_s: float = Field(default=30.0)
+
+
+class HuggingFaceSettings(BaseModel):
+    """Hugging Face credentials for authenticated training downloads."""
+
+    hf_token: SecretStr | None = Field(default=None)
+
+    @field_validator("hf_token", mode="before")
+    @classmethod
+    def empty_token_is_unset(cls, value: str | None) -> str | None:
+        """Treat an empty form submission as removal of the stored token."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+
+_USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface")
+
+
+class UserConfigSettingsSource(JsonConfigSettingsSource):
+    """JSON settings source restricted to user-configurable groups."""
+
+    def __call__(self) -> dict[str, Any]:
+        data: dict[str, Any] = super().__call__()
+        return {key: value for key, value in data.items() if key in _USER_CONFIG_GROUPS}
 
 
 class Settings(BaseSettings):
@@ -111,17 +154,10 @@ class Settings(BaseSettings):
         """Storage directory for logs."""
         return self.storage_dir / "logs"
 
-    # Remote training
-    # Seconds to wait for trainer HTTP requests (excludes long-poll/SSE streams).
-    trainer_request_timeout_s: float = Field(default=30.0, alias="TRAINER_REQUEST_TIMEOUT_S")
-    # Seconds to wait between chunks while streaming the model artifact. A stalled
-    # transfer (e.g. a proxy holding the connection open) must fail instead of
-    # hanging the job forever; this is a per-read gap, not a total transfer cap.
-    trainer_download_read_timeout_s: float = Field(default=120.0, alias="TRAINER_DOWNLOAD_READ_TIMEOUT_S")
-    # Stop reconnecting after this continuous trainer outage.
-    trainer_stream_reconnect_max_s: float = Field(default=900.0, alias="TRAINER_STREAM_RECONNECT_MAX_S")
-    # Upper bound on the exponential backoff between event-stream reconnect attempts.
-    trainer_stream_reconnect_backoff_max_s: float = Field(default=30.0, alias="TRAINER_STREAM_RECONNECT_BACKOFF_MAX_S")
+    # User-configurable client-side remote trainer timeouts.
+    trainer: TrainerClientSettings = TrainerClientSettings()
+    # User-configurable Hugging Face credentials.
+    huggingface: HuggingFaceSettings = HuggingFaceSettings()
 
     # Server
     host: str = Field(default="0.0.0.0", alias="HOST")  # noqa: S104 # nosec B104
@@ -149,8 +185,80 @@ class Settings(BaseSettings):
         """Get synchronous database URL"""
         return f"sqlite:///{self.data_dir / self.database_file}"
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Resolve init kwargs, user JSON, environment, then .env."""
+        return (
+            init_settings,
+            UserConfigSettingsSource(settings_cls, json_file=get_settings_file_path()),
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
 
-@lru_cache
+
+def write_user_settings(data: dict[str, Any]) -> None:
+    """Atomically persist allowed user-configurable settings."""
+    path = get_settings_file_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    filtered = {key: value for key, value in data.items() if key in _USER_CONFIG_GROUPS and value is not None}
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix="settings.", suffix=".json.tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            json.dump(filtered, tmp_file, indent=2, default=_plain_secret_str)
+            tmp_file.write("\n")
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _plain_secret_str(value: Any) -> Any:
+    """Serialize SecretStr values as plaintext in the local settings file."""
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return value
+
+
+def load_user_settings_file() -> dict[str, Any]:
+    """Return the raw user settings JSON, or an empty mapping."""
+    path = get_settings_file_path()
+    if not path.exists():
+        return {}
+    try:
+        with path.open(encoding="utf-8") as settings_file:
+            data = json.load(settings_file)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def merge_user_settings(patch: dict[str, Any]) -> None:
+    """Apply a partial patch without overwriting omitted fields."""
+    current = load_user_settings_file()
+    for group in _USER_CONFIG_GROUPS:
+        if group not in patch:
+            continue
+        value = patch[group]
+        if value is None:
+            current.pop(group, None)
+        elif isinstance(value, dict):
+            current.setdefault(group, {}).update(value)
+    write_user_settings(current)
+
+
 def get_settings() -> Settings:
-    """Get cached application settings"""
+    """Return settings freshly resolved from their sources."""
     return Settings()
