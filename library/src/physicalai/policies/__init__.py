@@ -18,8 +18,6 @@ from .vla_jepa import VLAJEPA, VLAJEPAConfig, VLAJEPAModel
 __all__ = [
     # ACT
     "ACT",
-    # VLA-JEPA (all-caps entries sort ahead of the CamelCase ones below)
-    "VLAJEPA",
     "ACTConfig",
     "ACTModel",
     # Groot
@@ -40,6 +38,7 @@ __all__ = [
     "SmolVLAConfig",
     "SmolVLAModel",
     # VLA-JEPA
+    "VLAJEPA",
     "VLAJEPAConfig",
     "VLAJEPAModel",
     # Utils
