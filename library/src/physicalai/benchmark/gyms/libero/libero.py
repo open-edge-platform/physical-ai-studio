@@ -64,6 +64,13 @@ class LiberoBenchmark(Benchmark):
         observation_width: Width of observation images (default: 256).
         video_dir: Directory to save videos. None disables recording.
         record_mode: Video recording mode - "all", "successes", "failures", "none".
+        control_mode: "relative" (default) sends the policy's action as a per-step
+            end-effector delta; "absolute" sends it as an absolute target pose instead.
+            Match this to what the policy was trained to predict -- most LIBERO-trained
+            policies use deltas, but check before assuming.
+        control_freq: Robot controller frequency in Hz (default: 20, robosuite's own
+            default, and the rate LeRobot evaluates LIBERO policies at). A policy trained
+            at a different rate needs this to match.
 
     Example:
         >>> # Full LIBERO-10 benchmark
@@ -90,12 +97,16 @@ class LiberoBenchmark(Benchmark):
         observation_width: int = 256,
         video_dir: str | Path | None = None,
         record_mode: str = "failures",
+        control_mode: str = "relative",
+        control_freq: int = 20,
     ) -> None:
         """Initialize LIBERO benchmark with task suite configuration."""
         self.task_suite = task_suite
         self.task_ids = task_ids
         self.observation_height = observation_height
         self.observation_width = observation_width
+        self.control_mode = control_mode
+        self.control_freq = control_freq
 
         # Use LIBERO default max_steps if not specified
         if max_steps is None:
@@ -126,6 +137,8 @@ class LiberoBenchmark(Benchmark):
             task_ids=self.task_ids,
             observation_height=self.observation_height,
             observation_width=self.observation_width,
+            control_mode=self.control_mode,
+            control_freq=self.control_freq,
         )
 
     def __repr__(self) -> str:
