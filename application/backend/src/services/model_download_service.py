@@ -64,7 +64,7 @@ class ModelDownloadService:
 
         return archive_path
 
-    def create_runtime_bundle(
+    def create_runtime_export(
         self,
         export_dir: Path,
         backend: str,

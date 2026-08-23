@@ -1,4 +1,4 @@
-export const runtimeBundleUrl = ({
+export const runtimeExportUrl = ({
     modelId,
     environmentId,
     backend,

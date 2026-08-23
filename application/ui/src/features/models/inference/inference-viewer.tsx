@@ -19,7 +19,7 @@ import { useProjectId } from '../../projects/use-project';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
-import { runtimeBundleUrl } from '../runtime-bundle';
+import { runtimeExportUrl } from '../runtime-export';
 
 interface InferenceViewerProps {
     tasks: string[];
@@ -33,9 +33,9 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
     const { model, readyForInference, state, startTask, stopTask, environment, observation, inferenceDevice } =
         useRuntimeSession();
 
-    const bundleUrl =
+    const exportUrl =
         model?.id !== undefined && inferenceDevice !== undefined
-            ? runtimeBundleUrl({
+            ? runtimeExportUrl({
                   modelId: model.id,
                   environmentId: environment.id,
                   backend: inferenceDevice.backend,
@@ -76,16 +76,16 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         ))}
                     </ComboBox>
                     <ButtonGroup>
-                        {bundleUrl !== undefined && (
+                        {exportUrl !== undefined && (
                             <Button
-                                href={bundleUrl}
-                                aria-label='Download runtime bundle'
+                                href={exportUrl}
+                                aria-label='Download runtime export'
                                 variant='secondary'
                                 target='_blank'
                                 rel='noopener noreferrer'
                             >
                                 <DownloadIcon />
-                                Bundle
+                                Runtime export
                             </Button>
                         )}
                         {state.follower_source === 'policy' ? (

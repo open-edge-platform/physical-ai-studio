@@ -165,7 +165,9 @@ def test_openvino_export_download_is_weights_only_without_recipe(tmp_path: Path)
     export_dir.mkdir(parents=True)
     (export_dir / "model.xml").write_text("<net/>")
     model = _make_model(model_dir)
-    _override_export_download(model)
+    # Weights-only must not require a robot manager / client factory.
+    _override_model_service(model)
+    app.dependency_overrides[get_environment_service] = lambda: MagicMock()
 
     try:
         client = TestClient(app)

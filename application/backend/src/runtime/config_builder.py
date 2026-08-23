@@ -133,11 +133,11 @@ def policy_source_from_fragment(fragment: dict[str, Any]) -> PolicySource:
     )
 
 
-def runtime_bundle_readme(document: dict[str, Any], *, unresolved: list[str]) -> str:
+def runtime_export_readme(document: dict[str, Any], *, unresolved: list[str]) -> str:
     """README for a portable inference zip, including CHANGE_ME paths."""
     robot_name = document["init_args"]["robot"]["init_args"]["name"]
     lines = [
-        "# Studio runtime bundle",
+        "# Studio runtime export",
         "",
         "Run from this directory so `./exports/<backend>` resolves:",
         "",
@@ -160,8 +160,8 @@ def runtime_bundle_readme(document: dict[str, Any], *, unresolved: list[str]) ->
         )
     lines.extend(
         [
-            "The `device` field on the model is the machine that exported this",
-            "bundle. Change it if this host has no matching accelerator.",
+            "The `device` field on the model is from the machine that produced this",
+            "export. Change it if this host has no matching accelerator.",
             "",
             f"The robot name is `{robot_name}`. Two runs that share it collide on",
             "one host — that is the intended lock. Stop the other run first.",

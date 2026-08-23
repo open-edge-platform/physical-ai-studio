@@ -5,15 +5,15 @@ import { Button, ButtonGroup, Content, Dialog, Divider, Heading, Item, Picker } 
 import { $api } from '../../../api/client';
 import { SchemaModel } from '../../../api/openapi-spec';
 import { getDefaultInferenceDevice, getSupportedInferenceDevices } from '../backend-selection/backend-selection';
-import { runtimeBundleUrl } from '../runtime-bundle';
+import { runtimeExportUrl } from '../runtime-export';
 
-interface RuntimeBundleDialogProps {
+interface RuntimeExportDialogProps {
     close: () => void;
     model: SchemaModel;
     backend: string;
 }
 
-export const RuntimeBundleDialog = ({ close, model, backend }: RuntimeBundleDialogProps) => {
+export const RuntimeExportDialog = ({ close, model, backend }: RuntimeExportDialogProps) => {
     const { data: environments = [] } = $api.useQuery('get', '/api/projects/{project_id}/environments', {
         params: { path: { project_id: model.project_id } },
     });
@@ -45,7 +45,7 @@ export const RuntimeBundleDialog = ({ close, model, backend }: RuntimeBundleDial
 
     const downloadUrl =
         model.id !== undefined && selectedEnvironmentId !== undefined && selectedDevice !== undefined
-            ? runtimeBundleUrl({
+            ? runtimeExportUrl({
                   modelId: model.id,
                   environmentId: selectedEnvironmentId,
                   backend,
@@ -56,7 +56,7 @@ export const RuntimeBundleDialog = ({ close, model, backend }: RuntimeBundleDial
 
     return (
         <Dialog>
-            <Heading>Download runtime bundle</Heading>
+            <Heading>Download runtime export</Heading>
             <Divider />
             <Content>
                 <Picker

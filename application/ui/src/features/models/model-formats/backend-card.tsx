@@ -16,7 +16,7 @@ import { DownloadIcon } from '@geti-ui/ui/icons';
 import { fetchClient } from '../../../api/client';
 import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
-import { RuntimeBundleDialog } from './runtime-bundle-dialog';
+import { RuntimeExportDialog } from './runtime-export-dialog';
 
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
 type ExportBackend = components['schemas']['ExportBackend'];
@@ -162,13 +162,13 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                                     {backendType === 'openvino' && (
                                         <DialogTrigger>
                                             <Button
-                                                aria-label={`Download ${backend.label} runtime bundle`}
+                                                aria-label={`Download ${backend.label} runtime export`}
                                                 variant='secondary'
                                             >
-                                                Runtime bundle
+                                                Runtime export
                                             </Button>
                                             {(close) => (
-                                                <RuntimeBundleDialog
+                                                <RuntimeExportDialog
                                                     close={close}
                                                     model={model}
                                                     backend={backendType}

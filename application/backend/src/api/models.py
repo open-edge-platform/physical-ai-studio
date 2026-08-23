@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
 from physicalai.config import to_yaml
@@ -15,13 +15,15 @@ from starlette.background import BackgroundTask
 
 from api.dependencies import (
     EnvironmentServiceDep,
-    RobotClientFactoryDep,
     get_dataset_service,
     get_job_service,
     get_model_download_service,
     get_model_id,
     get_model_metrics_service,
     get_model_service,
+    get_robot_catalog_service,
+    get_robot_client_factory,
+    get_robot_manager_service,
 )
 from api.utils import safe_archive_name
 from exceptions import ResourceNotFoundError, ResourceType
@@ -31,8 +33,8 @@ from runtime.config_builder import (
     RUNTIME_FPS,
     build_runtime_config,
     policy_source_fragment,
-    runtime_bundle_readme,
     runtime_config_change_me,
+    runtime_export_readme,
 )
 from schemas import Model, ModelDetailResponse
 from schemas.job import TrainJob
@@ -87,7 +89,7 @@ async def _runtime_recipe_texts(
 
     unresolved = runtime_config_change_me(document)
     comments = "".join(f"# CHANGE_ME: replace machine-specific device path {path}\n" for path in unresolved)
-    return comments + to_yaml(document), runtime_bundle_readme(document, unresolved=unresolved)
+    return comments + to_yaml(document), runtime_export_readme(document, unresolved=unresolved)
 
 
 @router.get("/{model_id}")
@@ -164,12 +166,12 @@ async def model_download_endpoint(
 
 @router.get("/{model_id}/exports/{backend}/download")
 async def download_model_backend(  # noqa: PLR0913
+    request: Request,
     model_id: Annotated[UUID, Depends(get_model_id)],
     backend: ExportBackend,
     model_service: Annotated[ModelService, Depends(get_model_service)],
     model_download_service: Annotated[ModelDownloadService, Depends(get_model_download_service)],
     environment_service: EnvironmentServiceDep,
-    robot_client_factory: RobotClientFactoryDep,
     environment_id: UUID | None = None,
     device: str | None = None,
     task: str | None = None,
@@ -203,6 +205,16 @@ async def download_model_backend(  # noqa: PLR0913
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Runtime export requires device",
             )
+        # Resolve hardware only when building a recipe. FastAPI would otherwise
+        # require a live robot manager for weights-only downloads too.
+        factory_override = request.app.dependency_overrides.get(get_robot_client_factory)
+        if factory_override is not None:
+            robot_client_factory = factory_override()
+        else:
+            robot_client_factory = get_robot_client_factory(
+                get_robot_manager_service(request),
+                get_robot_catalog_service(),
+            )
         runtime_yaml, readme = await _runtime_recipe_texts(
             model=model,
             environment_id=environment_id,
@@ -213,7 +225,7 @@ async def download_model_backend(  # noqa: PLR0913
             robot_client_factory=robot_client_factory,
         )
         archive_path = await asyncio.to_thread(
-            model_download_service.create_runtime_bundle,
+            model_download_service.create_runtime_export,
             export_dir,
             backend.value,
             runtime_yaml=runtime_yaml,
