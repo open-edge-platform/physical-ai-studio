@@ -168,7 +168,6 @@ class LiberoGym(Gym):
         init_states: bool = True,
         num_steps_wait: int = 10,
         control_mode: str = "relative",
-        control_freq: int = 20,
     ) -> None:
         """Initialize LIBERO gym environment.
 
@@ -182,13 +181,6 @@ class LiberoGym(Gym):
             init_states: Whether to use pre-defined init states for reproducibility
             num_steps_wait: Steps to wait after reset for stabilization (default: 10)
             control_mode: "relative" for delta actions, "absolute" for absolute control
-            control_freq: Robot controller frequency in Hz, i.e. how many env.step() calls
-                execute per second of simulated time. Defaults to 20, robosuite's own
-                default, which is also what LeRobot evaluates LIBERO policies at; a policy
-                trained at a different rate needs this to match. Note that LeRobot's
-                ``LiberoEnv`` config carries a separate ``fps`` field (30 at the time of
-                writing) that it does *not* feed to the simulator -- do not read it as a
-                control rate.
         """
         _check_libero_available()
 
@@ -205,7 +197,6 @@ class LiberoGym(Gym):
         self.init_states = init_states
         self.num_steps_wait = num_steps_wait
         self.control_mode = control_mode
-        self.control_freq = control_freq
 
         # Load LIBERO suite
         self.task_suite = self._load_suite(task_suite)
@@ -327,7 +318,6 @@ class LiberoGym(Gym):
             "bddl_file_name": task_bddl_file,
             "camera_heights": self.observation_height,
             "camera_widths": self.observation_width,
-            "control_freq": self.control_freq,
         }
 
         env = OffScreenRenderEnv(**env_args)
@@ -611,7 +601,6 @@ def create_libero_gyms(
     obs_type: str = "pixels_agent_pos",
     num_steps_wait: int = 10,
     control_mode: str = "relative",
-    control_freq: int = 20,
 ) -> list[LiberoGym]:
     """Create LiberoGym instances for LIBERO benchmark evaluation.
 
@@ -629,8 +618,6 @@ def create_libero_gyms(
         obs_type: "pixels_agent_pos" or "pixels"
         num_steps_wait: Steps to wait after reset for stabilization
         control_mode: "relative" for delta actions, "absolute" for absolute control
-        control_freq: Robot controller frequency in Hz; must match what the policy was
-            evaluated at (default: 20, robosuite's own default).
 
     Returns:
         List of LiberoGym instances ready for validation
@@ -712,7 +699,6 @@ def create_libero_gyms(
                 obs_type=obs_type,
                 num_steps_wait=num_steps_wait,
                 control_mode=control_mode,
-                control_freq=control_freq,
             )
             gyms.append(gym)
 
