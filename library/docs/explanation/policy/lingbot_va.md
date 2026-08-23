@@ -137,9 +137,40 @@ physicalai fit --config configs/physicalai/lingbot_va.yaml --trainer.fast_dev_ru
 
 ## Export
 
-Export is intentionally **not** supported for this family. The autoregressive KV cache, the
-lazily loaded 20 GB frozen stack and the two nested denoising loops have no meaningful
-static graph, so `ExportablePolicyMixin` is not mixed in.
+Only the **`torch`** backend is supported. The autoregressive KV cache, the lazily loaded
+20 GB frozen stack and the two nested denoising loops have no meaningful static graph, so
+the tracing backends (ONNX, OpenVINO, ExecuTorch) are deliberately not offered.
+`to_torch()` needs none of them: it serializes the trainable transformer plus the
+hyperparameters that rebuild the policy, and Runtime restores the live Python object from
+them. The frozen VAE/UMT5 stack stays out of the checkpoint and is pulled from
+`wan_pretrained_path` on first use, exactly as during training.
+
+```bash
+physicalai export \
+  --policy physicalai.policies.lingbot_va.LingBotVA \
+  --ckpt_path checkpoints/last.ckpt \
+  --backend torch \
+  --output_dir ./export
+```
+
+```python
+from physicalai.export import ExportBackend
+
+policy.export("./export", backend=ExportBackend.TORCH)
+```
+
+The export directory holds `lingbotva.pt` and a `manifest.json` naming one visual feature
+per configured camera (`images.<name>`, in `obs_cam_keys` order) plus the `task` prompt, and
+a single `action` output of shape `(chunk_size, output_action_dim)`. Action (de)normalization
+travels inside the restored policy, so the only runtime preprocessor is `to_float_tensor`.
+
+!!! note "Chunk-at-a-time vs. streaming"
+
+    Runtime's `SinglePass` runner calls the policy's `forward()`, which returns a whole
+    action chunk — the same contract as every other exported Studio policy. That chunk is
+    executed open-loop. To get the closed-loop behaviour described above, where each
+    observed frame is replayed into the KV cache, drive the restored policy with
+    `select_action()` once per environment step instead.
 
 ## Checkpoints
 
