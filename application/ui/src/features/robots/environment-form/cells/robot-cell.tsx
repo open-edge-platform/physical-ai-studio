@@ -116,12 +116,7 @@ export const RobotCell = ({
 
     return (
         <RobotModelsProvider>
-            <AvailableRobotCell
-                robot={robot}
-                followerId={follower_id}
-                leaderId={leader_id}
-                cameraIds={camera_ids}
-            />
+            <AvailableRobotCell robot={robot} followerId={follower_id} leaderId={leader_id} cameraIds={camera_ids} />
         </RobotModelsProvider>
     );
 };
