@@ -31,13 +31,15 @@ against the official evaluation recipe (``lerobot-eval --env.control_mode=absolu
 and LeRobot's ``LiberoProcessorStep``/``LiberoEnv`` source:
 
 - Its action data records an **absolute** target end-effector pose per step, not a delta.
-  Run :class:`~physicalai.benchmark.gyms.LiberoBenchmark` with ``control_mode="absolute"``
-  (``LiberoGym``'s default is ``"relative"``, i.e. deltas) so the environment's controller
-  interprets the bridged action the same way the checkpoint was trained to produce it;
-  feeding an absolute-scale pose into a delta-mode controller saturates every joint on the
-  first step and the episode never recovers. Whether a different ``ee6d`` checkpoint uses
-  absolute or delta actions is a property of how it was trained, not of the ``ee6d``
-  layout itself -- check before assuming either.
+  Build the environment with ``control_mode="absolute"`` (``LiberoGym``'s default is
+  ``"relative"``, i.e. deltas) so its controller interprets the bridged action the same way
+  the checkpoint was trained to produce it; feeding an absolute-scale pose into a delta-mode
+  controller saturates every joint on the first step and the episode never recovers.
+  :class:`~physicalai.benchmark.gyms.LiberoBenchmark` does not expose ``control_mode``, so
+  pass it to :func:`~physicalai.gyms.create_libero_gyms` and hand the gyms to the generic
+  :class:`~physicalai.benchmark.gyms.Benchmark` instead -- see the example below. Whether a
+  different ``ee6d`` checkpoint uses absolute or delta actions is a property of how it was
+  trained, not of the ``ee6d`` layout itself -- check before assuming either.
 - Its domain id is **3**, published in the checkpoint's ``policy_preprocessor.json`` and
   auto-detected by :func:`~physicalai.policies.xvla.pretrained_utils.extract_domain_id`
   when loading via ``pretrained_name_or_path`` (see :class:`~physicalai.policies.xvla.XVLA`).
@@ -57,12 +59,15 @@ model inputs tensor by tensor:
   body orientation, while upstream builds its 6D rotation from the OSC controller's grip-site
   frame -- a fixed quarter turn apart. See :data:`GRIP_SITE_FROM_HAND_BODY`; this was the one
   mismatch large enough to matter, and correcting it is what moved LIBERO-10 off 0%.
-- LeRobot's eval config renders LIBERO at **360x360**, not ``LiberoGym``'s 256x256 default.
-  Pass ``observation_height=360, observation_width=360`` (to ``LiberoGym``,
-  ``create_libero_gyms``, or ``LiberoBenchmark``) to match. Its ``control_freq`` stays at
-  robosuite's 20 Hz default, which ``LiberoGym`` also defaults to -- LeRobot's ``LiberoEnv``
-  config does carry an ``fps`` field set to 30, but never feeds it to the simulator, so it is
-  not a control rate.
+- LeRobot's eval config renders LIBERO at **360x360**, where ``LiberoGym`` defaults to
+  256x256. Both are resized to the model's 224x224 anyway, and the difference was measured
+  as immaterial (12/15 vs 13/15 episodes, below), so ``LiberoGym``'s default is fine; pass
+  ``observation_height=360, observation_width=360`` only if you want byte-faithful parity
+  with LeRobot. The controller frequency needs nothing at all: LeRobot drives LIBERO at
+  robosuite's 20 Hz default, which ``LiberoGym`` inherits from LIBERO's own
+  ``OffScreenRenderEnv``. LeRobot's ``LiberoEnv`` config does carry an ``fps`` field set to
+  30, but never feeds it to the simulator, so it is not a control rate -- do not read it as
+  one.
 - The checkpoint's own ``config.json`` already declares an ``empty_camera_0`` feature baked
   in from an earlier validation pass, so re-running upstream's ``validate_features()``
   formula on load (``max(published num_image_views, declared views + empty_cameras)``)
@@ -72,11 +77,30 @@ model inputs tensor by tensor:
 With these plus the domain id and tokenizer length above, ``XVLALiberoPolicy``'s model
 inputs match LeRobot's to within float noise (images to 1e-6, proprioception to 1e-4 -- the
 latter only because upstream reads a controller matrix that lags the returned observation by
-the last few simulation substeps), and the bridged 7-dim actions agree to ~2e-3. End to end,
-``LiberoBenchmark(task_suite="libero_10", num_episodes=1, control_mode="absolute",
-max_steps=800, observation_height=360, observation_width=360)`` then solves 10/10 LIBERO-10
-tasks. That is one episode per task, so read it as confirmation that the bridging is correct,
-not as a precise success rate -- run more episodes per task for that.
+the last few simulation substeps), and the bridged 7-dim actions agree to ~2e-3.
+
+Which of those settings actually carry the success rate was then measured by ablation on
+LIBERO-10 tasks 0-4, one episode each, changing one thing at a time from the recipe in the
+example below:
+
+===========================================  =========
+Configuration                                Successes
+===========================================  =========
+recipe as below                              5/5
+``control_mode="relative"``                  0/5
+no wrist-camera flip correction              2/5
+256x256 rendering                            4/5
+``max_steps=520`` instead of 800             5/5
+===========================================  =========
+
+So ``control_mode="absolute"`` and the wrist-camera correction are load-bearing, while the
+render resolution and a longer step budget are not: successful episodes finish in about 250
+steps, well inside LIBERO-10's own 520 limit. Repeating the resolution arm with three
+episodes per task put 360x360 at 13/15 and 256x256 at 12/15 -- a single episode apart, i.e.
+indistinguishable. Those 15-episode numbers are also the more honest headline: the 5/5 and
+10/10 figures come from a single episode per task, and flow-matching inference draws fresh
+noise every call, so treat the ablation as evidence about which settings matter rather than
+as a published success rate.
 
 Example:
     >>> from physicalai.policies.xvla.libero import XVLALiberoPolicy
@@ -354,13 +378,15 @@ class XVLALiberoPolicy(XVLA):
     same training path -- only the inference-time observation/action boundary differs.
 
     Example:
+        >>> from physicalai.benchmark.gyms import Benchmark  # doctest: +SKIP
+        >>> from physicalai.gyms import create_libero_gyms  # doctest: +SKIP
         >>> policy = XVLALiberoPolicy(pretrained_name_or_path="lerobot/xvla-libero")  # doctest: +SKIP
         >>> policy.eval()  # doctest: +SKIP
-        >>> # control_mode="absolute": this checkpoint predicts absolute target poses,
-        >>> # not per-step deltas -- see the module docstring.
-        >>> benchmark = LiberoBenchmark(  # doctest: +SKIP
-        ...     task_suite="libero_10", num_episodes=1, control_mode="absolute"
-        ... )
+        >>> # control_mode="absolute" is required: this checkpoint predicts absolute target
+        >>> # poses, not per-step deltas. LiberoBenchmark does not expose it, so build the
+        >>> # gyms directly -- see the module docstring.
+        >>> gyms = create_libero_gyms("libero_10", control_mode="absolute")  # doctest: +SKIP
+        >>> benchmark = Benchmark(gyms=gyms, num_episodes=1, max_steps=520)  # doctest: +SKIP
         >>> results = benchmark.evaluate(policy)  # doctest: +SKIP
     """
 
