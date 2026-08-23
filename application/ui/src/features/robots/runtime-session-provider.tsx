@@ -252,11 +252,9 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
     const discardEpisode = useMutation({
         meta: { skipInvalidation: true },
         mutationFn: async () =>
-            socket.sendJsonMessageAndWait<RuntimeApiJsonResponse>(
-                { event: 'discard_episode', data: {} },
-                undefined,
-                { timeout: EPISODE_ACK_TIMEOUT_MS }
-            ),
+            socket.sendJsonMessageAndWait<RuntimeApiJsonResponse>({ event: 'discard_episode', data: {} }, undefined, {
+                timeout: EPISODE_ACK_TIMEOUT_MS,
+            }),
     });
 
     return (
