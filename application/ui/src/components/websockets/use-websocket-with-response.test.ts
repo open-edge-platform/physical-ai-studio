@@ -17,6 +17,9 @@ const deliver = (payload: unknown) => {
     capturedOnMessage?.({ data: JSON.stringify(payload) } as MessageEvent);
 };
 
+// Placeholder only — react-use-websocket is mocked; no socket is opened.
+const SOCKET_URL = 'wss://runtime';
+
 describe('useWebSocketWithResponse', () => {
     afterEach(() => {
         sendJsonMessage.mockClear();
@@ -26,7 +29,7 @@ describe('useWebSocketWithResponse', () => {
 
     it('puts request_id on the sent payload', () => {
         vi.useFakeTimers();
-        const { result } = renderHook(() => useWebSocketWithResponse('ws://runtime'));
+        const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
 
         void result.current.sendJsonMessageAndWait({ event: 'load_model' }, () => false);
 
@@ -37,7 +40,7 @@ describe('useWebSocketWithResponse', () => {
     });
 
     it('resolves when an ack with a matching id arrives', async () => {
-        const { result } = renderHook(() => useWebSocketWithResponse('ws://runtime'));
+        const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
         const pending = result.current.sendJsonMessageAndWait({ event: 'save_episode' });
         const requestId = (sendJsonMessage.mock.calls[0][0] as { request_id: string }).request_id;
 
@@ -49,7 +52,7 @@ describe('useWebSocketWithResponse', () => {
     });
 
     it('rejects when an ack reports ok: false', async () => {
-        const { result } = renderHook(() => useWebSocketWithResponse('ws://runtime'));
+        const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
         const pending = result.current.sendJsonMessageAndWait({ event: 'save_episode' });
         const requestId = (sendJsonMessage.mock.calls[0][0] as { request_id: string }).request_id;
 
@@ -61,7 +64,7 @@ describe('useWebSocketWithResponse', () => {
     });
 
     it('resolves publication commands on a matcher rather than an ack', async () => {
-        const { result } = renderHook(() => useWebSocketWithResponse('ws://runtime'));
+        const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
         const pending = result.current.sendJsonMessageAndWait<{ event: string; data?: { model_loaded?: boolean } }>(
             { event: 'load_model' },
             (message) => message.event === 'state' && message.data?.model_loaded === true
@@ -75,7 +78,7 @@ describe('useWebSocketWithResponse', () => {
     });
 
     it('rejects a matcher waiter when an error event arrives', async () => {
-        const { result } = renderHook(() => useWebSocketWithResponse('ws://runtime'));
+        const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
         const pending = result.current.sendJsonMessageAndWait<{ event: string; data?: { follower_source?: string } }>(
             { event: 'start_task' },
             (message) => message.event === 'state' && message.data?.follower_source === 'policy'
@@ -89,7 +92,7 @@ describe('useWebSocketWithResponse', () => {
     });
 
     it('does not reject an ack-only waiter on an unrelated error event', async () => {
-        const { result } = renderHook(() => useWebSocketWithResponse('ws://runtime'));
+        const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
         const pending = result.current.sendJsonMessageAndWait({ event: 'save_episode' });
         const requestId = (sendJsonMessage.mock.calls[0][0] as { request_id: string }).request_id;
 
@@ -105,7 +108,7 @@ describe('useWebSocketWithResponse', () => {
 
     it('rejects after the default timeout', async () => {
         vi.useFakeTimers();
-        const { result } = renderHook(() => useWebSocketWithResponse('ws://runtime'));
+        const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
         const pending = result.current.sendJsonMessageAndWait({ event: 'load_model' }, () => false);
         const assertion = expect(pending).rejects.toThrow('WebSocket request timed out.');
 
