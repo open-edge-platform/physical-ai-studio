@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
@@ -12,6 +13,9 @@ from physicalai.robot import RobotDeviceAlreadyOwned
 from api.dependencies import get_robot_client_factory, get_robot_service
 from main import app
 from runtime.features import feature_names
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 PROJECT_ID = uuid4()
 ROBOT_ID = uuid4()
@@ -90,7 +94,7 @@ def factory(mock_robot_client_factory, shared_robot: FakeSharedRobot):
 
 
 @pytest.fixture
-def client(factory) -> TestClient:
+def client(factory) -> Iterator[TestClient]:
     app.dependency_overrides[get_robot_service] = lambda: _StubRobotService(_StubRobot())
     app.dependency_overrides[get_robot_client_factory] = lambda: factory
     try:
