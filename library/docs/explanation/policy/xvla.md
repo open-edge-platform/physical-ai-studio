@@ -250,30 +250,39 @@ camera-orientation correction `LiberoGym` needs for this checkpoint. See its mod
 docstring for the full list of checkpoint-specific details it accounts for and their
 sourcing.
 
-The published `lerobot/xvla-libero` checkpoint needs the settings LeRobot evaluates it with,
-which are not `LiberoBenchmark`'s defaults:
+The published `lerobot/xvla-libero` checkpoint needs exactly one non-default environment
+setting: `control_mode="absolute"`, because it predicts an absolute target end-effector pose
+per step rather than a delta. `LiberoBenchmark` does not expose `control_mode`, so build the
+gyms directly and hand them to the generic `Benchmark`:
 
 ```python
-from physicalai.benchmark.gyms import LiberoBenchmark
+from physicalai.benchmark.gyms import Benchmark
+from physicalai.gyms import create_libero_gyms
 from physicalai.policies.xvla.libero import XVLALiberoPolicy
 
 policy = XVLALiberoPolicy(pretrained_name_or_path="lerobot/xvla-libero")
 policy.eval()
 
-benchmark = LiberoBenchmark(
-    task_suite="libero_10",
-    num_episodes=1,
-    control_mode="absolute",  # this checkpoint predicts absolute poses, not deltas
-    max_steps=800,  # the official recipe's episode length
-    observation_height=360,  # LeRobot renders LIBERO at 360x360, not LiberoGym's 256
-    observation_width=360,
-)
+gyms = create_libero_gyms("libero_10", control_mode="absolute")
+benchmark = Benchmark(gyms=gyms, num_episodes=1, max_steps=520)
 results = benchmark.evaluate(policy)
 ```
 
-This solves 10/10 LIBERO-10 tasks at one episode per task. Leaving any of these at its
-default degrades success sharply — `control_mode="relative"` most of all, since it feeds an
-absolute-scale pose to a delta controller.
+An ablation on LIBERO-10 tasks 0–4 (one episode each) shows what carries the success rate:
+
+| Change from the recipe above         | Successes |
+| ------------------------------------ | --------- |
+| _(none)_                             | 5/5       |
+| `control_mode="relative"`            | 0/5       |
+| no wrist-camera flip correction      | 2/5       |
+| 256×256 rendering instead of 360×360 | 4/5       |
+| `max_steps=520` instead of 800       | 5/5       |
+
+Only `control_mode` and the wrist-camera correction (which the bridge applies for you)
+matter. Render resolution and a longer step budget do not: repeating the resolution arm with
+three episodes per task put 360×360 at 13/15 and 256×256 at 12/15, a single episode apart.
+Those 15-episode numbers are the more honest headline — one episode per task is too few to
+quote as a success rate, since flow-matching inference draws fresh noise on every call.
 
 ## Differences from the LeRobot implementation
 
