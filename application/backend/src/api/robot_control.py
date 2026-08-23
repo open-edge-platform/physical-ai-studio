@@ -86,7 +86,9 @@ async def handle_incoming(websocket: WebSocket, client: RuntimeSessionClient) ->
                 continue
             client.apply(command)
     except WebSocketDisconnect:
-        pass
+        # Browser close / refresh is a detach. The child stays up until an
+        # explicit disconnect event or idle timeout.
+        logger.debug("Robot control websocket closed; detaching from the runtime session")
 
 
 async def start_runtime_session(
