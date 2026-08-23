@@ -10,19 +10,6 @@
 The paper's contribution. The head never sees the raw observation: its input is
 *all zeros*, and every bit of information arrives by cross-attention onto the
 frozen VLM's per-layer hidden states.
-
-Block ``i`` is conditioned on LLM layer ``i + 1`` — hence block count must equal
-LLM depth. Each layer's states split into the leading ``num_task_tokens``
-("task", ``h_t``) and the trailing action-query positions ("action", ``h_a``).
-With the projected proprio token ``p`` these form two cross-attention pathways
-whose relative strength is a learned, ``tanh``-squashed ``gating_factor`` — the
-"Bridge".
-
-Differences from upstream, all behaviour-preserving: shape constants are
-constructor args rather than ``sys.argv`` globals; ``phase="Training"`` becomes
-``nn.Module.training``; the hard-coded bfloat16 cast is dropped so the head runs
-on CPU and through export. Module *structure* is unchanged, so ``state_dict()``
-stays compatible with ``action_head--checkpoint.pt``.
 """
 
 from __future__ import annotations
@@ -34,9 +21,7 @@ from torch import nn
 
 # Standard deviation of the training-time input perturbation. Upstream builds a
 # fresh (unregistered, hence untrained) ``nn.Parameter`` on every forward pass,
-# which is equivalent to adding fixed-scale Gaussian noise. Keeping it
-# unregistered also keeps our ``state_dict`` compatible with the released
-# checkpoints, which contain no perturbation entry.
+# which is equivalent to adding fixed-scale Gaussian noise.
 _PERTURBATION_STD = 0.02
 
 

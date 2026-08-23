@@ -9,25 +9,8 @@
 
 r"""The Prismatic VLM: fused DINOv2 + SigLIP towers feeding a Qwen2 LLM.
 
-The vision modules are **vendored, not reimplemented**. Three checkpoint
-behaviours are easy to get wrong and all fail silently — shapes agree, the model
-runs, only the success rate suffers:
-
-1. Features come from the **second-to-last** block via
-   ``get_intermediate_layers(n={num_blocks - 2})``, not ``forward_features``.
-2. ``LayerScale`` params are renamed ``gamma`` -> ``scale_factor`` (HF overwrites
-   names containing ``gamma``). Without the patch, 48 tensors fail to load.
-3. Each image arrives as **six** channels, three normalised per tower.
-
-Upstream's ``prismatic`` package pins torch 2.2 / transformers 4.40 / timm 0.9,
-so it cannot be a dependency; the checkpoint-local ``modeling_prismatic.py``
-needs only timm + transformers and is the vendoring source.
-
-:class:`VLM` takes its API from upstream's ``PrismaticVLM`` but its module names
-from ``PrismaticForConditionalGeneration`` — the class the checkpoints export
-through — so ``VLM.state_dict()`` matches ``model.safetensors`` exactly (982
-tensors, no prefix surgery). Mostly frozen: towers and LLM stay fixed while the
-projector and ``action_queries`` train; see :attr:`VLM.trainable_module_keys`.
+Mostly frozen: towers and LLM stay fixed while the projector and
+``action_queries`` train; see :attr:`VLM.trainable_module_keys`.
 
 ``action_queries`` lives here, not with the head, because it is an *input* to
 the LLM. The head reads the hidden states produced *at* those positions, never
@@ -62,7 +45,8 @@ from physicalai.policies.vla_adapter.config import (
 if TYPE_CHECKING:
     from timm.layers import LayerScale
     from timm.models import VisionTransformer
-    from transformers import Qwen2Model
+    from transformers import Qwen2Config, Qwen2Model
+    from transformers.modeling_outputs import BaseModelOutputWithPast
 
     from physicalai.policies.vla_adapter.config import VLAAdapterConfig
 
@@ -85,7 +69,7 @@ def _ls_new_forward(self: Any, x: torch.Tensor) -> torch.Tensor:  # noqa: ANN401
 def ls_apply_patch(ls_module: LayerScale) -> None:
     """Rename a ``LayerScale`` module's ``gamma`` parameter to ``scale_factor``.
 
-    The checkpoints store ``ls1.scale_factor``; without this, 48 tensors fail
+    The LIBERO-compatible weights store ``ls1.scale_factor``; without this, 48 tensors fail
     to load.
 
     Args:
@@ -101,15 +85,13 @@ def ls_apply_patch(ls_module: LayerScale) -> None:
 class PrismaticVisionBackbone(nn.Module):
     """Fused DINOv2 + SigLIP towers, vendored from the checkpoint modeling code.
 
-    ``primary_featurizer`` is DINOv2 (width 1024), ``secondary_featurizer`` is
-    SigLIP (width 1152). Upstream names these ``featurizer`` /
-    ``fused_featurizer``; the released checkpoints use those keys, so importing
-    one needs a name mapping (see Phase 3). Nothing in the train/save/load/export
-    path depends on it — our own checkpoints round-trip under these names.
+    ``featurizer`` is DINOv2 (width 1024), ``fused_featurizer`` is SigLIP
+    (width 1152). The names are upstream's, kept verbatim so the released
+    checkpoints load without remapping these tensors.
     """
 
-    primary_featurizer: VisionTransformer
-    secondary_featurizer: VisionTransformer
+    featurizer: VisionTransformer
+    fused_featurizer: VisionTransformer
     embed_dim: int
 
     def __init__(
@@ -133,19 +115,19 @@ class PrismaticVisionBackbone(nn.Module):
         super().__init__()
         self.num_images_in_input = 1
 
-        self.primary_featurizer = self._create_featurizer(
+        self.featurizer = self._create_featurizer(
             model_id=timm_model_ids[0],
             img_size=image_sizes[0],
             act_layer=timm_override_act_layers[0],
             pretrained=pretrained,
         )
-        self.secondary_featurizer = self._create_featurizer(
+        self.fused_featurizer = self._create_featurizer(
             model_id=timm_model_ids[1],
             img_size=image_sizes[1],
             act_layer=timm_override_act_layers[1],
             pretrained=pretrained,
         )
-        self.embed_dim = self.primary_featurizer.embed_dim + self.secondary_featurizer.embed_dim
+        self.embed_dim = self.featurizer.embed_dim + self.fused_featurizer.embed_dim
 
         self._patch_layer_scales()
 
@@ -205,7 +187,7 @@ class PrismaticVisionBackbone(nn.Module):
         """Patch every ``LayerScale`` module in both towers."""
         from timm.models.vision_transformer import LayerScale  # noqa: PLC0415
 
-        for tower in (self.primary_featurizer, self.secondary_featurizer):
+        for tower in (self.featurizer, self.fused_featurizer):
             for module in tower.modules():
                 if isinstance(module, LayerScale):
                     ls_apply_patch(module)
@@ -216,7 +198,7 @@ class PrismaticVisionBackbone(nn.Module):
         Returns:
             Patch tokens per image, per tower.
         """
-        return int(self.primary_featurizer.patch_embed.num_patches)
+        return int(self.featurizer.patch_embed.num_patches)
 
     def get_num_images_in_input(self) -> int:
         """Report how many camera views the backbone expects.
@@ -249,8 +231,8 @@ class PrismaticVisionBackbone(nn.Module):
         all_patches = []
         for img in images:
             img_regular, img_fused = torch.split(img, [CHANNELS_PER_TOWER, CHANNELS_PER_TOWER], dim=1)
-            patches = self.primary_featurizer(img_regular)
-            patches_fused = self.secondary_featurizer(img_fused)
+            patches = self.featurizer(img_regular)
+            patches_fused = self.fused_featurizer(img_fused)
             all_patches.append(torch.cat([patches, patches_fused], dim=2))
 
         return torch.cat(all_patches, dim=1)
@@ -306,18 +288,80 @@ class PrismaticVisualProjector(nn.Module):
         return self.fc3(projected_features)
 
 
+class LanguageModel(nn.Module):
+    """Model that wraps LLM transformer."""
+
+    model: Qwen2Model
+
+    def __init__(self, model_name: str, *, pretrained: bool = True) -> None:
+        """Build the Qwen2 transformer.
+
+        Args:
+            model_name: HuggingFace identifier supplying both geometry and weights.
+            pretrained: Boolean indicating whether to load published weights.
+        """
+        super().__init__()
+
+        from transformers import Qwen2Config, Qwen2Model  # noqa: PLC0415
+
+        if pretrained:
+            self.model = Qwen2Model.from_pretrained(model_name, dtype=torch.float32)
+        else:
+            self.model = Qwen2Model(Qwen2Config.from_pretrained(model_name))
+
+        # Every call is a single forward pass; a key/value cache would only add
+        # memory and break the static shapes export depends on.
+        self.model.config.use_cache = False
+
+    @property
+    def config(self) -> Qwen2Config:
+        """Configuration of the wrapped transformer.
+
+        Returns:
+            The Qwen2 configuration.
+        """
+        return self.model.config
+
+    def get_input_embeddings(self) -> nn.Module:
+        """Return the token embedding table.
+
+        Returns:
+            The wrapped transformer's input embeddings.
+        """
+        return self.model.get_input_embeddings()
+
+    def forward(
+        self,
+        inputs_embeds: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
+        *,
+        use_cache: bool = False,
+        output_hidden_states: bool = True,
+        return_dict: bool = True,
+    ) -> BaseModelOutputWithPast:
+        """Run the wrapped transformer.
+
+        Args:
+            inputs_embeds: Pre-embedded sequence ``(B, S, llm_dim)``.
+            attention_mask: Mask over the sequence.
+            use_cache: Retain key/value cache; off, as every call is one pass.
+            output_hidden_states: Return all per-layer hidden states.
+            return_dict: Return a dataclass rather than a tuple.
+
+        Returns:
+            The transformer output, carrying ``hidden_states``.
+        """
+        return self.model(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            use_cache=use_cache,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+
 class VLM(nn.Module):
-    """The Prismatic VLM, exposing per-layer hidden states to the action head.
-
-    Holds exactly the four submodules ``model.safetensors`` contains, so its
-    ``state_dict()`` matches that file key for key.
-    """
-
-    # Declared for the same reason as the vision towers: `.config` and friends
-    # are resolved dynamically by transformers.
-    language_model: Qwen2Model
-    llm_dim: int
-    num_layers: int
+    """The Prismatic VLM, exposing per-layer hidden states to the action head."""
 
     def __init__(self, config: VLAAdapterConfig) -> None:
         """Assemble the towers, projector, language model and action queries.
@@ -340,7 +384,10 @@ class VLM(nn.Module):
         self.vision_backbone.set_num_images_in_input(config.num_images_in_input)
 
         # init LLM
-        self.language_model = self._build_language_model()
+        self.language_model = LanguageModel(
+            config.llm_model_name,
+            pretrained=config.load_pretrained_backbone,
+        )
         self.llm_dim = self.language_model.config.hidden_size
         self.num_layers = self.language_model.config.num_hidden_layers
 
@@ -358,42 +405,11 @@ class VLM(nn.Module):
         self.trainable_module_keys: list[str] = []
         self.apply_trainability()
 
-    def _build_language_model(self) -> Qwen2Model:
-        """Build the Qwen2 language model, taking its geometry from the reference.
-
-        Geometry is never configured locally: it is read from
-        ``llm_model_name`` so the model and its tokenizer cannot disagree, and
-        so the action head's depth follows the LLM's automatically.
-
-        Weights are pretrained unless disabled. The LLM is frozen by default, so
-        a randomly initialised one would leave the head reading noise. They are
-        loaded as float32 because the published weights are bfloat16, which
-        would not match the float32 vision towers and head.
-
-        Returns:
-            A ``Qwen2Model`` with caching disabled.
-        """
-        from transformers import Qwen2Config, Qwen2Model  # noqa: PLC0415
-
-        if not self.config.load_pretrained_backbone:
-            llm_config = Qwen2Config.from_pretrained(self.config.llm_model_name)
-            llm_config.use_cache = False
-            return Qwen2Model(llm_config)
-
-        model = Qwen2Model.from_pretrained(self.config.llm_model_name, dtype=torch.float32)
-        model.config.use_cache = False
-        return model
-
     def apply_trainability(self) -> None:
         """Apply the trainability flags and record the outcome.
 
         Only the two large pretrained backbones are configurable. The visual
-        projector and action queries always train: absent a checkpoint the
-        projector is randomly initialised and the queries are zero, so freezing
-        either would leave the action head reading noise. Upstream agrees —
-        ``freeze_backbones`` trains the projector in every stage but
-        ``last-layer-finetune``, and ``finetune.py`` forces ``requires_grad``
-        on the action queries.
+        projector and action queries always train.
         """
         wants_grad = {
             "vision_backbone": self.config.train_vision_backbone,
