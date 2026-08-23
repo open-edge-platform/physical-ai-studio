@@ -252,20 +252,28 @@ sourcing.
 
 The published `lerobot/xvla-libero` checkpoint needs exactly one non-default environment
 setting: `control_mode="absolute"`, because it predicts an absolute target end-effector pose
-per step rather than a delta. `LiberoBenchmark` does not expose `control_mode`, so build the
-gyms directly and hand them to the generic `Benchmark`:
+per step rather than a delta. Leaving it at the default does not raise — it scores zero:
 
 ```python
-from physicalai.benchmark.gyms import Benchmark
-from physicalai.gyms import create_libero_gyms
+from physicalai.benchmark.gyms import LiberoBenchmark
 from physicalai.policies.xvla.libero import XVLALiberoPolicy
 
 policy = XVLALiberoPolicy(pretrained_name_or_path="lerobot/xvla-libero")
 policy.eval()
 
-gyms = create_libero_gyms("libero_10", control_mode="absolute")
-benchmark = Benchmark(gyms=gyms, num_episodes=1, max_steps=520)
+benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=1, control_mode="absolute")
 results = benchmark.evaluate(policy)
+```
+
+From the CLI, save the checkpoint first (`--ckpt_path` takes a local export directory or
+`.ckpt`, not a Hub repo id) with `policy.to_torch("./exports/xvla_libero")`, then:
+
+```bash
+physicalai benchmark \
+  --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
+  --benchmark.task_suite libero_10 --benchmark.control_mode absolute \
+  --policy physicalai.policies.xvla.libero.XVLALiberoPolicy \
+  --ckpt_path ./exports/xvla_libero/xvlaliberopolicy.pt
 ```
 
 An ablation on LIBERO-10 tasks 0–4 (one episode each) shows what carries the success rate:
