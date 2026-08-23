@@ -14,9 +14,9 @@ import {
     Text,
 } from '@geti-ui/ui';
 
-import { useRuntimeSession } from '../../../features/robots/runtime-session-provider';
 import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
+import { useRuntimeSession } from '../../../features/robots/runtime-session-provider';
 import { paths } from '../../../router';
 
 import classes from './recording-viewer.module.css';
