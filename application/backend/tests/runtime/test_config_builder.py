@@ -14,9 +14,9 @@ from runtime.config_builder import (
     RUNTIME_FPS,
     build_runtime_config,
     policy_source_fragment,
-    runtime_bundle_readme,
     runtime_camera_keys,
     runtime_config_change_me,
+    runtime_export_readme,
     runtime_identity_digest,
 )
 from schemas import SerialPortInfo
@@ -285,11 +285,11 @@ async def test_inference_export_document_uses_the_policy_fragment(mocker: Any) -
     assert "leader" not in source["init_args"]
 
 
-def test_runtime_bundle_readme_lists_unresolved_paths() -> None:
+def test_runtime_export_readme_lists_unresolved_paths() -> None:
     document = {
         "init_args": {"robot": {"init_args": {"name": "rt-follower"}}},
     }
-    text = runtime_bundle_readme(document, unresolved=["/dev/ttyACM0"])
+    text = runtime_export_readme(document, unresolved=["/dev/ttyACM0"])
     assert "physicalai run --config runtime.yaml" in text
     assert "/dev/ttyACM0" in text
     assert "rt-follower" in text

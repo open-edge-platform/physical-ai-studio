@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { runtimeBundleUrl } from './runtime-bundle';
+import { runtimeExportUrl } from './runtime-export';
 
-describe('runtimeBundleUrl', () => {
+describe('runtimeExportUrl', () => {
     it('omits an empty task', () => {
         expect(
-            runtimeBundleUrl({
+            runtimeExportUrl({
                 modelId: 'model-1',
                 environmentId: 'env-1',
                 backend: 'openvino',
@@ -17,7 +17,7 @@ describe('runtimeBundleUrl', () => {
 
     it('includes a non-empty task', () => {
         expect(
-            runtimeBundleUrl({
+            runtimeExportUrl({
                 modelId: 'model-1',
                 environmentId: 'env-1',
                 backend: 'openvino',
