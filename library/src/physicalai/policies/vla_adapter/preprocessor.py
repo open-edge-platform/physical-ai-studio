@@ -36,46 +36,25 @@ from physicalai.policies.utils.normalization import FeatureNormalizeTransform, N
 logger = logging.getLogger(__name__)
 
 
+# An image tensor carries a leading time axis when the datamodule applies
+# observation delta timestamps: (B, T, C, H, W) rather than (B, C, H, W).
+IMAGE_DIMS_WITH_TIME = 5
+
 # VLA-Adapter inherits OpenVLA's BOUNDS_Q99 convention for both state and action.
 NORM_MAP = {
     FeatureType.STATE: NormalizationType.QUANTILES,
     FeatureType.ACTION: NormalizationType.QUANTILES,
 }
 
-# Fallback pixel statistics if a tower id carries no pretrained config.
-_FALLBACK_MEAN = (0.5, 0.5, 0.5)
-_FALLBACK_STD = (0.5, 0.5, 0.5)
-
-
-def resolve_tower_stats(model_id: str) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """Look up a timm model's pixel mean/std without instantiating it.
-
-    Args:
-        model_id: timm model identifier.
-
-    Returns:
-        ``(mean, std)``, each a 3-tuple.
-    """
-    try:
-        import timm  # noqa: PLC0415
-
-        cfg = timm.get_pretrained_cfg(model_id)
-        data = cfg.to_dict() if hasattr(cfg, "to_dict") else vars(cfg)
-        mean, std = data.get("mean"), data.get("std")
-    except Exception:  # noqa: BLE001 - any lookup failure falls back to symmetric stats
-        mean = std = None
-
-    if not mean or not std:
-        logger.warning(
-            "No pretrained pixel statistics found for %r; falling back to symmetric [-1, 1] normalization.",
-            model_id,
-        )
-        return _FALLBACK_MEAN, _FALLBACK_STD
-    return tuple(mean), tuple(std)
-
 
 class VLAAdapterPreprocessor(torch.nn.Module):
     """Transform raw observations into VLA-Adapter model inputs."""
+
+    # Registered buffers, declared so they type as tensors rather than modules.
+    primary_mean: torch.Tensor
+    primary_std: torch.Tensor
+    secondary_mean: torch.Tensor
+    secondary_std: torch.Tensor
 
     def __init__(
         self,
@@ -99,8 +78,8 @@ class VLAAdapterPreprocessor(torch.nn.Module):
             max_state_dim: Proprioceptive state dimension.
             max_action_dim: Action dimension.
             image_resolution: Target ``(height, width)``.
-            vision_backbone_ids: timm ids of the primary and fused towers, used
-                to resolve per-tower pixel statistics.
+            vision_backbone_ids: timm ids of the primary and secondary towers,
+                used to resolve per-tower pixel statistics.
             image_key_reorder_map: Image-key to camera-slot mapping.
             num_cameras: Camera slots; <= 0 keeps only batch cameras.
             features: Feature descriptors for normalization, or None.
@@ -122,36 +101,28 @@ class VLAAdapterPreprocessor(torch.nn.Module):
         self.max_token_len = max_token_len
         self.tokenizer_name = tokenizer_name
         self.padding = padding
-        self._tokenizer: Any = None
+
+        import timm  # noqa: PLC0415
+        from transformers import AutoTokenizer  # noqa: PLC0415
+
+        tokenizer: Any = AutoTokenizer.from_pretrained(tokenizer_name)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        self.tokenizer = tokenizer
 
         # Per-tower pixel statistics, registered as buffers so they move with
         # the module and are captured by exported graphs.
-        for name, model_id in zip(("primary", "fused"), vision_backbone_ids, strict=False):
-            mean, std = resolve_tower_stats(model_id)
-            self.register_buffer(f"{name}_mean", torch.tensor(mean).view(1, 3, 1, 1), persistent=False)
-            self.register_buffer(f"{name}_std", torch.tensor(std).view(1, 3, 1, 1), persistent=False)
+        for name, model_id in zip(("primary", "secondary"), vision_backbone_ids, strict=False):
+            cfg: Any = timm.get_pretrained_cfg(model_id)
+            self.register_buffer(f"{name}_mean", torch.tensor(cfg.mean).view(1, 3, 1, 1), persistent=False)
+            self.register_buffer(f"{name}_std", torch.tensor(cfg.std).view(1, 3, 1, 1), persistent=False)
 
         if features is not None:
             self._state_action_normalizer: torch.nn.Module = FeatureNormalizeTransform(features, NORM_MAP)
         else:
             self._state_action_normalizer = torch.nn.Identity()
 
-    @property
-    def tokenizer(self) -> Any:  # noqa: ANN401 - HF tokenizer has no stable public type
-        """Lazily instantiated HuggingFace tokenizer.
-
-        Returns:
-            The tokenizer for ``tokenizer_name``.
-        """
-        if self._tokenizer is None:
-            from transformers import AutoTokenizer  # noqa: PLC0415
-
-            self._tokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)
-            if self._tokenizer.pad_token is None:
-                self._tokenizer.pad_token = self._tokenizer.eos_token
-        return self._tokenizer
-
-    def _tokenize(self, task: Any) -> tuple[torch.Tensor, torch.Tensor]:  # noqa: ANN401
+    def _tokenize(self, task: str | list[str]) -> tuple[torch.Tensor, torch.Tensor]:
         """Tokenize the task description(s) to a fixed length.
 
         Args:
@@ -197,11 +168,18 @@ class VLAAdapterPreprocessor(torch.nn.Module):
         """Resize one view and stack its two normalised copies.
 
         Args:
-            view: Images ``(B, 3, H, W)`` with values in [0, 1].
+            view: Images ``(B, 3, H, W)``, or ``(B, T, 3, H, W)`` when the
+                datamodule has applied observation delta timestamps.
 
         Returns:
             ``(B, 6, *image_resolution)``.
         """
+        # The datamodule sets observation delta timestamps from the model's
+        # `observation_delta_indices`, which adds a time axis even for a single
+        # step. Keep the most recent frame, as the other policies do.
+        if view.dim() == IMAGE_DIMS_WITH_TIME:
+            view = view[:, -1]
+
         resized = F.interpolate(
             view.float(),
             size=self.image_resolution,
@@ -209,8 +187,8 @@ class VLAAdapterPreprocessor(torch.nn.Module):
             align_corners=False,
         )
         primary = (resized - self.primary_mean) / self.primary_std
-        fused = (resized - self.fused_mean) / self.fused_std
-        return torch.cat([primary, fused], dim=1)
+        secondary = (resized - self.secondary_mean) / self.secondary_std
+        return torch.cat([primary, secondary], dim=1)
 
     def _preprocess_images(self, batch: dict[str, Any]) -> dict[str, Any]:
         """Resize, normalise per tower, and channel-stack all camera views.
@@ -223,9 +201,6 @@ class VLAAdapterPreprocessor(torch.nn.Module):
         Returns:
             Batch dict with ``IMAGES`` as ``(B, 6 * num_views, H, W)``.
         """
-        # Observation.to_dict() flattens nested dicts, so cameras normally
-        # arrive as `images.image`, `images.image2`, ... rather than a nested
-        # dict under `images`.
         flat_keys = [key for key in Observation.get_flattened_keys(batch, IMAGES) if "is_pad" not in key]
 
         if flat_keys:
@@ -266,12 +241,13 @@ class VLAAdapterPreprocessor(torch.nn.Module):
             quantile-normalized state/action.
         """
         batch = dict(batch)
-
-        if TASK in batch:
-            tokens, masks = self._tokenize(batch[TASK])
-            device = batch[STATE].device if STATE in batch else tokens.device
-            batch[TOKENIZED_PROMPT] = tokens.to(device)
-            batch[TOKENIZED_PROMPT_MASK] = masks.to(device)
+        task = batch.get(TASK)
+        if not task:
+            task = [""] * _batch_size(batch)
+        tokens, masks = self._tokenize(task)
+        device = batch[STATE].device if STATE in batch else tokens.device
+        batch[TOKENIZED_PROMPT] = tokens.to(device)
+        batch[TOKENIZED_PROMPT_MASK] = masks.to(device)
 
         batch = self._preprocess_images(batch)
 
@@ -315,7 +291,26 @@ class VLAAdapterPostprocessor(torch.nn.Module):
         return batch
 
 
-def _quantile_params(stat: dict[str, Any]) -> NormalizationParameters:
+def _batch_size(batch: dict[str, Any]) -> int:
+    """Infer the batch size from whichever tensor the batch carries.
+
+    Args:
+        batch: Batch dict, before image stacking.
+
+    Returns:
+        Leading dimension of the first tensor found, or 1 if there is none.
+    """
+    for value in batch.values():
+        if isinstance(value, torch.Tensor) and value.dim() > 0:
+            return int(value.shape[0])
+        if isinstance(value, dict):
+            for inner in value.values():
+                if isinstance(inner, torch.Tensor) and inner.dim() > 0:
+                    return int(inner.shape[0])
+    return 1
+
+
+def _quantile_params(stat: dict[str, list[float] | str | tuple]) -> NormalizationParameters:
     """Build quantile normalization parameters from a dataset stat entry.
 
     LeRobot datasets do not always carry ``q01``/``q99``, so fall back to
@@ -357,7 +352,7 @@ def _quantile_params(stat: dict[str, Any]) -> NormalizationParameters:
 def make_vla_adapter_preprocessors(
     max_state_dim: int = 8,
     max_action_dim: int = 7,
-    stats: dict[str, dict[str, Any]] | None = None,
+    stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     *,
     image_resolution: tuple[int, int] = (224, 224),
     vision_backbone_ids: tuple[str, str] = (

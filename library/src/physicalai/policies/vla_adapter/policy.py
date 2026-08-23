@@ -30,12 +30,15 @@ from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.policies.base import Policy
 from physicalai.policies.vla_adapter.config import VLAAdapterConfig
 from physicalai.policies.vla_adapter.model import VLAAdapterModel
-from physicalai.policies.vla_adapter.preprocessor import VLAAdapterPostprocessor, VLAAdapterPreprocessor
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 if TYPE_CHECKING:
     from physicalai.data import Observation
+    from physicalai.policies.vla_adapter.preprocessor import (
+        VLAAdapterPostprocessor,
+        VLAAdapterPreprocessor,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +91,7 @@ class VLAAdapter(ExportablePolicyMixin, Policy):
         scheduler_decay_steps: int = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization (for checkpoint loading)
-        dataset_stats: dict[str, dict[str, Any]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
         """Initialize the policy.
 
@@ -149,7 +152,7 @@ class VLAAdapter(ExportablePolicyMixin, Policy):
             self.hparams[key] = value
         self.hparams["config"] = self.config.to_dict()
 
-    def _initialize_model(self, dataset_stats: dict[str, dict[str, Any]]) -> None:
+    def _initialize_model(self, dataset_stats: dict[str, dict[str, list[float] | str | tuple]]) -> None:
         """Build the model and its pre/postprocessors.
 
         Args:
@@ -158,7 +161,7 @@ class VLAAdapter(ExportablePolicyMixin, Policy):
         self.model = VLAAdapterModel(self.config, dataset_stats=dataset_stats)
         self._update_preprocessor_stats(dataset_stats)
 
-    def _update_preprocessor_stats(self, dataset_stats: dict[str, dict[str, Any]]) -> None:
+    def _update_preprocessor_stats(self, dataset_stats: dict[str, dict[str, list[float] | str | tuple]]) -> None:
         """Rebuild pre- and postprocessors from dataset statistics.
 
         Args:

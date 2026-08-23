@@ -6,16 +6,10 @@
 Upstream reference: https://github.com/OpenHelix-Team/VLA-Adapter (MIT),
 arXiv:2509.09372.
 
-Upstream keeps chunk length, action dimension and proprio dimension as
-*module-level globals* in ``prismatic/vla/constants.py``, selected from
-``sys.argv`` at import. That is incompatible with Studio's frozen dataclass
-configs, so they are typed fields here; defaults reproduce the LIBERO preset.
+Upstream's constants are typed fields in Studio's dataclass
+configs; defaults reproduce the LIBERO preset.
 
 CLI: ``physicalai fit --config configs/physicalai/vla_adapter.yaml``
-
-Example:
-    >>> from physicalai.policies.vla_adapter import VLAAdapterConfig
-    >>> config = VLAAdapterConfig(chunk_size=8, max_action_dim=7)
 """
 
 from __future__ import annotations
@@ -23,6 +17,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from physicalai.config import Config
+
+# Vision-backbone constants: VLA-Adapter always fuses two vision towers,
+# and each tower consumes its own normalised RGB copy of every camera view,
+# so an image reaches the backbone as six channels rather than three.
+NUM_VISION_TOWERS = 2
+CHANNELS_PER_TOWER = 3
+CHANNELS_PER_IMAGE = NUM_VISION_TOWERS * CHANNELS_PER_TOWER
 
 
 @dataclass(frozen=True)
@@ -97,19 +98,12 @@ class VLAAdapterConfig(Config):
     num_cameras: int = 0
     num_images_in_input: int = 2
 
-    # NOTE: fixed for export compatibility (avoids dynamic input shapes).
-    # Masking ignores unused tokens, so this should not affect accuracy.
-    tokenizer_max_length: int = 48
-
     num_task_tokens: int = 512
+    tokenizer_max_length: int = 48
     num_action_queries: int = 64
     head_num_heads: int = 8
 
-    # The Prismatic checkpoint defines the topology but ships no usable fast
-    # tokenizer, so both tokenizer and LLM weights come from Qwen directly.
     llm_model_name: str = "Qwen/Qwen2.5-0.5B"
-    load_pretrained_backbone: bool = True
-    # timm ids taken verbatim from the checkpoint's config.json (timm_model_ids).
     vision_backbone_ids: tuple[str, str] = (
         "vit_large_patch14_reg4_dinov2.lvd142m",
         "vit_so400m_patch14_siglip_224",
@@ -118,12 +112,10 @@ class VLAAdapterConfig(Config):
 
     use_proprio: bool = True
 
-    # Only the two large pretrained backbones are configurable. Everything else
-    # — visual projector, action queries, action head, proprio projector —
-    # always trains: each is randomly or zero-initialised, so freezing any of
-    # them would leave the policy unable to learn.
+    # default: loading the pretrained backbones and freezing them
     train_vision_backbone: bool = False
     train_llm: bool = False
+    load_pretrained_backbone: bool = True
 
     optimizer_lr: float = 5e-4
     optimizer_betas: tuple[float, float] = (0.9, 0.95)
@@ -139,13 +131,21 @@ class VLAAdapterConfig(Config):
         """Validate configuration parameters after initialization.
 
         Raises:
-            ValueError: If ``n_action_steps`` exceeds ``chunk_size``, or if any
-                count that must be positive is not.
+            ValueError: If ``n_action_steps`` exceeds ``chunk_size``, if the
+                wrong number of vision towers is given, or if any count that
+                must be positive is not.
         """
         if self.n_action_steps > self.chunk_size:
             msg = (
                 f"The chunk size is the upper bound for the number of action steps per model invocation. Got "
                 f"{self.n_action_steps} for `n_action_steps` and {self.chunk_size} for `chunk_size`."
+            )
+            raise ValueError(msg)
+
+        if len(self.vision_backbone_ids) != NUM_VISION_TOWERS:
+            msg = (
+                f"VLA-Adapter always fuses exactly {NUM_VISION_TOWERS} vision towers "
+                f"(DINOv2 + SigLIP), got {len(self.vision_backbone_ids)}."
             )
             raise ValueError(msg)
 

@@ -1,18 +1,16 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""
-VLA-Adapter model
+"""VLA-Adapter model.
 
-Default trainability: the head, proprio projector, visual projector and 
+Default trainability: the head, proprio projector, visual projector and
 action queries train, while the visual backbone and LLM stay frozen.
-
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -21,7 +19,9 @@ from physicalai.data.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES, STATE
 from physicalai.policies.base.model import Model
 from physicalai.policies.vla_adapter.components import VLM, L1RegressionActionHead, ProprioProjector
-from physicalai.policies.vla_adapter.config import VLAAdapterConfig
+
+if TYPE_CHECKING:
+    from physicalai.policies.vla_adapter.config import VLAAdapterConfig
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class VLAAdapterModel(Model):
     def __init__(
         self,
         config: VLAAdapterConfig,
-        dataset_stats: dict[str, dict[str, Any]] | None = None,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
     ) -> None:
         """Build the VLM, proprio projector and action head.
 

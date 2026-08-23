@@ -47,49 +47,29 @@ carries no ``lm_head`` — it is a feature extractor.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-import timm
 import torch
 from torch import nn
 
-from physicalai.policies.vla_adapter.config import VLAAdapterConfig
+from physicalai.policies.vla_adapter.config import (
+    CHANNELS_PER_IMAGE,
+    CHANNELS_PER_TOWER,
+    NUM_VISION_TOWERS,
+)
+
+if TYPE_CHECKING:
+    from timm.layers import LayerScale
+    from timm.models import VisionTransformer
+    from transformers import Qwen2Model
+
+    from physicalai.policies.vla_adapter.config import VLAAdapterConfig
 
 logger = logging.getLogger(__name__)
 
-# Channels per image once both towers' normalised copies are stacked.
-CHANNELS_PER_IMAGE = 6
-# Channels a single tower consumes.
-CHANNELS_PER_TOWER = 3
-# VLA-Adapter always fuses DINOv2 with SigLIP.
-NUM_VISION_TOWERS = 2
 
-
-def unpack_tuple(fn: Callable[[Any], tuple[Any]]) -> Callable[[Any], Any]:
-    """Unwrap a single-element sequence returned by a monkey-patched forward.
-
-    DEVIATION FROM UPSTREAM: upstream tests ``isinstance(result, tuple)``,
-    correct for timm 0.9. timm 1.0 returns a *list*, which a tuple-only check
-    passes straight through, handing the caller a list where a tensor is
-    expected.
-
-    Args:
-        fn: Function whose result should be unwrapped.
-
-    Returns:
-        Wrapper returning ``result[0]`` for a tuple or list.
-    """
-
-    def wrapper(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-        result = fn(*args, **kwargs)
-        return result[0] if isinstance(result, (tuple, list)) else result
-
-    return wrapper
-
-
-def _ls_new_forward(self: nn.Module, x: torch.Tensor) -> torch.Tensor:
+def _ls_new_forward(self: Any, x: torch.Tensor) -> torch.Tensor:  # noqa: ANN401
     """Replacement ``LayerScale.forward`` reading ``scale_factor``.
 
     Args:
@@ -102,7 +82,7 @@ def _ls_new_forward(self: nn.Module, x: torch.Tensor) -> torch.Tensor:
     return x.mul_(self.scale_factor) if self.inplace else x * self.scale_factor
 
 
-def ls_apply_patch(ls_module: nn.Module) -> None:
+def ls_apply_patch(ls_module: LayerScale) -> None:
     """Rename a ``LayerScale`` module's ``gamma`` parameter to ``scale_factor``.
 
     The checkpoints store ``ls1.scale_factor``; without this, 48 tensors fail
@@ -114,16 +94,23 @@ def ls_apply_patch(ls_module: nn.Module) -> None:
     from timm.models.vision_transformer import LayerScale  # noqa: PLC0415
 
     ls_module.scale_factor = nn.Parameter(ls_module.gamma.clone())
-    ls_module.forward = _ls_new_forward.__get__(ls_module, LayerScale)
+    ls_module.forward = _ls_new_forward.__get__(ls_module, LayerScale)  # type: ignore[method-assign]
     del ls_module.gamma
 
 
 class PrismaticVisionBackbone(nn.Module):
     """Fused DINOv2 + SigLIP towers, vendored from the checkpoint modeling code.
 
-    Attribute names (``featurizer``, ``fused_featurizer``) mirror the
-    checkpoint's tensor keys.
+    ``primary_featurizer`` is DINOv2 (width 1024), ``secondary_featurizer`` is
+    SigLIP (width 1152). Upstream names these ``featurizer`` /
+    ``fused_featurizer``; the released checkpoints use those keys, so importing
+    one needs a name mapping (see Phase 3). Nothing in the train/save/load/export
+    path depends on it — our own checkpoints round-trip under these names.
     """
+
+    primary_featurizer: VisionTransformer
+    secondary_featurizer: VisionTransformer
+    embed_dim: int
 
     def __init__(
         self,
@@ -142,34 +129,34 @@ class PrismaticVisionBackbone(nn.Module):
             pretrained: Fetch pretrained tower weights. The towers are frozen by
                 default, so leaving this False means the head reads noise.
 
-        Raises:
-            ValueError: If exactly two tower ids are not supplied.
         """
         super().__init__()
         self.num_images_in_input = 1
 
-        if len(timm_model_ids) != NUM_VISION_TOWERS:
-            msg = f"VLA-Adapter always fuses exactly {NUM_VISION_TOWERS} vision towers, got {len(timm_model_ids)}."
-            raise ValueError(msg)
-
-        self.featurizer = self._create_featurizer(
+        self.primary_featurizer = self._create_featurizer(
             model_id=timm_model_ids[0],
             img_size=image_sizes[0],
             act_layer=timm_override_act_layers[0],
             pretrained=pretrained,
         )
-        self.fused_featurizer = self._create_featurizer(
+        self.secondary_featurizer = self._create_featurizer(
             model_id=timm_model_ids[1],
             img_size=image_sizes[1],
             act_layer=timm_override_act_layers[1],
             pretrained=pretrained,
         )
-        self.embed_dim = self.featurizer.embed_dim + self.fused_featurizer.embed_dim
+        self.embed_dim = self.primary_featurizer.embed_dim + self.secondary_featurizer.embed_dim
 
         self._patch_layer_scales()
 
     @staticmethod
-    def _create_featurizer(model_id: str, img_size: int, act_layer: str | None, *, pretrained: bool) -> nn.Module:
+    def _create_featurizer(
+        model_id: str,
+        img_size: int,
+        act_layer: str | None,
+        *,
+        pretrained: bool,
+    ) -> VisionTransformer:
         """Create a timm featurizer emitting second-to-last-block patches.
 
         The monkey-patched ``forward`` is load-bearing: Prismatic reads block
@@ -185,16 +172,32 @@ class PrismaticVisionBackbone(nn.Module):
         Returns:
             The configured featurizer.
         """
-        featurizer = timm.create_model(
-            model_id,
-            pretrained=pretrained,
-            num_classes=0,
-            img_size=img_size,
-            act_layer=act_layer,
+        import timm  # noqa: PLC0415
+
+        # `create_model` is a factory keyed on a string, so it is declared
+        # `-> Module`. The concrete class here is the ViT we asked for, and the
+        # attributes used below (`blocks`, `embed_dim`, `patch_embed`,
+        # `get_intermediate_layers`) live on `VisionTransformer`, not `Module`.
+        featurizer = cast(
+            "VisionTransformer",
+            timm.create_model(
+                model_id,
+                pretrained=pretrained,
+                num_classes=0,
+                img_size=img_size,
+                act_layer=act_layer,
+            ),
         )
 
-        num_blocks = len(featurizer.blocks)
-        featurizer.forward = unpack_tuple(partial(featurizer.get_intermediate_layers, n={num_blocks - 2}))
+        second_to_last = [len(featurizer.blocks) - 2]
+
+        def _forward(x: torch.Tensor) -> torch.Tensor:
+            # A single requested index yields a one-element list.
+            # (Upstream passes a set here, which is outside the declared
+            #  signature; a one-element list is identical in effect.)
+            return featurizer.get_intermediate_layers(x, n=second_to_last)[0]
+
+        featurizer.forward = _forward  # type: ignore[method-assign,assignment]
 
         return featurizer
 
@@ -202,7 +205,7 @@ class PrismaticVisionBackbone(nn.Module):
         """Patch every ``LayerScale`` module in both towers."""
         from timm.models.vision_transformer import LayerScale  # noqa: PLC0415
 
-        for tower in (self.featurizer, self.fused_featurizer):
+        for tower in (self.primary_featurizer, self.secondary_featurizer):
             for module in tower.modules():
                 if isinstance(module, LayerScale):
                     ls_apply_patch(module)
@@ -213,7 +216,7 @@ class PrismaticVisionBackbone(nn.Module):
         Returns:
             Patch tokens per image, per tower.
         """
-        return int(self.featurizer.patch_embed.num_patches)
+        return int(self.primary_featurizer.patch_embed.num_patches)
 
     def get_num_images_in_input(self) -> int:
         """Report how many camera views the backbone expects.
@@ -246,8 +249,8 @@ class PrismaticVisionBackbone(nn.Module):
         all_patches = []
         for img in images:
             img_regular, img_fused = torch.split(img, [CHANNELS_PER_TOWER, CHANNELS_PER_TOWER], dim=1)
-            patches = self.featurizer(img_regular)
-            patches_fused = self.fused_featurizer(img_fused)
+            patches = self.primary_featurizer(img_regular)
+            patches_fused = self.secondary_featurizer(img_fused)
             all_patches.append(torch.cat([patches, patches_fused], dim=2))
 
         return torch.cat(all_patches, dim=1)
@@ -310,6 +313,12 @@ class VLM(nn.Module):
     ``state_dict()`` matches that file key for key.
     """
 
+    # Declared for the same reason as the vision towers: `.config` and friends
+    # are resolved dynamically by transformers.
+    language_model: Qwen2Model
+    llm_dim: int
+    num_layers: int
+
     def __init__(self, config: VLAAdapterConfig) -> None:
         """Assemble the towers, projector, language model and action queries.
 
@@ -349,7 +358,7 @@ class VLM(nn.Module):
         self.trainable_module_keys: list[str] = []
         self.apply_trainability()
 
-    def _build_language_model(self) -> nn.Module:
+    def _build_language_model(self) -> Qwen2Model:
         """Build the Qwen2 language model, taking its geometry from the reference.
 
         Geometry is never configured locally: it is read from
@@ -366,14 +375,12 @@ class VLM(nn.Module):
         """
         from transformers import Qwen2Config, Qwen2Model  # noqa: PLC0415
 
-        name = self.config.llm_model_name
-        llm_config = Qwen2Config.from_pretrained(name)
-        llm_config.use_cache = False
-
         if not self.config.load_pretrained_backbone:
+            llm_config = Qwen2Config.from_pretrained(self.config.llm_model_name)
+            llm_config.use_cache = False
             return Qwen2Model(llm_config)
 
-        model = Qwen2Model.from_pretrained(name, dtype=torch.float32)
+        model = Qwen2Model.from_pretrained(self.config.llm_model_name, dtype=torch.float32)
         model.config.use_cache = False
         return model
 
