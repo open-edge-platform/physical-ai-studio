@@ -13,10 +13,12 @@ keyframes are fed back into the transformer's KV cache before the next chunk is
 predicted. :meth:`LingBotVA.select_action` therefore overrides the base action-queue
 behaviour, which only sees the batch when the queue runs dry.
 
-Export is intentionally **not** supported for this family: the autoregressive KV cache,
-the lazily loaded 20 GB frozen VAE/UMT5 stack, and the two nested denoising loops have no
-meaningful static graph, so :class:`~physicalai.export.ExportablePolicyMixin` is not mixed
-in.
+Only the :attr:`~physicalai.export.ExportBackend.TORCH` backend is supported. The
+autoregressive KV cache, the lazily loaded 20 GB frozen VAE/UMT5 stack and the two nested
+denoising loops have no meaningful static graph, so the tracing backends (ONNX, OpenVINO,
+ExecuTorch) are out of reach; :meth:`~physicalai.export.ExportablePolicyMixin.to_torch`
+needs none of them, because it serializes the trainable transformer plus the hyperparameters
+that rebuild the policy, and Runtime restores the live Python object from them.
 """
 
 from __future__ import annotations
@@ -25,16 +27,20 @@ import logging
 from typing import TYPE_CHECKING, Any, Literal
 
 import torch
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
+from physicalai.inference.manifest import ComponentSpec
 from torch.optim.lr_scheduler import LambdaLR
 
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION
+from physicalai.data.observation import ACTION, IMAGES, TASK, FeatureType
+from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.export.backends import ExportParameters, TorchExportParameters
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import LingBotVAConfig
 from .model import LingBotVAModel
-from .preprocessor import make_lingbot_va_preprocessors
+from .preprocessor import camera_basename, make_lingbot_va_preprocessors
 from .pretrained_utils import (
     detect_normalization_mode,
     extract_action_stats,
@@ -72,7 +78,7 @@ def warmup_constant_scheduler(optimizer: torch.optim.Optimizer, num_warmup_steps
     return LambdaLR(optimizer, lr_lambda)
 
 
-class LingBotVA(Policy):
+class LingBotVA(ExportablePolicyMixin, Policy):
     """LingBot-VA - an autoregressive video-action world model on the Wan2.2 stack.
 
     Uses the same dual-path initialization as the other Studio policies:
@@ -271,7 +277,7 @@ class LingBotVA(Policy):
         self._set_hparam_keys()
 
         self.model: LingBotVAModel | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
-        self._preprocessor: LingBotVAPreprocessor | None = None
+        self._preprocessor: LingBotVAPreprocessor | None = None  # pyrefly: ignore[bad-override-mutable-attribute]
         self._postprocessor: LingBotVAPostprocessor | None = None
         self._dataset_stats = dataset_stats
 
@@ -486,8 +492,14 @@ class LingBotVA(Policy):
     def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
         """Predict one autoregressive chunk of actions.
 
+        This is the entry point the exported Torch artifact is driven through, and it runs
+        the world model open-loop: only the episode's **first** call conditions on ``batch``.
+        Later calls continue from the KV cache, because a single observation is not the
+        keyframe clip a chunk boundary needs. Drive :meth:`select_action` once per
+        environment step for the closed-loop behaviour.
+
         Args:
-            batch: Input observation batch; its cameras condition the chunk.
+            batch: Input observation batch; its cameras condition the episode's first chunk.
 
         Returns:
             Actions of shape ``[B, T, output_action_dim]`` in physical units. ``T`` is
@@ -574,6 +586,115 @@ class LingBotVA(Policy):
             msg = "Model is not initialized"
             raise ValueError(msg)
         return self._preprocessor(batch.to(self.device).to_dict())
+
+    # ------------------------------------------------------------------ #
+    # Export                                                              #
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
+        """Get a list of export backends supported by policy.
+
+        Returns:
+            list[str | ExportBackend]: Only ``torch``. The tracing backends would have to
+            capture the streaming KV cache and the two nested denoising loops in a static
+            graph, which this architecture does not have.
+        """
+        return [ExportBackend.TORCH]
+
+    @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected inputs for export.
+
+        Returns:
+            One visual feature per configured camera, in ``obs_cam_keys`` order, plus the
+            ``task`` prompt the world model is conditioned on. LingBot-VA consumes no robot
+            state. Returns ``None`` if the model has not been initialized yet.
+        """
+        if self.model is None:
+            return None
+
+        schema: list[InferenceFeature] = [
+            InferenceFeature(
+                ftype=InferenceFeatureType.VISUAL,
+                shape=self._camera_shape(key),
+                # Always fully qualified, even for a single camera: ``resolve_camera_keys``
+                # matches on the camera's basename, so a bare ``images`` would not resolve.
+                name=f"{IMAGES}.{camera_basename(key)}",
+                dtype=InferenceFeatureDtype.FLOAT32,
+            )
+            for key in self.config.obs_cam_keys
+        ]
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
+        return schema
+
+    def _camera_shape(self, camera_key: str) -> tuple[int, ...]:
+        """Return the raw ``(C, H, W)`` shape of one configured camera.
+
+        The dataset's own resolution is reported when the statistics carry it; otherwise the
+        VAE input resolution is used. Either is accurate enough for the manifest, because the
+        model resizes every camera to ``(config.height, config.width)`` itself.
+
+        Args:
+            camera_key: A key from ``config.obs_cam_keys``.
+
+        Returns:
+            The camera's shape, excluding the batch dimension.
+        """
+        base = camera_basename(camera_key)
+        for name, stat in (self._dataset_stats or {}).items():
+            if str(FeatureType.VISUAL) not in str(stat.get("type", "")):
+                continue
+            if camera_basename(name) == base and stat.get("shape"):
+                return tuple(stat["shape"])
+        return (3, self.config.height, self.config.width)
+
+    @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's output for export.
+
+        Returns:
+            A single ``action`` feature of shape ``(chunk_size, output_action_dim)``. An
+            episode's *first* chunk is ``action_per_frame`` steps shorter, because its first
+            latent frame is the conditioning observation. Returns ``None`` if the model has
+            not been initialized yet.
+        """
+        if self.model is None:
+            return None
+
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.ACTION,
+                shape=(self.config.chunk_size, self.config.output_action_dim),
+                name=ACTION,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Additional export arguments for model conversion.
+
+        The exported checkpoint restores the policy itself, so action normalization stays
+        inside it: the runtime only has to hand over ``float32`` images in ``[0, 1]``. No
+        chunk trimmer is recorded either, since ``n_action_steps == chunk_size``.
+
+        Returns:
+            dict[str, ExportParameters]: Export parameters keyed by backend name.
+        """
+        return {
+            "torch": TorchExportParameters(
+                preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+                postprocessors_specs=[],
+                output_names=[ACTION],
+            ),
+        }
 
 
 __all__ = ["LingBotVA", "warmup_constant_scheduler"]
