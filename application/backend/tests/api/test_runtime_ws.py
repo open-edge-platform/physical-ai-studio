@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
@@ -9,6 +10,9 @@ from fastapi.testclient import TestClient
 from api.dependencies import get_camera_service, get_robot_client_factory, get_robot_service
 from exceptions import ResourceNotFoundError, ResourceType
 from main import app
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 PROJECT_ID = uuid4()
 ROBOT_ID = uuid4()
@@ -43,7 +47,7 @@ def camera_service() -> _StubCameraService:
 
 
 @pytest.fixture
-def client(mock_robot_client_factory, camera_service: _StubCameraService) -> TestClient:
+def client(mock_robot_client_factory, camera_service: _StubCameraService) -> Iterator[TestClient]:
     app.dependency_overrides[get_robot_service] = lambda: _StubRobotService()
     app.dependency_overrides[get_camera_service] = lambda: camera_service
     app.dependency_overrides[get_robot_client_factory] = lambda: mock_robot_client_factory
