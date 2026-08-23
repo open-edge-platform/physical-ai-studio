@@ -34,12 +34,13 @@ and LeRobot's ``LiberoProcessorStep``/``LiberoEnv`` source:
   Build the environment with ``control_mode="absolute"`` (``LiberoGym``'s default is
   ``"relative"``, i.e. deltas) so its controller interprets the bridged action the same way
   the checkpoint was trained to produce it; feeding an absolute-scale pose into a delta-mode
-  controller saturates every joint on the first step and the episode never recovers.
-  :class:`~physicalai.benchmark.gyms.LiberoBenchmark` does not expose ``control_mode``, so
-  pass it to :func:`~physicalai.gyms.create_libero_gyms` and hand the gyms to the generic
-  :class:`~physicalai.benchmark.gyms.Benchmark` instead -- see the example below. Whether a
-  different ``ee6d`` checkpoint uses absolute or delta actions is a property of how it was
-  trained, not of the ``ee6d`` layout itself -- check before assuming either.
+  controller saturates every joint on the first step and the episode never recovers --
+  scoring zero without raising, so the mistake is silent. Pass ``control_mode="absolute"``
+  to :class:`~physicalai.benchmark.gyms.LiberoBenchmark`, to
+  :func:`~physicalai.gyms.create_libero_gyms`, or to :class:`~physicalai.gyms.LiberoGym`
+  directly. Whether a different ``ee6d`` checkpoint uses absolute or delta actions is a
+  property of how it was trained, not of the ``ee6d`` layout itself -- check before
+  assuming either.
 - Its domain id is **3**, published in the checkpoint's ``policy_preprocessor.json`` and
   auto-detected by :func:`~physicalai.policies.xvla.pretrained_utils.extract_domain_id`
   when loading via ``pretrained_name_or_path`` (see :class:`~physicalai.policies.xvla.XVLA`).
@@ -378,15 +379,14 @@ class XVLALiberoPolicy(XVLA):
     same training path -- only the inference-time observation/action boundary differs.
 
     Example:
-        >>> from physicalai.benchmark.gyms import Benchmark  # doctest: +SKIP
-        >>> from physicalai.gyms import create_libero_gyms  # doctest: +SKIP
+        >>> from physicalai.benchmark.gyms import LiberoBenchmark  # doctest: +SKIP
         >>> policy = XVLALiberoPolicy(pretrained_name_or_path="lerobot/xvla-libero")  # doctest: +SKIP
         >>> policy.eval()  # doctest: +SKIP
         >>> # control_mode="absolute" is required: this checkpoint predicts absolute target
-        >>> # poses, not per-step deltas. LiberoBenchmark does not expose it, so build the
-        >>> # gyms directly -- see the module docstring.
-        >>> gyms = create_libero_gyms("libero_10", control_mode="absolute")  # doctest: +SKIP
-        >>> benchmark = Benchmark(gyms=gyms, num_episodes=1, max_steps=520)  # doctest: +SKIP
+        >>> # poses, not per-step deltas. Leaving the default scores zero silently.
+        >>> benchmark = LiberoBenchmark(  # doctest: +SKIP
+        ...     task_suite="libero_10", num_episodes=1, control_mode="absolute"
+        ... )
         >>> results = benchmark.evaluate(policy)  # doctest: +SKIP
     """
 
