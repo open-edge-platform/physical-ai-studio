@@ -94,13 +94,20 @@ class RecordingState:
             return self._mutation
 
     def take_mutation(self) -> RecordingMutation | None:
-        """Detach the mutation so teardown can finalize it once."""
+        """Detach the mutation so teardown can finalize it once.
+
+        ``_episodes_recorded`` counts episodes saved into the attached mutation
+        and not yet copied into the dataset. Detaching is the moment that count
+        becomes zero: the UI adds it to the episodes the dataset API returns, so
+        leaving it set double-counts every episode once the copy lands.
+        """
         with self._lock:
             mutation = self._mutation
             self._mutation = None
             self._is_recording = False
             self._dataset_loaded = False
             self._task = None
+            self._episodes_recorded = 0
             return mutation
 
     def close(self) -> None:

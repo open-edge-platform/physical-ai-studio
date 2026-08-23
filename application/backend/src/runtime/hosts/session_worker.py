@@ -38,22 +38,25 @@ def _watch_subscribers(
     idle_timeout_s: float,
     stop: threading.Event,
 ) -> None:
-    """Force hold when the last subscriber leaves, then idle-exit.
+    """Hold the arm and commit the recording when the last subscriber leaves, then idle-exit.
 
     Started only after wait_for_client() returned, so a subscriber has already
     matched at least once. Losing every subscriber is the worst abandonment
     state — an arm following a leader with nobody watching — so the session
     latches a target before the countdown starts.
+
+    The recording is finalized at the same moment rather than at process exit.
+    The process itself stays alive for the idle window so a returning client
+    keeps the hardware connection, but the dataset must not wait that long: the
+    user navigates straight back to the dataset page expecting their episodes.
     """
     subscribers_present = True
     idle_since: float | None = None
-    recording_idle_logged = False
 
     while not stop.wait(_IDLE_POLL_INTERVAL_S):
         if server.has_matching_subscribers():
             subscribers_present = True
             idle_since = None
-            recording_idle_logged = False
             continue
         if subscribers_present:
             subscribers_present = False
@@ -62,14 +65,14 @@ def _watch_subscribers(
                 session.apply(SetFollowerSourceCommand(follower_source="hold"))
             except Exception:
                 logger.exception("Failed to switch runtime session to hold after losing subscribers")
+            # Latch the arm first, then commit. Waiting for the idle exit would
+            # leave saved episodes invisible on the dataset page for the whole
+            # countdown, and an abandoned open episode would pause it forever.
+            try:
+                session.finalize_recording()
+            except Exception:
+                logger.exception("Failed to finalize the recording after losing subscribers")
         now = time.monotonic()
-        if session.is_recording:
-            if not recording_idle_logged:
-                logger.info("Runtime session is recording; idle countdown paused")
-                recording_idle_logged = True
-            idle_since = None
-            continue
-        recording_idle_logged = False
         if idle_since is None:
             idle_since = now
         elif now - idle_since > idle_timeout_s:
@@ -81,9 +84,9 @@ def _watch_subscribers(
             logger.info("Runtime session idle for {}s; shutting down", idle_timeout_s)
             server.emit(LifecycleEvent(data=LifecycleData(event="shutdown", reason="idle_timeout")))
             # Setting stop ends session.run(...), which returns through
-            # session.teardown() in main(). That teardown shuts the command
-            # worker and runs RecordingMutation.teardown so an idle exit
-            # after a save still copies the cache back.
+            # session.teardown() in main(), releasing the devices. The recording
+            # was already committed when the last subscriber left, so nothing
+            # depends on reaching this point.
             stop.set()
             return
 
