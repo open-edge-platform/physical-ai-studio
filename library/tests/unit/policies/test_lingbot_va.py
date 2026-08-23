@@ -15,9 +15,12 @@ from typing import Any
 import pytest
 import torch
 from physicalai.config import Config
+from physicalai.inference.data import InferenceFeatureDtype, InferenceFeatureType
+from physicalai.inference.manifest import Manifest
 from torch import nn
 
 from physicalai.data import Observation
+from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.policies import get_policy
 from physicalai.policies.lingbot_va import LingBotVA, LingBotVAConfig, LingBotVAModel
 from physicalai.policies.lingbot_va.preprocessor import (
@@ -750,3 +753,131 @@ class TestLingBotVACheckpointLoading:
         assert policy.config.optimizer_lr == 7e-6
         # Untouched fields keep the checkpoint's values.
         assert policy.config.num_layers == 1
+
+
+# ============================================================================ #
+# Export                                                                       #
+# ============================================================================ #
+
+
+class TestLingBotVAExport:
+    """Tests for the Torch export path."""
+
+    def test_only_the_torch_backend_is_supported(self) -> None:
+        """Tracing backends are deliberately not offered."""
+        policy = build_policy()
+        assert isinstance(policy, ExportablePolicyMixin)
+        assert policy.get_supported_export_backends() == [ExportBackend.TORCH]
+
+    @pytest.mark.parametrize("backend", [ExportBackend.ONNX, ExportBackend.OPENVINO, ExportBackend.EXECUTORCH])
+    def test_tracing_backends_are_rejected(self, backend: ExportBackend, tmp_path: Any) -> None:
+        """Asking for a tracing backend fails instead of emitting a broken artifact."""
+        policy = build_policy()
+        with pytest.raises(NotImplementedError):
+            policy.export(tmp_path, backend=backend)
+
+    def test_schemas_describe_cameras_task_and_action_chunk(self) -> None:
+        """Every configured camera, the task prompt and the action chunk are described."""
+        policy = build_policy()
+        config = policy.config
+
+        inputs = policy.inputs_schema
+        assert inputs is not None
+        assert [feature.name for feature in inputs] == ["images.image", "images.image2", "task"]
+        assert [feature.ftype for feature in inputs] == [
+            InferenceFeatureType.VISUAL,
+            InferenceFeatureType.VISUAL,
+            InferenceFeatureType.LANGUAGE,
+        ]
+        assert inputs[0].shape == (3, config.height, config.width)
+        assert inputs[-1].dtype is InferenceFeatureDtype.STRING
+
+        outputs = policy.outputs_schema
+        assert outputs is not None
+        assert len(outputs) == 1
+        assert outputs[0].name == "action"
+        assert outputs[0].shape == (config.chunk_size, config.output_action_dim)
+
+    def test_camera_shape_prefers_dataset_statistics(self) -> None:
+        """A dataset's own camera resolution wins over the VAE input resolution."""
+        policy = build_policy()
+        policy._dataset_stats = {  # noqa: SLF001
+            "observation.images.image": {"type": "VISUAL", "shape": (3, 96, 128)},
+        }
+        inputs = policy.inputs_schema
+        assert inputs is not None
+        assert inputs[0].shape == (3, 96, 128)
+        # The camera missing from the stats falls back to the configured VAE resolution.
+        assert inputs[1].shape == (3, policy.config.height, policy.config.width)
+
+    def test_schemas_are_none_before_initialization(self) -> None:
+        """A lazily-constructed policy has nothing to describe yet."""
+        policy = LingBotVA(**tiny_config().to_dict())
+        assert policy.inputs_schema is None
+        assert policy.outputs_schema is None
+
+    def test_export_writes_checkpoint_and_manifest(self, tmp_path: Any) -> None:
+        """``to_torch`` writes both artifacts the export contract requires."""
+        policy = build_policy()
+        policy.export(tmp_path, backend=ExportBackend.TORCH)
+
+        assert (tmp_path / "lingbotva.pt").exists()
+        manifest = Manifest.load(tmp_path / "manifest.json")
+        assert manifest.model.artifacts == {"torch": "lingbotva.pt"}
+        assert manifest.policy.source.class_path.endswith("lingbot_va.policy.LingBotVA")
+        assert [spec.type for spec in manifest.model.preprocessors] == ["to_float_tensor"]
+        # n_action_steps == chunk_size, so nothing has to trim the chunk.
+        assert manifest.model.postprocessors == []
+        assert [spec.init_args["name"] for spec in manifest.model.output_features] == ["action"]
+
+    def test_frozen_stack_stays_out_of_the_checkpoint(self, tmp_path: Any) -> None:
+        """The ~20 GB VAE/UMT5 stack is not serialized with the transformer."""
+        policy = build_policy()
+        policy.to_torch(tmp_path)
+
+        # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+        checkpoint = torch.load(tmp_path / "lingbotva.pt", map_location="cpu", weights_only=False)  # nosec B614
+        owners = {key.split(".")[0] + "." + key.split(".")[1] for key in checkpoint["state_dict"]}
+        assert owners == {
+            "model.transformer",
+            "_preprocessor._action_normalizer",
+            "_postprocessor._action_denormalizer",
+        }
+
+    def test_exported_checkpoint_round_trips(self, tmp_path: Any) -> None:
+        """The exported checkpoint rebuilds an identical policy."""
+        policy = build_policy()
+        policy.to_torch(tmp_path)
+
+        restored = LingBotVA.load_from_checkpoint(
+            tmp_path / "lingbotva.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        assert restored.config == policy.config
+        assert restored._dataset_stats == policy._dataset_stats  # noqa: SLF001
+
+        original_state = policy.state_dict()
+        restored_state = restored.state_dict()
+        assert set(original_state) == set(restored_state)
+        assert all(torch.equal(original_state[key], restored_state[key]) for key in original_state)
+
+    def test_restored_policy_matches_numerically(self, tmp_path: Any) -> None:
+        """The restored policy predicts the same chunk as the exported one."""
+        policy = build_policy()
+        policy.to_torch(tmp_path)
+
+        restored = LingBotVA.load_from_checkpoint(
+            tmp_path / "lingbotva.pt",
+            map_location="cpu",
+            weights_only=False,
+        )
+        install_fake_frozen_modules(restored.inner_model)
+        restored.eval()
+
+        observation = make_observation(policy.config)
+        torch.manual_seed(0)
+        expected = policy.predict_action_chunk(observation)
+        torch.manual_seed(0)
+        actual = restored.predict_action_chunk(observation)
+        assert torch.allclose(expected, actual, atol=1e-6)
