@@ -122,11 +122,10 @@ construct the policy and delegate shared behavior to `PhysicalAIModelServer`:
 ```python
 class LiberoPi05ModelServer(PhysicalAIModelServer):
     def __init__(
-        self,
+      self,
       pretrained_name_or_path: str = "lerobot/pi05_libero_finetuned",
-        device: str = "cuda",
-        **kwargs: Any,
-    ) -> None:
+      device: str = "cuda",
+      **kwargs: Any) -> None:
         policy = Pi05(pretrained_name_or_path=pretrained_name_or_path)
         super().__init__(
             _policy=policy,

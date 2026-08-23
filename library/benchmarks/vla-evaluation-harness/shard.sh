@@ -16,27 +16,58 @@ Options:
 EOF
 }
 
+require_value() {
+  local option="$1"
+  local value="${2:-}"
+  if (($# < 2)) || [[ -z "$value" || "$value" == -* ]]; then
+    echo "$option requires a value" >&2
+    usage >&2
+    exit 1
+  fi
+}
+
 CONFIG=""
 NUM_SHARDS=4
 EVAL_ID="${EVAL_ID:-}"
 OUTPUT_DIR=""
+pids=()
+
+cleanup() {
+  local exit_code="$1"
+  trap - INT TERM
+  if ((${#pids[@]} > 0)); then
+    echo "Stopping ${#pids[@]} shard process(es)..." >&2
+    kill "${pids[@]}" 2>/dev/null || true
+    for pid in "${pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+  fi
+  exit "$exit_code"
+}
+
+trap 'cleanup 130' INT
+trap 'cleanup 143' TERM
 
 while (($# > 0)); do
   case "$1" in
     -c|--config)
-      CONFIG="${2:-}"
+      require_value "$@"
+      CONFIG="$2"
       shift 2
       ;;
     -n|--shards)
-      NUM_SHARDS="${2:-}"
+      require_value "$@"
+      NUM_SHARDS="$2"
       shift 2
       ;;
     -e|--eval-id)
-      EVAL_ID="${2:-}"
+      require_value "$@"
+      EVAL_ID="$2"
       shift 2
       ;;
     -o|--output-dir)
-      OUTPUT_DIR="${2:-}"
+      require_value "$@"
+      OUTPUT_DIR="$2"
       shift 2
       ;;
     -h|--help)
@@ -77,7 +108,6 @@ fi
 
 echo "Launching $NUM_SHARDS shards with eval ID $EVAL_ID"
 
-pids=()
 for SHARD_ID in $(seq 0 $((NUM_SHARDS - 1))); do
   uv run --no-sync vla-eval run \
     "${RUN_ARGS[@]}" \
