@@ -276,6 +276,7 @@ class TestNamedLeRobotPolicy:
         """Every named wrapper's POLICY_NAME is registered in SUPPORTED_POLICIES."""
         from physicalai.policies.lerobot import (
             ACT,
+            EO1,
             PI0,
             PI05,
             SUPPORTED_POLICIES,
@@ -290,6 +291,7 @@ class TestNamedLeRobotPolicy:
         wrappers = (
             ACT,
             Diffusion,
+            EO1,
             Groot,
             PI0,
             PI05,
@@ -318,7 +320,7 @@ class TestNamedLeRobotPolicy:
 
     @pytest.mark.parametrize(
         "wrapper_name",
-        ["ACT", "Diffusion", "Groot", "PI0", "PI05", "PI0Fast", "SmolVLA", "XVLA"],
+        ["ACT", "Diffusion", "EO1", "Groot", "PI0", "PI05", "PI0Fast", "SmolVLA", "XVLA"],
     )
     def test_named_wrapper_rejects_mismatched_policy_name(self, wrapper_name):
         """``ACT(policy_name="diffusion")`` raises — POLICY_NAME is the source of truth.

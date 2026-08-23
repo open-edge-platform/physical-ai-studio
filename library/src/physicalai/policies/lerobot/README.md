@@ -58,6 +58,7 @@ name outside the named set.
 | `pi0_fast`    | Validated               | Fast Inference PI0                      |
 | `groot`       | Named, xfail (upstream) | NVIDIA GR00T-N1 VLA Foundation Model    |
 | `xvla`        | Named, xfail (upstream) | XVLA Vision-Language-Action             |
+| `eo1`         | Named, xfail (pending)  | EO-1 Vision-Language-Action (Qwen2.5-VL)|
 | anything else | Best-effort (warns)     | Routed via `LeRobotPolicy` escape hatch |
 
 ## Features

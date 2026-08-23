@@ -41,6 +41,7 @@ from lightning_utilities.core.imports import module_available
 
 from physicalai.policies.lerobot.aliases import (
     ACT,
+    EO1,
     PI0,
     PI05,
     XVLA,
@@ -57,6 +58,7 @@ LEROBOT_AVAILABLE = module_available("lerobot")
 SUPPORTED_POLICIES: tuple[str, ...] = (
     "act",
     "diffusion",
+    "eo1",
     "groot",
     "pi0",
     "pi05",
@@ -76,6 +78,7 @@ VALIDATED_EQUIVALENCE_POLICIES: tuple[str, ...] = (
 _NAMED_WRAPPERS: tuple[type[NamedLeRobotPolicy], ...] = (
     ACT,
     Diffusion,
+    EO1,
     Groot,
     PI0,
     PI05,
@@ -89,6 +92,7 @@ _POLICY_MAP: dict[str, type[NamedLeRobotPolicy]] = {cls.POLICY_NAME: cls for cls
 
 __all__ = [
     "ACT",
+    "EO1",
     "PI0",
     "PI05",
     "SUPPORTED_POLICIES",
