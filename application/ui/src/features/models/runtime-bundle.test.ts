@@ -24,8 +24,6 @@ describe('runtimeBundleUrl', () => {
                 device: 'GPU',
                 task: 'pick up the cube',
             })
-        ).toBe(
-            '/api/models/model-1/exports/openvino/download?environment_id=env-1&device=GPU&task=pick+up+the+cube'
-        );
+        ).toBe('/api/models/model-1/exports/openvino/download?environment_id=env-1&device=GPU&task=pick+up+the+cube');
     });
 });
