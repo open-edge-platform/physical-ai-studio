@@ -21,13 +21,22 @@ currently advertises Torch only.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import torch
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
+from physicalai.inference.manifest import ComponentSpec
 
-from physicalai.data.observation import ACTION
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
 from physicalai.policies.base import Policy
+from physicalai.policies.utils.normalization import NormalizationType
 from physicalai.policies.vla_adapter.config import VLAAdapterConfig
 from physicalai.policies.vla_adapter.model import VLAAdapterModel
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
@@ -347,4 +356,191 @@ class VLAAdapter(ExportablePolicyMixin, Policy):
         Returns:
             Supported export backends.
         """
-        return [ExportBackend.TORCH]
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+
+    @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the inputs the exported policy expects.
+
+        Everything is read from the dataset statistics rather than the config,
+        so the schema follows whatever dataset the policy was trained on: the
+        camera count and names, the state width and the image resolution all
+        come from the data. Image shapes are the *dataset's* — resizing to
+        ``image_size`` happens inside the preprocessor, which travels with the
+        Torch artifact.
+
+        Returns:
+            One ``STATE`` feature, one ``VISUAL`` feature per camera and one
+            ``LANGUAGE`` feature, or None before ``setup`` has run.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        dataset_stats = self._dataset_stats
+
+        num_image_features = sum(
+            1 for feature in dataset_stats.values() if str(FeatureType.VISUAL) in str(feature.get("type", ""))
+        )
+
+        schema: list[InferenceFeature] = []
+        for feature_id, feature in dataset_stats.items():
+            feature_type = str(feature.get("type", ""))
+            if STATE in feature_id:
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.STATE,
+                        shape=cast("tuple", feature["shape"]),
+                        name=STATE,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+            elif str(FeatureType.VISUAL) in feature_type:
+                feature_name = (
+                    str(feature.get("name", feature_id)).removeprefix("observation.").removeprefix(f"{IMAGES}.")
+                )
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=cast("tuple", feature["shape"]),
+                        name=IMAGES if num_image_features == 1 else f"{IMAGES}.{feature_name}",
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
+
+        return schema
+
+    @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the exported policy's output.
+
+        Returns:
+            A single ``ACTION`` feature of ``(chunk_size, *action_dim)``, with
+            the action width taken from the dataset statistics. None before
+            ``setup`` has run.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
+
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.ACTION,
+                shape=(self.config.chunk_size, *action_shape),
+                name=ACTION,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Provide backend-specific export parameters.
+
+        The Torch artifact is the whole Lightning policy, so the preprocessor
+        and postprocessor — and the normalization buffers they hold — are saved
+        inside it and run within the policy. Runtime therefore only has to
+        supply what ``Observation`` cannot: uint8 images cast to float32 in
+        [0, 1] and transposed to channels-first.
+
+        The deployment backends are the opposite case: only ``self.model`` is
+        traced, so the preprocessor and postprocessor are left outside the graph
+        and Runtime has to rebuild both from these specs — hence the image
+        component, the tokenizer and the ``denormalize`` that Torch does not need.
+
+        Returns:
+            Export parameters keyed by backend name.
+
+        Raises:
+            ValueError: If dataset stats are unavailable.
+        """
+        if self._dataset_stats is None:
+            msg = (
+                "Dataset stats are required for export. Initialize the policy with dataset_stats"
+                " or train for at least one epoch to populate them."
+            )
+            raise ValueError(msg)
+
+        trimmer_specs = []
+        if self.config.chunk_size != self.config.n_action_steps:
+            trimmer_specs.append(
+                ComponentSpec(
+                    type="action_chunk_trimmer",
+                    n_action_steps=self.config.n_action_steps,
+                ),
+            )
+
+        # Take the tower statistics from the preprocessor's own buffers rather
+        # than re-resolving them through timm, so the numpy component cannot
+        # drift from the torch reference — and so Runtime needs no timm.
+        preprocessor = cast("Any", self._preprocessor)
+        deployment_preproc_specs = [
+            ComponentSpec(
+                type="normalize",
+                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                mode=NormalizationType.QUANTILES.lower(),
+            ),
+            ComponentSpec(
+                type="vla_adapter",
+                image_resolution=self.config.image_size,
+                primary_mean=tuple(preprocessor.primary_mean.flatten().tolist()),
+                primary_std=tuple(preprocessor.primary_std.flatten().tolist()),
+                secondary_mean=tuple(preprocessor.secondary_mean.flatten().tolist()),
+                secondary_std=tuple(preprocessor.secondary_std.flatten().tolist()),
+                image_key_reorder_map=self.config.image_key_reorder_map,
+                num_cameras=self.config.num_cameras,
+            ),
+        ]
+        deployment_postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode=NormalizationType.QUANTILES.lower(),
+            ),
+            *trimmer_specs,
+        ]
+
+        output_names = [feature.name for feature in (self.outputs_schema or [])]
+
+        return {
+            "torch": TorchExportParameters(
+                preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+                postprocessors_specs=trimmer_specs,
+            ),
+            # ONNX is not an advertised backend, but `to_openvino` reads its
+            # `exporter_kwargs` when `via_onnx` is set, so `output_names` would
+            # never reach `torch.onnx.export` without this entry.
+            "onnx": ONNXExportParameters(
+                exporter_kwargs={"output_names": output_names},
+                preprocessors_specs=[
+                    *deployment_preproc_specs,
+                    ComponentSpec(
+                        type="hf_tokenizer",
+                        tokenizer_name=self.config.llm_model_name,
+                        revision="main",
+                        max_token_len=self.config.tokenizer_max_length,
+                    ),
+                ],
+                postprocessors_specs=deployment_postproc_specs,
+            ),
+            "openvino": OpenVINOExportParameters(
+                outputs=output_names,
+                compress_to_fp16=True,
+                via_onnx=True,
+                export_tokenizer=True,
+                exporter_kwargs={},
+                preprocessors_specs=[
+                    *deployment_preproc_specs,
+                    ComponentSpec(type="ov_tokenizer", artifact="tokenizer.xml"),
+                ],
+                postprocessors_specs=deployment_postproc_specs,
+            ),
+        }
