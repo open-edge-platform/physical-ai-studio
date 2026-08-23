@@ -9,7 +9,7 @@ from robots.catalog.registry import RobotCatalogRegistry
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
 from robots.robot_client import RobotClient
 from schemas import SerialPortInfo
-from schemas.robot import Robot, ReadableRobot, UnavailableRobot
+from schemas.robot import ReadableRobot, UnavailableRobot
 from utils.device_paths import resolve_serial_device
 from utils.serial_robot_tools import RobotConnectionManager
 
