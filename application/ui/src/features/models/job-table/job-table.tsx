@@ -112,12 +112,7 @@ const JobMenu = ({ trainJob, onViewLogs }: { trainJob: SchemaTrainJob; onViewLog
 
     return (
         <MenuTrigger>
-            <ActionButton
-                isQuiet
-                UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
-                aria-label='Job options'
-                isDisabled={deleteJobMutation.isPending}
-            >
+            <ActionButton isQuiet aria-label='Job options' isDisabled={deleteJobMutation.isPending}>
                 <MoreMenu />
             </ActionButton>
             <Menu onAction={onAction} disabledKeys={disabledKeys}>

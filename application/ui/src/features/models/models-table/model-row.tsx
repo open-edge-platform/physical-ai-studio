@@ -70,7 +70,7 @@ export const ModelRow = ({
             </div>
             <View>
                 <MenuTrigger direction='left'>
-                    <ActionButton isQuiet UNSAFE_className={classes.optionsButton} aria-label='options'>
+                    <ActionButton isQuiet aria-label='options'>
                         <MoreMenu />
                     </ActionButton>
                     <Menu onAction={onAction} disabledKeys={disabledKeys}>

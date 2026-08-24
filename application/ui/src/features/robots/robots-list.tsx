@@ -44,11 +44,7 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
 
     return (
         <MenuTrigger>
-            <ActionButton
-                aria-label={`Actions for ${robot.name}`}
-                isQuiet
-                UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
-            >
+            <ActionButton aria-label={`Actions for ${robot.name}`} isQuiet>
                 <MoreMenu />
             </ActionButton>
             <Menu
