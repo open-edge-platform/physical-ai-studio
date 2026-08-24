@@ -1,0 +1,77 @@
+# LingBot-VA Policy Training Configuration
+#
+# LingBot-VA is an autoregressive video-action world model on the Wan2.2 stack: one
+# dual-stream transformer interleaves future video latents and robot actions.
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/lingbot_va.yaml
+#
+# Requirements:
+#   - pip install 'physicalai-train[lingbot_va]'
+#   - Training needs `attn_mode: flex` (block-causal flow-matching masks); the default
+#     `torch` SDPA backend is inference-only.
+#   - The ~5B transformer does not fit a 24-32 GB GPU under AdamW: fine-tune with LoRA
+#     and/or optimizer offload, and keep the batch size at 1.
+#   - The frozen VAE + UMT5 text encoder (~20 GB) are pulled from `wan_pretrained_path`
+#     on first use; they are never written into the Studio checkpoint.
+
+model:
+  class_path: physicalai.policies.LingBotVA
+  init_args:
+    # Start from a released checkpoint (architecture + action statistics come with it).
+    pretrained_name_or_path: lerobot/lingbot_va_libero_long
+
+    # Attention backend: "flex" is required for training, "torch" for inference-only runs.
+    attn_mode: flex
+    dtype: bfloat16
+
+    # Frozen sub-models (VAE + UMT5 encoder + tokenizer). Keeping the text encoder on CPU
+    # frees ~11 GB of VRAM; it only runs once per episode.
+    text_encoder_device: cpu
+
+    # Cameras, in fixed order: exterior/head view first, wrist views after.
+    obs_cam_keys:
+      - observation.images.image
+      - observation.images.image2
+    camera_layout: width_concat
+    image_hflip: true
+
+    # Chunk geometry: frame_chunk_size * action_per_frame actions per chunk.
+    height: 128
+    width: 128
+    frame_chunk_size: 4
+    action_per_frame: 4
+    attn_window: 30
+
+    # Action channels this checkpoint drives (LIBERO: 6-DoF EEF delta + gripper).
+    used_action_channel_ids: [0, 1, 2, 3, 4, 5, 6]
+
+    # Sampling (inference only).
+    num_inference_steps: 20
+    action_num_inference_steps: 50
+    guidance_scale: 5.0
+    action_guidance_scale: 1.0
+
+    # Optimizer / scheduler (AdamW + linear warmup then constant, matching upstream).
+    optimizer_lr: 1.0e-5
+    optimizer_weight_decay: 1.0e-4
+    optimizer_grad_clip_norm: 1.0
+    scheduler_warmup_steps: 1000
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    # The dataset must provide the configured cameras as a temporal clip and
+    # frame_chunk_size * action_per_frame action steps per item; the policy's delta
+    # indices configure that automatically.
+    repo_id: "physical-intelligence/libero"
+    train_batch_size: 1
+    data_format: "physicalai"
+
+trainer:
+  max_epochs: 10
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  accumulate_grad_batches: 8
+  log_every_n_steps: 10

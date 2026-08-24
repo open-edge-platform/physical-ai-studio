@@ -98,6 +98,17 @@ groot = [
     "ninja>=1.11.1,<2.0.0",
 ]
 
+# LingBot-VA autoregressive video-action world model (Wan2.2 stack)
+# The ~5B transformer is checkpointed; the frozen VAE + UMT5-XXL text encoder (~20 GB)
+# are pulled from `wan_pretrained_path` at load time. Inference needs ~18-24 GB of VRAM;
+# training additionally needs a flex-attention-capable torch build (--policy.attn_mode=flex).
+lingbot_va = [
+    "transformers>=5.5.0,<5.6.0",
+    "diffusers>=0.38.0",
+    "einops>=0.8.0",
+    "safetensors>=0.4.3,<1.0.0",
+]
+
 # SmolVLA foundation model
 smolvla = [
     "transformers>=5.5.0,<5.6.0",
@@ -119,6 +130,7 @@ all = [
     "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
+    "physicalai-train[lingbot_va]",
 ]
 
 # Contribute Torch and ExecuTorch as inference backends to the registry
