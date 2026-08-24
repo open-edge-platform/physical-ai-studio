@@ -1,0 +1,97 @@
+# XR1 fine-tuning on LIBERO, starting from a released checkpoint.
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/xr1_libero.yaml
+#
+# Why the RoboCasa checkpoint. LIBERO's action is 7-dimensional - three end-effector
+# position deltas, three orientation deltas and a gripper, in [-1, 1] - on a Franka
+# Panda. The released RoboCasa checkpoint drives exactly seven action slots, and they
+# are left_ee_pos(0:3) + left_ee_aa(3:6) + left_gripper(6:7): the same physical
+# parameterization, on the same robot. Of the released checkpoints it is also the one
+# whose domain, kitchen manipulation, sits closest to LIBERO.
+#
+# What is inherited from the checkpoint rather than set here: the action expert's depth
+# and width, the padded action and state widths, and chunk_size, which comes from the
+# checkpoint's own preprocessor_config.json (10, i.e. one second at the dataset's
+# 10 fps). Setting them here would only create a conflict.
+#
+# Two caveats worth reading before trusting a run:
+#
+#  * No action_slot_map is needed. Padding already places dataset dimension i in slot i,
+#    and for LIBERO that is the correct routing.
+#  * The state layout does NOT correspond. LIBERO reports an 8-dim end-effector pose
+#    plus gripper, while XR1's state slots are joint space. The state projector relearns
+#    this during fine-tuning, which is fine here, but it does rule out zero-shot use of
+#    the checkpoint on LIBERO.
+
+model:
+  class_path: physicalai.policies.XR1
+  init_args:
+    pretrained_name_or_path: XiaomiRobotics/Xiaomi-Robotics-1-RoboCasa
+
+    vlm_model_id: Qwen/Qwen3-VL-4B-Instruct
+    vlm_attn_implementation: sdpa
+    dtype: bfloat16
+
+    n_obs_steps: 1
+    max_state_dim: 60
+    max_action_dim: 60
+    state_len: 1
+
+    dit_num_layers: 36
+    dit_hidden_size: 1024
+    dit_head_dim: 128
+    dit_kv_heads: 8
+
+    num_inference_steps: 5
+    flow_sampling: beta
+    training_repeat: 4
+
+    enable_freq: true
+    freq_coefficient: 1.0
+    async_train: true
+    enable_choice_head: true
+    n_choices: 5
+
+    # LiberoGym renames its cameras: agentview_image -> image, and
+    # robot0_eye_in_hand_image -> image2. The dataset uses the same two names.
+    image_resolution:
+      - 256
+      - 256
+    camera_views:
+      - image
+      - image2
+    tokenizer_max_length: 256
+
+    # 5.04B parameters is ~9.4 GiB of bf16 weights; a full AdamW fine-tune needs
+    # roughly 66 GiB. Freezing the backbone trains the action expert and projectors
+    # only, which fits a 24 GB card.
+    gradient_checkpointing: true
+    freeze_vlm: true
+    normalization_mode: MEAN_STD
+    optimizer_lr: 5.0e-5
+    optimizer_weight_decay: 0.1
+    optimizer_grad_clip_norm: 1.0
+    scheduler_warmup_steps: 500
+    scheduler_decay_steps: 30000
+    scheduler_decay_lr: 5.0e-7
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    # 1693 episodes, 273465 frames at 10 fps, Panda, two 256x256 cameras. This is the
+    # set the LIBERO benchmark README uses for its Pi0.5 example.
+    repo_id: "HuggingFaceVLA/libero"
+    train_batch_size: 1
+    data_format: "physicalai"
+
+trainer:
+  # One epoch is 273465 optimizer steps at this batch size, so max_steps rather than
+  # max_epochs is the honest control here. 30000 steps is roughly a ninth of an epoch;
+  # for scale, 10000 steps at batch 4 took 1.6 h on one RTX 3090 (1.76 it/s).
+  max_steps: 30000
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 10
+  val_check_interval: 2000

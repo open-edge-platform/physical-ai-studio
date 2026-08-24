@@ -35,4 +35,10 @@ export const MODELS: ReadonlyArray<{
         description: 'Enhanced Pi0 with discrete state encoding and longer context',
         minVRAM: 16 * GB,
     },
+    {
+        id: 'xr1',
+        name: 'XR-1',
+        description: 'Xiaomi-Robotics-1: Qwen3-VL backbone with a flow-matching action expert',
+        minVRAM: 24 * GB,
+    },
 ];

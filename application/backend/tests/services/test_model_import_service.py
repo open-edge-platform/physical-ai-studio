@@ -150,6 +150,25 @@ async def test_import_model_directory_success(tmp_path, project_id, dataset_id, 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("policy", ["act", "smolvla", "pi05", "xr1"])
+async def test_import_accepts_every_policy_the_ui_can_train(
+    policy, tmp_path, project_id, dataset_id, settings, dataset, job
+):
+    """A policy the training dialog offers must also be importable once exported."""
+    source_dir = _create_model_directory(tmp_path, _base_files(policy, f"{policy}.pt"))
+
+    with _mock_services(settings, dataset, job) as service:
+        model = await service.import_model_directory(
+            source_dir=source_dir,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            model_name="imported",
+        )
+
+    assert model.policy == policy
+
+
+@pytest.mark.anyio
 async def test_import_model_directory_move_removes_source(tmp_path, project_id, dataset_id, settings, dataset, job):
     source_dir = _create_model_directory(tmp_path, _base_files())
 

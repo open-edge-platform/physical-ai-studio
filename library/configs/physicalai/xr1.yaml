@@ -1,0 +1,89 @@
+# XR1 (Xiaomi-Robotics-1) Policy Training Configuration
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/xr1.yaml
+#
+# The released configuration is 5.04B parameters (Qwen3-VL-4B backbone + a 36-layer
+# DiT action expert), i.e. 9.4 GiB of bf16 weights. A full AdamW fine-tune needs
+# roughly 66 GiB, so `freeze_vlm: true` is the default here: it trains the action
+# expert and projectors only (~0.7B parameters, ~17 GiB) and fits a 24 GB GPU.
+#
+# For a quick smoke test that needs no checkpoint download, use xr1_smoke.yaml.
+
+model:
+  class_path: physicalai.policies.XR1
+  init_args:
+    # Backbone
+    vlm_model_id: Qwen/Qwen3-VL-4B-Instruct
+    vlm_attn_implementation: sdpa
+    dtype: bfloat16
+
+    # Input / output structure
+    n_obs_steps: 1
+    chunk_size: 30
+    n_action_steps: 30
+    max_state_dim: 32
+    max_action_dim: 32
+    state_len: 1
+
+    # DiT action expert. dit_num_layers must not exceed the backbone depth (36),
+    # and dit_head_dim / dit_kv_heads must match its KV geometry, because each DiT
+    # layer attends over the matching cached VLM layer.
+    dit_num_layers: 36
+    dit_hidden_size: 1024
+    dit_head_dim: 128
+    dit_kv_heads: 8
+
+    # Flow matching
+    num_inference_steps: 5
+    flow_sampling: beta
+    training_repeat: 4
+
+    # Loss terms
+    enable_freq: true
+    freq_coefficient: 1.0
+
+    # Both training-only branches of the reference recipe. async_train conditions on
+    # a prefix taken from the head of the target chunk; the Choice Policy head is
+    # supervised by that same chunk, so neither needs extra dataset fields. Neither
+    # affects inference. Costs, if you need to trade them away for throughput:
+    # async_train adds one no-grad `num_inference_steps`-step rollout on roughly half
+    # the optimizer steps, and the choice head adds 59.6M trainable parameters plus one
+    # text-stack pass over chunk_size + 2 tokens.
+    async_train: true
+    enable_choice_head: true
+    n_choices: 5
+
+    # Observation preprocessing
+    image_resolution:
+      - 256
+      - 256
+    camera_views:
+      - top
+    tokenizer_max_length: 256
+
+    # Optimization
+    gradient_checkpointing: true
+    freeze_vlm: true
+    normalization_mode: MEAN_STD
+    optimizer_lr: 1.0e-4
+    optimizer_weight_decay: 0.1
+    optimizer_grad_clip_norm: 1.0
+    scheduler_warmup_steps: 1000
+    scheduler_decay_steps: 30000
+    scheduler_decay_lr: 5.0e-7
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    train_batch_size: 1
+    data_format: "physicalai"
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 10
+  check_val_every_n_epoch: 10

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
+from physicalai.policies import ACT, XR1, Pi0, Pi05, SmolVLA
 
 router = APIRouter(prefix="/api/policies", tags=["Policies"])
 
@@ -8,6 +8,7 @@ _POLICY_CLASSES = {
     "pi0": Pi0,
     "pi05": Pi05,
     "smolvla": SmolVLA,
+    "xr1": XR1,
 }
 
 
