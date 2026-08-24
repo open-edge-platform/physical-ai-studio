@@ -111,3 +111,7 @@ a {
 svg {
     fill: currentColor;
 }
+
+button:not(:disabled):not([aria-disabled='true']) {
+    cursor: pointer !important;
+}
