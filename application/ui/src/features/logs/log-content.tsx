@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { AriaListBox, AriaListBoxItem, Flex, ListLayout, Text, View, Virtualizer } from '@geti-ui/ui';
 
@@ -71,17 +71,37 @@ const NoLogs = ({ isLoading, totalLogs }: { isLoading: boolean; totalLogs: numbe
 };
 
 const useScrollToBottom = (totalLogs: number) => {
-    const logsListRef = useRef<HTMLDivElement | null>(null);
+    // The list is rendered conditionally, so its DOM node does not exist on the first render.
+    // Keeping the node in state makes its attachment observable to the effects below, a ref
+    // mutation would not re-run them.
+    const [logsList, setLogsList] = useState<HTMLDivElement | null>(null);
     const [enabled, setEnabled] = useState(true);
 
     useEffect(() => {
-        if (!enabled || !logsListRef.current) {
+        if (logsList === null || !enabled) {
             return;
         }
-        logsListRef.current.scrollTop = logsListRef.current.scrollHeight;
-    }, [enabled, totalLogs]);
 
-    return [enabled, setEnabled, logsListRef] as const;
+        const mutationObserver = new MutationObserver(() => {
+            logsList.scrollTo({ top: logsList.scrollHeight });
+        });
+
+        mutationObserver.observe(logsList, { childList: true, subtree: true });
+
+        return () => {
+            mutationObserver.disconnect();
+        };
+    }, [enabled, logsList]);
+
+    useEffect(() => {
+        if (logsList === null || !enabled) {
+            return;
+        }
+
+        logsList.scrollTo({ top: logsList.scrollHeight });
+    }, [enabled, logsList, totalLogs]);
+
+    return [enabled, setEnabled, setLogsList] as const;
 };
 
 const useFilteredLogs = (logs: Array<LogEntryType>, filters: LogFiltersType) => {
@@ -99,7 +119,7 @@ export const LogContent = ({ logs, isLoading = false }: { logs: LogEntryType[]; 
         await navigator.clipboard.writeText(formattedLogs);
     };
 
-    const [autoScroll, setAutoScroll, logsListRef] = useScrollToBottom(filteredLogs.length);
+    const [autoScroll, setAutoScroll, setLogsList] = useScrollToBottom(filteredLogs.length);
 
     return (
         <View UNSAFE_className={styles.logViewer}>
@@ -121,7 +141,7 @@ export const LogContent = ({ logs, isLoading = false }: { logs: LogEntryType[]; 
                         <Virtualizer layout={ListLayout} layoutOptions={{ estimatedRowHeight: 36 }}>
                             <AriaListBox
                                 aria-label='Log entries'
-                                ref={logsListRef}
+                                ref={setLogsList}
                                 items={filteredLogs}
                                 className={styles.virtualizedList}
                             >
