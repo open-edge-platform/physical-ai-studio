@@ -40,7 +40,6 @@ def start_server(host: str, port: int) -> None:
     # loopback-only enforcement) never checks a stale default instead of it.
     os.environ["HOST"] = host
     os.environ["PORT"] = str(port)
-    get_settings.cache_clear()
     get_ssh_feature_availability.cache_clear()
     _sync_missing_robot_assets()
     _run_migrations()
