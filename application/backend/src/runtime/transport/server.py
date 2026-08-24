@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class RuntimeZenohServer:
     """Bind a process-local RuntimeSession to Studio's Zenoh contract."""
 
-    def __init__(self, name: str, *, instance_id: str | None = None) -> None:
+    def __init__(self, name: str, *, instance_id: str) -> None:
         self._name = name
         self._instance_id = instance_id
         self._session: Any = None
