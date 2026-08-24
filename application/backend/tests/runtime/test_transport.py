@@ -158,7 +158,7 @@ def test_server_declares_required_qos(monkeypatch: pytest.MonkeyPatch) -> None:
         "FifoChannel",
         record_fifo_channel,
     )
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     try:
         server.open(lambda command: None)
 
@@ -212,7 +212,7 @@ def test_client_buffers_command_until_metadata_answers() -> None:
     time.sleep(0.1)
     assert received == []
 
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     try:
         server.open(received.append)
         connect_thread.join(timeout=3)
@@ -237,7 +237,7 @@ def test_client_buffers_multiple_commands_until_metadata_answers() -> None:
     client.apply(load_command)
     client.apply(teleop_command)
 
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     try:
         server.open(received.append)
         client.connect(timeout=3)
@@ -266,7 +266,7 @@ def test_client_connect_keeps_a_received_fatal_error_when_the_process_has_exited
 
 def test_acked_request_returns_correlated_unsupported_reply() -> None:
     name = runtime_session_name(UUID("46770884-694f-453b-9a8f-a3d04b1ff974"))
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     client = RuntimeSessionClient(name)
     client.open()
     try:
@@ -285,7 +285,7 @@ def test_acked_request_returns_correlated_unsupported_reply() -> None:
 
 def test_ready_state_can_be_recovered_from_metadata_when_publication_is_dropped() -> None:
     name = runtime_session_name(UUID("c27a49eb-1b90-4a52-8ec9-e329214233bc"))
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     client = RuntimeSessionClient(name)
     client.open()
     try:

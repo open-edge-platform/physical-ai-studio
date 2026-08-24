@@ -13,7 +13,7 @@ from runtime.transport.server import RuntimeZenohServer
 def test_a_request_receives_an_ack_carrying_its_request_id() -> None:
     name = runtime_session_name(UUID("46770884-694f-453b-9a8f-a3d04b1ff974"))
     received: list = []
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="server")
     client = RuntimeSessionClient(name)
     client.open()
     try:
@@ -33,7 +33,7 @@ def test_a_request_receives_an_ack_carrying_its_request_id() -> None:
 
 def test_a_failing_handler_replies_ok_false_with_the_message() -> None:
     name = runtime_session_name(UUID("8c1d2e3f-4051-6273-8495-a6b7c8d9e0f1"))
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="server")
     client = RuntimeSessionClient(name)
     client.open()
 
