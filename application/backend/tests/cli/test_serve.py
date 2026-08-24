@@ -10,14 +10,12 @@ serve_module = importlib.import_module("cli.serve")
 
 @pytest.fixture(autouse=True)
 def _clear_packaged_runtime_environment() -> Iterator[None]:
-    settings_module = importlib.import_module("settings")
     security_module = importlib.import_module("core.security")
     os.environ.pop("ALEMBIC_CONFIG_PATH", None)
     os.environ.pop("ALEMBIC_SCRIPT_LOCATION", None)
     os.environ.pop("STATIC_FILES_DIR", None)
     os.environ.pop("HOST", None)
     os.environ.pop("PORT", None)
-    settings_module.get_settings.cache_clear()
     security_module.get_ssh_feature_availability.cache_clear()
     yield
     os.environ.pop("ALEMBIC_CONFIG_PATH", None)
@@ -25,7 +23,6 @@ def _clear_packaged_runtime_environment() -> Iterator[None]:
     os.environ.pop("STATIC_FILES_DIR", None)
     os.environ.pop("HOST", None)
     os.environ.pop("PORT", None)
-    settings_module.get_settings.cache_clear()
     security_module.get_ssh_feature_availability.cache_clear()
 
 

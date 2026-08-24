@@ -115,10 +115,7 @@ def test_reason_never_names_a_host_alias_or_container() -> None:
 
 
 def test_get_ssh_feature_availability_is_cached_like_get_settings(monkeypatch) -> None:
-    from settings import get_settings
-
     get_ssh_feature_availability.cache_clear()
-    get_settings.cache_clear()
     monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "false")
     monkeypatch.setenv("HOST", "127.0.0.1")
 
@@ -126,7 +123,6 @@ def test_get_ssh_feature_availability_is_cached_like_get_settings(monkeypatch) -
 
     monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "true")
     monkeypatch.setenv("HOST", "0.0.0.0")
-    get_settings.cache_clear()
     second = get_ssh_feature_availability()
 
     assert first == second  # still cached: settings changed, but the cache was not cleared
@@ -137,4 +133,3 @@ def test_get_ssh_feature_availability_is_cached_like_get_settings(monkeypatch) -
     assert third.network_exposed is True
 
     get_ssh_feature_availability.cache_clear()
-    get_settings.cache_clear()

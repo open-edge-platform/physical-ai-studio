@@ -13,7 +13,6 @@ from loguru import logger
 
 from core import lifecycle as lifecycle_module
 from core.security import get_ssh_feature_availability
-from settings import get_settings
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -21,10 +20,8 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 def _clear_caches() -> Generator[None]:
-    get_settings.cache_clear()
     get_ssh_feature_availability.cache_clear()
     yield
-    get_settings.cache_clear()
     get_ssh_feature_availability.cache_clear()
 
 
@@ -60,7 +57,6 @@ async def test_ssh_feature_enabled_on_non_loopback_logs_critical_and_deactivates
 ) -> None:
     monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "true")
     monkeypatch.setenv("HOST", "0.0.0.0")
-    get_settings.cache_clear()
     get_ssh_feature_availability.cache_clear()
     app = FastAPI()
     messages = await _run_startup_and_capture_logs(app)
@@ -76,7 +72,6 @@ async def test_ssh_feature_enabled_on_loopback_logs_no_warning_and_stays_active(
 ) -> None:
     monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "true")
     monkeypatch.setenv("HOST", "127.0.0.1")
-    get_settings.cache_clear()
     get_ssh_feature_availability.cache_clear()
     app = FastAPI()
     messages = await _run_startup_and_capture_logs(app)
@@ -88,7 +83,6 @@ async def test_ssh_feature_enabled_on_loopback_logs_no_warning_and_stays_active(
 async def test_ssh_feature_disabled_by_default_logs_no_warning(monkeypatch, _stub_heavy_startup) -> None:
     monkeypatch.delenv("SSH_REMOTE_TRAINER_ENABLED", raising=False)
     monkeypatch.setenv("HOST", "0.0.0.0")
-    get_settings.cache_clear()
     get_ssh_feature_availability.cache_clear()
     app = FastAPI()
     messages = await _run_startup_and_capture_logs(app)
