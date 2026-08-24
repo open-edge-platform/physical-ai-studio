@@ -6,13 +6,12 @@
 from __future__ import annotations
 
 from core.backend_instance import get_backend_instance_id, reset_backend_instance_id_cache
-from settings import Settings, get_settings
+from settings import Settings
 
 
 def _use_storage_dir(monkeypatch, tmp_path) -> None:
     settings = Settings(STORAGE_DIR=str(tmp_path))
     monkeypatch.setattr("core.backend_instance.get_settings", lambda: settings)
-    get_settings.cache_clear()
     reset_backend_instance_id_cache()
 
 
