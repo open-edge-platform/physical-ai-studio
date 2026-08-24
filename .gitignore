@@ -217,6 +217,13 @@ experiments/
 library/experiments/
 library/results/
 
+# Saved checkpoints and exported artifacts consumed by `physicalai benchmark --ckpt_path`
+# and `InferenceModel(...)`. Multi-GB for VLA policies -- keep them out of the repo.
+checkpoints/
+library/checkpoints/
+exports/
+library/exports/
+
 # Knowledge-graph cache produced by the graphify tooling
 graphify-out/
 

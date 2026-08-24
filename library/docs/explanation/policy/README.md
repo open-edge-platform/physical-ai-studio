@@ -82,6 +82,7 @@ Both `Policy` and `InferenceModel` satisfy this protocol, enabling:
 | **GROOT**     | Vision-language policy       | Native implementation |
 | **Pi0**       | Physical Intelligence model  | Native implementation |
 | **SmolVLA**   | Small Vision-Language-Action | Native + LeRobot      |
+| **XVLA**      | Cross-embodiment VLA         | Native implementation |
 
 ## Creating a New Policy
 

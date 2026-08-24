@@ -64,6 +64,13 @@ class LiberoBenchmark(Benchmark):
         observation_width: Width of observation images (default: 256).
         video_dir: Directory to save videos. None disables recording.
         record_mode: Video recording mode - "all", "successes", "failures", "none".
+        control_mode: "relative" (default) sends the policy's action as a per-step
+            end-effector delta; "absolute" sends it as an absolute target pose instead.
+            This must match what the policy was trained to predict. Most LIBERO-trained
+            policies use deltas, but some -- the published ``lerobot/xvla-libero``
+            checkpoint among them -- predict absolute poses, and feeding one of those to a
+            delta-mode controller saturates the arm on the first step and scores zero
+            without raising, so check before assuming the default.
 
     Example:
         >>> # Full LIBERO-10 benchmark
@@ -90,12 +97,14 @@ class LiberoBenchmark(Benchmark):
         observation_width: int = 256,
         video_dir: str | Path | None = None,
         record_mode: str = "failures",
+        control_mode: str = "relative",
     ) -> None:
         """Initialize LIBERO benchmark with task suite configuration."""
         self.task_suite = task_suite
         self.task_ids = task_ids
         self.observation_height = observation_height
         self.observation_width = observation_width
+        self.control_mode = control_mode
 
         # Use LIBERO default max_steps if not specified
         if max_steps is None:
@@ -126,6 +135,7 @@ class LiberoBenchmark(Benchmark):
             task_ids=self.task_ids,
             observation_height=self.observation_height,
             observation_width=self.observation_width,
+            control_mode=self.control_mode,
         )
 
     def __repr__(self) -> str:
