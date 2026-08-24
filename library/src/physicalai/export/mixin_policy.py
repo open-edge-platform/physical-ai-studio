@@ -539,7 +539,7 @@ class ExportablePolicyMixin:
         )
 
     @torch.no_grad()
-    def to_executorch(
+    def to_executorch(  # noqa: PLR0912, PLR0914, PLR0915
         self,
         output_path: PathLike | str,
         input_sample: dict[str, torch.Tensor] | None = None,
@@ -576,6 +576,7 @@ class ExportablePolicyMixin:
                 implement ``sample_input`` property.
             ImportError: If the required ``executorch`` package (or selected delegate
                 dependencies) is not installed.
+            ValueError: If an unsupported delegate is specified.
         """
         if ExportBackend.EXECUTORCH not in self.get_supported_export_backends():
             msg = (
@@ -612,14 +613,54 @@ class ExportablePolicyMixin:
             msg = "executorch package is required for ExecuTorch export. Install with: pip install executorch"
             raise ImportError(msg) from e
 
-        aten_dialect = self._export_executorch_aten_dialect(input_sample, **extra_export_kwargs)
-        partitioner = self._get_executorch_partitioner(delegate, delegate_config)
-
-        edge_program = (
-            to_edge_transform_and_lower(aten_dialect, partitioner=[partitioner])
-            if partitioner is not None
-            else to_edge_transform_and_lower(aten_dialect)
+        # ExecuTorch doesn't support CUDA/XPU tensors (segfaults instead of
+        # raising), so trace a CPU copy. Move the model to CPU before
+        # deepcopy (not after) to avoid briefly holding two accelerator-
+        # resident copies; original device/mode are restored below.
+        original_device = self.device
+        was_training = self.model.training
+        self.model.to("cpu")
+        try:
+            export_model = copy.deepcopy(self.model).eval()
+        finally:
+            self.model.to(original_device)
+            self.model.train(was_training)
+        cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
+        aten_dialect = torch.export.export(
+            export_model,
+            args=(cpu_input_sample,),
+            **extra_export_kwargs,
         )
+
+        try:
+            if delegate == "openvino":
+                from executorch.backends.openvino.partitioner import OpenvinoPartitioner  # noqa: PLC0415
+                from executorch.exir.backend.backend_details import CompileSpec  # noqa: PLC0415
+
+                compile_spec = [CompileSpec("device", (delegate_config or {}).get("device", "CPU").encode())]
+                partitioner = OpenvinoPartitioner(compile_spec)
+            elif delegate == "xnnpack":
+                from executorch.backends.xnnpack.partition.xnnpack_partitioner import (  # noqa: PLC0415
+                    XnnpackPartitioner,
+                )
+
+                partitioner = XnnpackPartitioner()
+            elif delegate is None or delegate == "portable":
+                partitioner = None
+            else:
+                msg = (
+                    f"Unsupported ExecuTorch delegate: {delegate!r}. "
+                    f"Supported delegates: 'portable', 'openvino', 'xnnpack', None"
+                )
+                raise ValueError(msg)
+        except ImportError as e:
+            msg = f"ExecuTorch delegate dependencies are required for delegate={delegate!r}."
+            raise ImportError(msg) from e
+
+        if partitioner is not None:
+            edge_program = to_edge_transform_and_lower(aten_dialect, partitioner=[partitioner])
+        else:
+            edge_program = to_edge_transform_and_lower(aten_dialect)
 
         exec_program = edge_program.to_executorch()
 
@@ -637,83 +678,6 @@ class ExportablePolicyMixin:
         )
 
         return model_path
-
-    def _export_executorch_aten_dialect(
-        self,
-        input_sample: dict[str, torch.Tensor],
-        **export_kwargs: dict,
-    ) -> torch.export.ExportedProgram:
-        """Trace a CPU copy of the model and return its ATen-dialect export.
-
-        ExecuTorch doesn't support CUDA/XPU tensors (segfaults instead of
-        raising), so trace a CPU copy. Move the model to CPU before
-        deepcopy (not after) to avoid briefly holding two accelerator-
-        resident copies; original device/mode are restored before returning.
-
-        Args:
-            input_sample: A sample input tensor dictionary used to trace the model.
-            **export_kwargs: Additional keyword arguments passed to ``torch.export.export``.
-
-        Returns:
-            The exported ATen-dialect program.
-        """
-        original_device = self.device
-        was_training = self.model.training
-        self.model.to("cpu")
-        try:
-            export_model = copy.deepcopy(self.model).eval()
-        finally:
-            self.model.to(original_device)
-            self.model.train(was_training)
-        cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
-        return torch.export.export(
-            export_model,
-            args=(cpu_input_sample,),
-            **export_kwargs,
-        )
-
-    @staticmethod
-    def _get_executorch_partitioner(
-        delegate: ExecuTorchDelegate | None,
-        delegate_config: dict[str, Any] | None,
-    ) -> Any:  # noqa: ANN401
-        """Resolve the ExecuTorch partitioner for the requested delegate.
-
-        Args:
-            delegate: ExecuTorch delegate backend to use.
-            delegate_config: Optional delegate-specific configuration.
-
-        Returns:
-            The partitioner instance, or ``None`` for the portable delegate.
-
-        Raises:
-            ValueError: If an unsupported delegate is specified.
-            ImportError: If the required delegate dependencies are not installed.
-        """
-        try:
-            if delegate == "openvino":
-                from executorch.backends.openvino.partitioner import OpenvinoPartitioner  # noqa: PLC0415
-                from executorch.exir.backend.backend_details import CompileSpec  # noqa: PLC0415
-
-                compile_spec = [CompileSpec("device", (delegate_config or {}).get("device", "CPU").encode())]
-                return OpenvinoPartitioner(compile_spec)
-            if delegate == "xnnpack":
-                from executorch.backends.xnnpack.partition.xnnpack_partitioner import (  # noqa: PLC0415
-                    XnnpackPartitioner,
-                )
-
-                return XnnpackPartitioner()
-            if delegate is None or delegate == "portable":
-                return None
-        except ImportError as e:
-            msg = f"ExecuTorch delegate dependencies are required for delegate={delegate!r}."
-            raise ImportError(msg) from e
-
-        msg = (
-            f"Unsupported ExecuTorch delegate: {delegate!r}. "
-            f"Supported delegates: 'portable', 'openvino', 'xnnpack', None"
-        )
-        raise ValueError(msg)
 
     def export(
         self,
