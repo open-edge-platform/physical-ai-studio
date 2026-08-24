@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import re
 from typing import Any
 
 import numpy as np
@@ -12,23 +11,15 @@ from physicalai.capture import SharedCamera
 from physicalai.capture.errors import CaptureError
 from physicalai.data import Observation
 
+from exceptions import RobotPluginUnavailableError
 from robots.robot_client import RobotClient
 from robots.robot_client_factory import RobotClientFactory
+from runtime.features import sanitize_camera_name
 from schemas.environment import EnvironmentWithRelations, TeleoperatorRobotWithRobot
 from schemas.project_camera import Camera
+from schemas.robot import UnavailableRobot
 from utils.camera_factory import build_shared_camera
 from utils.jpeg import encode_jpeg_rgb
-
-
-def sanitize_camera_name(name: str) -> str:
-    """Turn a camera name into a safe video feature key.
-
-    Preserve lowercase letters, spaces, ``_``, and ``-`` for compatibility;
-    replace other characters because feature keys become dataset paths and
-    single-quoted ffconcat entries during recording, where they can invalidate
-    ffmpeg parsing.
-    """
-    return re.sub(r"[^a-z0-9 _-]+", "_", name.lower())
 
 
 class EnvironmentIntegration:
@@ -48,6 +39,7 @@ class EnvironmentIntegration:
 
     async def setup(self) -> None:
         try:
+            self._ensure_robots_available()
             robot = self.environment.robots[0]  # TODO: Handle multiple robots?
 
             self.follower = await self.robot_client_factory.build(robot.robot)
@@ -83,6 +75,19 @@ class EnvironmentIntegration:
         except Exception:
             await self.teardown()
             raise
+
+    def _ensure_robots_available(self) -> None:
+        for robot_with_teleoperator in self.environment.robots:
+            robots = [robot_with_teleoperator.robot]
+            if (
+                isinstance(robot_with_teleoperator.tele_operator, TeleoperatorRobotWithRobot)
+                and robot_with_teleoperator.tele_operator.robot is not None
+            ):
+                robots.append(robot_with_teleoperator.tele_operator.robot)
+
+            for robot in robots:
+                if isinstance(robot, UnavailableRobot):
+                    raise RobotPluginUnavailableError(robot.name, robot.type)
 
     def build_lerobot_dataset_features(self, use_videos: bool = True) -> dict:
         """Build lerobot dataset features."""

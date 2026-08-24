@@ -5,6 +5,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import anyio
+import httpx
 from loguru import logger
 from sse_starlette import ServerSentEvent
 
@@ -49,6 +50,27 @@ class ModelMetricsService:
             logger.debug(f"SSE log stream cancelled for {path}")
         except GeneratorExit:
             logger.debug(f"SSE log stream closed for {path}")
+
+    @staticmethod
+    async def tail_remote_csv_file(base_url: str, remote_job_id: str) -> AsyncGenerator[ServerSentEvent]:
+        """Relay metric SSE events from a remote trainer without exposing it to clients."""
+        url = f"{base_url.rstrip('/')}/jobs/{remote_job_id}/metrics"
+        timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
+        try:
+            async with (
+                httpx.AsyncClient(timeout=timeout) as client,
+                client.stream("GET", url, headers={"Accept": "text/event-stream"}) as response,
+            ):
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data:"):
+                        yield ServerSentEvent(data=line.removeprefix("data:").lstrip())
+        except httpx.HTTPError as exc:
+            logger.warning("Remote metrics stream failed for {}: {}", remote_job_id, exc)
+        except asyncio.CancelledError:
+            logger.debug("Remote metrics stream cancelled for {}", remote_job_id)
+        except GeneratorExit:
+            logger.debug("Remote metrics stream closed for {}", remote_job_id)
 
     @staticmethod
     async def empty_metrics_stream() -> AsyncGenerator[ServerSentEvent]:

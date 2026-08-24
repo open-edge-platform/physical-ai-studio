@@ -1,13 +1,13 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
-import { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../robot-types';
+import { AvailableSchemaRobot, ConfigurableRobotType, SchemaRobotInput } from '../robot-types';
 import { getInitialSO101FormData } from './catalog/so101';
 import { getInitialWidowxFormData } from './catalog/widowxai';
 import { getInitialBimanualFormData } from './catalog/widowxai-bimanual';
 import { buildRobotBody, type AnyRobotFormData, type FormDataForSchema } from './form-data';
 
 type RobotFormState = {
-    activeType: SchemaRobotType;
+    activeType: ConfigurableRobotType;
     SO101_Follower: FormDataForSchema['SO101_Follower'];
     SO101_Leader: FormDataForSchema['SO101_Leader'];
     Trossen_WidowXAI_Follower: FormDataForSchema['Trossen_WidowXAI_Follower'];
@@ -19,8 +19,8 @@ type RobotFormState = {
 const RobotFormContext = createContext<RobotFormState | null>(null);
 
 type SetRobotFormContextType = {
-    setActiveType: (type: SchemaRobotType) => void;
-    updateFormData: <K extends SchemaRobotType>(
+    setActiveType: (type: ConfigurableRobotType) => void;
+    updateFormData: <K extends ConfigurableRobotType>(
         schemaType: K,
         update: Partial<FormDataForSchema[K]> | ((prev: FormDataForSchema[K]) => FormDataForSchema[K])
     ) => void;
@@ -28,7 +28,7 @@ type SetRobotFormContextType = {
 
 const SetRobotFormContext = createContext<SetRobotFormContextType | null>(null);
 
-const FORM_DATA_FAMILY: Record<SchemaRobotType, string> = {
+const FORM_DATA_FAMILY: Record<ConfigurableRobotType, string> = {
     SO101_Follower: 'so101',
     SO101_Leader: 'so101',
     Trossen_WidowXAI_Follower: 'widowx',
@@ -37,7 +37,7 @@ const FORM_DATA_FAMILY: Record<SchemaRobotType, string> = {
     Trossen_Bimanual_WidowXAI_Leader: 'bimanual',
 };
 
-const getInitialState = (robot?: SchemaRobot): RobotFormState => ({
+const getInitialState = (robot?: AvailableSchemaRobot): RobotFormState => ({
     activeType: robot?.type ?? 'SO101_Follower',
     SO101_Follower: getInitialSO101FormData(robot?.type === 'SO101_Follower' ? robot : undefined),
     SO101_Leader: getInitialSO101FormData(robot?.type === 'SO101_Leader' ? robot : undefined),
@@ -53,10 +53,10 @@ const getInitialState = (robot?: SchemaRobot): RobotFormState => ({
     ),
 });
 
-export const RobotFormProvider = ({ children, robot }: { children: ReactNode; robot?: SchemaRobot }) => {
+export const RobotFormProvider = ({ children, robot }: { children: ReactNode; robot?: AvailableSchemaRobot }) => {
     const [state, setState] = useState(() => getInitialState(robot));
 
-    const setActiveType = useCallback(<T extends SchemaRobotType>(type: T) => {
+    const setActiveType = useCallback(<T extends ConfigurableRobotType>(type: T) => {
         setState((prev) => {
             if (prev.activeType === type) return prev;
 
@@ -72,7 +72,7 @@ export const RobotFormProvider = ({ children, robot }: { children: ReactNode; ro
     }, []);
 
     const updateFormData = useCallback(
-        <K extends SchemaRobotType>(
+        <K extends ConfigurableRobotType>(
             schemaType: K,
             update: Partial<FormDataForSchema[K]> | ((prev: FormDataForSchema[K]) => FormDataForSchema[K])
         ) => {
@@ -98,11 +98,11 @@ export const RobotFormProvider = ({ children, robot }: { children: ReactNode; ro
     );
 };
 
-export function useRobotForm(): { activeType: SchemaRobotType; robotForm: AnyRobotFormData };
-export function useRobotForm<K extends SchemaRobotType>(
+export function useRobotForm(): { activeType: ConfigurableRobotType; robotForm: AnyRobotFormData };
+export function useRobotForm<K extends ConfigurableRobotType>(
     schemaType: K
-): { activeType: SchemaRobotType; robotForm: FormDataForSchema[K] };
-export function useRobotForm(schemaType?: SchemaRobotType) {
+): { activeType: ConfigurableRobotType; robotForm: FormDataForSchema[K] };
+export function useRobotForm(schemaType?: ConfigurableRobotType) {
     const context = useContext(RobotFormContext);
 
     if (context === null) {

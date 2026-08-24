@@ -40,7 +40,7 @@ const MenuActions = ({ camera_id }: { camera_id: string }) => {
 
     return (
         <MenuTrigger>
-            <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}>
+            <ActionButton isQuiet>
                 <MoreMenu />
             </ActionButton>
             <Menu

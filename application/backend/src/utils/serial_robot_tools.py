@@ -22,6 +22,20 @@ def from_port(port: ListPortInfo) -> SerialPortInfo | None:
     return SerialPortInfo(connection_string=port.device, serial_number=serial_number or None)
 
 
+def _match_serial_port(discovered: list[SerialPortInfo], target: SerialPortInfo) -> str | None:
+    """Return the connection string for ``target`` among discovered ports, if any."""
+    if target.serial_number:
+        for serial_port in discovered:
+            if serial_port.serial_number == target.serial_number:
+                return serial_port.connection_string
+        return None
+
+    for serial_port in discovered:
+        if serial_port.connection_string == target.connection_string:
+            return serial_port.connection_string
+    return None
+
+
 class RobotConnectionManager:
     _all_robots: list[SerialPortInfo]
     available_ports: list[ListPortInfo]
@@ -33,6 +47,15 @@ class RobotConnectionManager:
     @property
     def robots(self) -> list[SerialPortInfo]:
         return self._all_robots
+
+    async def find_port(self, port_info: SerialPortInfo) -> str | None:
+        """Return the live connection string for a known port, rescanning once if needed."""
+        port = _match_serial_port(self._all_robots, port_info)
+        if port is not None:
+            return port
+
+        await self.find_robots()
+        return _match_serial_port(self._all_robots, port_info)
 
     async def find_robots(self) -> None:
         self.available_ports = list(list_ports.comports())

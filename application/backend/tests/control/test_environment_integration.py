@@ -1,5 +1,6 @@
 import asyncio
 from unittest.mock import MagicMock, Mock, patch
+from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -7,6 +8,9 @@ import torch
 from physicalai.capture import SharedCamera
 
 from control.environment_integration import EnvironmentIntegration, sanitize_camera_name
+from exceptions import RobotPluginUnavailableError
+from schemas.environment import EnvironmentWithRelations, RobotWithTeleoperator, TeleoperatorNoneWithRobot
+from schemas.robot import UnavailableRobot
 
 
 def test_sanitize_camera_name():
@@ -62,6 +66,30 @@ def inference_environment_integration(event_loop, mock_robot_client_factory, moc
 
 
 class TestInferenceEnvironmentIntegration:
+    def test_setup_rejects_environment_with_unavailable_robot(self, mock_robot_client_factory, event_loop):
+        unavailable_robot = UnavailableRobot(
+            id=uuid4(),
+            name="Missing MuJoCo robot",
+            type="MuJoCo_SO101_Follower",
+            payload={"port": "/dev/ttyACM0"},
+        )
+        environment = EnvironmentWithRelations(
+            id=uuid4(),
+            name="Unavailable robot environment",
+            robots=[
+                RobotWithTeleoperator(
+                    robot=unavailable_robot,
+                    tele_operator=TeleoperatorNoneWithRobot(),
+                )
+            ],
+        )
+        subject = EnvironmentIntegration(environment, mock_robot_client_factory)
+
+        with pytest.raises(RobotPluginUnavailableError, match="MuJoCo_SO101_Follower"):
+            event_loop.run_until_complete(subject.setup())
+
+        mock_robot_client_factory.build.assert_not_called()
+
     def test_get_observation(self, inference_environment_integration: EnvironmentIntegration, event_loop):
         observation = event_loop.run_until_complete(inference_environment_integration.get_observation())
         assert observation is not None

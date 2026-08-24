@@ -27,8 +27,7 @@ def _configure_packaged_runtime() -> None:
     os.environ.setdefault("ALEMBIC_CONFIG_PATH", str(package_root / "alembic.ini"))
     os.environ.setdefault("ALEMBIC_SCRIPT_LOCATION", str(package_root / "alembic"))
 
-    # Refresh cached settings so downstream DB/migration modules observe packaged paths.
-    get_settings.cache_clear()
+    # Settings are resolved for each call, so downstream modules observe these paths.
 
 
 def start_server(host: str, port: int) -> None:

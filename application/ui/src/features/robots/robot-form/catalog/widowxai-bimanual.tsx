@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import type { SchemaTrossenBimanualPayload } from '../../../../api/openapi-spec';
 import { useCatalogIdentifyMutation } from '../../robot-catalog.hooks';
-import type { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../../robot-types';
+import type { AvailableSchemaRobot, ConfigurableRobotType, SchemaRobotInput } from '../../robot-types';
 import { useRobotFormFields } from '../provider';
 import { IdentifyRobot } from './actions';
 import { buildWidowxBody } from './widowxai';
@@ -13,7 +13,7 @@ export interface BimanualFormData {
     payload: SchemaTrossenBimanualPayload;
 }
 
-export const getInitialBimanualFormData = (robot?: SchemaRobot): BimanualFormData => ({
+export const getInitialBimanualFormData = (robot?: AvailableSchemaRobot): BimanualFormData => ({
     name: robot?.name ?? '',
     payload:
         robot && 'connection_string_left' in robot.payload
@@ -23,7 +23,7 @@ export const getInitialBimanualFormData = (robot?: SchemaRobot): BimanualFormDat
 
 export const buildBimanualBody = (
     formData: BimanualFormData,
-    schemaType: SchemaRobotType,
+    schemaType: ConfigurableRobotType,
     robot_id: string
 ): SchemaRobotInput | null => {
     if (!formData.payload.connection_string_left || !formData.payload.connection_string_right) {

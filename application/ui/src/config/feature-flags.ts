@@ -10,7 +10,7 @@
  *   setFeatureFlag('someFlag')         // clear override, use build default
  */
 
-type FeatureFlagName = never;
+type FeatureFlagName = 'ipcam';
 
 const STORAGE_KEY_PREFIX = 'physicalai:featureFlags:';
 
@@ -49,7 +49,11 @@ void resolveFlag;
  *       return resolveFlag('someFlag', envValue);
  *   },
  */
-export const featureFlags = {};
+export const featureFlags = {
+    get ipCamera(): boolean {
+        return resolveFlag('ipcam', typeof process !== 'undefined' ? process.env.PUBLIC_ENABLE_IP_CAM : undefined);
+    },
+};
 
 /**
  * Overrides a feature flag at runtime via `localStorage`, without needing a

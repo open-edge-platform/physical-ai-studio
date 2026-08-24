@@ -44,9 +44,7 @@ class USBCameraPayload(BaseModel):
 class IPCameraPayload(BaseModel):
     """Configuration for IPCameraCapture."""
 
-    stream_url: str = Field(..., description="RTSP or HTTP stream URL")
-    username: str | None = Field(None, description="Camera login username")
-    password: str | None = Field(None, description="Camera login password")
+    url: str = Field(..., description="RTSP or HTTP stream URL")
     width: int | None = Field(None, ge=160, le=4096, description="Frame width in pixels (if supported)")
     height: int | None = Field(None, ge=120, le=2160, description="Frame height in pixels (if supported)")
     fps: int = Field(25, ge=1, le=60, description="Expected frame rate")
@@ -131,9 +129,7 @@ class IPCamera(BaseCamera):
                 "fingerprint": "rtsp://192.168.1.100:554/stream1",
                 "hardware_name": None,
                 "payload": {
-                    "stream_url": "rtsp://192.168.1.100:554/stream1",
-                    "username": "admin",
-                    "password": "<rtsp-password>",
+                    "url": "rtsp://192.168.1.100:554/stream1",
                 },
             }
         }

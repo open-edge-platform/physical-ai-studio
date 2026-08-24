@@ -1,8 +1,10 @@
 import { Flex, Item, Picker, Text } from '@geti-ui/ui';
 
+import { getApiErrorMessage, isSerialPermissionDeniedError } from '../../../../api/errors';
 import type { SchemaSo101RobotPayload } from '../../../../api/openapi-spec';
 import { useCatalogIdentifyMutation, useDiscoverRobotsQuery } from '../../robot-catalog.hooks';
-import type { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../../robot-types';
+import type { AvailableSchemaRobot, ConfigurableRobotType, SchemaRobotInput } from '../../robot-types';
+import { InlineAlert } from '../../setup-wizard/shared/inline-alert';
 import { PermissionDeniedError } from '../../setup-wizard/so101/diagnostics-step-error';
 import { useRobotFormFields } from '../provider';
 import { IdentifyRobot, RefreshRobotsButton } from './actions';
@@ -12,7 +14,7 @@ export interface SO101FormData {
     payload: SchemaSo101RobotPayload;
 }
 
-export const getInitialSO101FormData = (robot?: SchemaRobot): SO101FormData => ({
+export const getInitialSO101FormData = (robot?: AvailableSchemaRobot): SO101FormData => ({
     name: robot?.name ?? '',
     payload:
         robot && (robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader')
@@ -22,7 +24,7 @@ export const getInitialSO101FormData = (robot?: SchemaRobot): SO101FormData => (
 
 export const buildSO101Body = (
     formData: SO101FormData,
-    schemaType: SchemaRobotType,
+    schemaType: ConfigurableRobotType,
     robot_id: string
 ): SchemaRobotInput | null => {
     if (!formData.payload.serial_number && !formData.payload.connection_string) {
@@ -122,7 +124,24 @@ export const SO101FormFields = () => {
                 </Flex>
             </Flex>
 
-            {identifyMutation.isError && <PermissionDeniedError port={formData.payload.connection_string} />}
+            {identifyMutation.isError && (
+                <IdentifyError error={identifyMutation.error} port={formData.payload.connection_string} />
+            )}
         </>
+    );
+};
+
+const IdentifyError = ({ error, port }: { error: unknown; port: string | null }) => {
+    if (isSerialPermissionDeniedError(error)) {
+        return <PermissionDeniedError port={port} />;
+    }
+
+    return (
+        <InlineAlert variant='error'>
+            <strong>Identify Failed</strong>
+            <br />
+            {getApiErrorMessage(error) ??
+                'The robot could not be identified. Make sure it is powered on and not already in use, then try again.'}
+        </InlineAlert>
     );
 };

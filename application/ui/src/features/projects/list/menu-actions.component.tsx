@@ -7,7 +7,7 @@ interface MenuActionsProps {
 export const MenuActions = ({ onAction }: MenuActionsProps) => {
     return (
         <MenuTrigger>
-            <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}>
+            <ActionButton isQuiet>
                 <MoreMenu />
             </ActionButton>
             <Menu onAction={onAction}>

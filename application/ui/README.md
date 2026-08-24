@@ -88,20 +88,22 @@ ui/src/
 
 Create `.env.local` for custom configuration:
 
-| Variable                          | Description                                    | Default                 |
-| --------------------------------- | ----------------------------------------------- | ----------------------- |
-| `PUBLIC_API_BASE_URL`             | Backend API base URL                            | `http://localhost:3000` |
+| Variable                  | Description                                     | Default                 |
+| ------------------------- | ----------------------------------------------- | ----------------------- |
+| `PUBLIC_API_BASE_URL`     | Backend API base URL                            | `http://localhost:3000` |
+| `PUBLIC_API_PROXY_TARGET` | Backend target for the development `/api` proxy | `http://localhost:7860` |
 
 ### Development Proxy
 
-The dev server proxies `/api` requests to the backend:
+The dev server proxies `/api` requests to `PUBLIC_API_PROXY_TARGET` (or
+`http://localhost:7860` by default):
 
 ```typescript
 // rsbuild.config.ts
 server: {
   proxy: {
     '/api': {
-      target: 'http://localhost:7860',  // Backend server
+      target: 'http://localhost:7860',  // Default backend server
       changeOrigin: true,
       ws: true,  // WebSocket support
     },
@@ -109,7 +111,7 @@ server: {
 }
 ```
 
-This allows the UI to make API calls to `/api/*` which are automatically forwarded to the backend at `http://localhost:7860`.
+This allows the UI to make API calls to `/api/*` which are automatically forwarded to the configured backend.
 
 ## See Also
 

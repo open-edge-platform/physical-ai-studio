@@ -1,26 +1,12 @@
 import { Suspense } from 'react';
 
-import {
-    ActionButton,
-    DialogTrigger,
-    Divider,
-    Flex,
-    Grid,
-    Icon,
-    Item,
-    Loading,
-    TabList,
-    Tabs,
-    View,
-} from '@geti-ui/ui';
-import { Manifest } from '@geti-ui/ui/icons';
+import { Flex, Grid, Item, Loading, TabList, Tabs, View } from '@geti-ui/ui';
 import { Outlet, useLocation } from 'react-router';
 
+import { AppFooter } from '../../components/app-footer/app-footer';
 import { AppLogo } from '../../components/app-logo/app-logo';
-import { JobStatus } from '../../features/jobs/footer/job-status';
-import { LogsDialog } from '../../features/logs/logs-dialog';
-import { ProjectsListPanel } from '../../features/projects/menu/projects-list-panel.component';
-import { useProjectId } from '../../features/projects/use-project';
+import { ProjectMenu } from '../../features/projects/menu/project-menu.component';
+import { useProject, useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { getMainPageInProjectUrl } from './project-navigation';
 
@@ -61,43 +47,8 @@ const Header = ({ project_id }: { project_id: string }) => {
                     ]}
                 </TabList>
                 <Flex alignItems={'center'} height={'100%'} marginStart='auto' gap='size-100'>
-                    <ProjectsListPanel />
+                    <ProjectMenu />
                 </Flex>
-            </Flex>
-        </View>
-    );
-};
-
-const Footer = () => {
-    return (
-        <View
-            gridArea={'footer'}
-            borderTopColor={'gray-300'}
-            borderTopWidth={'thin'}
-            borderBottomColor={'gray-75'}
-            borderBottomWidth={'thin'}
-            paddingX='size-100'
-            paddingY='size-25'
-        >
-            <Flex alignItems={'center'} height='100%' gap='size-100'>
-                <View overflow={'hidden'}>
-                    <DialogTrigger type='fullscreen'>
-                        <ActionButton
-                            isQuiet
-                            UNSAFE_style={{
-                                paddingRight: 'var(--spectrum-global-dimension-size-100)',
-                            }}
-                        >
-                            <Icon>
-                                <Manifest />
-                            </Icon>
-                            Logs
-                        </ActionButton>
-                        {(close) => <LogsDialog close={close} />}
-                    </DialogTrigger>
-                </View>
-                <Divider orientation='vertical' size='S' />
-                <JobStatus />
             </Flex>
         </View>
     );
@@ -106,6 +57,9 @@ const Footer = () => {
 export const ProjectLayout = () => {
     const { project_id } = useProjectId();
     const { pathname } = useLocation();
+
+    // We want to check if the project exists before rendering the layout. If it doesn't, error boundary will catch it.
+    useProject();
 
     const pageName = getMainPageInProjectUrl(pathname);
 
@@ -123,12 +77,19 @@ export const ProjectLayout = () => {
                 height={'100%'}
             >
                 <Header project_id={project_id} />
-                <View gridArea={'content'} maxHeight={'100vh'} minWidth={0} minHeight={0} height='100%'>
+                <View
+                    gridArea={'content'}
+                    maxHeight={'100vh'}
+                    minWidth={0}
+                    minHeight={0}
+                    height='100%'
+                    backgroundColor={'gray-75'}
+                >
                     <Suspense fallback={<Loading mode='overlay' />}>
                         <Outlet />
                     </Suspense>
                 </View>
-                <Footer />
+                <AppFooter />
             </Grid>
         </Tabs>
     );

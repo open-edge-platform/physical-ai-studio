@@ -41,12 +41,12 @@ const ProjectsList = ({ projects }: ProjectsListProps) => {
 
     const sortedProjects = useMemo(() => {
         return filteredProjects.toSorted((projectA, projectB) => {
-            const projectUpdatedAtA = projectA.updated_at ? new Date(projectA.updated_at) : new Date(0);
-            const projectUpdatedAtB = projectB.updated_at ? new Date(projectB.updated_at) : new Date(0);
+            const projectCreatedAtA = projectA.created_at ? new Date(projectA.created_at) : new Date(0);
+            const projectUpdatedAtB = projectB.created_at ? new Date(projectB.created_at) : new Date(0);
 
             return sortDirection === 'desc'
-                ? projectUpdatedAtB.getTime() - projectUpdatedAtA.getTime()
-                : projectUpdatedAtA.getTime() - projectUpdatedAtB.getTime();
+                ? projectUpdatedAtB.getTime() - projectCreatedAtA.getTime()
+                : projectCreatedAtA.getTime() - projectUpdatedAtB.getTime();
         });
     }, [filteredProjects, sortDirection]);
 

@@ -13,6 +13,7 @@ class ResourceType(StrEnum):
     DATASET = "Dataset"
     MODEL = "Model"
     REMOTE_TRAINER = "Remote trainer"
+    REMOTE_SERVER = "Remote server"
     JOB = "JOB"
     JOB_FILE = "JOB_FILE"
 
@@ -71,6 +72,20 @@ class ResourceInUseError(BaseException):
         super().__init__(
             message=msg,
             error_code=f"{resource_type}_in_use",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class RobotPluginUnavailableError(BaseException):
+    """Raised when a robot's catalog plugin is not installed."""
+
+    def __init__(self, robot_name: str, robot_type: str) -> None:
+        super().__init__(
+            message=(
+                f"Robot '{robot_name}' requires unavailable plugin type '{robot_type}'. "
+                "Reinstall the plugin before connecting."
+            ),
+            error_code="robot_plugin_unavailable",
             http_status=http.HTTPStatus.CONFLICT,
         )
 
@@ -280,5 +295,141 @@ class SharedRobotTransportError(BaseException):
         super().__init__(
             message=message,
             error_code="robot_transport_error",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class RobotIdentifyError(BaseException):
+    """Raised when visually identifying a robot fails during joint motion."""
+
+    def __init__(
+        self,
+        message: str = (
+            "Robot identify failed: a joint could not be moved safely. Power-cycle the robot and try again."
+        ),
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="robot_identify_error",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshHostAliasNotFoundError(BaseException):
+    """Raised when a server's SSH host alias is absent from the user's SSH config.
+
+    Distinct from a connection failure: nothing was dialed, because there was no
+    host to dial. A wildcard-only match lands here too - a pattern stanza is not
+    a usable target.
+    """
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"SSH host alias '{alias}' was not found in your SSH config. "
+                f"Add a Host entry named '{alias}' to ~/.ssh/config, then try again."
+            ),
+            error_code="ssh_host_alias_not_found",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshHostKeyUnknownError(BaseException):
+    """Raised when the host is absent from ``known_hosts``.
+
+    Fails closed. Studio neither pins nor writes host keys, so the recovery is
+    for the user to accept the fingerprint themselves.
+    """
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"The host key for '{alias}' has not been accepted yet. "
+                f"Run `ssh {alias}` once and accept its fingerprint, then try again."
+            ),
+            error_code="ssh_host_key_unknown",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshHostKeyMismatchError(BaseException):
+    """Raised when the host key differs from the one in ``known_hosts``.
+
+    Treated as untrusted rather than as a stale entry: this is what a
+    machine-in-the-middle looks like, and it is also what a legitimately
+    rebuilt host looks like. Studio cannot tell them apart, so it refuses.
+    """
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"The host key for '{alias}' does not match the one in your known_hosts file. "
+                "The server may have been rebuilt, or the connection may be intercepted. "
+                "Verify the new fingerprint out of band before updating known_hosts."
+            ),
+            error_code="ssh_host_key_mismatch",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshAgentRequiredError(BaseException):
+    """Raised when the resolved identity is passphrase-protected and no agent can unlock it.
+
+    Studio never prompts for or stores a passphrase, so an agent is the only way
+    a protected key can be used.
+    """
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"The SSH key for '{alias}' is passphrase-protected and no SSH agent is available. "
+                f"Start an agent and run `ssh-add`, then try again."
+            ),
+            error_code="ssh_agent_required",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshAuthenticationError(BaseException):
+    """Raised when the server rejected every identity the SSH config offered."""
+
+    def __init__(self, alias: str) -> None:
+        super().__init__(
+            message=(
+                f"Authentication failed for '{alias}'. Check that `ssh {alias}` works from a terminal, then try again."
+            ),
+            error_code="ssh_authentication_failed",
+            http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshConnectionError(BaseException):
+    """Raised when the resolved host could not be reached.
+
+    Carries no underlying exception text: a raw SSH error can contain resolved
+    hostnames and key paths, which must not reach an API response.
+    """
+
+    def __init__(self, alias: str, reason: str | None = None) -> None:
+        detail = f" ({reason})" if reason else ""
+        super().__init__(
+            message=f"Could not connect to '{alias}'{detail}. Check that the server is reachable.",
+            error_code="ssh_connection_failed",
+            http_status=http.HTTPStatus.BAD_GATEWAY,
+        )
+
+
+class RemoteServerPreflightError(BaseException):
+    """Raised when a server's blocking Tier 1 checks fail on create or update.
+
+    Carries the structured per-check results so the UI can show which check
+    failed rather than only that something did.
+    """
+
+    def __init__(self, message: str, failures: list[str] | None = None) -> None:
+        self.failures = failures or []
+        super().__init__(
+            message=message,
+            error_code="remote_server_preflight_failed",
             http_status=http.HTTPStatus.BAD_REQUEST,
         )

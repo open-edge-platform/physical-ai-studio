@@ -9,17 +9,14 @@ serve_module = importlib.import_module("cli.serve")
 
 
 @pytest.fixture(autouse=True)
-def _clear_settings_cache() -> Iterator[None]:
-    settings_module = importlib.import_module("settings")
+def _clear_packaged_runtime_environment() -> Iterator[None]:
     os.environ.pop("ALEMBIC_CONFIG_PATH", None)
     os.environ.pop("ALEMBIC_SCRIPT_LOCATION", None)
     os.environ.pop("STATIC_FILES_DIR", None)
-    settings_module.get_settings.cache_clear()
     yield
     os.environ.pop("ALEMBIC_CONFIG_PATH", None)
     os.environ.pop("ALEMBIC_SCRIPT_LOCATION", None)
     os.environ.pop("STATIC_FILES_DIR", None)
-    settings_module.get_settings.cache_clear()
 
 
 def test_sync_missing_robot_assets_skips_when_available(monkeypatch) -> None:
@@ -66,9 +63,8 @@ def test_sync_missing_robot_assets_exits_when_sync_fails(monkeypatch) -> None:
         serve_module._sync_missing_robot_assets()
 
 
-def test_configure_packaged_runtime_refreshes_cached_settings(monkeypatch) -> None:
+def test_configure_packaged_runtime_updates_settings(monkeypatch) -> None:
     settings_module = importlib.import_module("settings")
-    settings_module.get_settings.cache_clear()
 
     stale_settings = settings_module.get_settings()
     assert stale_settings.alembic_script_location == "src/alembic"

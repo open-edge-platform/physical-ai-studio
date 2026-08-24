@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import json
 import re
 import shutil
 from dataclasses import dataclass
@@ -13,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 from uuid import UUID  # noqa: TC003
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from loguru import logger
@@ -24,7 +27,7 @@ from physicalai.data.archive_safety import (
     check_disk_headroom,
     flatten_single_root_directory,
 )
-from sse_starlette.sse import EventSourceResponse
+from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
 from trainer.schemas import (
     CancelResponse,
@@ -51,6 +54,15 @@ class _ChunkedFileResponse(FileResponse):
     """FileResponse with a larger streaming chunk size for large artifacts."""
 
     chunk_size = _ARTIFACT_CHUNK_SIZE
+
+
+def _parse_metric_value(value: str) -> int | float | str | None:
+    """Match the Studio CSV metric value representation."""
+    try:
+        parsed = float(value)
+        return int(parsed) if parsed.is_integer() else parsed
+    except ValueError:
+        return None if value == "" else value
 
 
 def _manager(request: Request) -> QueueManager:
@@ -292,6 +304,57 @@ async def job_events(job_id: ResolvedJob, request: Request) -> EventSourceRespon
             await asyncio.sleep(1.0)
 
     return EventSourceResponse(_event_stream())
+
+
+@router.get("/{job_id}/metrics")
+async def job_metrics(job_id: ResolvedJob, request: Request) -> EventSourceResponse:
+    """Stream Lightning CSV metrics while a remote job is running."""
+    manager = job_id.manager
+    cache_path = get_settings().storage_dir / "cache" / job_id.id / "version_0" / "metrics.csv"
+    model_path = get_settings().models_dir / job_id.id / "version_0" / "metrics.csv"
+
+    async def _metric_stream():
+        path = cache_path
+        while not path.exists():
+            if await request.is_disconnected():
+                return
+            state = manager.store.get(job_id.id)
+            if state is None or state.status in _TERMINAL:
+                # A completed run moves the cache into the model directory.
+                if model_path.exists():
+                    path = model_path
+                    break
+                return
+            await asyncio.sleep(0.5)
+
+        async with await anyio.open_file(path, encoding="utf-8") as metrics_file:
+            header_line = ""
+            while not header_line:
+                if await request.is_disconnected():
+                    return
+                header_line = await metrics_file.readline()
+                if header_line:
+                    break
+                state = manager.store.get(job_id.id)
+                if state is None or state.status in _TERMINAL:
+                    return
+                await asyncio.sleep(0.5)
+            headers = [header.replace("/", "_") for header in next(csv.reader([header_line]))]
+            while True:
+                if await request.is_disconnected():
+                    return
+                line = await metrics_file.readline()
+                if line:
+                    row = next(csv.reader([line]))
+                    data = {key: _parse_metric_value(value) for key, value in zip(headers, row, strict=False)}
+                    yield ServerSentEvent(data=json.dumps(data))
+                    continue
+                state = manager.store.get(job_id.id)
+                if state is None or state.status in _TERMINAL:
+                    return
+                await asyncio.sleep(0.5)
+
+    return EventSourceResponse(_metric_stream())
 
 
 @router.get("/{job_id}/artifact")

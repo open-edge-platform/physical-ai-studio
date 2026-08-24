@@ -36,24 +36,30 @@ export const useSynchronizeModelJoints = (joints: JointsState, robotType: Schema
     }, [model, joints, jointMap]);
 };
 
-export enum RobotActionReadState {
-    None = 0,
-    Teleoperation = 1,
-}
+// Mirrors the backend's runtime.contract.FollowerSource. 'policy' is not sent by
+// this websocket yet (reserved for Phase B inference), but the union must match
+// the backend contract so a future value doesn't silently narrow to 'hold'.
+export type FollowerSource = 'hold' | 'teleop' | 'policy';
+
+const RECOVERABLE_ERROR_CODES = new Set(['leader_connection_lost']);
+
+export const isRecoverableRobotControlError = (errorCode: unknown): errorCode is string =>
+    typeof errorCode === 'string' && RECOVERABLE_ERROR_CODES.has(errorCode);
 
 interface RobotControlState {
     connected: boolean;
-    follower_source: RobotActionReadState;
+    follower_source: FollowerSource;
 }
 
 export const useJointState = (project_id: string, follower_id: string, leader_id?: string) => {
     const [joints, setJoints] = useState<JointsState>([]);
     const [state, setState] = useState<RobotControlState>({
         connected: false,
-        follower_source: RobotActionReadState.None,
+        follower_source: 'hold',
     });
     const [error, setError] = useState<string | null>(null);
     const [errorCode, setErrorCode] = useState<string | null>(null);
+    const [warning, setWarning] = useState<string | null>(null);
     const hasFatalError = useRef(false);
 
     const handleMessage = useCallback((event: WebSocketEventMap['message']) => {
@@ -67,8 +73,17 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
                 setState(payload['data']);
                 setError(null);
                 setErrorCode(null);
+                setWarning(null);
                 hasFatalError.current = false;
             } else if (payload['event'] === 'error') {
+                if (isRecoverableRobotControlError(payload.error_code)) {
+                    setWarning(
+                        typeof payload.message === 'string'
+                            ? payload.message
+                            : 'The robot session entered a safe state.'
+                    );
+                    return;
+                }
                 hasFatalError.current = true;
                 setError(typeof payload.message === 'string' ? payload.message : 'Failed to connect to the robot.');
                 setErrorCode(typeof payload.error_code === 'string' ? payload.error_code : 'robot_connection_failed');
@@ -96,6 +111,7 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
                 }
                 setError(null);
                 setErrorCode(null);
+                setWarning(null);
                 socket.sendJsonMessage({
                     follower_id,
                     leader_id,
@@ -113,12 +129,12 @@ export const useJointState = (project_id: string, follower_id: string, leader_id
         }
     );
 
-    const setFollowerSourceRequest = (value: RobotActionReadState) => {
+    const setFollowerSourceRequest = (value: FollowerSource) => {
         socket.sendJsonMessage({
             event: 'set_follower_source',
-            data: value,
+            data: { follower_source: value },
         });
     };
 
-    return { joints, socket, state, error, errorCode, setFollowerSource: setFollowerSourceRequest };
+    return { joints, socket, state, error, errorCode, warning, setFollowerSource: setFollowerSourceRequest };
 };

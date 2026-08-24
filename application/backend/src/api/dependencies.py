@@ -77,9 +77,18 @@ def get_remote_trainer_service(session: AsyncSessionDep) -> RemoteTrainerService
 RemoteTrainerServiceDep = Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)]
 
 
-def get_robot_service(session: AsyncSessionDep) -> RobotService:
+@lru_cache
+def get_robot_catalog_service() -> RobotCatalogService:
+    """Provide a RobotCatalogService instance for the robot catalog."""
+    return RobotCatalogService()
+
+
+RobotCatalogServiceDep = Annotated[RobotCatalogService, Depends(get_robot_catalog_service)]
+
+
+def get_robot_service(session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep) -> RobotService:
     """Provide a RobotService instance for managing robots in a project."""
-    return RobotService(session)
+    return RobotService(session, catalog_service.registry)
 
 
 RobotServiceDep = Annotated[RobotService, Depends(get_robot_service)]
@@ -98,38 +107,32 @@ def get_robot_manager_service(request: HTTPConnection) -> RobotConnectionManager
 RobotConnectionManagerDep = Annotated[RobotConnectionManager, Depends(get_robot_manager_service)]
 
 
-def get_robot_client_factory(robot_manager: RobotConnectionManagerDep) -> RobotClientFactory:
+def get_robot_client_factory(
+    robot_manager: RobotConnectionManagerDep,
+    catalog_service: RobotCatalogServiceDep,
+) -> RobotClientFactory:
     """Provide a RobotClientFactory bound to the application robot manager.
 
     Request scoped: the factory is a thin wrapper around the shared
     RobotConnectionManager and is the seam used to fake robot hardware in tests.
     """
-    return RobotClientFactory(robot_manager=robot_manager)
+    return RobotClientFactory(robot_manager=robot_manager, catalog_registry=catalog_service.registry)
 
 
 RobotClientFactoryDep = Annotated[RobotClientFactory, Depends(get_robot_client_factory)]
 
 
-@lru_cache
-def get_robot_catalog_service() -> RobotCatalogService:
-    """Provide a RobotCatalogService instance for the robot catalog."""
-    return RobotCatalogService()
-
-
-RobotCatalogServiceDep = Annotated[RobotCatalogService, Depends(get_robot_catalog_service)]
-
-
-def get_camera_service(session: AsyncSessionDep) -> ProjectCameraService:
+def get_camera_service(session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep) -> ProjectCameraService:
     """Provide a ProjectCameraService instance for managing cameras in a project."""
-    return ProjectCameraService(session)
+    return ProjectCameraService(session, catalog_service.registry)
 
 
 ProjectCameraServiceDep = Annotated[ProjectCameraService, Depends(get_camera_service)]
 
 
-def get_environment_service(session: AsyncSessionDep) -> EnvironmentService:
+def get_environment_service(session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep) -> EnvironmentService:
     """Provide a EnvironmentService instance for managing environments in a project."""
-    return EnvironmentService(session)
+    return EnvironmentService(session, catalog_service.registry)
 
 
 EnvironmentServiceDep = Annotated[EnvironmentService, Depends(get_environment_service)]

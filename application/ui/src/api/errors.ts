@@ -24,6 +24,18 @@ export const isResourceInUseError = (error: unknown): boolean =>
     typeof (error as Record<string, unknown>).error_code === 'string' &&
     (error as Record<string, string>).error_code.toLowerCase().endsWith('_in_use');
 
+/**
+ * Returns true when the API error was a serial port permission failure (HTTP 403).
+ *
+ * The backend returns `{ error_code: "serial_permission_denied", ... }` when the
+ * process cannot open the robot's serial device (e.g. missing `dialout` access).
+ */
+export const isSerialPermissionDeniedError = (error: unknown): boolean =>
+    typeof error === 'object' &&
+    error !== null &&
+    typeof (error as Record<string, unknown>).error_code === 'string' &&
+    (error as Record<string, string>).error_code.toLowerCase() === 'serial_permission_denied';
+
 interface ApiErrorBody {
     error_code?: string;
     message?: string;

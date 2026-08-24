@@ -54,7 +54,6 @@ cu128 = ["torch", "torchvision"]
 xpu = [
     "torch",
     "torchvision",
-    "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 # Testing dependencies
 tests = [
@@ -219,7 +218,6 @@ torchvision = [
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 
-pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 triton-xpu = { index = "pytorch-xpu" }
 
 

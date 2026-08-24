@@ -1,0 +1,15 @@
+script: model_servers/physicalai.py
+port: 8000
+args:
+  policy:
+    class_path: physicalai.policies.pi05.Pi05
+    init_args:
+      pretrained_name_or_path: lerobot/pi05_libero_finetuned_v044
+  image_keys:
+    agentview: image
+    wrist: image2
+  state_key: observation.state
+  send_state: true
+  send_wrist_image: true
+  chunk_size: 10
+  device: cuda # xpu cpu etc

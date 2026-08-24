@@ -17,7 +17,7 @@ from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError, ResourceType
 from schemas import Job
 from schemas.base_job import JobStatus
-from schemas.job import TrainJobPayload
+from schemas.job import TrainingTarget, TrainJob, TrainJobPayload
 from services import JobService, ModelMetricsService
 from services.event_processor import EventProcessor, EventType
 
@@ -46,7 +46,7 @@ async def delete_job(
     job_id: Annotated[UUID, Depends(get_job_id)],
     job_service: Annotated[JobService, Depends(get_job_service)],
 ) -> None:
-    """Delete a job. Only allows deleting failed jobs"""
+    """Delete a job. Only allows deleting failed or canceled jobs"""
     await job_service.delete_job(job_id)
 
 
@@ -88,6 +88,15 @@ async def get_model_job_metrics(
     metrics_path = await model_metrics_service.get_model_job_metrics_path(job)
     if metrics_path.exists():
         return EventSourceResponse(model_metrics_service.tail_csv_file(metrics_path))
+    if (
+        isinstance(job, TrainJob)
+        and job.payload.training_target is TrainingTarget.REMOTE
+        and job.payload.remote_trainer_url is not None
+        and job.payload.remote_job_id is not None
+    ):
+        return EventSourceResponse(
+            model_metrics_service.tail_remote_csv_file(job.payload.remote_trainer_url, str(job.payload.remote_job_id))
+        )
     return EventSourceResponse(model_metrics_service.empty_metrics_stream())
 
 
