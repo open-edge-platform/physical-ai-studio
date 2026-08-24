@@ -3359,6 +3359,18 @@
       "severity": "error"
     },
     {
+      "line": 569,
+      "column": 9,
+      "stop_line": 569,
+      "stop_column": 29,
+      "path": "src/physicalai/policies/vla_jepa/policy.py",
+      "code": -2,
+      "name": "bad-override",
+      "description": "Class member `VLAJEPA.configure_optimizers` overrides parent class `Policy` in an inconsistent manner\n  `VLAJEPA.configure_optimizers` has type `(self: VLAJEPA) -> dict[str, Any]`, which is not assignable to `(self: VLAJEPA) -> OptimizerLRScheduler`, the type of `Policy.configure_optimizers`\n  Signature mismatch:\n  expected: def configure_optimizers(self: VLAJEPA) -> OptimizerLRScheduler: ...\n                                                       ^^^^^^^^^^^^^^^^^^^^ return type\n  found:    def configure_optimizers(self: VLAJEPA) -> dict[str, Any]: ...\n                                                       ^^^^^^^^^^^^^^ return type",
+      "concise_description": "Class member `VLAJEPA.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
       "line": 261,
       "column": 21,
       "stop_line": 261,

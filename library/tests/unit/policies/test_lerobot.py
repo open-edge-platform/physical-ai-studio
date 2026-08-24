@@ -280,6 +280,7 @@ class TestNamedLeRobotPolicy:
             PI05,
             SUPPORTED_POLICIES,
             VALIDATED_EQUIVALENCE_POLICIES,
+            VLAJEPA,
             XVLA,
             Diffusion,
             Groot,
@@ -295,6 +296,7 @@ class TestNamedLeRobotPolicy:
             PI05,
             PI0Fast,
             SmolVLA,
+            VLAJEPA,
             XVLA,
         )
         names = {cls.POLICY_NAME for cls in wrappers}
@@ -318,7 +320,7 @@ class TestNamedLeRobotPolicy:
 
     @pytest.mark.parametrize(
         "wrapper_name",
-        ["ACT", "Diffusion", "Groot", "PI0", "PI05", "PI0Fast", "SmolVLA", "XVLA"],
+        ["ACT", "Diffusion", "Groot", "PI0", "PI05", "PI0Fast", "SmolVLA", "VLAJEPA", "XVLA"],
     )
     def test_named_wrapper_rejects_mismatched_policy_name(self, wrapper_name):
         """``ACT(policy_name="diffusion")`` raises — POLICY_NAME is the source of truth.

@@ -5,7 +5,7 @@
 PhysicalAI integrates LeRobot policies through a single base class
 (`LeRobotPolicy`) and one thin alias per first-class supported policy
 (`act`, `diffusion`, `groot`, `pi0`, `pi05`, `pi0_fast`, `smolvla`,
-`xvla`), each binding a fixed `policy_name`. Configuration flows through
+`vla_jepa`, `xvla`), each binding a fixed `policy_name`. Configuration flows through
 LeRobot's own `PreTrainedConfig` dataclasses (`ACTConfig`,
 `DiffusionConfig`, …), so the upstream contract is the single source of
 truth for policy parameters. Other LeRobot-registered policies remain
@@ -245,7 +245,7 @@ Two registries describe the wrapper's coverage:
 
 - `SUPPORTED_POLICIES` — first-class LeRobot policies exposed as named
   `NamedLeRobotPolicy` subclasses (`act`, `diffusion`, `groot`, `pi0`,
-  `pi05`, `pi0_fast`, `smolvla`, `xvla`).
+  `pi05`, `pi0_fast`, `smolvla`, `vla_jepa`, `xvla`).
 - `VALIDATED_EQUIVALENCE_POLICIES` — subset with measured wrapper-vs-native
   numerical equivalence under tier-appropriate tolerances: `rtol=atol=1e-6`
   at the unit tier (CPU, fp32) and `rtol=1e-5` (loss) / `rtol=5e-5` (weights)
@@ -256,6 +256,7 @@ Two registries describe the wrapper's coverage:
 | `act`, `diffusion`, `smolvla` | ✅         | ✅                     | Validated CPU + accelerator tiers       |
 | `pi0`, `pi05`, `pi0_fast`     | —          | ✅                     | VLA, accelerator + bf16-mixed only      |
 | `groot`                       | —          | xfail                  | Upstream hardcodes `flash_attention_2`  |
+| `vla_jepa`                    | —          | xfail                  | Needs `delta_timestamps` for its world model |
 | `xvla`                        | —          | xfail                  | Requires explicit `vision_config` kwarg |
 
 Tracked limitations register as pytest `xfail(reason=...)` rather than silent

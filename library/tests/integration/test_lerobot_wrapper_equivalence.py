@@ -41,7 +41,7 @@ pytest.importorskip("lerobot", reason="LeRobot not installed")
 DATASET_REPO_ID = "lerobot/aloha_sim_insertion_human"
 
 # VLA policies that need smaller batch/episode counts for GPU memory
-_VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot"}
+_VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot", "vla_jepa"}
 
 
 def _empty_accelerator_cache(device: torch.device) -> None:
@@ -60,6 +60,7 @@ _EQUIVALENCE_XFAIL_REASONS: dict[str, str] = {
     "pi05": "model repo is gated",
     "pi0_fast": "model repo is gated",
     "pi0": "model repo is gated",
+    "vla_jepa": "world-model branch needs multi-frame `delta_timestamps`, not derivable from dataset",
 }
 
 

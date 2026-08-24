@@ -41,6 +41,7 @@ PhysicalAI Library is a Python SDK for training, evaluating, and deploying Visio
 | **Pi0**      | Physical Intelligence foundation model                      | [Black et al. 2024](https://www.physicalintelligence.company/download/pi0.pdf) |
 | **GR00T N1** | Vision-language grounded policy                             | [Bjork et al. 2025](https://arxiv.org/abs/2503.14734)                          |
 | **Pi0.5**    | Vision-Language-Action Model with Open-World Generalization | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)                          |
+| **VLA-JEPA** | Vision-Language-Action Model with Latent World Model        | [Sun et al. 2026](https://arxiv.org/pdf/2602.10098)                            |
 
 # Installation
 
