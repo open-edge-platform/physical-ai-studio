@@ -3,6 +3,7 @@
 
 """Mixin classes for exporting Policies."""
 
+import copy
 import inspect
 import logging
 import tempfile
@@ -612,10 +613,20 @@ class ExportablePolicyMixin:
             msg = "executorch package is required for ExecuTorch export. Install with: pip install executorch"
             raise ImportError(msg) from e
 
-        self.model.eval()
+        # ExecuTorch targets CPU/edge deployment: its delegates ("portable",
+        # "xnnpack") and its EValue/flatbuffer serialization format have no
+        # CUDA/XPU device case. Tracing and lowering a graph with
+        # accelerator-resident tensors reaches that missing case in native
+        # code, which segfaults rather than raising a catchable Python
+        # exception. Trace a CPU copy instead of `self.model` so this export
+        # doesn't crash when the policy is trained on cuda/xpu, and so the
+        # live, accelerator-resident policy is left untouched for any export
+        # backend that runs after this one.
+        export_model = copy.deepcopy(self.model).to("cpu").eval()
+        cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
         aten_dialect = torch.export.export(
-            self.model,
-            args=(input_sample,),
+            export_model,
+            args=(cpu_input_sample,),
             **extra_export_kwargs,
         )
 
