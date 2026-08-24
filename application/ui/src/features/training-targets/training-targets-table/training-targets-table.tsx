@@ -1,11 +1,9 @@
-import { ReactNode, useState } from 'react';
+import { useState } from 'react';
 
 import {
     ActionButton,
     Badge,
     Flex,
-    Grid,
-    Icon,
     Item,
     Key,
     Menu,
@@ -15,9 +13,10 @@ import {
     Tooltip,
     TooltipTrigger,
 } from '@geti-ui/ui';
-import { ChevronRightSmallLight, MoreMenu } from '@geti-ui/ui/icons';
+import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteServer, SchemaRemoteTrainer } from '../../../api/openapi-spec';
+import { Table, TableColumn } from '../../../components/table/table';
 import {
     remoteServerComputeDetail,
     remoteServerStatusLabel,
@@ -33,23 +32,19 @@ import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 
 import classes from './training-targets-table.module.css';
 
-export const TRAINING_TARGETS_GRID_COLUMNS = 'max-content 1fr 1fr 1fr 1fr auto';
-
 const DEVICE_BADGE_CLASSES: Record<string, string> = {
     CUDA: classes.cudaBadge,
     XPU: classes.xpuBadge,
 };
 
-export const TrainingTargetsTableHeader = () => (
-    <div className={classes.tableHeader}>
-        <div />
-        <Text>Name</Text>
-        <Text>Connection</Text>
-        <Text>Status</Text>
-        <Text>Compute</Text>
-        <div />
-    </div>
-);
+export const TRAINING_TARGET_COLUMNS: TableColumn[] = [
+    { width: 'max-content' },
+    { width: '1fr', header: 'Name' },
+    { width: '1fr', header: 'Connection' },
+    { width: '1fr', header: 'Status' },
+    { width: '1fr', header: 'Compute' },
+    { width: 'auto', align: 'end' },
+];
 
 const TARGET_MENU_ACTION_ITEMS = {
     CHECK_STATUS: 'check_status',
@@ -95,8 +90,7 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }
 
 type StatusVariant = 'positive' | 'notice' | 'negative' | 'neutral' | 'yellow';
 
-type TargetRowShellProps = {
-    id: string;
+type TargetRowContentProps = {
     name: string;
     connectionLabel: string;
     statusVariant: StatusVariant;
@@ -105,16 +99,18 @@ type TargetRowShellProps = {
     computeDetail: string;
     kindBadge: 'SSH' | 'Direct URL';
     isChecking: boolean;
-    isExpanded: boolean;
-    onToggleExpanded: () => void;
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
-    children: ReactNode;
 };
 
-const TargetRowShell = ({
-    id,
+/**
+ * The five cells rendered inside a row, one per column after the disclosure
+ * column. Returns a flat array (not a fragment) so `Table.ExpandableRow`'s
+ * `Children.toArray` sees five distinct children matching the five columns,
+ * rather than a single wrapped element.
+ */
+const targetRowCells = ({
     name,
     connectionLabel,
     statusVariant,
@@ -123,81 +119,49 @@ const TargetRowShell = ({
     computeDetail,
     kindBadge,
     isChecking,
-    isExpanded,
-    onToggleExpanded,
     onCheck,
     onEdit,
     onDelete,
-    children,
-}: TargetRowShellProps) => {
-    const contentId = `training-target-detail-${id}`;
+}: TargetRowContentProps) => [
+    <Text key='name'>{name}</Text>,
 
-    return (
-        <div
-            data-testid={`training-target-row-${id}`}
-            onClick={onToggleExpanded}
-            className={`${classes.trainerRow} ${isExpanded ? classes.rowExpanded : ''}`}
-        >
-            <ActionButton
-                isQuiet
-                aria-expanded={isExpanded}
-                aria-controls={contentId}
-                aria-label={`Show details for ${name}`}
-                onPress={onToggleExpanded}
-                UNSAFE_className={classes.disclosureButton}
-            >
-                <Icon>
-                    <ChevronRightSmallLight />
-                </Icon>
-            </ActionButton>
+    <TooltipTrigger key='connection' delay={300}>
+        <ActionButton isQuiet UNSAFE_className={classes.kindBadgeTrigger} aria-label={connectionLabel}>
+            <Badge variant='neutral' UNSAFE_className={classes.kindBadge}>
+                {kindBadge}
+            </Badge>
+        </ActionButton>
+        <Tooltip>{connectionLabel}</Tooltip>
+    </TooltipTrigger>,
 
-            <Text>{name}</Text>
+    <StatusLight key='status' variant={statusVariant} UNSAFE_className={classes.healthStatus}>
+        {statusLabel}
+    </StatusLight>,
 
-            <TooltipTrigger delay={300}>
-                <ActionButton isQuiet UNSAFE_className={classes.kindBadgeTrigger} aria-label={connectionLabel}>
-                    <Badge variant='neutral' UNSAFE_className={classes.kindBadge}>
-                        {kindBadge}
-                    </Badge>
-                </ActionButton>
-                <Tooltip>{connectionLabel}</Tooltip>
-            </TooltipTrigger>
+    <Flex key='compute' gap='size-100' alignItems='center' wrap>
+        {types.map((type) => (
+            <Badge key={type} variant='neutral' UNSAFE_className={DEVICE_BADGE_CLASSES[type]}>
+                {type}
+            </Badge>
+        ))}
+        <Text UNSAFE_className={classes.cardMetaText}>{computeDetail}</Text>
+    </Flex>,
 
-            <StatusLight variant={statusVariant} UNSAFE_className={classes.healthStatus}>
-                {statusLabel}
-            </StatusLight>
-
-            <Flex gap='size-100' alignItems='center' wrap>
-                {types.map((type) => (
-                    <Badge key={type} variant='neutral' UNSAFE_className={DEVICE_BADGE_CLASSES[type]}>
-                        {type}
-                    </Badge>
-                ))}
-                <Text UNSAFE_className={classes.cardMetaText}>{computeDetail}</Text>
-            </Flex>
-
-            <Flex gap='size-100' wrap UNSAFE_className={classes.actionsCell}>
-                <TargetMenuActions
-                    targetName={name}
-                    onCheck={onCheck}
-                    onEdit={onEdit}
-                    onDelete={onDelete}
-                    isChecking={isChecking}
-                />
-            </Flex>
-
-            {isExpanded && (
-                <Grid id={contentId} gridColumn={'1/-1'} marginTop={'size-150'}>
-                    {children}
-                </Grid>
-            )}
-        </div>
-    );
-};
+    <div key='actions' onClick={(event) => event.stopPropagation()}>
+        <TargetMenuActions
+            targetName={name}
+            onCheck={onCheck}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            isChecking={isChecking}
+        />
+    </div>,
+];
 
 type DirectUrlTargetRowProps = {
     trainer: SchemaRemoteTrainer;
     isExpanded: boolean;
-    onToggleExpanded: () => void;
+    onExpandedChange: (isExpanded: boolean) => void;
     onExpand: () => void;
     onEdit: () => void;
     onDelete: () => void;
@@ -206,7 +170,7 @@ type DirectUrlTargetRowProps = {
 const DirectUrlTargetRow = ({
     trainer,
     isExpanded,
-    onToggleExpanded,
+    onExpandedChange,
     onExpand,
     onEdit,
     onDelete,
@@ -217,76 +181,83 @@ const DirectUrlTargetRow = ({
     const types = deviceTypes(displayHealth);
 
     return (
-        <TargetRowShell
-            id={trainer.id}
-            name={trainer.name}
-            connectionLabel={trainer.url}
-            statusVariant={healthVariant(displayHealth, isChecking)}
-            statusLabel={healthLabel(displayHealth, isChecking)}
-            deviceTypes={types}
-            computeDetail={
-                displayHealth?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported')
-            }
-            kindBadge='Direct URL'
-            isChecking={isChecking}
+        <Table.ExpandableRow
+            id={`training-target-row-${trainer.id}`}
+            label={trainer.name}
             isExpanded={isExpanded}
-            onToggleExpanded={onToggleExpanded}
-            onCheck={() => {
-                void health?.checkHealth();
-                onExpand();
-            }}
-            onEdit={onEdit}
-            onDelete={onDelete}
+            onExpandedChange={onExpandedChange}
+            detail={<RemoteTrainerDetail remoteTrainer={trainer} health={displayHealth} isChecking={isChecking} />}
         >
-            <RemoteTrainerDetail remoteTrainer={trainer} health={displayHealth} isChecking={isChecking} />
-        </TargetRowShell>
+            {targetRowCells({
+                name: trainer.name,
+                connectionLabel: trainer.url,
+                statusVariant: healthVariant(displayHealth, isChecking),
+                statusLabel: healthLabel(displayHealth, isChecking),
+                deviceTypes: types,
+                computeDetail:
+                    displayHealth?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported'),
+                kindBadge: 'Direct URL',
+                isChecking,
+                onCheck: () => {
+                    void health?.checkHealth();
+                    onExpand();
+                },
+                onEdit,
+                onDelete,
+            })}
+        </Table.ExpandableRow>
     );
 };
 
 type SshTargetRowProps = {
     server: SchemaRemoteServer;
     isExpanded: boolean;
-    onToggleExpanded: () => void;
+    onExpandedChange: (isExpanded: boolean) => void;
     onExpand: () => void;
     onEdit: () => void;
     onDelete: () => void;
 };
 
-const SshTargetRow = ({ server, isExpanded, onToggleExpanded, onExpand, onEdit, onDelete }: SshTargetRowProps) => {
+const SshTargetRow = ({ server, isExpanded, onExpandedChange, onExpand, onEdit, onDelete }: SshTargetRowProps) => {
     const entry = useRemoteServersStatus([server.id]).get(server.id);
     const isChecking = entry?.isChecking ?? false;
     const checkMutation = useRemoteServerCheckMutation();
 
     return (
-        <TargetRowShell
-            id={server.id}
-            name={server.name}
-            connectionLabel={`ssh ${server.ssh_host_alias}`}
-            statusVariant={remoteServerStatusVariant(entry?.status, isChecking)}
-            statusLabel={remoteServerStatusLabel(entry?.status, isChecking)}
-            deviceTypes={[server.device_type.toUpperCase()]}
-            computeDetail={isChecking ? 'Checking…' : (remoteServerComputeDetail(entry?.status) ?? 'Not reported')}
-            kindBadge='SSH'
-            isChecking={isChecking}
+        <Table.ExpandableRow
+            id={`training-target-row-${server.id}`}
+            label={server.name}
             isExpanded={isExpanded}
-            onToggleExpanded={onToggleExpanded}
-            onCheck={() => {
-                void entry?.checkStatus();
-                onExpand();
-            }}
-            onEdit={onEdit}
-            onDelete={onDelete}
+            onExpandedChange={onExpandedChange}
+            detail={
+                <RemoteServerDetail
+                    remoteServer={server}
+                    status={entry?.status}
+                    isChecking={isChecking}
+                    tier2Result={checkMutation.data}
+                    tier2CheckedAt={checkMutation.data?.checked_at}
+                    isRunningTier2={checkMutation.isPending}
+                    onTestConnection={() => checkMutation.mutate({ params: { path: { remote_server_id: server.id } } })}
+                />
+            }
         >
-            <RemoteServerDetail
-                remoteServer={server}
-                status={entry?.status}
-                isChecking={isChecking}
-                tier2Result={checkMutation.data}
-                tier2CheckedAt={checkMutation.data?.checked_at}
-                isRunningTier2={checkMutation.isPending}
-                onTestConnection={() => checkMutation.mutate({ params: { path: { remote_server_id: server.id } } })}
-            />
-        </TargetRowShell>
+            {targetRowCells({
+                name: server.name,
+                connectionLabel: `ssh ${server.ssh_host_alias}`,
+                statusVariant: remoteServerStatusVariant(entry?.status, isChecking),
+                statusLabel: remoteServerStatusLabel(entry?.status, isChecking),
+                deviceTypes: [server.device_type.toUpperCase()],
+                computeDetail: isChecking ? 'Checking…' : (remoteServerComputeDetail(entry?.status) ?? 'Not reported'),
+                kindBadge: 'SSH',
+                isChecking,
+                onCheck: () => {
+                    void entry?.checkStatus();
+                    onExpand();
+                },
+                onEdit,
+                onDelete,
+            })}
+        </Table.ExpandableRow>
     );
 };
 
@@ -304,8 +275,7 @@ export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargets
     const toggleExpanded = (id: string) => setExpandedId((current) => (current === id ? undefined : id));
 
     return (
-        <Grid columns={TRAINING_TARGETS_GRID_COLUMNS} columnGap='size-100' width='100%'>
-            <TrainingTargetsTableHeader />
+        <Table columns={TRAINING_TARGET_COLUMNS} isEmphasized>
             {rows.map((row) => {
                 const id = trainingTargetRowId(row);
                 const isExpanded = expandedId === id;
@@ -316,7 +286,7 @@ export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargets
                             key={id}
                             trainer={row.trainer}
                             isExpanded={isExpanded}
-                            onToggleExpanded={() => toggleExpanded(id)}
+                            onExpandedChange={() => toggleExpanded(id)}
                             onExpand={() => setExpandedId(id)}
                             onEdit={() => onEdit(row)}
                             onDelete={() => onDelete(row)}
@@ -329,13 +299,13 @@ export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargets
                         key={id}
                         server={row.server}
                         isExpanded={isExpanded}
-                        onToggleExpanded={() => toggleExpanded(id)}
+                        onExpandedChange={() => toggleExpanded(id)}
                         onExpand={() => setExpandedId(id)}
                         onEdit={() => onEdit(row)}
                         onDelete={() => onDelete(row)}
                     />
                 );
             })}
-        </Grid>
+        </Table>
     );
 };

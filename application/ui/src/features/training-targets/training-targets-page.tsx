@@ -63,17 +63,17 @@ export const TrainingTargetsPage = () => {
                 </Text>
             )}
 
-            <View UNSAFE_className={classes.container}>
-                {rows.length === 0 ? (
+            {rows.length === 0 ? (
+                <View UNSAFE_className={classes.container}>
                     <Text UNSAFE_className={classes.emptyList}>No training targets are configured.</Text>
-                ) : (
-                    <TrainingTargetsTable
-                        rows={rows}
-                        onEdit={(row) => setAction({ type: 'edit', row })}
-                        onDelete={(row) => setAction({ type: 'delete', row })}
-                    />
-                )}
-            </View>
+                </View>
+            ) : (
+                <TrainingTargetsTable
+                    rows={rows}
+                    onEdit={(row) => setAction({ type: 'edit', row })}
+                    onDelete={(row) => setAction({ type: 'delete', row })}
+                />
+            )}
 
             <DialogContainer onDismiss={() => setAction(undefined)}>
                 {action?.type === 'create' && <TrainingTargetForm close={() => setAction(undefined)} />}
