@@ -221,58 +221,73 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             invalidates: [['get', '/api/jobs']],
         },
     });
+    // `save` awaits health re-checks before it ever calls `mutateAsync`, so
+    // `trainMutation.isPending` alone doesn't cover the whole submission window
+    // — a double-click (or the dialog's slow close after success) can start a
+    // second `save()` call while the first one is still awaiting those checks.
+    // Track submission with its own flag so a second call is a no-op for the
+    // entire duration, not just while the mutation itself is in flight.
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const save = async () => {
+        if (isSubmitting) {
+            return;
+        }
+
         const dataset_id = selectedDataset?.toString();
 
         if (!dataset_id || !selectedPolicy || selectedTarget === null) {
             return;
         }
 
-        if (isRemoteTarget) {
-            // Final guard: the remote trainer may have gone offline since the last
-            // poll, so re-check availability right before submitting the job.
-            const latestHealth = await checkRemoteTrainerHealth();
-            if (latestHealth === null || latestHealth.status === 'unreachable') {
-                return;
+        setIsSubmitting(true);
+        try {
+            if (isRemoteTarget) {
+                // Final guard: the remote trainer may have gone offline since the last
+                // poll, so re-check availability right before submitting the job.
+                const latestHealth = await checkRemoteTrainerHealth();
+                if (latestHealth === null || latestHealth.status === 'unreachable') {
+                    return;
+                }
             }
-        }
 
-        if (isSshTarget) {
-            if (sshUnavailable) {
-                return;
+            if (isSshTarget) {
+                if (sshUnavailable) {
+                    return;
+                }
+                // Final guard: the server may have gone unreachable/degraded since the
+                // last poll, so re-check its Tier-1 status right before submitting.
+                const latestStatus = await selectedSshStatusEntry?.checkStatus();
+                if (!latestStatus || latestStatus.status !== 'healthy') {
+                    return;
+                }
             }
-            // Final guard: the server may have gone unreachable/degraded since the
-            // last poll, so re-check its Tier-1 status right before submitting.
-            const latestStatus = await selectedSshStatusEntry?.checkStatus();
-            if (!latestStatus || latestStatus.status !== 'healthy') {
-                return;
-            }
-        }
 
-        const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
+            const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
 
-        const payload: SchemaJob['payload'] = {
-            dataset_id,
-            project_id: projectId,
-            model_name: name,
-            policy: selectedPolicy,
-            max_epochs: maxEpochs,
-            batch_size: batchSize,
-            num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
-            auto_scale_batch_size: autoScaleBatchSize,
-            precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
-            compile_model: compileModel,
-            val_split: 0.1,
-            training_target: isRemoteTarget ? 'remote' : isSshTarget ? 'ssh' : 'local',
-            ...(isRemoteTarget ? { remote_trainer_id: targetRawId(selectedTarget.id) } : {}),
-            ...(isSshTarget ? { remote_server_id: targetRawId(selectedTarget.id) } : {}),
-            ...extraPayload,
-        };
+            const payload: SchemaJob['payload'] = {
+                dataset_id,
+                project_id: projectId,
+                model_name: name,
+                policy: selectedPolicy,
+                max_epochs: maxEpochs,
+                batch_size: batchSize,
+                num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
+                auto_scale_batch_size: autoScaleBatchSize,
+                precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
+                compile_model: compileModel,
+                val_split: 0.1,
+                training_target: isRemoteTarget ? 'remote' : isSshTarget ? 'ssh' : 'local',
+                ...(isRemoteTarget ? { remote_trainer_id: targetRawId(selectedTarget.id) } : {}),
+                ...(isSshTarget ? { remote_server_id: targetRawId(selectedTarget.id) } : {}),
+                ...extraPayload,
+            };
 
-        trainMutation.mutateAsync({ body: payload }).then((response) => {
+            const response = await trainMutation.mutateAsync({ body: payload });
             close(response as SchemaTrainJob | undefined);
-        });
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -379,19 +394,21 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 </Flex>
             </Content>
             <ButtonGroup>
-                <Button variant='secondary' onPress={() => close(undefined)}>
+                <Button variant='secondary' onPress={() => close(undefined)} isDisabled={isSubmitting}>
                     Cancel
                 </Button>
                 <Button
                     variant='accent'
                     onPress={save}
+                    isPending={isSubmitting}
                     isDisabled={
                         !selectedDataset ||
                         !selectedPolicy ||
                         selectedTarget === null ||
                         remoteUnavailable ||
                         sshUnavailable ||
-                        policyAccessBlocksTraining
+                        policyAccessBlocksTraining ||
+                        isSubmitting
                     }
                 >
                     Train

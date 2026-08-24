@@ -372,4 +372,41 @@ describe('TrainModelDialog', () => {
         const sshOption = screen.getByRole('option', { name: new RegExp(healthyRemoteServer.name) });
         await waitFor(() => expect(within(sshOption).getByText('Healthy')).toBeInTheDocument());
     });
+
+    it('submits only one job when Train is double-clicked before the request resolves', async () => {
+        // The dialog stays open for a moment after the request settles (the parent
+        // closes it once `close()` runs), so a fast double-click could previously
+        // fire `save()` twice before the button became disabled, submitting two
+        // identical jobs.
+        const user = userEvent.setup();
+        let submitCount = 0;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async () => {
+                submitCount += 1;
+                // Simulate real network/server latency so both clicks land while the
+                // first request is still in flight.
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+
+        const trainButton = screen.getByRole('button', { name: 'Train' });
+
+        // Fire both clicks back-to-back, the way a real double-click would,
+        // instead of awaiting user-event's full interaction between them.
+        void user.click(trainButton);
+        void user.click(trainButton);
+
+        await waitFor(() => expect(trainButton).toBeDisabled());
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        expect(submitCount).toBe(1);
+    });
 });
