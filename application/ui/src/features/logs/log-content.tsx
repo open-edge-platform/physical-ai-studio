@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { AriaListBox, AriaListBoxItem, Flex, ListLayout, Text, View, Virtualizer } from '@geti-ui/ui';
 
@@ -70,38 +70,99 @@ const NoLogs = ({ isLoading, totalLogs }: { isLoading: boolean; totalLogs: numbe
     );
 };
 
-const useScrollToBottom = (totalLogs: number) => {
+const virtualizedContainerWithDefinedHeight = (virtualizedList: HTMLDivElement | null) => {
+    if (virtualizedList === null) {
+        return null;
+    }
+
+    return virtualizedList.firstElementChild;
+};
+
+const useScrollToBottom = () => {
     // The list is rendered conditionally, so its DOM node does not exist on the first render.
     // Keeping the node in state makes its attachment observable to the effects below, a ref
     // mutation would not re-run them.
     const [logsList, setLogsList] = useState<HTMLDivElement | null>(null);
-    const [enabled, setEnabled] = useState(true);
+    const [autoScrollEnabled, setAutoScrollEnabled] = useState<boolean>(true);
+    const [isAtTheBottom, setIsAtTheBottom] = useState<boolean>(true);
+    const lastScrollPositionRef = useRef(0);
+    const isAutomaticScroll = useRef(false);
+
+    const handleAutoScroll = (value: boolean) => {
+        if (value) {
+            logsList?.scrollTo({ top: logsList.scrollHeight });
+            setIsAtTheBottom(true);
+        }
+
+        setAutoScrollEnabled(value);
+    };
 
     useEffect(() => {
-        if (logsList === null || !enabled) {
+        if (logsList === null || !autoScrollEnabled) {
             return;
         }
 
-        const mutationObserver = new MutationObserver(() => {
-            logsList.scrollTo({ top: logsList.scrollHeight });
+        const resizeObserver = new ResizeObserver(() => {
+            isAutomaticScroll.current = true;
+            logsList?.scrollTo({ top: logsList.scrollHeight });
+
+            logsList.addEventListener(
+                'scrollend',
+                () => {
+                    isAutomaticScroll.current = false;
+                },
+                { once: true }
+            );
+
+            setIsAtTheBottom(true);
         });
 
-        mutationObserver.observe(logsList, { childList: true, subtree: true });
+        const container = virtualizedContainerWithDefinedHeight(logsList);
+
+        if (container !== null) {
+            resizeObserver.observe(container);
+        }
 
         return () => {
-            mutationObserver.disconnect();
+            resizeObserver.disconnect();
         };
-    }, [enabled, logsList]);
+    }, [autoScrollEnabled, logsList]);
 
     useEffect(() => {
-        if (logsList === null || !enabled) {
+        if (logsList === null) {
             return;
         }
 
-        logsList.scrollTo({ top: logsList.scrollHeight });
-    }, [enabled, logsList, totalLogs]);
+        const abortController = new AbortController();
 
-    return [enabled, setEnabled, setLogsList] as const;
+        logsList.addEventListener(
+            'scroll',
+            (event) => {
+                const target = event.currentTarget as HTMLDivElement;
+
+                const currentScrollPosition = target.scrollTop;
+
+                if (
+                    isAtTheBottom &&
+                    !isAutomaticScroll.current &&
+                    currentScrollPosition > lastScrollPositionRef.current
+                ) {
+                    setAutoScrollEnabled(false);
+
+                    lastScrollPositionRef.current = currentScrollPosition;
+                }
+
+                setIsAtTheBottom(target.scrollHeight - target.clientHeight - currentScrollPosition < 10);
+            },
+            { passive: true, signal: abortController.signal }
+        );
+
+        return () => {
+            abortController.abort();
+        };
+    }, [logsList, isAtTheBottom]);
+
+    return [autoScrollEnabled, handleAutoScroll, setLogsList] as const;
 };
 
 const useFilteredLogs = (logs: Array<LogEntryType>, filters: LogFiltersType) => {
