@@ -17,6 +17,7 @@ from schemas.remote_trainer import RemoteTrainer
 from services.job_service import JobService
 
 MODULE = "services.job_service"
+SSH_MODULE = "services.training_targets.ssh"
 
 
 def _session_context() -> AsyncMock:
@@ -123,7 +124,7 @@ async def test_submit_ssh_job_accepts_a_healthy_server() -> None:
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),
         patch(
-            f"{MODULE}.resolve_alias",
+            f"{SSH_MODULE}.resolve_alias",
             return_value=ResolvedSshHost(alias=remote_server.ssh_host_alias, hostname="gpu-box.lan", found=True),
         ),
     ):
@@ -185,7 +186,7 @@ async def test_submit_ssh_job_rejects_a_renamed_or_removed_alias() -> None:
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),
         patch(
-            f"{MODULE}.resolve_alias",
+            f"{SSH_MODULE}.resolve_alias",
             return_value=ResolvedSshHost(alias=remote_server.ssh_host_alias, found=False),
         ),
         pytest.raises(RemoteServerAliasNotFoundError),

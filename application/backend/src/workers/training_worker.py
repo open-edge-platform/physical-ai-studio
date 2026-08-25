@@ -29,6 +29,7 @@ from services.training_backends import (
     get_training_backend,
 )
 from services.training_service import TrainingService, TrainingTrackingDispatcher
+from services.training_targets import target_key as training_target_key
 from settings import get_settings
 from workers.base import BaseProcessWorker
 
@@ -89,17 +90,12 @@ class TrainingWorker(BaseProcessWorker):
     def _target_key(payload: TrainJobPayload) -> str:
         """Return the exclusive execution target for a training job.
 
-        Each remote kind gets its own key namespace so an SSH job never
-        collapses onto the direct-URL registry's ``remote:<id>`` key (or vice
-        versa): the two id fields are unrelated, and their validator keeps
-        exactly one of them set per job, so neither branch can ever embed
-        ``None`` for a well-formed payload.
+        Delegates to `services.training_targets.target_key` so submission
+        validation (`JobService`) and worker scheduling derive this key from
+        the same per-target handler registry, instead of each keeping its own
+        copy of the target-to-key mapping.
         """
-        if payload.training_target is TrainingTarget.LOCAL:
-            return TrainingTarget.LOCAL.value
-        if payload.training_target is TrainingTarget.SSH:
-            return f"{TrainingTarget.SSH.value}:{payload.remote_server_id}"
-        return f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
+        return training_target_key(payload)
 
     async def _run_training_job(self, job: Job, payload: TrainJobPayload) -> None:
         """Prepare and execute one job after its execution target has been reserved."""

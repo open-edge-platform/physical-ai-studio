@@ -5,25 +5,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.schema import JobDB
-from exceptions import (
-    DuplicateJobException,
-    RemoteResumeUnsupportedError,
-    RemoteServerAliasNotFoundError,
-    RemoteServerNotReadyError,
-    ResourceInUseError,
-    ResourceNotFoundError,
-    ResourceType,
-    UnsupportedDeviceError,
-)
+from exceptions import DuplicateJobException, ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import JobRepository
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import JobPayload, TrainingTarget, TrainJob, TrainJobPayload
+from schemas.job import JobPayload, TrainJob, TrainJobPayload
 from services.remote_server_service import RemoteServerService
 from services.remote_trainer_service import RemoteTrainerService
-from services.ssh_config_reader import resolve_alias
-from services.system_service import SystemService
-from settings import get_settings
+from services.training_targets import get_training_target_handler
 
 
 class JobService:
@@ -59,49 +48,10 @@ class JobService:
 
     async def submit_train_job(self, payload: TrainJobPayload) -> Job:
         """Validate and persist a training job with its execution target pinned."""
-        if payload.training_target is TrainingTarget.REMOTE:
-            if payload.remote_trainer_id is None:
-                raise ValueError("Remote training requires a selected remote trainer")
-            if payload.base_model_id is not None:
-                raise RemoteResumeUnsupportedError
-            remote_trainer_service = self.remote_trainer_service or RemoteTrainerService(self.session)
-            remote_trainer = await remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
-            payload = TrainJobPayload.model_validate(
-                payload.model_dump()
-                | {"remote_trainer_url": str(remote_trainer.url), "remote_trainer_name": remote_trainer.name}
-            )
-
-        if payload.training_target is TrainingTarget.SSH:
-            if payload.remote_server_id is None:
-                raise ValueError("SSH training requires a selected remote server")
-            if payload.base_model_id is not None:
-                raise RemoteResumeUnsupportedError
-            remote_server_service = self.remote_server_service or RemoteServerService(self.session)
-            # Raises ResourceNotFoundError for an unknown server. Studio never
-            # dials SSH from job submission, so this only consults the
-            # persisted last-check summary from the explicit save/verify
-            # actions (last_check_status != "healthy" also catches a server
-            # that has never been checked at all).
-            remote_server = await remote_server_service.get_remote_server(payload.remote_server_id)
-            if remote_server.last_check_status != "healthy":
-                raise RemoteServerNotReadyError(remote_server.name, remote_server.last_check_status)
-            # A renamed/removed Host entry is caught by re-parsing the config
-            # file directly (no SSH dial), so it fails closed even if the
-            # server's last preflight happened before the alias disappeared.
-            resolved = resolve_alias(get_settings().ssh_config_path, remote_server.ssh_host_alias)
-            if not resolved.found:
-                raise RemoteServerAliasNotFoundError(remote_server.name, remote_server.ssh_host_alias)
-
-        # A remote trainer validates its own devices. Validate only local device choices here.
-        if (
-            payload.training_target is TrainingTarget.LOCAL
-            and payload.device is not None
-            and not SystemService.is_device_supported_for_training(payload.device.type)
-        ):
-            raise UnsupportedDeviceError(
-                device_type=payload.device.type,
-                supported=SystemService.supported_training_device_types(),
-            )
+        handler = get_training_target_handler(
+            payload, self.session, self.remote_trainer_service, self.remote_server_service
+        )
+        payload = await handler.prepare(payload)
 
         if await self.repo.is_job_duplicate(project_id=payload.project_id, payload=payload):
             raise DuplicateJobException
