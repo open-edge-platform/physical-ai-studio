@@ -1211,7 +1211,7 @@ def test_trainer_image_ref_is_built_from_constants() -> None:
 
 
 async def test_tier2_device_probe_mid_pull_is_skipped_not_failed(install_transport) -> None:
-    # Defense-in-depth for the race between `_image_present_locally` reporting
+    # Defense-in-depth for the race between `image_present_locally` reporting
     # present and the `docker run` a few lines later - e.g. another process
     # evicting the image in between, forcing Docker to pull it inline. The raw
     # progress output must never read as the compute probe, or the device,

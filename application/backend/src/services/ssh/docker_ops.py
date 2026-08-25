@@ -39,6 +39,7 @@ from exceptions import (
 from schemas.hardware import DeviceType
 from services.ssh.preflight import (  # noqa: F401 - resolve_render_group_gid re-exported for provisioning.py
     PROTOCOL_LABEL,
+    image_present_locally,
     protocol_tag,
     resolve_render_group_gid,
     trainer_image_ref,
@@ -676,7 +677,20 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
 
 
 async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Settings) -> None:
-    """Pull the resolved image by digest.
+    """Pull the resolved image by digest, skipping a no-op re-pull.
+
+    Tier 2's "Pull & verify image" check (`services.ssh.preflight`) already
+    pulls this same image by tag as part of its container device probe, so by
+    the time a job actually starts, the digest job provisioning just resolved
+    is very often already sitting in the remote Docker image store under that
+    tag - Docker records the pulled manifest's digest as a `RepoDigest` on that
+    same local image regardless of which reference (tag or digest) was used to
+    fetch it. Checking first, the same way Tier 2 does before its own device
+    probe, skips asking the daemon to re-fetch a manifest (and re-walk every
+    layer) it already has, and avoids the visible-but-redundant `docker pull`
+    this would otherwise always run, even immediately after a successful Tier 2
+    check. A cold image (protocol tag never verified, or evicted since) still
+    pulls exactly as before.
 
     Uses `settings.ssh_image_pull_timeout_s` rather than the default
     `ssh_command_timeout_s`: that budget is sized for cheap probes
@@ -689,6 +703,9 @@ async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Se
         TrainerImagePullError: The pull failed, or did not finish within
             `settings.ssh_image_pull_timeout_s`.
     """
+    if await image_present_locally(transport, image.digest_reference):
+        return
+
     result = await transport.run_command(
         ["docker", "pull", image.digest_reference], timeout=settings.ssh_image_pull_timeout_s
     )

@@ -447,6 +447,39 @@ async def test_pull_image_raises_on_failure(settings) -> None:
         await docker_ops.pull_image(transport, _image(), settings)
 
 
+async def test_pull_image_skips_pull_when_digest_already_present_locally(settings) -> None:
+    """Regression guard: before this check, every job start re-pulled the image
+    over SSH even when Tier 2's own "Pull & verify image" check had already
+    fetched the exact same digest moments earlier, showing up as a surprising
+    second `docker pull` immediately after a successful verification.
+    """
+    image = _image()
+    transport = FakeTransport(
+        {
+            f"docker image inspect {image.digest_reference}": _ok(),
+            "docker pull": _fail("should never be called when already cached"),
+        }
+    )
+
+    await docker_ops.pull_image(transport, image, settings)
+
+    assert not transport.ran("docker pull")
+
+
+async def test_pull_image_pulls_when_not_present_locally(settings) -> None:
+    image = _image()
+    transport = FakeTransport(
+        {
+            f"docker image inspect {image.digest_reference}": _fail("No such image"),
+            f"docker pull {image.digest_reference}": _ok(),
+        }
+    )
+
+    await docker_ops.pull_image(transport, image, settings)
+
+    assert transport.ran(f"docker pull {image.digest_reference}")
+
+
 async def test_launch_container_returns_container_id() -> None:
     transport = FakeTransport({"docker run": _ok("abc123\n")})
     container_id = await docker_ops.launch_container(transport, ["docker", "run"], "gpu-box")

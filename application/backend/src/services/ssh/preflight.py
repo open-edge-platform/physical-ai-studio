@@ -906,7 +906,7 @@ def _device_probe_expression(device_type: DeviceType) -> str:
 # Substrings Docker's own client prints while it pulls an image inline for a
 # `docker run` whose image is not yet cached locally. Matched against a failed
 # probe's output as a defense-in-depth fallback for the race between
-# `_image_present_locally` and the `docker run` a few lines later - e.g.
+# `image_present_locally` and the `docker run` a few lines later - e.g.
 # another process evicting the image in between. The normal path never hits
 # this: the presence check below routes a genuinely absent image to a
 # background pull instead of an inline one.
@@ -919,8 +919,16 @@ def _is_pulling_image(result: CommandResult) -> bool:
     return any(marker in text for marker in _IMAGE_PULL_MARKERS)
 
 
-async def _image_present_locally(transport: SshTransport, image_ref: str) -> bool:
-    """True when the image is already cached in the remote Docker image store."""
+async def image_present_locally(transport: SshTransport, image_ref: str) -> bool:
+    """True when the image is already cached in the remote Docker image store.
+
+    Shared with `services.ssh.docker_ops.pull_image`, which uses it to skip a
+    redundant `docker pull` when the exact digest Tier 2 already pulled (by tag)
+    is still the one job provisioning resolved: Docker's local image store
+    indexes by content digest, so a tag-pull and a later digest-pull of the same
+    manifest share layers, and there is nothing to gain from asking the daemon
+    to re-fetch a manifest it already has.
+    """
     result = await transport.run_command(["docker", "image", "inspect", image_ref])
     return result.ok
 
@@ -996,7 +1004,7 @@ async def _check_device_probe(
         caller can skip the protocol check rather than have it fail against an
         image that is not there yet.
     """
-    if not await _image_present_locally(transport, image_ref):
+    if not await image_present_locally(transport, image_ref):
         pidfile, logfile = _pull_state_paths(image_ref)
         already_running = await _pull_already_running(transport, pidfile)
         if not already_running:
