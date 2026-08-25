@@ -86,7 +86,11 @@ const AvailableRobotCell = ({
                         Restart session
                     </Button>
                     {leaderId !== undefined && (
-                        <Switch isSelected={isTeleoperating} onChange={(b) => setFollowerSource(b ? 'teleop' : 'hold')}>
+                        <Switch
+                            isEmphasized
+                            isSelected={isTeleoperating}
+                            onChange={(b) => setFollowerSource(b ? 'teleop' : 'hold')}
+                        >
                             Teleoperate
                         </Switch>
                     )}

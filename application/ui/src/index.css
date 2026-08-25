@@ -39,6 +39,7 @@
 
     --spectrum-button-primary-text-font-weight: 500;
     --spectrum-tabs-selection-indicator-color: var(--energy-blue);
+    --spectrum-tabs-rule-height: 4px;
 
     --steel-blue-hue: 215;
     --steel-blue-sat: 25%;

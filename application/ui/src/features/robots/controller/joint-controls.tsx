@@ -171,7 +171,7 @@ export const JointControls = ({
                         </Heading>
                     </ActionButton>
 
-                    <Switch isSelected={isConnected} onChange={setIsConnected}>
+                    <Switch isEmphasized isSelected={isConnected} onChange={setIsConnected}>
                         Connect
                     </Switch>
                 </Flex>
