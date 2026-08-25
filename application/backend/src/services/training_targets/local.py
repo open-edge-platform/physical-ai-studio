@@ -17,7 +17,9 @@ class LocalTrainingTargetHandler:
         """Reject a local device SystemService reports as unsupported for training.
 
         A remote or SSH-provisioned trainer validates its own devices, so only
-        local device choices are checked here.
+        local device choices are checked here. `device` is a shared field
+        (declared on `TrainJobPayloadBase`), so no narrowing to
+        `LocalTrainJobPayload` is needed to read it.
         """
         if payload.device is not None and not SystemService.is_device_supported_for_training(payload.device.type):
             raise UnsupportedDeviceError(

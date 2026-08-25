@@ -16,7 +16,7 @@ from sse_starlette import ServerSentEvent
 from core.logging.utils import get_job_logs_path
 from schemas.base_job import JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
-from schemas.job import TrainJobPayload
+from schemas.job import TrainJobPayloadAdapter
 from schemas.logs import LogSource
 from services.job_service import JobService
 from settings import Settings
@@ -92,7 +92,7 @@ class LogService:
 
         for job in jobs:
             if job.type == JobType.TRAINING:
-                payload = TrainJobPayload.model_validate(job.payload)
+                payload = TrainJobPayloadAdapter.validate_python(job.payload)
                 names[str(job.id)] = f"{payload.model_name} ({payload.policy})"
             elif job.type == JobType.DATASET_IMPORT:
                 payload = DatasetImportJobPayload.model_validate(job.payload)

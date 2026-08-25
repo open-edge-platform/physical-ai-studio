@@ -63,7 +63,7 @@ async def test_discover_job_sources_includes_training_name_and_created_at(tmp_pa
         id=job_id,
         project_id=uuid4(),
         payload={
-            "type": "training",
+            "training_target": "local",
             "project_id": str(uuid4()),
             "dataset_id": str(uuid4()),
             "policy": "pi0",
@@ -100,7 +100,7 @@ async def test_discover_job_sources_ignores_rotated_job_logs(tmp_path) -> None:
         id=job_id,
         project_id=uuid4(),
         payload={
-            "type": "training",
+            "training_target": "local",
             "project_id": str(uuid4()),
             "dataset_id": str(uuid4()),
             "policy": "pi0",

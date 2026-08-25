@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from exceptions import RemoteResumeUnsupportedError
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import RemoteTrainJobPayload, TrainingTarget, TrainJobPayload
 from services.remote_trainer_service import RemoteTrainerService
 
 
@@ -21,17 +21,22 @@ class RemoteTrainingTargetHandler:
 
         Rejects resuming from a base model: the trainer protocol can receive a
         dataset but has no way to upload a base checkpoint.
+
+        `get_training_target_handler` only ever routes a `RemoteTrainJobPayload`
+        here (selected by `payload.training_target`), so this narrows via
+        `isinstance` before touching `remote_trainer_id`.
         """
-        if payload.remote_trainer_id is None:
-            raise ValueError("Remote training requires a selected remote trainer")
+        if not isinstance(payload, RemoteTrainJobPayload):
+            raise TypeError("RemoteTrainingTargetHandler.prepare requires a RemoteTrainJobPayload")
         if payload.base_model_id is not None:
             raise RemoteResumeUnsupportedError
         remote_trainer = await self.remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
-        return TrainJobPayload.model_validate(
-            payload.model_dump()
-            | {"remote_trainer_url": str(remote_trainer.url), "remote_trainer_name": remote_trainer.name}
+        return payload.model_copy(
+            update={"remote_trainer_url": str(remote_trainer.url), "remote_trainer_name": remote_trainer.name}
         )
 
     @staticmethod
     def target_key(payload: TrainJobPayload) -> str:
+        if not isinstance(payload, RemoteTrainJobPayload):
+            raise TypeError("RemoteTrainingTargetHandler.target_key requires a RemoteTrainJobPayload")
         return f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"

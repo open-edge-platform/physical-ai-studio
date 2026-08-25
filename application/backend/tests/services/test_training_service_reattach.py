@@ -11,21 +11,20 @@ from uuid import UUID, uuid4
 import pytest
 
 from schemas.base_job import JobStatus
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainJobPayload
 from services.training_service import TrainingService
 
 MODULE = "services.training_service"
 
 
-def _payload(*, remote_job_id: UUID | None = None, target: TrainingTarget = TrainingTarget.REMOTE) -> TrainJobPayload:
-    return TrainJobPayload(
+def _payload(*, remote_job_id: UUID | None = None) -> TrainJobPayload:
+    return RemoteTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="m",
-        training_target=target,
-        remote_trainer_id=uuid4() if target is TrainingTarget.REMOTE else None,
-        remote_trainer_url="https://trainer.test" if target is TrainingTarget.REMOTE else None,
+        remote_trainer_id=uuid4(),
+        remote_trainer_url="https://trainer.test",
         remote_job_id=remote_job_id,
     )
 
@@ -68,7 +67,14 @@ class TestReattachOrphans:
     @pytest.mark.anyio
     async def test_local_job_always_fails_orphans(self):
         """A local job cannot reattach, even if a stale remote id is present."""
-        job = _job(_payload(remote_job_id=uuid4(), target=TrainingTarget.LOCAL))
+        payload = LocalTrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="act",
+            model_name="m",
+            remote_job_id=uuid4(),
+        )
+        job = _job(payload)
 
         service = MagicMock()
         service.get_job_list = AsyncMock(return_value=[job])
@@ -85,12 +91,11 @@ class TestReattachOrphans:
         Its trainer container keeps running independently of the studio process,
         the same way a direct-URL remote trainer does.
         """
-        payload = TrainJobPayload(
+        payload = SshTrainJobPayload(
             project_id=uuid4(),
             dataset_id=uuid4(),
             policy="act",
             model_name="m",
-            training_target=TrainingTarget.SSH,
             remote_server_id=uuid4(),
             remote_job_id=uuid4(),
         )
@@ -108,12 +113,11 @@ class TestReattachOrphans:
     @pytest.mark.anyio
     async def test_ssh_running_job_without_remote_id_is_failed(self):
         """An SSH job that never got a remote id cannot resume and is failed."""
-        payload = TrainJobPayload(
+        payload = SshTrainJobPayload(
             project_id=uuid4(),
             dataset_id=uuid4(),
             policy="act",
             model_name="m",
-            training_target=TrainingTarget.SSH,
             remote_server_id=uuid4(),
         )
         job = _job(payload)

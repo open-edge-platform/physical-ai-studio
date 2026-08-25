@@ -9,7 +9,7 @@ import queue
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -17,7 +17,13 @@ import pytest
 import core.scheduler  # noqa: F401
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Snapshot
-from schemas.job import TrainingPrecision, TrainingTarget, TrainJobPayload
+from schemas.job import (
+    LocalTrainJobPayload,
+    RemoteTrainJobPayload,
+    SshTrainJobPayload,
+    TrainingPrecision,
+    TrainJobPayload,
+)
 from schemas.model import Model
 
 if TYPE_CHECKING:
@@ -35,7 +41,7 @@ MODULE = "workers.training_worker"
 def _make_payload(
     *, compile_model: bool = True, precision: TrainingPrecision = TrainingPrecision.BF16_MIXED
 ) -> TrainJobPayload:
-    return TrainJobPayload(
+    return LocalTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
@@ -46,6 +52,26 @@ def _make_payload(
         auto_scale_batch_size=False,
         compile_model=compile_model,
         precision=precision,
+    )
+
+
+def _make_remote_payload(*, remote_trainer_id: UUID | None = None) -> RemoteTrainJobPayload:
+    return RemoteTrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="test-model",
+        remote_trainer_id=remote_trainer_id or uuid4(),
+    )
+
+
+def _make_ssh_payload(*, remote_server_id: UUID | None = None) -> SshTrainJobPayload:
+    return SshTrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="test-model",
+        remote_server_id=remote_server_id or uuid4(),
     )
 
 
@@ -456,29 +482,21 @@ class TestTargetKey:
     def test_remote_target_key_uses_remote_trainer_id(self) -> None:
         from workers.training_worker import TrainingWorker
 
-        payload = _make_payload()
-        payload.training_target = TrainingTarget.REMOTE
-        payload.remote_trainer_id = uuid4()
+        payload = _make_remote_payload()
         assert TrainingWorker._target_key(payload) == f"remote:{payload.remote_trainer_id}"
 
     def test_ssh_target_key_uses_remote_server_id(self) -> None:
         from workers.training_worker import TrainingWorker
 
-        payload = _make_payload()
-        payload.training_target = TrainingTarget.SSH
-        payload.remote_server_id = uuid4()
+        payload = _make_ssh_payload()
         assert TrainingWorker._target_key(payload) == f"ssh:{payload.remote_server_id}"
 
     def test_ssh_and_remote_targets_never_collide_on_none(self) -> None:
         """Two well-formed jobs on different servers never collapse onto one key."""
         from workers.training_worker import TrainingWorker
 
-        first = _make_payload()
-        first.training_target = TrainingTarget.SSH
-        first.remote_server_id = uuid4()
-        second = _make_payload()
-        second.training_target = TrainingTarget.SSH
-        second.remote_server_id = uuid4()
+        first = _make_ssh_payload()
+        second = _make_ssh_payload()
 
         first_key = TrainingWorker._target_key(first)
         second_key = TrainingWorker._target_key(second)
@@ -492,9 +510,7 @@ class TestTrainingScheduling:
     @pytest.mark.anyio
     async def test_jobs_on_distinct_targets_start_without_waiting(self, worker) -> None:
         """A local job and jobs on separate remote trainers run concurrently."""
-        remote_payload = _make_payload()
-        remote_payload.training_target = TrainingTarget.REMOTE
-        remote_payload.remote_trainer_id = uuid4()
+        remote_payload = _make_remote_payload()
         other_remote_payload = remote_payload.model_copy(update={"remote_trainer_id": uuid4()})
         jobs = [_make_job(_make_payload()), _make_job(remote_payload), _make_job(other_remote_payload)]
         worker._active_training_tasks = {}
@@ -513,9 +529,7 @@ class TestTrainingScheduling:
     @pytest.mark.anyio
     async def test_second_job_on_same_target_remains_pending(self, worker) -> None:
         """Only the oldest job for an occupied local or remote target starts."""
-        remote_payload = _make_payload()
-        remote_payload.training_target = TrainingTarget.REMOTE
-        remote_payload.remote_trainer_id = uuid4()
+        remote_payload = _make_remote_payload()
         jobs = [
             _make_job(_make_payload()),
             _make_job(_make_payload()),

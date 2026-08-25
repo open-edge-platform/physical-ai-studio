@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 from api.dependencies import get_scheduler
 from main import app
 from schemas.base_job import JobStatus
-from schemas.job import TrainJobPayload
+from schemas.job import LocalTrainJobPayload, TrainJobPayloadAdapter
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
@@ -75,7 +75,7 @@ def _run_training_job_step() -> None:
         async with get_async_db_session_ctx() as session:
             job = await JobService(session).get_pending_train_job()
         assert job is not None, "Expected a pending training job"
-        payload = TrainJobPayload.model_validate(job.payload)
+        payload = TrainJobPayloadAdapter.validate_python(job.payload)
 
         settings = get_settings()
         model_id = uuid4()
@@ -303,7 +303,7 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
         async with get_async_db_session_ctx() as session:
             job_service = JobService(session)
             job = await job_service.submit_train_job(
-                TrainJobPayload(
+                LocalTrainJobPayload(
                     project_id=project_id,
                     dataset_id=uuid4(),
                     policy="act",

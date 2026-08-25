@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from exceptions import RemoteResumeUnsupportedError, RemoteServerAliasNotFoundError, RemoteServerNotReadyError
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import SshTrainJobPayload, TrainingTarget, TrainJobPayload
 from services.remote_server_service import RemoteServerService
 from services.ssh_config_reader import resolve_alias
 from settings import get_settings
@@ -28,9 +28,13 @@ class SshTrainingTargetHandler:
         re-parsing the config file directly (no SSH dial), so it fails closed
         even if the server's last preflight happened before the alias
         disappeared.
+
+        `get_training_target_handler` only ever routes an `SshTrainJobPayload`
+        here (selected by `payload.training_target`), so this narrows via
+        `isinstance` before touching `remote_server_id`.
         """
-        if payload.remote_server_id is None:
-            raise ValueError("SSH training requires a selected remote server")
+        if not isinstance(payload, SshTrainJobPayload):
+            raise TypeError("SshTrainingTargetHandler.prepare requires an SshTrainJobPayload")
         if payload.base_model_id is not None:
             raise RemoteResumeUnsupportedError
         remote_server = await self.remote_server_service.get_remote_server(payload.remote_server_id)
@@ -43,4 +47,6 @@ class SshTrainingTargetHandler:
 
     @staticmethod
     def target_key(payload: TrainJobPayload) -> str:
+        if not isinstance(payload, SshTrainJobPayload):
+            raise TypeError("SshTrainingTargetHandler.target_key requires an SshTrainJobPayload")
         return f"{TrainingTarget.SSH.value}:{payload.remote_server_id}"

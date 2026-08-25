@@ -16,7 +16,7 @@ from core.logging.utils import job_logging_ctx
 from db import get_async_db_session_ctx
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
 from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
@@ -60,7 +60,7 @@ class TrainingWorker(BaseProcessWorker):
                 async with get_async_db_session_ctx() as session:
                     pending_jobs = await JobService(session, RemoteTrainerService(session)).get_pending_train_jobs()
                 for job in pending_jobs:
-                    payload = TrainJobPayload.model_validate(job.payload)
+                    payload = TrainJobPayloadAdapter.validate_python(job.payload)
                     target = self._target_key(payload)
                     if target in self._active_training_tasks:
                         continue

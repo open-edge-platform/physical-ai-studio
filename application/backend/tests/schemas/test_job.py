@@ -1,11 +1,14 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for TrainJobPayload's execution-target validator.
+"""Tests for the `TrainJobPayload` discriminated union.
 
 Local training, the direct-URL remote trainer registry, and SSH-provisioned
-servers are mutually exclusive targets. Each must reject fields that belong to
-a different target so a payload can never express two targets at once.
+servers are mutually exclusive targets, each modeled as its own payload class
+(`LocalTrainJobPayload`, `RemoteTrainJobPayload`, `SshTrainJobPayload`). A
+payload can never express two targets at once: a target's fields simply don't
+exist on another target's class, and `extra="forbid"` rejects any attempt to
+pass them in anyway.
 """
 
 from uuid import uuid4
@@ -13,7 +16,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget
 
 
 def _base_kwargs() -> dict:
@@ -27,7 +30,7 @@ def _base_kwargs() -> dict:
 
 class TestLocalTarget:
     def test_local_job_accepts_no_remote_fields(self) -> None:
-        payload = TrainJobPayload(**_base_kwargs(), training_target=TrainingTarget.LOCAL)
+        payload = LocalTrainJobPayload(**_base_kwargs())
         assert payload.training_target is TrainingTarget.LOCAL
 
     @pytest.mark.parametrize(
@@ -41,18 +44,17 @@ class TestLocalTarget:
     )
     def test_local_job_rejects_any_remote_field(self, extra: dict) -> None:
         with pytest.raises(ValidationError):
-            TrainJobPayload(**_base_kwargs(), training_target=TrainingTarget.LOCAL, **extra)
+            LocalTrainJobPayload(**_base_kwargs(), **extra)
 
 
 class TestRemoteTarget:
     def test_remote_job_requires_remote_trainer_id(self) -> None:
         with pytest.raises(ValidationError):
-            TrainJobPayload(**_base_kwargs(), training_target=TrainingTarget.REMOTE)
+            RemoteTrainJobPayload(**_base_kwargs())
 
     def test_remote_job_accepts_direct_url_fields(self) -> None:
-        payload = TrainJobPayload(
+        payload = RemoteTrainJobPayload(
             **_base_kwargs(),
-            training_target=TrainingTarget.REMOTE,
             remote_trainer_id=uuid4(),
             remote_trainer_url="https://trainer.test",
         )
@@ -60,23 +62,19 @@ class TestRemoteTarget:
 
     def test_remote_job_rejects_remote_server_id(self) -> None:
         with pytest.raises(ValidationError):
-            TrainJobPayload(
-                **_base_kwargs(),
-                training_target=TrainingTarget.REMOTE,
-                remote_trainer_id=uuid4(),
-                remote_server_id=uuid4(),
+            RemoteTrainJobPayload.model_validate(
+                {**_base_kwargs(), "remote_trainer_id": uuid4(), "remote_server_id": uuid4()}
             )
 
 
 class TestSshTarget:
     def test_ssh_job_requires_remote_server_id(self) -> None:
         with pytest.raises(ValidationError):
-            TrainJobPayload(**_base_kwargs(), training_target=TrainingTarget.SSH)
+            SshTrainJobPayload(**_base_kwargs())
 
     def test_ssh_job_accepts_remote_server_id(self) -> None:
-        payload = TrainJobPayload(
+        payload = SshTrainJobPayload(
             **_base_kwargs(),
-            training_target=TrainingTarget.SSH,
             remote_server_id=uuid4(),
         )
         assert payload.training_target is TrainingTarget.SSH
@@ -92,9 +90,8 @@ class TestSshTarget:
     )
     def test_ssh_job_rejects_direct_url_fields(self, extra: dict) -> None:
         with pytest.raises(ValidationError):
-            TrainJobPayload(
+            SshTrainJobPayload(
                 **_base_kwargs(),
-                training_target=TrainingTarget.SSH,
                 remote_server_id=uuid4(),
                 **extra,
             )

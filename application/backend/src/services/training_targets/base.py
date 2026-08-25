@@ -23,6 +23,13 @@ class TrainingTargetHandler(Protocol):
     from running concurrently. Adding a target (e.g. a future
     AWS-provisioned trainer) means adding one handler class, not another
     branch in each caller.
+
+    Each concrete handler is only ever invoked with the payload variant
+    matching its target (`get_training_target_handler` routes on
+    `payload.training_target`), so it narrows via `isinstance` internally
+    before touching a target-specific field. The signature stays the full
+    `TrainJobPayload` union so every handler is substitutable for this
+    Protocol regardless of which variant it actually handles.
     """
 
     async def prepare(self, payload: TrainJobPayload) -> TrainJobPayload:

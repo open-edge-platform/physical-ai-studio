@@ -11,7 +11,7 @@ from exceptions import (
     ResourceType,
 )
 from schemas.hardware import DeviceType
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import RemoteTrainJobPayload, SshTrainJobPayload
 from schemas.remote_server import RemoteServer, RemoteServerCheckStatus, ResolvedSshHost
 from schemas.remote_trainer import RemoteTrainer
 from services.job_service import JobService
@@ -39,12 +39,11 @@ async def test_submit_remote_job_pins_configured_url_and_ignores_client_url() ->
         name="trainer",
         url="https://configured-trainer.test",
     )
-    payload = TrainJobPayload(
+    payload = RemoteTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="model",
-        training_target=TrainingTarget.REMOTE,
         remote_trainer_id=remote_trainer_id,
         remote_trainer_url="https://client-supplied.test",
     )
@@ -73,12 +72,11 @@ async def test_submit_remote_job_rejects_continuing_from_an_existing_model() -> 
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
     repository.save = AsyncMock(side_effect=lambda job: job)
-    payload = TrainJobPayload(
+    payload = RemoteTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="model",
-        training_target=TrainingTarget.REMOTE,
         remote_trainer_id=uuid4(),
         base_model_id=uuid4(),
     )
@@ -109,12 +107,11 @@ async def test_submit_ssh_job_accepts_a_healthy_server() -> None:
     repository.is_job_duplicate = AsyncMock(return_value=False)
     repository.save = AsyncMock(side_effect=lambda job: job)
     remote_server = _remote_server()
-    payload = TrainJobPayload(
+    payload = SshTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="model",
-        training_target=TrainingTarget.SSH,
         remote_server_id=remote_server.id,
     )
 
@@ -142,12 +139,11 @@ async def test_submit_ssh_job_rejects_an_unhealthy_server() -> None:
     repository.is_job_duplicate = AsyncMock(return_value=False)
     repository.save = AsyncMock(side_effect=lambda job: job)
     remote_server = _remote_server(last_check_status="unreachable")
-    payload = TrainJobPayload(
+    payload = SshTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="model",
-        training_target=TrainingTarget.SSH,
         remote_server_id=remote_server.id,
     )
 
@@ -171,12 +167,11 @@ async def test_submit_ssh_job_rejects_a_renamed_or_removed_alias() -> None:
     repository.is_job_duplicate = AsyncMock(return_value=False)
     repository.save = AsyncMock(side_effect=lambda job: job)
     remote_server = _remote_server()
-    payload = TrainJobPayload(
+    payload = SshTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="model",
-        training_target=TrainingTarget.SSH,
         remote_server_id=remote_server.id,
     )
 
@@ -202,12 +197,11 @@ async def test_submit_ssh_job_rejects_an_unknown_server() -> None:
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
     repository.save = AsyncMock(side_effect=lambda job: job)
-    payload = TrainJobPayload(
+    payload = SshTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="model",
-        training_target=TrainingTarget.SSH,
         remote_server_id=uuid4(),
     )
 
@@ -231,12 +225,11 @@ async def test_submit_ssh_job_rejects_continuing_from_an_existing_model() -> Non
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
     repository.save = AsyncMock(side_effect=lambda job: job)
-    payload = TrainJobPayload(
+    payload = SshTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="model",
-        training_target=TrainingTarget.SSH,
         remote_server_id=uuid4(),
         base_model_id=uuid4(),
     )

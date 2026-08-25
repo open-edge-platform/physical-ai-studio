@@ -9,7 +9,7 @@ from loguru import logger
 
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget
 from services.event_processor import EventType
 from services.job_service import JobService
 from workers.base import BaseThreadWorker
@@ -112,10 +112,15 @@ class TrainingService:
 
     @staticmethod
     def _reattachable_remote_job_id(job: object) -> UUID | None:
-        """Return the persisted remote job id for a training job, if any."""
+        """Return the persisted remote job id for a training job, if any.
+
+        Only `RemoteTrainJobPayload` and `SshTrainJobPayload` carry a
+        reattachable `remote_job_id`; class identity already encodes the
+        target, so no separate read of `training_target` is needed here.
+        """
         payload = getattr(job, "payload", None)
-        if isinstance(payload, TrainJobPayload):
-            return payload.remote_job_id if payload.training_target in TrainingService._REATTACHABLE_TARGETS else None
+        if isinstance(payload, RemoteTrainJobPayload | SshTrainJobPayload):
+            return payload.remote_job_id
         if isinstance(payload, dict):
             remote_job_id = payload.get("remote_job_id")
             if payload.get("training_target") not in {target.value for target in TrainingService._REATTACHABLE_TARGETS}:
