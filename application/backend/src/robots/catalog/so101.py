@@ -44,7 +44,7 @@ class SO101RobotPayload(BaseModel):
     )
 
     model_config = ConfigDict(
-        json_schema_extra={
+        json_schema_extra={  # pyrefly: ignore[bad-argument-type]
             "example": {"connection_string": "", "serial_number": "SO101-2024-001", "calibration": None},
             **robot_payload_ui(
                 [

@@ -26,7 +26,7 @@ class TrossenSingleArmPayload(BaseModel):
     connection_string: str = Field(..., description="IP address of the robot")
 
     model_config = ConfigDict(
-        json_schema_extra={
+        json_schema_extra={  # pyrefly: ignore[bad-argument-type]
             "example": {
                 "connection_string": "192.168.1.100",
             },
@@ -46,7 +46,7 @@ class TrossenBimanualPayload(BaseModel):
     connection_string_right: str = Field(..., description="IP address of the right arm")
 
     model_config = ConfigDict(
-        json_schema_extra={
+        json_schema_extra={  # pyrefly: ignore[bad-argument-type]
             "example": {
                 "connection_string_left": "192.168.1.100",
                 "connection_string_right": "192.168.1.101",

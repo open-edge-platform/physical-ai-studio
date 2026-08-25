@@ -100,19 +100,17 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
         return resolved if isinstance(resolved, dict) else field_schema
 
     def validate_items(  # noqa: C901, PLR0912
-        items: object,
+        items: list[object],
         properties: dict[str, Any],
         path: str,
         owned_fields: set[str] | None = None,
     ) -> None:
-        if not isinstance(items, list):
-            error(path, "must be a list of items")
-
         owned_fields = set() if owned_fields is None else owned_fields
         for index, item in enumerate(items):
             item_path = f"{path}[{index}]"
             if not isinstance(item, dict):
                 error(item_path, "must be an object")
+                continue
             kind = item.get("kind")
 
             if kind == "info":
@@ -123,13 +121,18 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
             if kind == "section":
                 if not isinstance(item.get("id"), str):
                     error(item_path, "section items require an id string")
-                validate_items(item.get("items"), properties, f"{item_path}.items", owned_fields)
+                section_items = item.get("items")
+                if not isinstance(section_items, list):
+                    error(item_path, "section items require a list of items")
+                    continue
+                validate_items(section_items, properties, f"{item_path}.items", owned_fields)
                 continue
 
             if kind == "field":
                 name = item.get("name")
                 if not isinstance(name, str) or name not in properties:
                     error(item_path, "field items must reference an existing payload field")
+                    continue
                 if name in owned_fields:
                     error(item_path, f"field '{name}' is owned more than once")
                 owned_fields.add(name)
@@ -139,6 +142,7 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
                 bindings = item.get("bind")
                 if not isinstance(bindings, dict) or not isinstance(bindings.get("connection"), str):
                     error(item_path, "connection items require bind.connection")
+                    continue
                 for binding_name in ("connection", "serial_number"):
                     field_name = bindings.get(binding_name)
                     if field_name is None:
@@ -163,7 +167,10 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
         properties = model_schema.get("properties")
         ui = model_schema.get("x-physicalai-ui")
         if ui is not None:
-            validate_items(ui, properties if isinstance(properties, dict) else {}, f"{path}.x-physicalai-ui")
+            if not isinstance(ui, list):
+                error(f"{path}.x-physicalai-ui", "must be a list of items")
+            else:
+                validate_items(ui, properties if isinstance(properties, dict) else {}, f"{path}.x-physicalai-ui")
         if isinstance(properties, dict):
             for field_name, field_schema in properties.items():
                 resolved = resolve(field_schema) if isinstance(field_schema, dict) else field_schema
