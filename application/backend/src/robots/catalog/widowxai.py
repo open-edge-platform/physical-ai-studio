@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
-from physicalai.robot import BimanualWidowXAI, WidowXAI
-from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition
+from physicalai.robot.trossen import BimanualWidowXAI, WidowXAI
+from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition, robot_payload_ui
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.robot_type import BaseRobot
@@ -30,6 +30,11 @@ class TrossenSingleArmPayload(BaseModel):
             "example": {
                 "connection_string": "192.168.1.100",
             },
+            **robot_payload_ui(
+                [
+                    {"kind": "field", "name": "connection_string"},
+                ]
+            ),
         },
     )
 
@@ -46,6 +51,12 @@ class TrossenBimanualPayload(BaseModel):
                 "connection_string_left": "192.168.1.100",
                 "connection_string_right": "192.168.1.101",
             },
+            **robot_payload_ui(
+                [
+                    {"kind": "field", "name": "connection_string_left"},
+                    {"kind": "field", "name": "connection_string_right"},
+                ]
+            ),
         },
     )
 

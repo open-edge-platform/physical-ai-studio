@@ -146,6 +146,15 @@ def register_physicalai_studio_plugin(registry: Any) -> None:
 
 ## API Reference
 
+### Robot Form UI Schema
+
+`robot_payload_ui(...)` defines optional ordered form presentation metadata for
+a Pydantic payload model. Before publishing a plugin, call
+`validate_robot_payload_ui(MyPayload)` in a test to verify that item shapes,
+field references, connection bindings, and ownership are valid. Studio also
+validates payload UI metadata during catalog registration and rejects invalid
+robot definitions with an actionable error.
+
 ### `RobotCatalogDefinition`
 
 The primary data class that describes a robot type to Studio. Generic over the payload model — use ``RobotCatalogDefinition[MyRobotPayload]`` to link the payload, probe, and robot builder types together.

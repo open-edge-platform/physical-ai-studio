@@ -24,6 +24,7 @@ from .ui_schema import (
     RobotUiSectionOptions,
     robot_field_ui,
     robot_payload_ui,
+    validate_robot_payload_ui,
 )
 
 __all__ = [
@@ -49,4 +50,5 @@ __all__ = [
     "robot_field_ui",
     "robot_payload_ui",
     "shared_robot_name",
+    "validate_robot_payload_ui",
 ]
