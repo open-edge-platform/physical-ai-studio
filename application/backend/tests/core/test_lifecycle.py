@@ -31,7 +31,6 @@ def _stub_heavy_startup(monkeypatch):
     scheduler.mp_stop_event = MagicMock()
     scheduler.event_queue = MagicMock()
     monkeypatch.setattr(lifecycle_module, "Scheduler", lambda: scheduler)
-    monkeypatch.setattr(lifecycle_module, "ModelWorkerRegistry", lambda **kwargs: MagicMock())
     monkeypatch.setattr(lifecycle_module, "EventProcessor", lambda queue: MagicMock())
     monkeypatch.setattr(lifecycle_module, "setup_logging", lambda: None)
     monkeypatch.setattr(lifecycle_module, "setup_uvicorn_logging", lambda: None)
