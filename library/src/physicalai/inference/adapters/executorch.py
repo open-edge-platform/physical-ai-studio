@@ -53,6 +53,7 @@ class ExecuTorchAdapter(RuntimeAdapter):
         self._method: Any = None
         self._input_names: list[str] = []
         self._output_names: list[str] = []
+        self._input_dtypes: list[torch.dtype | None] = []
 
     def load(self, model_path: Path) -> None:
         """Load .pte model and optional manifest.
@@ -83,6 +84,9 @@ class ExecuTorchAdapter(RuntimeAdapter):
             msg = f"Failed to load ExecuTorch program from {model_path}: {exc}"
             raise RuntimeError(msg) from exc
 
+        # set_inputs() requires an exact dtype match; cache expected dtypes.
+        self._input_dtypes = self._read_input_dtypes()
+
         manifest_path = model_path.parent / "manifest.json"
         if manifest_path.exists():
             try:
@@ -98,11 +102,61 @@ class ExecuTorchAdapter(RuntimeAdapter):
                 self._input_names = []
                 self._output_names = []
 
-    def predict(self, inputs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def _read_input_dtypes(self) -> list[torch.dtype | None]:
+        """Read expected dtype per ``forward`` input; ``None`` if non-tensor/unknown."""
+        # input_tensor_meta().dtype() returns an ExecuTorch ScalarType int code.
+        try:
+            from executorch.exir.tensor import ScalarType, enum_to_scalar_map  # noqa: PLC0415
+        except ImportError as exc:
+            logger.warning("Could not import ExecuTorch EXIR tensor metadata helpers: %s", exc)
+            return []
+
+        dtypes: list[torch.dtype | None] = []
+        try:
+            meta = self._method.metadata
+            num_inputs = meta.num_inputs() if callable(meta.num_inputs) else meta.num_inputs
+            for i in range(num_inputs):
+                try:
+                    code = int(meta.input_tensor_meta(i).dtype())
+                    dtypes.append(enum_to_scalar_map.get(ScalarType(code)))
+                except (RuntimeError, IndexError, TypeError, ValueError):
+                    dtypes.append(None)  # non-tensor input
+        except (AttributeError, RuntimeError, TypeError) as exc:
+            logger.warning("Could not read ExecuTorch input dtypes: %s", exc)
+            return []
+        return dtypes
+
+    def _cast_input_dtypes(self, ordered_inputs: list[Any]) -> list[Any]:
+        """Cast each tensor to its expected dtype (``set_inputs()`` needs an exact match)."""
+        if not self._input_dtypes:
+            return ordered_inputs
+
+        cast_inputs: list[Any] = []
+        for i, value in enumerate(ordered_inputs):
+            expected = self._input_dtypes[i] if i < len(self._input_dtypes) else None
+            if isinstance(value, torch.Tensor) and expected is not None and value.dtype != expected:
+                value = value.to(expected)
+            cast_inputs.append(value)
+        return cast_inputs
+
+    def _convert_to_tensor(self, value: Any) -> torch.Tensor | None:  # noqa: ANN401
+        """Convert input to a contiguous tensor; strings/None map to None (traced out)."""
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return None  # strings are traced out at export
+        if isinstance(value, torch.Tensor):
+            tensor = value
+        else:
+            tensor = torch.from_numpy(value)
+        # ExecuTorch requires contiguous inputs.
+        return tensor.contiguous()
+
+    def predict(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:
         """Run inference.
 
         Args:
-            inputs: Mapping of input names to numpy arrays.
+            inputs: Mapping of input names to numpy arrays, strings, or None values.
 
         Returns:
             Mapping of output names to numpy arrays.
@@ -121,13 +175,14 @@ class ExecuTorchAdapter(RuntimeAdapter):
                 msg = f"Missing required inputs: {missing_inputs}. Expected: {self._input_names}"
                 raise ValueError(msg)
             ordered_inputs = [
-                value if isinstance(value, torch.Tensor) else torch.from_numpy(value)
-                for value in (inputs[name] for name in self._input_names)
+                self._convert_to_tensor(inputs[name]) for name in self._input_names
             ]
         else:
             ordered_inputs = [
-                value if isinstance(value, torch.Tensor) else torch.from_numpy(value) for value in inputs.values()
+                self._convert_to_tensor(value) for value in inputs.values()
             ]
+
+        ordered_inputs = self._cast_input_dtypes(ordered_inputs)
 
         outputs = self._method.execute(ordered_inputs)
 
