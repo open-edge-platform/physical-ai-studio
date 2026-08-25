@@ -249,6 +249,7 @@ async def test_record_check_result_persists_healthy_on_pass() -> None:
             "last_check_at": result.checked_at,
             "last_check_latency_ms": 1200,
             "last_check_reason_code": None,
+            "last_check_checks": [check.model_dump(mode="json") for check in result.checks],
         },
     )
 
@@ -276,6 +277,7 @@ async def test_record_check_result_persists_degraded_on_blocking_failure() -> No
             "last_check_at": result.checked_at,
             "last_check_latency_ms": 500,
             "last_check_reason_code": "image_pull_failed",
+            "last_check_checks": [check.model_dump(mode="json") for check in result.checks],
         },
     )
 

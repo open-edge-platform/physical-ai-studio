@@ -100,6 +100,11 @@ class RemoteServerService:
         deliberately transient and must not overwrite the persisted record, so
         job submission (which only trusts the persisted value) keeps requiring
         an explicit, successful deep verification before a server is usable.
+
+        Persists the per-check detail (``last_check_checks``) alongside the
+        summary so the "Image pull & verification" card can render the last
+        verification's detail after a page refresh, rather than resetting to
+        "Not verified yet" until the user reruns the check.
         """
         remote_server = await self.repo.get_by_id(remote_server_id)
         if remote_server is None:
@@ -111,6 +116,7 @@ class RemoteServerService:
             "last_check_at": result.checked_at,
             "last_check_latency_ms": result.latency_ms,
             "last_check_reason_code": reason_code,
+            "last_check_checks": [check.model_dump(mode="json") for check in result.checks],
         }
         return await self.repo.update(remote_server, partial_update)
 

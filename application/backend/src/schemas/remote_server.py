@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schemas.hardware import DeviceType
+from schemas.ssh_preflight import PreflightCheck
 
 # Devices a remote trainer image exists for.
 SSH_SERVER_DEVICE_TYPES = frozenset({DeviceType.CUDA, DeviceType.XPU})
@@ -84,6 +85,11 @@ class RemoteServer(RemoteServerCreate):
     last_check_at: datetime | None = None
     last_check_latency_ms: int | None = Field(default=None, ge=0)
     last_check_reason_code: str | None = None
+    # Per-check detail from the most recent Tier 2 ``/check`` run. Persisted
+    # alongside the summary above so the "Image pull & verification" card can
+    # show the last verification's detail after a page refresh, instead of
+    # resetting to "Not verified yet" until the user reruns the check.
+    last_check_checks: list[PreflightCheck] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
