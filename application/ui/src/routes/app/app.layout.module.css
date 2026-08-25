@@ -1,7 +1,3 @@
-.layout {
-    --spectrum-tabs-selection-indicator-color: var(--energy-blue);
-}
-
 .sidebarList {
     --spectrum-tabs-vertical-rule-width: var(--spectrum-global-dimension-size-50);
 

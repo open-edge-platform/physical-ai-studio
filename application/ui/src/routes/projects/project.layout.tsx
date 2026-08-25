@@ -21,7 +21,6 @@ const Header = ({ project_id }: { project_id: string }) => {
                     width={'100%'}
                     UNSAFE_style={{
                         '--spectrum-tabs-rule-height': '4px',
-                        '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
                     }}
                 >
                     {[

@@ -7,8 +7,6 @@ import { AppFooter } from '../../components/app-footer/app-footer';
 import { AppSidebar } from './app-sidebar';
 import { disabledNavItemKeys } from './nav-items';
 
-import classes from './app.layout.module.css';
-
 const getSelectedNavKey = (pathname: string) => {
     const [, firstSegment] = pathname.split('/');
 
@@ -25,7 +23,6 @@ export const AppLayout = () => {
             aria-label='Main navigation'
             selectedKey={selectedKey}
             disabledKeys={disabledNavItemKeys}
-            UNSAFE_className={classes.layout}
             minHeight={0}
             height={'100%'}
             width={'100%'}
