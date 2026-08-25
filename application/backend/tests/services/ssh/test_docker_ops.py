@@ -219,6 +219,13 @@ def test_check_library_version_no_label_is_silent() -> None:
     assert result.reported_version is None
 
 
+def test_check_library_version_no_label_fails_closed_for_a_named_policy() -> None:
+    """A strict, non-default policy must not be bypassable by omitting the label."""
+    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version=None)
+    with pytest.raises(TrainerLibraryVersionError):
+        docker_ops.check_library_version(image, minimum_version="1.0.0", policy_name="pi05")
+
+
 def test_check_library_version_older_is_a_warning_not_a_failure() -> None:
     image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="0.9.0")
     result = docker_ops.check_library_version(image, minimum_version="1.0.0")

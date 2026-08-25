@@ -92,13 +92,31 @@ class SshTunnel:
         new ones (a reconnect must never leak the connection it is replacing),
         and closes the newly-connected transport itself if `forward_local_port`
         fails (a half-open connect must never leak either).
+
+        On a reconnect (`self._local_port` already set), re-binds to that same
+        local port so callers that cached a base URL derived from it keep
+        working. Falls back to a fresh ephemeral port only if the previous one
+        is not immediately available for re-bind (e.g. still in the OS's
+        `TIME_WAIT`) - a best effort, not a guarantee: a caller that needs a
+        hard guarantee should still re-read `local_port` after a reconnect.
         """
         await self._close_current_connection()
 
         transport = self._open_transport()
+        preferred_port = self._local_port
         try:
             await transport.connect()
-            listener = await transport.forward_local_port(self._remote_host, self._remote_port)
+            try:
+                listener = await transport.forward_local_port(
+                    self._remote_host, self._remote_port, local_port=preferred_port or 0
+                )
+            except OSError:
+                if preferred_port is None:
+                    raise
+                logger.warning(
+                    "SSH tunnel could not re-bind local port {}; a new port will be assigned", preferred_port
+                )
+                listener = await transport.forward_local_port(self._remote_host, self._remote_port)
         except BaseException:
             await transport.close()
             raise
@@ -146,11 +164,12 @@ class SshTunnel:
     async def _reconnect_with_backoff(self) -> None:
         """Retry `_connect_and_forward` with exponential backoff, within budget.
 
-        On success, the tunnel resumes on the *same* `local_port` value from
-        the caller's point of view is not guaranteed (a fresh ephemeral port is
-        assigned), so callers that need address stability across a reconnect
-        should read `local_port` again after a successful reconnect rather than
-        caching it once.
+        `_connect_and_forward` re-binds to the same `local_port` on success, so
+        a caller's cached base URL keeps working across a reconnect in the
+        common case. That re-bind is best effort, not guaranteed (see its
+        docstring), so a caller that needs a hard guarantee should still read
+        `local_port` again after a successful reconnect rather than caching it
+        once.
         """
         settings = self._settings
         started = monotonic()

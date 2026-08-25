@@ -551,7 +551,8 @@ class TrainerImageResolutionError(BaseException):
         super().__init__(
             message=(
                 f"Could not resolve trainer image '{image_ref}' for protocol version {protocol_version}{extra}. "
-                "A matching `protocol-{n}`-tagged trainer image must be published before this job can run."
+                f"A matching `protocol-{protocol_version}`-tagged trainer image must be published before this "
+                "job can run."
             ),
             error_code="trainer_image_unresolved",
             http_status=http.HTTPStatus.CONFLICT,

@@ -44,6 +44,7 @@ class FakeTransport:
         self.fail_connect = fail_connect
         self.connected = False
         self.closed = False
+        self.requested_local_ports: list[int] = []
 
     async def connect(self) -> None:
         if self.fail_connect:
@@ -53,7 +54,8 @@ class FakeTransport:
     async def close(self) -> None:
         self.closed = True
 
-    async def forward_local_port(self, remote_host: str, remote_port: int):
+    async def forward_local_port(self, remote_host: str, remote_port: int, local_port: int = 0):
+        self.requested_local_ports.append(local_port)
         return self.listener
 
 
@@ -151,11 +153,65 @@ async def test_reconnect_closes_the_previous_transport_it_replaces(settings) -> 
     await tunnel.close()
 
 
+async def test_reconnect_requests_the_same_local_port(settings) -> None:
+    """A reconnect asks to re-bind the previously-assigned local port."""
+    first_listener = FakeListener(port=1111)
+    second_listener = FakeListener(port=1111)
+    transports = [FakeTransport(first_listener), FakeTransport(second_listener)]
+    calls = iter(transports)
+
+    tunnel = SshTunnel(lambda: next(calls), "127.0.0.1", 8080, settings)
+    await tunnel.open()
+    assert tunnel.local_port == 1111
+    assert transports[0].requested_local_ports == [0]  # first connect: no preference yet
+
+    first_listener.drop()
+    for _ in range(50):
+        if transports[1].requested_local_ports:
+            break
+        await asyncio.sleep(0.01)
+
+    # The reconnect requested the same port the caller's cached base URL relies on.
+    assert transports[1].requested_local_ports == [1111]
+    assert tunnel.local_port == 1111
+    await tunnel.close()
+
+
+async def test_reconnect_falls_back_to_a_fresh_port_if_the_old_one_is_unavailable(settings) -> None:
+    """If re-binding the previous port fails, the tunnel falls back rather than giving up."""
+    first_listener = FakeListener(port=1111)
+    second_listener = FakeListener(port=2222)
+
+    class _PortUnavailableTransport(FakeTransport):
+        async def forward_local_port(self, remote_host: str, remote_port: int, local_port: int = 0):
+            self.requested_local_ports.append(local_port)
+            if local_port != 0:
+                raise OSError("simulated address already in use")
+            return self.listener
+
+    transports = [FakeTransport(first_listener), _PortUnavailableTransport(second_listener)]
+    calls = iter(transports)
+
+    tunnel = SshTunnel(lambda: next(calls), "127.0.0.1", 8080, settings)
+    await tunnel.open()
+    assert tunnel.local_port == 1111
+
+    first_listener.drop()
+    for _ in range(50):
+        if tunnel.local_port == 2222:
+            break
+        await asyncio.sleep(0.01)
+
+    assert tunnel.local_port == 2222
+    assert transports[1].requested_local_ports == [1111, 0]
+    await tunnel.close()
+
+
 async def test_forward_failure_closes_the_newly_connected_transport(settings) -> None:
     """A transport that connects but fails to forward must not be leaked."""
 
     class _FailingForwardTransport(FakeTransport):
-        async def forward_local_port(self, remote_host: str, remote_port: int):
+        async def forward_local_port(self, remote_host: str, remote_port: int, local_port: int = 0):
             raise RuntimeError("simulated forward failure")
 
     transport = _FailingForwardTransport(FakeListener(port=1111))

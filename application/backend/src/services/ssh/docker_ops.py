@@ -319,7 +319,10 @@ def check_library_version(
 
     Older than the minimum is a non-fatal warning (the job proceeds); equal or
     newer is silent; a version this policy documents as required but the image
-    does not meet is fatal, raised before any pull.
+    does not meet is fatal, raised before any pull. A non-default policy also
+    fails closed when the image carries no version label at all: an image
+    cannot satisfy a required minimum it declines to report, so a missing
+    label is not the same as compliance.
 
     Args:
         image: The digest-resolved image, carrying the registry label.
@@ -334,11 +337,15 @@ def check_library_version(
 
     Raises:
         TrainerLibraryVersionError: The image's version does not meet
-            `minimum_version` and `policy_name` names a required minimum.
+            `minimum_version` and `policy_name` names a required minimum, or
+            `policy_name` is non-default and the image carries no version
+            label at all.
         ValueError: `minimum_version` is not a valid PEP 440 version.
     """
     reported = image.library_version
     if reported is None:
+        if policy_name != "default":
+            raise TrainerLibraryVersionError(policy_name, minimum_version, "unknown (no version label)")
         return LibraryVersionCheck(reported_version=None, minimum_version=minimum_version)
 
     try:

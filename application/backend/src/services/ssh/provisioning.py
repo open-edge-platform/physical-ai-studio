@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 TRAINER_CONTAINER_PORT = 8001
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProvisionedTrainer:
     """A running, tunnel-reachable trainer, and how to tear it down."""
 
