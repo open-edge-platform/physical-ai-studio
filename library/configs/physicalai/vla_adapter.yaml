@@ -1,0 +1,78 @@
+# VLA-Adapter Policy Training Configuration
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/vla_adapter.yaml
+#
+# VLA-Adapter freezes a Prismatic VLM (fused DINOv2 + SigLIP towers feeding
+# Qwen2.5-0.5B) and trains only a Bridge-Attention head, the visual projector,
+# the action queries and the proprio projector — roughly 125M of ~1.2B
+# parameters. The per-component split is logged when the model is built.
+
+model:
+  class_path: physicalai.policies.VLAAdapter
+  init_args:
+    # Backbone weights. The towers and the language model are frozen, so
+    # leaving this false would train the head against random features.
+    load_pretrained_backbone: true
+
+    # Trainability of the two large pretrained backbones. Everything else
+    # (visual projector, action queries, action head, proprio projector)
+    # always trains.
+    train_vision_backbone: false
+    train_llm: false
+
+    # LIBERO preset: 8-step chunks of 7-DoF actions, 8-dim proprioception.
+    chunk_size: 8
+    n_action_steps: 8
+    max_action_dim: 7
+    max_state_dim: 8
+
+    # Two cameras (third-person + wrist). The dataset's `images.image` and
+    # `images.image2` sort into slots 0 and 1, matching upstream's
+    # full_image / wrist_image order, so no remapping is needed.
+    num_images_in_input: 2
+    image_key_reorder_map: {}
+    num_cameras: 0
+
+    # Fixed token length keeps exported graphs statically shaped.
+    tokenizer_max_length: 48
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    # 1693 episodes / 273k frames / 10 fps / ~35 GB.
+    # For a quick smoke run, restrict it on the CLI instead of editing here:
+    #   --data.episodes=[0,1,2]
+    repo_id: "HuggingFaceVLA/libero"
+    data_format: "physicalai"
+
+    # Batch size 1: the frozen backbone is ~1.2B params in fp32, and
+    # `output_hidden_states=True` retains 25 x 576 x 896 floats per sample.
+    # Raise this on a machine with real GPU memory.
+    train_batch_size: 1
+
+    # Eval-loss validation on a held-out 5% of episodes. Gym-based validation
+    # (`val_gym: physicalai.gyms.libero.LiberoGym`) is the alternative, but it
+    # needs the `libero` extra and is far more expensive; benchmark separately
+    # with `physicalai benchmark` once weights are worth evaluating.
+    val_split: 0.05
+    val_split_seed: 42
+
+    # Optional augmentation, matching the other first-party configs:
+    # image_transforms:
+    #   class_path: torchvision.transforms.v2.Compose
+    #   init_args:
+    #     transforms:
+    #       - class_path: torchvision.transforms.v2.ColorJitter
+    #         init_args:
+    #           contrast: [0.8, 1.2]
+    #           brightness: [0.7, 1.3]
+
+trainer:
+  max_epochs: 100
+  accelerator: auto
+  devices: 1
+  precision: 32
+  log_every_n_steps: 50
+  check_val_every_n_epoch: 1
+  gradient_clip_val: 1.0
