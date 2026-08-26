@@ -20,14 +20,14 @@ from threading import Lock
 
 from settings import get_settings
 
-_INSTANCE_ID_FILENAME = "backend_instance_id"
+_BACKEND_INSTANCE_ID_FILENAME = "backend_instance_id"
 
-_cached_id: str | None = None
+_cached_backend_instance_id: str | None = None
 _lock = Lock()
 
 
-def _instance_id_path() -> Path:
-    return get_settings().data_dir / _INSTANCE_ID_FILENAME
+def _backend_instance_id_path() -> Path:
+    return get_settings().data_dir / _BACKEND_INSTANCE_ID_FILENAME
 
 
 def _read_existing(path: Path) -> str | None:
@@ -69,27 +69,27 @@ def get_backend_instance_id() -> str:
     a fresh process so a restart keeps the same id and can reclaim its own
     still-running containers.
     """
-    global _cached_id  # noqa: PLW0603 - process-wide identity, intentionally a singleton.
-    if _cached_id is not None:
-        return _cached_id
+    global _cached_backend_instance_id  # noqa: PLW0603 - process-wide identity, intentionally a singleton.
+    if _cached_backend_instance_id is not None:
+        return _cached_backend_instance_id
 
     with _lock:
-        if _cached_id is not None:
-            return _cached_id
+        if _cached_backend_instance_id is not None:
+            return _cached_backend_instance_id
 
-        path = _instance_id_path()
+        path = _backend_instance_id_path()
         existing = _read_existing(path)
         if existing is not None:
-            _cached_id = existing
-            return _cached_id
+            _cached_backend_instance_id = existing
+            return _cached_backend_instance_id
 
         generated = str(uuid.uuid4())
         _write_atomic(path, generated)
-        _cached_id = generated
-        return _cached_id
+        _cached_backend_instance_id = generated
+        return _cached_backend_instance_id
 
 
 def reset_backend_instance_id_cache() -> None:
     """Drop the in-process cache. Test-support only."""
-    global _cached_id  # noqa: PLW0603 - test-support reset of the process-wide singleton.
-    _cached_id = None
+    global _cached_backend_instance_id  # noqa: PLW0603 - test-support reset of the process-wide singleton.
+    _cached_backend_instance_id = None
