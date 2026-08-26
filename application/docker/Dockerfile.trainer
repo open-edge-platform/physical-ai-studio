@@ -186,10 +186,6 @@ ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
 ARG APPLICATION_VERSION=unknown
 ARG TRAINER_API_PROTOCOL_VERSION=1
-# Version of the installed `physicalai-train` package. Populated by CI from the
-# same wheel `uv sync` resolved into this image, so it can never drift from
-# what actually runs; read pre-pull by `services.ssh.docker_ops` via the
-# registry manifest, and re-confirmed at runtime by `/health`.
 ARG PHYSICALAI_TRAIN_VERSION=unknown
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio remote CUDA training service" \

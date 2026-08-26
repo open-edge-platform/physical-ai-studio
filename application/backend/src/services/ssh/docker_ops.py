@@ -351,20 +351,11 @@ def check_library_version(
     try:
         minimum_parsed = Version(minimum_version)
     except InvalidVersion:
-        # `minimum_version` is operator configuration, not untrusted image data:
-        # a misconfigured minimum must fail fast, not silently disable the
-        # version policy by swallowing its parse error alongside the label's.
         raise ValueError(f"minimum_version '{minimum_version}' is not a valid PEP 440 version") from None
 
     try:
         reported_parsed = Version(reported)
     except InvalidVersion:
-        # `reported_version` stays `None`, not the unparseable string:
-        # `SshProvisioningService.provision()` treats any non-`None`
-        # `reported_version` as authoritative against `/health`'s real
-        # version, and would otherwise raise `TrainerLibraryVersionMismatchError`
-        # on every image whose label isn't a valid PEP 440 version (e.g. the
-        # Dockerfile's `PHYSICALAI_TRAIN_VERSION=unknown` default).
         return LibraryVersionCheck(
             reported_version=None,
             minimum_version=minimum_version,
@@ -548,8 +539,6 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
     render_gid: str | None = None,
 ) -> list[str]:
     """Build the least-privilege `docker run` command for one trainer container.
-
-    Security properties, matching the PR's security gate:
 
     * Launches by digest (`image_digest_ref`), never a mutable tag.
     * `-p 127.0.0.1::<port>` publishes an OS-assigned ephemeral host port bound
