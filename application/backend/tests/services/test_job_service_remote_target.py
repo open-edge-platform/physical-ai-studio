@@ -13,7 +13,7 @@ from exceptions import (
     SshFeatureDisabledError,
 )
 from schemas.hardware import DeviceType
-from schemas.job import RemoteTrainJobPayload, SshTrainJobPayload
+from schemas.job import RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget
 from schemas.remote_server import RemoteServer, RemoteServerCheckStatus, ResolvedSshHost
 from schemas.remote_trainer import RemoteTrainer
 from services.job_service import JobService
@@ -259,7 +259,7 @@ async def test_submit_ssh_job_rejects_when_feature_disabled() -> None:
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
     repository.save = AsyncMock(side_effect=lambda job: job)
-    payload = TrainJobPayload(
+    payload = SshTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
@@ -291,7 +291,7 @@ async def test_submit_ssh_job_rejects_when_feature_fails_closed_on_network_expos
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
     repository.save = AsyncMock(side_effect=lambda job: job)
-    payload = TrainJobPayload(
+    payload = SshTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
