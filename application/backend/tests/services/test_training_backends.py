@@ -13,13 +13,7 @@ import pytest
 from loguru import logger
 
 from schemas.hardware import DeviceType
-from schemas.job import (
-    LocalTrainJobPayload,
-    RemoteTrainJobPayload,
-    SshTrainJobPayload,
-    TrainingTarget,
-    TrainJobPayload,
-)
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget, TrainJobPayload
 from schemas.remote_server import RemoteServer
 from services.training_backends import get_training_backend
 from services.training_backends.local import LocalTrainingBackend
@@ -104,7 +98,6 @@ async def test_get_training_backend_raises_without_remote_server_id() -> None:
     payload = _payload(TrainingTarget.SSH).model_copy(update={"remote_server_id": None})
     with pytest.raises(ValueError, match="remote server"):
         await get_training_backend(payload, uuid4())
-
 
 
 def test_dispatcher_report_enqueues_progress_tuple() -> None:
