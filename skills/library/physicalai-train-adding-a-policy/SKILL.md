@@ -6,7 +6,7 @@ license: Apache-2.0
 
 # Adding a Studio Policy
 
-Policies live in `library/src/physicalai/policies/<name>/`. Each family is a Lightning-facing `Policy` wrapping a `torch.nn.Module` `Model`, split across three files. Base classes are in `policies/base/` (`Policy` in `policy.py`, `Model` in `model.py`); shared `Config` / `FromConfig` types come from Runtime (`physicalai.config`) — see Runtime docs [`use-from-config`](https://github.com/openvinotoolkit/physicalai/blob/main/docs/how-to/config/use-from-config.md) and [`configuration`](https://github.com/openvinotoolkit/physicalai/blob/main/docs/explanation/configuration.md).
+Policies live in `library/src/physicalai/policies/<name>/`. Each family is a Lightning-facing `Policy` wrapping a `torch.nn.Module` `Model`, split across three files. Base classes are in `policies/base/` (`Policy` in `policy.py`, `Model` in `model.py`); shared `Config` / `FromConfig` types come from Runtime (`physicalai.config`) — see `docs/how-to/config/use-from-config.md` and `docs/explanation/configuration.md` in the `physicalai` repo.
 
 ## Workflow
 
