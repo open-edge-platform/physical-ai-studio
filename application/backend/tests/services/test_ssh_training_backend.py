@@ -29,10 +29,13 @@ def _server() -> RemoteServer:
     return RemoteServer(id=uuid4(), name="Lab GPU box", ssh_host_alias="gpu-box", device_type=DeviceType.CUDA)
 
 
-def _context(*, remote_job_id=None, should_stop=False) -> MagicMock:
+def _context(*, remote_job_id=None, should_stop=False, snapshot_path: str | None = "/tmp") -> MagicMock:
     context = MagicMock()
     context.remote_job_id = remote_job_id
-    context.snapshot = None
+    if snapshot_path is None:
+        context.snapshot = None
+    else:
+        context.snapshot = MagicMock(path=snapshot_path)
     context.should_stop = MagicMock(return_value=should_stop)
     context.on_remote_job_id = AsyncMock()
     return context
@@ -148,6 +151,20 @@ async def test_train_leaves_container_running_on_suspend() -> None:
 
     trainer.teardown.assert_not_called()
     repo.delete_by_job_id.assert_not_called()
+
+
+async def test_provision_and_train_raises_without_a_snapshot() -> None:
+    """A fresh provision must fail fast rather than upload nothing."""
+    server = _server()
+    backend = SshTrainingBackend(uuid4(), server)
+    context = _context(snapshot_path=None)
+
+    try:
+        await backend.train(context)
+    except ValueError as error:
+        assert "dataset snapshot" in str(error)
+    else:
+        raise AssertionError("expected a ValueError when no snapshot is provided")
 
 
 async def test_reattach_uses_persisted_provisioning_row() -> None:
