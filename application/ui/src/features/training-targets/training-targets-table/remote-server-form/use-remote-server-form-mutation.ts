@@ -11,7 +11,10 @@ export const useRemoteServerFormMutation = (remoteServer: SchemaRemoteServer | u
         meta: { invalidates: [['get', '/api/remote-servers']] },
     });
 
-    const save = (values: RemoteServerFormValues, { onSuccess }: { onSuccess: () => void }): void => {
+    const save = (
+        values: RemoteServerFormValues,
+        { onSuccess }: { onSuccess: (saved: SchemaRemoteServer) => void }
+    ): void => {
         if (remoteServer === undefined) {
             createRemoteServer.mutate({ body: values }, { onSuccess });
 

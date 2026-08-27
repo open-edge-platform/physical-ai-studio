@@ -15,7 +15,7 @@ import {
 } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
-import { SchemaRemoteServer, SchemaRemoteTrainer } from '../../../api/openapi-spec';
+import { SchemaPreflightResult, SchemaRemoteServer, SchemaRemoteTrainer } from '../../../api/openapi-spec';
 import { Table, TableColumn } from '../../../components/table/table';
 import {
     remoteServerComputeDetail,
@@ -218,10 +218,30 @@ type SshTargetRowProps = {
     onDelete: () => void;
 };
 
+/**
+ * Reconstructs the last persisted Tier 2 result from the server record itself
+ * (`last_check_checks`/`last_check_at`), so a row that mounts fresh - e.g. after
+ * navigating back to the training-targets page, or after verifying from the
+ * post-save dialog's own mutation instance - still shows the server's real
+ * verification state instead of "Not verified yet" just because *this*
+ * component's local check mutation has never fired.
+ */
+const persistedTier2Result = (server: SchemaRemoteServer): SchemaPreflightResult | undefined => {
+    if (server.last_check_checks === undefined || server.last_check_checks.length === 0) return undefined;
+
+    return {
+        remote_server_id: server.id,
+        checks: server.last_check_checks,
+        checked_at: server.last_check_at ?? new Date(0).toISOString(),
+    };
+};
+
 const SshTargetRow = ({ server, isExpanded, onExpandedChange, onExpand, onEdit, onDelete }: SshTargetRowProps) => {
     const entry = useRemoteServersStatus([server.id]).get(server.id);
     const isChecking = entry?.isChecking ?? false;
     const checkMutation = useRemoteServerCheckMutation();
+    const tier2Result = checkMutation.data ?? persistedTier2Result(server);
+    const tier2CheckedAt = checkMutation.data?.checked_at ?? server.last_check_at ?? undefined;
 
     return (
         <Table.ExpandableRow
@@ -234,8 +254,8 @@ const SshTargetRow = ({ server, isExpanded, onExpandedChange, onExpand, onEdit, 
                     remoteServer={server}
                     status={entry?.status}
                     isChecking={isChecking}
-                    tier2Result={checkMutation.data}
-                    tier2CheckedAt={checkMutation.data?.checked_at}
+                    tier2Result={tier2Result}
+                    tier2CheckedAt={tier2CheckedAt}
                     isRunningTier2={checkMutation.isPending}
                     onTestConnection={() => checkMutation.mutate({ params: { path: { remote_server_id: server.id } } })}
                 />

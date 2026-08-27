@@ -301,6 +301,73 @@ describe('TrainModelDialog', () => {
         expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
     });
 
+    it('allows submitting a job against a never-verified SSH server, letting the backend verify it', async () => {
+        // "unknown" last_check_status just means nobody has clicked "Pull & verify
+        // image" yet - not a confirmed failure. The job endpoint runs the same
+        // Tier-2 verification automatically, so the dialog must not force a trip
+        // to the training targets page first.
+        const user = userEvent.setup();
+        let submittedPayload: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer({
+            remoteServers: [{ ...healthyRemoteServer, last_check_status: 'unknown' }],
+        });
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedPayload = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
+
+        expect(await screen.findByText(/hasn't been verified yet/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Train' })).not.toBeDisabled();
+
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submittedPayload).not.toBeNull());
+        expect(submittedPayload).toMatchObject({
+            training_target: 'ssh',
+            remote_server_id: remoteServerId,
+        });
+    });
+
+    it('shows the backend error when Tier-2 verification fails during submission', async () => {
+        const user = userEvent.setup();
+
+        mockProjectWithRemoteTrainer({
+            remoteServers: [{ ...healthyRemoteServer, last_check_status: 'unknown' }],
+        });
+        server.use(
+            http.post('/api/jobs:train', () =>
+                HttpResponse.json(
+                    {
+                        error_code: 'remote_server_not_ready',
+                        message: "Remote server 'lab-gpu-box' is not ready for training.",
+                        http_status: 409,
+                    } as never,
+                    { status: 409 }
+                )
+            )
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        expect(await screen.findByText(/is not ready for training/i)).toBeInTheDocument();
+    });
+
     it('does not submit an SSH job when the live status is unhealthy despite a persisted healthy check', async () => {
         // A server can be verified (last_check_status === "healthy") yet go
         // unreachable before the next explicit verification — the live Tier-1

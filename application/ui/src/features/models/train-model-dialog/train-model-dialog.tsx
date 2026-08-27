@@ -19,6 +19,7 @@ import {
 } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
+import { getApiErrorMessage } from '../../../api/errors';
 import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
 import { useProject } from '../../projects/use-project';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
@@ -109,15 +110,26 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             ? remoteServers.map((remoteServer) => {
                   const entry = remoteServerStatusById.get(remoteServer.id);
                   const isChecking = entry?.isChecking ?? false;
-                  const isVerified = remoteServer.last_check_status === 'healthy';
+                  const isConfirmedBad =
+                      remoteServer.last_check_status === 'unreachable' || remoteServer.last_check_status === 'degraded';
+                  const isUnverified = remoteServer.last_check_status === 'unknown';
                   return {
                       id: `ssh:${remoteServer.id}`,
                       label: remoteServer.name,
                       kind: 'ssh' as const,
-                      statusVariant: isVerified
-                          ? remoteServerStatusVariant(entry?.status, isChecking)
-                          : ('negative' as const),
-                      statusLabel: isVerified ? remoteServerStatusLabel(entry?.status, isChecking) : 'Not verified',
+                      // "unknown" reads as neutral/notice, not a hard failure -
+                      // submitting will verify it automatically. Only a confirmed
+                      // prior failure reads as "negative".
+                      statusVariant: isConfirmedBad
+                          ? ('negative' as const)
+                          : isUnverified
+                            ? ('notice' as const)
+                            : remoteServerStatusVariant(entry?.status, isChecking),
+                      statusLabel: isConfirmedBad
+                          ? 'Not verified'
+                          : isUnverified
+                            ? 'Not verified yet'
+                            : remoteServerStatusLabel(entry?.status, isChecking),
                   };
               })
             : []),
@@ -172,16 +184,26 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // === "healthy") yet go unreachable/degraded before the next explicit
     // verification, so gate on both rather than trusting the persisted flag alone.
     const selectedSshStatusEntry = selectedSshServer ? remoteServerStatusById.get(selectedSshServer.id) : undefined;
-    const sshVerified = selectedSshServer?.last_check_status === 'healthy';
+    const sshLastCheckStatus = selectedSshServer?.last_check_status;
+    // Only a *confirmed* prior failure blocks outright. "unknown" (nobody has
+    // ever run "Pull & verify image" on this server) is not blocking here:
+    // submitting the job triggers the backend's one-time automatic Tier-2
+    // verification (`RemoteServerService.ensure_verified`), which the job
+    // endpoint runs itself and rejects with `remote_server_not_ready` if it
+    // fails — so this dialog doesn't have to force a trip to the training
+    // targets page first just to run the same check.
+    const sshConfirmedBad = sshLastCheckStatus === 'unreachable' || sshLastCheckStatus === 'degraded';
     const sshLiveStatus = selectedSshStatusEntry?.status?.status;
     const sshUnavailable =
-        isSshTarget && (!sshVerified || (sshLiveStatus !== undefined && sshLiveStatus !== 'healthy'));
+        isSshTarget &&
+        (!selectedSshServer || sshConfirmedBad || (sshLiveStatus !== undefined && sshLiveStatus !== 'healthy'));
+    const sshUnverified = isSshTarget && !sshUnavailable && sshLastCheckStatus === 'unknown';
     // Human-readable reason for the warning banner below, falling back to an
     // explicit label rather than rendering `undefined` when the server isn't
     // found in `remoteServers` yet (e.g. still loading).
     const sshStatusMessage = !selectedSshServer
         ? 'not loaded yet'
-        : !sshVerified
+        : sshConfirmedBad
           ? selectedSshServer.last_check_status
           : remoteServerStatusLabel(selectedSshStatusEntry?.status, selectedSshStatusEntry?.isChecking ?? false);
     const selectedSshComputeDetail = useMemo(() => {
@@ -228,6 +250,12 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // Track submission with its own flag so a second call is a no-op for the
     // entire duration, not just while the mutation itself is in flight.
     const [isSubmitting, setIsSubmitting] = useState(false);
+    // Surfaced when the final pre-submit guard (remote trainer health recheck,
+    // SSH Tier-1 recheck) fails, or when the job endpoint itself rejects the
+    // request - most notably `remote_server_not_ready` (HTTP 409), raised when
+    // the backend's automatic Tier-2 verification of a never-checked SSH
+    // server fails right at submission time.
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     const save = async () => {
         if (isSubmitting) {
@@ -241,12 +269,14 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         }
 
         setIsSubmitting(true);
+        setSubmitError(null);
         try {
             if (isRemoteTarget) {
                 // Final guard: the remote trainer may have gone offline since the last
                 // poll, so re-check availability right before submitting the job.
                 const latestHealth = await checkRemoteTrainerHealth();
                 if (latestHealth === null || latestHealth.status === 'unreachable') {
+                    setSubmitError("Can't reach the remote trainer right now. Make sure it's running, then try again.");
                     return;
                 }
             }
@@ -256,9 +286,12 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     return;
                 }
                 // Final guard: the server may have gone unreachable/degraded since the
-                // last poll, so re-check its Tier-1 status right before submitting.
+                // last poll, so re-check its Tier-1 status right before submitting. A
+                // server that has never passed Tier-2 ("unknown") still reaches this
+                // point on purpose — the job endpoint verifies it automatically.
                 const latestStatus = await selectedSshStatusEntry?.checkStatus();
                 if (!latestStatus || latestStatus.status !== 'healthy') {
+                    setSubmitError('This remote server is not reachable right now. Try again once it is back online.');
                     return;
                 }
             }
@@ -292,6 +325,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
             const response = await trainMutation.mutateAsync({ body: payload });
             close(response as SchemaTrainJob | undefined);
+        } catch (error) {
+            setSubmitError(getApiErrorMessage(error) ?? 'The job could not be submitted. Try again.');
         } finally {
             setIsSubmitting(false);
         }
@@ -328,6 +363,15 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                             server before submitting a job.
                         </InlineAlert>
                     )}
+
+                    {sshUnverified && (
+                        <InlineAlert variant='info'>
+                            This remote server hasn&apos;t been verified yet. Submitting will pull and verify the
+                            trainer image first, which can take a few minutes.
+                        </InlineAlert>
+                    )}
+
+                    {submitError !== null && <InlineAlert variant='error'>{submitError}</InlineAlert>}
 
                     <Picker
                         label='Dataset'

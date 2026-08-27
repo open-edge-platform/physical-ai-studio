@@ -192,7 +192,7 @@ describe('TrainingTargetsPage', () => {
         expect(screen.queryByText(remoteTrainer.name)).not.toBeInTheDocument();
     });
 
-    it('creates an SSH server training target', async () => {
+    it('creates an SSH server training target and prompts to verify the image', async () => {
         const user = userEvent.setup();
         let servers: (typeof remoteServer)[] = [];
         server.use(
@@ -220,6 +220,51 @@ describe('TrainingTargetsPage', () => {
         await user.click(within(dialog).getByRole('button', { name: /device type/i }));
         await user.click(await screen.findByRole('option', { name: 'CUDA' }));
         await user.click(within(dialog).getByRole('button', { name: 'Verify & save' }));
+
+        // Rather than closing outright, a freshly created server prompts the
+        // user to pull & verify the trainer image right away.
+        expect(await screen.findByRole('heading', { name: /pull.*verify trainer image/i })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Skip for now' }));
+
+        expect(await screen.findByRole('button', { name: /show details for lambda-a100/i })).toBeInTheDocument();
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('runs pull & verify from the post-save prompt when accepted', async () => {
+        const user = userEvent.setup();
+        let servers: (typeof remoteServer)[] = [];
+        const checkResult = {
+            remote_server_id: remoteServer.id,
+            tiers_run: [2 as const],
+            checks: [],
+            checked_at: '2026-08-07T12:05:00Z',
+        };
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json(servers)),
+            http.post(REMOTE_SERVERS_PATH, async ({ request }) => {
+                const body = (await request.json()) as Pick<
+                    typeof remoteServer,
+                    'name' | 'ssh_host_alias' | 'device_type'
+                >;
+                servers = [{ ...body, id: remoteServer.id, last_check_status: 'unknown' }];
+                return HttpResponse.json(servers[0], { status: 201 });
+            }),
+            http.post('/api/remote-servers/{remote_server_id}/check', () => HttpResponse.json(checkResult))
+        );
+
+        render(<TrainingTargetsPage />);
+
+        await user.click(await screen.findByRole('button', { name: /new training target/i }));
+        const dialog = await screen.findByRole('dialog');
+        await user.type(within(dialog).getByLabelText(/name/i), remoteServer.name);
+        await user.click(within(dialog).getByRole('button', { name: /ssh host/i }));
+        await user.click(await screen.findByRole('option', { name: aliasOption.alias }));
+        await user.click(within(dialog).getByRole('button', { name: /device type/i }));
+        await user.click(await screen.findByRole('option', { name: 'CUDA' }));
+        await user.click(within(dialog).getByRole('button', { name: 'Verify & save' }));
+
+        await user.click(await screen.findByRole('button', { name: 'Pull & verify image' }));
 
         expect(await screen.findByRole('button', { name: /show details for lambda-a100/i })).toBeInTheDocument();
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

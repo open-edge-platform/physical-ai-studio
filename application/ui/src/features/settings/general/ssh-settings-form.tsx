@@ -1,12 +1,11 @@
 import { useState } from 'react';
 
-import { Divider, NumberField, Switch, Text } from '@geti-ui/ui';
+import { Divider, NumberField, Switch } from '@geti-ui/ui';
 
 import { SchemaSettingsUpdate, SchemaSshProvisioningSettings } from '../../../api/openapi-spec';
+import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { SettingsSection } from './settings-section';
 import { useSettingsPatch } from './use-settings-patch';
-
-import classes from './general-settings.module.css';
 
 type SshSettingsFormProps = { ssh: SchemaSshProvisioningSettings };
 
@@ -62,7 +61,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
     return (
         <SettingsSection
             title='SSH-provisioned training'
-            description='Provision training jobs on a GPU server reachable over SSH.'
+            description='Run training jobs on a GPU server you reach over SSH.'
             isDirty={dirty}
             isPending={patchMutation.isPending}
             saved={saved}
@@ -72,15 +71,15 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
             <Switch isEmphasized isSelected={enabled} onChange={(value) => update(setEnabled, value)}>
                 Enable SSH-provisioned training
             </Switch>
-            <Text UNSAFE_className={classes.description}>
-                This feature has no authentication model of its own: anyone who can reach the backend&apos;s API can run
-                arbitrary code as root on every registered server. Only enable it on a single-user localhost workstation
-                that nobody else can reach.
-            </Text>
-            <Text UNSAFE_className={classes.description}>
-                Changing this setting restarts the backend so the change takes effect; the page reconnects automatically
-                once it is back.
-            </Text>
+            <InlineAlert variant='warning'>
+                <strong>Security warning:</strong> This feature has no built-in authentication. Anyone who can reach the
+                Physical AI Studio backend can run arbitrary code as root on any server you register. Enable it only on
+                a single-user, localhost-only workstation with no other network access.
+            </InlineAlert>
+            <InlineAlert variant='info'>
+                Saving this setting restarts the backend. You&apos;ll be reconnected automatically once it&apos;s back
+                up, usually within a few seconds.
+            </InlineAlert>
 
             <Divider size='S' marginY='size-100' />
 

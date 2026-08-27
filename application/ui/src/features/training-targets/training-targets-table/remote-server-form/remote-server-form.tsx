@@ -20,6 +20,7 @@ import { getApiErrorMessage } from '../../../../api/errors';
 import { SchemaRemoteServer } from '../../../../api/openapi-spec';
 import { InlineAlert } from '../../../robots/setup-wizard/shared/inline-alert';
 import { useRemoteServerFormMutation } from './use-remote-server-form-mutation';
+import { VerifyAfterSaveDialog } from './verify-after-save-dialog';
 
 import classes from './remote-server-form.module.css';
 
@@ -41,6 +42,7 @@ export const RemoteServerForm = ({ remoteServer, close }: RemoteServerFormProps)
     );
     const isEditing = remoteServer !== undefined;
     const { save, isPending, error } = useRemoteServerFormMutation(remoteServer);
+    const [savedServer, setSavedServer] = useState<SchemaRemoteServer | undefined>(undefined);
 
     const { data: aliasOptions = [] } = $api.useQuery('get', '/api/remote-servers/aliases');
     const resolvedAlias = useMemo(
@@ -55,8 +57,26 @@ export const RemoteServerForm = ({ remoteServer, close }: RemoteServerFormProps)
             return;
         }
 
-        save({ name: name.trim(), ssh_host_alias: sshHostAlias, device_type: deviceType }, { onSuccess: close });
+        save(
+            { name: name.trim(), ssh_host_alias: sshHostAlias, device_type: deviceType },
+            {
+                onSuccess: (saved) => {
+                    // Only a brand-new server needs the prompt: an edit changes
+                    // connection details on a server that may already be verified,
+                    // and re-prompting every time it's edited would be noise.
+                    if (isEditing) {
+                        close();
+                        return;
+                    }
+                    setSavedServer(saved);
+                },
+            }
+        );
     };
+
+    if (savedServer !== undefined) {
+        return <VerifyAfterSaveDialog savedServer={savedServer} close={close} />;
+    }
 
     const errorMessage = error
         ? (getApiErrorMessage(error) ?? 'The training target could not be saved. Try again.')

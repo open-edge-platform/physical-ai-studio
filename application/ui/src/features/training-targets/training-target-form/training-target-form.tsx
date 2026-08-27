@@ -18,8 +18,10 @@ import {
 
 import { $api } from '../../../api/client';
 import { getApiErrorMessage } from '../../../api/errors';
+import { SchemaRemoteServer } from '../../../api/openapi-spec';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { useRemoteServerFormMutation } from '../training-targets-table/remote-server-form/use-remote-server-form-mutation';
+import { VerifyAfterSaveDialog } from '../training-targets-table/remote-server-form/verify-after-save-dialog';
 import { useRemoteTrainerFormMutation } from '../training-targets-table/remote-trainer-form/use-remote-trainer-form-mutation';
 
 import classes from './training-target-form.module.css';
@@ -51,6 +53,10 @@ export const TrainingTargetForm = ({ close }: TrainingTargetFormProps) => {
     const [url, setUrl] = useState('');
     const [sshHostAlias, setSshHostAlias] = useState<string | undefined>(undefined);
     const [deviceType, setDeviceType] = useState<DeviceType | undefined>(undefined);
+    // Set once an SSH server is saved, to swap this dialog for the "pull &
+    // verify now?" prompt (see `VerifyAfterSaveDialog`). A direct-URL trainer
+    // has no such preflight, so it always just closes on save.
+    const [savedServer, setSavedServer] = useState<SchemaRemoteServer | undefined>(undefined);
 
     const {
         save: saveTrainer,
@@ -86,13 +92,17 @@ export const TrainingTargetForm = ({ close }: TrainingTargetFormProps) => {
             }
             saveServer(
                 { name: name.trim(), ssh_host_alias: sshHostAlias, device_type: deviceType },
-                { onSuccess: close }
+                { onSuccess: setSavedServer }
             );
             return;
         }
 
         saveTrainer({ name: name.trim(), url }, { onSuccess: close });
     };
+
+    if (savedServer !== undefined) {
+        return <VerifyAfterSaveDialog savedServer={savedServer} close={close} />;
+    }
 
     return (
         <Form onSubmit={handleSubmit} validationBehavior='native' width='size-6000'>
