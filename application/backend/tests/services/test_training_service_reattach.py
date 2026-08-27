@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from schemas.base_job import JobStatus
-from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainJobPayload
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget, TrainJobPayload
 from services.training_service import TrainingService
 
 MODULE = "services.training_service"
@@ -161,7 +161,7 @@ class TestReattachOrphans:
         `remote_job_id` (a crash between provisioning and job submission).
         Excluding it is what stops this generic pass from failing it anyway.
         """
-        payload = TrainJobPayload(
+        payload = SshTrainJobPayload(
             project_id=uuid4(),
             dataset_id=uuid4(),
             policy="act",

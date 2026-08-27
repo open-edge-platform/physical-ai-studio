@@ -19,11 +19,11 @@ from db.schema import Base, JobProvisioningDB, ProjectDB, RemoteServerDB
 from repositories.job_provisioning_repo import JobProvisioningRepository
 from repositories.mappers.job_mapper import JobMapper
 from schemas.base_job import JobStatus
-from schemas.job import TrainingTarget, TrainJob, TrainJobPayload
+from schemas.job import SshTrainJobPayload, TrainingTarget, TrainJob
 
 
 def _make_job(project_id, remote_server_id, status: JobStatus) -> TrainJob:
-    payload = TrainJobPayload(
+    payload = SshTrainJobPayload(
         project_id=project_id,
         dataset_id=uuid4(),
         policy="act",
