@@ -85,7 +85,7 @@ def _healthy_script(container_id: str = "abc123", published_port: int = 54321) -
             "/dev/sda1 900000000000 100000000000 85899345920 12% /var/lib/docker\n"
         ),
         "docker pull": _ok("Status: Downloaded"),
-        "nvidia-smi --query-compute-apps": _ok("\n"),  # GPU free
+        "nvidia-smi --query-gpu=memory.used": _ok("1000, 40000\n"),  # GPU free
         "docker volume create": _ok(""),
         "docker run": _ok(f"{container_id}\n"),
         "docker port": _ok(f"127.0.0.1:{published_port}\n"),

@@ -140,8 +140,12 @@ class RemoteResumeUnsupportedError(BaseException):
 class RemoteServerNotReadyError(BaseException):
     """Raised when an SSH job targets a server that has not passed preflight.
 
-    Studio never dials SSH from job submission (only the explicit save/check
-    actions do); this only consults the server's persisted last-check summary.
+    Studio never re-dials SSH from job submission for a server that was
+    already checked; this only consults the server's persisted last-check
+    summary. A server that has never been checked at all is verified once,
+    automatically, before this error is raised (see
+    `services.remote_server_service.RemoteServerService.ensure_verified`), so
+    this only ever fires for a server whose last explicit check failed.
     """
 
     def __init__(self, server_name: str, last_check_status: str) -> None:

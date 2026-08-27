@@ -264,8 +264,25 @@ def test_check_library_version_invalid_minimum_version_fails_fast() -> None:
 # --------------------------------------------------------------------------- #
 
 
+async def test_is_gpu_busy_cuda_low_memory_usage_is_not_busy() -> None:
+    """A process holding a trivial slice of GPU memory must not block a job."""
+    transport = FakeTransport({"nvidia-smi --query-gpu=memory.used": _ok("1000, 40000\n")})
+    assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is False
+
+
+async def test_is_gpu_busy_cuda_high_memory_usage_is_busy() -> None:
+    transport = FakeTransport({"nvidia-smi --query-gpu=memory.used": _ok("30000, 40000\n")})
+    assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is True
+
+
+async def test_is_gpu_busy_cuda_unknown_when_command_fails() -> None:
+    transport = FakeTransport({"nvidia-smi --query-gpu=memory.used": _fail()})
+    assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is None
+
+
 async def test_wait_for_gpu_free_returns_once_free(settings) -> None:
-    calls = iter([_ok("1234\n"), _ok("\n")])  # busy once, then free
+    # busy once (30GB/40GB used), then free (1GB/40GB used)
+    calls = iter([_ok("30000, 40000\n"), _ok("1000, 40000\n")])
 
     class _Sequenced(FakeTransport):
         async def connect(self) -> None:
@@ -317,7 +334,7 @@ async def test_wait_for_gpu_free_gives_up_after_timeout(settings) -> None:
             return None
 
         async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
-            return _ok("1234\n")
+            return _ok("30000, 40000\n")  # 75% used, always busy
 
     async def fake_sleep(seconds: float) -> None:
         return None
@@ -471,6 +488,151 @@ async def test_pull_image_pulls_when_not_present_locally(settings) -> None:
     await docker_ops.pull_image(transport, image, settings)
 
     assert transport.ran(f"docker pull {image.digest_reference}")
+
+
+class _SequencedTransport(FakeTransport):
+    """A `FakeTransport` where named commands answer from a queue, in order.
+
+    Needed to simulate a background pull that is still running on the first
+    check and has finished by a later one - a fixed `script` dict can only
+    ever answer a given prefix the same way every time.
+    """
+
+    def __init__(
+        self, script: dict[str, CommandResult] | None = None, sequences: dict[str, list[CommandResult]] | None = None
+    ) -> None:
+        super().__init__(script)
+        self._sequences = {prefix: list(results) for prefix, results in (sequences or {}).items()}
+
+    async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
+        joined = " ".join(argv)
+        for prefix, queue in self._sequences.items():
+            if joined.startswith(prefix) and queue:
+                self.commands.append(tuple(argv))
+                return queue.pop(0)
+        return await super().run_command(argv, timeout=timeout)
+
+
+async def _no_sleep(_seconds: float) -> None:
+    return None
+
+
+async def test_pull_image_waits_for_in_progress_background_pull_then_skips(settings, monkeypatch) -> None:
+    """Regression guard: a job dispatched while Tier 2's detached tag pull is
+    still transferring must not race it with a second, concurrent `docker
+    pull` of the identical content by digest - indistinguishable in logs from
+    pulling an unrelated image. It should wait for the tag pull to finish and
+    pick up the now-cached image instead.
+    """
+    image = _image()
+    monkeypatch.setattr(docker_ops.asyncio, "sleep", _no_sleep)
+    transport = _SequencedTransport(
+        {"docker pull": _fail("should never be called; the background pull already finished")},
+        sequences={
+            f"docker image inspect {image.digest_reference}": [_fail("No such image"), _ok()],
+            "sh -c test -f": [_ok(), _fail("no pull in progress")],
+        },
+    )
+
+    await docker_ops.pull_image(transport, image, settings)
+
+    assert not transport.ran("docker pull")
+
+
+async def test_pull_image_falls_back_to_direct_pull_when_background_pull_never_finishes(settings, monkeypatch) -> None:
+    """A background pull that stalls (or was never actually started) must not
+    block a job forever - once the wait budget is spent, provisioning falls
+    back to its own direct digest pull exactly as before this behavior existed.
+    """
+    image = _image()
+    monkeypatch.setattr(docker_ops.asyncio, "sleep", _no_sleep)
+    stalled_settings = settings.model_copy(update={"ssh_image_pull_timeout_s": 0})
+    transport = _SequencedTransport(
+        {
+            f"docker image inspect {image.digest_reference}": _fail("No such image"),
+            f"docker pull {image.digest_reference}": _ok(),
+        },
+        sequences={"sh -c test -f": [_ok()]},
+    )
+
+    await docker_ops.pull_image(transport, image, stalled_settings)
+
+    assert transport.ran(f"docker pull {image.digest_reference}")
+
+
+# --------------------------------------------------------------------------- #
+# prune_stale_images                                                          #
+# --------------------------------------------------------------------------- #
+
+
+async def test_prune_stale_images_removes_other_digests_of_same_repository(settings) -> None:
+    image = _image()
+    repository = f"{_REGISTRY}/physicalai-trainer-cuda"
+    old_digest = "sha256:" + "b" * 64
+    transport = FakeTransport(
+        {
+            f"docker images {repository} --digests": _ok(f"old-id\t{old_digest}\ncurrent-id\t{image.digest}\n"),
+            "docker rmi old-id": _ok(),
+            "docker rmi current-id": _fail("should never remove the image just pulled"),
+        }
+    )
+
+    removed = await docker_ops.prune_stale_images(transport, image)
+
+    assert removed == ["old-id"]
+    assert transport.ran("docker rmi old-id")
+    assert not transport.ran("docker rmi current-id")
+
+
+async def test_prune_stale_images_keeps_image_still_in_use(settings) -> None:
+    """A stale digest still referenced by a container (this installation's own
+    still-running job, or another Studio installation's) must not be forced
+    out from under it - `docker rmi` refusing is tolerated, not retried.
+    """
+    image = _image()
+    repository = f"{_REGISTRY}/physicalai-trainer-cuda"
+    old_digest = "sha256:" + "b" * 64
+    in_use_error = (
+        "Error response from daemon: conflict: unable to delete (must be forced) "
+        "- image is being used by running container abc123"
+    )
+    transport = FakeTransport(
+        {
+            f"docker images {repository} --digests": _ok(f"old-id\t{old_digest}\n"),
+            "docker rmi old-id": _fail(in_use_error),
+        }
+    )
+
+    removed = await docker_ops.prune_stale_images(transport, image)
+
+    assert removed == []
+
+
+async def test_prune_stale_images_tolerates_listing_failure(settings) -> None:
+    image = _image()
+    transport = FakeTransport({})  # every command fails: unscripted
+
+    removed = await docker_ops.prune_stale_images(transport, image)
+
+    assert removed == []
+
+
+async def test_pull_image_prunes_stale_images_after_pulling(settings) -> None:
+    image = _image()
+    repository = f"{_REGISTRY}/physicalai-trainer-cuda"
+    old_digest = "sha256:" + "b" * 64
+    transport = FakeTransport(
+        {
+            f"docker image inspect {image.digest_reference}": _fail("No such image"),
+            f"docker pull {image.digest_reference}": _ok(),
+            f"docker images {repository} --digests": _ok(f"old-id\t{old_digest}\n"),
+            "docker rmi old-id": _ok(),
+        }
+    )
+
+    await docker_ops.pull_image(transport, image, settings)
+
+    assert transport.ran("docker rmi old-id")
 
 
 async def test_launch_container_returns_container_id() -> None:

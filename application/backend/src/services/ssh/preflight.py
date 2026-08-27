@@ -5,7 +5,10 @@
 
 Tier 1 is cheap and bounded, so it can gate a create/update request. Tier 2
 resolves and inspects the trainer image and runs a one-shot GPU container, so it
-is an explicit action and never runs inline in a request handler.
+never runs inline in a *create/update* request - it only ever runs from an
+explicit ``/check``, or once automatically the first time an unverified server
+is selected for a job (see
+:meth:`~services.remote_server_service.RemoteServerService.ensure_verified`).
 
 **Tier 1 performs no image work at all.** Its registry check is an
 unauthenticated ``HEAD`` against the registry's ``/v2/`` API root, which
@@ -970,6 +973,21 @@ async def _pull_already_running(transport: SshTransport, pidfile: str) -> bool:
     return result.ok
 
 
+async def pull_in_progress(transport: SshTransport, image_ref: str) -> bool:
+    """True when a Tier 2 background pull of ``image_ref`` is still running.
+
+    Shared with `services.ssh.docker_ops.pull_image`: without this, a job
+    dispatched while Tier 2's own detached `docker pull <tag>` (started by
+    `_start_background_pull`, below) is still transferring cannot see that
+    transfer - the image store is empty until it finishes - and would start a
+    second, concurrent `docker pull` of the same content by digest, which
+    reads in logs as an unrelated image. `pull_image` polls this instead of
+    racing it.
+    """
+    pidfile, _ = _pull_state_paths(image_ref)
+    return await _pull_already_running(transport, pidfile)
+
+
 async def _start_background_pull(transport: SshTransport, image_ref: str, pidfile: str, logfile: str) -> None:
     """Launch ``docker pull`` detached from this SSH session so it outlives it.
 
@@ -1132,10 +1150,13 @@ async def run_tier2_preflight(
 ) -> PreflightResult:
     """Run the expensive verification tier against one server.
 
-    Invoked only by an explicit verify action: it inspects the trainer image in
-    the registry and starts a one-shot container, neither of which belongs inside
-    a create/update request. ``protocol_version`` is a parameter so this module
-    stays independent of the trainer package.
+    Invoked by an explicit verify action (the ``/check`` endpoint), or once,
+    automatically, by `services.remote_server_service.RemoteServerService.
+    ensure_verified` the first time a server is selected for a job: neither is
+    a create/update request, which is what this must never run inline in - it
+    inspects the trainer image in the registry and starts a one-shot
+    container. ``protocol_version`` is a parameter so this module stays
+    independent of the trainer package.
 
     Like Tier 1, does not raise for a server that fails its checks.
 

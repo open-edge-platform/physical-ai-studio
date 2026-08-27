@@ -295,6 +295,49 @@ async def test_record_check_result_missing_remote_server_raises_not_found() -> N
     repository.update.assert_not_called()
 
 
+@pytest.mark.anyio
+async def test_ensure_verified_runs_tier2_for_a_never_checked_server() -> None:
+    """A server with the default `"unknown"` status is verified once, automatically."""
+    session = _session()
+    remote_server = _remote_server()
+    assert remote_server.last_check_status == "unknown"
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=remote_server)
+    repository.update = AsyncMock(side_effect=lambda server, update: server.model_copy(update=update))
+    result = PreflightResult(checks=[_check(CheckOutcome.PASSED)], checked_at=CHECKED_AT, latency_ms=100)
+    run_tier2 = AsyncMock(return_value=result)
+
+    with (
+        patch(f"{MODULE}.RemoteServerRepository", return_value=repository),
+        patch(f"{MODULE}.run_tier2_preflight", run_tier2),
+    ):
+        updated = await RemoteServerService(session).ensure_verified(remote_server.id)
+
+    run_tier2.assert_awaited_once()
+    assert run_tier2.await_args is not None
+    assert run_tier2.await_args.args[0] == remote_server
+    assert updated.last_check_status == "healthy"
+
+
+@pytest.mark.anyio
+async def test_ensure_verified_skips_tier2_for_an_already_checked_server() -> None:
+    """A server that already has a recorded outcome (even a failed one) is never re-checked here."""
+    session = _session()
+    remote_server = _remote_server().model_copy(update={"last_check_status": "degraded"})
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=remote_server)
+    run_tier2 = AsyncMock()
+
+    with (
+        patch(f"{MODULE}.RemoteServerRepository", return_value=repository),
+        patch(f"{MODULE}.run_tier2_preflight", run_tier2),
+    ):
+        updated = await RemoteServerService(session).ensure_verified(remote_server.id)
+
+    run_tier2.assert_not_awaited()
+    assert updated == remote_server
+
+
 def _patched_service(
     remote_server: RemoteServer,
     *,

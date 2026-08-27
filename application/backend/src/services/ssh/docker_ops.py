@@ -23,6 +23,7 @@ server, using the `sigstore` PyPI package rather than a `cosign` binary. See
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -47,6 +48,7 @@ from services.ssh.preflight import (  # noqa: F401 - resolve_render_group_gid re
     PROTOCOL_LABEL,
     image_present_locally,
     protocol_tag,
+    pull_in_progress,
     resolve_render_group_gid,
     trainer_image_ref,
 )
@@ -81,9 +83,8 @@ _CONTAINER_NAME_PREFIX: Final = "physicalai-trainer-"
 # uploaded datasets and model artifacts consume disk rather than RAM.
 _DATA_VOLUME_NAME_PREFIX: Final = "physicalai-trainer-data-"
 
-# Fraction of device memory in use above which an accelerator counts as busy.
-# Mirrors the (advisory) preflight heuristic for XPU, which has no
-# per-process attribution comparable to `nvidia-smi --query-compute-apps`.
+# Fraction of device memory in use above which an accelerator counts as busy
+# for the pre-launch `wait_for_gpu_free` check.
 _GPU_BUSY_MEMORY_FRACTION: Final = 0.3
 
 _DF_AVAILABLE_COLUMN: Final = 3
@@ -462,11 +463,27 @@ def _first_number_pair(stdout: str) -> tuple[float, float] | None:
 
 
 async def _cuda_gpu_busy(transport: SshTransport) -> bool | None:
-    """Return whether a CUDA GPU is busy, or ``None`` if occupancy is unknown."""
-    result = await transport.run_command(["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"])
+    """Return whether a CUDA GPU is busy, or ``None`` if occupancy is unknown.
+
+    Uses the same memory-utilization heuristic as `_xpu_gpu_busy`, not
+    compute-process *presence*: a GPU carrying an unrelated process that holds
+    only a sliver of its memory (a monitoring agent, another user's idle
+    notebook) must not block a job that would fit comfortably alongside it.
+    `nvidia-smi --query-compute-apps` would flag the GPU busy the moment any
+    process holds it at all, regardless of how much of the device it actually
+    occupies - too strict for a shared box, and the direct cause of jobs
+    refusing to start next to a process using a trivial fraction of memory.
+    """
+    result = await transport.run_command(
+        ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
+    )
     if not result.ok:
         return None
-    return bool([line for line in result.stdout.splitlines() if line.strip()])
+    pair = _first_number_pair(result.stdout)
+    if pair is None:
+        return None
+    used, total = pair
+    return (used / total) >= _GPU_BUSY_MEMORY_FRACTION
 
 
 async def _xpu_gpu_busy(transport: SshTransport) -> bool | None:
@@ -686,6 +703,14 @@ async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Se
     check. A cold image (protocol tag never verified, or evicted since) still
     pulls exactly as before.
 
+    Tier 2's tag pull is detached (`nohup`) and may still be transferring when
+    a job is dispatched moments later - the image store is empty until it
+    finishes, so the digest check above cannot see it yet. Rather than start a
+    second, concurrent `docker pull` of the identical content by digest
+    (indistinguishable in logs from pulling an unrelated image), this waits
+    for that in-flight pull with `pull_in_progress` and re-checks the image
+    store once it ends, before falling back to its own pull.
+
     Uses `settings.ssh_image_pull_timeout_s` rather than the default
     `ssh_command_timeout_s`: that budget is sized for cheap probes
     (`docker version`, `nvidia-smi`), and is far too short for a multi-gigabyte
@@ -693,18 +718,113 @@ async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Se
     short budget elapses would otherwise surface as a spurious pull failure,
     with only the partial progress output as its (misleading) detail.
 
+    After the digest is confirmed present (whether pulled here, pulled by a
+    Tier 2 background pull this call waited out, or already cached), this
+    prunes any other locally cached image of the same repository via
+    `prune_stale_images` - best effort, never raised - so a long-lived remote
+    server accumulates only the trainer image each job actually needed, not
+    every protocol tag/digest it has ever pulled.
+
     Raises:
         TrainerImagePullError: The pull failed, or did not finish within
             `settings.ssh_image_pull_timeout_s`.
     """
-    if await image_present_locally(transport, image.digest_reference):
-        return
+    if not await image_present_locally(transport, image.digest_reference):
+        if await pull_in_progress(transport, image.tag_reference):
+            await _await_background_pull(transport, image.tag_reference, settings)
 
-    result = await transport.run_command(
-        ["docker", "pull", image.digest_reference], timeout=settings.ssh_image_pull_timeout_s
-    )
+        if not await image_present_locally(transport, image.digest_reference):
+            result = await transport.run_command(
+                ["docker", "pull", image.digest_reference], timeout=settings.ssh_image_pull_timeout_s
+            )
+            if not result.ok:
+                raise TrainerImagePullError(image.digest_reference, detail=result.stderr or result.stdout or None)
+
+    await prune_stale_images(transport, image)
+
+
+async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> list[str]:
+    """Remove other locally cached images of `image`'s repository, freeing disk.
+
+    A remote server keeps every distinct digest it has ever pulled for a
+    given `physicalai-trainer-<device>` repository (one per protocol version
+    Studio has resolved against it) until something removes them - each is
+    multiple gigabytes, so a long-lived server otherwise fills its disk
+    purely from accumulated image history rather than any single job's needs.
+    Called after `pull_image` confirms `image.digest_reference` is present, so
+    disk reclaimed here never costs a re-pull of the image a job just
+    verified it needs.
+
+    Never touches `image.digest_reference` itself. Tolerates - silently,
+    without raising - a `docker rmi` refused because a container (this
+    installation's or another's) still references that image: it is still in
+    use and must not be forced out from under it. Also tolerates the listing
+    command itself failing, returning no removals rather than raising:
+    reclaiming disk is best-effort bookkeeping, never something a job's launch
+    should fail over.
+
+    Args:
+        transport: An open transport to the remote server.
+        image: The resolved image just confirmed present; its repository
+            (everything before the ``@``) is what gets swept, and its digest
+            is the one entry that is always kept.
+
+    Returns:
+        IDs of the images actually removed.
+    """
+    repository = image.digest_reference.rsplit("@", 1)[0]
+    try:
+        result = await transport.run_command(
+            ["docker", "images", repository, "--digests", "--format", "{{.ID}}\t{{.Digest}}"]
+        )
+    except Exception as error:
+        logger.warning("Could not list images for '{}' to prune stale ones: {}", repository, error)
+        return []
     if not result.ok:
-        raise TrainerImagePullError(image.digest_reference, detail=result.stderr or result.stdout or None)
+        return []
+
+    stale_ids: set[str] = set()
+    for line in result.stdout.splitlines():
+        image_id, _, digest = line.partition("\t")
+        image_id, digest = image_id.strip(), digest.strip()
+        if image_id and digest != image.digest:
+            stale_ids.add(image_id)
+
+    removed: list[str] = []
+    for image_id in stale_ids:
+        try:
+            rm_result = await transport.run_command(["docker", "rmi", image_id])
+        except Exception as error:
+            logger.warning("Could not remove stale image '{}': {}", image_id, error)
+            continue
+        if rm_result.ok:
+            removed.append(image_id)
+        elif "image is being used" not in (rm_result.stderr or "").lower():
+            logger.warning("docker rmi reported a failure for stale image '{}': {}", image_id, rm_result.stderr)
+    return removed
+
+
+# Interval between polls of an in-flight background pull's PID. Short enough
+# not to waste much of `settings.ssh_image_pull_timeout_s` on the final poll,
+# long enough not to flood the SSH connection with `kill -0` round trips
+# during a multi-gigabyte transfer that can take minutes.
+_PULL_POLL_INTERVAL_S: Final = 5.0
+
+
+async def _await_background_pull(transport: SshTransport, image_ref: str, settings: Settings) -> None:
+    """Wait for a Tier 2 background pull of `image_ref` to finish, best effort.
+
+    Bounded by `settings.ssh_image_pull_timeout_s`, the same budget a direct
+    pull would use. Gives up silently rather than raising when the budget
+    elapses - the caller re-checks the image store either way and falls back
+    to its own pull, so a background pull that stalled degrades to the
+    pre-existing behavior instead of failing the job here.
+    """
+    deadline = time.monotonic() + settings.ssh_image_pull_timeout_s
+    while time.monotonic() < deadline:
+        if not await pull_in_progress(transport, image_ref):
+            return
+        await asyncio.sleep(_PULL_POLL_INTERVAL_S)
 
 
 async def launch_container(transport: SshTransport, argv: list[str], server_name: str) -> str:

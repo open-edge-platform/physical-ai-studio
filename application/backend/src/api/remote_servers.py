@@ -172,10 +172,14 @@ async def check_remote_server(
 ) -> PreflightResult:
     """Explicitly run Tier 2 preflight against a registered server.
 
-    Never runs inline on save: this is the only path that can trigger a
-    registry pull and one-shot GPU container probe. Its outcome is also the
-    only thing that ever moves the server's persisted ``last_check_status``
-    off ``"unknown"`` - a live Tier 1 read from ``/status`` never does.
+    The only other path that can trigger a registry pull and one-shot GPU
+    container probe is `RemoteServerService.ensure_verified`, called once,
+    automatically, the first time a server with ``last_check_status ==
+    "unknown"`` is selected for a job - so submitting a job never has to
+    reject a server for the sole reason that nobody happened to click
+    "Test connection" first. This endpoint is what a user reaches for
+    afterward to re-verify a server, or to verify one before ever submitting
+    a job against it.
     """
     server = await remote_server_service.get_remote_server(remote_server_id)
     result = await run_tier2_preflight(server)

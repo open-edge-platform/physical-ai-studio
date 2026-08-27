@@ -21,7 +21,7 @@ from repositories.job_repo import JobRepository
 from repositories.remote_server_repo import RemoteServerRepository
 from schemas.remote_server import RemoteServer, RemoteServerCreate, RemoteServerUpdate
 from schemas.ssh_preflight import PreflightResult, RemoteServerStatus
-from services.ssh.preflight import run_tier1_preflight
+from services.ssh.preflight import DEFAULT_PROTOCOL_VERSION, run_tier1_preflight, run_tier2_preflight
 from services.training_backends.phase import PhaseState
 from settings import Settings, get_settings
 
@@ -93,13 +93,16 @@ class RemoteServerService:
         await self.repo.delete_by_id(remote_server_id)
 
     async def record_check_result(self, remote_server_id: UUID, result: PreflightResult) -> RemoteServer:
-        """Persist the outcome of an explicit Tier 2 ``/check`` (Test connection).
+        """Persist the outcome of a Tier 2 verification (explicit ``/check``, or `ensure_verified`).
 
         This is the only path that ever moves ``last_check_status`` off its
-        default of ``"unknown"``: the live Tier 1 read behind ``/status`` is
-        deliberately transient and must not overwrite the persisted record, so
-        job submission (which only trusts the persisted value) keeps requiring
-        an explicit, successful deep verification before a server is usable.
+        default of ``"unknown"``. Besides the explicit "Test connection"
+        action, `ensure_verified` also calls this - once, automatically - the
+        first time a server is selected for a job, so job submission never
+        has to reject a server for the sole reason that nobody happened to
+        click "Test connection" first. A server whose check already failed
+        (``"degraded"``/``"unreachable"``) still requires the user to
+        re-verify deliberately; neither path retries that automatically.
 
         Persists the per-check detail (``last_check_checks``) alongside the
         summary so the "Image pull & verification" card can render the last
@@ -119,6 +122,28 @@ class RemoteServerService:
             "last_check_checks": [check.model_dump(mode="json") for check in result.checks],
         }
         return await self.repo.update(remote_server, partial_update)
+
+    async def ensure_verified(
+        self, remote_server_id: UUID, *, protocol_version: int = DEFAULT_PROTOCOL_VERSION
+    ) -> RemoteServer:
+        """Run Tier 2 preflight automatically the first time a server is used, then return it.
+
+        Job submission only ever trusts the persisted ``last_check_status`` -
+        a server whose last explicit ``/check`` failed (``"degraded"``/
+        ``"unreachable"``) still requires the user to re-run it deliberately.
+        But ``"unknown"`` (never checked at all) is different: nothing about
+        it says the server is broken, only that nobody has run the one-time
+        verification yet. Rather than reject the job and send the user back
+        to the training-targets page, this runs that verification inline so
+        the job can proceed - the image pull it kicks off (or confirms
+        already ran) is exactly the pull `SshProvisioningService.provision`
+        would need to do anyway.
+        """
+        remote_server = await self.get_remote_server(remote_server_id)
+        if remote_server.last_check_status != "unknown":
+            return remote_server
+        result = await run_tier2_preflight(remote_server, protocol_version=protocol_version)
+        return await self.record_check_result(remote_server_id, result)
 
     async def get_status(self, remote_server_id: UUID, settings: Settings | None = None) -> RemoteServerStatus:
         """Return one server's live status: a throttled Tier 1 probe plus in-use/GPU-wait state.
