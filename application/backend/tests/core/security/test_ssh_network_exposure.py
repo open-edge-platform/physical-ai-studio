@@ -12,6 +12,7 @@ from core.security.ssh_network_exposure import (
     get_ssh_feature_availability,
     is_loopback_host,
 )
+from settings import write_user_settings
 
 
 class _Settings:
@@ -114,14 +115,20 @@ def test_reason_never_names_a_host_alias_or_container() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_get_ssh_feature_availability_is_cached_like_get_settings(monkeypatch) -> None:
-    get_ssh_feature_availability.cache_clear()
-    monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "false")
+def test_get_ssh_feature_availability_is_cached_like_get_settings(monkeypatch, tmp_path) -> None:
+    """`get_ssh_feature_availability` is cached for the process lifetime.
+
+    The master switch is settings-page-only (see `settings._EnvExclusionSource`),
+    so this writes to the settings file rather than an environment variable
+    to change the underlying setting between reads.
+    """
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
     monkeypatch.setenv("HOST", "127.0.0.1")
+    get_ssh_feature_availability.cache_clear()
 
     first = get_ssh_feature_availability()
 
-    monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "true")
+    write_user_settings({"SSH_REMOTE_TRAINER_ENABLED": True})
     monkeypatch.setenv("HOST", "0.0.0.0")
     second = get_ssh_feature_availability()
 

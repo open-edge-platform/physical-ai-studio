@@ -8,12 +8,17 @@ Everything in this module runs a command over an already-connected
 a connection: :mod:`services.ssh.provisioning` owns connection lifetime, so a
 single SSH connection can span image resolution, launch, and later teardown.
 
-Image resolution and verification never pull a layer. ``docker buildx
-imagetools inspect`` reads the registry manifest (and, via ``--format``, the
-image config's labels) over the registry API, the same class of call Tier 1's
-preflight uses for its own registry-reachability probe. The label carrying the
+Image resolution never pulls a layer. ``docker buildx imagetools inspect``
+reads the registry manifest (and, via ``--format``, the image config's
+labels) over the registry API, the same class of call Tier 1's preflight uses
+for its own registry-reachability probe. The label carrying the
 `physicalai-train` version is read from this same call, before any pull, so a
 version-policy rejection never costs a multi-gigabyte transfer.
+
+``verify_image_signature`` is the one exception to "everything here runs over
+SSH": it runs entirely on this backend's own host, not the remote trainer
+server, using the `sigstore` PyPI package rather than a `cosign` binary. See
+`services.ssh.sigstore_verify`.
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ from exceptions import (
     TrainerLibraryVersionError,
 )
 from schemas.hardware import DeviceType
+from services.ssh import sigstore_verify
 from services.ssh.preflight import (  # noqa: F401 - resolve_render_group_gid re-exported for provisioning.py
     PROTOCOL_LABEL,
     image_present_locally,
@@ -344,54 +350,42 @@ async def resolve_protocol_image(
     )
 
 
-async def verify_image_signature(transport: SshTransport, image: ResolvedImage, settings: Settings) -> None:
+async def verify_image_signature(image: ResolvedImage, settings: Settings) -> None:
     """Verify the resolved image's signature, pinned to Studio's release identity.
 
-    Fails closed by default: both a failed `cosign verify` and `cosign` being
-    unavailable on the remote host raise. This is the opposite policy from
-    Tier 1's advisory preflight signature check, which is defense-in-depth on
-    top of the publish-time signature and never blocks a save.
+    Delegates to `services.ssh.sigstore_verify`, which uses the `sigstore`
+    PyPI package rather than the `cosign` binary: verification runs entirely
+    in this backend process (never over SSH, never needing anything installed
+    on the remote trainer server) by fetching the image's Sigstore-bundle
+    referrer directly from the registry over HTTPS and verifying it in pure
+    Python.
 
-    `cosign` being unavailable can be downgraded to a non-blocking warning by
-    setting `settings.ssh_require_cosign_verification` to `False` (e.g. for a
-    host where installing `cosign` is not viable). A failed `cosign verify`
-    always raises regardless of that setting: it means the image's signature
-    does not match Studio's expected identity, not that a tool is missing.
+    Always fails closed: an unreachable registry/Sigstore infrastructure, an
+    unsigned image, and a signature that fails verification (wrong identity,
+    tampered signature, missing Rekor inclusion proof) all block the job the
+    same way. There is no escape hatch - this backend always has `sigstore`
+    available (it is a regular dependency, not an optional binary), so
+    "verification could not be attempted" is always a real problem worth
+    blocking on, not a missing tool to shrug off.
 
     Args:
-        transport: An open transport to the remote server.
         image: The digest-resolved image to verify.
-        settings: Application settings (pinned certificate identity/issuer,
-            and whether `cosign` availability is required).
+        settings: Application settings (pinned certificate identity/issuer).
 
     Raises:
-        TrainerImageVerificationError: `cosign` is unavailable and required,
-            or verification failed.
+        TrainerImageVerificationError: Verification failed, or the
+            registry/Sigstore infrastructure could not be reached.
     """
-    available = await transport.run_command(["cosign", "version"])
-    if not available.ok:
-        if not settings.ssh_require_cosign_verification:
-            logger.warning(
-                "cosign is not available on the remote host; proceeding without signature "
-                "verification for '{}' because SSH_REQUIRE_COSIGN_VERIFICATION is disabled.",
-                image.digest_reference,
-            )
-            return
-        raise TrainerImageVerificationError(image.digest_reference, "cosign is not available on the remote host")
-
-    verified = await transport.run_command(
-        [
-            "cosign",
-            "verify",
+    try:
+        await sigstore_verify.verify_signature(
             image.digest_reference,
-            "--certificate-identity-regexp",
-            settings.cosign_certificate_identity_regexp,
-            "--certificate-oidc-issuer",
-            settings.cosign_oidc_issuer,
-        ]
-    )
-    if not verified.ok:
-        raise TrainerImageVerificationError(image.digest_reference, verified.first_line() or "signature not verified")
+            identity_regexp=settings.cosign_certificate_identity_regexp,
+            oidc_issuer=settings.cosign_oidc_issuer,
+        )
+    except sigstore_verify.SignatureUnavailableError as error:
+        raise TrainerImageVerificationError(image.digest_reference, f"verification unavailable: {error}") from error
+    except sigstore_verify.SignatureVerificationError as error:
+        raise TrainerImageVerificationError(image.digest_reference, str(error)) from error
 
 
 def check_library_version(

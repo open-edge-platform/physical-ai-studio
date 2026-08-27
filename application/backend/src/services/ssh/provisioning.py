@@ -242,7 +242,7 @@ class SshProvisioningService:
                 if library_check.warning:
                     logger.warning(library_check.warning)
                 _phase(PhaseKey.IMAGE_VERIFY)
-                await docker_ops.verify_image_signature(transport, image, settings)
+                await docker_ops.verify_image_signature(image, settings)
                 await docker_ops.check_disk_for_job(transport, snapshot_size_bytes, server.name)
                 _phase(PhaseKey.IMAGE_PULL)
                 await docker_ops.pull_image(transport, image, settings)

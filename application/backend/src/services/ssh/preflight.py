@@ -23,7 +23,10 @@ Neither entry point raises for a server that fails its checks. A failure is a
 the first one.
 
 The transport is reached through :data:`transport_factory`, so a caller can
-substitute a fake without patching ``asyncssh``.
+substitute a fake without patching ``asyncssh``. ``IMAGE_SIGNATURE`` is the one
+Tier 2 check that never uses that transport: it runs in this backend process
+against the registry directly, since the reference it checks is fully
+qualified. See :mod:`services.ssh.sigstore_verify`.
 """
 
 import hashlib
@@ -47,6 +50,7 @@ from exceptions import (
 from schemas.hardware import DeviceType
 from schemas.remote_server import SSH_SERVER_DEVICE_TYPES, RemoteServer
 from schemas.ssh_preflight import CheckKey, CheckOutcome, PreflightCheck, PreflightResult, PreflightTier
+from services.ssh import sigstore_verify
 from services.ssh.sanitize import sanitize_output
 from services.ssh.transport import CommandResult, SshTransport, open_transport
 from services.ssh_config_reader import resolve_alias
@@ -739,8 +743,8 @@ _TIER2_KEYS: Final = (
     CheckKey.PROTOCOL_COMPATIBLE,
 )
 
-# IMAGE_SIGNATURE is advisory: the images are signed at publish time, so a host
-# without cosign is informative, not broken.
+# IMAGE_SIGNATURE is advisory: the images are signed at publish time, so this
+# backend lacking `cosign` is informative, not broken.
 _TIER2_NON_BLOCKING: Final = frozenset({CheckKey.IMAGE_SIGNATURE})
 
 
@@ -828,37 +832,47 @@ async def _resolve_image(
     return None
 
 
-async def _check_signature(recorder: _CheckRecorder, transport: SshTransport, image_ref: str) -> None:
-    """Verify the image signature when ``cosign`` is available on the host.
+async def _check_signature(recorder: _CheckRecorder, image_ref: str) -> None:
+    """Verify the image signature using `services.ssh.sigstore_verify`.
 
-    Defense in depth rather than required infrastructure, so a host without
-    ``cosign`` is ``SKIPPED`` and a failed verification is a non-blocking
-    ``WARNING``: the publish-time signature is the primary control.
+    Runs on this backend's own host, not over SSH: ``image_ref`` is a fully
+    qualified registry reference, so verifying it needs only this process's
+    own network egress to the registry and to Sigstore, not access to the
+    remote server being checked.
+
+    Defense in depth rather than required infrastructure, so infrastructure
+    being unreachable is ``SKIPPED`` and a failed verification is a
+    non-blocking ``WARNING``: the publish-time signature is the primary
+    control.
     """
-    available = await transport.run_command(["cosign", "version"])
-    if not available.ok:
+    settings = get_settings()
+    try:
+        await sigstore_verify.verify_signature(
+            image_ref,
+            identity_regexp=settings.cosign_certificate_identity_regexp,
+            oidc_issuer=settings.cosign_oidc_issuer,
+        )
+    except sigstore_verify.SignatureUnavailableError as error:
         recorder.add(
             CheckKey.IMAGE_SIGNATURE,
             CheckOutcome.SKIPPED,
             blocking=False,
             reason_code=REASON_TOOL_MISSING,
-            detail="cosign is not installed on the remote host, so the signature was not verified there.",
+            detail=f"Signature verification infrastructure is unreachable: {error}",
             method=METHOD_COSIGN,
         )
         return
-
-    verified = await transport.run_command(["cosign", "verify", image_ref])
-    if verified.ok:
-        recorder.add(CheckKey.IMAGE_SIGNATURE, CheckOutcome.PASSED, blocking=False, method=METHOD_COSIGN)
+    except sigstore_verify.SignatureVerificationError as error:
+        recorder.add(
+            CheckKey.IMAGE_SIGNATURE,
+            CheckOutcome.WARNING,
+            blocking=False,
+            reason_code=REASON_COMMAND_FAILED,
+            detail=_detail(str(error)),
+            method=METHOD_COSIGN,
+        )
         return
-    recorder.add(
-        CheckKey.IMAGE_SIGNATURE,
-        CheckOutcome.WARNING,
-        blocking=False,
-        reason_code=REASON_COMMAND_FAILED,
-        detail=_failure_detail(verified) or "cosign could not verify the image signature.",
-        method=METHOD_COSIGN,
-    )
+    recorder.add(CheckKey.IMAGE_SIGNATURE, CheckOutcome.PASSED, blocking=False, method=METHOD_COSIGN)
 
 
 async def resolve_render_group_gid(transport: SshTransport) -> str | None:
@@ -1150,7 +1164,7 @@ async def run_tier2_preflight(
             _complete_tier2(recorder, REASON_IMAGE_UNRESOLVED)
             return _result(server, recorder, started, checked_at)
 
-        await _check_signature(recorder, transport, image_ref)
+        await _check_signature(recorder, image_ref)
         pulling = await _check_device_probe(recorder, transport, server.device_type, image_ref)
         if pulling:
             # The protocol check reads a label off the local image via `docker

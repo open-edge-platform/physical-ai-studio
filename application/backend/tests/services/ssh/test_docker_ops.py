@@ -19,7 +19,7 @@ from exceptions import (
     TrainerLibraryVersionError,
 )
 from schemas.hardware import DeviceType
-from services.ssh import docker_ops
+from services.ssh import docker_ops, sigstore_verify
 from services.ssh.docker_ops import LIBRARY_VERSION_LABEL, ResolvedImage
 from services.ssh.preflight import PROTOCOL_LABEL
 from services.ssh.transport import CommandResult
@@ -165,46 +165,39 @@ def _image() -> ResolvedImage:
     )
 
 
-async def test_verify_image_signature_fails_closed_when_cosign_unavailable(settings) -> None:
-    transport = FakeTransport({"cosign version": _fail()})
+async def test_verify_image_signature_fails_closed_when_unavailable(settings, monkeypatch) -> None:
+    async def fake_verify(image_ref, *, identity_regexp, oidc_issuer):
+        raise sigstore_verify.SignatureUnavailableError("registry unreachable")
+
+    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify)
 
     with pytest.raises(TrainerImageVerificationError):
-        await docker_ops.verify_image_signature(transport, _image(), settings)
+        await docker_ops.verify_image_signature(_image(), settings)
 
 
-async def test_verify_image_signature_fails_closed_on_failed_verification(settings) -> None:
-    transport = FakeTransport({"cosign version": _ok("v2.4.1"), "cosign verify": _fail("no matching signatures")})
+async def test_verify_image_signature_fails_closed_on_failed_verification(settings, monkeypatch) -> None:
+    async def fake_verify(image_ref, *, identity_regexp, oidc_issuer):
+        raise sigstore_verify.SignatureVerificationError("no matching signatures")
 
-    with pytest.raises(TrainerImageVerificationError):
-        await docker_ops.verify_image_signature(transport, _image(), settings)
-
-
-async def test_verify_image_signature_allows_missing_cosign_when_not_required(settings) -> None:
-    """`SSH_REQUIRE_COSIGN_VERIFICATION=false` downgrades a missing `cosign` to a warning."""
-    settings = Settings(TRAINER_IMAGE_REGISTRY=_REGISTRY, SSH_REQUIRE_COSIGN_VERIFICATION=False)
-    transport = FakeTransport({"cosign version": _fail()})
-
-    await docker_ops.verify_image_signature(transport, _image(), settings)
-
-
-async def test_verify_image_signature_still_fails_closed_on_bad_signature_when_not_required(settings) -> None:
-    """Opting out of requiring `cosign` never excuses a signature that fails verification."""
-    settings = Settings(TRAINER_IMAGE_REGISTRY=_REGISTRY, SSH_REQUIRE_COSIGN_VERIFICATION=False)
-    transport = FakeTransport({"cosign version": _ok("v2.4.1"), "cosign verify": _fail("no matching signatures")})
+    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify)
 
     with pytest.raises(TrainerImageVerificationError):
-        await docker_ops.verify_image_signature(transport, _image(), settings)
+        await docker_ops.verify_image_signature(_image(), settings)
 
 
-async def test_verify_image_signature_passes_and_pins_identity(settings) -> None:
-    transport = FakeTransport({"cosign version": _ok("v2.4.1"), "cosign verify": _ok("Verified OK")})
+async def test_verify_image_signature_passes_and_pins_identity(settings, monkeypatch) -> None:
+    calls = []
 
-    await docker_ops.verify_image_signature(transport, _image(), settings)
+    async def fake_verify(image_ref, *, identity_regexp, oidc_issuer):
+        calls.append((image_ref, identity_regexp, oidc_issuer))
 
-    assert any(
-        "--certificate-identity-regexp" in " ".join(argv) and settings.cosign_oidc_issuer in " ".join(argv)
-        for argv in transport.commands
-    )
+    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify)
+
+    await docker_ops.verify_image_signature(_image(), settings)
+
+    assert calls == [
+        (_image().digest_reference, settings.cosign_certificate_identity_regexp, settings.cosign_oidc_issuer)
+    ]
 
 
 # --------------------------------------------------------------------------- #

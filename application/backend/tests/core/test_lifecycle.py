@@ -13,6 +13,7 @@ from loguru import logger
 
 from core import lifecycle as lifecycle_module
 from core.security import get_ssh_feature_availability
+from settings import write_user_settings
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -23,6 +24,17 @@ def _clear_caches() -> Generator[None]:
     get_ssh_feature_availability.cache_clear()
     yield
     get_ssh_feature_availability.cache_clear()
+
+
+@pytest.fixture
+def _settings_file(monkeypatch, tmp_path) -> None:
+    """Point the settings file at an isolated path for this test.
+
+    The SSH master switch is settings-page-only (see `settings._EnvExclusionSource`),
+    so tests enable it through `write_user_settings` rather than an
+    `SSH_REMOTE_TRAINER_ENABLED` environment variable.
+    """
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
 
 
 @pytest.fixture
@@ -52,9 +64,9 @@ async def _run_startup_and_capture_logs(app: FastAPI) -> list[str]:
 
 @pytest.mark.anyio
 async def test_ssh_feature_enabled_on_non_loopback_logs_critical_and_deactivates(
-    monkeypatch, _stub_heavy_startup
+    monkeypatch, _stub_heavy_startup, _settings_file
 ) -> None:
-    monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "true")
+    write_user_settings({"SSH_REMOTE_TRAINER_ENABLED": True})
     monkeypatch.setenv("HOST", "0.0.0.0")
     get_ssh_feature_availability.cache_clear()
     app = FastAPI()
@@ -67,9 +79,9 @@ async def test_ssh_feature_enabled_on_non_loopback_logs_critical_and_deactivates
 
 @pytest.mark.anyio
 async def test_ssh_feature_enabled_on_loopback_logs_no_warning_and_stays_active(
-    monkeypatch, _stub_heavy_startup
+    monkeypatch, _stub_heavy_startup, _settings_file
 ) -> None:
-    monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "true")
+    write_user_settings({"SSH_REMOTE_TRAINER_ENABLED": True})
     monkeypatch.setenv("HOST", "127.0.0.1")
     get_ssh_feature_availability.cache_clear()
     app = FastAPI()
@@ -79,8 +91,9 @@ async def test_ssh_feature_enabled_on_loopback_logs_no_warning_and_stays_active(
 
 
 @pytest.mark.anyio
-async def test_ssh_feature_disabled_by_default_logs_no_warning(monkeypatch, _stub_heavy_startup) -> None:
-    monkeypatch.delenv("SSH_REMOTE_TRAINER_ENABLED", raising=False)
+async def test_ssh_feature_disabled_by_default_logs_no_warning(
+    monkeypatch, _stub_heavy_startup, _settings_file
+) -> None:
     monkeypatch.setenv("HOST", "0.0.0.0")
     get_ssh_feature_availability.cache_clear()
     app = FastAPI()
