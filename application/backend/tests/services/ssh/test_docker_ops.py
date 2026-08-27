@@ -576,6 +576,21 @@ async def test_inspect_container_raises_when_the_inspect_command_itself_fails() 
         await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
 
 
+async def test_inspect_container_raises_when_the_labels_call_fails() -> None:
+    """The container was confirmed present by the first call; a second-call
+    failure is still an operational error, not evidence of an empty label set
+    (which would read as an ownership mismatch rather than "couldn't tell")."""
+    transport = FakeTransport(
+        {
+            "docker inspect --format {{.State.Running}}": _ok("true\n"),
+            "docker inspect --format {{json .Config.Labels}}": _fail("Cannot connect to the Docker daemon"),
+        }
+    )
+
+    with pytest.raises(docker_ops.ContainerInspectionError):
+        await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+
 async def test_inspect_container_reports_running_state_and_labels() -> None:
     labels = {docker_ops.INSTANCE_LABEL: "instance-1", docker_ops.JOB_LABEL: "job1"}
     transport = FakeTransport(

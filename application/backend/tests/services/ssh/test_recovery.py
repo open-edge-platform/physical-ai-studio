@@ -24,6 +24,10 @@ from services.ssh import recovery as recovery_module
 from services.ssh.provisioning import ReattachFailureReason, ReattachVerification
 from services.ssh.recovery import recover_ssh_jobs
 
+# Every test in this module is async; mark the whole module rather than each
+# test individually.
+pytestmark = pytest.mark.anyio
+
 
 def _server(name: str = "Lab GPU box") -> RemoteServer:
     return RemoteServer(id=uuid4(), name=name, ssh_host_alias="gpu-box", device_type=DeviceType.CUDA)

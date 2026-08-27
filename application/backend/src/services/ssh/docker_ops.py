@@ -230,8 +230,10 @@ async def inspect_container(transport: SshTransport, name_or_id: str) -> Contain
         ``running=False``.
 
     Raises:
-        ContainerInspectionError: The inspect command failed for some other
-            reason - the container's existence could not be determined.
+        ContainerInspectionError: Either inspect call failed for some other
+            reason - the container's existence, or its labels, could not be
+            determined. Never raised for a container confirmed absent by the
+            first call.
     """
     running_result = await transport.run_command(["docker", "inspect", "--format", "{{.State.Running}}", name_or_id])
     if not running_result.ok:
@@ -242,7 +244,16 @@ async def inspect_container(transport: SshTransport, name_or_id: str) -> Contain
     labels_result = await transport.run_command(
         ["docker", "inspect", "--format", "{{json .Config.Labels}}", name_or_id]
     )
-    labels = _parse_json(labels_result.stdout) if labels_result.ok else None
+    if not labels_result.ok:
+        # The container existed a moment ago (the first call succeeded); a
+        # second failure here is an operational error, not evidence the
+        # container is gone. Folding this into `labels={}` would read as a
+        # confirmed-empty label set and let ownership/digest checks silently
+        # pass as "mismatch" rather than "couldn't tell".
+        if _container_not_found(labels_result):
+            return None
+        raise ContainerInspectionError(name_or_id, detail=labels_result.stderr or labels_result.stdout or None)
+    labels = _parse_json(labels_result.stdout)
     labels = labels if isinstance(labels, dict) else {}
     return ContainerInspection(running=running_result.first_line().lower() == "true", labels=labels)
 
