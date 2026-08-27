@@ -123,10 +123,11 @@ class SshTrainingBackend:
         await self._provision_and_train(context)
 
     async def _provision_and_train(self, context: TrainingContext) -> None:
-        snapshot_size_bytes = 0
-        if context.snapshot is not None:
-            snapshot_size_bytes = await asyncio.to_thread(_directory_size_bytes, Path(context.snapshot.path))
+        if context.snapshot is None:
+            raise ValueError("SSH training requires a dataset snapshot")
 
+        snapshot_path = Path(context.snapshot.path)
+        snapshot_size_bytes = await asyncio.to_thread(_directory_size_bytes, snapshot_path)
         current_phase = PhaseKey.CONNECT
 
         def _report(
