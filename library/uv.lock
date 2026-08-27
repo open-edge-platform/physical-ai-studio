@@ -3836,6 +3836,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.3" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
+    { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
     { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=9be95d88d5b9f8342f6952d8ec288fb108fa416e" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
