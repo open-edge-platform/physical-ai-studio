@@ -265,23 +265,30 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
             const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
 
-            const payload: SchemaJob['payload'] = {
+            const commonPayload = {
                 dataset_id,
                 project_id: projectId,
                 model_name: name,
                 policy: selectedPolicy,
                 max_epochs: maxEpochs,
                 batch_size: batchSize,
-                num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
+                num_workers: numWorkers === 'auto' ? ('auto' as const) : Number(numWorkers),
                 auto_scale_batch_size: autoScaleBatchSize,
                 precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
                 compile_model: compileModel,
                 val_split: 0.1,
-                training_target: isRemoteTarget ? 'remote' : isSshTarget ? 'ssh' : 'local',
-                ...(isRemoteTarget ? { remote_trainer_id: targetRawId(selectedTarget.id) } : {}),
-                ...(isSshTarget ? { remote_server_id: targetRawId(selectedTarget.id) } : {}),
                 ...extraPayload,
             };
+
+            // Built as an explicit per-branch literal (rather than a single object with
+            // a computed `training_target`) so each branch narrows to the matching
+            // member of the `SchemaJob['payload']` discriminated union - a computed
+            // `training_target` value can't be narrowed to one member by TypeScript.
+            const payload: SchemaJob['payload'] = isRemoteTarget
+                ? { ...commonPayload, training_target: 'remote', remote_trainer_id: targetRawId(selectedTarget.id) }
+                : isSshTarget
+                  ? { ...commonPayload, training_target: 'ssh', remote_server_id: targetRawId(selectedTarget.id) }
+                  : { ...commonPayload, training_target: 'local' };
 
             const response = await trainMutation.mutateAsync({ body: payload });
             close(response as SchemaTrainJob | undefined);
