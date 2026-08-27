@@ -6,10 +6,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 from loguru import logger
-from physicalai.robot import SO101
-from physicalai.robot.so101 import SO101Calibration, SO101JointCalibration
+from physicalai.robot.so101 import SO101, SO101Calibration, SO101JointCalibration
 from physicalai.robot.so101.constants import TICKS_PER_REVOLUTION
-from physicalai_studio_plugin import RobotAdapterOptions, RobotAsset, RobotCatalogDefinition, RobotProbe
+from physicalai_studio_plugin import (
+    RobotAdapterOptions,
+    RobotAsset,
+    RobotCatalogDefinition,
+    RobotProbe,
+    robot_payload_ui,
+)
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from exceptions import RobotIdentifyError
@@ -29,19 +34,34 @@ class SO101RobotPayload(BaseModel):
         default="",
         description="Serial port path; leave empty to auto-discover via serial_number",
     )
-    serial_number: str = Field(default="", description="USB serial number of the robot (when available)")
+    serial_number: str = Field(
+        default="",
+        description="USB serial number of the robot (when available)",
+    )
     calibration: dict[str, SO101JointCalibration] | None = Field(
         default=None,
         description="Per-joint calibration values (id, drive_mode, homing_offset, range_min, range_max)",
     )
 
     model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "connection_string": "",
-                "serial_number": "SO101-2024-001",
-                "calibration": None,
-            },
+        json_schema_extra={  # pyrefly: ignore[bad-argument-type]
+            "example": {"connection_string": "", "serial_number": "SO101-2024-001", "calibration": None},
+            **robot_payload_ui(
+                [
+                    {
+                        "kind": "connection",
+                        "label": "Connection",
+                        "device_discovery": True,
+                        "identify": True,
+                        "manual_entry": True,
+                        "bind": {
+                            "connection": "connection_string",
+                            "serial_number": "serial_number",
+                        },
+                    },
+                    {"kind": "field", "name": "calibration"},
+                ]
+            ),
         },
     )
 

@@ -59,6 +59,7 @@ export const TrainingParameters = ({
                 />
                 <Flex direction='row' gap='size-100' alignItems='center'>
                     <Checkbox
+                        isEmphasized
                         isSelected={autoScaleBatchSize}
                         onChange={onAutoScaleBatchSizeChange}
                         isDisabled={isAutoScaleBatchDisabled}
@@ -154,7 +155,7 @@ export const TrainingParameters = ({
             </Picker>
             <Flex direction='column' gap='size-150' width='100%' justifyContent='center'>
                 <Flex direction='row' gap='size-100' alignItems='center'>
-                    <Checkbox isSelected={compileModel} onChange={onCompileModelChange}>
+                    <Checkbox isEmphasized isSelected={compileModel} onChange={onCompileModelChange}>
                         Compile model
                     </Checkbox>
                     <ContextualHelp variant='info'>

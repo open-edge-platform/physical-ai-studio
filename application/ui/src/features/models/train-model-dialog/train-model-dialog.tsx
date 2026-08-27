@@ -139,7 +139,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
         const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
 
-        const payload: SchemaJob['payload'] = {
+        const commonPayload = {
             dataset_id,
             project_id: projectId,
             model_name: name,
@@ -151,10 +151,19 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
             compile_model: compileModel,
             val_split: 0.1,
-            training_target: isRemoteTarget ? 'remote' : 'local',
-            ...(isRemoteTarget ? { remote_trainer_id: remoteTrainerId?.toString() } : {}),
             ...extraPayload,
-        };
+        } as const;
+
+        const payload: SchemaJob['payload'] = isRemoteTarget
+            ? {
+                  ...commonPayload,
+                  training_target: 'remote',
+                  remote_trainer_id: remoteTrainerId?.toString() ?? '',
+              }
+            : {
+                  ...commonPayload,
+                  training_target: 'local',
+              };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
             close(response as SchemaTrainJob | undefined);
         });

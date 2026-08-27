@@ -23,3 +23,13 @@ def test_feature_names_and_observation_values_have_the_same_order() -> None:
 
 def test_camera_name_sanitization_remains_stable() -> None:
     assert sanitize_camera_name("Front/Left Camera") == "front_left camera"
+    assert sanitize_camera_name("Bob's view") == "bob_s view"
+    assert sanitize_camera_name("global view") == "global view"
+    assert sanitize_camera_name("Left Camera") == "left camera"
+    assert sanitize_camera_name("Front") == "front"
+    assert sanitize_camera_name("  -front-  ") == "  -front-  "
+    assert sanitize_camera_name("grabber") == "grabber"
+    assert sanitize_camera_name("cámara-1") == "c_mara-1"
+    assert sanitize_camera_name("bob\\view") == "bob_view"
+    assert sanitize_camera_name("my\ncam") == "my_cam"
+    assert sanitize_camera_name(sanitize_camera_name("Bob's view")) == sanitize_camera_name("Bob's view")

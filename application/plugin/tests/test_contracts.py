@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from physicalai_studio_plugin import (
     PortScanner,
@@ -13,6 +13,9 @@ from physicalai_studio_plugin import (
     RobotCatalogDefinition,
     RobotProbe,
     SerialPortInfo,
+    robot_field_ui,
+    robot_payload_ui,
+    validate_robot_payload_ui,
 )
 
 
@@ -186,3 +189,100 @@ def test_no_payload_model_returns_raw_dict() -> None:
     raw = {"some": "data"}
     result = raw if definition.robot_payload is None else definition.robot_payload.model_validate(raw)
     assert result == raw
+
+
+def test_robot_field_ui_supports_required_option() -> None:
+    assert robot_field_ui({"required": True}) == {"x-physicalai-ui": {"required": True}}
+
+
+def test_robot_payload_ui_supports_recursive_items() -> None:
+    assert robot_payload_ui(
+        [
+            {
+                "kind": "section",
+                "id": "connection",
+                "title": "Connection",
+                "description": "Pick a detected device or enter one manually.",
+                "items": [
+                    {"kind": "info", "text": "USB hubs can rename ports after reboot.", "variant": "warning"},
+                    {
+                        "kind": "connection",
+                        "bind": {"connection": "connection_string", "serial_number": "serial_number"},
+                    },
+                ],
+            },
+        ],
+    ) == {
+        "x-physicalai-ui": [
+            {
+                "kind": "section",
+                "id": "connection",
+                "title": "Connection",
+                "description": "Pick a detected device or enter one manually.",
+                "items": [
+                    {"kind": "info", "text": "USB hubs can rename ports after reboot.", "variant": "warning"},
+                    {
+                        "kind": "connection",
+                        "bind": {"connection": "connection_string", "serial_number": "serial_number"},
+                    },
+                ],
+            },
+        ],
+    }
+
+
+def test_validate_robot_payload_ui_accepts_nested_item_lists() -> None:
+    class ConnectionPayload(BaseModel):
+        connection_string: str
+        serial_number: str
+
+        model_config = ConfigDict(
+            json_schema_extra=robot_payload_ui(
+                [
+                    {
+                        "kind": "connection",
+                        "bind": {"connection": "connection_string", "serial_number": "serial_number"},
+                    },
+                ],
+            ),
+        )
+
+    class RobotPayload(BaseModel):
+        arm: ConnectionPayload
+
+        model_config = ConfigDict(json_schema_extra=robot_payload_ui([{"kind": "field", "name": "arm"}]))
+
+    validate_robot_payload_ui(RobotPayload)
+
+
+def test_validate_robot_payload_ui_ignores_field_options() -> None:
+    class Payload(BaseModel):
+        id: str | None = Field(default=None, json_schema_extra=robot_field_ui({"required": True}))
+
+    validate_robot_payload_ui(Payload)
+
+
+@pytest.mark.parametrize(
+    ("items", "message"),
+    [
+        ({"groups": {}}, "must be a list of items"),
+        ([{"kind": "field", "name": "missing"}], "must reference an existing payload field"),
+        ([{"kind": "connection", "bind": {"connection": "port"}}], "must reference a string payload field"),
+        (
+            [
+                {"kind": "field", "name": "connection_string"},
+                {"kind": "connection", "bind": {"connection": "connection_string"}},
+            ],
+            "owned more than once",
+        ),
+    ],
+)
+def test_validate_robot_payload_ui_rejects_invalid_metadata(items: object, message: str) -> None:
+    class InvalidPayload(BaseModel):
+        connection_string: str
+        port: int
+
+        model_config = ConfigDict(json_schema_extra={"x-physicalai-ui": items})
+
+    with pytest.raises(ValueError, match=message):
+        validate_robot_payload_ui(InvalidPayload)

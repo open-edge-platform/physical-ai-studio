@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import queue
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -34,7 +35,7 @@ class RuntimeSessionClient:
         self._metadata_ready = threading.Event()
         self._hardware_ready = threading.Event()
         self._shutdown_received = threading.Event()
-        self._pending_command: Command | None = None
+        self._pending_commands: list[Command] = []
         self._lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._last_state: StateEvent | None = None
@@ -58,6 +59,55 @@ class RuntimeSessionClient:
             encoding=zenoh.Encoding("application/msgpack"),
         )
 
+    def probe(self, timeout: float = 1.0) -> dict[str, Any] | None:
+        """Query metadata once. No retry and no client state change."""
+        if self._session is None:
+            raise RuntimeError("Runtime session client is not open")
+        try:
+            replies = self._session.get(metadata_key(self._name), timeout=timeout)
+            for reply in replies:
+                sample = reply.ok
+                if sample is None:
+                    continue
+                metadata = decode_metadata(sample.payload.to_bytes())
+                if self._instance_id is not None and metadata.get("instance_id") != self._instance_id:
+                    continue
+                return metadata
+        except Exception:
+            logger.debug("Runtime metadata query failed for {}", self._name, exc_info=True)
+        return None
+
+    def probe_with_retry(self, timeout: float) -> dict[str, Any] | None:
+        """Poll ``probe`` until metadata answers or the deadline elapses."""
+        deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            metadata = self.probe(timeout=min(1.0, remaining))
+            if metadata is not None:
+                return metadata
+            time.sleep(min(0.05, remaining))
+
+    def attach(self, metadata: dict[str, Any]) -> None:
+        """Adopt one session generation and drop any state from a previous one."""
+        instance_id = metadata.get("instance_id")
+        if instance_id is not None and (not isinstance(instance_id, str) or not instance_id):
+            raise RuntimeError("Runtime session metadata instance_id must be a string")
+        self._instance_id = instance_id
+        with self._state_lock:
+            self._hardware_ready.clear()
+            self._last_state = None
+            self.error = None
+            self._shutdown_received.clear()
+        while True:
+            try:
+                self._events.get_nowait()
+            except queue.Empty:
+                break
+        self._metadata_ready.set()
+        self._flush_pending_commands()
+
     def connect(self, timeout: float = 10.0, *, process: Any = None) -> dict[str, Any]:
         """Wait for metadata before allowing any command publication."""
         if self._session is None:
@@ -74,29 +124,17 @@ class RuntimeSessionClient:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError(f"Runtime session {self._name} did not answer metadata")
-            try:
-                replies = self._session.get(metadata_key(self._name), timeout=min(1.0, remaining))
-                for reply in replies:
-                    sample = reply.ok
-                    if sample is None:
-                        continue
-                    metadata = decode_metadata(sample.payload.to_bytes())
-                    if self._instance_id is None:
-                        self._instance_id = metadata["instance_id"]
-                    elif metadata.get("instance_id") != self._instance_id:
-                        continue
-                    self._metadata_ready.set()
-                    self._flush_pending_command()
-                    return metadata
-            except Exception:
-                logger.debug("Runtime metadata query failed for {}", self._name, exc_info=True)
+            metadata = self.probe(timeout=min(1.0, remaining))
+            if metadata is not None:
+                self.attach(metadata)
+                return metadata
             time.sleep(min(0.05, remaining))
 
     def apply(self, command: Command) -> None:
-        """Publish now when metadata is ready, otherwise retain the newest command."""
+        """Publish now when metadata is ready, otherwise queue until attach flushes."""
         with self._lock:
             if not self._metadata_ready.is_set():
-                self._pending_command = command
+                self._pending_commands.append(command)
                 return
             self._command_pub.put(encode_command(command, instance_id=self._instance_id))
 
@@ -123,6 +161,10 @@ class RuntimeSessionClient:
                 raise RuntimeError("Runtime acknowledgement request_id does not match the request")
             return ack
         raise TimeoutError(f"Runtime request {command.command} received no reply")
+
+    def deliver(self, event: RuntimeEvent) -> None:
+        """Enqueue a locally produced event, such as a request ack, for the websocket pump."""
+        self._events.emit(event)
 
     def get_nowait(self) -> RuntimeEvent:
         return self._events.get_nowait()
@@ -151,19 +193,27 @@ class RuntimeSessionClient:
             except Exception:
                 logger.debug("Failed to undeclare runtime subscriber", exc_info=True)
         if self._command_pub is not None:
-            self._command_pub.undeclare()
+            try:
+                self._command_pub.undeclare()
+            except Exception:
+                logger.debug("Failed to undeclare runtime command publisher", exc_info=True)
         if self._session is not None:
-            self._session.close()
+            try:
+                self._session.close()
+            except Exception:
+                logger.debug("Failed to close runtime Zenoh session", exc_info=True)
 
-    def _flush_pending_command(self) -> None:
+    def _flush_pending_commands(self) -> None:
         with self._lock:
-            if self._pending_command is not None:
-                self._command_pub.put(encode_command(self._pending_command, instance_id=self._instance_id))
-                self._pending_command = None
+            for command in self._pending_commands:
+                self._command_pub.put(encode_command(command, instance_id=self._instance_id))
+            self._pending_commands.clear()
 
     def _receive_event(self, sample: Any) -> None:
         try:
             event, fatal, instance_id = decode_event(sample.payload.to_bytes())
+            if not self._metadata_ready.is_set():
+                return
             if self._instance_id is not None and instance_id != self._instance_id:
                 logger.warning("Rejected runtime event for a different instance")
                 return

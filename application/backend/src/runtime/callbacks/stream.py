@@ -4,7 +4,7 @@ import threading
 from typing import TYPE_CHECKING
 
 from runtime.contract import LifecycleData, LifecycleEvent, ObservationEvent, StateData, StateEvent
-from runtime.features import observation_to_dict
+from runtime.features import action_to_dict, observation_to_dict
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,12 +23,14 @@ class StreamCallback:
         *,
         event_sink: EventSink,
         follower_source: Callable[[], FollowerSource],
+        state_data: Callable[[], StateData] | None = None,
         ready: threading.Event | None = None,
         start_allowed: Callable[[], bool] | None = None,
         lifecycle_lock: threading.Lock | None = None,
     ) -> None:
         self._event_sink = event_sink
         self._follower_source = follower_source
+        self._state_data = state_data
         self._joint_names: list[str] = []
         self.ready = ready or threading.Event()
         self._start_allowed = start_allowed or (lambda: True)
@@ -43,7 +45,10 @@ class StreamCallback:
             event.robot_state,
             include_velocities=False,
         )
-        self._event_sink.emit(ObservationEvent(data=data))
+        actions = None
+        if event.action_sent is not None and self._joint_names:
+            actions = action_to_dict(self._joint_names, event.action_sent)
+        self._event_sink.emit(ObservationEvent(data=data, actions=actions))
 
     def on_lifecycle(self, event: RuntimeLifecycleEvent) -> None:
         if event.event == "start":
@@ -52,14 +57,12 @@ class StreamCallback:
                     return
                 self._joint_names = list(event.metadata["joint_names"])
                 self.ready.set()
-                self._event_sink.emit(
-                    StateEvent(
-                        data=StateData(
-                            connected=True,
-                            follower_source=self._follower_source(),
-                        )
-                    )
+                state = (
+                    self._state_data()
+                    if self._state_data is not None
+                    else StateData(connected=True, follower_source=self._follower_source())
                 )
+                self._event_sink.emit(StateEvent(data=state))
         elif event.event == "shutdown":
             self._event_sink.emit(
                 LifecycleEvent(

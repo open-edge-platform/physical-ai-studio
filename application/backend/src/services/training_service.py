@@ -9,7 +9,7 @@ from loguru import logger
 
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget
 from services.event_processor import EventType
 from services.job_service import JobService
 from workers.base import BaseThreadWorker
@@ -76,12 +76,12 @@ class TrainingService:
         """
         Reconcile RUNNING training jobs left behind by a previous process.
 
-        Called on training-worker setup and teardown. A remote job keeps running
-        on the trainer independently of the studio, so a RUNNING job that already
-        recorded its ``remote_job_id`` is requeued (back to PENDING) to reattach
-        and mirror progress on the next pickup -- this is what lets a run survive
-        the studio restarting (e.g. the laptop was closed overnight). Any other
-        orphaned RUNNING training job cannot resume and is marked FAILED.
+        Called on training-worker setup and teardown. A remote or SSH-provisioned
+        trainer keeps running independently of the studio, so a RUNNING job that
+        already recorded its ``remote_job_id`` is requeued (back to PENDING) to
+        reattach and mirror progress on the next pickup -- this is what lets a run
+        survive the studio restarting (e.g. the laptop was closed overnight). Any
+        other orphaned RUNNING training job cannot resume and is marked FAILED.
         """
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}
         running_jobs = await job_service.get_job_list(extra_filters=query)
@@ -106,15 +106,24 @@ class TrainingService:
                 message="Job aborted due to application shutdown",
             )
 
+    # Targets whose trainer keeps running independently of the studio process,
+    # and so can be reattached to after a restart via their remote_job_id.
+    _REATTACHABLE_TARGETS = (TrainingTarget.REMOTE, TrainingTarget.SSH)
+
     @staticmethod
     def _reattachable_remote_job_id(job: object) -> UUID | None:
-        """Return the persisted remote job id for a training job, if any."""
+        """Return the persisted remote job id for a training job, if any.
+
+        Only `RemoteTrainJobPayload` and `SshTrainJobPayload` carry a
+        reattachable `remote_job_id`; class identity already encodes the
+        target, so no separate read of `training_target` is needed here.
+        """
         payload = getattr(job, "payload", None)
-        if isinstance(payload, TrainJobPayload):
-            return payload.remote_job_id if payload.training_target is TrainingTarget.REMOTE else None
+        if isinstance(payload, RemoteTrainJobPayload | SshTrainJobPayload):
+            return payload.remote_job_id
         if isinstance(payload, dict):
             remote_job_id = payload.get("remote_job_id")
-            if payload.get("training_target") != TrainingTarget.REMOTE:
+            if payload.get("training_target") not in {target.value for target in TrainingService._REATTACHABLE_TARGETS}:
                 return None
             try:
                 return UUID(str(remote_job_id))

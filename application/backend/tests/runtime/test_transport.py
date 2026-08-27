@@ -9,7 +9,15 @@ from uuid import UUID
 import pytest
 import zenoh
 
-from runtime.contract import Command, SaveEpisodeCommand, SetFollowerSourceCommand, StateData, StateEvent
+from runtime.contract import (
+    Command,
+    ErrorEvent,
+    LoadDatasetCommand,
+    SaveEpisodeCommand,
+    SetFollowerSourceCommand,
+    StateData,
+    StateEvent,
+)
 from runtime.transport.client import RuntimeProcessError, RuntimeSessionClient
 from runtime.transport.codec import encode_event
 from runtime.transport.ids import (
@@ -137,24 +145,26 @@ def test_session_config_is_peer_only_without_scouting_and_uses_loopback(listen: 
 def test_server_declares_required_qos(monkeypatch: pytest.MonkeyPatch) -> None:
     name = runtime_session_name(UUID("be2781f9-b165-4ffc-a78d-f77f258f4235"))
     fake_session = _FakeSession()
-    ring_channels: list[int] = []
+    fifo_channels: list[int] = []
     monkeypatch.setattr("runtime.transport.server.open_session", lambda name, listen: fake_session)
-    original_ring_channel = zenoh.handlers.RingChannel
+    original_fifo_channel = zenoh.handlers.FifoChannel
 
-    def record_ring_channel(capacity: int) -> object:
-        ring_channels.append(capacity)
-        return original_ring_channel(capacity)
+    def record_fifo_channel(capacity: int) -> object:
+        fifo_channels.append(capacity)
+        return original_fifo_channel(capacity)
 
     monkeypatch.setattr(
         zenoh.handlers,
-        "RingChannel",
-        record_ring_channel,
+        "FifoChannel",
+        record_fifo_channel,
     )
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     try:
         server.open(lambda command: None)
 
-        assert ring_channels == [1]
+        # Commands are a sequence: a ring would evict the oldest on overflow.
+        assert fifo_channels == [64]
+        assert isinstance(fake_session.subscribers[command_key(name)], original_fifo_channel)
         for key in (tick_key(name), state_key(name), error_key(name)):
             assert fake_session.publishers[key]["reliability"] == zenoh.Reliability.BEST_EFFORT
             assert fake_session.publishers[key]["congestion_control"] == zenoh.CongestionControl.DROP
@@ -202,7 +212,7 @@ def test_client_buffers_command_until_metadata_answers() -> None:
     time.sleep(0.1)
     assert received == []
 
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     try:
         server.open(received.append)
         connect_thread.join(timeout=3)
@@ -212,6 +222,30 @@ def test_client_buffers_command_until_metadata_answers() -> None:
 
         assert connect_error == []
         assert received == [command]
+    finally:
+        server.close()
+        client.close()
+
+
+def test_client_buffers_multiple_commands_until_metadata_answers() -> None:
+    name = runtime_session_name(UUID("2ee32ff5-d880-4c20-be57-fe5733450012"))
+    received: list = []
+    client = RuntimeSessionClient(name)
+    client.open()
+    load_command = LoadDatasetCommand(dataset_id=UUID("e8454e0c-f962-492e-878c-f7367f5ae73f"))
+    teleop_command = SetFollowerSourceCommand(follower_source="teleop")
+    client.apply(load_command)
+    client.apply(teleop_command)
+
+    server = RuntimeZenohServer(name, instance_id="live")
+    try:
+        server.open(received.append)
+        client.connect(timeout=3)
+        deadline = time.monotonic() + 2
+        while len(received) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        assert received == [load_command, teleop_command]
     finally:
         server.close()
         client.close()
@@ -232,7 +266,7 @@ def test_client_connect_keeps_a_received_fatal_error_when_the_process_has_exited
 
 def test_acked_request_returns_correlated_unsupported_reply() -> None:
     name = runtime_session_name(UUID("46770884-694f-453b-9a8f-a3d04b1ff974"))
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     client = RuntimeSessionClient(name)
     client.open()
     try:
@@ -242,8 +276,8 @@ def test_acked_request_returns_correlated_unsupported_reply() -> None:
         ack = client.request(SaveEpisodeCommand(request_id="request-7"))
 
         assert ack.data.request_id == "request-7"
-        assert not ack.data.ok
-        assert ack.data.error == "save_episode is not supported by this runtime session"
+        assert ack.data.ok
+        assert ack.data.error is None
     finally:
         server.close()
         client.close()
@@ -251,7 +285,7 @@ def test_acked_request_returns_correlated_unsupported_reply() -> None:
 
 def test_ready_state_can_be_recovered_from_metadata_when_publication_is_dropped() -> None:
     name = runtime_session_name(UUID("c27a49eb-1b90-4a52-8ec9-e329214233bc"))
-    server = RuntimeZenohServer(name)
+    server = RuntimeZenohServer(name, instance_id="live")
     client = RuntimeSessionClient(name)
     client.open()
     try:
@@ -269,7 +303,15 @@ def test_ready_state_can_be_recovered_from_metadata_when_publication_is_dropped(
 
         assert client.get_nowait().model_dump() == {
             "event": "state",
-            "data": {"connected": True, "follower_source": "hold"},
+            "data": {
+                "connected": True,
+                "follower_source": "hold",
+                "model_loaded": None,
+                "task": None,
+                "dataset_loaded": None,
+                "is_recording": None,
+                "episodes_recorded": None,
+            },
         }
     finally:
         server.close()
@@ -311,6 +353,7 @@ def test_event_from_replaced_instance_is_rejected() -> None:
         runtime_session_name(UUID("c66b74d9-cea7-4ac0-94f8-39f86898589a")),
         instance_id="old-instance",
     )
+    client._metadata_ready.set()
     sample = type(
         "Sample",
         (),
@@ -334,7 +377,7 @@ def test_event_from_replaced_instance_is_rejected() -> None:
         client.get_nowait()
 
 
-def test_event_before_metadata_adoption_is_accepted() -> None:
+def test_event_before_metadata_adoption_is_ignored() -> None:
     client = RuntimeSessionClient(runtime_session_name(UUID("77df4e92-bbd8-46c8-9ca1-640ce0fe79f4")))
     event = StateEvent(data=StateData(connected=True, follower_source="hold"))
     sample = type(
@@ -351,4 +394,55 @@ def test_event_before_metadata_adoption_is_accepted() -> None:
 
     client._receive_event(sample)
 
-    assert client.get_nowait() == event
+    with pytest.raises(queue.Empty):
+        client.get_nowait()
+    assert not client._hardware_ready.is_set()
+
+
+def _event_sample(event: StateEvent | ErrorEvent, *, instance_id: str, fatal: bool = False) -> object:
+    return type(
+        "Sample",
+        (),
+        {
+            "payload": type(
+                "Payload",
+                (),
+                {"to_bytes": lambda self: encode_event(event, fatal=fatal, instance_id=instance_id)},
+            )()
+        },
+    )()
+
+
+def test_attach_clears_stale_ready_from_a_pre_attach_event() -> None:
+    client = RuntimeSessionClient(runtime_session_name(UUID("0c1a2b3d-4e5f-6789-abcd-ef0123456789")))
+    client.attach({"instance_id": "old"})
+    client._receive_event(
+        _event_sample(StateEvent(data=StateData(connected=True, follower_source="hold")), instance_id="old")
+    )
+    assert client._hardware_ready.is_set()
+
+    client.attach({"instance_id": "new"})
+
+    assert not client._hardware_ready.is_set()
+    with pytest.raises(queue.Empty):
+        client.get_nowait()
+
+
+def test_attach_clears_a_fatal_error_from_a_pre_attach_event() -> None:
+    client = RuntimeSessionClient(runtime_session_name(UUID("1d2e3f40-5162-7384-95a6-b7c8d9e0f123")))
+    client.attach({"instance_id": "old"})
+    client._receive_event(
+        _event_sample(
+            ErrorEvent(message="old process died", error_code="robot_connection_failed"),
+            instance_id="old",
+            fatal=True,
+        )
+    )
+    assert client.error is not None
+
+    client.attach({"instance_id": "new"})
+
+    assert client.error is None
+    process = type("AliveProcess", (), {"is_alive": lambda self: True, "error": None})()
+    with pytest.raises(TimeoutError, match="did not become ready"):
+        client.wait_until_ready(process, timeout=0.1)

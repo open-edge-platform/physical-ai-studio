@@ -92,6 +92,7 @@ CommandAdapter: TypeAdapter[Command] = TypeAdapter(Command)
 class ObservationEvent(BaseModel):
     event: Literal["observation"] = "observation"
     data: dict[str, float]
+    actions: dict[str, float] | None = None
 
 
 class StateData(BaseModel):
@@ -99,6 +100,11 @@ class StateData(BaseModel):
 
     connected: bool
     follower_source: FollowerSource
+    model_loaded: bool | None = None
+    task: str | None = None
+    dataset_loaded: bool | None = None
+    is_recording: bool | None = None
+    episodes_recorded: int | None = None
 
 
 class StateEvent(BaseModel):

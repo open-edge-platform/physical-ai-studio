@@ -1,26 +1,27 @@
+import { RefObject, useState } from 'react';
+
 import { View } from '@geti-ui/ui';
 
+import { SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
+import { useInterval } from '../../../routes/datasets/use-interval';
 import { RobotViewer, UnavailableRobotViewer } from '../controller/robot-viewer';
-import { Observation, useRobotControl } from '../robot-control-provider';
 import { RobotModelsProvider } from '../robot-models-context';
 import { isUnavailableRobot } from '../robot-types';
 
-const getActionObservationSource = (observation?: Observation): { [joint: string]: number } | undefined => {
-    if (observation === undefined) {
-        return undefined;
-    }
-    if (observation.actions !== null) {
-        return observation.actions;
-    }
-    return observation.state;
-};
+export const RobotCell = ({
+    robot_id,
+    environment,
+    joints,
+}: {
+    robot_id: string;
+    environment: SchemaEnvironmentWithRelations;
+    joints: RefObject<Record<string, number> | undefined>;
+}) => {
+    const [current, setCurrent] = useState<Record<string, number>>();
+    useInterval(() => {
+        setCurrent(joints.current === undefined ? undefined : { ...joints.current });
+    }, 1000 / 30);
 
-export const RobotCell = ({ robot_id }: { robot_id: string }) => {
-    const { observation, environment } = useRobotControl();
-
-    const observation_source = getActionObservationSource(observation.current);
-    const action_values = observation_source === undefined ? undefined : Object.values(observation_source);
-    const action_keys = observation_source === undefined ? undefined : Object.keys(observation_source);
     if (environment.robots === undefined) {
         return <></>;
     }
@@ -31,6 +32,9 @@ export const RobotCell = ({ robot_id }: { robot_id: string }) => {
     if (isUnavailableRobot(environmentRobot)) {
         return <UnavailableRobotViewer robotType={environmentRobot.type} />;
     }
+
+    const action_values = current === undefined ? undefined : Object.values(current);
+    const action_keys = current === undefined ? undefined : Object.keys(current);
 
     return (
         <RobotModelsProvider>

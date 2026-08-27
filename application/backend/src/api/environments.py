@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from physicalai.config import to_yaml
 
 from api.dependencies import RobotClientFactoryDep, get_environment_id, get_environment_service, get_project_id
-from runtime.config_builder import build_runtime_config, runtime_config_change_me
+from runtime.config_builder import RUNTIME_FPS, build_runtime_config, runtime_config_change_me
 from schemas.environment import Environment, EnvironmentWithRelations, TeleoperatorRobotWithRobot
 from services.environment_service import EnvironmentService
 
@@ -65,8 +65,8 @@ async def get_runtime_config(
             follower=relation.robot,
             leader=relation.tele_operator.robot,
             cameras=environment.cameras,
-            fps=30,
             robot_factory=robot_client_factory,
+            fps=RUNTIME_FPS,
             # The rig this describes does not have to be attached to export it.
             allow_stored_port=True,
         )

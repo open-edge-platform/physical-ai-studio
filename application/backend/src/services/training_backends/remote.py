@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
     from loguru import Logger, Record
 
+    from schemas.job import TrainingDevice
     from services.training_backends._training_methods import TrainingMethod
     from services.training_backends.base import TrainingContext
 
@@ -77,7 +78,13 @@ class RemoteTrainingBackend:
 
     _last_progress_log: str | None = None
 
-    def __init__(self, base_url: str, *, trainer_name: str | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        trainer_name: str | None = None,
+        device: TrainingDevice | None = None,
+    ) -> None:
         settings = get_settings()
         self._base_url = base_url.rstrip("/")
         self._timeout = settings.trainer.request_timeout_s
@@ -88,6 +95,11 @@ class RemoteTrainingBackend:
         # Suppress duplicate consecutive progress lines (e.g. the trainer
         # re-emitting the final training state while it optimizes/exports).
         self._last_progress_log: str | None = None
+        # An injected device (e.g. an SSH-provisioned server's configured
+        # accelerator) is sent to the trainer instead of stripping the spec's
+        # device to None. The direct-URL registry path never sets this, so its
+        # behavior is unchanged: the trainer keeps selecting its own device.
+        self._device = device
         # Prefix every log line from this backend with its trainer, so a job's
         # log (and the shared "training" worker log) identify which remote
         # server produced each line when several trainers run concurrently.
@@ -320,7 +332,17 @@ class RemoteTrainingBackend:
         """
         from services.training_backends.local import build_spec
 
-        spec = build_spec(context).model_copy(update={"device_type": None, "device_index": None})
+        # An injected device (SSH-provisioned server) is sent as-is: that trainer
+        # image runs on one known accelerator, so there is nothing to probe. The
+        # direct-URL registry path leaves ``self._device`` unset and keeps the
+        # existing behavior of stripping the device so the trainer selects its
+        # own hardware.
+        device_update = (
+            {"device_type": str(self._device.type), "device_index": self._device.index}
+            if self._device is not None
+            else {"device_type": None, "device_index": None}
+        )
+        spec = build_spec(context).model_copy(update=device_update)
         body: dict[str, Any] = {
             "spec": spec.model_dump(mode="json", exclude={"run_options"}),
             "dataset_transfer": "http",

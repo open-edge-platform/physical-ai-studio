@@ -1,9 +1,12 @@
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
 from api.dependencies import get_project_id, get_robot_id, get_robot_service
+from exceptions import RuntimeSessionBusyError
+from runtime.owner import runtime_session_holder
 from schemas.robot import (
     ReadableRobot,
     Robot,
@@ -79,4 +82,9 @@ async def delete_project_robot(
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
 ) -> None:
     """Delete a robot."""
+    robot = await robot_service.get_robot_by_id(project_id, robot_id)
+    holder = await asyncio.to_thread(runtime_session_holder, robot_id)
+    if holder is not None:
+        pid = holder.get("pid")
+        raise RuntimeSessionBusyError(robot_name=robot.name, pid=pid if isinstance(pid, int) else None)
     await robot_service.delete_robot(project_id, robot_id)

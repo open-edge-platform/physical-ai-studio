@@ -98,8 +98,10 @@ services:
       target: physicalai-trainer-xpu
     devices:
       - "${RENDER_NODE:-/dev/dri/renderD128}:${RENDER_NODE:-/dev/dri/renderD128}"
+    # No "render" group exists in this image, so the fallback fails fast at
+    # container start (not at parse time) if RENDER_GID isn't set.
     group_add:
-      - "${RENDER_GID:?RENDER_GID must be set to the host's render node GID; see .env.trainer.example}"
+      - "${RENDER_GID:-render}"
 
 volumes:
   physicalai-trainer-data:

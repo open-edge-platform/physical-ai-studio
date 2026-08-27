@@ -16,7 +16,7 @@ from core.logging.utils import job_logging_ctx
 from db import get_async_db_session_ctx
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.job import TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
 from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
@@ -29,6 +29,7 @@ from services.training_backends import (
     get_training_backend,
 )
 from services.training_service import TrainingService, TrainingTrackingDispatcher
+from services.training_targets import target_key as training_target_key
 from settings import get_settings
 from workers.base import BaseProcessWorker
 
@@ -59,7 +60,7 @@ class TrainingWorker(BaseProcessWorker):
                 async with get_async_db_session_ctx() as session:
                     pending_jobs = await JobService(session, RemoteTrainerService(session)).get_pending_train_jobs()
                 for job in pending_jobs:
-                    payload = TrainJobPayload.model_validate(job.payload)
+                    payload = TrainJobPayloadAdapter.validate_python(job.payload)
                     target = self._target_key(payload)
                     if target in self._active_training_tasks:
                         continue
@@ -87,17 +88,24 @@ class TrainingWorker(BaseProcessWorker):
 
     @staticmethod
     def _target_key(payload: TrainJobPayload) -> str:
-        """Return the exclusive execution target for a training job."""
-        if payload.training_target is TrainingTarget.LOCAL:
-            return TrainingTarget.LOCAL.value
-        return f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
+        """Return the exclusive execution target for a training job.
+
+        Delegates to `services.training_targets.target_key` so submission
+        validation (`JobService`) and worker scheduling derive this key from
+        the same per-target handler registry, instead of each keeping its own
+        copy of the target-to-key mapping.
+        """
+        return training_target_key(payload)
 
     async def _run_training_job(self, job: Job, payload: TrainJobPayload) -> None:
         """Prepare and execute one job after its execution target has been reserved."""
         with job_logging_ctx(job_id=str(job.id)):
             settings = get_settings()
             model_id = uuid4()
-            reattaching = payload.training_target is TrainingTarget.REMOTE and bool(payload.remote_job_id)
+            # Both remote kinds keep their trainer running independently of the
+            # studio process, so either can carry a persisted remote_job_id to
+            # reattach to across a restart; only local training never does.
+            reattaching = payload.training_target is not TrainingTarget.LOCAL and bool(payload.remote_job_id)
 
             base_model = None
             if payload.base_model_id is not None:
@@ -210,7 +218,7 @@ class TrainingWorker(BaseProcessWorker):
                 should_cancel_job=lambda: bool(self.job_interrupt_flags.get(str(job.id), False)),
             )
 
-            backend = get_training_backend(payload)
+            backend = await get_training_backend(payload, job.id)
             await backend.train(context)
             # The local backend stops cooperatively without raising; treat a
             # completed-but-interrupted run as a cancellation, not a success.

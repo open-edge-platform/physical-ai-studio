@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 import { NavLink } from 'react-router';
 
 import { $api } from '../../api/client';
-import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
+import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
 import RobotArm from './../../assets/robot-arm.webp';
@@ -58,7 +58,7 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                             { params: { path: { project_id, robot_id: robot.id } } },
                             {
                                 onError: (error) => {
-                                    if (isResourceInUseError(error)) {
+                                    if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
                                         toast.info(
                                             getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.'
                                         );

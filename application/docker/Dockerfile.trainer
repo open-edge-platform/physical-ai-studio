@@ -60,6 +60,8 @@ RUN groupadd --gid "${TRAINER_GID}" trainer \
     && useradd --uid "${TRAINER_UID}" --gid "${TRAINER_GID}" --create-home --shell /usr/sbin/nologin trainer \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+        build-essential \
+        g++ \
         ffmpeg \
         libgl1 \
         libglib2.0-0 \
@@ -76,7 +78,9 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     TRAINER_STORAGE_DIR=/var/lib/physicalai-trainer \
     HF_HOME=/var/lib/physicalai-trainer/huggingface \
     TORCH_HOME=/var/lib/physicalai-trainer/torch \
-    XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache
+    XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache \
+    HOME=/var/lib/physicalai-trainer \
+    TRITON_CACHE_DIR=/var/lib/physicalai-trainer/cache/triton
 
 # Only the trainer and training packages, never the rest of the backend: no
 # studio API, robots, database, or UI assets reach this image.
@@ -182,6 +186,7 @@ ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
 ARG APPLICATION_VERSION=unknown
 ARG TRAINER_API_PROTOCOL_VERSION=1
+ARG PHYSICALAI_TRAIN_VERSION=unknown
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio remote CUDA training service" \
       org.opencontainers.image.revision="${GIT_SHA}" \
@@ -190,6 +195,7 @@ LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/phy
       org.opencontainers.image.title="physicalai-trainer-cuda" \
       org.opencontainers.image.vendor="Open Edge Platform" \
       org.open-edge-platform.physicalai.trainer.api-protocol="${TRAINER_API_PROTOCOL_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.library-version="${PHYSICALAI_TRAIN_VERSION}" \
       org.open-edge-platform.physicalai.trainer.device="cuda"
 ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_BUILD_DATE="${BUILD_DATE}" \
@@ -203,6 +209,7 @@ ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
 ARG APPLICATION_VERSION=unknown
 ARG TRAINER_API_PROTOCOL_VERSION=1
+ARG PHYSICALAI_TRAIN_VERSION=unknown
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio remote Intel XPU training service" \
       org.opencontainers.image.revision="${GIT_SHA}" \
@@ -211,6 +218,7 @@ LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/phy
       org.opencontainers.image.title="physicalai-trainer-xpu" \
       org.opencontainers.image.vendor="Open Edge Platform" \
       org.open-edge-platform.physicalai.trainer.api-protocol="${TRAINER_API_PROTOCOL_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.library-version="${PHYSICALAI_TRAIN_VERSION}" \
       org.open-edge-platform.physicalai.trainer.device="xpu"
 ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_BUILD_DATE="${BUILD_DATE}" \

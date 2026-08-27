@@ -5,9 +5,12 @@ import time
 from dataclasses import dataclass
 
 import numpy as np
+from physicalai.capture import Frame
 
 _connect_tracker = {"depth": 0, "max_depth": 0}
 _connect_depth_lock = threading.Lock()
+_disconnect_order: list[str] = []
+_disconnect_lock = threading.Lock()
 
 
 def reset_connect_tracking() -> None:
@@ -19,6 +22,37 @@ def reset_connect_tracking() -> None:
 def max_concurrent_connects() -> int:
     with _connect_depth_lock:
         return int(_connect_tracker["max_depth"])
+
+
+def reset_disconnect_tracking() -> None:
+    with _disconnect_lock:
+        _disconnect_order.clear()
+
+
+def recorded_disconnects() -> list[str]:
+    with _disconnect_lock:
+        return list(_disconnect_order)
+
+
+def _track_connect(delay: float, error: str | None) -> None:
+    with _connect_depth_lock:
+        _connect_tracker["depth"] += 1
+        _connect_tracker["max_depth"] = max(_connect_tracker["max_depth"], _connect_tracker["depth"])
+    try:
+        if delay > 0:
+            time.sleep(delay)
+        if error is not None:
+            raise ConnectionError(error)
+    finally:
+        with _connect_depth_lock:
+            _connect_tracker["depth"] -= 1
+
+
+def _track_disconnect(name: str, error: str | None) -> None:
+    with _disconnect_lock:
+        _disconnect_order.append(name)
+    if error is not None:
+        raise ConnectionError(error)
 
 
 @dataclass
@@ -45,6 +79,7 @@ class FakeRobot:
         connect_error: str | None = None,
         observation_error: str | None = None,
         connect_delay: float = 0.0,
+        disconnect_error: str | None = None,
         name: str = "fake_robot",
     ) -> None:
         if observations is None:
@@ -59,24 +94,16 @@ class FakeRobot:
         self._connect_error = connect_error
         self._observation_error = observation_error
         self._connect_delay = connect_delay
+        self._disconnect_error = disconnect_error
         self.name = name
         self.sent_actions: list[np.ndarray] = []
 
     def connect(self) -> None:
-        with _connect_depth_lock:
-            _connect_tracker["depth"] += 1
-            _connect_tracker["max_depth"] = max(_connect_tracker["max_depth"], _connect_tracker["depth"])
-        try:
-            if self._connect_delay > 0:
-                time.sleep(self._connect_delay)
-            if self._connect_error is not None:
-                raise ConnectionError(self._connect_error)
-            self._connected = True
-        finally:
-            with _connect_depth_lock:
-                _connect_tracker["depth"] -= 1
+        _track_connect(self._connect_delay, self._connect_error)
+        self._connected = True
 
     def disconnect(self) -> None:
+        _track_disconnect(self.name, self._disconnect_error)
         self._connected = False
 
     def get_observation(self) -> FakeObservation:
@@ -99,3 +126,91 @@ class FakeRobot:
     @property
     def device_ids(self) -> tuple[str, ...]:
         return ()
+
+
+class FakeAdapter:
+    def __init__(self, input_names: list[str]) -> None:
+        self.input_names = input_names
+
+
+class FakeInferenceModel:
+    """Stand-in for physicalai.inference.InferenceModel used by PolicyLoader tests."""
+
+    def __init__(
+        self,
+        export_dir: object = None,
+        policy_name: str | None = None,
+        backend: str = "auto",
+        device: str = "auto",
+        *,
+        input_names: list[str] | None = None,
+        chunk: np.ndarray | None = None,
+        construct_delay: float = 0.0,
+        label: str = "fake",
+        predict: object | None = None,
+    ) -> None:
+        if construct_delay > 0:
+            time.sleep(construct_delay)
+        self.export_dir = export_dir
+        self.policy_name = policy_name
+        self.backend = backend
+        self.device = device
+        self.adapter = FakeAdapter(input_names or ["state"])
+        self._chunk = np.zeros((4, 1), dtype=np.float32) if chunk is None else np.asarray(chunk, dtype=np.float32)
+        self.chunk_size = int(self._chunk.shape[0])
+        self.predict_calls: list[dict] = []
+        self.reset_calls = 0
+        self.label = label
+        self._predict = predict
+
+    def predict_action_chunk(self, observation: dict) -> np.ndarray:
+        self.predict_calls.append(observation)
+        if callable(self._predict):
+            return np.asarray(self._predict(observation), dtype=np.float32)
+        return np.array(self._chunk, copy=True)
+
+    def reset(self) -> None:
+        self.reset_calls += 1
+
+
+class FakeCamera:
+    """Stand-in for SharedCamera that participates in session connect/teardown."""
+
+    def __init__(
+        self,
+        *,
+        name: str = "fake_camera",
+        connect_error: str | None = None,
+        disconnect_error: str | None = None,
+        connect_delay: float = 0.0,
+        width: int = 8,
+        height: int = 8,
+    ) -> None:
+        self.name = name
+        self._connect_error = connect_error
+        self._disconnect_error = disconnect_error
+        self._connect_delay = connect_delay
+        self._width = width
+        self._height = height
+        self._connected = False
+        self._sequence = 0
+
+    def connect(self, timeout: float = 5.0) -> None:
+        _track_connect(self._connect_delay, self._connect_error)
+        self._connected = True
+
+    def disconnect(self) -> None:
+        _track_disconnect(self.name, self._disconnect_error)
+        self._connected = False
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected
+
+    def read_latest(self) -> Frame:
+        self._sequence += 1
+        return Frame(
+            data=np.zeros((self._height, self._width, 3), dtype=np.uint8),
+            timestamp=time.monotonic(),
+            sequence=self._sequence,
+        )

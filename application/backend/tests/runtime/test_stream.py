@@ -18,7 +18,18 @@ def test_lifecycle_start_emits_connected_state_once() -> None:
     )
 
     event = events.get_nowait()
-    assert event.model_dump() == {"event": "state", "data": {"connected": True, "follower_source": "hold"}}
+    assert event.model_dump() == {
+        "event": "state",
+        "data": {
+            "connected": True,
+            "follower_source": "hold",
+            "model_loaded": None,
+            "task": None,
+            "dataset_loaded": None,
+            "is_recording": None,
+            "episodes_recorded": None,
+        },
+    }
 
 
 def test_lifecycle_start_is_suppressed_after_disconnect() -> None:
@@ -60,13 +71,25 @@ def test_tick_emits_exact_observation_shape() -> None:
         )
     )
 
-    assert events.get_nowait().model_dump() == {"event": "observation", "data": {"joint.pos": 2.0}}
+    assert events.get_nowait().model_dump() == {
+        "event": "observation",
+        "data": {"joint.pos": 2.0},
+        "actions": {"joint.pos": 2.0},
+    }
 
 
 def test_state_and_error_events_keep_the_websocket_contract() -> None:
     assert StateEvent(data=StateData(connected=True, follower_source="teleop")).model_dump() == {
         "event": "state",
-        "data": {"connected": True, "follower_source": "teleop"},
+        "data": {
+            "connected": True,
+            "follower_source": "teleop",
+            "model_loaded": None,
+            "task": None,
+            "dataset_loaded": None,
+            "is_recording": None,
+            "episodes_recorded": None,
+        },
     }
     assert ErrorEvent(message="lost", error_code="leader_connection_lost").model_dump() == {
         "event": "error",
@@ -82,4 +105,8 @@ def test_event_sink_coalesces_observations_without_dropping_state() -> None:
     events.emit(ObservationEvent(data={"joint.pos": 2}))
 
     assert events.get_nowait().event == "state"
-    assert events.get_nowait().model_dump() == {"event": "observation", "data": {"joint.pos": 2.0}}
+    assert events.get_nowait().model_dump() == {
+        "event": "observation",
+        "data": {"joint.pos": 2.0},
+        "actions": None,
+    }

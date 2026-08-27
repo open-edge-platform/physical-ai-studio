@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 class RuntimeZenohServer:
     """Bind a process-local RuntimeSession to Studio's Zenoh contract."""
 
-    def __init__(self, name: str, *, instance_id: str | None = None) -> None:
+    def __init__(self, name: str, *, instance_id: str) -> None:
         self._name = name
         self._instance_id = instance_id
         self._session: Any = None
@@ -30,6 +30,7 @@ class RuntimeZenohServer:
         self._metadata_queryable: Any = None
         self._publishers: dict[type, Any] = {}
         self._command_handler: Callable[[Command], None] | None = None
+        self._request_handler: Callable[[Command], None] | None = None
         self._stop = threading.Event()
         self._command_thread: threading.Thread | None = None
         self._metadata_lock = threading.Lock()
@@ -53,11 +54,21 @@ class RuntimeZenohServer:
         with self._metadata_lock:
             self._metadata.update(values)
 
-    def open(self, command_handler: Callable[[Command], None]) -> None:
-        """Declare every endpoint, then expose metadata as the readiness gate."""
+    def open(
+        self,
+        command_handler: Callable[[Command], None],
+        request_handler: Callable[[Command], None] | None = None,
+    ) -> None:
+        """Declare every endpoint, then expose metadata as the readiness gate.
+
+        ``command_handler`` receives published commands. ``request_handler``
+        answers the request queryable; when omitted, published commands and
+        requests share ``command_handler``.
+        """
         import zenoh
 
         self._command_handler = command_handler
+        self._request_handler = request_handler
         try:
             self._session = open_session(self._name, listen=True)
         except Exception as exc:
@@ -65,9 +76,14 @@ class RuntimeZenohServer:
                 logger.warning("Runtime session {} port is taken: {}", self._name, exc)
                 raise RobotDeviceAlreadyOwnedError from exc
             raise
+        # FIFO rather than a ring: commands are a sequence, not a latest-value
+        # signal. A ring evicts the oldest on overflow, which drops load_dataset
+        # and keeps the set_follower_source that depends on it. FIFO yields a
+        # contiguous prefix instead. The pump cannot drain mid-burst, so the
+        # capacity has to cover a whole client flush, not just the arrival rate.
         self._command_sub = self._session.declare_subscriber(
             command_key(self._name),
-            zenoh.handlers.RingChannel(1),
+            zenoh.handlers.FifoChannel(64),
         )
         self._request_queryable = self._session.declare_queryable(
             request_key(self._name),
@@ -107,6 +123,11 @@ class RuntimeZenohServer:
             )
 
         self._metadata_queryable = self._session.declare_queryable(metadata_key(self._name), answer_metadata)
+
+    def has_matching_subscribers(self) -> bool:
+        """Return whether at least one client is subscribed to session state."""
+        publisher = self._publishers.get(StateEvent)
+        return publisher is not None and bool(publisher.matching_status.matching)
 
     def emit(self, event: RuntimeEvent, *, fatal: bool = False) -> None:
         """Publish an event without allowing transport failure to stop the robot loop."""
@@ -184,13 +205,14 @@ class RuntimeZenohServer:
             request_id = command.request_id
             if request_id is None:
                 raise ValueError("Runtime request has no request_id")
-            ack = AckEvent(
-                data=AckData(
-                    request_id=request_id,
-                    ok=False,
-                    error=f"{command.command} is not supported by this runtime session",
-                )
-            )
+            handler = self._request_handler if self._request_handler is not None else self._command_handler
+            try:
+                if handler is not None:
+                    handler(command)
+            except Exception as exc:
+                ack = AckEvent(data=AckData(request_id=request_id, ok=False, error=str(exc)))
+            else:
+                ack = AckEvent(data=AckData(request_id=request_id, ok=True))
             query.reply(
                 request_key(self._name),
                 encode_event(ack, instance_id=self._instance_id),

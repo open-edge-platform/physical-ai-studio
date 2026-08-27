@@ -31,7 +31,7 @@ export const SecretField = ({ label, isSet, onChange }: SecretFieldProps) => {
                 width='100%'
             />
             {isSet && (
-                <Switch isSelected={remove} onChange={(selected) => update(draft, selected)}>
+                <Switch isEmphasized isSelected={remove} onChange={(selected) => update(draft, selected)}>
                     Remove the configured value
                 </Switch>
             )}

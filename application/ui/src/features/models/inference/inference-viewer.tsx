@@ -12,14 +12,14 @@ import {
     StatusLight,
     Text,
 } from '@geti-ui/ui';
-import { Back, Pause, Play } from '@geti-ui/ui/icons';
+import { Back, DownloadIcon, Pause, Play } from '@geti-ui/ui/icons';
 
-import { ErrorMessage } from '../../../components/error-page/error-page';
 import { paths } from '../../../router';
 import { useProjectId } from '../../projects/use-project';
-import { useRobotControl } from '../../robots/robot-control-provider';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
+import { useRuntimeSession } from '../../robots/runtime-session-provider';
+import { runtimeExportUrl } from '../runtime-export';
 
 interface InferenceViewerProps {
     tasks: string[];
@@ -30,11 +30,19 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
 
     const [task, setTask] = useState<string>(tasks[0] ?? '');
 
-    const { model, readyForInference, state, startTask, stopTask } = useRobotControl();
+    const { model, readyForInference, state, startTask, stopTask, environment, observation, inferenceDevice } =
+        useRuntimeSession();
 
-    if (state.error) {
-        return <ErrorMessage message={'An error occurred during inference setup'} />;
-    }
+    const exportUrl =
+        model?.id !== undefined && inferenceDevice !== undefined
+            ? runtimeExportUrl({
+                  modelId: model.id,
+                  environmentId: environment.id,
+                  backend: inferenceDevice.backend,
+                  device: inferenceDevice.device,
+                  task,
+              })
+            : undefined;
 
     if (!readyForInference) {
         return (
@@ -45,7 +53,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                 </Heading>
                 <Flex direction='column' margin='size-200'>
                     <StatusLight variant={state.model_loaded ? 'positive' : 'yellow'}>Model</StatusLight>
-                    <StatusLight variant={state.environment_loaded ? 'positive' : 'yellow'}>Environment</StatusLight>
+                    <StatusLight variant={state.connected ? 'positive' : 'yellow'}>Environment</StatusLight>
                 </Flex>
                 <Button variant={'secondary'} href={paths.project.models.index({ project_id })}>
                     Cancel
@@ -68,7 +76,19 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         ))}
                     </ComboBox>
                     <ButtonGroup>
-                        {state.follower_source === 'model' ? (
+                        {exportUrl !== undefined && (
+                            <Button
+                                href={exportUrl}
+                                aria-label='Download runtime export'
+                                variant='secondary'
+                                target='_blank'
+                                rel='noopener noreferrer'
+                            >
+                                <DownloadIcon />
+                                Runtime export
+                            </Button>
+                        )}
+                        {state.follower_source === 'policy' ? (
                             <Button variant='primary' isPending={stopTask.isPending} onPress={() => stopTask.mutate()}>
                                 <Pause fill='white' />
                                 Stop
@@ -85,7 +105,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         )}
                     </ButtonGroup>
                 </Flex>
-                <RobotControlView />
+                <RobotControlView environment={environment} isReady={state.connected} joints={observation} />
             </Flex>
         </RobotModelsProvider>
     );
