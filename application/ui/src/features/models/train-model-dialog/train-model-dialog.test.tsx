@@ -65,6 +65,16 @@ const mockProjectWithRemoteTrainer = () => {
                     stream_reconnect_backoff_max_s: 30,
                 },
                 huggingface: { hf_token: null },
+                ssh: {
+                    enabled: false,
+                    connect_timeout_s: 10,
+                    command_timeout_s: 15,
+                    preflight_timeout_s: 30,
+                    image_pull_timeout_s: 1800,
+                    readiness_timeout_s: 120,
+                    gpu_wait_giveup_s: 1800,
+                    min_free_disk_bytes: 53687091200,
+                },
             })
         ),
         http.get('/api/policies/{policy}/huggingface-access', ({ params }) => {
