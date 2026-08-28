@@ -1,7 +1,3 @@
-.layout {
-    --spectrum-tabs-selection-indicator-color: var(--energy-blue);
-}
-
 .sidebarList {
     --spectrum-tabs-vertical-rule-width: var(--spectrum-global-dimension-size-50);
 
@@ -10,7 +6,7 @@
 
     & a[class*='spectrum-Tabs-item'] {
         margin-left: 0;
-        padding-left: var(--spectrum-global-dimension-size-200);
+        padding-left: var(--spectrum-global-dimension-size-300);
 
         &:hover {
             background-color: var(--spectrum-global-color-gray-200);
@@ -18,6 +14,16 @@
 
         &[class*='is-selected'] {
             background-color: var(--spectrum-global-color-gray-300);
+
+            .sidebarListItemIcon,
+            .sidebarListItemIcon path {
+                fill: var(--energy-blue) !important;
+            }
         }
     }
+}
+
+.sidebarListItemIcon,
+.sidebarListItemIcon path {
+    fill: var(--spectrum-global-color-gray-700) !important;
 }

@@ -2,7 +2,7 @@
 
 Skills for `library/` (`physicalai-train`): policies, datasets, training, benchmarking, and export. Library skills must cover both direct Python API usage and the `physicalai` CLI whenever both surfaces exist.
 
-Run commands from `library/` unless noted otherwise (`uv sync`, `uv run pytest ...`, `physicalai ...` with configs under `library/configs/`).
+Run commands from `library/` unless noted otherwise (`uv sync`, `uv run --no-sync pytest ...`, `physicalai ...` with configs under `library/configs/`).
 
 ## Skills
 

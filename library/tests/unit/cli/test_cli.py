@@ -114,6 +114,50 @@ class TestDispatch:
         assert exit_code == 0
         trainer.fit.assert_called_once_with(model=model, datamodule=datamodule)
 
+    def test_fit_dispatch_forwards_ckpt_path(self) -> None:
+        """``--fit.ckpt_path`` must reach ``Trainer.fit``, not be silently dropped."""
+        parser = fit_module.register().parser
+        cfg = parser.parse_args([f"--config={_act_config_path()}", "--fit.ckpt_path=/tmp/phase1.ckpt"])
+        trainer = MagicMock()
+        model = object()
+        datamodule = object()
+
+        with patch.object(
+            parser,
+            "instantiate_classes",
+            return_value=Namespace(
+                trainer=trainer,
+                model=model,
+                data=datamodule,
+                fit=Namespace(ckpt_path="/tmp/phase1.ckpt", weights_only=None),
+            ),
+        ):
+            exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
+
+        assert exit_code == 0
+        # weights_only is None (unset) and must not shadow the Trainer default.
+        trainer.fit.assert_called_once_with(model=model, datamodule=datamodule, ckpt_path="/tmp/phase1.ckpt")
+
+    def test_validate_dispatch_forwards_ckpt_path(self) -> None:
+        parser = validate_module.register().parser
+        cfg = parser.parse_args([f"--config={_act_config_path()}"])
+        trainer = MagicMock()
+
+        with patch.object(
+            parser,
+            "instantiate_classes",
+            return_value=Namespace(
+                trainer=trainer,
+                model=object(),
+                data=object(),
+                validate=Namespace(ckpt_path="/tmp/best.ckpt", verbose=None, weights_only=None),
+            ),
+        ):
+            exit_code = validate_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
+
+        assert exit_code == 0
+        assert trainer.validate.call_args.kwargs["ckpt_path"] == "/tmp/best.ckpt"
+
     def test_benchmark_dispatch_calls_benchmark_evaluate(self, tmp_path: Path) -> None:
         parser = benchmark_module.register().parser
         cfg = parser.parse_args(

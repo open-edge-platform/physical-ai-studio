@@ -2,13 +2,18 @@ import { ThemeProvider } from '@geti-ui/ui';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { render as rtlRender, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
+import { vi } from 'vitest';
 
 import { createQueryClient } from '../../query-client/query-client';
 import { render } from '../../test-utils/render';
 import { AppLayout } from './app.layout';
 
+vi.mock('../../features/jobs/footer/job-status', () => ({
+    JobStatus: () => null,
+}));
+
 describe('AppLayout', () => {
-    it('renders the logo in the header, linking to the projects page', () => {
+    it('renders the logo, linking to the projects page', () => {
         render(<AppLayout />, { route: '/projects', path: '/projects' });
 
         const logoLink = screen.getByRole('link', { name: /physical ai studio/i });

@@ -90,7 +90,7 @@ Use this path when the user asks for terminal commands, docs under `library/docs
 ```bash
 # from library/
 physicalai fit --config configs/physicalai/<name>.yaml --trainer.fast_dev_run=true
-uv run pytest tests/unit/train
+uv run --no-sync pytest tests/unit/train
 ```
 
 For API-facing changes, add or run an equivalent Python smoke test (not a shell heredoc) that constructs `Policy`, `DataModule`, and `Trainer` directly and calls `trainer.fit(...)`.

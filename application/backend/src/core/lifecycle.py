@@ -1,3 +1,5 @@
+import os
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -5,13 +7,42 @@ from fastapi import FastAPI
 from loguru import logger
 
 from core.logging import setup_logging, setup_uvicorn_logging
+from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
+from services.health_service import HealthService
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.model_worker_registry import ModelWorkerRegistry
 
 from .scheduler import Scheduler
+
+
+def _restart_argv_candidates() -> list[list[str]]:
+    """Build candidate argv lists for re-executing the current server process."""
+    candidates: list[list[str]] = []
+
+    orig_argv = list(getattr(sys, "orig_argv", []) or [])
+    if orig_argv and orig_argv[0]:
+        candidates.append(orig_argv)
+
+    python_argv = [sys.executable, *sys.argv]
+    if python_argv[0] and python_argv not in candidates:
+        candidates.append(python_argv)
+
+    return candidates
+
+
+def _restart_process() -> None:
+    """Replace this process image after graceful application shutdown."""
+    for argv in _restart_argv_candidates():
+        executable = argv[0]
+        try:
+            if os.path.sep in executable:
+                os.execv(executable, argv)  # noqa: S606
+            else:
+                os.execvp(executable, argv)  # noqa: S606
+        except OSError:
+            logger.exception("Restart exec failed for argv={}", argv)
 
 
 @asynccontextmanager
@@ -23,21 +54,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     settings = get_settings()
     app.state.settings = settings
+    app.state.health_service = HealthService()
 
-    # Camera fingerprints locked by an active recording/teleop session.
-    # Mutated by the robot_control WS handler; checked by camera CRUD and
-    # camera-stream WS endpoints. Keyed by fingerprint (not ProjectCamera ID)
-    # so aliased project rows for the same physical device share one lock.
-    app.state.recording_locked_camera_fingerprints = set()
+    # Camera settings pinned by live runtime sessions in this API process.
+    # In-memory on purpose: see CameraClaimRegistry. Keyed by fingerprint so
+    # aliased project rows for the same physical device share one pin.
+    app.state.camera_claim_registry = CameraClaimRegistry()
     logger.info(f"Starting {settings.app_name} application...")
     ensure_spawn_start_method()
     app_scheduler = Scheduler()
     app_scheduler.start_workers()
 
-    app.state.model_registry = ModelWorkerRegistry(
-        max_workers=1,
-        stop_event=app_scheduler.mp_stop_event,
-    )
     app.state.scheduler = app_scheduler
     app.state.event_processor = EventProcessor(app_scheduler.event_queue)
     logger.info("Application startup completed")
@@ -59,3 +86,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app_scheduler.shutdown()
     app.state.event_processor.shutdown()
     logger.info("Application shutdown completed")
+
+    if app.state.health_service.plugin_restart_required:
+        _restart_process()

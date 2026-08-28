@@ -9,9 +9,10 @@ the full contract.
 """
 
 from .device import resolve_accelerator, resolve_devices, resolve_strategy
-from .job import TrainingJobSpec, run_training_job
+from .job import RunOptions, TrainingJobSpec, run_training_job
 
 __all__ = [
+    "RunOptions",
     "TrainingJobSpec",
     "resolve_accelerator",
     "resolve_devices",

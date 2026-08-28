@@ -2,7 +2,7 @@ import { Flex, TextField } from '@geti-ui/ui';
 
 import type { SchemaTrossenSingleArmPayload } from '../../../../api/openapi-spec';
 import { useCatalogIdentifyMutation } from '../../robot-catalog.hooks';
-import type { SchemaRobot, SchemaRobotInput, SchemaRobotType } from '../../robot-types';
+import type { AvailableSchemaRobot, ConfigurableRobotType, SchemaRobotInput } from '../../robot-types';
 import { useRobotFormFields } from '../provider';
 import { IdentifyRobot } from './actions';
 
@@ -11,14 +11,14 @@ export interface WidowxFormData {
     payload: SchemaTrossenSingleArmPayload;
 }
 
-export const getInitialWidowxFormData = (robot?: SchemaRobot): WidowxFormData => ({
+export const getInitialWidowxFormData = (robot?: AvailableSchemaRobot): WidowxFormData => ({
     name: robot?.name ?? '',
     payload: robot && 'connection_string' in robot.payload ? robot.payload : { connection_string: '' },
 });
 
 export const buildWidowxBody = (
     formData: WidowxFormData,
-    schemaType: SchemaRobotType,
+    schemaType: ConfigurableRobotType,
     robot_id: string
 ): SchemaRobotInput | null => {
     if (!formData.payload.connection_string) {

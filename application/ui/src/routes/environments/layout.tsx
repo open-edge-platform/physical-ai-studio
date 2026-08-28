@@ -40,7 +40,7 @@ const MenuActions = ({ environment_id }: { environment_id: string }) => {
 
     return (
         <MenuTrigger>
-            <ActionButton isQuiet UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}>
+            <ActionButton isQuiet>
                 <MoreMenu />
             </ActionButton>
             <Menu

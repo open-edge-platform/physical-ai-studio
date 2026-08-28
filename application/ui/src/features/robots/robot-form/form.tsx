@@ -4,7 +4,7 @@ import { ChevronLeft } from '@geti-ui/ui/icons';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { useRobotCatalogQuery } from '../robot-catalog.hooks';
-import { SchemaRobotType } from '../robot-types';
+import { ConfigurableRobotType } from '../robot-types';
 import { SO101FormFields } from './catalog/so101';
 import { WidowxAIFormFields } from './catalog/widowxai';
 import { BiManualWidowxAIFormFields } from './catalog/widowxai-bimanual';
@@ -23,7 +23,7 @@ export const RobotType = () => {
             selectedKey={activeType}
             onSelectionChange={(selected) => {
                 if (selected !== null) {
-                    setActiveType(selected as SchemaRobotType);
+                    setActiveType(selected as ConfigurableRobotType);
                 }
             }}
         >

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from time import perf_counter
 from uuid import UUID, uuid4
@@ -20,6 +21,14 @@ from schemas.remote_trainer import (
 
 _HEALTH_CHECK_TIMEOUT_S = 5.0
 
+# RemoteTrainerService is instantiated fresh per request (see
+# api.dependencies.get_remote_trainer_service), so an instance-level cache
+# can't prevent concurrent requests for the same trainer (multiple browser
+# tabs/components polling at once) from each issuing their own /health,
+# /devices, /storage round trip. Coalesce those into one in-flight probe per
+# trainer, shared across requests via this module-level table.
+_inflight_checks: dict[UUID, asyncio.Task[RemoteTrainerHealth]] = {}
+
 
 class RemoteTrainerService:
     """Manage global direct remote trainer endpoint configurations."""
@@ -40,8 +49,29 @@ class RemoteTrainerService:
         return remote_trainer
 
     async def check_remote_trainer(self, remote_trainer_id: UUID) -> RemoteTrainerHealth:
-        """Check a configured trainer's liveness and available compute devices."""
+        """Check a configured trainer's liveness and available compute devices.
+
+        Concurrent callers (multiple browser tabs, or the trainers table and a
+        training dialog both polling the same trainer) share one in-flight
+        probe instead of each triggering their own /health, /devices,
+        /storage round trip against the trainer.
+        """
         remote_trainer = await self.get_remote_trainer(remote_trainer_id)
+        task = _inflight_checks.get(remote_trainer_id)
+        if task is None:
+            task = asyncio.ensure_future(self._probe_remote_trainer(remote_trainer_id, remote_trainer))
+            _inflight_checks[remote_trainer_id] = task
+
+            def _clear_inflight(done: asyncio.Task[RemoteTrainerHealth], trainer_id: UUID = remote_trainer_id) -> None:
+                if _inflight_checks.get(trainer_id) is done:
+                    del _inflight_checks[trainer_id]
+
+            task.add_done_callback(_clear_inflight)
+        return await task
+
+    @staticmethod
+    async def _probe_remote_trainer(remote_trainer_id: UUID, remote_trainer: RemoteTrainer) -> RemoteTrainerHealth:
+        """Probe a trainer's /health, /devices, /storage once and build its health report."""
         checked_at = datetime.now(UTC)
         started = perf_counter()
         base_url = str(remote_trainer.url).rstrip("/")
@@ -69,7 +99,7 @@ class RemoteTrainerService:
                         devices = [
                             device for device in validated_devices if device.type in {DeviceType.XPU, DeviceType.CUDA}
                         ]
-                        storage = await self._fetch_storage(client, base_url)
+                        storage = await RemoteTrainerService._fetch_storage(client, base_url)
         except httpx.TimeoutException:
             status, reason_code = "unreachable", "timeout"
         except httpx.HTTPStatusError:

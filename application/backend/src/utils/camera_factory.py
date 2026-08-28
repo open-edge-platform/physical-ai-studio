@@ -1,6 +1,6 @@
 """Factory for building camera instances from backend camera configs.
 
-Maps backend driver names to physicalai.capture ComponentConfig recipes and
+Maps backend driver names to physicalai.capture Config recipes and
 filters per-driver kwargs so that only constructor-safe parameters reach the camera.
 """
 
@@ -10,28 +10,32 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 from physicalai.capture import CameraType, ColorMode, SharedCamera
+from physicalai.config import Config
 
 if TYPE_CHECKING:
     from schemas.project_camera import Camera
 
-MIGRATED_DRIVERS: frozenset[str] = frozenset({"usb_camera", "realsense", "basler"})
+MIGRATED_DRIVERS: frozenset[str] = frozenset({"usb_camera", "realsense", "basler", "ipcam"})
 
 DRIVER_KEY_MAP: dict[str, str] = {
     "uvc": "usb_camera",
     "realsense": "realsense",
     "basler": "basler",
+    "ipcam": "ipcam",
 }
 
 _DRIVER_TO_CAMERA_TYPE: dict[str, CameraType] = {
     "usb_camera": CameraType.UVC,
     "realsense": CameraType.REALSENSE,
     "basler": CameraType.BASLER,
+    "ipcam": CameraType.IP,
 }
 
 _DRIVER_TO_CLASS_PATH: dict[str, str] = {
     "usb_camera": "physicalai.capture.UVCCamera",
     "realsense": "physicalai.capture.RealSenseCamera",
     "basler": "physicalai.capture.BaslerCamera",
+    "ipcam": "physicalai.capture.IPCamera",
 }
 
 # Per-driver kwargs that are safe to pass through to the nested camera recipe.
@@ -39,10 +43,12 @@ _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
     "usb_camera": frozenset({"width", "height", "fps"}),
     "realsense": frozenset({"width", "height", "fps"}),
     "basler": frozenset({"width", "height", "fps"}),
+    "ipcam": frozenset({"width", "height", "fps", "url"}),
 }
 
 
-def _camera_component_config(config: Camera) -> dict[str, Any]:
+def build_camera_config(config: Camera, *, device: str | None = None) -> Config:
+    """Build the direct physicalai camera recipe for a Studio camera row."""
     class_path = _DRIVER_TO_CLASS_PATH[config.driver]
     allowed = _ALLOWED_KWARGS.get(config.driver, frozenset())
 
@@ -54,11 +60,10 @@ def _camera_component_config(config: Camera) -> dict[str, Any]:
         # Strip legacy ":N" sub-device suffix (e.g. "/dev/video0:0" → "/dev/video0").
         if fingerprint.startswith("/dev/video") and ":" in fingerprint:
             fingerprint = fingerprint.split(":")[0]
-        init_args["device"] = fingerprint
-    else:
+        init_args["device"] = device or fingerprint
+    elif config.driver != "ipcam":
         init_args["serial_number"] = config.fingerprint
-
-    return {"class_path": class_path, "init_args": init_args}
+    return Config(class_path, init_args)
 
 
 def is_migrated(driver: str) -> bool:
@@ -107,7 +112,7 @@ def build_shared_camera(
         msg = f"unsupported driver {config.driver!r}; expected one of {sorted(MIGRATED_DRIVERS)}"
         raise ValueError(msg)
 
-    camera_config = _camera_component_config(config)
+    camera_config = build_camera_config(config)
     logger.debug(f"camera config for {config.name}: {camera_config}")
 
     return SharedCamera(

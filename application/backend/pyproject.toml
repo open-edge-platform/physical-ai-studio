@@ -11,7 +11,9 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
   "physicalai[robots, capture, transport]",
-  "physicalai-train[pi0,smolvla]",
+  "eclipse-zenoh==1.9.0",
+  "msgpack==1.2.1",
+  "physicalai-train[pi0,smolvla,rldx1]",
   "lerobot[dataset,feetech]==0.6.0",
   "torchcodec==0.11.1",
   "numpy",
@@ -35,6 +37,8 @@ dependencies = [
   "huggingface-hub>=0.27",
   "psutil~=7.2",
   "physicalai-studio-plugin",
+  "asyncssh~=2.24",
+  "packaging>=24.0",
 ]
 
 [project.scripts]
@@ -73,7 +77,6 @@ cuda = [
 xpu = [
     "torch>=2.11,<2.12",
     "torchvision>=0.26,<0.27",
-    "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 
 tests = [
@@ -120,7 +123,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "cb934cd2e3b2c47236e8839444cdbb71cf7a7e83" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9be95d88d5b9f8342f6952d8ec288fb108fa416e" }
 physicalai-studio-plugin = { path = "../plugin", editable = true }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
@@ -137,7 +140,8 @@ torchvision = [
     { index = "pytorch-cu128", extra = "cuda" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
-pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
+# torch's XPU build depends on triton-xpu transitively; pin its index.
+triton-xpu = { index = "pytorch-xpu" }
 
 [dependency-groups]
 dev = [
@@ -163,7 +167,7 @@ package = true
 default-groups = ["all"]
 exclude-newer = "7 days"
 # The pytorch-xpu index is non-explicit (explicit = false) because
-# transitive deps like pytorch-triton-xpu only exist on the XPU index.
+# transitive deps like triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale
 # copies of common packages; best-match avoids index-order shadowing.
 #

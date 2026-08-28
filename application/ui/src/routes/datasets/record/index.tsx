@@ -20,7 +20,7 @@ import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
-import { RobotControlProvider, useRobotControl } from '../../../features/robots/robot-control-provider';
+import { RuntimeSessionProvider, useRuntimeSession } from '../../../features/robots/runtime-session-provider';
 import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
@@ -28,7 +28,7 @@ import classes from './index.module.css';
 
 const TotalRecordedEpisodes = () => {
     const { dataset_id } = useDatasetId();
-    const { state } = useRobotControl();
+    const { state } = useRuntimeSession();
 
     const episodeQuery = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
         params: {
@@ -90,7 +90,7 @@ const RecordingPage = () => {
         }
     );
     return (
-        <RobotControlProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
+        <RuntimeSessionProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
             <Grid
                 areas={['header', 'content']}
                 UNSAFE_style={{
@@ -134,7 +134,7 @@ const RecordingPage = () => {
                     </View>
                 </View>
             </Grid>
-        </RobotControlProvider>
+        </RuntimeSessionProvider>
     );
 };
 

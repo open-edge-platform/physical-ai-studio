@@ -119,6 +119,8 @@ def _definitions() -> list[RobotCatalogDefinition[MyRobotPayload]]:
         RobotCatalogDefinition[MyRobotPayload](
             type="MyRobot_Follower",
             display_name="My Robot Follower",
+            category="My Robot",
+            source="external",
             role="follower",
             robot_builder=_build_my_robot,
             robot_payload=MyRobotPayload,
@@ -126,6 +128,7 @@ def _definitions() -> list[RobotCatalogDefinition[MyRobotPayload]]:
                 urdf_relative_path=Path("my_robot/model.urdf"),
                 packages={"my_robot": Path("my_robot")},
                 joint_map={"gripper.pos": ["gripper"]},
+                preview_thumbnail=Path("my_robot/thumbnail.png"),
                 root_resolver=lambda: Path("/path/to/urdf"),
             ),
             adapter_options=RobotAdapterOptions(include_velocities=True),
@@ -143,6 +146,15 @@ def register_physicalai_studio_plugin(registry: Any) -> None:
 
 ## API Reference
 
+### Robot Form UI Schema
+
+`robot_payload_ui(...)` defines optional ordered form presentation metadata for
+a Pydantic payload model. Before publishing a plugin, call
+`validate_robot_payload_ui(MyPayload)` in a test to verify that item shapes,
+field references, connection bindings, and ownership are valid. Studio also
+validates payload UI metadata during catalog registration and rejects invalid
+robot definitions with an actionable error.
+
 ### `RobotCatalogDefinition`
 
 The primary data class that describes a robot type to Studio. Generic over the payload model — use ``RobotCatalogDefinition[MyRobotPayload]`` to link the payload, probe, and robot builder types together.
@@ -153,6 +165,8 @@ class RobotCatalogDefinition(Generic[_PayloadT]):
     type: str                        # Unique identifier, e.g. "MyRobot_Follower"
     display_name: str                # Human-readable name
     role: Literal["follower", "leader"]
+    category: str = "Other"
+    source: Literal["internal", "first_party", "external"] = "external"
     robot_builder: BuildRobotCallable | None = None
     robot_payload: type[_PayloadT] | None = None
     asset: RobotAsset | None = None
@@ -165,9 +179,11 @@ class RobotCatalogDefinition(Generic[_PayloadT]):
 | `type` | Stable identifier used in DB storage and API paths. Must be unique across all plugins. Convention: PascalCase with underscores, e.g. `"MyRobot_Follower"`. |
 | `display_name` | Human-readable name shown in the Studio UI. |
 | `role` | Either `"follower"` (executes actions) or `"leader"` (provides demonstrations). |
+| `category` | Short UI grouping label, such as `"ReBot"` or `"SO101"`. |
+| `source` | Ownership classification: `"internal"`, `"first_party"`, or `"external"`. |
 | `robot_builder` | Async callable that receives a robot payload and factory, returns a `PhysicalAIRobot` instance. |
 | `robot_payload` | A Pydantic `BaseModel` subclass defining the configuration fields for this robot type (e.g. `serial_number`, `connection_string`). |
-| `asset` | URDF and package maps for 3D visualization. |
+| `asset` | Optional URDF and package maps for 3D visualization. Entries without one remain configurable but have no 3D preview. |
 | `adapter_options` | Controls velocity/effort forwarding behavior. |
 | `probe` | Optional [`RobotProbe[_PayloadT]`](#robotprobe) typed to the same payload model. |
 
@@ -190,6 +206,7 @@ class RobotAsset:
     packages: dict[str, Path]
     joint_map: dict[str, list[str]]
     root_resolver: Callable[[], Path] | None = None
+    preview_thumbnail: Path | None = None
 ```
 
 | Field | Description |
@@ -197,6 +214,7 @@ class RobotAsset:
 | `urdf_relative_path` | Path to the URDF file, relative to the packages root. |
 | `packages` | Maps ROS package names to their filesystem paths, e.g. `{"my_robot": Path("my_robot")}`. |
 | `joint_map` | Maps Studio's observation key names (e.g. `"gripper.pos"`) to URDF joint name(s). |
+| `preview_thumbnail` | Optional image path relative to the asset root, used by the catalog-card preview. |
 | `root_resolver` | Callable that returns the root directory for URDF lookup. Used by Studio to resolve URDF paths for the API. |
 
 ### `RobotProbe`

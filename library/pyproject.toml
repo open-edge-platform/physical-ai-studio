@@ -36,8 +36,8 @@ dependencies = [
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
-    "openvino>=2026.0",
-    "openvino_tokenizers>=2026.0",
+    "openvino>=2026.3",
+    "openvino_tokenizers>=2026.3",
     "onnxscript",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
@@ -54,7 +54,6 @@ cu128 = ["torch", "torchvision"]
 xpu = [
     "torch",
     "torchvision",
-    "pytorch-triton-xpu ; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 # Testing dependencies
 tests = [
@@ -106,6 +105,16 @@ smolvla = [
     "safetensors>=0.4.3,<1.0.0",
 ]
 
+# RLWRLD RLDX-1
+rldx1 = [
+    "transformers>=5.3.0,<5.6.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+    "scipy>=1.11.0,<2.0.0",
+    "peft>=0.13.0,<1.0.0",
+    "diffusers>=0.38.0",
+]
+
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
 
@@ -120,6 +129,7 @@ all = [
     "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
+    "physicalai-train[rldx1]",
 ]
 
 # Contribute Torch and ExecuTorch as inference backends to the registry
@@ -196,7 +206,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "cb934cd2e3b2c47236e8839444cdbb71cf7a7e83" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9be95d88d5b9f8342f6952d8ec288fb108fa416e" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -208,7 +218,6 @@ torchvision = [
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 
-pytorch-triton-xpu = [{ index = "pytorch-xpu", extra = "xpu" }]
 triton-xpu = { index = "pytorch-xpu" }
 
 
@@ -238,6 +247,10 @@ project-excludes = [
     "src/physicalai/gyms/robocasa.py",
     "src/physicalai/policies/pi05/pi_gemma.py",
     "src/physicalai/policies/groot/components/backbone.py",
+    # rldx1's model.py lazily imports peft, an optional dep not present in the
+    # main `.venv`; guarded at runtime with a clear ImportError if missing.
+    "src/physicalai/policies/rldx1/model.py",
+    "src/physicalai/policies/rldx1/components/backbone/modeling_qwen3_vl.py",
 ]
 
 
@@ -257,6 +270,8 @@ extend-exclude = [
     "examples",
     "tests",
     "notebooks", # Jupyter notebooks have different style requirements
+    # Auto-generated from transformers' modular_qwen3_vl.py; not hand-maintained.
+    "src/physicalai/policies/rldx1/components/backbone/modeling_qwen3_vl.py",
 ]
 
 [tool.ruff.lint]

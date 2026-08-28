@@ -20,12 +20,15 @@ from services import (
     ProjectCameraService,
     ProjectService,
     ProjectThumbnailService,
+    RemoteServerService,
     RemoteTrainerService,
     RobotService,
 )
+from services.camera_claims import CameraClaimRegistry
 from services.dataset_import.service import DatasetImportService
 from services.environment_service import EnvironmentService
 from services.event_processor import EventProcessor
+from services.health_service import HealthService
 from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_catalog_service import RobotCatalogService
@@ -33,7 +36,6 @@ from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
 from settings import Settings, get_settings
 from utils.serial_robot_tools import RobotConnectionManager
-from workers.model_worker_registry import ModelWorkerRegistry
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_db_session)]
@@ -61,6 +63,17 @@ def get_system_service() -> SystemService:
 SystemServiceDep = Annotated[SystemService, Depends(get_system_service)]
 
 
+def get_health_service(request: HTTPConnection) -> HealthService:
+    """Provide the process-local health service initialized during application startup."""
+    health_service = getattr(request.app.state, "health_service", None)
+    if health_service is None:
+        raise RuntimeError("Health service not initialized")
+    return cast("HealthService", health_service)
+
+
+HealthServiceDep = Annotated[HealthService, Depends(get_health_service)]
+
+
 def get_project_service(session: AsyncSessionDep) -> ProjectService:
     """Provide a ProjectService instance for managing projects."""
     return ProjectService(session)
@@ -77,9 +90,26 @@ def get_remote_trainer_service(session: AsyncSessionDep) -> RemoteTrainerService
 RemoteTrainerServiceDep = Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)]
 
 
-def get_robot_service(session: AsyncSessionDep) -> RobotService:
+@lru_cache
+def get_robot_catalog_service() -> RobotCatalogService:
+    """Provide a RobotCatalogService instance for the robot catalog."""
+    return RobotCatalogService()
+
+
+RobotCatalogServiceDep = Annotated[RobotCatalogService, Depends(get_robot_catalog_service)]
+
+
+def get_remote_server_service(session: AsyncSessionDep) -> RemoteServerService:
+    """Provide a request-scoped service for SSH-provisioned training servers."""
+    return RemoteServerService(session)
+
+
+RemoteServerServiceDep = Annotated[RemoteServerService, Depends(get_remote_server_service)]
+
+
+def get_robot_service(session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep) -> RobotService:
     """Provide a RobotService instance for managing robots in a project."""
-    return RobotService(session)
+    return RobotService(session, catalog_service.registry)
 
 
 RobotServiceDep = Annotated[RobotService, Depends(get_robot_service)]
@@ -98,38 +128,32 @@ def get_robot_manager_service(request: HTTPConnection) -> RobotConnectionManager
 RobotConnectionManagerDep = Annotated[RobotConnectionManager, Depends(get_robot_manager_service)]
 
 
-def get_robot_client_factory(robot_manager: RobotConnectionManagerDep) -> RobotClientFactory:
+def get_robot_client_factory(
+    robot_manager: RobotConnectionManagerDep,
+    catalog_service: RobotCatalogServiceDep,
+) -> RobotClientFactory:
     """Provide a RobotClientFactory bound to the application robot manager.
 
     Request scoped: the factory is a thin wrapper around the shared
     RobotConnectionManager and is the seam used to fake robot hardware in tests.
     """
-    return RobotClientFactory(robot_manager=robot_manager)
+    return RobotClientFactory(robot_manager=robot_manager, catalog_registry=catalog_service.registry)
 
 
 RobotClientFactoryDep = Annotated[RobotClientFactory, Depends(get_robot_client_factory)]
 
 
-@lru_cache
-def get_robot_catalog_service() -> RobotCatalogService:
-    """Provide a RobotCatalogService instance for the robot catalog."""
-    return RobotCatalogService()
-
-
-RobotCatalogServiceDep = Annotated[RobotCatalogService, Depends(get_robot_catalog_service)]
-
-
-def get_camera_service(session: AsyncSessionDep) -> ProjectCameraService:
+def get_camera_service(session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep) -> ProjectCameraService:
     """Provide a ProjectCameraService instance for managing cameras in a project."""
-    return ProjectCameraService(session)
+    return ProjectCameraService(session, catalog_service.registry)
 
 
 ProjectCameraServiceDep = Annotated[ProjectCameraService, Depends(get_camera_service)]
 
 
-def get_environment_service(session: AsyncSessionDep) -> EnvironmentService:
+def get_environment_service(session: AsyncSessionDep, catalog_service: RobotCatalogServiceDep) -> EnvironmentService:
     """Provide a EnvironmentService instance for managing environments in a project."""
-    return EnvironmentService(session)
+    return EnvironmentService(session, catalog_service.registry)
 
 
 EnvironmentServiceDep = Annotated[EnvironmentService, Depends(get_environment_service)]
@@ -202,7 +226,7 @@ ModelDownloadServiceDep = Annotated[ModelDownloadService, Depends(get_model_down
 
 def get_job_service(session: AsyncSessionDep) -> JobService:
     """Provides a JobService instance for managing jobs."""
-    return JobService(session, RemoteTrainerService(session))
+    return JobService(session, RemoteTrainerService(session), RemoteServerService(session))
 
 
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]
@@ -281,6 +305,13 @@ def get_environment_id(environment_id: str) -> UUID:
     return UUID(environment_id)
 
 
+def get_remote_server_id(remote_server_id: str) -> UUID:
+    """Initialize and validate a remote server ID."""
+    if not is_valid_uuid(remote_server_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid remote server ID")
+    return UUID(remote_server_id)
+
+
 def get_scheduler(request: HTTPConnection) -> Scheduler:
     """Provide the global Scheduler instance.
 
@@ -300,23 +331,12 @@ def get_event_processor_ws(request: HTTPConnection) -> EventProcessor:
 EventProcessorDep = Annotated[EventProcessor, Depends(get_event_processor_ws)]
 
 
-def get_recording_locked_camera_fingerprints(request: HTTPConnection) -> set[str]:
-    """Set of camera fingerprints locked by an active recording session."""
-    locked = getattr(request.app.state, "recording_locked_camera_fingerprints", None)
-    if locked is None:
-        raise RuntimeError("Recording lock state not initialized")
-    return cast("set[str]", locked)
-
-
-RecordingLockedCamerasDep = Annotated[set[str], Depends(get_recording_locked_camera_fingerprints)]
-
-
-def get_model_registry(request: HTTPConnection) -> ModelWorkerRegistry:
-    """Dependency to get model worker registry."""
-    registry = getattr(request.app.state, "model_registry", None)
+def get_camera_claim_registry(request: HTTPConnection) -> CameraClaimRegistry:
+    """Return the process-local camera claim registry."""
+    registry = getattr(request.app.state, "camera_claim_registry", None)
     if registry is None:
-        raise RuntimeError("Model worker registry not initialized")
-    return cast("ModelWorkerRegistry", registry)
+        raise RuntimeError("Camera claim registry is not initialized")
+    return cast("CameraClaimRegistry", registry)
 
 
-ModelRegistryDep = Annotated[ModelWorkerRegistry, Depends(get_model_registry)]
+CameraClaimRegistryDep = Annotated[CameraClaimRegistry, Depends(get_camera_claim_registry)]

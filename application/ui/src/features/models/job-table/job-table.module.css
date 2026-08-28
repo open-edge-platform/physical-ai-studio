@@ -1,0 +1,11 @@
+.rowInfo {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.progressBar div {
+    border-radius: 0px !important;
+}
+
+.progressBar div[class*='spectrum-BarLoader-fill'] {
+    background-color: var(--energy-blue);
+}

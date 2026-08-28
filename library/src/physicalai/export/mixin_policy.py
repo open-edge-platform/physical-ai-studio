@@ -6,6 +6,11 @@
 import inspect
 import logging
 import tempfile
+<<<<<<< HEAD
+=======
+from collections.abc import Generator, Iterable
+from contextlib import contextmanager
+>>>>>>> origin/main
 from os import PathLike
 from pathlib import Path
 from typing import Any, cast
@@ -44,28 +49,43 @@ DATASET_STATS_KEY = "dataset_stats"
 # Their warnings and errors still matter, so only INFO and below is suppressed.
 _VERBOSE_ONNX_EXPORT_LOGGERS = ("onnxscript", "onnx_ir")
 
+# openvino.convert_model() probes a string/Path input against several PyTorch
+# loaders (torch.jit.load, then torch.export.load) before falling back to its
+# ONNX frontend. When the input is actually a plain ONNX file (our via_onnx
+# OpenVINO export path), the torch.export.load() probe always fails and torch
+# logs it at WARNING with a full traceback (exc_info=True), even though the
+# RuntimeError is caught internally by both torch and OpenVINO and is harmless.
+_ONNX_PROBE_NOISE_LOGGERS = ("torch.export",)
+
 
 @contextmanager
-def _quiet_onnx_export_logs() -> Generator[None, None, None]:
-    """Raise the ONNX exporter loggers to WARNING for the duration of the block.
+def _quiet_loggers(names: Iterable[str], level: int = logging.WARNING) -> Generator[None, None, None]:
+    """Raise the given loggers to `level` for the duration of the block.
 
     Usable as either a context manager or a decorator. Loggers that already sit
-    at WARNING or above (for example because the caller configured them
+    at `level` or above (for example because the caller configured them
     explicitly) are left untouched, and every level is restored on exit even if
-    the export raises.
+    the block raises.
     """
     restore: list[tuple[logging.Logger, int]] = []
-    for name in _VERBOSE_ONNX_EXPORT_LOGGERS:
-        onnx_logger = logging.getLogger(name)
-        if onnx_logger.getEffectiveLevel() >= logging.WARNING:
+    for name in names:
+        target_logger = logging.getLogger(name)
+        if target_logger.getEffectiveLevel() >= level:
             continue
-        restore.append((onnx_logger, onnx_logger.level))
-        onnx_logger.setLevel(logging.WARNING)
+        restore.append((target_logger, target_logger.level))
+        target_logger.setLevel(level)
     try:
         yield
     finally:
-        for onnx_logger, level in restore:
-            onnx_logger.setLevel(level)
+        for target_logger, restored_level in restore:
+            target_logger.setLevel(restored_level)
+
+
+@contextmanager
+def _quiet_onnx_export_logs() -> Generator[None, None, None]:
+    """Raise the ONNX exporter loggers to WARNING for the duration of the block."""
+    with _quiet_loggers(_VERBOSE_ONNX_EXPORT_LOGGERS):
+        yield
 
 
 class ExportablePolicyMixin:
@@ -456,12 +476,34 @@ class ExportablePolicyMixin:
 
         self.model.eval()
 
+<<<<<<< HEAD
         if extra_model_args.via_onnx:
             with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
                 self._onnx_core_export_step(
                     model_path=Path(tmp.name),
                     input_sample=input_sample,
                     arg_name=arg_name,
+=======
+            if extra_model_args.via_onnx:
+                with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
+                    self._onnx_core_export_step(
+                        model_path=Path(tmp.name),
+                        input_sample=input_sample,
+                        arg_name=arg_name,
+                        **extra_export_kwargs,
+                    )
+                    with _quiet_loggers(_ONNX_PROBE_NOISE_LOGGERS, level=logging.ERROR):
+                        ov_model = openvino.convert_model(
+                            tmp.name,
+                            example_input={arg_name: input_sample},
+                            input=input_shapes,
+                        )
+            else:
+                ov_model = openvino.convert_model(
+                    self.model,
+                    example_input={arg_name: input_sample},
+                    input=input_shapes,
+>>>>>>> origin/main
                     **extra_export_kwargs,
                 )
                 ov_model = openvino.convert_model(
@@ -543,7 +585,6 @@ class ExportablePolicyMixin:
                 implement ``sample_input`` property.
             ImportError: If the required ``executorch`` package (or selected delegate
                 dependencies) is not installed.
-            ValueError: If an unsupported delegate is specified.
         """
         if ExportBackend.EXECUTORCH not in self.get_supported_export_backends():
             msg = (
@@ -580,10 +621,68 @@ class ExportablePolicyMixin:
             msg = "executorch package is required for ExecuTorch export. Install with: pip install executorch"
             raise ImportError(msg) from e
 
+        # ExecuTorch doesn't support CUDA/XPU tensors (segfaults instead of
+        # raising), so trace on CPU. Original device/train mode are always
+        # restored.
+        original_device = self.device
+        was_training = self.model.training
+        self.model.to("cpu")
         self.model.eval()
+        try:
+            self._export_executorch_pte(
+                model_path=model_path,
+                input_sample=input_sample,
+                extra_export_kwargs=extra_export_kwargs,
+                delegate=delegate,
+                delegate_config=delegate_config,
+                to_edge_transform_and_lower=to_edge_transform_and_lower,
+            )
+        finally:
+            self.model.to(original_device)
+            self.model.train(was_training)
+
+        self.create_manifest(
+            export_dir,
+            ExportBackend.EXECUTORCH,
+            runner=ComponentSpec.from_class(SinglePass),
+            input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
+            output_names=extra_model_args.output_names,
+            input_features=self._to_component_specs(self.inputs_schema or []),
+            output_features=self._to_component_specs(self.outputs_schema or []),
+        )
+
+        return model_path
+
+    def _export_executorch_pte(
+        self,
+        model_path: Path,
+        input_sample: dict[str, torch.Tensor],
+        extra_export_kwargs: dict,
+        delegate: "ExecuTorchDelegate | None",
+        delegate_config: dict[str, Any] | None,
+        to_edge_transform_and_lower: Any,  # noqa: ANN401
+    ) -> None:
+        """Trace, lower, and serialize ``self.model`` to a ``.pte`` file.
+
+        Assumes ``self.model`` is already on CPU and in eval mode; the caller
+        is responsible for restoring the original device/train mode.
+
+        Args:
+            model_path: Destination path for the serialized ``.pte`` file.
+            input_sample: Input tensor dictionary used to trace the model.
+            extra_export_kwargs: Extra keyword arguments for ``torch.export.export``.
+            delegate: ExecuTorch delegate backend to use.
+            delegate_config: Optional delegate-specific configuration.
+            to_edge_transform_and_lower: The imported ``executorch.exir.to_edge_transform_and_lower`` function.
+
+        Raises:
+            ValueError: If an unsupported delegate is specified.
+            ImportError: If the selected delegate's dependencies are not installed.
+        """
+        cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
         aten_dialect = torch.export.export(
             self.model,
-            args=(input_sample,),
+            args=(cpu_input_sample,),
             **extra_export_kwargs,
         )
 
@@ -621,18 +720,6 @@ class ExportablePolicyMixin:
 
         with model_path.open("wb") as f:
             exec_program.write_to_file(f)
-
-        self.create_manifest(
-            export_dir,
-            ExportBackend.EXECUTORCH,
-            runner=ComponentSpec.from_class(SinglePass),
-            input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
-            output_names=extra_model_args.output_names,
-            input_features=self._to_component_specs(self.inputs_schema or []),
-            output_features=self._to_component_specs(self.outputs_schema or []),
-        )
-
-        return model_path
 
     def export(
         self,

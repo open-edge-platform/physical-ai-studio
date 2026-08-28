@@ -28,11 +28,12 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 from physicalai.policies.base import Policy
+from physicalai.policies.mixins import SnapFlowPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
-from .model import SmolVLAModel
+from .model import SmolVLAModel, VLAFlowMatching
 from .pretrained_utils import extract_dataset_stats, fix_state_dict_keys
 
 if TYPE_CHECKING:
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SmolVLA(ExportablePolicyMixin, Policy):
+class SmolVLA(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
     """SmolVLA Policy - Hugging Face's flow matching VLA model.
 
     Lightning wrapper for training and inference with SmolVLA model.
@@ -676,6 +677,26 @@ class SmolVLA(ExportablePolicyMixin, Policy):
                 "interval": "step",
             },
         }
+
+    @property
+    def inner_model(self) -> VLAFlowMatching:
+        """The unwrapped SmolVLA flow-matching module.
+
+        Raises:
+            RuntimeError: If accessed before ``setup()`` has initialized the model.
+        """
+        if self.model is None:
+            msg = "inner_model accessed before the model was initialized (setup() has not run yet)."
+            raise RuntimeError(msg)
+        return self.model._model  # noqa: SLF001
+
+    def freeze_vlm(self) -> None:
+        """Freeze the VLM so only the action expert and target-time embedding train."""
+        inner = self.inner_model
+        object.__setattr__(self.config, "train_expert_only", True)  # noqa: PLC2801
+        inner.vlm_with_expert.train_expert_only = True
+        inner.vlm_with_expert.set_requires_grad()
+        self.model.train()
 
     def configure_gradient_clipping(
         self,

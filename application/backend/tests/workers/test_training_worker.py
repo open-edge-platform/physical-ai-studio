@@ -9,7 +9,7 @@ import queue
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -17,7 +17,13 @@ import pytest
 import core.scheduler  # noqa: F401
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Snapshot
-from schemas.job import TrainingPrecision, TrainingTarget, TrainJobPayload
+from schemas.job import (
+    LocalTrainJobPayload,
+    RemoteTrainJobPayload,
+    SshTrainJobPayload,
+    TrainingPrecision,
+    TrainJobPayload,
+)
 from schemas.model import Model
 
 if TYPE_CHECKING:
@@ -35,7 +41,7 @@ MODULE = "workers.training_worker"
 def _make_payload(
     *, compile_model: bool = True, precision: TrainingPrecision = TrainingPrecision.BF16_MIXED
 ) -> TrainJobPayload:
-    return TrainJobPayload(
+    return LocalTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
@@ -46,6 +52,26 @@ def _make_payload(
         auto_scale_batch_size=False,
         compile_model=compile_model,
         precision=precision,
+    )
+
+
+def _make_remote_payload(*, remote_trainer_id: UUID | None = None) -> RemoteTrainJobPayload:
+    return RemoteTrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="test-model",
+        remote_trainer_id=remote_trainer_id or uuid4(),
+    )
+
+
+def _make_ssh_payload(*, remote_server_id: UUID | None = None) -> SshTrainJobPayload:
+    return SshTrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="test-model",
+        remote_server_id=remote_server_id or uuid4(),
     )
 
 
@@ -164,7 +190,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService"),
@@ -202,7 +228,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -241,7 +267,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -277,7 +303,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -315,7 +341,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -355,7 +381,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -400,7 +426,7 @@ class TestTraining:
 
         with (
             patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
-            patch(f"{MODULE}.get_training_backend", return_value=backend),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
             patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
             patch(f"{MODULE}.JobService") as MockJobService,
             patch(f"{MODULE}.ModelService") as MockModelService,
@@ -444,13 +470,96 @@ class TestTraining:
             assert args[1].snapshot_id == snapshot_id
 
 
+class TestTargetKey:
+    """`_target_key` must give every remote kind its own key namespace."""
+
+    def test_local_target_key(self) -> None:
+        from workers.training_worker import TrainingWorker
+
+        payload = _make_payload()
+        assert TrainingWorker._target_key(payload) == "local"
+
+    def test_remote_target_key_uses_remote_trainer_id(self) -> None:
+        from workers.training_worker import TrainingWorker
+
+        payload = _make_remote_payload()
+        assert TrainingWorker._target_key(payload) == f"remote:{payload.remote_trainer_id}"
+
+    def test_ssh_target_key_uses_remote_server_id(self) -> None:
+        from workers.training_worker import TrainingWorker
+
+        payload = _make_ssh_payload()
+        assert TrainingWorker._target_key(payload) == f"ssh:{payload.remote_server_id}"
+
+    def test_ssh_and_remote_targets_never_collide_on_none(self) -> None:
+        """Two well-formed jobs on different servers never collapse onto one key."""
+        from workers.training_worker import TrainingWorker
+
+        first = _make_ssh_payload()
+        second = _make_ssh_payload()
+
+        first_key = TrainingWorker._target_key(first)
+        second_key = TrainingWorker._target_key(second)
+
+        assert first_key != second_key
+        assert "None" not in first_key
+        assert "None" not in second_key
+
+
+class TestSetupRecovery:
+    """`setup()` must recover SSH jobs before the generic orphan abort runs."""
+
+    @pytest.mark.anyio
+    async def test_setup_runs_ssh_recovery_before_generic_orphan_abort(self, worker) -> None:
+        from workers.training_worker import TrainingWorker
+
+        calls: list[str] = []
+        handled_job_id = uuid4()
+
+        async def fake_recover_ssh_jobs() -> frozenset[UUID]:
+            calls.append("recover_ssh_jobs")
+            return frozenset({handled_job_id})
+
+        async def fake_abort_orphan_jobs(*, exclude_job_ids: frozenset[UUID] | None = None) -> None:
+            calls.append("abort_orphan_jobs")
+            assert exclude_job_ids == frozenset({handled_job_id})
+
+        with (
+            patch.object(TrainingWorker, "_recover_ssh_jobs", staticmethod(fake_recover_ssh_jobs)),
+            patch.object(TrainingWorker, "_abort_orphan_jobs", staticmethod(fake_abort_orphan_jobs)),
+            patch(f"{MODULE}.BaseProcessWorker.setup", new=AsyncMock()),
+        ):
+            await worker.setup()
+
+        assert calls == ["recover_ssh_jobs", "abort_orphan_jobs"]
+
+    @pytest.mark.anyio
+    async def test_recover_ssh_jobs_wires_recovery_dependencies(self, worker) -> None:
+        """`_recover_ssh_jobs` builds the repo/service trio and logs the report."""
+        from services.ssh.recovery import SshRecoveryReport
+
+        report = SshRecoveryReport(confirmed=1, transient=2, failed=3, stale_rows_cleaned=4, orphans_removed=5)
+
+        with (
+            patch(f"{MODULE}.JobProvisioningRepository") as MockProvisioningRepo,
+            patch(f"{MODULE}.RemoteServerService") as MockRemoteServerService,
+            patch(f"{MODULE}.JobService") as MockJobService,
+            patch(f"{MODULE}.recover_ssh_jobs", AsyncMock(return_value=report)) as mock_recover,
+        ):
+            await worker._recover_ssh_jobs()
+
+            mock_recover.assert_awaited_once_with(
+                MockJobService.return_value,
+                MockProvisioningRepo.return_value,
+                MockRemoteServerService.return_value,
+            )
+
+
 class TestTrainingScheduling:
     @pytest.mark.anyio
     async def test_jobs_on_distinct_targets_start_without_waiting(self, worker) -> None:
         """A local job and jobs on separate remote trainers run concurrently."""
-        remote_payload = _make_payload()
-        remote_payload.training_target = TrainingTarget.REMOTE
-        remote_payload.remote_trainer_id = uuid4()
+        remote_payload = _make_remote_payload()
         other_remote_payload = remote_payload.model_copy(update={"remote_trainer_id": uuid4()})
         jobs = [_make_job(_make_payload()), _make_job(remote_payload), _make_job(other_remote_payload)]
         worker._active_training_tasks = {}
@@ -469,9 +578,7 @@ class TestTrainingScheduling:
     @pytest.mark.anyio
     async def test_second_job_on_same_target_remains_pending(self, worker) -> None:
         """Only the oldest job for an occupied local or remote target starts."""
-        remote_payload = _make_payload()
-        remote_payload.training_target = TrainingTarget.REMOTE
-        remote_payload.remote_trainer_id = uuid4()
+        remote_payload = _make_remote_payload()
         jobs = [
             _make_job(_make_payload()),
             _make_job(_make_payload()),

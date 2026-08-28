@@ -61,6 +61,7 @@ def job(project_id, dataset_id):
             "type": "training",
             "status": "completed",
             "payload": {
+                "training_target": "local",
                 "project_id": str(project_id),
                 "dataset_id": str(dataset_id),
                 "policy": "act",

@@ -4,6 +4,7 @@ import { Button, Divider, Flex, Heading, Icon, View } from '@geti-ui/ui';
 import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { RadioDisclosure } from '../../../components/radio-disclosure-group/radio-disclosure-group';
+import { featureFlags } from '../../../config/feature-flags';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { CameraIcon } from './camera-icon';
@@ -84,7 +85,7 @@ const CameraFormFields = () => {
             value: 'ipcam' as const,
             icon: <CameraIcon type='ipcam' width={'24px'} />,
             content: <IpCamFormFields />,
-            visible: false, // Disable IP cameras until tested
+            visible: featureFlags.ipCamera,
         },
     ].filter((item) => item.visible);
 

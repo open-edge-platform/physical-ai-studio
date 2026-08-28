@@ -1,47 +1,6 @@
-.tableHeader {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: subgrid;
-    align-items: center;
-    padding: var(--spectrum-global-dimension-size-150) var(--spectrum-global-dimension-size-200);
-    background: var(--spectrum-global-color-gray-200);
-    text-transform: uppercase;
-    font-size: var(--spectrum-global-dimension-font-size-50);
-}
-
-.rowExpanded {
-    background: var(--spectrum-global-color-gray-75);
-    box-shadow: inset 3px 0 var(--energy-blue);
-}
-
-.disclosureButton {
-    transition: transform 0.2s ease;
-
-    &[aria-expanded='true'] {
-        transform: rotate(90deg);
-    }
-}
-
 .cardMetaText {
     color: var(--spectrum-global-color-gray-600);
     font-size: var(--spectrum-global-dimension-font-size-50);
-}
-
-.trainerRow {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: subgrid;
-    align-items: center;
-    padding: var(--spectrum-global-dimension-size-150) var(--spectrum-global-dimension-size-200);
-    border-top: 1px solid var(--spectrum-global-color-gray-300);
-    cursor: pointer;
-    background: var(--spectrum-global-color-gray-100);
-
-    transition: box-shadow 0.2s ease;
-
-    &:hover {
-        background: var(--spectrum-global-color-gray-200);
-    }
 }
 
 .healthStatus::before {

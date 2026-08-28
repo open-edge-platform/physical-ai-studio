@@ -225,7 +225,6 @@ jobs:
 
           # Verify volumes were created (compose only)
           if [ "${DEVICE}" != "cuda" ]; then
-            docker volume ls | grep physical-ai-studio-data || { echo "Data volume missing"; eval "${CLEANUP_CMD}"; exit 1; }
             docker volume ls | grep physical-ai-studio-storage || { echo "Storage volume missing"; eval "${CLEANUP_CMD}"; exit 1; }
             echo "Volumes created successfully"
           fi

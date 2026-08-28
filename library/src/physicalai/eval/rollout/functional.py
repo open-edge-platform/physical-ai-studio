@@ -20,7 +20,7 @@ import torch
 from torch import Tensor
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from physicalai.data import Observation
     from physicalai.eval.video import VideoRecorder
@@ -156,10 +156,9 @@ def _get_max_steps(env: Gym, max_steps: int | None) -> int:
     """
     if max_steps is not None:
         return max_steps
-    if hasattr(env, "max_steps"):
-        env_max = int(env.max_steps)  # type: ignore[attr-defined]
-        if env_max is not None:
-            return env_max
+    env_max = env.get_max_episode_steps()
+    if env_max is not None:
+        return int(env_max)
     return 1000  # Default fallback
 
 
@@ -202,20 +201,32 @@ def _process_step_outputs(
 
 def _collect_frame(
     observation: Observation,
-    frame_key: str,
+    frame_key: str | Sequence[str],
 ) -> np.ndarray | None:
     """Extract a frame from observation for visualization.
 
     Args:
         observation: Current observation
-        frame_key: Key to extract from observation.images
+        frame_key: Key to extract from observation.images. Pass a sequence of
+            keys (e.g. multiple camera views) to stack them side-by-side
+            horizontally into a single frame.
 
     Returns:
-        Frame as numpy array (H, W, C) or None if not available
+        Frame as numpy array (H, W, C), or (H, W*N, C) when `frame_key` is a
+        sequence, or None if not available.
     """
     if not hasattr(observation, "images") or observation.images is None:
         return None
     images = observation.images
+
+    if not isinstance(frame_key, str):
+        if not isinstance(images, dict):
+            return None
+        frames = [
+            torch.as_tensor(images[key]).squeeze(0).permute(1, 2, 0).cpu().numpy() for key in frame_key if key in images
+        ]
+        return np.concatenate(frames, axis=1) if frames else None
+
     # images can be a Tensor (single camera) or dict (multiple cameras)
     if isinstance(images, (Tensor, np.ndarray)):
         img = torch.as_tensor(images)
@@ -233,6 +244,7 @@ def setup_rollout(
     policy: Policy,
     seed: int | None,
     max_steps: int | None,
+    rollout_idx: int = 0,
 ) -> tuple[Observation, int]:
     """Set up rollout by attaching max_steps, seed, resetting policy and providing first observation.
 
@@ -241,6 +253,7 @@ def setup_rollout(
         policy (Policy): policy to reset if it has attribute.
         seed (int | None): seed to init reset.
         max_steps (int | None): maximum number of steps
+        rollout_idx (int): index of the current rollout. Defaults to 0.
 
     Returns:
         tuple[Observation, int]: First Observation and maximum number of steps of rollout
@@ -248,7 +261,7 @@ def setup_rollout(
     max_steps = _get_max_steps(env, max_steps)
 
     # Reset environment → batched observation
-    observation, _ = env.reset(seed=seed)
+    observation, _ = env.reset(seed=seed, episode_index=rollout_idx)
 
     # Reset policy if needed
     if hasattr(policy, "reset") and callable(policy.reset):
@@ -266,7 +279,7 @@ def run_rollout_loop(  # noqa: PLR0914
     render_callback: Callable[[Gym], None] | None,
     return_observations: bool = False,
     return_frames: bool = False,
-    frame_key: str = "image",
+    frame_key: str | Sequence[str] = "image",
     video_recorder: VideoRecorder | None = None,
 ) -> tuple[_EpisodeData, int, float]:
     """Run a full rollout loop.
@@ -279,7 +292,8 @@ def run_rollout_loop(  # noqa: PLR0914
         render_callback (Callable[[Gym], None] | None, optional): Optional callback for gym to render.
         return_observations (bool, optional): Optional save observations and return after rollout.
         return_frames (bool, optional): Whether to collect rendered frames for visualization.
-        frame_key (str, optional): Key for extracting frames from observation images.
+        frame_key (str | Sequence[str], optional): Key(s) for extracting frames from observation
+            images. A sequence of keys stacks the views horizontally.
         video_recorder (VideoRecorder | None, optional): Video recorder for capturing frames.
             Recording happens DURING the loop - no separate pass needed.
 
@@ -292,6 +306,15 @@ def run_rollout_loop(  # noqa: PLR0914
     batch_size = observation.batch_size
     done_mask = torch.zeros(batch_size, dtype=torch.bool)
     success_mask = torch.zeros(batch_size, dtype=torch.bool)
+
+    # Some gyms (e.g. RoboCasa) only know the task description after reset(),
+    # so refresh the caption here rather than relying on a value captured earlier.
+    # Only do this when no caption was explicitly set, so callers who pass a
+    # custom caption to VideoRecorder don't have it silently overwritten.
+    if video_recorder is not None and not video_recorder.caption:
+        description = getattr(env, "task_description", None)
+        if description:
+            video_recorder.caption = description
 
     step = 0
     while step < max_steps and not torch.all(done_mask):
@@ -418,9 +441,10 @@ def rollout(
     max_steps: int | None = None,
     return_observations: bool = False,
     return_frames: bool = False,
-    frame_key: str = "image",
+    frame_key: str | Sequence[str] = "image",
     render_callback: Callable[[Gym], None] | None = None,
     video_recorder: VideoRecorder | None = None,
+    rollout_idx: int = 0,
 ) -> dict[str, Any]:
     """Runs a policy in an environment for a single episode.
 
@@ -446,13 +470,15 @@ def rollout(
             sequence in the output. Defaults to False.
         return_frames (bool, optional): Whether to collect rendered frames for
             visualization. Defaults to False.
-        frame_key (str, optional): Key for extracting frames from observation.images.
+        frame_key (str | Sequence[str], optional): Key(s) for extracting frames from
+            observation.images. A sequence of keys stacks the views horizontally.
             Defaults to "image".
         render_callback (Callable[[Gym], None] | None, optional): Optional callback
             invoked each step for rendering. Defaults to None.
         video_recorder (VideoRecorder | None, optional): Video recorder for capturing
             frames during the rollout. Call start_episode() before and finish_episode()
             after. Defaults to None.
+        rollout_idx (int, optional): Index of the current rollout. Defaults to 0.
 
     Returns:
         dict[str, Any]: Episode information containing:
@@ -468,7 +494,7 @@ def rollout(
             - observation: Observations - if return_observations=True
     """
     # init rollout and policy
-    initial_observation, max_steps = setup_rollout(env, policy, seed, max_steps)
+    initial_observation, max_steps = setup_rollout(env, policy, seed, max_steps, rollout_idx)
 
     # if render callback, call for first observation
     if render_callback:
@@ -562,7 +588,7 @@ def evaluate_policy(
     start_seed: int | None = None,
     max_steps: int | None = None,
     return_episode_data: bool = False,
-    frame_key: str = "image",
+    frame_key: str | Sequence[str] = "image",
     video_recorder: VideoRecorder | None = None,
 ) -> dict[str, Any]:
     """Evaluates a policy over multiple episodes.
@@ -581,8 +607,9 @@ def evaluate_policy(
         max_steps (int | None, optional): Maximum steps per episode. Defaults to None.
         return_episode_data (bool, optional): Whether to include per-episode rollout
             data in the result. Defaults to False.
-        frame_key (str, optional): Key for extracting frames from observation.images
-            for video recording. Defaults to "image".
+        frame_key (str | Sequence[str], optional): Key(s) for extracting frames from
+            observation.images for video recording. A sequence of keys stacks the
+            views horizontally. Defaults to "image".
         video_recorder (VideoRecorder | None, optional): Video recorder for capturing
             frames during evaluation. Defaults to None.
 
@@ -598,7 +625,6 @@ def evaluate_policy(
 
     while episodes_collected < n_episodes:
         seed = None if start_seed is None else start_seed + rollout_idx
-        rollout_idx += 1
 
         # Start video recording for this episode
         if video_recorder is not None:
@@ -613,7 +639,10 @@ def evaluate_policy(
             return_observations=return_episode_data,
             frame_key=frame_key,
             video_recorder=video_recorder,
+            rollout_idx=rollout_idx,
         )
+
+        rollout_idx += 1
 
         # Finish video recording
         if video_recorder is not None:

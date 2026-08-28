@@ -12,6 +12,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from api.camera import router as camera_router
 from api.dataset import router as dataset_router
 from api.dataset_import import router as imports_router
+from api.dependencies import HealthServiceDep
 from api.environments import router as project_environments_router
 from api.hardware import router as hardware_router
 from api.job import router as job_router
@@ -20,12 +21,13 @@ from api.models import router as models_router
 from api.policies import router as policies_router
 from api.project import router as project_router
 from api.project_camera import router as project_cameras_router
-from api.record import router as record_router
+from api.remote_servers import router as remote_servers_router
 from api.remote_trainers import router as remote_trainers_router
 from api.robot_catalog import router as robot_catalog_router
-from api.robot_control import router as robot_control_router
+from api.robot_observations import router as robot_observations_router
 from api.robot_setup import router as robot_setup_router
 from api.robots import router as project_robots_router
+from api.runtime_ws import router as runtime_ws_router
 from api.settings import router as settings_router
 from api.system import system_router
 from api.webui import SPAStaticFiles
@@ -49,13 +51,14 @@ app.include_router(project_robots_router)
 app.include_router(robot_catalog_router)
 app.include_router(project_cameras_router)
 app.include_router(robot_setup_router)
-app.include_router(robot_control_router)
+app.include_router(runtime_ws_router)
+app.include_router(robot_observations_router)
 app.include_router(project_environments_router)
 app.include_router(hardware_router)
 app.include_router(camera_router)
 app.include_router(dataset_router)
-app.include_router(record_router)
 app.include_router(remote_trainers_router)
+app.include_router(remote_servers_router)
 app.include_router(settings_router)
 app.include_router(models_router)
 app.include_router(policies_router)
@@ -73,10 +76,14 @@ async def _upload_size_guard(request: Request, call_next: RequestResponseEndpoin
 
 
 @app.get("/api/health")
-async def health_check() -> dict:
+async def health_check(response: Response, health_service: HealthServiceDep) -> dict[str, str | bool]:
     """Health check endpoint."""
+    response.headers["Cache-Control"] = "no-store"
+    health_service.refresh_plugin_restart_required()
     return {
         "status": "healthy",
+        "instance_id": health_service.instance_id,
+        "restart_required": health_service.plugin_restart_required,
     }
 
 

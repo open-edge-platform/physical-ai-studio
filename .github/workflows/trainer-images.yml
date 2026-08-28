@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IMAGE_REGISTRY: ghcr.io/open-edge-platform
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   TRAINER_API_PROTOCOL_VERSION: "1"
 
 jobs:
@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +93,7 @@ jobs:
             ghcr1production.blob.core.windows.net:443
             github.com:443
             keyserver.ubuntu.com:443
+            pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
             production.cloudflare.docker.com:443
             production.cloudfront.docker.com:443
@@ -109,6 +110,7 @@ jobs:
         run: |
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
+          echo "library-version=$(grep -m1 '^version = ' library/pyproject.toml | sed -E 's/version = "(.*)"/\1/')" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -135,11 +137,15 @@ jobs:
           load: true
           push: false
           tags: physicalai-trainer-${{ matrix.device }}:test
+          # PR builds are cache-read-only; the per-device build cache is written
+          # from `main` by the publish job below.
+          cache-from: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.build-metadata.outputs.created }}
             APPLICATION_VERSION=${{ steps.build-metadata.outputs.version }}
             TRAINER_API_PROTOCOL_VERSION=${{ env.TRAINER_API_PROTOCOL_VERSION }}
+            PHYSICALAI_TRAIN_VERSION=${{ steps.build-metadata.outputs.library-version }}
 
       - name: Smoke-test trainer image
         env:
@@ -147,6 +153,7 @@ jobs:
           DEVICE: ${{ matrix.device }}
           VERSION: ${{ steps.build-metadata.outputs.version }}
           BUILD_DATE: ${{ steps.build-metadata.outputs.created }}
+          LIBRARY_VERSION: ${{ steps.build-metadata.outputs.library-version }}
         run: |
           container_name="physicalai-trainer-${DEVICE}-smoke"
           cleanup() { docker rm -f "$container_name" >/dev/null 2>&1 || true; }
@@ -155,6 +162,10 @@ jobs:
           test "$(docker image inspect "$IMAGE" --format '{{.Config.User}}')" = "trainer"
           test "$(docker image inspect "$IMAGE" --format '{{json .Config.Entrypoint}}')" = '["physicalai-trainer"]'
           test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.open-edge-platform.physicalai.trainer.api-protocol"}}')" = "1"
+          # `services.ssh.docker_ops.resolve_protocol_image` reads this label
+          # pre-pull, before `/health` is ever reachable: it must carry the
+          # real installed version, not the Dockerfile's `unknown` default.
+          test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.open-edge-platform.physicalai.trainer.library-version"}}')" = "$LIBRARY_VERSION"
           ! docker run --rm --entrypoint sh "$IMAGE" -c 'test -e /app/application/backend -o -e /app/application/ui -o -e /var/run/docker.sock'
 
           docker run -d --name "$container_name" -p 127.0.0.1::8001 "$IMAGE"
@@ -166,7 +177,12 @@ jobs:
             sleep 2
           done
           test -s health.json
-          python -c 'import json, os; health = json.load(open("health.json")); assert health == {"status": "healthy", "protocol_version": 1, "device_type": os.environ["DEVICE"], "build_revision": os.environ["GITHUB_SHA"], "build_date": os.environ["BUILD_DATE"], "application_version": os.environ["VERSION"]}'
+
+          # Read the installed library version from the image itself so this
+          # check never drifts from what /health actually reports.
+          reported_version="$(docker run --rm --entrypoint python "$IMAGE" -c 'from importlib.metadata import version; print(version("physicalai-train"))')"
+          test "$reported_version" = "$LIBRARY_VERSION"
+          LIBRARY_VERSION="$reported_version" python -c 'import json, os; health = json.load(open("health.json")); assert health == {"status": "healthy", "protocol_version": 1, "device_type": os.environ["DEVICE"], "build_revision": os.environ["GITHUB_SHA"], "build_date": os.environ["BUILD_DATE"], "application_version": os.environ["VERSION"], "library_version": os.environ["LIBRARY_VERSION"]}'
 
   publish:
     name: Publish, attest, scan, and sign (${{ matrix.device }})
@@ -225,6 +241,7 @@ jobs:
           echo "version=$(tr -d '[:space:]' < application/VERSION)" >> "$GITHUB_OUTPUT"
           echo "short-sha=$(echo "$GITHUB_SHA" | head -c 8)" >> "$GITHUB_OUTPUT"
           echo "created=$(date --utc --iso-8601=seconds)" >> "$GITHUB_OUTPUT"
+          echo "library-version=$(grep -m1 '^version = ' library/pyproject.toml | sed -E 's/version = "(.*)"/\1/')" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry
         uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
@@ -252,23 +269,28 @@ jobs:
             ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
             ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ github.ref_name }}
           labels: |
-            org.opencontainers.image.source=https://github.com/open-edge-platform/physical-ai-studio
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.build-metadata.outputs.version }}
             org.opencontainers.image.created=${{ steps.build-metadata.outputs.created }}
             org.open-edge-platform.physicalai.trainer.api-protocol=${{ env.TRAINER_API_PROTOCOL_VERSION }}
           sbom: true
           provenance: mode=max
+          # `main` publishes warm the per-device build cache that PR builds read.
+          cache-from: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache,mode=max,compression=zstd,image-manifest=true,ignore-error=true
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.build-metadata.outputs.created }}
             APPLICATION_VERSION=${{ steps.build-metadata.outputs.version }}
             TRAINER_API_PROTOCOL_VERSION=${{ env.TRAINER_API_PROTOCOL_VERSION }}
+            PHYSICALAI_TRAIN_VERSION=${{ steps.build-metadata.outputs.library-version }}
 
       - name: Verify required image metadata and attestations
         env:
           IMAGE: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}@${{ steps.build.outputs.digest }}
           VERSION: ${{ steps.build-metadata.outputs.version }}
+          LIBRARY_VERSION: ${{ steps.build-metadata.outputs.library-version }}
         run: |
           docker buildx imagetools inspect "$IMAGE" --format '{{json .Image}}' > image.json
           docker buildx imagetools inspect "$IMAGE" --format '{{json .Provenance}}' > provenance.json
@@ -292,6 +314,7 @@ jobs:
               "org.open-edge-platform.physicalai.trainer.api-protocol": os.environ[
                   "TRAINER_API_PROTOCOL_VERSION"
               ],
+              "org.open-edge-platform.physicalai.trainer.library-version": os.environ["LIBRARY_VERSION"],
           }
           for config in configs:
               labels = config.get("config", {}).get("Labels") or {}

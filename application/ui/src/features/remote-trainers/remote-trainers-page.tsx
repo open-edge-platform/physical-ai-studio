@@ -39,17 +39,17 @@ export const RemoteTrainersPage = () => {
                 </Button>
             </Flex>
 
-            <View UNSAFE_className={classes.container}>
-                {remoteTrainers.length === 0 ? (
+            {remoteTrainers.length === 0 ? (
+                <View UNSAFE_className={classes.container}>
                     <Text UNSAFE_className={classes.emptyList}>No remote trainers are configured.</Text>
-                ) : (
-                    <RemoteTrainersTable
-                        remoteTrainers={remoteTrainers}
-                        onEdit={(remoteTrainer) => setAction({ type: 'edit', remoteTrainer })}
-                        onDelete={(remoteTrainer) => setAction({ type: 'delete', remoteTrainer })}
-                    />
-                )}
-            </View>
+                </View>
+            ) : (
+                <RemoteTrainersTable
+                    remoteTrainers={remoteTrainers}
+                    onEdit={(remoteTrainer) => setAction({ type: 'edit', remoteTrainer })}
+                    onDelete={(remoteTrainer) => setAction({ type: 'delete', remoteTrainer })}
+                />
+            )}
 
             <DialogContainer onDismiss={() => setAction(undefined)}>
                 {(action?.type === 'create' || action?.type === 'edit') && (

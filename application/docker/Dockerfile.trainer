@@ -2,7 +2,7 @@
 
 ARG PYTHON_VERSION=3.13
 
-FROM python:${PYTHON_VERSION}-slim@sha256:9662417aace5ae7b8e2609cce472b72a8958e134ba372808abe9cc1a0c0125e6 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 # UV_PROJECT_ENVIRONMENT must match the runtime COPY destination (/opt/venv).
@@ -52,7 +52,7 @@ FROM builder-base AS builder-xpu
 RUN --mount=type=cache,id=uv-trainer-xpu,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
 
-FROM python:${PYTHON_VERSION}-slim@sha256:9662417aace5ae7b8e2609cce472b72a8958e134ba372808abe9cc1a0c0125e6 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:ffb752e139c0a19692a43af8d8523b274222dd68eebad5d583b45c2201c6e30a AS runtime-base
 
 ARG TRAINER_UID=10001
 ARG TRAINER_GID=10001
@@ -60,6 +60,8 @@ RUN groupadd --gid "${TRAINER_GID}" trainer \
     && useradd --uid "${TRAINER_UID}" --gid "${TRAINER_GID}" --create-home --shell /usr/sbin/nologin trainer \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+        build-essential \
+        g++ \
         ffmpeg \
         libgl1 \
         libglib2.0-0 \
@@ -76,7 +78,9 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     TRAINER_STORAGE_DIR=/var/lib/physicalai-trainer \
     HF_HOME=/var/lib/physicalai-trainer/huggingface \
     TORCH_HOME=/var/lib/physicalai-trainer/torch \
-    XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache
+    XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache \
+    HOME=/var/lib/physicalai-trainer \
+    TRITON_CACHE_DIR=/var/lib/physicalai-trainer/cache/triton
 
 # Only the trainer and training packages, never the rest of the backend: no
 # studio API, robots, database, or UI assets reach this image.
@@ -182,6 +186,7 @@ ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
 ARG APPLICATION_VERSION=unknown
 ARG TRAINER_API_PROTOCOL_VERSION=1
+ARG PHYSICALAI_TRAIN_VERSION=unknown
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio remote CUDA training service" \
       org.opencontainers.image.revision="${GIT_SHA}" \
@@ -190,6 +195,7 @@ LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/phy
       org.opencontainers.image.title="physicalai-trainer-cuda" \
       org.opencontainers.image.vendor="Open Edge Platform" \
       org.open-edge-platform.physicalai.trainer.api-protocol="${TRAINER_API_PROTOCOL_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.library-version="${PHYSICALAI_TRAIN_VERSION}" \
       org.open-edge-platform.physicalai.trainer.device="cuda"
 ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_BUILD_DATE="${BUILD_DATE}" \
@@ -203,6 +209,7 @@ ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
 ARG APPLICATION_VERSION=unknown
 ARG TRAINER_API_PROTOCOL_VERSION=1
+ARG PHYSICALAI_TRAIN_VERSION=unknown
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio remote Intel XPU training service" \
       org.opencontainers.image.revision="${GIT_SHA}" \
@@ -211,6 +218,7 @@ LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/phy
       org.opencontainers.image.title="physicalai-trainer-xpu" \
       org.opencontainers.image.vendor="Open Edge Platform" \
       org.open-edge-platform.physicalai.trainer.api-protocol="${TRAINER_API_PROTOCOL_VERSION}" \
+      org.open-edge-platform.physicalai.trainer.library-version="${PHYSICALAI_TRAIN_VERSION}" \
       org.open-edge-platform.physicalai.trainer.device="xpu"
 ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_BUILD_DATE="${BUILD_DATE}" \

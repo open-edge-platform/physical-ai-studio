@@ -1,10 +1,19 @@
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
 from api.dependencies import get_project_id, get_robot_id, get_robot_service
-from schemas.robot import Robot, RobotWithConnectionState
+from exceptions import RuntimeSessionBusyError
+from runtime.owner import runtime_session_holder
+from schemas.robot import (
+    ReadableRobot,
+    Robot,
+    RobotWithConnectionState,
+    UnavailableRobot,
+    UnavailableRobotWithConnectionState,
+)
 from services import RobotService
 
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
@@ -16,7 +25,7 @@ ProjectID = Annotated[UUID, Depends(get_project_id)]
 async def list_project_robots(
     project_id: ProjectID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
-) -> list[Robot]:
+) -> list[ReadableRobot]:
     """Fetch all robots."""
     return await robot_service.get_robot_list(project_id)
 
@@ -25,7 +34,7 @@ async def list_project_robots(
 async def list_online_project_robots(
     project_id: ProjectID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
-) -> list[RobotWithConnectionState]:
+) -> list[RobotWithConnectionState | UnavailableRobotWithConnectionState]:
     """Fetch all robots."""
     return await robot_service.find_online_robots(project_id)
 
@@ -45,7 +54,7 @@ async def get_project_robot(
     project_id: Annotated[UUID, Depends(get_project_id)],
     robot_id: Annotated[UUID, Depends(get_robot_id)],
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
-) -> Robot:
+) -> Robot | UnavailableRobot:
     """Get robot by id."""
     return await robot_service.get_robot_by_id(project_id, robot_id)
 
@@ -73,4 +82,9 @@ async def delete_project_robot(
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
 ) -> None:
     """Delete a robot."""
+    robot = await robot_service.get_robot_by_id(project_id, robot_id)
+    holder = await asyncio.to_thread(runtime_session_holder, robot_id)
+    if holder is not None:
+        pid = holder.get("pid")
+        raise RuntimeSessionBusyError(robot_name=robot.name, pid=pid if isinstance(pid, int) else None)
     await robot_service.delete_robot(project_id, robot_id)

@@ -5,7 +5,7 @@ Use these prompts to test whether an agent correctly invokes and follows each li
 Expected rubric per scenario:
 
 - **Activates the right skill** — loaded `SKILL.md` matches the topic.
-- **Uses real paths and commands** — references `library/src/physicalai/...`, `physicalai ...`, `uv run pytest ...` as documented.
+- **Uses real paths and commands** — references `library/src/physicalai/...`, `physicalai ...`, `uv run --no-sync pytest ...` as documented.
 - **Follows the workflow checklist** — does not skip Required checks / Verify steps.
 - **Produces a checkable artifact** — a command run, a file written, or a test result.
 
@@ -22,7 +22,7 @@ Expected behavior:
 - Verifies `from physicalai.policies import Mynet, get_policy` and `get_policy("mynet")` work without CLI involvement.
 - Adds `library/configs/physicalai/mynet.yaml` wiring `model`, `data`, and `trainer`.
 - Adds at least one test under `library/tests/unit/policies/`.
-- Runs `uv run pytest tests/unit/policies -k mynet` and `physicalai fit --config configs/physicalai/mynet.yaml --trainer.fast_dev_run=true`.
+- Runs `uv run --no-sync pytest tests/unit/policies -k mynet` and `physicalai fit --config configs/physicalai/mynet.yaml --trainer.fast_dev_run=true`.
 
 ### Scenario 2: Extend an existing policy for export
 
@@ -141,7 +141,7 @@ Expected behavior:
 
 - Edits/tests `data/lerobot/converters.py` (`DataFormat.physicalai` ↔ `DataFormat.lerobot`).
 - Adds a unit test under `tests/unit/data/`.
-- Runs `uv run pytest tests/unit/data -k <field>`.
+- Runs `uv run --no-sync pytest tests/unit/data -k <field>`.
 
 ## `physicalai-train-exporting-and-validating`
 

@@ -6,8 +6,6 @@ from core.logging.log_config import LogConfig
 def test_worker_log_info_references_existing_worker_classes() -> None:
     worker_modules = {
         "TrainingWorker": "workers.training_worker",
-        "ModelWorker": "workers.model_worker",
-        "RobotControlWorker": "workers.robot_control_worker",
         "DatasetImportWorker": "workers.dataset_import_worker",
     }
 
