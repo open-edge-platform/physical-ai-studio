@@ -311,7 +311,7 @@ stateDiagram-v2
   Spawning --> Attached: metadata published
   Spawning --> Failed: name lock lost / startup error
   Attached --> Running: connect() then run()
-  Running --> Running: mode changes, episodes
+  Running --> Running: mode changes
   Running --> Stopping: disconnect / idle_timeout / error
   Stopping --> [*]: finalize recording, disconnect devices, exit
   Failed --> [*]
