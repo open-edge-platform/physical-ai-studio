@@ -201,6 +201,7 @@ async def submit_job(body: SubmitJobRequest, request: Request) -> SubmitJobRespo
     """Enqueue a job, awaiting upload for HTTP transfers."""
     manager = _manager(request)
     job_id = manager.store.create(body)
+    manager.store.stash_secret(job_id, body.hf_token)
     state = manager.store.get(job_id)
     job_status = state.status if state is not None else TrainerJobStatus.QUEUED
     return SubmitJobResponse(remote_job_id=job_id, status=job_status)

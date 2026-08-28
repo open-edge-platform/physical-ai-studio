@@ -329,8 +329,15 @@ class RemoteTrainingBackend:
         Sends the same spec a local run would execute, so both paths train from
         one set of defaults. The trainer selects its own device, so the studio's
         device choice is left out: it names hardware on this host.
+
+        The Hugging Face token is sent as a separate, top-level ``hf_token``
+        field rather than as part of ``spec.run_options`` (which is dropped
+        from ``spec`` entirely below): the trainer never persists that field
+        to disk, only caches it in memory for the one job it was submitted
+        for (see `trainer.schemas.SubmitJobRequest.hf_token` and
+        `trainer.store.JobStore.stash_secret`).
         """
-        from services.training_backends.local import build_spec
+        from services.training_backends.local import build_spec, resolve_hf_token
 
         # An injected device (SSH-provisioned server) is sent as-is: that trainer
         # image runs on one known accelerator, so there is nothing to probe. The
@@ -343,9 +350,11 @@ class RemoteTrainingBackend:
             else {"device_type": None, "device_index": None}
         )
         spec = build_spec(context).model_copy(update=device_update)
+        hf_token = resolve_hf_token()
         body: dict[str, Any] = {
             "spec": spec.model_dump(mode="json", exclude={"run_options"}),
             "dataset_transfer": "http",
+            "hf_token": hf_token.get_secret_value() if hf_token is not None else None,
         }
         async with await self._client() as client:
             response = await client.post(f"{self._base_url}/jobs", json=body)
