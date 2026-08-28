@@ -94,7 +94,7 @@ data:
 trainer:
   # Weights-only warm start via --weights_from starts step/epoch counting at 0,
   # so this is the phase-2 budget alone (not phase-1 + phase-2).
-  max_steps: 30000
+  max_epochs: 2
   accelerator: gpu
   devices: 1
   precision: 32
