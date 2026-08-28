@@ -27,7 +27,7 @@ from physicalai.data.constants import (
 )
 from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER
 from physicalai.policies.base import Model
-from physicalai.policies.mixins import SnapFlowModelMixin
+from physicalai.policies.mixins import RTCModelMixin, SnapFlowModelMixin
 
 from .pi_gemma import (
     PaliGemmaForConditionalGenerationWithPiGemma,
@@ -544,7 +544,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         return [prefix_output, suffix_output], prefix_past_key_values
 
 
-class Pi05Model(SnapFlowModelMixin, Model):
+class Pi05Model(SnapFlowModelMixin, RTCModelMixin, Model):
     """Core Pi05 PyTorch model for flow matching VLA.
 
     This is the nn.Module that contains the actual model logic,
@@ -664,8 +664,6 @@ class Pi05Model(SnapFlowModelMixin, Model):
         self.target_time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
         nn.init.zeros_(self.target_time_mlp_out.weight)
         nn.init.zeros_(self.target_time_mlp_out.bias)
-
-        self.enable_rtc = False
 
         self.gradient_checkpointing_enabled = False
         if gradient_checkpointing:
@@ -1175,78 +1173,6 @@ class Pi05Model(SnapFlowModelMixin, Model):
             actions = actions[:, : self._n_action_steps]
 
         return actions
-
-    def _compute_prefix_weights(
-        self,
-        inference_delay: Tensor,
-        execution_horizon: Tensor,
-        prefix_attention_schedule: Literal["linear", "exp"] = "linear",
-    ) -> Tensor:
-        """Compute prefix attention weights inside the graph.
-
-        Args:
-            inference_delay: Scalar tensor — the dynamic latency estimate.
-            execution_horizon: Scalar tensor — number of fresh actions per chunk.
-            prefix_attention_schedule: Schedule type for prefix attention weights ("linear" or "exp").
-
-        Returns:
-            ``(1, chunk_size, 1)`` weight tensor.
-        """
-        chunk_size = self._chunk_size
-        end = execution_horizon.float()
-        start = torch.minimum(inference_delay.float(), end)
-
-        idx = torch.arange(chunk_size, dtype=torch.float32, device=inference_delay.device)
-        denom = end - start + 1.0
-        weights = (end - idx) / denom
-        weights = torch.clamp(weights, min=0.0, max=1.0)
-
-        if prefix_attention_schedule == "exp":
-            weights = weights * (torch.exp(weights) - 1.0) / (math.e - 1.0)
-        # "linear" → no-op
-
-        return weights.unsqueeze(0).unsqueeze(-1)  # (1, chunk_size, 1)
-
-    @staticmethod
-    def _rtc_correct(
-        x_t: Tensor,
-        v_t: Tensor,
-        prev_chunk_left_over: Tensor,
-        prefix_weights: Tensor,
-        time: float,
-        max_guidance_weight: Tensor,
-    ) -> Tensor:
-        """Apply RTC guidance correction to velocity prediction.
-
-        Uses direct error (not autograd.grad) for OV traceability.
-
-        Returns:
-            Corrected velocity tensor.
-        """
-        tau = 1.0 - time
-
-        # Predicted clean actions at t=0
-        x1_t = x_t - time * v_t
-
-        # Weighted error between previous chunk and prediction
-        err = (prev_chunk_left_over - x1_t) * prefix_weights
-        correction = err
-
-        # Adaptive guidance weight
-        max_gw = max_guidance_weight.float()
-        tau_t = torch.as_tensor(tau)
-        squared_one_minus_tau = (1.0 - tau_t) ** 2
-        inv_r2 = (squared_one_minus_tau + tau_t**2) / squared_one_minus_tau
-
-        # Manual nan_to_num — torch.nan_to_num not supported by OV
-        c_raw = (1.0 - tau_t) / tau_t
-        c = torch.where(torch.isinf(c_raw), max_gw, c_raw)
-
-        guidance_weight_raw = c * inv_r2
-        guidance_weight = torch.where(torch.isinf(guidance_weight_raw), max_gw, guidance_weight_raw)
-        guidance_weight = torch.minimum(guidance_weight, max_gw)
-
-        return v_t - guidance_weight * correction
 
     @torch.no_grad()
     def sample_actions(  # noqa: PLR0914

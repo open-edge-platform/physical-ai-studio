@@ -3,7 +3,13 @@
 
 """Behaviour shared by more than one first-party policy family."""
 
-from physicalai.policies.mixins.rtc import RTCPolicyMixin
+from physicalai.policies.mixins.rtc import RTCModelMixin, RTCPolicyMixin
 from physicalai.policies.mixins.snapflow import SnapFlowConfigMixin, SnapFlowModelMixin, SnapFlowPolicyMixin
 
-__all__ = ["RTCPolicyMixin", "SnapFlowConfigMixin", "SnapFlowModelMixin", "SnapFlowPolicyMixin"]
+__all__ = [
+    "RTCModelMixin",
+    "RTCPolicyMixin",
+    "SnapFlowConfigMixin",
+    "SnapFlowModelMixin",
+    "SnapFlowPolicyMixin",
+]

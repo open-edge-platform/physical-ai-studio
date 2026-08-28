@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import pytest
 
-from physicalai.policies.mixins.rtc import RTCPolicyMixin
+from physicalai.policies.mixins.rtc import RTCModelMixin, RTCPolicyMixin
 
 
-class _ModelStub:
+class _ModelStub(RTCModelMixin):
     """Minimal stand-in for a torch model exposing the RTC flag."""
 
     def __init__(self) -> None:
