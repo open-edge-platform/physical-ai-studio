@@ -342,7 +342,7 @@ This is exactly what `--weights_from` does under the hood (see Option 2).
 | `best_teacher_monitor`   | `None`                   | Disambiguates which monitored `ModelCheckpoint` to restore from when more than one is configured.                               |
 | `scope_best_to_phase`    | `true`                   | Reset best-checkpoint tracking at the boundary, since `val/loss` is not comparable across `num_inference_steps`.                |
 | Phase-1 budget           | 5-10 epochs              | Fewer for a warm-started VLA than for from-scratch training.                                                                    |
-| Phase-2 budget           | ~2-3 epochs (~30k steps) | Short because the target-time embedding is zero-initialised.                                                                    |
+| Phase-2 budget           | ~2-3 epochs | Short because the target-time embedding is zero-initialised.                                                                    |
 | `scheduler_warmup_steps` | ~5% of total steps       | No fractional option exists; compute it from your dataset (below).                                                              |
 
 Converting an epoch budget into steps, for warmup sizing:
