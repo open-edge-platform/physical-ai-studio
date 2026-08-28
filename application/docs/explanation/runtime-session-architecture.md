@@ -312,9 +312,7 @@ stateDiagram-v2
   Spawning --> Failed: name lock lost / startup error
   Attached --> Running: connect() then run()
   Running --> Running: mode changes, episodes
-  Running --> Stopping: explicit disconnect
-  Running --> Stopping: no subscriber for idle_timeout
-  Running --> Stopping: unrecoverable error
+  Running --> Stopping: disconnect / idle_timeout / error
   Stopping --> [*]: finalize recording, disconnect devices, exit
   Failed --> [*]
   Attached --> Stopping: kill backstop
