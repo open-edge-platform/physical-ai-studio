@@ -5,15 +5,18 @@ from fastapi.dependencies.utils import get_dependant
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import (
+    get_camera_claim_registry,
+    get_camera_service,
     get_dataset_service,
     get_job_service,
     get_log_service,
     get_model_metrics_service,
     get_model_service,
+    get_project_service,
     get_robot_client_factory,
 )
-from api.record import robot_control_websocket
-from api.robot_control import robot_websocket
+from api.robot_observations import robot_observations_websocket
+from api.runtime_ws import runtime_websocket
 from robots.robot_client_factory import RobotClientFactory
 from services.job_service import JobService
 from services.robot_catalog_service import RobotCatalogService
@@ -72,9 +75,12 @@ def test_database_services_share_dependency_provided_session() -> None:
     assert all(service.session is session for service in services)
 
 
-def test_record_websocket_depends_on_robot_client_factory() -> None:
-    assert get_robot_client_factory in _dependency_calls(robot_control_websocket)
+def test_runtime_websocket_depends_on_robot_client_factory() -> None:
+    assert get_robot_client_factory in _dependency_calls(runtime_websocket)
+    assert get_camera_service in _dependency_calls(runtime_websocket)
+    assert get_project_service in _dependency_calls(runtime_websocket)
+    assert get_camera_claim_registry in _dependency_calls(runtime_websocket)
 
 
-def test_teleoperation_websocket_depends_on_robot_client_factory() -> None:
-    assert get_robot_client_factory in _dependency_calls(robot_websocket)
+def test_observation_websocket_depends_on_robot_client_factory() -> None:
+    assert get_robot_client_factory in _dependency_calls(robot_observations_websocket)

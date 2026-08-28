@@ -7,10 +7,6 @@
     border: var(--spectrum-alias-border-size-thin) solid transparent !important;
 }
 
-.panelLink svg {
-    fill: currentColor;
-}
-
 .panelLink[class*='is-hovered'] {
     border: var(--spectrum-alias-border-size-thin) solid var(--spectrum-global-color-gray-300) !important;
     background-color: var(--spectrum-global-color-gray-100) !important;

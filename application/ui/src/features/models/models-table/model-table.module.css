@@ -6,7 +6,3 @@
     color: var(--spectrum-gray-600);
     font-size: var(--spectrum-global-dimension-static-font-size-75);
 }
-
-.optionsButton {
-    fill: var(--spectrum-gray-900);
-}

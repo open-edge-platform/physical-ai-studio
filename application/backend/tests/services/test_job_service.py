@@ -17,7 +17,7 @@ def _job(*, status: JobStatus = JobStatus.PENDING) -> TrainJob:
         project_id=project_id,
         status=status,
         payload={
-            "type": "training",
+            "training_target": "local",
             "project_id": str(project_id),
             "dataset_id": str(uuid4()),
             "policy": "act",

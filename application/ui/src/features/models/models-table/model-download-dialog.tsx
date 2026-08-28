@@ -43,7 +43,7 @@ export const ModelDownloadDialog = ({
 
                     <Content>
                         <Flex direction='column' gap='size-200'>
-                            <Checkbox isSelected={includeSnapshot} onChange={setIncludeSnapshot}>
+                            <Checkbox isEmphasized isSelected={includeSnapshot} onChange={setIncludeSnapshot}>
                                 Include training dataset snapshot
                             </Checkbox>
                         </Flex>

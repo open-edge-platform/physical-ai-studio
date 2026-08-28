@@ -8,7 +8,7 @@ from db.schema import Base, ProjectDB
 from repositories.job_repo import JobRepository
 from repositories.mappers.job_mapper import JobMapper
 from schemas.base_job import JobStatus, JobType
-from schemas.job import TrainingTarget, TrainJob, TrainJobPayload
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainJob
 
 
 def test_duplicate_remote_job_payload_with_uuids_is_json_serializable() -> None:
@@ -18,14 +18,13 @@ def test_duplicate_remote_job_payload_with_uuids_is_json_serializable() -> None:
         engine = create_async_engine("sqlite+aiosqlite://")
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
         project_id = uuid4()
-        payload = TrainJobPayload(
+        payload = RemoteTrainJobPayload(
             project_id=project_id,
             dataset_id=uuid4(),
             policy="act",
             model_name="test-model",
             base_model_id=uuid4(),
             snapshot_id=uuid4(),
-            training_target=TrainingTarget.REMOTE,
             remote_trainer_id=uuid4(),
             remote_trainer_url="https://trainer.example.test",
         )
@@ -60,7 +59,7 @@ def test_pending_jobs_are_filtered_and_returned_in_submission_order() -> None:
         engine = create_async_engine("sqlite+aiosqlite://")
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
         project_id = uuid4()
-        payload = TrainJobPayload(
+        payload = LocalTrainJobPayload(
             project_id=project_id,
             dataset_id=uuid4(),
             policy="act",

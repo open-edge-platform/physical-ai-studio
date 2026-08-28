@@ -29,7 +29,7 @@ Example:
 
         from physicalai.gyms import create_robocasa_gyms
 
-        gyms = create_robocasa_gyms(tasks="atomic_seen")  # 18 v1.0 tasks
+        gyms = create_robocasa_gyms(tasks=RoboCasaTaskGroup.ATOMIC_SEEN)  # 18 v1.0 tasks
         assert len(gyms) == 18
 
 Note:
@@ -43,6 +43,7 @@ Note:
 from __future__ import annotations
 
 import logging
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
@@ -54,13 +55,24 @@ from physicalai.gyms.base import Gym
 
 __all__ = [
     "ACTION_DIM",
+    "DEFAULT_ACTION_ORDER",
     "DEFAULT_CAMERAS",
     "DEFAULT_OBJ_REGISTRIES",
+    "DEFAULT_STATE_ORDER",
     "OBS_STATE_DIM",
+    "FieldOrder",
     "RoboCasaGym",
+    "RoboCasaSplit",
+    "RoboCasaTaskGroup",
     "convert_action",
     "create_robocasa_gyms",
 ]
+
+# Ordered `(name, dim)` pairs describing a flat state/action vector's layout.
+# A checkpoint trained with a different field order can pass its own order
+# (e.g. built from that checkpoint's own `statistics.json` keys/widths)
+# instead of hardcoding a competing constant elsewhere.
+FieldOrder = tuple[tuple[str, int], ...]
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -106,12 +118,68 @@ def _check_robocasa_available() -> None:
         raise ImportError(msg)
 
 
-# Dimensions for the flat action/state vectors. These correspond to the
-# PandaOmron robot in RoboCasa v1.0.
-OBS_STATE_DIM = 16  # base_pos(3) + base_quat(4) + ee_pos_rel(3) + ee_quat_rel(4) + gripper_qpos(2)
-ACTION_DIM = 12  # base_motion(4) + control_mode(1) + ee_pos(3) + ee_rot(3) + gripper(1)
+# Native field order for the PandaOmron robot in RoboCasa v1.0. Only the
+# *default* -- pass a different `state_order`/`action_order` to `RoboCasaGym`
+# to match a checkpoint trained with a different field order.
+DEFAULT_STATE_ORDER: FieldOrder = (
+    ("end_effector_position_relative", 3),
+    ("end_effector_rotation_relative", 4),
+    ("gripper_qpos", 2),
+    ("base_position", 3),
+    ("base_rotation", 4),
+)
+DEFAULT_ACTION_ORDER: FieldOrder = (
+    ("end_effector_position", 3),
+    ("end_effector_rotation", 3),
+    ("gripper_close", 1),
+    ("base_motion", 4),
+    ("control_mode", 1),
+)
+OBS_STATE_DIM = sum(dim for _, dim in DEFAULT_STATE_ORDER)  # 16
+ACTION_DIM = sum(dim for _, dim in DEFAULT_ACTION_ORDER)  # 12
 ACTION_LOW = -1.0
 ACTION_HIGH = 1.0
+
+
+def _concat_fields(order: FieldOrder, source: dict[str, Any], *, default: float = 0.0) -> np.ndarray:
+    """Concatenate named values from `source` into a flat vector, in `order`.
+
+    Args:
+        order: Ordered ``(name, dim)`` pairs; determines both slot order
+            and expected width per field.
+        source: Mapping from field name to a `dim`-length array. Fields
+            absent from `source` are filled with `default`.
+        default: Fill value for a field missing from `source`.
+
+    Returns:
+        ``(sum(dim), )`` float32 array.
+    """
+    return np.concatenate(
+        [
+            np.asarray(source[name], dtype=np.float32) if name in source else np.full(dim, default, dtype=np.float32)
+            for name, dim in order
+        ],
+        axis=-1,
+    )
+
+
+def _split_fields(order: FieldOrder, flat: np.ndarray) -> dict[str, np.ndarray]:
+    """Split a flat vector into a name-keyed dict, using `order`.
+
+    Args:
+        order: Ordered ``(name, dim)`` pairs.
+        flat: ``(sum(dim),)`` array.
+
+    Returns:
+        Dict mapping each field name to its ``(dim,)`` slice.
+    """
+    out: dict[str, np.ndarray] = {}
+    offset = 0
+    for name, dim in order:
+        out[name] = flat[offset : offset + dim]
+        offset += dim
+    return out
+
 
 # Default PandaOmron cameras. Raw RoboCasa names are surfaced verbatim as
 # `Observation.images["robot0_*"]` so the keys match the upstream RoboCasa
@@ -119,87 +187,125 @@ ACTION_HIGH = 1.0
 # RLDX_CAMERA_REMAP_KITCHEN adapter at policy-input time, not here.
 DEFAULT_CAMERAS: tuple[str, ...] = (
     "robot0_agentview_left",
-    "robot0_eye_in_hand",
     "robot0_agentview_right",
+    "robot0_eye_in_hand",
 )
 
 # Object-mesh registries to sample from. The objaverse pack is huge
-# (~30 GB) and not on disk in our setup; sampling from a registry whose
+# (~30 GB) and not on disk in some setups; sampling from a registry whose
 # category has zero candidates crashes with `Probabilities contain NaN`
-# (0/0 in the normalization). Restrict to lightwheel only.
-DEFAULT_OBJ_REGISTRIES: tuple[str, ...] = ("lightwheel",)
+# (0/0 in the normalization). Download the objaverse assets, or pass
+# `obj_registries=("lightwheel",)` explicitly, if you hit that crash.
+DEFAULT_OBJ_REGISTRIES: tuple[str, ...] = ("objaverse", "lightwheel")
 
-# Task-group shortcuts accepted as `task=`. Single task names (or a
-# comma-separated list) take precedence; this only triggers on an exact
-# group-name match. All groups resolve via robocasa's own
+
+class RoboCasaTaskGroup(StrEnum):
+    """RoboCasa task-group keywords, expanded via robocasa's own dataset_registry.
+
+    Individual task names (e.g. ``"CloseFridge"``) are intentionally NOT
+    enumerated here: the real task universe is large (100+ names) and
+    version-pinned, so it is resolved lazily from the installed robocasa
+    package rather than duplicated as a second, driftable source of truth.
+    """
+
+    ATOMIC_SEEN = "atomic_seen"
+    COMPOSITE_SEEN = "composite_seen"
+    COMPOSITE_UNSEEN = "composite_unseen"
+    PRETRAIN50 = "pretrain50"
+    PRETRAIN100 = "pretrain100"
+    PRETRAIN200 = "pretrain200"
+    PRETRAIN300 = "pretrain300"
+
+
+class RoboCasaSplit(StrEnum):
+    """Dataset split accepted by ``RoboCasaGym``/``create_robocasa_gyms``."""
+
+    ALL = "all"
+    PRETRAIN = "pretrain"
+    TARGET = "target"
+
+
+# Each group's natural split. All groups resolve via robocasa's own
 # dataset_registry; eval-specific subsets (e.g. paper-parity slices)
 # live alongside the benchmark that consumes them, not here.
-_TASK_GROUP_SPLITS: dict[str, str] = {
-    "atomic_seen": "target",
-    "composite_seen": "target",
-    "composite_unseen": "target",
-    "pretrain50": "pretrain",
-    "pretrain100": "pretrain",
-    "pretrain200": "pretrain",
-    "pretrain300": "pretrain",
+_TASK_GROUP_SPLITS: dict[RoboCasaTaskGroup, RoboCasaSplit] = {
+    RoboCasaTaskGroup.ATOMIC_SEEN: RoboCasaSplit.TARGET,
+    RoboCasaTaskGroup.COMPOSITE_SEEN: RoboCasaSplit.TARGET,
+    RoboCasaTaskGroup.COMPOSITE_UNSEEN: RoboCasaSplit.TARGET,
+    RoboCasaTaskGroup.PRETRAIN50: RoboCasaSplit.PRETRAIN,
+    RoboCasaTaskGroup.PRETRAIN100: RoboCasaSplit.PRETRAIN,
+    RoboCasaTaskGroup.PRETRAIN200: RoboCasaSplit.PRETRAIN,
+    RoboCasaTaskGroup.PRETRAIN300: RoboCasaSplit.PRETRAIN,
 }
 
 
-def _resolve_tasks(task: str) -> tuple[list[str], str | None]:
-    """Resolve a ``task`` value to ``(task_names, split_override)``.
+# Used when a task's horizon can't be looked up (e.g. a custom task name
+# not in robocasa's dataset_registry). Matches robocasa's own Kitchen env
+# default (see `kitchen.py`'s `horizon=1000`).
+_FALLBACK_EPISODE_LENGTH = 1000
 
-    If ``task`` is a known group keyword (e.g. ``atomic_seen``,
-    ``pretrain100``), expand it via ``robocasa.utils.dataset_registry``
-    and return the matching split. Otherwise treat ``task`` as an explicit
-    task name (or comma-separated list) and leave the split untouched
-    (``None``).
+
+def _resolve_episode_length(task: str, episode_length: int | None) -> int:
+    """Resolve the per-episode step limit for ``task``.
+
+    An explicit ``episode_length`` always wins. Otherwise, look up the
+    official per-task horizon from robocasa's own dataset_registry (task
+    horizons vary widely -- roughly 200-700 for atomic tasks, up to ~4800
+    for some composite/pretrain tasks) via robocasa's own
+    ``get_task_horizon``, which robocasa exposes for exactly this purpose.
 
     Args:
-        task: Group keyword or one-or-more comma-separated task names.
+        task: RoboCasa task name.
+        episode_length: Explicit override, if any.
 
     Returns:
-        Tuple of ``(list[task_name], split_or_None)``.
+        Resolved max steps for this task.
+    """
+    if episode_length is not None:
+        return episode_length
+    from robocasa.utils.dataset_registry_utils import get_task_horizon  # noqa: PLC0415
+
+    try:
+        return int(get_task_horizon(task))
+    except ValueError:
+        logger.debug("No registry horizon for task %r, falling back to %d", task, _FALLBACK_EPISODE_LENGTH)
+        return _FALLBACK_EPISODE_LENGTH
+
+
+def _resolve_task_group(group: RoboCasaTaskGroup) -> tuple[list[str], RoboCasaSplit]:
+    """Expand a ``RoboCasaTaskGroup`` to ``(task_names, natural_split)``.
+
+    Args:
+        group: A task-group keyword.
+
+    Returns:
+        Tuple of ``(list[task_name], split)``.
 
     Raises:
-        ValueError: If ``task`` is empty, or if it is a recognized group
-            keyword but missing from the installed robocasa registry.
+        ValueError: If the group is missing from the installed robocasa registry.
     """
-    key = task.strip()
+    from robocasa.utils.dataset_registry import PRETRAINING_TASKS, TARGET_TASKS  # noqa: PLC0415
 
-    if key in _TASK_GROUP_SPLITS:
-        from robocasa.utils.dataset_registry import PRETRAINING_TASKS, TARGET_TASKS  # noqa: PLC0415
-
-        combined = {**TARGET_TASKS, **PRETRAINING_TASKS}
-        if key not in combined:
-            msg = f"Task group '{key}' is not available in this version of robocasa. Known groups: {sorted(combined)}."
-            raise ValueError(msg)
-        return list(combined[key]), _TASK_GROUP_SPLITS[key]
-
-    names = [t.strip() for t in key.split(",") if t.strip()]
-    if not names:
-        msg = "`task` must contain at least one RoboCasa task name."
+    combined = {**TARGET_TASKS, **PRETRAINING_TASKS}
+    if group.value not in combined:
+        msg = f"Task group '{group.value}' is not available in this version. Known groups: {sorted(combined)}."
         raise ValueError(msg)
-    return names, None
+    return list(combined[group.value]), _TASK_GROUP_SPLITS[group]
 
 
-def convert_action(flat_action: np.ndarray) -> dict[str, np.ndarray]:
-    """Split a flat ``(12,)`` action vector into a RoboCasa action dict.
-
-    Layout: ``base_motion(4) + control_mode(1) + ee_pos(3) + ee_rot(3) + gripper(1)``.
+def convert_action(flat_action: np.ndarray, action_order: FieldOrder = DEFAULT_ACTION_ORDER) -> dict[str, np.ndarray]:
+    """Split a flat action vector into a RoboCasa action dict.
 
     Args:
-        flat_action: 1-D array of shape ``(ACTION_DIM,)``.
+        flat_action: 1-D array of shape ``(sum(dim for _, dim in action_order),)``.
+        action_order: Ordered field schema to split by. Defaults to the
+            native PandaOmron order (``DEFAULT_ACTION_ORDER``); pass a
+            different order to match a checkpoint trained differently.
 
     Returns:
-        Dict with the five RoboCasa action keys.
+        Dict with one ``"action.<field>"`` key per field in `action_order`.
     """
-    return {
-        "action.base_motion": flat_action[0:4],
-        "action.control_mode": flat_action[4:5],
-        "action.end_effector_position": flat_action[5:8],
-        "action.end_effector_rotation": flat_action[8:11],
-        "action.gripper_close": flat_action[11:12],
-    }
+    return {f"action.{name}": value for name, value in _split_fields(action_order, flat_action).items()}
 
 
 class RoboCasaGym(Gym):
@@ -229,9 +335,11 @@ class RoboCasaGym(Gym):
         render_mode: str = "rgb_array",
         observation_height: int = 256,
         observation_width: int = 256,
-        split: str | None = None,
+        split: RoboCasaSplit | None = None,
         episode_length: int | None = None,
         obj_registries: Sequence[str] | None = None,
+        state_order: FieldOrder | None = None,
+        action_order: FieldOrder | None = None,
     ) -> None:
         """Initialize a RoboCasa gym for one task.
 
@@ -241,21 +349,31 @@ class RoboCasaGym(Gym):
                 here.
             camera_names: Camera views to include. Defaults to the three
                 ``robot0_*`` cameras in ``DEFAULT_CAMERAS``.
-            obs_type: ``"pixels_agent_pos"`` for images + 16-D state, or
+            obs_type: ``"pixels_agent_pos"`` for images + state, or
                 ``"pixels"`` for images only.
             render_mode: Passed through to RoboCasa (``"rgb_array"`` only).
             observation_height: Image height in pixels.
             observation_width: Image width in pixels.
-            split: RoboCasa dataset split (``None``/``"all"``/
-                ``"pretrain"``/``"target"``). When ``None``, the underlying
-                env defaults to ``"all"`` (RoboCasa's own ``"test"`` default
-                is rejected by ``create_env``).
-            episode_length: Max steps per episode. Defaults to 1000 when
-                ``None``.
+            split: RoboCasa dataset split. When ``None``, the underlying
+                env defaults to ``RoboCasaSplit.ALL`` (RoboCasa's own
+                ``"test"`` default is rejected by ``create_env``).
+            episode_length: Max steps per episode. Defaults to the
+                task's official horizon from robocasa's own dataset_registry
+                (via ``get_task_horizon``) when ``None``.
             obj_registries: Object-mesh registries to sample from.
-                Defaults to ``("lightwheel",)`` to avoid the
-                ``Probabilities contain NaN`` crash when objaverse meshes
-                are not on disk.
+                Defaults to ``("objaverse", "lightwheel")``. Pass
+                ``("lightwheel",)`` explicitly if objaverse meshes are not
+                on disk -- sampling from an empty registry crashes with
+                ``Probabilities contain NaN``.
+            state_order: Ordered ``(name, dim)`` field schema for the flat
+                ``agent_pos`` vector. Defaults to ``DEFAULT_STATE_ORDER``
+                (native PandaOmron order). Pass a checkpoint-derived order
+                (e.g. built from that checkpoint's own
+                ``stats["general_embodiment"]["state"]`` keys/widths) when a
+                policy expects a different field order.
+            action_order: Ordered field schema for the flat action vector,
+                analogous to `state_order`. Defaults to
+                ``DEFAULT_ACTION_ORDER``.
         """
         _check_robocasa_available()
 
@@ -267,8 +385,10 @@ class RoboCasaGym(Gym):
         self.split = split
         self.obj_registries = tuple(obj_registries) if obj_registries is not None else DEFAULT_OBJ_REGISTRIES
         self.camera_names = list(camera_names) if camera_names is not None else list(DEFAULT_CAMERAS)
+        self.state_order = state_order if state_order is not None else DEFAULT_STATE_ORDER
+        self.action_order = action_order if action_order is not None else DEFAULT_ACTION_ORDER
 
-        self._max_episode_steps = episode_length if episode_length is not None else 1000
+        self._max_episode_steps = _resolve_episode_length(task, episode_length)
 
         # Deferred — the underlying MuJoCo env is created lazily on first
         # reset() so that constructing many RoboCasaGym instances stays
@@ -303,7 +423,7 @@ class RoboCasaGym(Gym):
                     "agent_pos": spaces.Box(
                         low=-np.inf,
                         high=np.inf,
-                        shape=(OBS_STATE_DIM,),
+                        shape=(sum(dim for _, dim in self.state_order),),
                         dtype=np.float32,
                     ),
                 },
@@ -315,7 +435,7 @@ class RoboCasaGym(Gym):
         self.action_space = spaces.Box(
             low=ACTION_LOW,
             high=ACTION_HIGH,
-            shape=(ACTION_DIM,),
+            shape=(sum(dim for _, dim in self.action_order),),
             dtype=np.float32,
         )
 
@@ -332,7 +452,7 @@ class RoboCasaGym(Gym):
             env_name=self.task,
             camera_widths=self.observation_width,
             camera_heights=self.observation_height,
-            split=self.split if self.split is not None else "all",
+            split=self.split if self.split is not None else RoboCasaSplit.ALL,
             obj_registries=self.obj_registries,
         )
 
@@ -359,16 +479,8 @@ class RoboCasaGym(Gym):
             return {"pixels": images}
 
         # `state.*` keys come from PandaOmronKeyConverter inside the wrapper.
-        agent_pos = np.concatenate(
-            [
-                raw_obs.get("state.base_position", np.zeros(3)),
-                raw_obs.get("state.base_rotation", np.zeros(4)),
-                raw_obs.get("state.end_effector_position_relative", np.zeros(3)),
-                raw_obs.get("state.end_effector_rotation_relative", np.zeros(4)),
-                raw_obs.get("state.gripper_qpos", np.zeros(2)),
-            ],
-            axis=-1,
-        ).astype(np.float32)
+        named_state = {name: raw_obs[f"state.{name}"] for name, _ in self.state_order if f"state.{name}" in raw_obs}
+        agent_pos = _concat_fields(self.state_order, named_state)
 
         return {"pixels": images, "agent_pos": agent_pos}
 
@@ -469,13 +581,14 @@ class RoboCasaGym(Gym):
         self._ensure_env()
 
         if isinstance(action, torch.Tensor):
-            action = action.detach().cpu().numpy()
+            action = action.detach().float().cpu().numpy()
 
-        if action.ndim != 1 or action.shape[0] != ACTION_DIM:
-            msg = f"Expected 1-D action shape ({ACTION_DIM},), got shape {action.shape}"
+        expected_dim = sum(dim for _, dim in self.action_order)
+        if action.ndim != 1 or action.shape[0] != expected_dim:
+            msg = f"Expected 1-D action shape ({expected_dim},), got shape {action.shape}"
             raise ValueError(msg)
 
-        action_dict = convert_action(action)
+        action_dict = convert_action(action, self.action_order)
         raw_obs, reward, done, truncated, info = self._env.step(action_dict)
 
         is_success = bool(info.get("success", False))
@@ -518,47 +631,56 @@ class RoboCasaGym(Gym):
 
 
 def create_robocasa_gyms(
-    tasks: str | Sequence[str],
+    tasks: RoboCasaTaskGroup | Sequence[str],
     *,
     camera_names: Sequence[str] | None = None,
     obs_type: str = "pixels_agent_pos",
     observation_height: int = 256,
     observation_width: int = 256,
-    split: str | None = None,
+    split: RoboCasaSplit | None = None,
     episode_length: int | None = None,
     obj_registries: Sequence[str] | None = None,
+    state_order: FieldOrder | None = None,
+    action_order: FieldOrder | None = None,
 ) -> list[RoboCasaGym]:
     """Create one ``RoboCasaGym`` per resolved task name.
 
-    Accepts either a group keyword (resolved via ``_resolve_tasks``) or an
-    explicit list/comma-separated string of task names. RoboCasa tasks are
-    named, not indexed — there is no ``task_ids`` parameter on purpose.
+    Accepts either a ``RoboCasaTaskGroup`` (resolved via
+    ``_resolve_task_group``) or an explicit list of task names. RoboCasa
+    tasks are named, not indexed — there is no ``task_ids`` parameter on
+    purpose.
 
     Args:
-        tasks: A group keyword (``"atomic_seen"``, ``"composite_seen"``,
-            ``"composite_unseen"``, ``"pretrain50/100/200/300"``), a
-            single task name, a comma-separated string of task names, or
-            a list of task names.
+        tasks: A ``RoboCasaTaskGroup`` member, or a list of explicit task
+            names. Bare strings are rejected -- pass a list even for a
+            single explicit task name (e.g. ``["CloseFridge"]``).
         camera_names: Forwarded to each ``RoboCasaGym``.
         obs_type: Forwarded to each ``RoboCasaGym``.
         observation_height: Image height in pixels.
         observation_width: Image width in pixels.
         split: Forwarded to each ``RoboCasaGym``. When ``None`` and
-            ``tasks`` is a group keyword, the group's natural split is
-            used (e.g. ``"target"`` for ``"atomic_seen"``).
-        episode_length: Forwarded to each ``RoboCasaGym``.
+            ``tasks`` is a group, the group's natural split is used
+            (e.g. ``RoboCasaSplit.TARGET`` for ``RoboCasaTaskGroup.ATOMIC_SEEN``).
+        episode_length: Forwarded to each ``RoboCasaGym``. When ``None``,
+            each gym resolves its own official per-task horizon (see
+            ``RoboCasaGym``'s ``episode_length`` docs).
         obj_registries: Forwarded to each ``RoboCasaGym``.
+        state_order: Forwarded to each ``RoboCasaGym``. See
+            ``RoboCasaGym``'s ``state_order`` docs.
+        action_order: Forwarded to each ``RoboCasaGym``. See
+            ``RoboCasaGym``'s ``action_order`` docs.
 
     Returns:
         ``list[RoboCasaGym]``, one per resolved task name.
 
     Raises:
+        TypeError: If ``tasks`` is a bare string.
         ValueError: If ``tasks`` is empty or names an unknown task group.
 
     Examples:
         All v1.0 atomic tasks::
 
-            gyms = create_robocasa_gyms("atomic_seen")
+            gyms = create_robocasa_gyms(RoboCasaTaskGroup.ATOMIC_SEEN)
             assert len(gyms) == 18
 
         Explicit task list::
@@ -568,8 +690,15 @@ def create_robocasa_gyms(
     """
     _check_robocasa_available()
 
-    if isinstance(tasks, str):
-        task_names, resolved_split = _resolve_tasks(tasks)
+    if isinstance(tasks, RoboCasaTaskGroup):
+        task_names, resolved_split = _resolve_task_group(tasks)
+    elif isinstance(tasks, str):
+        msg = (
+            "`tasks` must be a `RoboCasaTaskGroup` member or a list of explicit "
+            "task names, not a bare string. Use e.g. `RoboCasaTaskGroup.ATOMIC_SEEN` "
+            'or `["TaskName"]`.'
+        )
+        raise TypeError(msg)
     else:
         task_names = [str(t).strip() for t in tasks if str(t).strip()]
         resolved_split = None
@@ -589,6 +718,8 @@ def create_robocasa_gyms(
             split=effective_split,
             episode_length=episode_length,
             obj_registries=obj_registries,
+            state_order=state_order,
+            action_order=action_order,
         )
         for name in task_names
     ]

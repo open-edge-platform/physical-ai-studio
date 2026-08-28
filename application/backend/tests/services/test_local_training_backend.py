@@ -19,7 +19,7 @@ import pytest
 from pydantic import SecretStr
 
 from schemas.dataset import Snapshot
-from schemas.job import _DEFAULT_MAX_EPOCHS, TrainingDevice, TrainingPrecision, TrainJobPayload
+from schemas.job import _DEFAULT_MAX_EPOCHS, LocalTrainJobPayload, TrainingDevice, TrainingPrecision, TrainJobPayload
 from schemas.model import Model
 from services.training_backends.base import TrainingContext
 from services.training_backends.local import LocalTrainingBackend, build_spec
@@ -33,7 +33,7 @@ LOCAL = "services.training_backends.local"
 
 
 def _payload(**overrides) -> TrainJobPayload:
-    return TrainJobPayload.model_validate(
+    return LocalTrainJobPayload.model_validate(
         {
             "project_id": uuid4(),
             "dataset_id": uuid4(),

@@ -66,7 +66,23 @@ const mockProjectWithRemoteTrainer = () => {
                 },
                 huggingface: { hf_token: null },
             })
-        )
+        ),
+        http.get('/api/policies/{policy}/huggingface-access', ({ params }) => {
+            const policy = params.policy;
+            return HttpResponse.json({
+                requirements:
+                    policy === 'act'
+                        ? []
+                        : [
+                              {
+                                  repository: 'google/paligemma-3b-pt-224',
+                                  status: 'missing_token',
+                                  required: policy === 'pi05',
+                                  access_url: 'https://huggingface.co/google/paligemma-3b-pt-224',
+                              },
+                          ],
+            });
+        })
     );
 };
 
@@ -143,8 +159,10 @@ describe('TrainModelDialog', () => {
 
         await user.click(await screen.findByLabelText('Select SmolVLA policy'));
 
-        expect(screen.getByText(/SmolVLA downloads pretrained assets from Hugging Face/i)).toBeInTheDocument();
-        expect(screen.queryByText(/Pi0.5 requires a Hugging Face token/i)).not.toBeInTheDocument();
+        expect(
+            await screen.findByText(/This policy downloads pretrained assets from Hugging Face/i)
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/gated base model/i)).not.toBeInTheDocument();
     });
 
     it('blocks Pi0.5 training without a Hugging Face token', async () => {
@@ -156,7 +174,36 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(screen.getByLabelText('Select Pi0.5 policy'));
 
-        expect(screen.getByText(/Pi0.5 requires a Hugging Face token/i)).toBeInTheDocument();
+        expect(
+            await screen.findByText(/This policy downloads pretrained assets from Hugging Face/i)
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+    });
+
+    it('blocks Pi0.5 training when the token lacks gated-model access', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/{policy}/huggingface-access', () =>
+                HttpResponse.json({
+                    requirements: [
+                        {
+                            repository: 'google/paligemma-3b-pt-224',
+                            status: 'denied',
+                            required: true,
+                            access_url: 'https://huggingface.co/google/paligemma-3b-pt-224',
+                        },
+                    ],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        expect(await screen.findByText(/does not have access to this policy/i)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
     });
 });

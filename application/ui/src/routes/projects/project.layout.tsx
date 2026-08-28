@@ -16,14 +16,7 @@ const Header = ({ project_id }: { project_id: string }) => {
             <Flex height='100%' alignItems={'center'} marginX='1rem' gap='size-200'>
                 <AppLogo />
 
-                <TabList
-                    height={'100%'}
-                    width={'100%'}
-                    UNSAFE_style={{
-                        '--spectrum-tabs-rule-height': '4px',
-                        '--spectrum-tabs-selection-indicator-color': 'var(--energy-blue)',
-                    }}
-                >
+                <TabList height={'100%'} width={'100%'}>
                     {[
                         <Item
                             textValue='Robot configuration'

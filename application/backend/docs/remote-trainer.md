@@ -198,9 +198,13 @@ docker compose -f docker-compose.trainer.yaml --profile cuda down   # add -v to 
 Set `TRAINER_IMAGE_TAG` in `.env.trainer` to an immutable
 `<version>-dev-<short-sha>` tag or resolved digest before using this in
 anything but a throwaway environment; the default `main` tag moves (see
-[Container images](#container-images) for what each tag tracks). The XPU profile also needs
-`RENDER_NODE` and `RENDER_GID` set to the host's Intel GPU render node (see
-`.env.trainer.example`).
+[Container images](#container-images) for what each tag tracks). For the XPU
+profile, also uncomment the `devices`/`group_add` entries under
+`physicalai-trainer-xpu` in `docker-compose.trainer.yaml` and set
+`RENDER_NODE`/`RENDER_GID` to the host's Intel GPU render node (see
+`.env.trainer.example`). They're commented out by default because Docker
+Compose evaluates `${RENDER_GID:?...}` for every service in the file — left
+active, it would also block `--profile cuda` runs when `RENDER_GID` isn't set.
 
 The examples below use a Docker-managed volume so the image's non-root
 `trainer` user can persist its queue, uploaded datasets, and artifacts

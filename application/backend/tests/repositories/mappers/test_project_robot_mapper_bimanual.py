@@ -8,12 +8,11 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from physicalai_studio_plugin import RobotCatalogDefinition
-from pydantic import BaseModel
 
 from repositories.mappers.project_robot_mapper import ProjectRobotMapper
 from robots.catalog.registry import RobotCatalogRegistry
 from robots.catalog.widowxai import TrossenBimanualPayload, TrossenBimanualRobot
+from schemas.environment import RobotWithTeleoperator, TeleoperatorNoneWithRobot
 from schemas.robot import UnavailableRobot
 
 
@@ -92,23 +91,11 @@ class TestProjectRobotMapperBimanual:
         assert result.unavailable is True
         assert result.payload == db_model.payload
 
-    def test_from_schema_uses_the_injected_registry_adapter(self):
-        class PluginPayload(BaseModel):
-            connection_string: str
-
+    def test_from_schema_uses_schema_adapter_for_available_robot(self):
         registry = RobotCatalogRegistry()
-        registry.register_robot(
-            RobotCatalogDefinition(
-                type="Test_Plugin_Robot",
-                display_name="Test Plugin Robot",
-                role="follower",
-                robot_payload=PluginPayload,
-            )
-        )
-        db_model = _make_bimanual_db_model("Test_Plugin_Robot")
-        db_model.payload = {"connection_string": "test://robot"}
+        db_model = _make_bimanual_db_model("Trossen_Bimanual_WidowXAI_Follower")
 
         result = ProjectRobotMapper.from_schema(db_model, registry)
+        relation = RobotWithTeleoperator(robot=result, tele_operator=TeleoperatorNoneWithRobot())
 
-        assert result.type == "Test_Plugin_Robot"
-        assert result.payload.connection_string == "test://robot"
+        assert relation.robot is result

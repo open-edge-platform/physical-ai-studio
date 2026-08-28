@@ -20,7 +20,7 @@ import pytest
 from loguru import logger
 
 from schemas.dataset import Snapshot
-from schemas.job import TrainingDevice, TrainJobPayload
+from schemas.job import RemoteTrainJobPayload, TrainingDevice
 from schemas.model import Model
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingContext
@@ -235,7 +235,9 @@ def _context(
         version=1,
         created_at=None,
     )
-    payload = TrainJobPayload(project_id=uuid4(), dataset_id=uuid4(), policy="act", model_name="m")
+    payload = RemoteTrainJobPayload(
+        project_id=uuid4(), dataset_id=uuid4(), policy="act", model_name="m", remote_trainer_id=uuid4()
+    )
     return TrainingContext(
         job=MagicMock(),
         model=model,

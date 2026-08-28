@@ -1,7 +1,7 @@
 from db.schema import ProjectRobotDB
 from repositories.mappers.base_mapper_interface import IBaseMapper
 from robots.catalog.registry import RobotCatalogRegistry
-from schemas.robot import Robot, UnavailableRobot
+from schemas.robot import Robot, RobotAdapter, UnavailableRobot
 
 
 class ProjectRobotMapper(IBaseMapper[ProjectRobotDB, Robot | UnavailableRobot]):
@@ -34,4 +34,4 @@ class ProjectRobotMapper(IBaseMapper[ProjectRobotDB, Robot | UnavailableRobot]):
         }
         if catalog_registry.get_definition(model.type) is None:
             return UnavailableRobot.model_validate(robot)
-        return catalog_registry.get_robot_adapter().validate_python(robot)
+        return RobotAdapter.validate_python(robot)

@@ -11,7 +11,9 @@ dependencies = [
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
   "physicalai[robots, capture, transport]",
-  "physicalai-train[pi0,smolvla]",
+  "eclipse-zenoh==1.9.0",
+  "msgpack==1.2.1",
+  "physicalai-train[pi0,smolvla,rldx1]",
   "lerobot[dataset,feetech]==0.6.0",
   "torchcodec==0.11.1",
   "numpy",
@@ -35,6 +37,8 @@ dependencies = [
   "huggingface-hub>=0.27",
   "psutil~=7.2",
   "physicalai-studio-plugin",
+  "asyncssh~=2.24",
+  "packaging>=24.0",
 ]
 
 [project.scripts]
@@ -119,7 +123,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "2528309e55ab6a5f7f71c6dc23b8baae21f80108" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9be95d88d5b9f8342f6952d8ec288fb108fa416e" }
 physicalai-studio-plugin = { path = "../plugin", editable = true }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can

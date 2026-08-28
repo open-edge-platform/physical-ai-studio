@@ -49,7 +49,7 @@ export const HyperParameters = ({ hparams }: { hparams: SchemaModelDetailRespons
             <View marginBottom={'size-100'}>
                 <Flex direction='row' justifyContent={'space-between'}>
                     <Heading marginTop='size-200'>Hyper parameters</Heading>
-                    <Switch isSelected={showJSON} onChange={setShowJSON}>
+                    <Switch isEmphasized isSelected={showJSON} onChange={setShowJSON}>
                         Show JSON
                     </Switch>
                 </Flex>

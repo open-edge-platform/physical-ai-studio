@@ -9,12 +9,16 @@ import multiprocessing as mp
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import pytest
 from loguru import logger
 
-from schemas.job import TrainingTarget, TrainJobPayload
+from schemas.hardware import DeviceType
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget, TrainJobPayload
+from schemas.remote_server import RemoteServer
 from services.training_backends import get_training_backend
 from services.training_backends.local import LocalTrainingBackend
 from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END, RemoteTrainingBackend
+from services.training_backends.ssh import SshTrainingBackend
 from services.training_service import TrainingTrackingDispatcher
 
 
@@ -25,30 +29,44 @@ def _settings() -> MagicMock:
 
 
 def _payload(target: TrainingTarget) -> TrainJobPayload:
-    return TrainJobPayload(
+    if target is TrainingTarget.LOCAL:
+        return LocalTrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="act",
+            model_name="model",
+        )
+    if target is TrainingTarget.REMOTE:
+        return RemoteTrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="act",
+            model_name="model",
+            remote_trainer_id=uuid4(),
+            remote_trainer_url="https://trainer.test",
+            remote_trainer_name="gpu-box-1",
+        )
+    return SshTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
         policy="act",
         model_name="model",
-        training_target=target,
-        remote_trainer_id=uuid4() if target is TrainingTarget.REMOTE else None,
-        remote_trainer_url="https://trainer.test" if target is TrainingTarget.REMOTE else None,
-        remote_trainer_name="gpu-box-1" if target is TrainingTarget.REMOTE else None,
+        remote_server_id=uuid4(),
     )
 
 
-def test_get_training_backend_returns_local_for_local_job() -> None:
-    backend = get_training_backend(_payload(TrainingTarget.LOCAL))
+async def test_get_training_backend_returns_local_for_local_job() -> None:
+    backend = await get_training_backend(_payload(TrainingTarget.LOCAL), uuid4())
     assert isinstance(backend, LocalTrainingBackend)
 
 
-def test_get_training_backend_returns_remote_for_remote_job() -> None:
+async def test_get_training_backend_returns_remote_for_remote_job() -> None:
     settings = _settings()
     with (
         patch("settings.get_settings", return_value=settings),
         patch("services.training_backends.remote.get_settings", return_value=settings),
     ):
-        backend = get_training_backend(_payload(TrainingTarget.REMOTE))
+        backend = await get_training_backend(_payload(TrainingTarget.REMOTE), uuid4())
     assert isinstance(backend, RemoteTrainingBackend)
 
     # The pinned trainer name reaches the backend, so its job logs are attributable.
@@ -59,6 +77,27 @@ def test_get_training_backend_returns_remote_for_remote_job() -> None:
     finally:
         logger.remove(sink_id)
     assert messages == ["[gpu-box-1] check"]
+
+
+async def test_get_training_backend_returns_ssh_for_ssh_job() -> None:
+    payload = _payload(TrainingTarget.SSH)
+    assert payload.remote_server_id is not None
+    server = RemoteServer(
+        id=payload.remote_server_id,
+        name="gpu-box-1",
+        ssh_host_alias="gpu-box",
+        device_type=DeviceType.CUDA,
+    )
+    with patch("services.remote_server_service.RemoteServerService.get_remote_server", AsyncMock(return_value=server)):
+        backend = await get_training_backend(payload, uuid4())
+    assert isinstance(backend, SshTrainingBackend)
+    assert backend._server is server
+
+
+async def test_get_training_backend_raises_without_remote_server_id() -> None:
+    payload = _payload(TrainingTarget.SSH).model_copy(update={"remote_server_id": None})
+    with pytest.raises(ValueError, match="remote server"):
+        await get_training_backend(payload, uuid4())
 
 
 def test_dispatcher_report_enqueues_progress_tuple() -> None:

@@ -91,3 +91,41 @@ class JobProvisioningRepository(BaseRepository[JobProvisioning, JobProvisioningD
         )
         results = await self.db.execute(query)
         return [self.from_schema(model) for model in results.scalars().all()]
+
+    async def get_active_for_server(self, remote_server_id: str | UUID) -> JobProvisioning | None:
+        """Return the one provisioning row on this server whose job can still own a container.
+
+        Drives the remote-server status endpoint's ``in_use_by_job_id``: the
+        target-per-job serialization (`TrainingWorker._target_key`) guarantees at
+        most one job is ever actively provisioning/training on a given server at
+        a time, so at most one row is expected here even though the query does
+        not itself enforce that invariant.
+        """
+        query = (
+            select(JobProvisioningDB)
+            .join(JobDB, JobDB.id == JobProvisioningDB.job_id)
+            .where(
+                JobProvisioningDB.remote_server_id == self._id_to_str(remote_server_id),
+                JobDB.status.in_(_NON_TERMINAL_JOB_STATUSES),
+            )
+            .order_by(JobProvisioningDB.created_at.asc())
+        )
+        results = await self.db.execute(query)
+        model = results.scalars().first()
+        return self.from_schema(model) if model is not None else None
+
+    async def list_stale(self) -> list[JobProvisioning]:
+        """Return provisioning rows whose job has already reached a terminal state.
+
+        Recovers a row a crashed teardown left behind: `_teardown` deletes the
+        row only after stopping the container, so a crash between the two
+        leaves a row describing a job that will never run again.
+        """
+        query = (
+            select(JobProvisioningDB)
+            .join(JobDB, JobDB.id == JobProvisioningDB.job_id)
+            .where(JobDB.status.notin_(_NON_TERMINAL_JOB_STATUSES))
+            .order_by(JobProvisioningDB.created_at.asc())
+        )
+        results = await self.db.execute(query)
+        return [self.from_schema(model) for model in results.scalars().all()]
