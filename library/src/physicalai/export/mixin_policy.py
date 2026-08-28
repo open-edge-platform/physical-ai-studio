@@ -6,11 +6,8 @@
 import inspect
 import logging
 import tempfile
-<<<<<<< HEAD
-=======
 from collections.abc import Generator, Iterable
 from contextlib import contextmanager
->>>>>>> origin/main
 from os import PathLike
 from pathlib import Path
 from typing import Any, cast
@@ -476,41 +473,20 @@ class ExportablePolicyMixin:
 
         self.model.eval()
 
-<<<<<<< HEAD
         if extra_model_args.via_onnx:
             with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
                 self._onnx_core_export_step(
                     model_path=Path(tmp.name),
                     input_sample=input_sample,
                     arg_name=arg_name,
-=======
-            if extra_model_args.via_onnx:
-                with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
-                    self._onnx_core_export_step(
-                        model_path=Path(tmp.name),
-                        input_sample=input_sample,
-                        arg_name=arg_name,
-                        **extra_export_kwargs,
-                    )
-                    with _quiet_loggers(_ONNX_PROBE_NOISE_LOGGERS, level=logging.ERROR):
-                        ov_model = openvino.convert_model(
-                            tmp.name,
-                            example_input={arg_name: input_sample},
-                            input=input_shapes,
-                        )
-            else:
-                ov_model = openvino.convert_model(
-                    self.model,
-                    example_input={arg_name: input_sample},
-                    input=input_shapes,
->>>>>>> origin/main
                     **extra_export_kwargs,
                 )
-                ov_model = openvino.convert_model(
-                    tmp.name,
-                    example_input={arg_name: input_sample},
-                    input=input_shapes,
-                )
+                with _quiet_loggers(_ONNX_PROBE_NOISE_LOGGERS, level=logging.ERROR):
+                    ov_model = openvino.convert_model(
+                        tmp.name,
+                        example_input={arg_name: input_sample},
+                        input=input_shapes,
+                    )
         else:
             ov_model = openvino.convert_model(
                 self.model,

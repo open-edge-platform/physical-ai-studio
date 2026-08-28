@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from physicalai.policies.utils.rtc_mixin import RTCPolicyMixin
+from physicalai.policies.mixins.rtc import RTCPolicyMixin
 
 
 class _ModelStub:

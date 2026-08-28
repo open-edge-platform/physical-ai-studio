@@ -29,8 +29,7 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 from physicalai.policies.base import Policy
-from physicalai.policies.utils.rtc_mixin import RTCPolicyMixin
-from physicalai.policies.mixins import SnapFlowPolicyMixin
+from physicalai.policies.mixins import RTCPolicyMixin, SnapFlowPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
