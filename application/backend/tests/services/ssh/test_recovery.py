@@ -135,7 +135,15 @@ async def test_confirmed_job_is_excluded_from_orphan_sweep() -> None:
 
     assert report.confirmed == 1
     assert report.failed == 0
-    assert job_service.status_updates == []
+    # Requeued to PENDING: `run_loop` only ever picks up jobs it finds
+    # PENDING, and only that pickup opens the real tunnel and resumes SSE
+    # streaming - a confirmed-but-still-RUNNING job would otherwise train to
+    # completion on the remote server with nothing in Studio reattached to it.
+    assert len(job_service.status_updates) == 1
+    confirmed_job_id, status, message = job_service.status_updates[0]
+    assert confirmed_job_id == row.job_id
+    assert status.value == "pending"
+    assert "restart" in message
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
     # Excluded from the generic orphan abort that follows, even though its
     # own job payload may not have persisted a remote_job_id yet.
@@ -181,7 +189,11 @@ async def test_transient_outcome_leaves_job_pending_but_still_excludes_it_from_s
 
     assert report.transient == 1
     assert report.failed == 0
-    assert job_service.status_updates == []
+    # Requeued to PENDING, same as the confirmed case: `run_loop` only ever
+    # picks up PENDING jobs, so this is what actually gets the reattach retried.
+    assert len(job_service.status_updates) == 1
+    assert job_service.status_updates[0][0] == row.job_id
+    assert job_service.status_updates[0][1].value == "pending"
     # Still claimed - a transient outcome does not lose its exclusion from the sweep.
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
     # And is excluded from the generic orphan abort: it has no persisted
@@ -203,7 +215,8 @@ async def test_inspection_failed_outcome_is_also_treated_as_transient() -> None:
 
     assert report.transient == 1
     assert report.failed == 0
-    assert job_service.status_updates == []
+    assert len(job_service.status_updates) == 1
+    assert job_service.status_updates[0][1].value == "pending"
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
 
 
@@ -216,6 +229,10 @@ async def test_row_with_no_container_yet_is_transient_and_never_calls_verify_rea
 
     assert report.transient == 1
     assert FakeProvisioningService.verify_calls == []
+    # Requeued to PENDING so this job actually gets picked back up and
+    # verified once a container eventually gets launched for it.
+    assert len(job_service.status_updates) == 1
+    assert job_service.status_updates[0][1].value == "pending"
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
 
 
