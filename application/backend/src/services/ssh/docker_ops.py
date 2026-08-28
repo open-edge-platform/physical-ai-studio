@@ -49,6 +49,8 @@ from settings import Settings
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from services.ssh.transport import CommandResult
+
 # Label carrying the `physicalai-train` version baked into the image, read
 # from the registry manifest before any pull.
 LIBRARY_VERSION_LABEL: Final = "org.open-edge-platform.physicalai.trainer.library-version"
@@ -61,6 +63,9 @@ MANAGED_LABEL: Final = "org.open-edge-platform.physicalai.managed"
 JOB_LABEL: Final = "org.open-edge-platform.physicalai.job-id"
 SERVER_LABEL: Final = "org.open-edge-platform.physicalai.server-id"
 INSTANCE_LABEL: Final = "org.open-edge-platform.physicalai.backend-instance-id"
+# Recorded so a reattach can detect drift between the persisted `JobProvisioningDB`
+# row and the container actually running, without a second registry round trip.
+IMAGE_DIGEST_LABEL: Final = "org.open-edge-platform.physicalai.image-digest"
 
 _CONTAINER_NAME_PREFIX: Final = "physicalai-trainer-"
 
@@ -158,20 +163,99 @@ def data_volume_name(job_id: str) -> str:
     return f"{_DATA_VOLUME_NAME_PREFIX}{job_id}"
 
 
-def management_labels(*, job_id: str, server_id: str, backend_instance_id: str) -> dict[str, str]:
+def management_labels(*, job_id: str, server_id: str, backend_instance_id: str, image_digest: str) -> dict[str, str]:
     """Return the labels every Studio-launched trainer container carries.
 
     `INSTANCE_LABEL` is the ownership marker the orphan sweep requires in
     addition to `MANAGED_LABEL`: a remote server can be shared by more than one
     Studio installation, and sweeping must never touch a container it merely
-    recognizes the shape of.
+    recognizes the shape of. `IMAGE_DIGEST_LABEL` lets a reattach detect that a
+    running container disagrees with the digest persisted for its job, without
+    a second registry call.
     """
     return {
         MANAGED_LABEL: "true",
         JOB_LABEL: job_id,
         SERVER_LABEL: server_id,
         INSTANCE_LABEL: backend_instance_id,
+        IMAGE_DIGEST_LABEL: image_digest,
     }
+
+
+@dataclass(frozen=True, slots=True)
+class ContainerInspection:
+    """A container's running state and labels, as reported by `docker inspect`."""
+
+    running: bool
+    labels: dict[str, str]
+
+
+class ContainerInspectionError(Exception):
+    """`docker inspect` failed for a reason other than the container being absent.
+
+    Raised instead of folding into `inspect_container`'s ``None`` return, so a
+    caller can never mistake an operational failure (docker daemon unavailable,
+    permission denied, an unexpected inspect error) for the container
+    legitimately not existing - the two demand very different recovery
+    responses (see `services.ssh.provisioning.ReattachFailureReason`).
+    """
+
+    def __init__(self, name_or_id: str, detail: str | None = None) -> None:
+        self.name_or_id = name_or_id
+        self.detail = detail
+        message = f"docker inspect failed for container '{name_or_id}'"
+        super().__init__(f"{message}: {detail}" if detail else message)
+
+
+# Substrings docker's own CLI/daemon use to report that the named object truly
+# does not exist, across the docker versions this module targets. Any other
+# failure (permission denied, daemon unavailable, a malformed name) is
+# inconclusive and must not be treated the same as "gone".
+_NOT_FOUND_MARKERS: Final = ("no such object", "no such container")
+
+
+def _container_not_found(result: CommandResult) -> bool:
+    """True when a failed `docker inspect` means the container does not exist."""
+    stderr = (result.stderr or "").lower()
+    return any(marker in stderr for marker in _NOT_FOUND_MARKERS)
+
+
+async def inspect_container(transport: SshTransport, name_or_id: str) -> ContainerInspection | None:
+    """Inspect a container's running state and labels.
+
+    Returns:
+        ``None`` when `docker inspect` confirms the container does not exist
+        at all (its stderr reports "No such object"/"No such container"). A
+        container that exists but is stopped is still returned, with
+        ``running=False``.
+
+    Raises:
+        ContainerInspectionError: Either inspect call failed for some other
+            reason - the container's existence, or its labels, could not be
+            determined. Never raised for a container confirmed absent by the
+            first call.
+    """
+    running_result = await transport.run_command(["docker", "inspect", "--format", "{{.State.Running}}", name_or_id])
+    if not running_result.ok:
+        if _container_not_found(running_result):
+            return None
+        raise ContainerInspectionError(name_or_id, detail=running_result.stderr or running_result.stdout or None)
+
+    labels_result = await transport.run_command(
+        ["docker", "inspect", "--format", "{{json .Config.Labels}}", name_or_id]
+    )
+    if not labels_result.ok:
+        # The container existed a moment ago (the first call succeeded); a
+        # second failure here is an operational error, not evidence the
+        # container is gone. Folding this into `labels={}` would read as a
+        # confirmed-empty label set and let ownership/digest checks silently
+        # pass as "mismatch" rather than "couldn't tell".
+        if _container_not_found(labels_result):
+            return None
+        raise ContainerInspectionError(name_or_id, detail=labels_result.stderr or labels_result.stdout or None)
+    labels = _parse_json(labels_result.stdout)
+    labels = labels if isinstance(labels, dict) else {}
+    return ContainerInspection(running=running_result.first_line().lower() == "true", labels=labels)
 
 
 def _parse_json(text: str) -> object | None:

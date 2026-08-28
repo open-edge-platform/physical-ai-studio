@@ -19,6 +19,9 @@ from uuid import uuid4
 import pytest
 
 from exceptions import (
+    SshConnectionError,
+    SshHostAliasNotFoundError,
+    SshHostKeyMismatchError,
     TrainerContainerLaunchError,
     TrainerImageResolutionError,
     TrainerImageVerificationError,
@@ -32,7 +35,7 @@ from services.ssh import docker_ops
 from services.ssh import provisioning as provisioning_module
 from services.ssh.docker_ops import JOB_LABEL, LIBRARY_VERSION_LABEL, MANAGED_LABEL, LibraryVersionCheck, ResolvedImage
 from services.ssh.preflight import PROTOCOL_LABEL
-from services.ssh.provisioning import SshProvisioningService
+from services.ssh.provisioning import ReattachFailureReason, SshProvisioningService
 from services.ssh.transport import CommandResult
 from services.training_backends.phase import PhaseKey
 from settings import Settings
@@ -56,6 +59,19 @@ def _fail(stderr: str = "failed") -> CommandResult:
 
 def _server() -> RemoteServer:
     return RemoteServer(id=uuid4(), name="Lab GPU box", ssh_host_alias="gpu-box", device_type=DeviceType.CUDA)
+
+
+def _inspection_script(*, running: bool, labels: dict[str, str]) -> dict[str, CommandResult]:
+    """Script `docker inspect --format ...` for the two distinct calls `inspect_container` makes.
+
+    `_healthy_script()`'s single catch-all `"docker inspect"` key would match
+    both calls with the same reply, so these tests build the two format-scoped
+    keys directly instead.
+    """
+    return {
+        "docker inspect --format {{.State.Running}}": _ok(f"{str(running).lower()}\n"),
+        "docker inspect --format {{json .Config.Labels}}": _ok(json.dumps(labels)),
+    }
 
 
 def _healthy_script(container_id: str = "abc123", published_port: int = 54321) -> dict[str, CommandResult]:
@@ -475,3 +491,330 @@ async def test_provisioned_trainer_teardown_uses_provisioning_settings(monkeypat
 
     assert captured["alias"] == "gpu-box"
     assert captured["settings"] is settings
+
+
+# --------------------------------------------------------------------------- #
+# verify_reattach                                                             #
+# --------------------------------------------------------------------------- #
+
+
+def _provisioning_row(server: RemoteServer, job_id, *, image_digest: str | None = _DIGEST) -> JobProvisioning:
+    return JobProvisioning(
+        job_id=job_id,
+        remote_server_id=server.id,
+        ssh_host_alias=server.ssh_host_alias,
+        container_name=docker_ops.container_name(str(job_id)),
+        remote_port=8080,
+        image_digest=image_digest,
+    )
+
+
+async def test_verify_reattach_confirms_a_healthy_owned_container(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    monkeypatch.setattr(provisioning_module, "get_backend_instance_id", lambda: "this-instance")
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script.update(
+        _inspection_script(
+            running=True,
+            labels={
+                docker_ops.INSTANCE_LABEL: "this-instance",
+                docker_ops.JOB_LABEL: str(job_id),
+                docker_ops.IMAGE_DIGEST_LABEL: _DIGEST,
+            },
+        )
+    )
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    async def fake_ready(base_url, server_name):
+        return {"protocol_version": _PROTOCOL_VERSION}
+
+    service._await_ready = fake_ready  # type: ignore[method-assign]
+
+    result = await service.verify_reattach(row, server)
+
+    assert result.ok
+    assert result.reason is None
+    assert result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_container_gone_when_no_container_was_ever_launched(
+    _patch_transport_and_tunnel, repository
+) -> None:
+    server = _server()
+    job_id = uuid4()
+    row = JobProvisioning(
+        job_id=job_id, remote_server_id=server.id, ssh_host_alias=server.ssh_host_alias, container_name=None
+    )
+    await repository.save(row)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is provisioning_module.ReattachFailureReason.CONTAINER_GONE
+    assert not result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_container_gone_when_not_running(_patch_transport_and_tunnel, repository) -> None:
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script.update(_inspection_script(running=False, labels={}))
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.CONTAINER_GONE
+    assert not result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_ownership_mismatch_without_teardown(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    monkeypatch.setattr(provisioning_module, "get_backend_instance_id", lambda: "this-instance")
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script.update(
+        _inspection_script(
+            running=True,
+            labels={docker_ops.INSTANCE_LABEL: "some-other-instance", docker_ops.JOB_LABEL: str(job_id)},
+        )
+    )
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.OWNERSHIP_MISMATCH
+    # Ownership was never established, so a caller must never tear this down -
+    # it may belong to another Studio installation.
+    assert not result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_digest_mismatch_and_allows_teardown(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    monkeypatch.setattr(provisioning_module, "get_backend_instance_id", lambda: "this-instance")
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id, image_digest=_DIGEST)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script.update(
+        _inspection_script(
+            running=True,
+            labels={
+                docker_ops.INSTANCE_LABEL: "this-instance",
+                docker_ops.JOB_LABEL: str(job_id),
+                docker_ops.IMAGE_DIGEST_LABEL: "sha256:" + "f" * 64,
+            },
+        )
+    )
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.DIGEST_MISMATCH
+    # Ownership was confirmed, so this one is provably ours to reclaim.
+    assert result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_digest_mismatch_when_running_container_has_no_digest_label(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    """A persisted digest with no running label to compare against fails closed.
+
+    A container launched by an older Studio build (before `IMAGE_DIGEST_LABEL`
+    existed) must never be silently treated as a confirmed match just because
+    there is nothing to compare against.
+    """
+    monkeypatch.setattr(provisioning_module, "get_backend_instance_id", lambda: "this-instance")
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id, image_digest=_DIGEST)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script.update(
+        _inspection_script(
+            running=True,
+            labels={docker_ops.INSTANCE_LABEL: "this-instance", docker_ops.JOB_LABEL: str(job_id)},
+        )
+    )
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.DIGEST_MISMATCH
+    assert result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_inspection_failed_when_docker_inspect_errors(
+    _patch_transport_and_tunnel, repository
+) -> None:
+    """An operational `docker inspect` failure must never be conflated with the
+    container being confirmed gone."""
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script["docker inspect --format {{.State.Running}}"] = _fail("Cannot connect to the Docker daemon")
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.INSPECTION_FAILED
+    assert not result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_health_never_ready_as_transient(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    monkeypatch.setattr(provisioning_module, "get_backend_instance_id", lambda: "this-instance")
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script.update(
+        _inspection_script(
+            running=True,
+            labels={
+                docker_ops.INSTANCE_LABEL: "this-instance",
+                docker_ops.JOB_LABEL: str(job_id),
+                docker_ops.IMAGE_DIGEST_LABEL: _DIGEST,
+            },
+        )
+    )
+    _set_script(_patch_transport_and_tunnel, script)
+    service = SshProvisioningService(repository)
+
+    async def never_ready(base_url, server_name):
+        raise TrainerReadinessTimeoutError(server_name, "no response")
+
+    service._await_ready = never_ready  # type: ignore[method-assign]
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.HEALTH_NEVER_READY
+    assert result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_host_key_failure_without_teardown(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+
+    class _RaisingTransport:
+        def __init__(self, alias, settings=None) -> None:
+            self._alias = alias
+
+        async def __aenter__(self):
+            raise SshHostKeyMismatchError(self._alias)
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    monkeypatch.setattr(provisioning_module, "SshTransport", _RaisingTransport)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.HOST_KEY_FAILURE
+    assert not result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_alias_missing_without_teardown(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+
+    class _RaisingTransport:
+        def __init__(self, alias, settings=None) -> None:
+            self._alias = alias
+
+        async def __aenter__(self):
+            raise SshHostAliasNotFoundError(self._alias)
+
+        async def __aexit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    monkeypatch.setattr(provisioning_module, "SshTransport", _RaisingTransport)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.ALIAS_MISSING
+    assert not result.safe_to_teardown
+
+
+async def test_verify_reattach_reports_port_unreachable_when_tunnel_fails(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    monkeypatch.setattr(provisioning_module, "get_backend_instance_id", lambda: "this-instance")
+    server = _server()
+    job_id = uuid4()
+    row = _provisioning_row(server, job_id)
+    await repository.save(row)
+    script = _healthy_script()
+    del script["docker inspect"]
+    script.update(
+        _inspection_script(
+            running=True,
+            labels={
+                docker_ops.INSTANCE_LABEL: "this-instance",
+                docker_ops.JOB_LABEL: str(job_id),
+                docker_ops.IMAGE_DIGEST_LABEL: _DIGEST,
+            },
+        )
+    )
+    _set_script(_patch_transport_and_tunnel, script)
+
+    class _FailingTunnel(FakeSshTunnel):
+        async def open(self) -> None:
+            raise SshConnectionError(server.ssh_host_alias, reason="unreachable")
+
+    monkeypatch.setattr(provisioning_module, "SshTunnel", _FailingTunnel)
+    service = SshProvisioningService(repository)
+
+    result = await service.verify_reattach(row, server)
+
+    assert not result.ok
+    assert result.reason is ReattachFailureReason.PORT_UNREACHABLE
+    assert not result.safe_to_teardown

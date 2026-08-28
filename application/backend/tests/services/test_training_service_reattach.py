@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from schemas.base_job import JobStatus
-from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainJobPayload
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget, TrainJobPayload
 from services.training_service import TrainingService
 
 MODULE = "services.training_service"
@@ -151,3 +151,30 @@ class TestReattachOrphans:
 
         job.payload = {"training_target": "local", "remote_job_id": str(remote_job_id)}
         assert TrainingService._reattachable_remote_job_id(job) is None
+
+    @pytest.mark.anyio
+    async def test_excluded_job_ids_are_skipped_even_without_a_remote_id(self):
+        """A job another recovery pass already handled is never re-judged here.
+
+        `services.ssh.recovery.recover_ssh_jobs` may confirm an SSH job's
+        container healthy before the job itself ever persisted a
+        `remote_job_id` (a crash between provisioning and job submission).
+        Excluding it is what stops this generic pass from failing it anyway.
+        """
+        payload = SshTrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="act",
+            model_name="m",
+            training_target=TrainingTarget.SSH,
+            remote_server_id=uuid4(),
+        )
+        job = _job(payload)
+
+        service = MagicMock()
+        service.get_job_list = AsyncMock(return_value=[job])
+        service.update_job_status = AsyncMock(return_value=MagicMock())
+
+        await TrainingService.abort_orphan_jobs(service, exclude_job_ids={job.id})
+
+        service.update_job_status.assert_not_awaited()

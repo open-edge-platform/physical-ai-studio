@@ -14,14 +14,17 @@ from loguru import logger
 
 from core.logging.utils import job_logging_ctx
 from db import get_async_db_session_ctx
+from repositories.job_provisioning_repo import JobProvisioningRepository
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
 from schemas.job import TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
 from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
+from services.remote_server_service import RemoteServerService
 from services.remote_trainer_service import RemoteTrainerService
 from services.snapshot_service import SnapshotService
+from services.ssh.recovery import recover_ssh_jobs
 from services.training_backends import (
     TrainingCanceledError,
     TrainingContext,
@@ -147,7 +150,14 @@ class TrainingWorker(BaseProcessWorker):
     async def setup(self) -> None:
         await super().setup()
         with logger.contextualize(worker=self.__class__.__name__):
-            await self._abort_orphan_jobs()
+            # SSH recovery must run before the generic orphan abort: it confirms
+            # or fails each SSH job's container explicitly, so the generic pass
+            # only ever needs to catch a job this one somehow failed to reach.
+            # Every job id it rendered a verdict for is excluded from the
+            # generic pass, which otherwise judges solely on `remote_job_id`
+            # and could re-fail a job SSH recovery just confirmed healthy.
+            handled_job_ids = await self._recover_ssh_jobs()
+            await self._abort_orphan_jobs(exclude_job_ids=handled_job_ids)
 
     async def teardown(self) -> None:
         await super().teardown()
@@ -155,9 +165,35 @@ class TrainingWorker(BaseProcessWorker):
             await self._abort_orphan_jobs()
 
     @staticmethod
-    async def _abort_orphan_jobs() -> None:
+    async def _abort_orphan_jobs(*, exclude_job_ids: frozenset[UUID] | None = None) -> None:
         async with get_async_db_session_ctx() as session:
-            await TrainingService.abort_orphan_jobs(JobService(session, RemoteTrainerService(session)))
+            await TrainingService.abort_orphan_jobs(
+                JobService(session, RemoteTrainerService(session)), exclude_job_ids=exclude_job_ids
+            )
+
+    @staticmethod
+    async def _recover_ssh_jobs() -> frozenset[UUID]:
+        """Reattach or fail every SSH-provisioned job left non-terminal by a restart.
+
+        Returns:
+            Every job id SSH recovery rendered a verdict for, so the caller can
+            exclude them from the generic orphan abort that follows.
+        """
+        async with get_async_db_session_ctx() as session:
+            provisioning_repo = JobProvisioningRepository(session)
+            remote_server_service = RemoteServerService(session)
+            job_service = JobService(session, RemoteTrainerService(session), remote_server_service)
+            report = await recover_ssh_jobs(job_service, provisioning_repo, remote_server_service)
+        logger.info(
+            "SSH job recovery: {} confirmed, {} pending retry, {} failed, {} stale row(s) cleaned, "
+            "{} orphan container(s) removed",
+            report.confirmed,
+            report.transient,
+            report.failed,
+            report.stale_rows_cleaned,
+            report.orphans_removed,
+        )
+        return report.handled_job_ids
 
     @staticmethod
     async def _update_training_progress(

@@ -13,7 +13,7 @@ dependencies = [
   "physicalai[robots, capture, transport]",
   "eclipse-zenoh==1.9.0",
   "msgpack==1.2.1",
-  "physicalai-train[pi0,smolvla]",
+  "physicalai-train[pi0,smolvla,rldx1]",
   "lerobot[dataset,feetech]==0.6.0",
   "torchcodec==0.11.1",
   "numpy",

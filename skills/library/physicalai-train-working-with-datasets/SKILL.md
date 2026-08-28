@@ -76,13 +76,13 @@ data:
 - Feature names, `FeatureType`, action dim, and normalization match between dataset, `Config`, and any export metadata.
 - Conversions round-trip without dropping or renaming fields.
 - Direct datamodule API construction and YAML config construction produce compatible batches.
-- Tests that require downloads are marked `requires_download`; keep default `uv run pytest` runnable offline.
+- Tests that require downloads are marked `requires_download`; keep default `uv run --no-sync pytest` runnable offline.
 
 ## Verify
 
 ```bash
 # from library/
-uv run pytest tests/unit/data tests/unit/datamodules
+uv run --no-sync pytest tests/unit/data tests/unit/datamodules
 ```
 
 ## Related skills

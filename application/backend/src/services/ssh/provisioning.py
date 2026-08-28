@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from enum import StrEnum
 from time import monotonic
 from typing import TYPE_CHECKING, Self
 
@@ -28,6 +29,10 @@ from loguru import logger
 
 from core.backend_instance import get_backend_instance_id
 from exceptions import (
+    SshConnectionError,
+    SshHostAliasNotFoundError,
+    SshHostKeyMismatchError,
+    SshHostKeyUnknownError,
     TrainerContainerLaunchError,
     TrainerLibraryVersionMismatchError,
     TrainerProtocolVersionMismatchError,
@@ -55,6 +60,58 @@ if TYPE_CHECKING:
 # never sets `TRAINER_PORT`, so this must match `TrainerSettings.port`'s
 # default and the Dockerfile's `EXPOSE`.
 TRAINER_CONTAINER_PORT = 8001
+
+
+class ReattachFailureReason(StrEnum):
+    """Why `verify_reattach` could not confirm a persisted job's container.
+
+    Each member drives a distinct recovery outcome (see
+    `services.ssh.recovery`): some are safe to tear down because ownership was
+    already established, some must never be touched because it wasn't, and some
+    are transient and should simply be retried on the next normal pickup.
+    """
+
+    # The container is gone entirely. Nothing to tear down.
+    CONTAINER_GONE = "container_gone"
+    # Ownership (backend_instance_id + job id labels) never matched. This may be
+    # another Studio installation's container - never touch it.
+    OWNERSHIP_MISMATCH = "ownership_mismatch"
+    # Ownership matched, but the running image disagrees with the persisted
+    # digest. Ownership is established, so this one is safe to tear down.
+    DIGEST_MISMATCH = "digest_mismatch"
+    # Ownership and digest matched, but `/health` never answered in time. May
+    # simply be slow to start; leave it for the next attempt.
+    HEALTH_NEVER_READY = "health_never_ready"
+    # The SSH host key could not be verified. Fails closed: never tear down a
+    # container it was not possible to authenticate the host for.
+    HOST_KEY_FAILURE = "host_key_failure"
+    # The alias is no longer in the user's SSH config. Cannot connect at all.
+    ALIAS_MISSING = "alias_missing"
+    # Connected before, but the host or the tunnel could not be reached this
+    # time. Transient; leave it for the next attempt.
+    PORT_UNREACHABLE = "port_unreachable"
+    # `docker inspect` itself failed for a reason other than the container
+    # being absent (daemon unavailable, permission denied, ...). Ownership
+    # could not be checked at all; transient, leave it for the next attempt.
+    INSPECTION_FAILED = "inspection_failed"
+
+
+@dataclass(frozen=True, slots=True)
+class ReattachVerification:
+    """Outcome of confirming a persisted job's container is still trustworthy.
+
+    `verify_reattach` only classifies; it never tears a container down itself,
+    so a caller that conflates "could not verify" with "verified and is wrong"
+    can never destroy a container it simply failed to reach.
+    """
+
+    ok: bool
+    reason: ReattachFailureReason | None = None
+    detail: str | None = None
+    # True once ownership (backend_instance_id + job id labels) was positively
+    # confirmed, so a caller knows a subsequent teardown is provably this
+    # installation's own container and not a guess.
+    safe_to_teardown: bool = False
 
 
 @dataclass(frozen=True)
@@ -156,9 +213,6 @@ class SshProvisioningService:
         backend_instance_id = get_backend_instance_id()
         name = docker_ops.container_name(str(job_id))
         data_volume = docker_ops.data_volume_name(str(job_id))
-        labels = docker_ops.management_labels(
-            job_id=str(job_id), server_id=str(server.id), backend_instance_id=backend_instance_id
-        )
 
         def _phase(key: PhaseKey) -> None:
             if on_phase is not None:
@@ -211,6 +265,12 @@ class SshProvisioningService:
                     None
                     if server.device_type is DeviceType.CUDA
                     else await docker_ops.resolve_render_group_gid(transport)
+                )
+                labels = docker_ops.management_labels(
+                    job_id=str(job_id),
+                    server_id=str(server.id),
+                    backend_instance_id=backend_instance_id,
+                    image_digest=image.digest,
                 )
                 await docker_ops.create_data_volume(transport, data_volume, labels, server.name)
                 volume_created = True
@@ -405,6 +465,95 @@ class SshProvisioningService:
             _data_volume=docker_ops.data_volume_name(str(job_provisioning.job_id)),
             _settings=settings,
         )
+
+    # PLR0911: one return per classified outcome (see `ReattachFailureReason`) -
+    # a lookup table would obscure which branch establishes ownership and which
+    # never connects at all, and that distinction is what a caller relies on to
+    # decide what is safe to clean up.
+    async def verify_reattach(  # noqa: PLR0911
+        self, job_provisioning: JobProvisioning, server: RemoteServer
+    ) -> ReattachVerification:
+        """Confirm a persisted job's container is still trustworthy, without keeping a tunnel open.
+
+        Called once at studio startup, before `reattach` opens the tunnel the
+        training backend actually trains through - this only classifies
+        whether that later reattach should be trusted to proceed. A throwaway
+        tunnel is opened just long enough to confirm `/health` answers, then
+        closed immediately: leaving a tunnel open here would idle it for
+        however long the job takes to be picked back up.
+
+        Never tears a container down itself: every failure branch below is a
+        pure classification, so the caller decides what is safe to clean up.
+        """
+        name = job_provisioning.container_name
+        if name is None:
+            return ReattachVerification(
+                ok=False, reason=ReattachFailureReason.CONTAINER_GONE, detail="no container was ever launched"
+            )
+
+        settings = self._settings
+        try:
+            async with SshTransport(server.ssh_host_alias, settings) as transport:
+                inspection = await docker_ops.inspect_container(transport, name)
+                if inspection is None or not inspection.running:
+                    return ReattachVerification(ok=False, reason=ReattachFailureReason.CONTAINER_GONE)
+
+                backend_instance_id = get_backend_instance_id()
+                owner = inspection.labels.get(docker_ops.INSTANCE_LABEL)
+                job_label = inspection.labels.get(docker_ops.JOB_LABEL)
+                if owner != backend_instance_id or job_label != str(job_provisioning.job_id):
+                    return ReattachVerification(
+                        ok=False,
+                        reason=ReattachFailureReason.OWNERSHIP_MISMATCH,
+                        detail="the running container's ownership labels do not match this installation and job",
+                    )
+
+                digest_label = inspection.labels.get(docker_ops.IMAGE_DIGEST_LABEL)
+                if job_provisioning.image_digest and digest_label != job_provisioning.image_digest:
+                    detail = (
+                        f"running image digest '{digest_label}' does not match persisted "
+                        f"'{job_provisioning.image_digest}'"
+                        if digest_label
+                        else "running container carries no image digest label to compare against the persisted digest"
+                    )
+                    return ReattachVerification(
+                        ok=False,
+                        reason=ReattachFailureReason.DIGEST_MISMATCH,
+                        detail=detail,
+                        safe_to_teardown=True,
+                    )
+        except SshHostAliasNotFoundError as error:
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.ALIAS_MISSING, detail=str(error))
+        except (SshHostKeyUnknownError, SshHostKeyMismatchError) as error:
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.HOST_KEY_FAILURE, detail=str(error))
+        except SshConnectionError as error:
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.PORT_UNREACHABLE, detail=str(error))
+        except docker_ops.ContainerInspectionError as error:
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.INSPECTION_FAILED, detail=str(error))
+
+        # Ownership and digest are confirmed; open a throwaway tunnel just long
+        # enough to confirm `/health` answers, then close it. The real reattach
+        # (opened by `SshTrainingBackend` when the job is next picked up) gets
+        # its own, longer-lived tunnel.
+        tunnel = SshTunnel(
+            lambda: open_transport(server.ssh_host_alias, settings),
+            "127.0.0.1",
+            job_provisioning.remote_port or TRAINER_CONTAINER_PORT,
+            settings,
+        )
+        try:
+            await tunnel.open()
+            await self._await_ready(f"http://127.0.0.1:{tunnel.local_port}", server.name)
+        except TrainerReadinessTimeoutError as error:
+            return ReattachVerification(
+                ok=False, reason=ReattachFailureReason.HEALTH_NEVER_READY, detail=str(error), safe_to_teardown=True
+            )
+        except SshConnectionError as error:
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.PORT_UNREACHABLE, detail=str(error))
+        finally:
+            await tunnel.close()
+
+        return ReattachVerification(ok=True, safe_to_teardown=True)
 
     async def teardown(self, job_id: UUID, server: RemoteServer) -> None:
         """Tear down a job's container by id, without an open tunnel.

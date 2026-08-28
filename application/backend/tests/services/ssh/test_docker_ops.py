@@ -540,3 +540,82 @@ async def test_list_managed_volumes_parses_docker_volume_ls_json_lines() -> None
     assert len(volumes) == 1
     assert volumes[0].name == "physicalai-trainer-data-job1"
     assert volumes[0].job_id == "job1"
+
+
+# --------------------------------------------------------------------------- #
+# management_labels / inspect_container (reattach support)                    #
+# --------------------------------------------------------------------------- #
+
+
+def test_management_labels_records_the_launched_image_digest() -> None:
+    labels = docker_ops.management_labels(
+        job_id="job1", server_id="server1", backend_instance_id="instance-1", image_digest=_DIGEST
+    )
+
+    assert labels[docker_ops.IMAGE_DIGEST_LABEL] == _DIGEST
+    assert labels[docker_ops.JOB_LABEL] == "job1"
+    assert labels[docker_ops.INSTANCE_LABEL] == "instance-1"
+
+
+async def test_inspect_container_returns_none_when_container_is_gone() -> None:
+    transport = FakeTransport({"docker inspect --format {{.State.Running}}": _fail("No such container")})
+
+    result = await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+    assert result is None
+
+
+async def test_inspect_container_raises_when_the_inspect_command_itself_fails() -> None:
+    """An operational failure (daemon down, permission denied, ...) must never be
+    conflated with the container legitimately not existing."""
+    transport = FakeTransport(
+        {"docker inspect --format {{.State.Running}}": _fail("Cannot connect to the Docker daemon")}
+    )
+
+    with pytest.raises(docker_ops.ContainerInspectionError):
+        await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+
+async def test_inspect_container_raises_when_the_labels_call_fails() -> None:
+    """The container was confirmed present by the first call; a second-call
+    failure is still an operational error, not evidence of an empty label set
+    (which would read as an ownership mismatch rather than "couldn't tell")."""
+    transport = FakeTransport(
+        {
+            "docker inspect --format {{.State.Running}}": _ok("true\n"),
+            "docker inspect --format {{json .Config.Labels}}": _fail("Cannot connect to the Docker daemon"),
+        }
+    )
+
+    with pytest.raises(docker_ops.ContainerInspectionError):
+        await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+
+async def test_inspect_container_reports_running_state_and_labels() -> None:
+    labels = {docker_ops.INSTANCE_LABEL: "instance-1", docker_ops.JOB_LABEL: "job1"}
+    transport = FakeTransport(
+        {
+            "docker inspect --format {{.State.Running}}": _ok("true\n"),
+            "docker inspect --format {{json .Config.Labels}}": _ok(json.dumps(labels)),
+        }
+    )
+
+    result = await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+    assert result is not None
+    assert result.running is True
+    assert result.labels == labels
+
+
+async def test_inspect_container_reports_stopped_state() -> None:
+    transport = FakeTransport(
+        {
+            "docker inspect --format {{.State.Running}}": _ok("false\n"),
+            "docker inspect --format {{json .Config.Labels}}": _ok("{}"),
+        }
+    )
+
+    result = await docker_ops.inspect_container(transport, "physicalai-trainer-job1")
+
+    assert result is not None
+    assert result.running is False

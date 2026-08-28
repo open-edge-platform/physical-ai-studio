@@ -105,6 +105,16 @@ smolvla = [
     "safetensors>=0.4.3,<1.0.0",
 ]
 
+# RLWRLD RLDX-1
+rldx1 = [
+    "transformers>=5.3.0,<5.6.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+    "scipy>=1.11.0,<2.0.0",
+    "peft>=0.13.0,<1.0.0",
+    "diffusers>=0.38.0",
+]
+
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
 
@@ -119,6 +129,7 @@ all = [
     "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
+    "physicalai-train[rldx1]",
 ]
 
 # Contribute Torch and ExecuTorch as inference backends to the registry
@@ -236,6 +247,10 @@ project-excludes = [
     "src/physicalai/gyms/robocasa.py",
     "src/physicalai/policies/pi05/pi_gemma.py",
     "src/physicalai/policies/groot/components/backbone.py",
+    # rldx1's model.py lazily imports peft, an optional dep not present in the
+    # main `.venv`; guarded at runtime with a clear ImportError if missing.
+    "src/physicalai/policies/rldx1/model.py",
+    "src/physicalai/policies/rldx1/components/backbone/modeling_qwen3_vl.py",
 ]
 
 
@@ -255,6 +270,8 @@ extend-exclude = [
     "examples",
     "tests",
     "notebooks", # Jupyter notebooks have different style requirements
+    # Auto-generated from transformers' modular_qwen3_vl.py; not hand-maintained.
+    "src/physicalai/policies/rldx1/components/backbone/modeling_qwen3_vl.py",
 ]
 
 [tool.ruff.lint]
