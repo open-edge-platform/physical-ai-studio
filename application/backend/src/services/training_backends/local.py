@@ -44,15 +44,9 @@ class LocalTrainingBackend:
             raise ValueError("Local training requires a dataset snapshot")
 
         spec = build_spec(context)
-        hf_token = get_settings().huggingface.hf_token
-        # Fallback to Environment Variable based hf token if settings hasn't been set
-        if (hf_token is None or not hf_token.get_secret_value()) and (
-            legacy_hf_token := os.environ.get("HF_TOKEN", "")
-        ):
-            hf_token = SecretStr(legacy_hf_token)
         spec.run_options = RunOptions(
             resume_from=_resume_checkpoint(context),
-            hf_token=hf_token,
+            hf_token=resolve_hf_token(),
         )
         await asyncio.to_thread(
             run_training_job,
@@ -81,6 +75,21 @@ class LocalTrainingBackend:
             reporter(min(99, progress), message=message, extra_info=extra_info)
 
         return report
+
+
+def resolve_hf_token() -> SecretStr | None:
+    """Return the configured Hugging Face token, falling back to the legacy env var.
+
+    Shared by the local backend (set directly into `RunOptions`) and the
+    remote/SSH backends (sent to the trainer at job submission time; see
+    `services.training_backends.remote.RemoteTrainingBackend.submit_job`), so
+    every training path resolves the same token the same way.
+    """
+    hf_token = get_settings().huggingface.hf_token
+    # Fallback to Environment Variable based hf token if settings hasn't been set
+    if (hf_token is None or not hf_token.get_secret_value()) and (legacy_hf_token := os.environ.get("HF_TOKEN", "")):
+        hf_token = SecretStr(legacy_hf_token)
+    return hf_token
 
 
 def build_spec(context: TrainingContext) -> TrainingJobSpec:

@@ -4,7 +4,7 @@ The SSH remote-trainer feature lets the Studio backend provision a training
 job on a GPU server it can reach over SSH: it copies/starts a job-scoped
 trainer container on that server, tunnels to it over the SSH connection, and
 runs the job exactly like a locally-registered remote trainer (see
-[`remote-trainer.md`](./remote-trainer.md) for what runs on the server side).
+[`../remote-trainer.md`](../remote-trainer.md) for what runs on the server side).
 
 ## Master switch
 
@@ -76,7 +76,7 @@ arguments), the backend re-evaluates whether it is safe to serve the feature:
   explaining why.
 
 This check lives in `core.security.ssh_network_exposure` and is applied in
-two independent places so a change in configuration is never enough on its
+three independent places so a change in configuration is never enough on its
 own to expose the feature, and a job that made it past submission is never
 enough on its own to let it run:
 
@@ -120,6 +120,6 @@ reached without authentication.
 - Treat a `critical`-level `"SSH remote-trainer feature disabled at
   startup"` log line as an operator action item: either narrow `HOST` to a
   loopback address, or turn the feature off from the settings page.
-- Review [`remote-trainer.md`](./remote-trainer.md) for the server-side
+- Review [`../remote-trainer.md`](../remote-trainer.md) for the server-side
   container image, network, and authentication expectations before
   registering any remote server.

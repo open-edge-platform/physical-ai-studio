@@ -90,7 +90,7 @@ the service, monitors the training job, and imports the resulting model.
 Alternatively, the backend can provision a job-scoped trainer over SSH on a
 server you can reach directly. This feature is off by default and has no
 authentication model of its own — see
-[`docs/ssh-remote-trainer.md`](docs/ssh-remote-trainer.md) before enabling it.
+[`docs/explanation/ssh-remote-trainer.md`](docs/explanation/ssh-remote-trainer.md) before enabling it.
 
 ### Database Migrations
 

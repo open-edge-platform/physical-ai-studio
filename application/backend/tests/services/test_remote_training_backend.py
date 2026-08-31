@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from loguru import logger
+from pydantic import SecretStr
 
 from schemas.dataset import Snapshot
 from schemas.job import RemoteTrainJobPayload, TrainingDevice
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 REMOTE = "services.training_backends.remote"
+LOCAL = "services.training_backends.local"
 TRANSFER = "services.training_backends._transfer_progress"
 
 
@@ -322,6 +324,27 @@ class TestRemoteTrainingBackend:
         body = await _submitted_body(_settings(), _context(tmp_path))
 
         assert "run_options" not in body["spec"]
+
+    @pytest.mark.anyio
+    async def test_submit_sends_hf_token_as_top_level_field(self, tmp_path):
+        """The token travels outside `spec`, so the trainer never persists it with the job request."""
+        local_settings = MagicMock()
+        local_settings.huggingface.hf_token = SecretStr("hf-secret")
+        with patch(f"{LOCAL}.get_settings", return_value=local_settings):
+            body = await _submitted_body(_settings(), _context(tmp_path))
+
+        assert body["hf_token"] == "hf-secret"
+        assert "hf_token" not in body["spec"]
+
+    @pytest.mark.anyio
+    async def test_submit_sends_none_hf_token_when_unconfigured(self, tmp_path, monkeypatch):
+        local_settings = MagicMock()
+        local_settings.huggingface.hf_token = None
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        with patch(f"{LOCAL}.get_settings", return_value=local_settings):
+            body = await _submitted_body(_settings(), _context(tmp_path))
+
+        assert body["hf_token"] is None
 
     @pytest.mark.anyio
     async def test_completion_deletes_remote_job_artifacts(self, tmp_path):

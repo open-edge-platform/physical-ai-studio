@@ -1,8 +1,18 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from schemas.hardware import DeviceType, InferenceBackend
 from services.system_service import SystemService
+
+
+@pytest.fixture(autouse=True)
+def _reset_openvino_core_cache():
+    """Reset the process-wide OpenVINO Core cache so each test sees its own mock."""
+    SystemService._get_openvino_core.cache_clear()
+    yield
+    SystemService._get_openvino_core.cache_clear()
 
 
 def _device_props(name: str, total_memory: int) -> SimpleNamespace:

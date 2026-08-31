@@ -77,11 +77,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             ssh_feature_availability.reason,
         )
 
-    # Camera fingerprints locked by an active recording/teleop session.
-    # Mutated by the robot_control WS handler; checked by camera CRUD and
-    # camera-stream WS endpoints. Keyed by fingerprint (not ProjectCamera ID)
-    # so aliased project rows for the same physical device share one lock.
-    app.state.recording_locked_camera_fingerprints = set()
     logger.info(f"Starting {settings.app_name} application...")
     ensure_spawn_start_method()
     app_scheduler = Scheduler()
