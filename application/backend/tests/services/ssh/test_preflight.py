@@ -35,6 +35,7 @@ from schemas.hardware import DeviceType
 from schemas.remote_server import RemoteServer
 from schemas.ssh_preflight import CheckKey, CheckOutcome, PreflightTier
 from services.ssh import preflight as preflight_module
+from services.ssh import sigstore_verify
 from services.ssh.preflight import (
     METHOD_NVIDIA_SMI,
     METHOD_RENDER_NODE,
@@ -172,8 +173,6 @@ def _healthy_cuda_script() -> dict[str, CommandResult]:
 def _healthy_tier2_script() -> dict[str, CommandResult]:
     return {
         f"docker manifest inspect {_CUDA_IMAGE}": _ok('{"schemaVersion": 2}'),
-        "cosign version": _ok("v2.4.1"),
-        "cosign verify": _ok("Verified OK"),
         "docker run": _ok("True\n"),
         "docker image inspect": _ok("1\n"),
     }
@@ -200,6 +199,22 @@ def resolvable_alias(monkeypatch, tmp_path):
         return ResolvedSshHost(alias=alias, hostname=f"{alias}.example.com", port=22, user="tester", found=True)
 
     monkeypatch.setattr(preflight_module, "resolve_alias", fake_resolve)
+
+
+@pytest.fixture(autouse=True)
+def default_signature_verification(monkeypatch):
+    """Default every test to a passing signature verification.
+
+    ``IMAGE_SIGNATURE`` never appears in a `FakeTransport` script (it runs on
+    this backend via `services.ssh.sigstore_verify`, not over SSH), so this
+    fixture is the equivalent default for it. A test that needs a different
+    outcome overrides `sigstore_verify.verify_signature` itself.
+    """
+
+    async def fake_verify_signature(image_ref, *, identity_regexp, oidc_issuer):
+        return None
+
+    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify_signature)
 
 
 def _outcome(result, key: CheckKey) -> CheckOutcome:
@@ -1002,12 +1017,16 @@ async def test_tier2_unresolvable_image_fails_and_skips_the_rest(install_transpo
     assert not transport.ran("docker run")
 
 
-async def test_tier2_missing_cosign_is_skipped_not_failed(install_transport) -> None:
+async def test_tier2_signature_infrastructure_unavailable_is_skipped_not_failed(install_transport, monkeypatch) -> None:
     # Signature verification here is defense in depth; the publish-time signature
-    # is the primary control.
-    script = _healthy_tier2_script()
-    script["cosign version"] = _fail("cosign: command not found", exit_status=127)
-    install_transport(FakeTransport(script))
+    # is the primary control. It runs on this backend, not over the fake
+    # transport, so the failure is scripted directly on `sigstore_verify`.
+    install_transport(FakeTransport(_healthy_tier2_script()))
+
+    async def fake_verify_signature(image_ref, *, identity_regexp, oidc_issuer):
+        raise sigstore_verify.SignatureUnavailableError("registry unreachable")
+
+    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify_signature)
 
     result = await run_tier2_preflight(_server())
 
@@ -1019,10 +1038,13 @@ async def test_tier2_missing_cosign_is_skipped_not_failed(install_transport) -> 
     assert result.passed is True
 
 
-async def test_tier2_failed_signature_verification_warns_without_blocking(install_transport) -> None:
-    script = _healthy_tier2_script()
-    script["cosign verify"] = _fail("no matching signatures")
-    install_transport(FakeTransport(script))
+async def test_tier2_failed_signature_verification_warns_without_blocking(install_transport, monkeypatch) -> None:
+    install_transport(FakeTransport(_healthy_tier2_script()))
+
+    async def fake_verify_signature(image_ref, *, identity_regexp, oidc_issuer):
+        raise sigstore_verify.SignatureVerificationError("no matching signatures")
+
+    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify_signature)
 
     result = await run_tier2_preflight(_server())
 
@@ -1050,7 +1072,6 @@ async def test_tier2_xpu_device_probe_passes_the_dri_device(install_transport) -
     xpu_image = f"{_REGISTRY}/physicalai-trainer-xpu:protocol-1"
     script = {
         f"docker manifest inspect {xpu_image}": _ok("{}"),
-        "cosign version": _fail("not found", exit_status=127),
         "sh -c stat -c %g": _ok("44\n"),
         "docker run": _ok("True"),
         "docker image inspect": _ok("1"),
@@ -1211,7 +1232,7 @@ def test_trainer_image_ref_is_built_from_constants() -> None:
 
 
 async def test_tier2_device_probe_mid_pull_is_skipped_not_failed(install_transport) -> None:
-    # Defense-in-depth for the race between `_image_present_locally` reporting
+    # Defense-in-depth for the race between `image_present_locally` reporting
     # present and the `docker run` a few lines later - e.g. another process
     # evicting the image in between, forcing Docker to pull it inline. The raw
     # progress output must never read as the compute probe, or the device,

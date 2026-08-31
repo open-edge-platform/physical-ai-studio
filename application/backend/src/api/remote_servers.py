@@ -12,7 +12,6 @@ it can pull multiple gigabytes.
 
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -75,7 +74,15 @@ async def _gate_on_tier1(candidate: RemoteServer, settings: SettingsDep) -> None
     Never persists anything: the caller passes an in-memory ``RemoteServer``
     that is only saved once this returns without raising.
     """
-    result = await asyncio.wait_for(run_tier1_preflight(candidate), timeout=settings.ssh_preflight_timeout_s)
+    try:
+        result = await asyncio.wait_for(run_tier1_preflight(candidate), timeout=settings.ssh_preflight_timeout_s)
+    except TimeoutError as exc:
+        # `run_tier1_preflight` itself never raises, so this only fires if the
+        # whole probe outlives its own timeout budget (e.g. a wedged transport).
+        # Mapped the same way `/status` maps it, so create/update never surfaces
+        # a bare 500 for a failure mode the rest of this API already has an
+        # actionable error for.
+        raise SshConnectionError(candidate.ssh_host_alias, reason="timed_out") from exc
     if result.passed:
         return
 
@@ -165,10 +172,14 @@ async def check_remote_server(
 ) -> PreflightResult:
     """Explicitly run Tier 2 preflight against a registered server.
 
-    Never runs inline on save: this is the only path that can trigger a
-    registry pull and one-shot GPU container probe. Its outcome is also the
-    only thing that ever moves the server's persisted ``last_check_status``
-    off ``"unknown"`` - a live Tier 1 read from ``/status`` never does.
+    The only other path that can trigger a registry pull and one-shot GPU
+    container probe is `RemoteServerService.ensure_verified`, called once,
+    automatically, the first time a server with ``last_check_status ==
+    "unknown"`` is selected for a job - so submitting a job never has to
+    reject a server for the sole reason that nobody happened to click
+    "Test connection" first. This endpoint is what a user reaches for
+    afterward to re-verify a server, or to verify one before ever submitting
+    a job against it.
     """
     server = await remote_server_service.get_remote_server(remote_server_id)
     result = await run_tier2_preflight(server)
@@ -180,39 +191,18 @@ async def check_remote_server(
 async def get_remote_server_status(
     remote_server_id: Annotated[UUID, Depends(get_remote_server_id)],
     remote_server_service: RemoteServerServiceDep,
-    settings: SettingsDep,
 ) -> RemoteServerStatus:
     """Return structured status for one registered server.
 
-    A live Tier 1 check always runs (per-connection throttling coordinated
-    with the GPU-busy re-check is not yet wired up standalone here - see the
-    TODO below); ``in_use_by_job_id``/``waiting_for_gpu`` are not-yet-implemented
-    placeholders until job provisioning exists.
-
-    TODO: throttle the live Tier 1 call using ``settings.ssh_preflight_throttle_s``
-    against the server's ``last_check_at`` once connection-level coordination
-    with the GPU-busy re-check (also throttled) is implemented; for now this
-    always dials out, which is a known simplification.
+    The Tier 1 check, and ``in_use_by_job_id``/``waiting_for_gpu``, are computed
+    by `RemoteServerService.get_status`: the Tier 1 probe is coalesced and
+    throttled per server (shared across concurrent pollers, at most one dial per
+    `settings.ssh_preflight_throttle_s`), while the in-use/GPU-wait fields are
+    always-fresh DB reads of the server's currently provisioning/training job,
+    if any.
     """
-    server = await remote_server_service.get_remote_server(remote_server_id)
     try:
-        result = await asyncio.wait_for(run_tier1_preflight(server), timeout=settings.ssh_preflight_timeout_s)
+        return await remote_server_service.get_status(remote_server_id)
     except TimeoutError as exc:
+        server = await remote_server_service.get_remote_server(remote_server_id)
         raise SshConnectionError(server.ssh_host_alias, reason="timed_out") from exc
-
-    status_value = "healthy" if result.passed else "degraded"
-    reason_code = None
-    if result.blocking_failures:
-        reason_code = result.blocking_failures[0].reason_code
-
-    return RemoteServerStatus(
-        remote_server_id=remote_server_id,
-        status=status_value,
-        device_type=server.device_type.value,
-        checks=result.checks,
-        checked_at=result.checked_at or datetime.now(UTC),
-        latency_ms=result.latency_ms,
-        reason_code=reason_code,
-        in_use_by_job_id=None,
-        waiting_for_gpu=False,
-    )

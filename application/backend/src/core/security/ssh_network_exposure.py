@@ -11,8 +11,10 @@ localhost workstation.
 
 This module is the runtime enforcement of that boundary, on top of - not a
 replacement for - the operator turning the feature on in the first place
-(`Settings.ssh_remote_trainer_enabled`, off by default) and the documentation
-in `docs/ssh-remote-trainer.md`. Even when explicitly enabled, the feature
+(`Settings.ssh_remote_trainer_enabled`, off by default, exclusively
+user-editable through the Studio settings page - see
+`settings.SshProvisioningSettings`) and the documentation in
+`docs/ssh-remote-trainer.md`. Even when explicitly enabled, the feature
 fails closed if the backend is bound to anything but a loopback address.
 """
 

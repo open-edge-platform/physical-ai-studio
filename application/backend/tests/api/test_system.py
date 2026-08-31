@@ -1,6 +1,7 @@
 from fastapi import BackgroundTasks
 
-from api.system import _stop_process, restart_server
+from api.system import restart_server
+from core.restart import request_graceful_restart
 from services.health_service import HealthService
 
 
@@ -13,4 +14,4 @@ async def test_restart_server_marks_restart_required_and_schedules_shutdown() ->
     assert response == {"status": "restarting"}
     assert health_service.plugin_restart_required is True
     assert len(background_tasks.tasks) == 1
-    assert background_tasks.tasks[0].func is _stop_process
+    assert background_tasks.tasks[0].func is request_graceful_restart
