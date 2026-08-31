@@ -11,6 +11,9 @@ type SshSettingsFormProps = { ssh: SchemaSshProvisioningSettings };
 
 const BYTES_PER_GIB = 1024 ** 3;
 
+const RESTART_WARNING =
+    "Saving this setting restarts the backend. You'll be reconnected automatically, usually within a few seconds.";
+
 export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
     const patchMutation = useSettingsPatch();
 
@@ -60,25 +63,22 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
 
     return (
         <SettingsSection
-            title='SSH-provisioned training'
-            description='Run training jobs on a GPU server you reach over SSH.'
+            title='SSH-Provisioned Training'
+            description='Connect to a remote GPU server over SSH and run training jobs on it.'
             isDirty={dirty}
             isPending={patchMutation.isPending}
             saved={saved}
             error={patchMutation.error}
             onSave={save}
+            restartWarning={RESTART_WARNING}
         >
             <Switch isEmphasized isSelected={enabled} onChange={(value) => update(setEnabled, value)}>
-                Enable SSH-provisioned training
+                Enable remote training over SSH
             </Switch>
             <InlineAlert variant='warning'>
                 <strong>Security warning:</strong> This feature has no built-in authentication. Anyone who can reach the
                 Physical AI Studio backend can run arbitrary code as root on any server you register. Enable it only on
                 a single-user, localhost-only workstation with no other network access.
-            </InlineAlert>
-            <InlineAlert variant='info'>
-                Saving this setting restarts the backend. You&apos;ll be reconnected automatically once it&apos;s back
-                up, usually within a few seconds.
             </InlineAlert>
 
             <Divider size='S' marginY='size-100' />
@@ -89,6 +89,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 onChange={(value) => update(setConnectTimeoutS, value)}
                 minValue={0.1}
                 width='100%'
+                isDisabled={!enabled}
             />
             <NumberField
                 label='Command timeout (s)'
@@ -96,6 +97,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 onChange={(value) => update(setCommandTimeoutS, value)}
                 minValue={0.1}
                 width='100%'
+                isDisabled={!enabled}
             />
             <NumberField
                 label='Preflight timeout (s)'
@@ -103,6 +105,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 onChange={(value) => update(setPreflightTimeoutS, value)}
                 minValue={0.1}
                 width='100%'
+                isDisabled={!enabled}
             />
             <NumberField
                 label='Image pull timeout (s)'
@@ -110,6 +113,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 onChange={(value) => update(setImagePullTimeoutS, value)}
                 minValue={0.1}
                 width='100%'
+                isDisabled={!enabled}
             />
             <NumberField
                 label='Container readiness timeout (s)'
@@ -117,6 +121,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 onChange={(value) => update(setReadinessTimeoutS, value)}
                 minValue={0.1}
                 width='100%'
+                isDisabled={!enabled}
             />
             <NumberField
                 label='GPU wait give-up budget (s)'
@@ -124,6 +129,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 onChange={(value) => update(setGpuWaitGiveupS, value)}
                 minValue={0.1}
                 width='100%'
+                isDisabled={!enabled}
             />
             <NumberField
                 label='Minimum free disk space (GiB)'
@@ -131,6 +137,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 onChange={(value) => update(setMinFreeDiskGib, value)}
                 minValue={0}
                 width='100%'
+                isDisabled={!enabled}
             />
         </SettingsSection>
     );
