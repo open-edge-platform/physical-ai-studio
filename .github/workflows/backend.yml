@@ -39,6 +39,7 @@ jobs:
             ghcr.io:443
             github.com:443
             index.crates.io:443
+            pkg-containers.githubusercontent.com:443
             pypi.org:443
             raw.githubusercontent.com:443
             rekor.sigstore.dev:443
