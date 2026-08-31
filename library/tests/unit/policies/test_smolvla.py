@@ -595,6 +595,7 @@ class TestSampleInput:
                 self._dataset_stats = stats
                 self.model = _ModelStub()
                 self.config = SmolVLAConfig()
+                self.rtc_enabled = False
 
         stub = _Stub(dataset_stats)
         # inputs_schema is consumed by the base sample_input property.
@@ -654,6 +655,85 @@ class TestSampleInput:
         assert f"{IMAGES}.front_cam" in sample_input
         assert f"{IMAGES}.wrist_cam" in sample_input
         assert IMAGES not in sample_input
+
+
+# ============================================================================ #
+# Real-Time Chunking                                                           #
+# ============================================================================ #
+
+
+class TestRtc:
+    """Tests for SmolVLA's Real-Time Chunking export schema and toggle."""
+
+    @staticmethod
+    def _call_sample_input_rtc(chunk_size: int = 50, max_action_dim: int = 32) -> dict:
+        """Invoke the SmolVLA.sample_input property with RTC enabled on a minimal stub."""
+        from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
+
+        class _ModelStub:
+            def __init__(self) -> None:
+                self._model = torch.nn.Linear(1, 1)
+
+        class _Stub:
+            def __init__(self) -> None:
+                self._dataset_stats = {
+                    "observation.state": {"name": "state", "shape": (10,), "type": "STATE"},
+                    "observation.image": {"name": "image", "shape": (3, 512, 512), "type": "VISUAL"},
+                }
+                self.model = _ModelStub()
+                self.config = SmolVLAConfig(
+                    chunk_size=chunk_size,
+                    n_action_steps=chunk_size,
+                    max_action_dim=max_action_dim,
+                )
+                self.rtc_enabled = True
+
+        stub = _Stub()
+        stub.inputs_schema = SmolVLA.inputs_schema.fget(stub)  # type: ignore[attr-defined]
+        return SmolVLA.sample_input.fget(stub)  # type: ignore[attr-defined]
+
+    def test_contains_rtc_keys(self) -> None:
+        """RTC sample input contains the four RTC-specific keys alongside the standard ones."""
+        from physicalai.data.observation import IMAGES, STATE
+
+        sample_input = self._call_sample_input_rtc()
+        assert "prev_chunk_left_over" in sample_input
+        assert "inference_delay" in sample_input
+        assert "max_guidance_weight" in sample_input
+        assert "execution_horizon" in sample_input
+        assert STATE in sample_input
+        assert IMAGES in sample_input
+
+    def test_rtc_input_shapes_and_dtypes(self) -> None:
+        """RTC inputs are traced with the shapes and dtypes the runtime feeds."""
+        chunk_size, max_action_dim = 20, 16
+        sample_input = self._call_sample_input_rtc(chunk_size=chunk_size, max_action_dim=max_action_dim)
+        assert sample_input["prev_chunk_left_over"].shape == (1, chunk_size, max_action_dim)
+        assert sample_input["prev_chunk_left_over"].dtype == torch.float32
+        assert sample_input["inference_delay"].dtype == torch.long
+        assert sample_input["max_guidance_weight"].dtype == torch.float32
+        assert sample_input["execution_horizon"].dtype == torch.long
+
+    def test_rtc_toggle_syncs_to_model(self) -> None:
+        """Toggling rtc_enabled before the model exists is applied once it is built."""
+        from physicalai.policies.mixins import RTCPolicyMixin
+        from physicalai.policies.smolvla.model import SmolVLAModel
+
+        class _Policy(RTCPolicyMixin):
+            def __init__(self) -> None:
+                self.model = None
+
+        policy = _Policy()
+        policy.rtc_enabled = True
+        assert policy.rtc_enabled is True
+
+        policy.model = SmolVLAModel.__new__(SmolVLAModel)
+        torch.nn.Module.__init__(policy.model)
+        assert policy.model.enable_rtc is False
+
+        policy._sync_rtc_to_model()  # noqa: SLF001
+        assert policy.model.enable_rtc is True
+        assert policy.rtc_enabled is True
 
 
 # ============================================================================ #

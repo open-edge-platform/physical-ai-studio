@@ -19,7 +19,8 @@ from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, I
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
-from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
+from physicalai.data.constants import RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
+from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
     ExportParameters,
@@ -28,7 +29,7 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 from physicalai.policies.base import Policy
-from physicalai.policies.mixins import SnapFlowPolicyMixin
+from physicalai.policies.mixins import RTCPolicyMixin, SnapFlowPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -44,7 +45,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class SmolVLA(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
+class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy):
     """SmolVLA Policy - Hugging Face's flow matching VLA model.
 
     Lightning wrapper for training and inference with SmolVLA model.
@@ -343,6 +344,9 @@ class SmolVLA(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         self._update_preprocessor_stats(dataset_stats)
 
         self._dataset_stats = dataset_stats
+
+        # Apply any RTC state requested before the model was built.
+        self._sync_rtc_to_model()
 
     @staticmethod
     def _from_hf(  # noqa: PLR0913
@@ -741,9 +745,10 @@ class SmolVLA(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
 
         Returns:
             A list of feature descriptors matching the model's expected input format,
-            covering the robot state, image observations, and language task. Returns
-            ``None`` if the underlying model or dataset stats have not been initialized
-            yet.
+            covering the robot state, image observations, the language task, and any
+            real-time chunking control tensors when :attr:`rtc_enabled` is ``True``.
+            Returns ``None`` if the underlying model or dataset stats have not been
+            initialized yet.
         """
         if self.model is None or self._dataset_stats is None:
             return None
@@ -782,6 +787,36 @@ class SmolVLA(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
                 dtype=InferenceFeatureDtype.STRING,
             ),
         )
+
+        if self.rtc_enabled:
+            schema.extend(
+                [
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(self.config.chunk_size, self.config.max_action_dim),
+                        name=PREV_CHUNK_LEFT_OVER,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name=RTC_INFERENCE_DELAY,
+                        dtype=InferenceFeatureDtype.INT64,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name=RTC_MAX_GUIDANCE_WEIGHT,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.COMMON,
+                        shape=(),
+                        name=RTC_EXECUTION_HORIZON,
+                        dtype=InferenceFeatureDtype.INT64,
+                    ),
+                ],
+            )
 
         return schema
 
