@@ -24,19 +24,22 @@ from physicalai.gyms.robocasa import (  # noqa: E402
     DEFAULT_CAMERAS,
     OBS_STATE_DIM,
     RoboCasaGym,
-    _resolve_tasks,
+    RoboCasaSplit,
+    RoboCasaTaskGroup,
+    _resolve_episode_length,
+    _resolve_task_group,
     convert_action,
     create_robocasa_gyms,
 )
 
 
-class TestResolveTasks:
-    """Test task-group resolution (``_resolve_tasks``)."""
+class TestResolveTaskGroup:
+    """Test task-group resolution (``_resolve_task_group``)."""
 
     def test_resolves_task_group_to_split(self):
         """``atomic_seen`` returns the v1.0 atomic task list under split=target."""
-        names, split = _resolve_tasks("atomic_seen")
-        assert split == "target"
+        names, split = _resolve_task_group(RoboCasaTaskGroup.ATOMIC_SEEN)
+        assert split == RoboCasaSplit.TARGET
         # Spot-check membership of known-stable v1.0 names rather than the
         # exact count so an upstream task-mix update doesn't immediately
         # break the test.
@@ -44,30 +47,28 @@ class TestResolveTasks:
         assert "OpenCabinet" in names
         assert "OpenDrawer" in names
 
-    def test_resolves_single_task_keeps_split_none(self):
-        """A bare task name resolves to itself with no split override."""
-        names, split = _resolve_tasks("CloseFridge")
-        assert names == ["CloseFridge"]
-        assert split is None
+    def test_resolves_pretrain_group_to_split(self):
+        """``pretrain50`` resolves under split=pretrain."""
+        names, split = _resolve_task_group(RoboCasaTaskGroup.PRETRAIN50)
+        assert split == RoboCasaSplit.PRETRAIN
+        assert len(names) > 0
 
-    def test_resolves_comma_separated_tasks(self):
-        """Comma-separated lists are split and stripped."""
-        names, split = _resolve_tasks("CloseFridge, OpenDrawer ,TurnOnStove")
-        assert names == ["CloseFridge", "OpenDrawer", "TurnOnStove"]
-        assert split is None
 
-    def test_rejects_unknown_task_group(self):
-        """An unknown name is treated as a single task, not an error."""
-        # The regex/split path should accept any non-empty string; only
-        # robocasa will later complain that the env doesn't exist.
-        names, split = _resolve_tasks("definitely_not_a_group")
-        assert names == ["definitely_not_a_group"]
-        assert split is None
+class TestResolveEpisodeLength:
+    """Test per-task horizon resolution (``_resolve_episode_length``)."""
 
-    def test_rejects_empty_task_string(self):
-        """Empty string raises ValueError."""
-        with pytest.raises(ValueError, match="at least one"):
-            _resolve_tasks("")
+    def test_explicit_override_wins(self):
+        assert _resolve_episode_length("CloseFridge", 42) == 42
+
+    def test_looks_up_registry_horizon_when_none(self):
+        """Different atomic tasks resolve to their own registry horizon, not a flat value."""
+        close_fridge = _resolve_episode_length("CloseFridge", None)
+        open_drawer = _resolve_episode_length("OpenDrawer", None)
+        assert close_fridge > 0
+        assert open_drawer > 0
+
+    def test_unknown_task_falls_back(self):
+        assert _resolve_episode_length("NotARealRoboCasaTask", None) == 1000
 
 
 class TestConvertAction:
@@ -89,14 +90,14 @@ class TestConvertAction:
             assert action_dict[key].shape == (width,), f"{key} has wrong shape"
 
     def test_convert_action_preserves_values(self):
-        """Slice values match the source array element-wise."""
+        """Slice values match the source array element-wise, per ``DEFAULT_ACTION_ORDER``."""
         flat = np.arange(ACTION_DIM, dtype=np.float32)
         action_dict = convert_action(flat)
-        np.testing.assert_array_equal(action_dict["action.base_motion"], flat[0:4])
-        np.testing.assert_array_equal(action_dict["action.control_mode"], flat[4:5])
-        np.testing.assert_array_equal(action_dict["action.end_effector_position"], flat[5:8])
-        np.testing.assert_array_equal(action_dict["action.end_effector_rotation"], flat[8:11])
-        np.testing.assert_array_equal(action_dict["action.gripper_close"], flat[11:12])
+        np.testing.assert_array_equal(action_dict["action.end_effector_position"], flat[0:3])
+        np.testing.assert_array_equal(action_dict["action.end_effector_rotation"], flat[3:6])
+        np.testing.assert_array_equal(action_dict["action.gripper_close"], flat[6:7])
+        np.testing.assert_array_equal(action_dict["action.base_motion"], flat[7:11])
+        np.testing.assert_array_equal(action_dict["action.control_mode"], flat[11:12])
 
 
 class TestObservationSpace:
@@ -160,7 +161,9 @@ class TestCreateRobocasaGyms:
 
     def test_create_from_atomic_seen_group(self):
         """``atomic_seen`` produces lazy gyms for every v1.0 atomic task."""
-        gyms = create_robocasa_gyms("atomic_seen", observation_height=128, observation_width=128)
+        gyms = create_robocasa_gyms(
+            RoboCasaTaskGroup.ATOMIC_SEEN, observation_height=128, observation_width=128
+        )
         try:
             assert len(gyms) > 0
             assert all(g._env is None for g in gyms), "constructor must not eagerly build MuJoCo envs"
@@ -191,6 +194,11 @@ class TestCreateRobocasaGyms:
         """An empty list raises before instantiating any gym."""
         with pytest.raises(ValueError, match="at least one"):
             create_robocasa_gyms([])
+
+    def test_bare_string_raises_type_error(self):
+        """A bare string (not a ``RoboCasaTaskGroup``) is rejected explicitly."""
+        with pytest.raises(TypeError, match="RoboCasaTaskGroup"):
+            create_robocasa_gyms("atomic_seen")
 
 
 class TestStepValidation:

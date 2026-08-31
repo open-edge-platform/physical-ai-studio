@@ -3716,6 +3716,7 @@ all = [
     { name = "pytest-examples" },
     { name = "pytest-mock" },
     { name = "safetensors" },
+    { name = "scipy" },
     { name = "sentencepiece" },
     { name = "timm" },
     { name = "transformers" },
@@ -3773,6 +3774,14 @@ pi05 = [
     { name = "sentencepiece" },
     { name = "transformers" },
 ]
+rldx1 = [
+    { name = "diffusers" },
+    { name = "peft" },
+    { name = "pillow" },
+    { name = "safetensors" },
+    { name = "scipy" },
+    { name = "transformers" },
+]
 smolvla = [
     { name = "num2words" },
     { name = "safetensors" },
@@ -3804,6 +3813,7 @@ requires-dist = [
     { name = "decord", marker = "(platform_machine == 'AMD64' and extra == 'groot') or (platform_machine == 'x86_64' and extra == 'groot')", specifier = ">=0.6.0,<1.0.0" },
     { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.38.0" },
     { name = "diffusers", marker = "extra == 'groot'", specifier = ">=0.38.0" },
+    { name = "diffusers", marker = "extra == 'rldx1'", specifier = ">=0.38.0" },
     { name = "diffusers", marker = "extra == 'tests'", specifier = ">=0.38.0" },
     { name = "dm-tree", marker = "extra == 'groot'", specifier = ">=0.1.8,<1.0.0" },
     { name = "executorch", marker = "extra == 'executorch'", specifier = ">=1.1.0" },
@@ -3826,17 +3836,20 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.3" },
     { name = "peft", marker = "extra == 'groot'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'pi0'", specifier = ">=0.13.0,<1.0.0" },
+    { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
     { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=9be95d88d5b9f8342f6952d8ec288fb108fa416e" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'pi05'" },
     { name = "physicalai-train", extras = ["pi05"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["rldx1"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["smolvla"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["tests"], marker = "extra == 'all'" },
     { name = "pillow" },
     { name = "pillow", marker = "extra == 'groot'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'pi0'", specifier = ">=10.0.0,<13.0.0" },
+    { name = "pillow", marker = "extra == 'rldx1'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pydantic" },
     { name = "pymunk", specifier = ">=6.6.0,<7.0.0" },
     { name = "pytest", marker = "extra == 'tests'" },
@@ -3844,7 +3857,9 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'tests'" },
     { name = "safetensors", marker = "extra == 'groot'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'pi0'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "safetensors", marker = "extra == 'rldx1'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "scipy", marker = "extra == 'rldx1'", specifier = ">=1.11.0,<2.0.0" },
     { name = "sentencepiece", marker = "extra == 'pi0'", specifier = "<=0.2.1" },
     { name = "tensorboard", marker = "extra == 'loggers'", specifier = ">=2.20" },
     { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
@@ -3856,10 +3871,11 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
     { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.5.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.3.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "executorch", "executorch-openvino", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "executorch", "executorch-openvino", "all"]
 
 [package.metadata.requires-dev]
 dev = [

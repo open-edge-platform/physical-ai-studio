@@ -79,6 +79,18 @@ _TRANSIENT_REASONS = frozenset(
 
 
 @dataclass(frozen=True, slots=True)
+class _RowVerdict:
+    """What one active row's processing decided, for the caller to tally and act on."""
+
+    outcome: str  # "confirmed" | "transient" | "failed"
+    # Server whose active set this job's id should be added to, so the
+    # per-server sweep does not reclaim its container. None only when the
+    # job was failed outright (its container, if any, is left for the sweep).
+    active_on_server: UUID | None
+    failure_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SshRecoveryReport:
     """Summary of one startup recovery pass, for a single structured log line."""
 
@@ -131,28 +143,35 @@ async def _reconcile_stale_rows(
     return cleaned
 
 
-async def _reattach_one_row(
+async def _requeue_pending(job_service: JobService, job_id: UUID) -> None:
+    """Requeue a job to PENDING so `run_loop` picks it back up to retry.
+
+    Shared by every active-row branch that decides a job is still worth
+    trying (container never launched, confirmed healthy, or transiently
+    inconclusive): none of them is itself watched by anything - only a
+    PENDING pickup opens the real tunnel and resumes progress streaming, or
+    tries the reattach again. Leaving the job at whatever non-terminal
+    status a hard crash left it in (usually RUNNING) would strand it forever.
+    """
+    await job_service.update_job_status(
+        job_id=job_id,
+        status=JobStatus.PENDING,
+        message="Reconnecting to remote training job after restart",
+    )
+
+
+async def _process_active_row(
+    row: JobProvisioning,
     job_service: JobService,
     provisioning_service: SshProvisioningService,
     remote_server_service: RemoteServerService,
-    row: JobProvisioning,
-) -> tuple[str, UUID | None, str | None]:
-    """Classify one active row and fail its job when the classification says to.
-
-    Returns ``(bucket, reserve_server_id, failure_reason)``:
-
-    - ``bucket`` is one of ``"confirmed"``, ``"transient"``, ``"failed"``.
-    - ``reserve_server_id``, when set, is the server id whose active-job set
-      this row's job id must be added to, so the orphan sweep below never
-      reclaims a container this pass still considers claimed. ``None`` means
-      the job was failed (or its server could not even be looked up) and
-      nothing here reserves its container.
-    - ``failure_reason`` is the reason code to tally, only set for ``"failed"``.
-    """
+) -> _RowVerdict:
+    """Decide one active row's fate: requeued (confirmed/transient) or failed."""
     if row.container_name is None:
         # Never got far enough to launch a container - nothing here for this
-        # pass to verify; leave it to the normal pickup path.
-        return "transient", row.remote_server_id, None
+        # pass to verify; requeue so it is retried later.
+        await _requeue_pending(job_service, row.job_id)
+        return _RowVerdict(outcome="transient", active_on_server=row.remote_server_id)
 
     try:
         server = await remote_server_service.get_remote_server(row.remote_server_id)
@@ -163,7 +182,7 @@ async def _reattach_one_row(
             status=JobStatus.FAILED,
             message="Training job failed: its remote server is no longer registered",
         )
-        return "failed", None, "server_not_registered"
+        return _RowVerdict(outcome="failed", active_on_server=None, failure_reason="server_not_registered")
 
     try:
         outcome = await provisioning_service.verify_reattach(row, server)
@@ -173,11 +192,16 @@ async def _reattach_one_row(
             row.job_id,
             server.name,
         )
-        return "transient", server.id, None
+        await _requeue_pending(job_service, row.job_id)
+        return _RowVerdict(outcome="transient", active_on_server=server.id)
 
     if outcome.ok:
         logger.info("Confirmed reattach for job {} on server '{}'", row.job_id, server.name)
-        return "confirmed", server.id, None
+        # A confirmed container only proves it is still safe to trust, not
+        # that anything is watching it: only a PENDING pickup opens the real
+        # (long-lived) tunnel and resumes SSE streaming (see `_requeue_pending`).
+        await _requeue_pending(job_service, row.job_id)
+        return _RowVerdict(outcome="confirmed", active_on_server=server.id)
 
     if outcome.reason in _TRANSIENT_REASONS:
         logger.warning(
@@ -187,7 +211,8 @@ async def _reattach_one_row(
             outcome.reason,
             outcome.detail,
         )
-        return "transient", server.id, None
+        await _requeue_pending(job_service, row.job_id)
+        return _RowVerdict(outcome="transient", active_on_server=server.id)
 
     message = (
         _ACTIONABLE_MESSAGES.get(outcome.reason, "its trainer container could not be verified")
@@ -200,11 +225,35 @@ async def _reattach_one_row(
         status=JobStatus.FAILED,
         message=f"Training job failed: {message}",
     )
-    # A failed job is never reserved above, so the sweep below reclaims its
-    # container - but only when ownership was actually established; a foreign
-    # container is never listed by the sweep in the first place (it filters on
-    # this installation's own backend_instance_id label).
-    return "failed", None, outcome.reason.value if outcome.reason is not None else None
+    # A failed job is never added back to active_job_ids_by_server, so the
+    # sweep below reclaims its container - but only when ownership was
+    # actually established; a foreign container is never listed by the sweep
+    # in the first place (it filters on this installation's own
+    # backend_instance_id label).
+    return _RowVerdict(
+        outcome="failed",
+        active_on_server=None,
+        failure_reason=outcome.reason.value if outcome.reason is not None else None,
+    )
+
+
+async def _sweep_all_servers(
+    provisioning_service: SshProvisioningService,
+    remote_server_service: RemoteServerService,
+    active_job_ids_by_server: dict[UUID, set[UUID]],
+) -> int:
+    """Sweep orphan containers on every registered server; one server's failure never aborts the rest."""
+    orphans_removed = 0
+    for server in await remote_server_service.list_remote_servers():
+        try:
+            removed = await provisioning_service.sweep_orphans(server, active_job_ids_by_server.get(server.id, set()))
+        except Exception as error:  # one server's failure must not abort the sweep of others
+            logger.warning("Could not sweep orphan containers on server '{}': {}", server.name, error)
+            continue
+        if removed:
+            logger.info("Swept {} orphan container(s) on server '{}'", len(removed), server.name)
+        orphans_removed += len(removed)
+    return orphans_removed
 
 
 async def recover_ssh_jobs(
@@ -231,30 +280,20 @@ async def recover_ssh_jobs(
 
     for row in active_rows:
         with job_logging_ctx(job_id=str(row.job_id)):
-            bucket, reserve_server_id, failure_reason = await _reattach_one_row(
-                job_service, provisioning_service, remote_server_service, row
-            )
-            if reserve_server_id is not None:
-                active_job_ids_by_server[reserve_server_id].add(row.job_id)
-            if bucket == "confirmed":
-                confirmed += 1
-            elif bucket == "transient":
-                transient += 1
-            else:
-                failed += 1
-                if failure_reason is not None:
-                    failures_by_reason[failure_reason] += 1
+            verdict = await _process_active_row(row, job_service, provisioning_service, remote_server_service)
 
-    orphans_removed = 0
-    for server in await remote_server_service.list_remote_servers():
-        try:
-            removed = await provisioning_service.sweep_orphans(server, active_job_ids_by_server.get(server.id, set()))
-        except Exception as error:  # one server's failure must not abort the sweep of others
-            logger.warning("Could not sweep orphan containers on server '{}': {}", server.name, error)
-            continue
-        if removed:
-            logger.info("Swept {} orphan container(s) on server '{}'", len(removed), server.name)
-        orphans_removed += len(removed)
+        if verdict.active_on_server is not None:
+            active_job_ids_by_server[verdict.active_on_server].add(row.job_id)
+        if verdict.outcome == "confirmed":
+            confirmed += 1
+        elif verdict.outcome == "transient":
+            transient += 1
+        else:
+            failed += 1
+            if verdict.failure_reason is not None:
+                failures_by_reason[verdict.failure_reason] += 1
+
+    orphans_removed = await _sweep_all_servers(provisioning_service, remote_server_service, active_job_ids_by_server)
 
     return SshRecoveryReport(
         confirmed=confirmed,

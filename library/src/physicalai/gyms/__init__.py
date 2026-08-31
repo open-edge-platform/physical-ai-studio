@@ -7,7 +7,7 @@ from .base import Gym
 from .gymnasium_gym import GymnasiumGym
 from .libero import LiberoGym, create_libero_gyms
 from .pusht import PushTGym
-from .robocasa import RoboCasaGym, create_robocasa_gyms
+from .robocasa import RoboCasaGym, RoboCasaSplit, RoboCasaTaskGroup, create_robocasa_gyms
 
 __all__ = [
     "Gym",
@@ -15,6 +15,8 @@ __all__ = [
     "LiberoGym",
     "PushTGym",
     "RoboCasaGym",
+    "RoboCasaSplit",
+    "RoboCasaTaskGroup",
     "create_libero_gyms",
     "create_robocasa_gyms",
 ]
