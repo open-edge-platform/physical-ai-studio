@@ -137,6 +137,13 @@ jobs:
         run: |
           SERVICE_NAME="physical-ai-studio-${DEVICE}"
 
+          # Remove any container left over from a prior run on this runner
+          # (e.g. a cancelled job via the workflow's concurrency group never
+          # reaches the cleanup step below), otherwise `docker run --name`
+          # below fails with "Conflict. The container name ... is already
+          # in use".
+          docker rm -f "${SERVICE_NAME}" > /dev/null 2>&1 || true
+
           # CUDA requires GPU hardware, test with docker run instead of compose
           # CPU and XPU test via compose to validate the full deployment config
           if [ "${DEVICE}" = "cuda" ]; then
