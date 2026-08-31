@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from physicalai.config import Config
-
 from physicalai.data import Feature  # noqa: TC001 - Needed at runtime for type hint resolution
 
 

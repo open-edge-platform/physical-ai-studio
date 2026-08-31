@@ -721,18 +721,19 @@ class TestRtc:
 
         class _Policy(RTCPolicyMixin):
             def __init__(self) -> None:
-                self.model = None
+                self.model: SmolVLAModel | None = None
 
         policy = _Policy()
         policy.rtc_enabled = True
         assert policy.rtc_enabled is True
 
-        policy.model = SmolVLAModel.__new__(SmolVLAModel)
-        torch.nn.Module.__init__(policy.model)
-        assert policy.model.enable_rtc is False
+        model = SmolVLAModel.__new__(SmolVLAModel)
+        torch.nn.Module.__init__(model)
+        policy.model = model
+        assert model.enable_rtc is False
 
         policy._sync_rtc_to_model()  # noqa: SLF001
-        assert policy.model.enable_rtc is True
+        assert model.enable_rtc is True
         assert policy.rtc_enabled is True
 
 

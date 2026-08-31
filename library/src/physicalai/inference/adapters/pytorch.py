@@ -15,11 +15,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
-from physicalai.config import import_class
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.manifest import Manifest
 
+from physicalai.config import import_class
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
 

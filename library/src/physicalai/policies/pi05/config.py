@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 from physicalai.config import Config
-
 from physicalai.policies.mixins import SnapFlowConfigMixin
 
 
