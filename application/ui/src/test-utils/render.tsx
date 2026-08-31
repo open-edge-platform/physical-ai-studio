@@ -9,6 +9,7 @@ import {
 } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 
+import { RestartStateProvider } from '../features/system/restart-state';
 import { createQueryClient } from '../query-client/query-client';
 
 type RenderOptions = RTLRenderOptions & {
@@ -23,7 +24,9 @@ type RenderOptions = RTLRenderOptions & {
 const TestProviders = ({ children, queryClient }: { children: ReactNode; queryClient: QueryClient }) => (
     <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-            <Suspense>{children}</Suspense>
+            <RestartStateProvider>
+                <Suspense>{children}</Suspense>
+            </RestartStateProvider>
         </ThemeProvider>
     </QueryClientProvider>
 );

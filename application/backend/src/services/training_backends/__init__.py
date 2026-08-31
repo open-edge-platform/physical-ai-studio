@@ -30,9 +30,19 @@ async def get_training_backend(payload: TrainJobPayload, job_id: UUID) -> Traini
     from schemas.job import TrainingTarget
 
     if payload.training_target is TrainingTarget.SSH:
+        from core.security import get_ssh_feature_availability
         from db import get_async_db_session_ctx
+        from exceptions import SshFeatureDisabledError
         from services.remote_server_service import RemoteServerService
         from services.training_backends.ssh import SshTrainingBackend
+
+        # Defense in depth: submission already rejects an SSH job while the
+        # feature is inactive, but a job persisted while it was active must
+        # not silently start if the feature was disabled before it was picked
+        # up (e.g. across a restart with a changed config).
+        availability = get_ssh_feature_availability()
+        if not availability.active:
+            raise SshFeatureDisabledError(availability.reason)
 
         if payload.remote_server_id is None:
             raise ValueError("SSH training job is missing its selected remote server")

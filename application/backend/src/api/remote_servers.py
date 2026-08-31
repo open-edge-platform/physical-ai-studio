@@ -18,7 +18,8 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, status
 
-from api.dependencies import RemoteServerServiceDep, SettingsDep, get_remote_server_id
+from api.dependencies import RemoteServerServiceDep, SettingsDep, get_remote_server_id, require_ssh_feature_active
+from core.security import SshFeatureAvailability, get_ssh_feature_availability
 from exceptions import BaseException as StudioBaseException
 from exceptions import (
     RemoteServerPreflightError,
@@ -34,6 +35,10 @@ from schemas.ssh_preflight import PreflightCheck, PreflightResult, RemoteServerS
 from services import ssh_config_reader
 from services.ssh.preflight import run_tier1_preflight, run_tier2_preflight
 
+# The whole administration surface fails closed behind `require_ssh_feature_active`
+# except `/feature-status` itself, which must stay reachable to explain *why*
+# everything else is unavailable (see its docstring below), so that dependency
+# is applied per-route below rather than at the router level.
 router = APIRouter(prefix="/api/remote-servers", tags=["Remote servers"])
 
 # `run_tier1_preflight` never raises: every SSH failure it hits becomes a FAILED
@@ -81,19 +86,32 @@ async def _gate_on_tier1(candidate: RemoteServer, settings: SettingsDep) -> None
     raise RemoteServerPreflightError("Remote server failed required checks", failures=failures)
 
 
-@router.get("/aliases")
+@router.get("/aliases", dependencies=[Depends(require_ssh_feature_active)])
 async def list_ssh_host_aliases(settings: SettingsDep) -> list[SshHostAliasOption]:
     """Return every selectable SSH host alias for the create/edit form."""
     return ssh_config_reader.list_host_aliases(settings.ssh_config_path)
 
 
-@router.get("")
+@router.get("/feature-status")
+async def get_feature_status() -> SshFeatureAvailability:
+    """Report whether the SSH remote-trainer feature is currently active.
+
+    Unauthenticated by design (no `require_ssh_feature_active` dependency):
+    the UI needs this to explain *why* the feature is unavailable, which would
+    be circular if reading the status itself required the feature to be
+    active. Safe to expose: `reason`, when set, already names no host alias,
+    container, or other registered-server detail.
+    """
+    return get_ssh_feature_availability()
+
+
+@router.get("", dependencies=[Depends(require_ssh_feature_active)])
 async def list_remote_servers(remote_server_service: RemoteServerServiceDep) -> list[RemoteServer]:
     """Return every registered SSH-provisioned training server."""
     return await remote_server_service.list_remote_servers()
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_ssh_feature_active)])
 async def create_remote_server(
     config: RemoteServerCreate,
     remote_server_service: RemoteServerServiceDep,
@@ -109,7 +127,7 @@ async def create_remote_server(
     return await remote_server_service.create_remote_server(config)
 
 
-@router.patch("/{remote_server_id}")
+@router.patch("/{remote_server_id}", dependencies=[Depends(require_ssh_feature_active)])
 async def update_remote_server(
     remote_server_id: Annotated[UUID, Depends(get_remote_server_id)],
     update: RemoteServerUpdate,
@@ -127,7 +145,11 @@ async def update_remote_server(
     return await remote_server_service.update_remote_server(remote_server_id, update)
 
 
-@router.delete("/{remote_server_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{remote_server_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_ssh_feature_active)],
+)
 async def delete_remote_server(
     remote_server_id: Annotated[UUID, Depends(get_remote_server_id)],
     remote_server_service: RemoteServerServiceDep,
@@ -136,7 +158,7 @@ async def delete_remote_server(
     await remote_server_service.delete_remote_server(remote_server_id)
 
 
-@router.post("/{remote_server_id}/check")
+@router.post("/{remote_server_id}/check", dependencies=[Depends(require_ssh_feature_active)])
 async def check_remote_server(
     remote_server_id: Annotated[UUID, Depends(get_remote_server_id)],
     remote_server_service: RemoteServerServiceDep,
@@ -154,7 +176,7 @@ async def check_remote_server(
     return result
 
 
-@router.get("/{remote_server_id}/status")
+@router.get("/{remote_server_id}/status", dependencies=[Depends(require_ssh_feature_active)])
 async def get_remote_server_status(
     remote_server_id: Annotated[UUID, Depends(get_remote_server_id)],
     remote_server_service: RemoteServerServiceDep,

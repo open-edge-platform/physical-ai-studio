@@ -4,6 +4,7 @@ import { render as rtlRender, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { vi } from 'vitest';
 
+import { RestartStateProvider } from '../../features/system/restart-state';
 import { createQueryClient } from '../../query-client/query-client';
 import { render } from '../../test-utils/render';
 import { AppLayout } from './app.layout';
@@ -31,7 +32,9 @@ describe('AppLayout', () => {
                     element: (
                         <QueryClientProvider client={queryClient}>
                             <ThemeProvider>
-                                <AppLayout />
+                                <RestartStateProvider>
+                                    <AppLayout />
+                                </RestartStateProvider>
                             </ThemeProvider>
                         </QueryClientProvider>
                     ),

@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from cli.database import _run_migrations
+from core.security import get_ssh_feature_availability
 from robots.catalog.assets import builtin_robot_assets_are_available
 from robots.catalog.sync_robot_assets import sync_robot_assets
 from settings import get_settings
@@ -33,6 +34,13 @@ def _configure_packaged_runtime() -> None:
 def start_server(host: str, port: int) -> None:
     """Configure the packaged runtime, run migrations, and launch the API server."""
     _configure_packaged_runtime()
+    # `--host`/`--port` can override the settings-derived default below; keep
+    # `Settings.host` in agreement with the address actually handed to uvicorn,
+    # so anything that reasons about the real bind address (the SSH feature's
+    # loopback-only enforcement) never checks a stale default instead of it.
+    os.environ["HOST"] = host
+    os.environ["PORT"] = str(port)
+    get_ssh_feature_availability.cache_clear()
     _sync_missing_robot_assets()
     _run_migrations()
 
