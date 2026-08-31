@@ -114,7 +114,7 @@ def test_reason_never_names_a_host_alias_or_container() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_get_ssh_feature_availability_is_cached_like_get_settings(monkeypatch) -> None:
+def test_get_ssh_feature_availability_is_memoized_until_cache_cleared(monkeypatch) -> None:
     get_ssh_feature_availability.cache_clear()
     monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "false")
     monkeypatch.setenv("HOST", "127.0.0.1")
