@@ -253,6 +253,7 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     CXX=/usr/bin/g++ \
     SYNC=false \
     UV_NO_SYNC=1 \
+    HOST="0.0.0.0" \
     STATIC_FILES_DIR="/app/application/ui/dist/" \
     STORAGE_DIR="/app/storage" \
     AUTO_MIGRATE_STORAGE_DIR="true" \

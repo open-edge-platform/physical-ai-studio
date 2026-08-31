@@ -5,6 +5,7 @@ import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { useRobotCatalogQuery } from '../robot-catalog.hooks';
 import { ConfigurableRobotType } from '../robot-types';
+import { BimanualSO101FormFields } from './catalog/bimanual-so101';
 import { SO101FormFields } from './catalog/so101';
 import { WidowxAIFormFields } from './catalog/widowxai';
 import { BiManualWidowxAIFormFields } from './catalog/widowxai-bimanual';
@@ -50,6 +51,11 @@ export const FormFields = () => {
         case 'Trossen_Bimanual_WidowXAI_Leader':
         case 'Trossen_Bimanual_WidowXAI_Follower':
             formFields = <BiManualWidowxAIFormFields />;
+            break;
+        // Bimanual SO101 is a plugin robot type not present in the backend catalog; kept for persisted robots.
+        case 'BimanualSO101_Follower' as ConfigurableRobotType:
+        case 'BimanualSO101_Leader' as ConfigurableRobotType:
+            formFields = <BimanualSO101FormFields />;
             break;
     }
 
