@@ -244,7 +244,10 @@ describe('TrainModelDialog', () => {
         mockProjectWithRemoteTrainer();
         server.use(
             http.get('/api/policies/{policy}/huggingface-access', () =>
-                HttpResponse.json({ detail: 'boom' }, { status: 500 })
+                HttpResponse.json(
+                    { detail: [{ loc: ['path', 'policy'], msg: 'boom', type: 'value_error' }] },
+                    { status: 500 }
+                )
             )
         );
 

@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
 from api.settings import SettingsUpdate, update_user_settings
-from core.restart import request_graceful_restart
+from api.system import request_graceful_restart
 from main import app
 from services.health_service import HealthService
 from settings import SshProvisioningSettings, get_settings, write_user_settings

@@ -80,10 +80,11 @@ class LocalTrainingBackend:
 def resolve_hf_token() -> SecretStr | None:
     """Return the configured Hugging Face token, falling back to the legacy env var.
 
-    Shared by the local backend (set directly into `RunOptions`) and the
+    Shared by the local backend (set directly into `RunOptions`), the
     remote/SSH backends (sent to the trainer at job submission time; see
-    `services.training_backends.remote.RemoteTrainingBackend.submit_job`), so
-    every training path resolves the same token the same way.
+    `services.training_backends.remote.RemoteTrainingBackend.submit_job`), and
+    `api.policies.check_huggingface_access`, so every caller resolves the same
+    token the same way.
     """
     hf_token = get_settings().huggingface.hf_token
     # Fallback to Environment Variable based hf token if settings hasn't been set

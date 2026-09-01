@@ -1208,6 +1208,72 @@ async def run_tier2_preflight(
     return _result(server, recorder, started, checked_at)
 
 
+# --------------------------------------------------------------------------- #
+# Device-type autodetection                                                   #
+# --------------------------------------------------------------------------- #
+
+
+async def _probe_device_type(transport: SshTransport) -> tuple[DeviceType | None, str | None]:
+    """Try each accelerator's cheap signal in turn and return the first match.
+
+    CUDA first, since `nvidia-smi` is unambiguous when present. Falls back to
+    the same XPU signals Tier 1 uses: `xpu-smi`, then the Intel render-node
+    probe for a host whose XPU works but lacks that tool.
+    """
+    cuda = await transport.run_command(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"])
+    if cuda.ok and cuda.first_line():
+        return DeviceType.CUDA, METHOD_NVIDIA_SMI
+
+    xpu = await transport.run_command(["xpu-smi", "discovery"])
+    if xpu.ok:
+        return DeviceType.XPU, METHOD_XPU_SMI
+
+    render = await _probe_intel_render_node(transport)
+    if render.ok:
+        return DeviceType.XPU, METHOD_RENDER_NODE
+
+    return None, None
+
+
+async def detect_device_type(alias: str) -> tuple[DeviceType | None, str | None, str | None]:
+    """Best-effort autodetect of the accelerator reachable via an SSH alias.
+
+    Used to prefill the "Device type" field in the add-target form, so it never
+    raises for a reachable-but-driverless host or an unreachable one - it
+    returns ``(None, None, reason_code)`` instead, and the caller falls back to
+    asking the user to pick manually.
+
+    Args:
+        alias: The SSH config host alias to probe.
+
+    Returns:
+        A ``(device_type, method, reason_code)`` tuple. ``device_type`` and
+        ``method`` are set together on a match; ``reason_code`` is set alone
+        on anything else (unresolved alias, unreachable host, or no signal).
+    """
+    settings = get_settings()
+    resolved = resolve_alias(settings.ssh_config_path, alias)
+    if not resolved.found:
+        return None, None, REASON_ALIAS_NOT_FOUND
+
+    transport = transport_factory(alias)
+    try:
+        await transport.connect()
+    except _CONNECT_FAILURES as error:
+        return None, None, _classify_connect_error(error)[0]
+
+    try:
+        device_type, method = await _probe_device_type(transport)
+    except SshConnectionError:
+        return None, None, REASON_UNREACHABLE
+    finally:
+        await transport.close()
+
+    if device_type is None:
+        return None, None, REASON_NO_SIGNAL
+    return device_type, method, None
+
+
 def set_transport_factory(factory: Callable[[str], SshTransport]) -> None:
     """Replace the transport factory both tiers use."""
     global transport_factory  # noqa: PLW0603 - the module-level factory is the documented seam.

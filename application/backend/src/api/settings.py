@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
 from api.dependencies import HealthServiceDep
-from core.restart import request_graceful_restart
+from api.system import restart_server
 from settings import (
     HuggingFaceSettings,
     Settings,
@@ -63,8 +63,8 @@ async def update_user_settings(
     effect after a full backend restart: `core.security.get_ssh_feature_availability`
     is cached for the life of the process and `app.state.ssh_feature_availability`
     is pinned once at startup. So, exactly when that field's effective value
-    changes, this schedules the same graceful restart `POST /api/system/restart`
-    uses - the save still completes and is reflected in the response; only the
+    changes, this calls the same `POST /api/system/restart` handler directly -
+    the save still completes and is reflected in the response; only the
     running process's behavior lags until the restart lands.
     """
     previously_enabled = get_settings().ssh_remote_trainer_enabled
@@ -77,6 +77,5 @@ async def update_user_settings(
     merge_user_settings(patch)
     response = UserSettingsResponse.from_settings(get_settings())
     if response.ssh.enabled != previously_enabled:
-        health_service.mark_plugin_restart_required()
-        background_tasks.add_task(request_graceful_restart)
+        await restart_server(background_tasks, health_service)
     return response

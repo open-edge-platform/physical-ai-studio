@@ -123,6 +123,7 @@ def test_get_ssh_feature_availability_is_cached_like_get_settings(monkeypatch, t
     to change the underlying setting between reads.
     """
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    get_ssh_feature_availability.cache_clear()
     monkeypatch.setenv("HOST", "127.0.0.1")
     get_ssh_feature_availability.cache_clear()
 

@@ -123,3 +123,18 @@ class SshHostAliasOption(BaseModel):
     hostname: str | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
     user: str | None = None
+
+
+class DeviceTypeDetection(BaseModel):
+    """Best-effort autodetection of an SSH host's accelerator.
+
+    Prefills the "Device type" field in the add-target form. ``device_type``
+    is ``None`` whenever detection could not identify an accelerator - an
+    unresolved alias, an unreachable host, or a host with no CUDA/XPU signal -
+    and ``reason_code`` says why, so the UI can fall back to asking the user
+    instead of silently guessing.
+    """
+
+    device_type: DeviceType | None = Field(default=None, description="Detected accelerator, or None if undetected.")
+    method: str | None = Field(default=None, description="Which probe answered, e.g. 'nvidia-smi', 'xpu-smi'.")
+    reason_code: str | None = Field(default=None, description="Why detection produced no device type.")

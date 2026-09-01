@@ -132,8 +132,8 @@ export const RemoteServerDetail = ({
                                 <Text UNSAFE_className={classes.emptyStateTitle}>Pulling &amp; verifying image…</Text>
                             </div>
                             <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyStateBody}`}>
-                                This pulls a multi-gigabyte trainer image and can take a while. You can navigate
-                                away - it will keep running in the background.
+                                This pulls a multi-gigabyte trainer image and can take a while. You can navigate away -
+                                it will keep running in the background.
                             </Text>
                         </div>
                     ) : (

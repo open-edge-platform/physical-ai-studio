@@ -4,8 +4,19 @@
 """Startup recovery for SSH-provisioned training jobs.
 
 Runs once at studio startup, before the generic orphan-job abort in
-`services.training_service.TrainingService.abort_orphan_jobs`. For every
-non-terminal job with a persisted `JobProvisioningDB` row, `recover_ssh_jobs`:
+`services.training_service.TrainingService.abort_orphan_jobs`. Fails closed
+the same way the other two SSH gates documented in
+`docs/explanation/ssh-remote-trainer.md` do: if
+`core.security.get_ssh_feature_availability` reports the feature inactive
+(disabled by settings, or network-exposed), this never dials SSH or touches a
+container - every persisted `JobProvisioningDB` row is left exactly as it is,
+untouched, for a future pass to reconcile once the feature is safe to serve
+again. Without this check, a disabled/fail-closed feature would still let a
+studio restart SSH into every registered server and (via the orphan sweep)
+stop/remove containers, even though the feature is supposed to be off.
+
+For every non-terminal job with a persisted `JobProvisioningDB` row while the
+feature is active, `recover_ssh_jobs`:
 
 1. Reconciles stale rows - a row whose job already reached a terminal state,
    left behind by a crash between stopping a container and deleting its row.
@@ -38,6 +49,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from core.logging.utils import job_logging_ctx
+from core.security import get_ssh_feature_availability
 from exceptions import ResourceNotFoundError
 from schemas.base_job import JobStatus
 from services.ssh.provisioning import ReattachFailureReason, SshProvisioningService
@@ -267,6 +279,9 @@ async def recover_ssh_jobs(
     Safe to call with no SSH servers registered and no provisioning rows at
     all: every step degrades to a no-op.
     """
+    if not get_ssh_feature_availability().active:
+        return SshRecoveryReport()
+
     provisioning_service = SshProvisioningService(provisioning_repo, settings)
     active_rows = await provisioning_repo.list_active()
 

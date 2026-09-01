@@ -23,8 +23,7 @@ export const useIsRemoteServerCheckRunning = (remoteServerId: string): boolean =
         mutationKey: ['post', '/api/remote-servers/{remote_server_id}/check'],
         predicate: (mutation) => {
             const variables = mutation.state.variables as
-                | { params?: { path?: { remote_server_id?: string } } }
-                | undefined;
+                { params?: { path?: { remote_server_id?: string } } } | undefined;
 
             return variables?.params?.path?.remote_server_id === remoteServerId;
         },

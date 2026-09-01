@@ -4,8 +4,10 @@
 """Persistence for SSH-provisioned training servers.
 
 Create and update here only persist the row. Tier-1-preflight-gated saves and
-resolved-host display are layered on top by the API; this service never
-dials SSH.
+resolved-host display are layered on top by the API; those two operations
+never dial SSH. `get_status`, however, does: it runs a throttled, shared
+Tier 1 preflight probe (see `_tier1_status`) so the status endpoint can
+report a server's live health.
 """
 
 import asyncio

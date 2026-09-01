@@ -14,7 +14,7 @@ replacement for - the operator turning the feature on in the first place
 (`Settings.ssh_remote_trainer_enabled`, off by default, exclusively
 user-editable through the Studio settings page - see
 `settings.SshProvisioningSettings`) and the documentation in
-`docs/explanation/ssh-remote-trainer.md`. Even when explicitly enabled, the feature
+`docs/ssh-remote-trainer.md`. Even when explicitly enabled, the feature
 fails closed if the backend is bound to anything but a loopback address.
 """
 
@@ -31,10 +31,6 @@ from settings import get_settings
 if TYPE_CHECKING:
     from settings import Settings
 
-# Hostnames that resolve to loopback by convention rather than by DNS lookup.
-# `getaddrinfo("localhost", ...)` already resolves this on every platform this
-# ships on, but treating it explicitly avoids a DNS round trip and a platform
-# difference from ever being the thing this check depends on.
 _LOOPBACK_HOSTNAMES = frozenset({"localhost"})
 
 
@@ -136,12 +132,7 @@ def evaluate_ssh_feature_availability(settings: Settings, *, bind_host: str | No
 
 @lru_cache
 def get_ssh_feature_availability() -> SshFeatureAvailability:
-    """Return the cached SSH feature availability for this process.
-
-    Cached the same way `settings.get_settings` is: call
-    `get_ssh_feature_availability.cache_clear()` after changing settings in a
-    test or after reconciling the actual bind host (see `cli.serve`).
-    """
+    """Return the cached SSH feature availability for this process."""
     return evaluate_ssh_feature_availability(get_settings())
 
 
