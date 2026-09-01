@@ -236,6 +236,27 @@ describe('TrainModelDialog', () => {
         expect(await screen.findByText(/does not have access to this policy/i)).toBeInTheDocument();
     });
 
+    it('blocks Pi0.5 training when the Hugging Face access check itself fails', async () => {
+        // Regression test: a failed check (network error, backend 500, ...) must
+        // fail closed for a policy with a required Hub dependency, rather than
+        // silently letting training through only to fail deep into a remote run.
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/{policy}/huggingface-access', () =>
+                HttpResponse.json({ detail: 'boom' }, { status: 500 })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        expect(await screen.findByText(/couldn.t verify Hugging Face access/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+    });
+
     it('lists a configured SSH server alongside local and direct-URL trainers in a single control', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer({ remoteServers: [healthyRemoteServer] });

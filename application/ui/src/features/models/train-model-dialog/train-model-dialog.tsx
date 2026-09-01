@@ -158,15 +158,24 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         checkHealth: checkRemoteTrainerHealth,
     } = useRemoteTrainerHealth(isRemoteTarget ? targetRawId(selectedTarget.id) : null);
     const remoteUnavailable = isRemoteTarget && remoteTrainerHealth?.status === 'unreachable';
-    const { data: policyAccess, isLoading: isCheckingPolicyAccess } = $api.useQuery(
-        'get',
-        '/api/policies/{policy}/huggingface-access',
-        {
-            params: { path: { policy: selectedPolicy } },
-        }
-    );
+    const {
+        data: policyAccess,
+        isLoading: isCheckingPolicyAccess,
+        isError: policyAccessCheckFailed,
+    } = $api.useQuery('get', '/api/policies/{policy}/huggingface-access', {
+        params: { path: { policy: selectedPolicy } },
+    });
+    // Fail closed: a policy with a *required* Hub dependency (see
+    // `_HUGGINGFACE_REQUIREMENTS`) that we could not verify access for -
+    // because the check is still loading, or because the request itself
+    // failed outright (as opposed to the backend reporting a definite
+    // `unavailable` status for one repository) - must not silently let
+    // training through only to fail deep into a remote run instead.
+    const hasRequiredHuggingFaceDependency =
+        policyAccess?.requirements.some((requirement) => requirement.required) ?? true;
     const policyAccessBlocksTraining =
         isCheckingPolicyAccess ||
+        (policyAccessCheckFailed && hasRequiredHuggingFaceDependency) ||
         policyAccess?.requirements.some(
             (requirement) =>
                 requirement.required && (requirement.status === 'missing_token' || requirement.status === 'denied')

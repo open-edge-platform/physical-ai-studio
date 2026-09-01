@@ -44,6 +44,12 @@
     font-weight: 500;
 }
 
+.inProgressRow {
+    display: flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-100);
+}
+
 .emptyStateBody {
     display: block;
     line-height: 1.4;

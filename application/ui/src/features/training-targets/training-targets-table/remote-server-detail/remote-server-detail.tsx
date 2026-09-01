@@ -1,6 +1,17 @@
 import { useState } from 'react';
 
-import { ActionButton, Badge, Button, Heading, StatusLight, Text, Tooltip, TooltipTrigger, View } from '@geti-ui/ui';
+import {
+    ActionButton,
+    Badge,
+    Button,
+    Heading,
+    ProgressCircle,
+    StatusLight,
+    Text,
+    Tooltip,
+    TooltipTrigger,
+    View,
+} from '@geti-ui/ui';
 
 import { SchemaPreflightResult, SchemaRemoteServer, SchemaRemoteServerStatus } from '../../../../api/openapi-spec';
 import {
@@ -114,31 +125,46 @@ export const RemoteServerDetail = ({
                             </Tooltip>
                         </TooltipTrigger>
                     </div>
-                    <div className={detailClasses.checkList}>
-                        {tier2Checks.map((check) => (
-                            <HealthCheckRow
-                                key={check.key}
-                                label={checkLabel[check.key] ?? check.key}
-                                detail={check.detail ?? (check.method ? `via ${check.method}` : '')}
-                                state={checkStateForCheck(check)}
-                                status={checkStatusLabel(check)}
-                                rowClassName={classes.tier2CheckRow}
-                                contentClassName={classes.tier2CheckContent}
-                            />
-                        ))}
-                    </div>
-                    {tier2Checks.length === 0 && (
+                    {isRunningTier2 ? (
                         <div className={classes.emptyState}>
-                            <Text UNSAFE_className={classes.emptyStateTitle}>Not verified yet</Text>
+                            <div className={classes.inProgressRow}>
+                                <ProgressCircle size='S' isIndeterminate aria-label='Pulling and verifying image' />
+                                <Text UNSAFE_className={classes.emptyStateTitle}>Pulling &amp; verifying image…</Text>
+                            </div>
                             <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyStateBody}`}>
-                                Pull &amp; verify image the trainer image.
+                                This pulls a multi-gigabyte trainer image and can take a while. You can navigate
+                                away - it will keep running in the background.
                             </Text>
                         </div>
-                    )}
-                    {tier2CheckedAt !== undefined && (
-                        <Text UNSAFE_className={`${detailClasses.checkDetail} ${detailClasses.sectionNote}`}>
-                            Last verified {new Date(tier2CheckedAt).toLocaleString()}
-                        </Text>
+                    ) : (
+                        <>
+                            <div className={detailClasses.checkList}>
+                                {tier2Checks.map((check) => (
+                                    <HealthCheckRow
+                                        key={check.key}
+                                        label={checkLabel[check.key] ?? check.key}
+                                        detail={check.detail ?? (check.method ? `via ${check.method}` : '')}
+                                        state={checkStateForCheck(check)}
+                                        status={checkStatusLabel(check)}
+                                        rowClassName={classes.tier2CheckRow}
+                                        contentClassName={classes.tier2CheckContent}
+                                    />
+                                ))}
+                            </div>
+                            {tier2Checks.length === 0 && (
+                                <div className={classes.emptyState}>
+                                    <Text UNSAFE_className={classes.emptyStateTitle}>Not verified yet</Text>
+                                    <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyStateBody}`}>
+                                        Pull &amp; verify image the trainer image.
+                                    </Text>
+                                </div>
+                            )}
+                            {tier2CheckedAt !== undefined && (
+                                <Text UNSAFE_className={`${detailClasses.checkDetail} ${detailClasses.sectionNote}`}>
+                                    Last verified {new Date(tier2CheckedAt).toLocaleString()}
+                                </Text>
+                            )}
+                        </>
                     )}
                 </View>
                 <View UNSAFE_className={detailClasses.detailSection}>

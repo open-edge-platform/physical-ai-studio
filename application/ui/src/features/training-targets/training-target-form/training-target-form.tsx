@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import {
     Button,
@@ -23,6 +23,7 @@ import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { useRemoteServerFormMutation } from '../training-targets-table/remote-server-form/use-remote-server-form-mutation';
 import { VerifyAfterSaveDialog } from '../training-targets-table/remote-server-form/verify-after-save-dialog';
 import { useRemoteTrainerFormMutation } from '../training-targets-table/remote-trainer-form/use-remote-trainer-form-mutation';
+import { useDeviceTypeDetection } from './use-device-type-detection';
 
 import classes from './training-target-form.module.css';
 
@@ -36,6 +37,8 @@ const TARGET_TYPE_LABELS: Record<TargetType, string> = {
 
 const DEVICE_TYPES = ['cuda', 'xpu'] as const;
 type DeviceType = (typeof DEVICE_TYPES)[number];
+
+const DEVICE_TYPE_DESCRIPTION = 'Determines which trainer image is provisioned.';
 
 type TrainingTargetFormProps = {
     close: () => void;
@@ -53,6 +56,11 @@ export const TrainingTargetForm = ({ close }: TrainingTargetFormProps) => {
     const [url, setUrl] = useState('');
     const [sshHostAlias, setSshHostAlias] = useState<string | undefined>(undefined);
     const [deviceType, setDeviceType] = useState<DeviceType | undefined>(undefined);
+    // True once the user picks a device type themselves, so a later
+    // autodetection response (e.g. from switching SSH hosts back and forth)
+    // never clobbers a deliberate choice. Reset whenever the host alias
+    // changes, so picking a new host re-enables autodetection for it.
+    const [deviceTypeTouched, setDeviceTypeTouched] = useState(false);
     // Set once an SSH server is saved, to swap this dialog for the "pull &
     // verify now?" prompt (see `VerifyAfterSaveDialog`). A direct-URL trainer
     // has no such preflight, so it always just closes on save.
@@ -72,6 +80,27 @@ export const TrainingTargetForm = ({ close }: TrainingTargetFormProps) => {
         () => aliasOptions.find((option) => option.alias === sshHostAlias),
         [aliasOptions, sshHostAlias]
     );
+
+    const { detectedDeviceType, isDetecting } = useDeviceTypeDetection(targetType === 'ssh' ? sshHostAlias : undefined);
+
+    useEffect(() => {
+        // A new host alias means a new device to detect, and the previous
+        // detection (or manual pick) no longer applies to it.
+        setDeviceTypeTouched(false);
+        setDeviceType(undefined);
+    }, [sshHostAlias]);
+
+    useEffect(() => {
+        if (!deviceTypeTouched && detectedDeviceType !== undefined) {
+            setDeviceType(detectedDeviceType);
+        }
+    }, [detectedDeviceType, deviceTypeTouched]);
+
+    const deviceTypeDescription = isDetecting
+        ? 'Detecting the accelerator on this host…'
+        : !deviceTypeTouched && detectedDeviceType !== undefined
+          ? 'Auto-detected from the SSH host. Change it if this is wrong.'
+          : DEVICE_TYPE_DESCRIPTION;
 
     const isPending = targetType === 'ssh' ? isSavingServer : isSavingTrainer;
     const error = targetType === 'ssh' ? serverError : trainerError;
@@ -160,11 +189,12 @@ export const TrainingTargetForm = ({ close }: TrainingTargetFormProps) => {
                                 )}
                                 <Picker
                                     label='Device type'
-                                    description='Determines which trainer image is provisioned.'
+                                    description={deviceTypeDescription}
                                     selectedKey={deviceType ?? null}
-                                    onSelectionChange={(key) =>
-                                        setDeviceType(key ? (String(key) as DeviceType) : undefined)
-                                    }
+                                    onSelectionChange={(key) => {
+                                        setDeviceTypeTouched(true);
+                                        setDeviceType(key ? (String(key) as DeviceType) : undefined);
+                                    }}
                                     width='100%'
                                     isRequired
                                 >

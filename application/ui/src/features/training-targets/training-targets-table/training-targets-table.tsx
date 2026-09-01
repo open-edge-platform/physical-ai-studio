@@ -26,6 +26,7 @@ import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../re
 import { RemoteServerDetail } from './remote-server-detail/remote-server-detail';
 import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
 import { TrainingTargetRow, trainingTargetRowId } from './training-target-row';
+import { useIsRemoteServerCheckRunning } from './use-is-remote-server-check-running';
 import { useRemoteServerCheckMutation } from './use-remote-server-check-mutation';
 import { useRemoteServersStatus } from './use-remote-servers-status';
 import { useRemoteTrainersHealth } from './use-remote-trainers-health';
@@ -242,6 +243,10 @@ const SshTargetRow = ({ server, isExpanded, onExpandedChange, onExpand, onEdit, 
     const checkMutation = useRemoteServerCheckMutation();
     const tier2Result = checkMutation.data ?? persistedTier2Result(server);
     const tier2CheckedAt = checkMutation.data?.checked_at ?? server.last_check_at ?? undefined;
+    // Reflects any in-flight Tier 2 check for this server, including one
+    // fired from the post-save dialog's own (now-unmounted) mutation
+    // instance - not just this row's local `checkMutation.isPending`.
+    const isRunningTier2 = useIsRemoteServerCheckRunning(server.id) || checkMutation.isPending;
 
     return (
         <Table.ExpandableRow
@@ -256,7 +261,7 @@ const SshTargetRow = ({ server, isExpanded, onExpandedChange, onExpand, onEdit, 
                     isChecking={isChecking}
                     tier2Result={tier2Result}
                     tier2CheckedAt={tier2CheckedAt}
-                    isRunningTier2={checkMutation.isPending}
+                    isRunningTier2={isRunningTier2}
                     onTestConnection={() => checkMutation.mutate({ params: { path: { remote_server_id: server.id } } })}
                 />
             }

@@ -14,6 +14,7 @@ const REMOTE_SERVERS_PATH = '/api/remote-servers';
 const REMOTE_SERVER_PATH = '/api/remote-servers/{remote_server_id}';
 const REMOTE_SERVER_ALIASES_PATH = '/api/remote-servers/aliases';
 const REMOTE_SERVER_STATUS_PATH = '/api/remote-servers/{remote_server_id}/status';
+const DEVICE_TYPE_DETECTION_PATH = '/api/remote-servers/aliases/{alias}/device-type';
 
 const remoteTrainer = {
     id: 'b8b28d4f-e78f-48ad-afb8-03d060178a3c',
@@ -57,7 +58,12 @@ describe('TrainingTargetsPage', () => {
             http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)),
             http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json([])),
             http.get(REMOTE_SERVER_ALIASES_PATH, () => HttpResponse.json([aliasOption])),
-            http.get(REMOTE_SERVER_STATUS_PATH, () => HttpResponse.json(healthyServerStatus))
+            http.get(REMOTE_SERVER_STATUS_PATH, () => HttpResponse.json(healthyServerStatus)),
+            // No CUDA/XPU signal by default, so these tests keep exercising the
+            // manual "Device type" pick rather than depending on autodetection.
+            http.get(DEVICE_TYPE_DETECTION_PATH, () =>
+                HttpResponse.json({ device_type: null, method: null, reason_code: 'no_signal' })
+            )
         );
     });
 
@@ -190,6 +196,28 @@ describe('TrainingTargetsPage', () => {
 
         expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
         expect(screen.queryByText(remoteTrainer.name)).not.toBeInTheDocument();
+    });
+
+    it('auto-detects the device type once an SSH host is picked', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json([])),
+            http.get(DEVICE_TYPE_DETECTION_PATH, () =>
+                HttpResponse.json({ device_type: 'xpu', method: 'xpu-smi', reason_code: null })
+            )
+        );
+
+        render(<TrainingTargetsPage />);
+
+        await user.click(await screen.findByRole('button', { name: /new training target/i }));
+        const dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('button', { name: /ssh host/i }));
+        await user.click(await screen.findByRole('option', { name: aliasOption.alias }));
+
+        // Detection fills the field without the user touching it.
+        const deviceTypeButton = await within(dialog).findByRole('button', { name: /device type/i });
+        expect(deviceTypeButton).toHaveTextContent('XPU');
     });
 
     it('creates an SSH server training target and prompts to verify the image', async () => {

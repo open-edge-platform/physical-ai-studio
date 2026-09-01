@@ -1,8 +1,7 @@
-import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Text } from '@geti-ui/ui';
+import { Button, ButtonGroup, Content, Dialog, Divider, Heading, Text, ToastQueue } from '@geti-ui/ui';
 
 import { getApiErrorMessage } from '../../../../api/errors';
 import { SchemaRemoteServer } from '../../../../api/openapi-spec';
-import { InlineAlert } from '../../../robots/setup-wizard/shared/inline-alert';
 import { useRemoteServerCheckMutation } from '../use-remote-server-check-mutation';
 
 type VerifyAfterSaveDialogProps = {
@@ -31,39 +30,50 @@ type VerifyAfterSaveDialogProps = {
  */
 export const VerifyAfterSaveDialog = ({ savedServer, close }: VerifyAfterSaveDialogProps) => {
     const checkMutation = useRemoteServerCheckMutation();
-    const errorMessage = checkMutation.isError
-        ? (getApiErrorMessage(checkMutation.error) ?? 'The image could not be pulled or verified. Try again.')
-        : undefined;
+
+    // Fire-and-forget: Tier 2 (SSH connect, registry round trips, a one-shot
+    // container launch to probe the device) can take tens of seconds, and
+    // this dialog has no way to show incremental progress. Closing
+    // immediately instead of awaiting `onSuccess` keeps that latency from
+    // blocking the user behind a spinner. The mutation keeps running after
+    // this component unmounts - React Query doesn't abort in-flight
+    // mutations on unmount - and the global `MutationCache` in
+    // `query-client.ts` invalidates the server list once it resolves
+    // regardless of which component fired it, so the training-targets table
+    // (and its own "Pull & verify image" row action) picks up the real
+    // `last_check_status` on its own. A failure is surfaced as a toast since
+    // there's no longer a dialog around to show it inline.
+    const startVerification = () => {
+        checkMutation.mutate(
+            { params: { path: { remote_server_id: savedServer.id } } },
+            {
+                onError: (error) => {
+                    const fallback = `'${savedServer.name}': image pull/verification failed.`;
+                    const hint = 'Try again from the training-targets table.';
+                    ToastQueue.negative(getApiErrorMessage(error) ?? `${fallback} ${hint}`);
+                },
+            }
+        );
+        close();
+    };
 
     return (
         <Dialog>
             <Heading>Pull &amp; verify trainer image?</Heading>
             <Divider />
             <Content>
-                <Flex direction='column' gap='size-200'>
-                    <Text>
-                        {`'${savedServer.name}' is saved. Pull and verify the trainer image now to start the download `}
-                        {'of the trainer image. '}
-                        Skipping it means you&apos;ll need to verify the server, from the training-targets table or when
-                        training, before you can submit a job to it.
-                    </Text>
-                    {errorMessage !== undefined && <InlineAlert variant='error'>{errorMessage}</InlineAlert>}
-                </Flex>
+                <Text>
+                    {`'${savedServer.name}' is saved. Pull and verify the trainer image now to start the download `}
+                    {'of the trainer image. '}
+                    Skipping it means you&apos;ll need to verify the server, from the training-targets table or when
+                    training, before you can submit a job to it.
+                </Text>
             </Content>
             <ButtonGroup>
-                <Button variant='secondary' onPress={close} isDisabled={checkMutation.isPending}>
+                <Button variant='secondary' onPress={close}>
                     Skip for now
                 </Button>
-                <Button
-                    variant='accent'
-                    isPending={checkMutation.isPending}
-                    onPress={() =>
-                        checkMutation.mutate(
-                            { params: { path: { remote_server_id: savedServer.id } } },
-                            { onSuccess: close }
-                        )
-                    }
-                >
+                <Button variant='accent' onPress={startVerification}>
                     Pull &amp; verify image
                 </Button>
             </ButtonGroup>
