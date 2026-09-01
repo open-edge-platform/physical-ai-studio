@@ -156,8 +156,11 @@ def _user_config_scalar_keys() -> tuple[str, ...]:
 def ssh_patch_to_flat(values: dict[str, Any] | None) -> dict[str, Any]:
     """Translate a partial `SshProvisioningSettings` patch into stored overrides.
 
-    A `None` patch clears every SSH override, restoring the environment value
-    or the built-in default for each one.
+    A `None` patch clears every SSH override, restoring each field's built-in
+    default. `_EnvExclusionSource` deliberately excludes these settings from
+    the environment/`.env` sources, so there is no environment value to fall
+    back to - only the field default (or an explicit `Settings(...)` init
+    kwarg, e.g. in tests).
 
     Args:
         values: Fields supplied by the caller, keyed by grouped field name, or

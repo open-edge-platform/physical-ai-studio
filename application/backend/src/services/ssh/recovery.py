@@ -196,7 +196,16 @@ async def _process_active_row(
         )
         return _RowVerdict(outcome="failed", active_on_server=None, failure_reason="server_not_registered")
 
-    outcome = await provisioning_service.verify_reattach(row, server)
+    try:
+        outcome = await provisioning_service.verify_reattach(row, server)
+    except Exception:  # one job's failure must not abort recovery of the rest
+        logger.exception(
+            "Reattach check for job {} on server '{}' raised unexpectedly; leaving pending for retry",
+            row.job_id,
+            server.name,
+        )
+        await _requeue_pending(job_service, row.job_id)
+        return _RowVerdict(outcome="transient", active_on_server=server.id)
 
     if outcome.ok:
         logger.info("Confirmed reattach for job {} on server '{}'", row.job_id, server.name)

@@ -28,7 +28,13 @@ import json
 import re
 from typing import Final
 
-from cryptography.x509 import Certificate, RFC822Name, SubjectAlternativeName, UniformResourceIdentifier
+from cryptography.x509 import (
+    Certificate,
+    ExtensionNotFound,
+    RFC822Name,
+    SubjectAlternativeName,
+    UniformResourceIdentifier,
+)
 from sigstore.errors import Error as SigstoreError
 from sigstore.errors import VerificationError as SigstoreVerificationError
 from sigstore.models import Bundle
@@ -99,7 +105,12 @@ class _IdentityRegexp:
 
     def verify(self, cert: Certificate) -> None:
         """Verify `cert` against the policy. Raises `SigstoreVerificationError` on failure."""
-        san_ext = cert.extensions.get_extension_for_class(SubjectAlternativeName).value
+        try:
+            san_ext = cert.extensions.get_extension_for_class(SubjectAlternativeName).value
+        except ExtensionNotFound as error:
+            raise SigstoreVerificationError(
+                f"certificate has no Subject Alternative Name extension to match against {self._pattern.pattern!r}"
+            ) from error
         candidates = set(san_ext.get_values_for_type(RFC822Name))
         candidates.update(san_ext.get_values_for_type(UniformResourceIdentifier))
         if not any(self._pattern.fullmatch(candidate) for candidate in candidates):
@@ -170,7 +181,12 @@ def _check_statement(digest_reference: str, payload: bytes) -> None:
     * The statement's subject digest must match the image actually being
       verified, confirming the referrer lookup found the right artifact.
     """
-    statement = json.loads(payload)
+    try:
+        statement = json.loads(payload)
+    except (json.JSONDecodeError, TypeError, UnicodeDecodeError) as error:
+        raise SignatureVerificationError(f"the signed statement is not valid JSON: {error}") from error
+    if not isinstance(statement, dict):
+        raise SignatureVerificationError(f"the signed statement is not a JSON object (got {type(statement).__name__})")
     if statement.get("predicateType") != _COSIGN_SIGN_PREDICATE_TYPE:
         raise SignatureVerificationError(f"unexpected predicate type {statement.get('predicateType')!r}")
 
