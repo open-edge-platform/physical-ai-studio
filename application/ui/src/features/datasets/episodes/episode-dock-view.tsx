@@ -9,12 +9,7 @@ import {
     IDockviewReactProps,
 } from 'dockview-react';
 
-import {
-    SchemaDatasetOutput,
-    SchemaEnvironmentWithRelations,
-    SchemaEpisode,
-    SchemaEpisodeVideo,
-} from '../../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaEpisode } from '../../../api/openapi-spec';
 import { physicalAiTheme } from '../../dockview';
 import { EpisodeVideoCell } from './episode-video-cell.component';
 import { RobotCell } from './robot-cell.component';
@@ -31,8 +26,8 @@ const components = {
     robot: (props: IDockviewPanelProps<{ robot_id: string }>) => {
         return <RobotCell robotId={props.params.robot_id} />;
     },
-    camera: (props: IDockviewPanelProps<{ video: SchemaEpisodeVideo; datasetId: string }>) => {
-        return <EpisodeVideoCell episodeVideo={props.params.video} datasetId={props.params.datasetId} />;
+    camera: (props: IDockviewPanelProps<{ videoId: string; datasetId: string | undefined }>) => {
+        return <EpisodeVideoCell videoId={props.params.videoId} datasetId={props.params.datasetId} />;
     },
     default: (props: IDockviewPanelProps<{ title: string }>) => {
         return <div style={{ padding: '20px', color: 'white' }}>{props.params.title}</div>;
@@ -60,7 +55,7 @@ const buildDockviewPanels = (
                 title: cameraName,
                 component: 'camera',
                 params: {
-                    video: episode.videos[videoId],
+                    videoId,
                     datasetId: dataset.id,
                 },
                 position: {
