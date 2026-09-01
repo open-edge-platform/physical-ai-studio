@@ -11,7 +11,6 @@ from physicalai_studio_plugin import shared_robot_name
 from robots.robot_client_factory import RobotClientFactory
 from runtime.features import sanitize_camera_name
 from utils.camera_factory import build_camera_config, is_migrated
-from utils.device_paths import resolve_camera_device
 
 if TYPE_CHECKING:
     from physicalai.runtime import PolicySource
@@ -57,16 +56,8 @@ async def _shared_robot_config(
 def _shared_camera_config(camera: Camera) -> dict[str, Any]:
     if not is_migrated(camera.driver):
         raise ValueError(f"Camera driver {camera.driver!r} is not supported by the runtime")
-    fingerprint = camera.fingerprint
-    if fingerprint.startswith("/dev/video") and ":" in fingerprint:
-        fingerprint = fingerprint.split(":")[0]
-    device = resolve_camera_device(fingerprint) if camera.driver == "usb_camera" else None
-    # Never reconfigure another session's publisher (overwrite_settings=False).
-    # Refuse frames at a resolution this environment did not declare rather
-    # than silently reading the wrong size: that is a wrong answer, not a
-    # degraded one. See runtime-process-context.md#cameras-connect-strictly.
     shared_camera = SharedCamera(
-        camera=build_camera_config(camera, device=device),
+        camera=build_camera_config(camera),
         color_mode=ColorMode.RGB,
         validate_on_connect=True,
         overwrite_settings=False,

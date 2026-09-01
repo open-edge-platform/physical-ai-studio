@@ -123,7 +123,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9be95d88d5b9f8342f6952d8ec288fb108fa416e" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "a7ee74d0a65bd8f27dc31d831210c7a905e92309" }
 physicalai-studio-plugin = { path = "../plugin", editable = true }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
@@ -166,6 +166,7 @@ all = [
 package = true
 default-groups = ["all"]
 exclude-newer = "7 days"
+exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false }
 # The pytorch-xpu index is non-explicit (explicit = false) because
 # transitive deps like triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale

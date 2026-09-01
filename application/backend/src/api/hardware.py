@@ -1,3 +1,4 @@
+import json
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 
 
 def _fingerprint_from_device_info(info: DeviceInfo) -> str:
-    return info.hardware_id if (info.id_stable and info.hardware_id) else info.device_id
+    return json.dumps(info.hardware_payload)
 
 
 def _build_camera_list(discovered: dict[str, list[DeviceInfo]]) -> list[Camera]:

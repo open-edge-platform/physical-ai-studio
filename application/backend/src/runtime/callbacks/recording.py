@@ -93,6 +93,17 @@ class RecordingState:
             self._is_recording = False
             return self._mutation
 
+    def current_mutation(self) -> RecordingMutation | None:
+        """Return the attached mutation without requiring an open episode.
+
+        Discard doubles as the recovery path after a failed save, which has
+        already cleared the recording flag. Requiring an open episode there
+        would leave the buffer with no way to clear it.
+        """
+        with self._lock:
+            self._is_recording = False
+            return self._mutation
+
     def take_mutation(self) -> RecordingMutation | None:
         """Detach the mutation so teardown can finalize it once.
 
