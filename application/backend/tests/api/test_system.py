@@ -1,7 +1,6 @@
 from fastapi import BackgroundTasks
 
-from api.system import restart_server
-from core.restart import request_graceful_restart
+from api.system import request_graceful_restart, restart_server
 from services.health_service import HealthService
 
 

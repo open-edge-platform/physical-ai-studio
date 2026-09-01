@@ -93,7 +93,7 @@ class SshProvisioningSettings(BaseModel):
     process and `app.state.ssh_feature_availability` is pinned once at
     startup, so `api.settings.update_user_settings` schedules the same
     graceful restart `POST /api/system/restart` uses whenever this field
-    changes (see `core.restart.request_graceful_restart`).
+    changes (see `api.system.request_graceful_restart`).
 
     Every other field is a bounded timeout or limit whose worst case is a job
     that gives up too early or waits too long, never a job that runs

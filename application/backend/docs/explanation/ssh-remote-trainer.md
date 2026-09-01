@@ -46,7 +46,7 @@ they configure *how* Studio trusts a host or an image, which the
 > `core.security.get_ssh_feature_availability` is cached for the life of the
 > process and `app.state.ssh_feature_availability` is pinned once at startup.
 > `PATCH /api/settings` detects the change and schedules the same graceful
-> restart `POST /api/system/restart` uses (see `core.restart.request_graceful_restart`)
+> restart `POST /api/system/restart` uses (see `api.system.request_graceful_restart`)
 > - the save itself always succeeds; the running process's behavior catches
 > up once the restart lands.
 
@@ -76,7 +76,7 @@ arguments), the backend re-evaluates whether it is safe to serve the feature:
   explaining why.
 
 This check lives in `core.security.ssh_network_exposure` and is applied in
-three independent places so a change in configuration is never enough on its
+four independent places so a change in configuration is never enough on its
 own to expose the feature, and a job that made it past submission is never
 enough on its own to let it run:
 
@@ -89,6 +89,14 @@ enough on its own to let it run:
   already-queued SSH-target job when the feature is inactive at pickup time,
   so a job that was accepted while the feature was active does not silently
   run after a restart changed the configuration or the bind address.
+- `services.ssh.recovery.recover_ssh_jobs` — skips startup reattachment
+  entirely when the feature is inactive, so a `JobProvisioningDB` row left
+  over from an earlier, active run never causes a studio restart to dial SSH
+  into a registered server or sweep/stop its containers while the feature is
+  supposed to be off. The generic orphan-job abort that runs afterward
+  (`TrainingService.abort_orphan_jobs`) still reconciles those jobs from the
+  database alone — no SSH connection made — and the normal pickup gate above
+  fails any that get requeued.
 
 ## Checking the feature's status
 

@@ -12,10 +12,12 @@ sweep - independent of the real docker/SSH calls `verify_reattach` makes
 
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
+from core.security import SshFeatureAvailability
 from exceptions import ResourceNotFoundError, ResourceType
 from schemas.hardware import DeviceType
 from schemas.job_provisioning import JobProvisioning
@@ -27,6 +29,18 @@ from services.ssh.recovery import recover_ssh_jobs
 # Every test in this module is async; mark the whole module rather than each
 # test individually.
 pytestmark = pytest.mark.anyio
+
+_ACTIVE = SshFeatureAvailability(enabled=True, network_exposed=False)
+_INACTIVE_DISABLED = SshFeatureAvailability(enabled=False, network_exposed=False)
+_INACTIVE_EXPOSED = SshFeatureAvailability(enabled=True, network_exposed=True, reason="network-exposed")
+
+
+@pytest.fixture(autouse=True)
+def _ssh_feature_active():
+    """Every test below exercises recovery's per-row behavior, which only runs while the
+    feature is active - `test_recovery_is_skipped_*` below cover the inactive gate itself."""
+    with patch("services.ssh.recovery.get_ssh_feature_availability", return_value=_ACTIVE):
+        yield
 
 
 def _server(name: str = "Lab GPU box") -> RemoteServer:
@@ -294,3 +308,28 @@ async def test_missing_server_fails_the_active_job_without_touching_other_server
     # Only the known server was ever swept - there is no transport to dial for
     # a server that no longer exists.
     assert [server_id for server_id, _ in FakeProvisioningService.sweep_calls] == [known_server.id]
+
+
+@pytest.mark.parametrize("inactive", [_INACTIVE_DISABLED, _INACTIVE_EXPOSED])
+async def test_recovery_is_skipped_entirely_when_ssh_feature_is_inactive(inactive) -> None:
+    """A disabled or network-exposed feature must never dial SSH or touch a container.
+
+    Regression test for the gap where a prior active run's `JobProvisioningDB`
+    rows would still be reattached/swept (real SSH connections, real `docker
+    stop`/`rm`) after the feature was turned off or started failing closed.
+    """
+    server = _server()
+    row = _row(server)
+    FakeProvisioningService.verify_outcomes[row.job_id] = ReattachVerification(ok=True)
+
+    job_service = FakeJobService()
+    repo = FakeProvisioningRepository([row])
+    with patch("services.ssh.recovery.get_ssh_feature_availability", return_value=inactive):
+        report = await recover_ssh_jobs(job_service, repo, FakeRemoteServerService([server]))
+
+    assert report == recovery_module.SshRecoveryReport()
+    assert job_service.status_updates == []
+    assert FakeProvisioningService.verify_calls == []
+    assert FakeProvisioningService.sweep_calls == []
+    assert FakeProvisioningService.teardown_calls == []
+    assert repo.deleted == []
