@@ -27,9 +27,7 @@ export const CameraPicker = ({ driver, selectedFingerprint, onSelect }: CameraPi
             {availableCameras.map((camera) => (
                 <Item textValue={camera.fingerprint} key={camera.fingerprint}>
                     <Text>{camera.name}</Text>
-                    <Text slot='description'>
-                        {camera.fingerprint} ({camera.driver})
-                    </Text>
+                    <Text slot='description'>({camera.driver})</Text>
                 </Item>
             ))}
         </Picker>

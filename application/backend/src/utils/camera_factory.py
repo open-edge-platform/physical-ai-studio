@@ -6,6 +6,7 @@ filters per-driver kwargs so that only constructor-safe parameters reach the cam
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -47,22 +48,32 @@ _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
 }
 
 
-def build_camera_config(config: Camera, *, device: str | None = None) -> Config:
-    """Build the direct physicalai camera recipe for a Studio camera row."""
+def _get_fingerprint_dict(fingerprint_str: str) -> dict[str, Any]:
+    try:
+        d = json.loads(fingerprint_str)
+        if isinstance(d, dict):
+            return d
+    except ValueError:  # This is not a valid fingerprint
+        pass
+    logger.error(f"Could not convert `{fingerprint_str}` into a valid fingerprint dict")
+    raise ValueError("Unable to parse fingerprint into a dict")
+
+
+def build_camera_config(config: Camera) -> Config:
+    """Build a camera configuration from a config schema."""
     class_path = _DRIVER_TO_CLASS_PATH[config.driver]
     allowed = _ALLOWED_KWARGS.get(config.driver, frozenset())
 
     payload = config.payload.model_dump()
     init_args: dict[str, Any] = {k: v for k, v in payload.items() if k in allowed and v is not None}
 
+    fingerprint = _get_fingerprint_dict(config.fingerprint)
+
     if config.driver == "usb_camera":
-        fingerprint = config.fingerprint
-        # Strip legacy ":N" sub-device suffix (e.g. "/dev/video0:0" → "/dev/video0").
-        if fingerprint.startswith("/dev/video") and ":" in fingerprint:
-            fingerprint = fingerprint.split(":")[0]
-        init_args["device"] = device or fingerprint
+        init_args["device"] = fingerprint
     elif config.driver != "ipcam":
-        init_args["serial_number"] = config.fingerprint
+        init_args["serial_number"] = fingerprint["serial"]
+
     return Config(class_path, init_args)
 
 

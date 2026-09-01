@@ -128,9 +128,6 @@ const CameraListItem = ({
                             <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
                                 {camera.driver}: {camera.hardware_name}
                             </li>
-                            <li style={{ marginLeft: 'var(--spectrum-global-dimension-size-200)' }}>
-                                {camera.fingerprint}
-                            </li>
                         </ul>
                     </View>
                 </Grid>

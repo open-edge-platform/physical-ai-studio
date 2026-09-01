@@ -16,7 +16,7 @@ build-backend = "hatchling.build"
 packages = ["src/physicalai_studio_plugin"]
 
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "9be95d88d5b9f8342f6952d8ec288fb108fa416e" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "a7ee74d0a65bd8f27dc31d831210c7a905e92309" }
 
 [dependency-groups]
 dev = [
@@ -40,6 +40,7 @@ all = [
 [tool.uv]
 default-groups = ["all"]
 exclude-newer = "7 days"
+exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false }
 
 [tool.ruff]
 extend = "../../pyproject.toml"

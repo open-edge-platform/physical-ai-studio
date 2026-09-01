@@ -55,15 +55,6 @@ const CameraHeading = ({ camera }: { camera: SchemaProjectCamera }) => {
                                 borderRadius: '2px',
                             }}
                         >
-                            {camera.fingerprint}
-                        </span>
-                        <span
-                            style={{
-                                backgroundColor: 'var(--spectrum-global-color-gray-300)',
-                                padding: '4px',
-                                borderRadius: '2px',
-                            }}
-                        >
                             {camera.payload.width} x {camera.payload.height} @ {camera.payload.fps}
                         </span>
                     </Flex>
