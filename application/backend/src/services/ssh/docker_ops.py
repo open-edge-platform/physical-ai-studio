@@ -743,6 +743,12 @@ async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Se
     await prune_stale_images(transport, image)
 
 
+# Substrings of a `docker rmi` failure that mean "already handled, not an
+# error": the image is still referenced by a running/stopped container, or it
+# is already gone (a concurrent prune on the same remote server won the race).
+_TOLERATED_RMI_FAILURES: Final = ("image is being used", "no such image")
+
+
 async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> list[str]:
     """Remove other locally cached images of `image`'s repository, freeing disk.
 
@@ -775,7 +781,7 @@ async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> l
     repository = image.digest_reference.rsplit("@", 1)[0]
     try:
         result = await transport.run_command(
-            ["docker", "images", repository, "--digests", "--format", "{{.ID}}\t{{.Digest}}"]
+            ["docker", "images", repository, "--digests", "--format", "{{.ID}} {{.Digest}}"]
         )
     except Exception as error:
         logger.warning("Could not list images for '{}' to prune stale ones: {}", repository, error)
@@ -785,7 +791,7 @@ async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> l
 
     stale_ids: set[str] = set()
     for line in result.stdout.splitlines():
-        image_id, _, digest = line.partition("\t")
+        image_id, _, digest = line.partition(" ")
         image_id, digest = image_id.strip(), digest.strip()
         if image_id and digest != image.digest:
             stale_ids.add(image_id)
@@ -799,7 +805,7 @@ async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> l
             continue
         if rm_result.ok:
             removed.append(image_id)
-        elif "image is being used" not in (rm_result.stderr or "").lower():
+        elif not any(reason in (rm_result.stderr or "").lower() for reason in _TOLERATED_RMI_FAILURES):
             logger.warning("docker rmi reported a failure for stale image '{}': {}", image_id, rm_result.stderr)
     return removed
 

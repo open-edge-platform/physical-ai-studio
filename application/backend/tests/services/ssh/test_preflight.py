@@ -1305,3 +1305,96 @@ async def test_tier2_device_probe_does_not_start_a_second_pull_already_in_flight
     assert _outcome(result, CheckKey.CONTAINER_DEVICE_PROBE) is CheckOutcome.SKIPPED
     assert "Still pulling" in (_detail_for(result, CheckKey.CONTAINER_DEVICE_PROBE) or "")
     assert not transport.ran("nohup docker pull")
+
+
+# --------------------------------------------------------------------------- #
+# Device-type autodetection                                                   #
+# --------------------------------------------------------------------------- #
+
+
+async def test_detect_device_type_finds_cuda(install_transport) -> None:
+    transport = install_transport(FakeTransport({"nvidia-smi --query-gpu": _ok("NVIDIA RTX 6000 Ada Generation\n")}))
+
+    device_type, method, reason_code = await preflight_module.detect_device_type(ALIAS)
+
+    assert device_type is DeviceType.CUDA
+    assert method == METHOD_NVIDIA_SMI
+    assert reason_code is None
+    assert not transport.ran("xpu-smi")
+
+
+async def test_detect_device_type_falls_back_to_xpu_smi(install_transport) -> None:
+    install_transport(
+        FakeTransport(
+            {
+                "nvidia-smi --query-gpu": _fail("nvidia-smi: command not found"),
+                "xpu-smi discovery": _ok(_XPU_DISCOVERY_TABLE),
+            }
+        )
+    )
+
+    device_type, method, reason_code = await preflight_module.detect_device_type(ALIAS)
+
+    assert device_type is DeviceType.XPU
+    assert method == METHOD_XPU_SMI
+    assert reason_code is None
+
+
+async def test_detect_device_type_falls_back_to_render_node(install_transport) -> None:
+    install_transport(
+        FakeTransport(
+            {
+                "nvidia-smi --query-gpu": _fail("nvidia-smi: command not found"),
+                "xpu-smi discovery": _fail("xpu-smi: command not found"),
+                "sh -c": _ok(""),
+            }
+        )
+    )
+
+    device_type, method, reason_code = await preflight_module.detect_device_type(ALIAS)
+
+    assert device_type is DeviceType.XPU
+    assert method == METHOD_RENDER_NODE
+    assert reason_code is None
+
+
+async def test_detect_device_type_reports_no_signal_when_neither_probe_answers(install_transport) -> None:
+    install_transport(
+        FakeTransport(
+            {
+                "nvidia-smi --query-gpu": _fail("nvidia-smi: command not found"),
+                "xpu-smi discovery": _fail("xpu-smi: command not found"),
+                "sh -c": _fail(""),
+            }
+        )
+    )
+
+    device_type, method, reason_code = await preflight_module.detect_device_type(ALIAS)
+
+    assert device_type is None
+    assert method is None
+    assert reason_code == REASON_NO_SIGNAL
+
+
+async def test_detect_device_type_reports_unresolved_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    from schemas.remote_server import ResolvedSshHost
+
+    monkeypatch.setattr(
+        preflight_module, "resolve_alias", lambda _config_path, alias: ResolvedSshHost(alias=alias, found=False)
+    )
+
+    device_type, method, reason_code = await preflight_module.detect_device_type(ALIAS)
+
+    assert device_type is None
+    assert method is None
+    assert reason_code == REASON_ALIAS_NOT_FOUND
+
+
+async def test_detect_device_type_reports_unreachable_host(install_transport) -> None:
+    install_transport(FakeTransport(connect_error=SshConnectionError(ALIAS, reason="timeout")))
+
+    device_type, method, reason_code = await preflight_module.detect_device_type(ALIAS)
+
+    assert device_type is None
+    assert method is None
+    assert reason_code == REASON_UNREACHABLE

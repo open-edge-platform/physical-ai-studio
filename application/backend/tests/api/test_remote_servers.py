@@ -202,6 +202,41 @@ def test_list_ssh_host_aliases_response_never_leaks_credential_fields(monkeypatc
         assert forbidden not in body_text
 
 
+def test_detect_device_type_returns_detected_cuda(monkeypatch: pytest.MonkeyPatch):
+    detect = AsyncMock(return_value=(DeviceType.CUDA, "nvidia-smi", None))
+    monkeypatch.setattr("api.remote_servers.preflight.detect_device_type", detect)
+
+    response = TestClient(app).get("/api/remote-servers/aliases/gpu-box/device-type")
+
+    assert response.status_code == 200
+    assert response.json() == {"device_type": "cuda", "method": "nvidia-smi", "reason_code": None}
+    detect.assert_awaited_once_with("gpu-box")
+
+
+def test_detect_device_type_reports_reason_code_when_undetected(monkeypatch: pytest.MonkeyPatch):
+    detect = AsyncMock(return_value=(None, None, "no_signal"))
+    monkeypatch.setattr("api.remote_servers.preflight.detect_device_type", detect)
+
+    response = TestClient(app).get("/api/remote-servers/aliases/gpu-box/device-type")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["device_type"] is None
+    assert body["reason_code"] == "no_signal"
+
+
+def test_detect_device_type_times_out_gracefully(monkeypatch: pytest.MonkeyPatch):
+    async def _hangs(_alias: str):
+        raise TimeoutError
+
+    monkeypatch.setattr("api.remote_servers.preflight.detect_device_type", _hangs)
+
+    response = TestClient(app).get("/api/remote-servers/aliases/gpu-box/device-type")
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "timed_out"
+
+
 def test_create_remote_server_success(monkeypatch: pytest.MonkeyPatch):
     run_tier1 = AsyncMock(return_value=_passing_tier1_result())
     monkeypatch.setattr("api.remote_servers.run_tier1_preflight", run_tier1)

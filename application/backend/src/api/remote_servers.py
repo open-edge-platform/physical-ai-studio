@@ -15,7 +15,7 @@ from collections.abc import Callable
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Path, status
 
 from api.dependencies import RemoteServerServiceDep, SettingsDep, get_remote_server_id, require_ssh_feature_active
 from core.security import SshFeatureAvailability, get_ssh_feature_availability
@@ -29,9 +29,17 @@ from exceptions import (
     SshHostKeyMismatchError,
     SshHostKeyUnknownError,
 )
-from schemas.remote_server import RemoteServer, RemoteServerCreate, RemoteServerUpdate, SshHostAliasOption
+from schemas.remote_server import (
+    SSH_HOST_ALIAS_PATTERN,
+    DeviceTypeDetection,
+    RemoteServer,
+    RemoteServerCreate,
+    RemoteServerUpdate,
+    SshHostAliasOption,
+)
 from schemas.ssh_preflight import PreflightCheck, PreflightResult, RemoteServerStatus
 from services import ssh_config_reader
+from services.ssh import preflight
 from services.ssh.preflight import run_tier1_preflight, run_tier2_preflight
 
 # The whole administration surface fails closed behind `require_ssh_feature_active`
@@ -97,6 +105,26 @@ async def _gate_on_tier1(candidate: RemoteServer, settings: SettingsDep) -> None
 async def list_ssh_host_aliases(settings: SettingsDep) -> list[SshHostAliasOption]:
     """Return every selectable SSH host alias for the create/edit form."""
     return ssh_config_reader.list_host_aliases(settings.ssh_config_path)
+
+
+@router.get("/aliases/{alias}/device-type", dependencies=[Depends(require_ssh_feature_active)])
+async def detect_device_type(
+    alias: Annotated[str, Path(min_length=1, max_length=255, pattern=SSH_HOST_ALIAS_PATTERN)],
+    settings: SettingsDep,
+) -> DeviceTypeDetection:
+    """Best-effort device-type autodetection, to prefill the add-target form.
+
+    Never raises for a driverless or unreachable host: it reports
+    ``device_type=None`` with a ``reason_code`` instead, so the form falls back
+    to asking the user to pick manually rather than blocking on this call.
+    """
+    try:
+        device_type, method, reason_code = await asyncio.wait_for(
+            preflight.detect_device_type(alias), timeout=settings.ssh_preflight_timeout_s
+        )
+    except TimeoutError:
+        return DeviceTypeDetection(reason_code="timed_out")
+    return DeviceTypeDetection(device_type=device_type, method=method, reason_code=reason_code)
 
 
 @router.get("/feature-status")

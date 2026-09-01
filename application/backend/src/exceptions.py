@@ -520,7 +520,7 @@ class SshConnectionError(BaseException):
     def __init__(self, alias: str, reason: str | None = None) -> None:
         detail = f" ({reason})" if reason else ""
         super().__init__(
-            message=f"Could not connect to '{alias}'{detail}. Check that the server is reachable.",
+            message=f"Could not connect to '{alias}'{detail}. Verify that the server is reachable.",
             error_code="ssh_connection_failed",
             http_status=http.HTTPStatus.BAD_GATEWAY,
         )

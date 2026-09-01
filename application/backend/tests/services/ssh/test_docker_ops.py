@@ -571,7 +571,7 @@ async def test_prune_stale_images_removes_other_digests_of_same_repository(setti
     old_digest = "sha256:" + "b" * 64
     transport = FakeTransport(
         {
-            f"docker images {repository} --digests": _ok(f"old-id\t{old_digest}\ncurrent-id\t{image.digest}\n"),
+            f"docker images {repository} --digests": _ok(f"old-id {old_digest}\ncurrent-id {image.digest}\n"),
             "docker rmi old-id": _ok(),
             "docker rmi current-id": _fail("should never remove the image just pulled"),
         }
@@ -598,8 +598,30 @@ async def test_prune_stale_images_keeps_image_still_in_use(settings) -> None:
     )
     transport = FakeTransport(
         {
-            f"docker images {repository} --digests": _ok(f"old-id\t{old_digest}\n"),
+            f"docker images {repository} --digests": _ok(f"old-id {old_digest}\n"),
             "docker rmi old-id": _fail(in_use_error),
+        }
+    )
+
+    removed = await docker_ops.prune_stale_images(transport, image)
+
+    assert removed == []
+
+
+async def test_prune_stale_images_tolerates_already_removed_image(settings) -> None:
+    """A stale ID can already be gone by the time this call gets to it - another
+    job on the same remote server pruning the same digest concurrently, or an
+    operator removing it by hand. `docker rmi` reporting "no such image" is a
+    race won by someone else, not a failure worth logging.
+    """
+    image = _image()
+    repository = f"{_REGISTRY}/physicalai-trainer-cuda"
+    old_digest = "sha256:" + "b" * 64
+    already_gone_error = f"Error response from daemon: No such image: old-id{old_digest}"
+    transport = FakeTransport(
+        {
+            f"docker images {repository} --digests": _ok(f"old-id {old_digest}\n"),
+            "docker rmi old-id": _fail(already_gone_error),
         }
     )
 
@@ -625,7 +647,7 @@ async def test_pull_image_prunes_stale_images_after_pulling(settings) -> None:
         {
             f"docker image inspect {image.digest_reference}": _fail("No such image"),
             f"docker pull {image.digest_reference}": _ok(),
-            f"docker images {repository} --digests": _ok(f"old-id\t{old_digest}\n"),
+            f"docker images {repository} --digests": _ok(f"old-id {old_digest}\n"),
             "docker rmi old-id": _ok(),
         }
     )

@@ -33,6 +33,19 @@ if TYPE_CHECKING:
     from training import TrainingJobSpec
 
 
+def resolve_hf_token() -> SecretStr | None:
+    """Return the configured HuggingFace token, falling back to `$HF_TOKEN`.
+
+    Shared by the local training backend and the HuggingFace-access check so
+    both agree on where a token can come from: settings first, then the
+    legacy environment variable if settings hasn't been configured.
+    """
+    hf_token = get_settings().huggingface.hf_token
+    if (hf_token is None or not hf_token.get_secret_value()) and (legacy_hf_token := os.environ.get("HF_TOKEN", "")):
+        hf_token = SecretStr(legacy_hf_token)
+    return hf_token
+
+
 class LocalTrainingBackend:
     """Train in the worker process with Lightning."""
 
@@ -44,15 +57,9 @@ class LocalTrainingBackend:
             raise ValueError("Local training requires a dataset snapshot")
 
         spec = build_spec(context)
-        hf_token = get_settings().huggingface.hf_token
-        # Fallback to Environment Variable based hf token if settings hasn't been set
-        if (hf_token is None or not hf_token.get_secret_value()) and (
-            legacy_hf_token := os.environ.get("HF_TOKEN", "")
-        ):
-            hf_token = SecretStr(legacy_hf_token)
         spec.run_options = RunOptions(
             resume_from=_resume_checkpoint(context),
-            hf_token=hf_token,
+            hf_token=resolve_hf_token(),
         )
         await asyncio.to_thread(
             run_training_job,
