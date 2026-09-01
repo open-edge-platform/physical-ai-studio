@@ -58,13 +58,15 @@ graph LR
 
 ## Supported Policies
 
-| Policy       | Description                                                 | Paper                                                                          |
-| ------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **ACT**      | Action Chunking with Transformers                           | [Zhao et al. 2023](https://arxiv.org/abs/2304.13705)                           |
-| **SmolVLA**  | Lightweight vision-language-action model                    | [Cadene et al. 2024](https://huggingface.co/lerobot/smolvla_base)              |
-| **Pi0**      | Physical Intelligence foundation model                      | [Black et al. 2024](https://www.physicalintelligence.company/download/pi0.pdf) |
-| **GR00T N1** | Vision-language grounded policy                             | [Bjork et al. 2025](https://arxiv.org/abs/2503.14734)                          |
-| **Pi0.5**    | Vision-Language-Action Model with Open-World Generalization | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)                          |
+| Policy      | Description                                                                | Reference                                                         |
+| ----------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **ACT**     | Action Chunking with Transformers                                          | [Zhao et al. 2023](https://arxiv.org/abs/2304.13705)              |
+| **SmolVLA** | Lightweight vision-language-action model                                   | [Cadene et al. 2025](https://arxiv.org/abs/2506.01844)            |
+| **Pi0.5**   | Vision-Language-Action model with open-world generalization                | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)             |
+| **RLDX-1**  | Flow-matching VLA with a Qwen3-VL backbone and MSAT action head            | [RLWRLD RLDX-1](https://huggingface.co/RLWRLD/RLDX-1-PT)          |
+
+Additional policies (ACT, Diffusion, SmolVLA, Pi0, Pi0.5, Pi0-FAST, GR00T, X-VLA) are also available
+through the LeRobot wrapper via `get_policy(..., source="lerobot")`.
 
 ## Need Help?
 
