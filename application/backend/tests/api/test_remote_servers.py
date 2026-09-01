@@ -271,6 +271,41 @@ def test_create_remote_server_blocking_failure_returns_400_and_never_persists(mo
     service.create_remote_server.assert_not_awaited()
 
 
+def test_create_remote_server_blocking_failure_names_the_failed_checks(monkeypatch: pytest.MonkeyPatch):
+    """The rejection message must name which check failed and why, not just
+    that "required checks" failed - a user cannot fix what they cannot see.
+    """
+    failing = PreflightCheck(
+        key=CheckKey.DISK_SPACE,
+        tier=1,  # type: ignore[arg-type]
+        outcome=CheckOutcome.FAILED,
+        blocking=True,
+        checked_at=CHECKED_AT,
+        reason_code="insufficient_disk",
+        detail="3.2 GiB free, 20.0 GiB required",
+    )
+    result = PreflightResult(
+        remote_server_id=None,
+        tiers_run=[1],  # type: ignore[list-item]
+        checks=[failing],
+        checked_at=CHECKED_AT,
+        latency_ms=10,
+    )
+    monkeypatch.setattr("api.remote_servers.run_tier1_preflight", AsyncMock(return_value=result))
+
+    service = AsyncMock()
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    payload = {"name": "gpu-box", "ssh_host_alias": "gpu-box", "device_type": "cuda"}
+    response = TestClient(app).post("/api/remote-servers", json=payload)
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "remote_server_preflight_failed"
+    assert "Storage available" in body["message"]
+    assert "3.2 GiB free, 20.0 GiB required" in body["message"]
+
+
 def test_create_remote_server_succeeds_when_only_gpu_free_warns(monkeypatch: pytest.MonkeyPatch):
     """Named acceptance criterion: a save must succeed even when GPU_FREE is a
     non-blocking WARNING.

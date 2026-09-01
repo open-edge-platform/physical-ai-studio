@@ -37,7 +37,7 @@ from schemas.remote_server import (
     RemoteServerUpdate,
     SshHostAliasOption,
 )
-from schemas.ssh_preflight import PreflightCheck, PreflightResult, RemoteServerStatus
+from schemas.ssh_preflight import CheckKey, PreflightCheck, PreflightResult, RemoteServerStatus
 from services import ssh_config_reader
 from services.ssh import preflight
 from services.ssh.preflight import run_tier1_preflight, run_tier2_preflight
@@ -63,6 +63,23 @@ _REASON_CODE_TO_ERROR: dict[str, Callable[[str], StudioBaseException]] = {
 }
 
 
+# Human-readable labels for Tier 1 checks, used to describe *which* check
+# failed rather than only reporting that the save was rejected. Kept in sync
+# with the UI's own `checkLabel` map (`remote-server-status-utils.ts`), which
+# labels the same `CheckKey` values for the status/verification cards.
+_CHECK_LABELS: dict[CheckKey, str] = {
+    CheckKey.ALIAS_RESOLVED: "SSH host alias resolves",
+    CheckKey.REACHABLE: "Reachable",
+    CheckKey.AUTHENTICATED: "Authenticated",
+    CheckKey.HOST_KEY_VERIFIED: "Host key verified",
+    CheckKey.DOCKER_USABLE: "Docker available",
+    CheckKey.DISK_SPACE: "Storage available",
+    CheckKey.DRIVER_PRESENT: "GPU driver present",
+    CheckKey.REGISTRY_REACHABLE: "Registry reachable",
+    CheckKey.GPU_FREE: "GPU free",
+}
+
+
 def _actionable_error(alias: str, blocking_failures: list[PreflightCheck]) -> StudioBaseException | None:
     """Return the dedicated exception for the first credential-adjacent failure.
 
@@ -74,6 +91,12 @@ def _actionable_error(alias: str, blocking_failures: list[PreflightCheck]) -> St
         if check.reason_code and (factory := _REASON_CODE_TO_ERROR.get(check.reason_code)):
             return factory(alias)
     return None
+
+
+def _describe_failure(check: PreflightCheck) -> str:
+    """Human-readable summary of one failed check, e.g. ``"Storage available: 3.2 GiB free, 20.0 GiB required"``."""
+    label = _CHECK_LABELS.get(check.key, check.key.value.replace("_", " "))
+    return f"{label}: {check.detail}" if check.detail else label
 
 
 async def _gate_on_tier1(candidate: RemoteServer, settings: SettingsDep) -> None:
@@ -97,8 +120,13 @@ async def _gate_on_tier1(candidate: RemoteServer, settings: SettingsDep) -> None
     if actionable := _actionable_error(candidate.ssh_host_alias, result.blocking_failures):
         raise actionable
 
-    failures = [f"{check.key.value}: {check.reason_code}" for check in result.blocking_failures]
-    raise RemoteServerPreflightError("Remote server failed required checks", failures=failures)
+    # Named each failed check by its human label plus its own detail (e.g. free
+    # disk space, or the raw Docker/driver error), so the save's rejection
+    # message tells the user exactly what to fix instead of only naming that
+    # "required checks" failed.
+    failures = [_describe_failure(check) for check in result.blocking_failures]
+    message = "Could not save: " + "; ".join(failures)
+    raise RemoteServerPreflightError(message, failures=failures)
 
 
 @router.get("/aliases", dependencies=[Depends(require_ssh_feature_active)])

@@ -107,6 +107,7 @@ class FakeProvisioningService:
     """
 
     verify_outcomes: dict = {}
+    verify_raises: dict = {}
     sweep_results: dict = {}
     teardown_calls: list = []
     verify_calls: list = []
@@ -121,6 +122,9 @@ class FakeProvisioningService:
 
     async def verify_reattach(self, row: JobProvisioning, server: RemoteServer) -> ReattachVerification:
         FakeProvisioningService.verify_calls.append(row.job_id)
+        error = FakeProvisioningService.verify_raises.get(row.job_id)
+        if error is not None:
+            raise error
         return FakeProvisioningService.verify_outcomes[row.job_id]
 
     async def sweep_orphans(self, server: RemoteServer, active_job_ids: set) -> list[str]:
@@ -131,6 +135,7 @@ class FakeProvisioningService:
 @pytest.fixture(autouse=True)
 def _fake_provisioning_service(monkeypatch):
     FakeProvisioningService.verify_outcomes = {}
+    FakeProvisioningService.verify_raises = {}
     FakeProvisioningService.sweep_results = {}
     FakeProvisioningService.teardown_calls = []
     FakeProvisioningService.verify_calls = []
@@ -232,6 +237,31 @@ async def test_inspection_failed_outcome_is_also_treated_as_transient() -> None:
     assert len(job_service.status_updates) == 1
     assert job_service.status_updates[0][1].value == "pending"
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
+
+
+async def test_verify_reattach_unexpected_exception_is_treated_as_transient() -> None:
+    """An unexpected `verify_reattach` exception must not abort recovery of every other job."""
+    server = _server()
+    row = _row(server)
+    other_row = _row(server)
+    FakeProvisioningService.verify_raises[row.job_id] = RuntimeError("boom")
+    FakeProvisioningService.verify_outcomes[other_row.job_id] = ReattachVerification(ok=True)
+
+    job_service = FakeJobService()
+    report = await recover_ssh_jobs(
+        job_service, FakeProvisioningRepository([row, other_row]), FakeRemoteServerService([server])
+    )
+
+    assert report.transient == 1
+    assert report.confirmed == 1
+    assert report.failed == 0
+    # Requeued to PENDING, same as any other transient outcome, so the next
+    # pickup retries the reattach check instead of stranding the job.
+    statuses = {job_id: status.value for job_id, status, _ in job_service.status_updates}
+    assert statuses[row.job_id] == "pending"
+    assert statuses[other_row.job_id] == "pending"
+    assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id, other_row.job_id}))]
+    assert report.handled_job_ids == frozenset({row.job_id, other_row.job_id})
 
 
 async def test_row_with_no_container_yet_is_transient_and_never_calls_verify_reattach() -> None:

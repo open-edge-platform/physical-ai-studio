@@ -29,6 +29,7 @@ Example:
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import logging
 import os
@@ -139,6 +140,33 @@ def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None
     return get_policy(spec.policy, source=spec.policy_source, **kwargs)
 
 
+@contextlib.contextmanager
+def _hf_token_env(token: SecretStr | None):
+    """Scope ``HF_TOKEN`` to one training run, restoring whatever was there before.
+
+    ``os.environ`` is process-global, and the trainer service runs jobs
+    sequentially or, with `TRAINER_MAX_CONCURRENT_JOBS` raised, concurrently in
+    separate threads within the same process (see `trainer.queue_worker`). A
+    token set for one job must not leak into the next job's environment (or
+    into a job submitted without one, which would otherwise silently inherit a
+    stranger's token), and must not clobber a value an operator set on the
+    process itself. A no-op when ``token`` is ``None``, so a token configured
+    directly in the trainer's own environment is left untouched.
+    """
+    if token is None:
+        yield
+        return
+    previous = os.environ.get("HF_TOKEN")
+    os.environ["HF_TOKEN"] = token.get_secret_value()
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("HF_TOKEN", None)
+        else:
+            os.environ["HF_TOKEN"] = previous
+
+
 def run_training_job(
     spec: TrainingJobSpec,
     *,
@@ -190,56 +218,55 @@ def run_training_job(
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
 
-    if spec.run_options.hf_token is not None:
-        os.environ["HF_TOKEN"] = spec.run_options.hf_token.get_secret_value()
-    accelerator = resolve_accelerator(spec.device_type)
-    output_dir, cache_dir = Path(output_dir), Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    with _hf_token_env(spec.run_options.hf_token):
+        accelerator = resolve_accelerator(spec.device_type)
+        output_dir, cache_dir = Path(output_dir), Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
-    datamodule = LeRobotDataModule(
-        repo_id=_DATASET_REPO_ID,
-        root=str(dataset_root),
-        train_batch_size=spec.batch_size,
-        num_workers=spec.num_workers,
-        val_split=spec.val_split,
-    )
-    policy = build_policy(spec, resume_from=spec.run_options.resume_from)
+        datamodule = LeRobotDataModule(
+            repo_id=_DATASET_REPO_ID,
+            root=str(dataset_root),
+            train_batch_size=spec.batch_size,
+            num_workers=spec.num_workers,
+            val_split=spec.val_split,
+        )
+        policy = build_policy(spec, resume_from=spec.run_options.resume_from)
 
-    trainer = Trainer(
-        logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
-        callbacks=[
-            ModelCheckpoint(
-                dirpath=cache_dir,
-                filename=Path(CHECKPOINT_NAME).stem,
-                save_top_k=1,
-                monitor="val/loss",
-                mode="min",
-            ),
-            ProgressReportingCallback(report=report, should_stop=should_stop),
-        ],
-        accelerator=accelerator,
-        strategy=resolve_strategy(spec.device_type),
-        devices=resolve_devices(spec.device_index),
-        max_epochs=spec.max_epochs,
-        auto_scale_batch_size=spec.auto_scale_batch_size,
-        precision=spec.precision,
-        check_val_every_n_epoch=1,
-    )
+        trainer = Trainer(
+            logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
+            callbacks=[
+                ModelCheckpoint(
+                    dirpath=cache_dir,
+                    filename=Path(CHECKPOINT_NAME).stem,
+                    save_top_k=1,
+                    monitor="val/loss",
+                    mode="min",
+                ),
+                ProgressReportingCallback(report=report, should_stop=should_stop),
+            ],
+            accelerator=accelerator,
+            strategy=resolve_strategy(spec.device_type),
+            devices=resolve_devices(spec.device_index),
+            max_epochs=spec.max_epochs,
+            auto_scale_batch_size=spec.auto_scale_batch_size,
+            precision=spec.precision,
+            check_val_every_n_epoch=1,
+        )
 
-    report(0, "Training model", {})
-    trainer.fit(model=policy, datamodule=datamodule)
-    if should_stop():
-        logger.info("Training canceled; skipping checkpoint and export")
-        return
+        report(0, "Training model", {})
+        trainer.fit(model=policy, datamodule=datamodule)
+        if should_stop():
+            logger.info("Training canceled; skipping checkpoint and export")
+            return
 
-    _ensure_checkpoint_exists(trainer, cache_dir)
-    _publish(cache_dir, output_dir)
+        _ensure_checkpoint_exists(trainer, cache_dir)
+        _publish(cache_dir, output_dir)
 
-    export_policy = _export_policy(spec, policy, output_dir)
-    _detach_trainer(export_policy, trainer)
-    del trainer, datamodule, policy
-    _release_memory()
-    _export(export_policy, output_dir, report)
+        export_policy = _export_policy(spec, policy, output_dir)
+        _detach_trainer(export_policy, trainer)
+        del trainer, datamodule, policy
+        _release_memory()
+        _export(export_policy, output_dir, report)
 
 
 def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Policy:
