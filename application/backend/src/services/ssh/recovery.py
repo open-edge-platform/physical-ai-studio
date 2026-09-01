@@ -5,15 +5,9 @@
 
 Runs once at studio startup, before the generic orphan-job abort in
 `services.training_service.TrainingService.abort_orphan_jobs`. Fails closed
-the same way the other two SSH gates documented in
-`docs/explanation/ssh-remote-trainer.md` do: if
-`core.security.get_ssh_feature_availability` reports the feature inactive
-(disabled by settings, or network-exposed), this never dials SSH or touches a
-container - every persisted `JobProvisioningDB` row is left exactly as it is,
-untouched, for a future pass to reconcile once the feature is safe to serve
-again. Without this check, a disabled/fail-closed feature would still let a
-studio restart SSH into every registered server and (via the orphan sweep)
-stop/remove containers, even though the feature is supposed to be off.
+like the other SSH gates: if `core.security.get_ssh_feature_availability`
+reports the feature inactive, this never dials SSH or touches a container -
+every `JobProvisioningDB` row is left untouched for a future pass.
 
 For every non-terminal job with a persisted `JobProvisioningDB` row while the
 feature is active, `recover_ssh_jobs`:

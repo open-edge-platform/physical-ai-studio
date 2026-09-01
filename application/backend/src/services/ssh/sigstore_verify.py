@@ -3,23 +3,19 @@
 
 """Container image signature verification using the `sigstore` PyPI package.
 
-No external binary, on this backend or on any remote trainer server: `cosign`
-signs images by attaching a Sigstore bundle to the registry (see
+No external binary needed, on this backend or any remote trainer server:
+`cosign` signs images by attaching a Sigstore bundle to the registry (see
 `services.ssh.oci_registry`), and `sigstore-python` (PyPI: `sigstore`) can
-verify that bundle's certificate chain and Rekor transparency-log inclusion
-proof entirely in Python. Verified end-to-end against this project's own
-published, `cosign`-signed `ghcr.io/open-edge-platform/physicalai-trainer-*`
-images during development of this module.
+verify that bundle's certificate chain and Rekor inclusion proof in Python.
 
-`sigstore-python` does not itself know how to find an image's signature in a
-registry (that convention is `cosign`'s), so `oci_registry` supplies that
-half; this module supplies the cryptographic half.
+`sigstore-python` doesn't know how to find a signature in a registry (that's
+`cosign`'s convention); `oci_registry` supplies that half, this module the
+cryptographic half.
 
-This module raises its own two exception types rather than a
-backend-specific one, so it stays usable from both a fail-closed caller
+Raises its own two exception types, rather than a backend-specific one, so
+it stays usable from both a fail-closed caller
 (`services.ssh.docker_ops.verify_image_signature`) and an advisory,
-never-blocking caller (`services.ssh.preflight`) without depending on either
-one's error-handling conventions.
+never-blocking caller (`services.ssh.preflight`).
 """
 
 from __future__ import annotations
@@ -43,12 +39,10 @@ from sigstore.verify.policy import AllOf, OIDCIssuer
 
 from services.ssh.oci_registry import RegistryUnreachableError, fetch_referrer_blob, resolve_digest
 
-# `cosign sign --new-bundle-format` (what signs this project's trainer images)
-# wraps even a plain signature - not an attestation - in a DSSE envelope with
-# this predicate type and an empty predicate. Requiring it here is what stops
-# an SBOM or provenance attestation - which a registry stores the exact same
-# way, as a Sigstore-bundle-shaped referrer - from being accepted as if it
-# were the image's actual signature.
+# `cosign sign --new-bundle-format` wraps even a plain signature (not an
+# attestation) in a DSSE envelope with this predicate type and an empty
+# predicate. Requiring it here stops an SBOM/provenance attestation - stored
+# the same way in the registry - from being accepted as a signature.
 _COSIGN_SIGN_PREDICATE_TYPE: Final = "https://sigstore.dev/cosign/sign/v1"
 
 # The artifact type `cosign`'s new bundle format publishes a signature under.
@@ -150,19 +144,15 @@ async def verify_signature(image_ref: str, *, identity_regexp: str, oidc_issuer:
 
     try:
         bundle = Bundle.from_json(bundle_bytes)
-        # `verify_dsse`'s own returned "predicate type" is the DSSE envelope's
-        # payload type (always `application/vnd.in-toto+json` for an in-toto
-        # statement, whichever kind of statement it wraps) - not the
-        # statement's own `predicateType` field, which is what distinguishes
-        # a plain signature from an SBOM or provenance attestation. That
-        # field lives inside `payload` and is checked below.
+        # `verify_dsse`'s returned "predicate type" is the DSSE envelope's payload
+        # type, not the statement's own `predicateType` field (checked below,
+        # which distinguishes a signature from an SBOM/provenance attestation).
         _, payload = _production_verifier().verify_dsse(bundle, policy)
     except SigstoreVerificationError as error:
         raise SignatureVerificationError(str(error)) from error
     except SigstoreError as error:
-        # NetworkError/TUFError/RootError: Sigstore's own infrastructure
-        # (Fulcio root, Rekor, the TUF metadata CDN) was unreachable, not a
-        # verification failure.
+        # NetworkError/TUFError/RootError: Sigstore's own infrastructure was
+        # unreachable, not a verification failure.
         raise SignatureUnavailableError(str(error)) from error
 
     _check_statement(digest_reference, payload)
@@ -171,15 +161,10 @@ async def verify_signature(image_ref: str, *, identity_regexp: str, oidc_issuer:
 def _check_statement(digest_reference: str, payload: bytes) -> None:
     """Confirm the signed in-toto statement is a plain signature over this exact image digest.
 
-    Two checks, both belt-and-suspenders on top of fetching the bundle keyed
-    by digest and type in the first place:
-
+    Belt-and-suspenders on top of fetching the bundle by digest and type:
     * `predicateType` must be `cosign`'s plain-signature predicate, not an
-      SBOM or provenance attestation - which a registry stores in the
-      identically-shaped Sigstore-bundle wrapper, and which `oci_registry`'s
-      artifact-type filter does not by itself distinguish from a signature.
-    * The statement's subject digest must match the image actually being
-      verified, confirming the referrer lookup found the right artifact.
+      SBOM/provenance attestation stored the same way.
+    * The statement's subject digest must match the image being verified.
     """
     try:
         statement = json.loads(payload)

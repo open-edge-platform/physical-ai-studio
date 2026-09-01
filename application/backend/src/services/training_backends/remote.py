@@ -331,11 +331,9 @@ class RemoteTrainingBackend:
         device choice is left out: it names hardware on this host.
 
         The Hugging Face token is sent as a separate, top-level ``hf_token``
-        field rather than as part of ``spec.run_options`` (which is dropped
-        from ``spec`` entirely below): the trainer never persists that field
-        to disk, only caches it in memory for the one job it was submitted
-        for (see `trainer.schemas.SubmitJobRequest.hf_token` and
-        `trainer.store.JobStore.stash_secret`).
+        field rather than as part of ``spec.run_options``: the trainer never
+        persists that field to disk, only caches it in memory for the job it
+        was submitted for (see `trainer.schemas.SubmitJobRequest.hf_token`).
         """
         from services.training_backends.local import build_spec, resolve_hf_token
 

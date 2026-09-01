@@ -184,9 +184,8 @@ def containerized_sshd(tmp_path: Path) -> Iterator[_ContainerizedSshd]:
             f"    IdentityFile {private_key_path}\n"
         )
 
-        # Every plausible pattern `asyncssh`'s known_hosts matcher might look
-        # up the same key under (bare address, bracketed address:port, and the
-        # alias itself), rather than assuming which one it is handed.
+        # Covers every pattern asyncssh's known_hosts matcher might look the
+        # key up under: bare address, bracketed address:port, and the alias.
         known_hosts_path = tmp_path / "known_hosts"
         known_hosts_path.write_text(
             f"127.0.0.1 {host_public_key}\n[127.0.0.1]:{port} {host_public_key}\n{_ALIAS} {host_public_key}\n"

@@ -120,10 +120,8 @@ async def _gate_on_tier1(candidate: RemoteServer, settings: SettingsDep) -> None
     if actionable := _actionable_error(candidate.ssh_host_alias, result.blocking_failures):
         raise actionable
 
-    # Named each failed check by its human label plus its own detail (e.g. free
-    # disk space, or the raw Docker/driver error), so the save's rejection
-    # message tells the user exactly what to fix instead of only naming that
-    # "required checks" failed.
+    # Names each failed check by its human label plus its own detail (e.g. free
+    # disk space, or the raw Docker/driver error) instead of just the reason code.
     failures = [_describe_failure(check) for check in result.blocking_failures]
     message = "Could not save: " + "; ".join(failures)
     raise RemoteServerPreflightError(message, failures=failures)

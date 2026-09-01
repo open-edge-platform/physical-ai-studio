@@ -60,12 +60,10 @@ class JobStore:
         self._conn.execute(_SCHEMA)
         self._conn.commit()
         # Per-job secrets (e.g. an HF token) never touch the SQLite row: `create`
-        # persists `request.model_dump_json()`, which is written to disk and
-        # meant to survive a trainer restart, and a restart already fails any
-        # RUNNING/AWAITING_DATASET job outright (see `reset_orphans`). Holding
-        # the secret only in memory means it is used at most once, for the one
-        # process lifetime a job can actually run in, and is never readable
-        # from the job database file.
+        # persists `request.model_dump_json()` to disk. Holding the secret only
+        # in memory means it is never readable from the job database file, and
+        # a restart already fails any RUNNING/AWAITING_DATASET job outright
+        # (see `reset_orphans`), so there's nothing to recover across restarts.
         self._secrets: dict[str, SecretStr] = {}
 
     def stash_secret(self, job_id: str, token: SecretStr | None) -> None:
