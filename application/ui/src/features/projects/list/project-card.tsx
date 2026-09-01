@@ -38,7 +38,7 @@ export const ProjectCard = ({ item, isActive }: ProjectCardProps) => {
 
     return (
         <NavLink to={paths.project.robots.index({ project_id: item.id! })}>
-            <Flex UNSAFE_className={clsx({ [classes.card]: true, [classes.activeCard]: isActive })}>
+            <Flex UNSAFE_className={clsx(classes.card, { [classes.activeCard]: isActive })}>
                 <View aria-label={'project thumbnail'} UNSAFE_className={classes.imgWrapper}>
                     <ProjectThumbnail projectId={item.id!} name={item.name} size={IMAGE_SIZE} />
                 </View>
