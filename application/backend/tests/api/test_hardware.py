@@ -1,4 +1,5 @@
 import asyncio
+import json
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -6,7 +7,7 @@ from fastapi.testclient import TestClient
 from physicalai.capture import DeviceInfo
 
 from api.dependencies import get_robot_manager_service
-from api.hardware import _fingerprint_from_device_info, get_cameras
+from api.hardware import get_cameras
 from main import app
 from schemas import SerialPortInfo
 
@@ -14,16 +15,14 @@ from schemas import SerialPortInfo
 def _make_device(
     device_id="/dev/video0",
     name="Test Camera",
-    hardware_id=None,
-    id_stable=False,
+    hardware_fingerprint=None,
 ):
     return DeviceInfo(
         device_id=device_id,
         index=0,
         name=name,
         driver="uvc",
-        hardware_id=hardware_id,
-        id_stable=id_stable,
+        hardware_payload=hardware_fingerprint,
     )
 
 
@@ -36,20 +35,20 @@ def event_loop():
 
 class TestFingerprintFromDeviceInfo:
     def test_stable_prefers_hardware_id(self):
-        info = _make_device(device_id="/dev/video0", hardware_id="/dev/v4l/by-id/usb-cam", id_stable=True)
-        assert _fingerprint_from_device_info(info) == "/dev/v4l/by-id/usb-cam"
+        info = _make_device(device_id="/dev/video0", hardware_fingerprint={"id": "usb-cam"})
+        assert info.hardware_payload["id"] == "usb-cam"
 
     def test_unstable_falls_back_to_device_id(self):
-        info = _make_device(device_id="/dev/video0", hardware_id=None, id_stable=False)
-        assert _fingerprint_from_device_info(info) == "/dev/video0"
+        info = _make_device(device_id="/dev/video0", hardware_fingerprint=None)
+        assert info.device_id == "/dev/video0"
 
     def test_stable_but_no_hardware_id_falls_back(self):
-        info = _make_device(device_id="/dev/video0", hardware_id=None, id_stable=True)
-        assert _fingerprint_from_device_info(info) == "/dev/video0"
+        info = _make_device(device_id="/dev/video0", hardware_fingerprint=None)
+        assert info.device_id == "/dev/video0"
 
     def test_unstable_ignores_hardware_id(self):
-        info = _make_device(device_id="/dev/video0", hardware_id="/dev/v4l/by-id/usb-cam", id_stable=False)
-        assert _fingerprint_from_device_info(info) == "/dev/video0"
+        info = _make_device(device_id="/dev/video0", hardware_fingerprint={"id": "usb-cam"})
+        assert info.device_id == "/dev/video0"
 
 
 class TestGetCameras:
@@ -67,15 +66,14 @@ class TestGetCameras:
             index=0,
             name="Intel RealSense D435",
             driver="realsense",
-            hardware_id="123456789",
-            id_stable=True,
+            hardware_payload={"serial": "123456789"},
         )
         devices = {"realsense": [rs_device]}
         with patch("api.hardware.discover_all", return_value=devices):
             cameras = event_loop.run_until_complete(get_cameras())
         assert len(cameras) == 1
         assert cameras[0].driver == "realsense"
-        assert cameras[0].fingerprint == "123456789"
+        assert json.loads(cameras[0].fingerprint) == {"serial": "123456789"}
 
     def test_skips_unknown_drivers(self, event_loop):
         devices = {"ip": [_make_device(name="IP cam")], "genicam": [_make_device(name="GenICam cam")]}

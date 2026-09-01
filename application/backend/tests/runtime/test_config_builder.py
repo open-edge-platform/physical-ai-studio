@@ -38,7 +38,6 @@ def _robot_factory(*, discovers: bool = True) -> RobotClientFactory:
 
 def _stub_device_paths(mocker: Any) -> None:
     mocker.patch("robots.robot_client_factory.resolve_serial_device", return_value="/dev/serial/by-id/test-robot")
-    mocker.patch("runtime.config_builder.resolve_camera_device", return_value="/dev/v4l/by-id/test-camera")
 
 
 def _calibration() -> dict[str, dict[str, int]]:
@@ -70,7 +69,7 @@ def _camera(*, name: str = "Overhead Camera") -> Any:
             "id": str(uuid4()),
             "driver": "usb_camera",
             "name": name,
-            "fingerprint": "/dev/video0:0",
+            "fingerprint": '{"serial":"test-camera"}',
             "hardware_name": "Camera",
             "payload": {"width": 640, "height": 480, "fps": 30},
         }
@@ -91,7 +90,7 @@ async def test_builder_emits_valid_runtime_recipe_and_round_trips(mocker: Any) -
     assert document["class_path"] == "physicalai.runtime.RobotRuntime"
     assert document["init_args"]["cameras"].keys() == {"overhead camera"}
     camera_device = document["init_args"]["cameras"]["overhead camera"]["init_args"]["camera"]["init_args"]["device"]
-    assert camera_device == "/dev/v4l/by-id/test-camera"
+    assert camera_device == {"serial": "test-camera"}
     calibration = document["init_args"]["robot"]["init_args"]["robot"]["init_args"]["calibration"]
     assert isinstance(calibration, dict)
 
@@ -104,7 +103,6 @@ async def test_builder_emits_valid_runtime_recipe_and_round_trips(mocker: Any) -
 
 async def test_builder_marks_unstable_device_paths(mocker: Any) -> None:
     mocker.patch("robots.robot_client_factory.resolve_serial_device", side_effect=lambda device: device)
-    mocker.patch("runtime.config_builder.resolve_camera_device", side_effect=lambda device: device)
     document = await build_runtime_config(
         follower=_robot("follower"),
         leader=_robot("leader"),
@@ -113,7 +111,7 @@ async def test_builder_marks_unstable_device_paths(mocker: Any) -> None:
         robot_factory=_robot_factory(),
     )
 
-    assert runtime_config_change_me(document) == ["/dev/ttyACM0", "/dev/video0", "/dev/ttyACM0"]
+    assert runtime_config_change_me(document) == ["/dev/ttyACM0", "/dev/ttyACM0"]
 
 
 async def test_builder_refuses_a_robot_that_is_not_attached() -> None:
@@ -147,7 +145,6 @@ async def test_export_keeps_the_stored_port_when_the_robot_is_absent(mocker: Any
 
 async def test_change_me_lists_unstable_ports_not_the_accelerator(mocker: Any) -> None:
     mocker.patch("robots.robot_client_factory.resolve_serial_device", side_effect=lambda device: device)
-    mocker.patch("runtime.config_builder.resolve_camera_device", side_effect=lambda device: device)
     document = await build_runtime_config(
         follower=_robot("follower"),
         leader=None,
@@ -164,7 +161,6 @@ async def test_change_me_lists_unstable_ports_not_the_accelerator(mocker: Any) -
 
     unresolved = runtime_config_change_me(document)
     assert "/dev/ttyACM0" in unresolved
-    assert "/dev/video0" in unresolved
     assert "cpu" not in unresolved
     for accelerator in ("CPU", "GPU", "gpu"):
         document["init_args"]["action_source"]["init_args"]["model"]["init_args"]["device"] = accelerator

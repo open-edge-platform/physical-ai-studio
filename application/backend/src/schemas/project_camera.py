@@ -103,7 +103,7 @@ class USBCamera(BaseCamera):
             "example": {
                 "name": "front_camera",
                 "driver": "usb_camera",
-                "fingerprint": "USB\\VID_1234&PID_5678:0",
+                "fingerprint": '{"serial":"12345678AB"}',
                 "hardware_name": "Logitech C920 HD Pro Webcam",
                 "payload": {
                     "width": 1920,
@@ -126,7 +126,7 @@ class IPCamera(BaseCamera):
             "example": {
                 "name": "security_camera",
                 "driver": "ipcam",
-                "fingerprint": "rtsp://192.168.1.100:554/stream1",
+                "fingerprint": '{"url":"rtsp://192.168.1.100:554/stream1"}',
                 "hardware_name": None,
                 "payload": {
                     "url": "rtsp://192.168.1.100:554/stream1",
@@ -147,7 +147,7 @@ class BaslerCamera(BaseCamera):
             "example": {
                 "name": "inspection_camera",
                 "driver": "basler",
-                "fingerprint": "40123456",
+                "fingerprint": '{"serial":"40123456"}',
                 "hardware_name": "Basler acA1920-40gm",
                 "payload": {
                     "serial_number": "40123456",
@@ -170,7 +170,7 @@ class RealsenseCamera(BaseCamera):
             "example": {
                 "name": "depth_camera",
                 "driver": "realsense",
-                "fingerprint": "123456789",
+                "fingerprint": '{"serial":"123456789"}',
                 "hardware_name": "Intel RealSense D435",
                 "payload": {
                     "width": 640,
@@ -193,7 +193,7 @@ class GenicamCamera(BaseCamera):
             "example": {
                 "name": "genicam_camera",
                 "driver": "genicam",
-                "fingerprint": "GC123456",
+                "fingerprint": '{"serial":"GC123456"}',
                 "hardware_name": "Genicam camera",
                 "payload": {
                     "serial_number": "GC123456",
