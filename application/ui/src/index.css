@@ -117,3 +117,7 @@ svg {
 button:not(:disabled):not([aria-disabled='true']) {
     cursor: pointer !important;
 }
+
+div[class*='spectrum-Modal'] {
+    --spectrum-dialog-background-color: hsl(from var(--spectrum-global-color-gray-75) h s calc(l - 10));
+}
