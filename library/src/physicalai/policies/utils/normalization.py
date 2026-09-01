@@ -5,13 +5,14 @@
 
 from enum import StrEnum
 from numbers import Integral
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import torch
 from torch import nn
 
 from physicalai.data import Feature, FeatureType, NormalizationParameters
+from physicalai.data.observation import ACTION, PREV_CHUNK_LEFT_OVER
 
 
 class NormalizationType(StrEnum):
@@ -293,3 +294,28 @@ class FeatureNormalizeTransform(nn.Module):
 
             stats_buffers[key] = buffer
         return stats_buffers
+
+
+def normalize_rtc_prev_action_chunk(
+    batch: dict[str, Any],
+    normalizer: nn.Module,
+) -> dict[str, Any]:
+    """Normalize the RTC previous-action chunk with the action statistics.
+
+    The chunk holds previously predicted actions in the dataset's action
+    dimension, so it is normalized exactly like the state is: through the
+    policy's state/action normalizer.
+
+    Args:
+        batch: Batch dict, possibly containing ``prev_chunk_left_over``.
+        normalizer: The preprocessor's state/action normalizer.
+
+    Returns:
+        The batch, with ``prev_chunk_left_over`` normalized when present.
+    """
+    prev_chunk = batch.get(PREV_CHUNK_LEFT_OVER)
+    if prev_chunk is None:
+        return batch
+
+    batch[PREV_CHUNK_LEFT_OVER] = normalizer({ACTION: prev_chunk})[ACTION]
+    return batch

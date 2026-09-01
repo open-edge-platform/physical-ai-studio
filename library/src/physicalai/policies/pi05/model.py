@@ -1152,7 +1152,7 @@ class Pi05Model(SnapFlowModelMixin, RTCModelMixin, Model):
                 "rtc_max_guidance": batch.get(RTC_MAX_GUIDANCE_WEIGHT, 0.0),
                 "rtc_execution_horizon": batch.get(RTC_EXECUTION_HORIZON, 0),
                 "rtc_latency": batch.get(RTC_INFERENCE_DELAY, 0.0),
-                "rtc_prev_action_chunk": batch.get(PREV_CHUNK_LEFT_OVER),
+                "rtc_prev_action_chunk": self._pad_prev_chunk(batch.get(PREV_CHUNK_LEFT_OVER)),
             }
 
         actions = self.sample_actions(

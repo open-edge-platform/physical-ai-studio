@@ -666,7 +666,7 @@ class TestRtc:
     """Tests for SmolVLA's Real-Time Chunking export schema and toggle."""
 
     @staticmethod
-    def _call_sample_input_rtc(chunk_size: int = 50, max_action_dim: int = 32) -> dict:
+    def _call_sample_input_rtc(chunk_size: int = 50, action_dim: int = 7) -> dict:
         """Invoke the SmolVLA.sample_input property with RTC enabled on a minimal stub."""
         from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
 
@@ -679,13 +679,10 @@ class TestRtc:
                 self._dataset_stats = {
                     "observation.state": {"name": "state", "shape": (10,), "type": "STATE"},
                     "observation.image": {"name": "image", "shape": (3, 512, 512), "type": "VISUAL"},
+                    "action": {"name": "action", "shape": (action_dim,), "type": "ACTION"},
                 }
                 self.model = _ModelStub()
-                self.config = SmolVLAConfig(
-                    chunk_size=chunk_size,
-                    n_action_steps=chunk_size,
-                    max_action_dim=max_action_dim,
-                )
+                self.config = SmolVLAConfig(chunk_size=chunk_size, n_action_steps=chunk_size)
                 self.rtc_enabled = True
 
         stub = _Stub()
@@ -706,9 +703,9 @@ class TestRtc:
 
     def test_rtc_input_shapes_and_dtypes(self) -> None:
         """RTC inputs are traced with the shapes and dtypes the runtime feeds."""
-        chunk_size, max_action_dim = 20, 16
-        sample_input = self._call_sample_input_rtc(chunk_size=chunk_size, max_action_dim=max_action_dim)
-        assert sample_input["prev_chunk_left_over"].shape == (1, chunk_size, max_action_dim)
+        chunk_size, action_dim = 20, 6
+        sample_input = self._call_sample_input_rtc(chunk_size=chunk_size, action_dim=action_dim)
+        assert sample_input["prev_chunk_left_over"].shape == (1, chunk_size, action_dim)
         assert sample_input["prev_chunk_left_over"].dtype == torch.float32
         assert sample_input["inference_delay"].dtype == torch.long
         assert sample_input["max_guidance_weight"].dtype == torch.float32

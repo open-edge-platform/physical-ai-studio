@@ -116,6 +116,26 @@ class RTCModelMixin:
 
     # Declared for type checkers only; provided by the host model.
     _chunk_size: int
+    _max_action_dim: int
+
+    def _pad_prev_chunk(self, prev_chunk: Tensor | None) -> Tensor | None:
+        """Pad the previous action chunk to the model's action dimension.
+
+        The chunk arrives in the dataset's action dimension, while the denoised
+        state it guides lives in ``_max_action_dim``.
+
+        Args:
+            prev_chunk: Unconsumed tail of the previous chunk, or ``None``.
+
+        Returns:
+            The chunk zero-padded along its last dimension, or ``None``.
+        """
+        if prev_chunk is None:
+            return None
+        padding = self._max_action_dim - prev_chunk.shape[-1]
+        if padding <= 0:
+            return prev_chunk
+        return torch.nn.functional.pad(prev_chunk, (0, padding))
 
     def _compute_prefix_weights(
         self,

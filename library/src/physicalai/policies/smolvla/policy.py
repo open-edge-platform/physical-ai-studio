@@ -789,11 +789,12 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         )
 
         if self.rtc_enabled:
+            action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
             schema.extend(
                 [
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
-                        shape=(self.config.chunk_size, self.config.max_action_dim),
+                        shape=(self.config.chunk_size, *action_shape),
                         name=PREV_CHUNK_LEFT_OVER,
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
@@ -862,6 +863,10 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             )
             raise ValueError(msg)
 
+        normalize_stats: dict[str, Any] = {STATE: self._dataset_stats[f"observation.{STATE}"]}
+        if self.rtc_enabled:
+            normalize_stats[PREV_CHUNK_LEFT_OVER] = self._dataset_stats[ACTION]
+
         base_preproc_specs = [
             ComponentSpec(
                 type="smolvla_resize",
@@ -872,7 +877,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             ComponentSpec(type="new_line"),
             ComponentSpec(
                 type="normalize",
-                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                stats=normalize_stats,
                 mode="mean_std",
             ),
         ]

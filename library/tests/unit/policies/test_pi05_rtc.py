@@ -358,6 +358,7 @@ class TestSampleInputRtc:
         stats = {
             "observation.state": {"name": "state", "shape": (8,), "type": "STATE"},
             "observation.image": {"name": "image", "shape": (3, 224, 224), "type": "VISUAL"},
+            "action": {"name": "action", "shape": (7,), "type": "ACTION"},
         }
         sample_input = self._call_sample_input_rtc(stats)
         assert "prev_chunk_left_over" in sample_input
@@ -366,20 +367,23 @@ class TestSampleInputRtc:
         assert "execution_horizon" in sample_input
 
     def test_prev_chunk_left_over_shape(self) -> None:
-        """prev_chunk_left_over has shape (1, chunk_size, max_action_dim)."""
+        """prev_chunk_left_over has shape (1, chunk_size, action_dim)."""
+        action_dim = 7
         stats = {
             "observation.state": {"name": "state", "shape": (8,), "type": "STATE"},
             "observation.image": {"name": "image", "shape": (3, 224, 224), "type": "VISUAL"},
+            "action": {"name": "action", "shape": (action_dim,), "type": "ACTION"},
         }
-        chunk_size, max_action_dim = 50, 32
-        sample_input = self._call_sample_input_rtc(stats, chunk_size=chunk_size, max_action_dim=max_action_dim)
-        assert sample_input["prev_chunk_left_over"].shape == (1, chunk_size, max_action_dim)
+        chunk_size = 50
+        sample_input = self._call_sample_input_rtc(stats, chunk_size=chunk_size)
+        assert sample_input["prev_chunk_left_over"].shape == (1, chunk_size, action_dim)
 
     def test_rtc_scalar_dtypes(self) -> None:
         """RTC scalar inputs have correct dtypes."""
         stats = {
             "observation.state": {"name": "state", "shape": (8,), "type": "STATE"},
             "observation.image": {"name": "image", "shape": (3, 224, 224), "type": "VISUAL"},
+            "action": {"name": "action", "shape": (7,), "type": "ACTION"},
         }
         sample_input = self._call_sample_input_rtc(stats)
         assert sample_input["inference_delay"].dtype == torch.long
@@ -394,6 +398,7 @@ class TestSampleInputRtc:
         stats = {
             "observation.state": {"name": "state", "shape": (8,), "type": "STATE"},
             "observation.image": {"name": "image", "shape": (3, 224, 224), "type": "VISUAL"},
+            "action": {"name": "action", "shape": (7,), "type": "ACTION"},
         }
         sample_input = self._call_sample_input_rtc(stats)
         assert STATE in sample_input
