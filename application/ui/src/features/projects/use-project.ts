@@ -7,7 +7,7 @@ export function useProjectId() {
     const { project_id } = useParams<{ project_id: string }>();
 
     if (project_id === undefined) {
-        throw new Error('Unkown project_id parameter');
+        throw new Error('Unknown project_id parameter');
     }
 
     return { project_id };
