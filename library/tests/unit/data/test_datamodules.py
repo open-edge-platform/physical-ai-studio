@@ -32,6 +32,17 @@ class TestResolveAutoNumWorkers:
             assert resolve_auto_num_workers() == 0
 
 
+class TestDataModuleBackwardCompatibility:
+    """Tests that DataModule remains constructible with positional arguments."""
+
+    def test_positional_construction(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(dummy_dataset(), 32, 4)
+        assert dm.train_batch_size == 32
+        assert dm.num_workers == 4
+
+
 class TestDataModuleNumWorkers:
     """Tests for the DataModule num_workers parameter."""
 

@@ -131,10 +131,9 @@ class DataModule(LightningDataModule):
     When both are provided, ``val_eval_dataset`` takes precedence (eval-loss mode).
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         train_dataset: Dataset,
-        *,
         train_batch_size: int = 16,
         num_workers: int | Literal["auto"] = "auto",
         val_gym: Gym | None = None,
@@ -144,8 +143,8 @@ class DataModule(LightningDataModule):
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
-        pin_memory: bool = True,
-        persistent_workers: bool = True,
+        pin_memory: bool = True,  # noqa: FBT001, FBT002
+        persistent_workers: bool = True,  # noqa: FBT001, FBT002
     ) -> None:
         """Initialize the ActionDataModule.
 
