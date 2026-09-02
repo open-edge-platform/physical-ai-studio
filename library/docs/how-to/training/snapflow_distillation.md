@@ -332,18 +332,18 @@ This is exactly what `--weights_from` does under the hood (see Option 2).
 
 ## Hyperparameter guidance
 
-| Parameter                | Paper default            | Notes                                                                                                                           |
-| ------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `alpha`                  | `0.5`                    | FM-loss weight. Keep at or above `0.5` to preserve multi-step ability.                                                          |
-| `lambda_`                | `0.1`                    | Shortcut-loss scale, balances the two gradient magnitudes.                                                                      |
-| `num_inference_steps`    | `1`                      | `1` gives the full SnapFlow speedup; raise it for intermediate modes.                                                           |
-| `checkpoint_prefix`      | `"snapflow-"`            | Marks phase-2 checkpoints on disk. `null` disables the rewrite.                                                                 |
-| `restore_best_teacher`   | `true`                   | Restore the monitored `ModelCheckpoint`'s best-val-loss weights before enabling SnapFlow, instead of distilling the live model. |
-| `best_teacher_monitor`   | `None`                   | Disambiguates which monitored `ModelCheckpoint` to restore from when more than one is configured.                               |
-| `scope_best_to_phase`    | `true`                   | Reset best-checkpoint tracking at the boundary, since `val/loss` is not comparable across `num_inference_steps`.                |
-| Phase-1 budget           | 5-10 epochs              | Fewer for a warm-started VLA than for from-scratch training.                                                                    |
-| Phase-2 budget           | ~2-3 epochs | Short because the target-time embedding is zero-initialised.                                                                    |
-| `scheduler_warmup_steps` | ~5% of total steps       | No fractional option exists; compute it from your dataset (below).                                                              |
+| Parameter                | Paper default      | Notes                                                                                                                           |
+| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `alpha`                  | `0.5`              | FM-loss weight. Keep at or above `0.5` to preserve multi-step ability.                                                          |
+| `lambda_`                | `0.1`              | Shortcut-loss scale, balances the two gradient magnitudes.                                                                      |
+| `num_inference_steps`    | `1`                | `1` gives the full SnapFlow speedup; raise it for intermediate modes.                                                           |
+| `checkpoint_prefix`      | `"snapflow-"`      | Marks phase-2 checkpoints on disk. `null` disables the rewrite.                                                                 |
+| `restore_best_teacher`   | `true`             | Restore the monitored `ModelCheckpoint`'s best-val-loss weights before enabling SnapFlow, instead of distilling the live model. |
+| `best_teacher_monitor`   | `None`             | Disambiguates which monitored `ModelCheckpoint` to restore from when more than one is configured.                               |
+| `scope_best_to_phase`    | `true`             | Reset best-checkpoint tracking at the boundary, since `val/loss` is not comparable across `num_inference_steps`.                |
+| Phase-1 budget           | 5-10 epochs        | Fewer for a warm-started VLA than for from-scratch training.                                                                    |
+| Phase-2 budget           | ~2-3 epochs        | Short because the target-time embedding is zero-initialised.                                                                    |
+| `scheduler_warmup_steps` | ~5% of total steps | No fractional option exists; compute it from your dataset (below).                                                              |
 
 Converting an epoch budget into steps, for warmup sizing:
 
