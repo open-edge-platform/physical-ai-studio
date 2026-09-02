@@ -1326,3 +1326,271 @@ class TestEmbedPrefix:
         _, _, att_masks = model.embed_prefix(images, img_masks, tokens, masks)
 
         assert not att_masks.any(), "All prefix attention masks should be False"
+
+
+# ============================================================================ #
+# LoRA (PEFT) Configuration Tests                                              #
+# ============================================================================ #
+
+
+class TestPi05LoRAConfig:
+    """Tests for Pi05Config LoRA fields and validation."""
+
+    def test_lora_disabled_by_default(self) -> None:
+        """Test LoRA is disabled by default."""
+        config = Pi05Config()
+        assert config.lora_enabled is False
+        assert config.use_lora is False
+        # Rank/alpha still have sensible defaults even when disabled.
+        assert config.lora_rank == 32
+
+    def test_use_lora_true_when_enabled(self) -> None:
+        """Test use_lora mirrors lora_enabled."""
+        config = Pi05Config(lora_enabled=True)
+        assert config.use_lora is True
+
+    def test_lora_default_values(self) -> None:
+        """Test default LoRA hyperparameters are sensible without any tuning."""
+        config = Pi05Config(lora_enabled=True)
+        assert config.lora_rank == 32
+        assert config.lora_alpha is None
+        assert config.effective_lora_alpha == 32
+        assert config.lora_dropout == 0.05
+        assert config.lora_target_modules is None
+        assert config.lora_adapter_dtype == "float32"
+        assert config.lora_use_dora is False
+
+    def test_effective_lora_alpha_resolves_to_rank(self) -> None:
+        """Test effective_lora_alpha defaults to lora_rank (scaling=1.0) when alpha is None."""
+        config = Pi05Config(lora_enabled=True, lora_rank=64)
+        assert config.lora_alpha is None
+        assert config.effective_lora_alpha == 64
+
+    def test_effective_lora_alpha_respects_explicit_value(self) -> None:
+        """Test effective_lora_alpha uses the explicit lora_alpha when set."""
+        config = Pi05Config(lora_enabled=True, lora_rank=64, lora_alpha=128)
+        assert config.effective_lora_alpha == 128
+
+    def test_lora_rank_negative_rejected(self) -> None:
+        """Test negative lora_rank is rejected."""
+        with pytest.raises(ValueError, match="lora_rank"):
+            Pi05Config(lora_rank=-1)
+
+    def test_lora_enabled_requires_positive_rank(self) -> None:
+        """Test lora_enabled=True with lora_rank=0 is rejected."""
+        with pytest.raises(ValueError, match="lora_rank"):
+            Pi05Config(lora_enabled=True, lora_rank=0)
+
+    def test_lora_alpha_must_be_positive_when_enabled(self) -> None:
+        """Test lora_alpha must be > 0 when LoRA is enabled."""
+        with pytest.raises(ValueError, match="lora_alpha"):
+            Pi05Config(lora_enabled=True, lora_rank=8, lora_alpha=0)
+
+    def test_lora_dropout_out_of_range_rejected(self) -> None:
+        """Test lora_dropout must be in [0, 1)."""
+        with pytest.raises(ValueError, match="lora_dropout"):
+            Pi05Config(lora_dropout=1.0)
+        with pytest.raises(ValueError, match="lora_dropout"):
+            Pi05Config(lora_dropout=-0.1)
+
+    def test_lora_adapter_dtype_validation(self) -> None:
+        """Test lora_adapter_dtype must be 'float32' or 'auto'."""
+        with pytest.raises(ValueError, match="Invalid lora_adapter_dtype"):
+            Pi05Config(lora_adapter_dtype="bfloat16")
+
+    def test_lora_target_modules_custom(self) -> None:
+        """Test custom lora_target_modules is stored as-is."""
+        config = Pi05Config(lora_enabled=True, lora_target_modules=("q_proj", "v_proj"))
+        assert config.lora_target_modules == ("q_proj", "v_proj")
+
+    def test_lora_use_dora_default_false(self) -> None:
+        """Test lora_use_dora defaults to False."""
+        config = Pi05Config(lora_enabled=True)
+        assert config.lora_use_dora is False
+
+    def test_lora_use_dora_enabled(self) -> None:
+        """Test lora_use_dora can be enabled."""
+        config = Pi05Config(lora_enabled=True, lora_use_dora=True)
+        assert config.lora_use_dora is True
+
+    def test_lora_serialization_roundtrip(self) -> None:
+        """Test LoRA fields survive to_dict/from_dict roundtrip."""
+        config = Pi05Config(
+            lora_enabled=True,
+            lora_rank=32,
+            lora_alpha=64,
+            lora_dropout=0.1,
+            lora_use_dora=True,
+        )
+        restored = Pi05Config.from_dict(config.to_dict())
+        assert restored.lora_enabled is True
+        assert restored.lora_rank == 32
+        assert restored.lora_alpha == 64
+        assert restored.lora_dropout == 0.1
+        assert restored.lora_use_dora is True
+        assert restored.use_lora is True
+
+    def test_lora_enabled_rejects_non_default_freeze_vision_encoder(self) -> None:
+        """Test lora_enabled=True with freeze_vision_encoder=True (non-default) is rejected."""
+        with pytest.raises(ValueError, match="freeze_vision_encoder"):
+            Pi05Config(lora_enabled=True, freeze_vision_encoder=True)
+
+    def test_lora_enabled_rejects_non_default_train_expert_only(self) -> None:
+        """Test lora_enabled=True with train_expert_only=True (non-default) is rejected."""
+        with pytest.raises(ValueError, match="train_expert_only"):
+            Pi05Config(lora_enabled=True, train_expert_only=True)
+
+    def test_lora_enabled_allows_default_freeze_flags(self) -> None:
+        """Test lora_enabled=True with freeze flags at their defaults is allowed."""
+        config = Pi05Config(lora_enabled=True, freeze_vision_encoder=False, train_expert_only=False)
+        assert config.use_lora is True
+
+    def test_freeze_flags_allowed_when_lora_disabled(self) -> None:
+        """Test non-default freeze flags are fine when LoRA is disabled."""
+        config = Pi05Config(lora_enabled=False, train_expert_only=True)
+        assert config.train_expert_only is True
+
+
+    """Construction-only Pi05 + LoRA integration tests.
+
+    These construct a real Pi05Model, but both the VLM backbone and action expert use
+    a tiny stand-in config (see ``_patch_tiny_gemma_config`` below) so they run in
+    seconds without ever calling ``forward``. Forward-pass tests for LoRA (merge/export
+    equivalence, backward gradients, checkpoint roundtrip) require a real gemma_2b-sized
+    backbone -- see ``tests/integration/test_pi05_lora_forward.py`` -- because
+    ``PaliGemmaWithExpertModel`` hardcodes ``vision_config.projection_dim = 2048``
+    regardless of variant, so those cannot be shrunk without a production code change.
+
+    Tests for the shared, policy-agnostic LoRA/DoRA helpers themselves live in
+    ``tests/unit/policies/test_peft.py``.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _patch_tiny_gemma_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Shrink the VLM backbone and action expert to a tiny, uniform config.
+
+        Also shrinks the vision tower, which otherwise defaults to the full SigLIP-so400m
+        size (``hidden_size=1152``, 27 layers) regardless of ``paligemma_variant``.
+        """
+        import physicalai.policies.pi05.model as pi05_model_mod
+
+        tiny = pi05_model_mod.GemmaVariantConfig(
+            width=64,
+            depth=2,
+            mlp_dim=128,
+            num_heads=1,
+            num_kv_heads=1,
+            head_dim=64,
+        )
+        monkeypatch.setattr(pi05_model_mod, "get_gemma_config", lambda variant: tiny)  # noqa: ARG005
+
+        orig_config_mapping_getitem = pi05_model_mod.CONFIG_MAPPING.__getitem__
+
+        def _tiny_paligemma_factory() -> object:
+            cfg = orig_config_mapping_getitem("paligemma")()
+            cfg.vision_config.hidden_size = 32
+            cfg.vision_config.intermediate_size = 64
+            cfg.vision_config.num_hidden_layers = 1
+            cfg.vision_config.num_attention_heads = 1
+            return cfg
+
+        class _TinyConfigMapping(dict):
+            def __getitem__(self, key: str) -> object:
+                if key == "paligemma":
+                    return _tiny_paligemma_factory
+                return orig_config_mapping_getitem(key)
+
+        monkeypatch.setattr(pi05_model_mod, "CONFIG_MAPPING", _TinyConfigMapping())
+
+    @staticmethod
+    def _stats() -> dict:
+        return {
+            "observation.state": {
+                "name": "observation.state",
+                "shape": (8,),
+                "mean": [0.0] * 8,
+                "std": [1.0] * 8,
+                "q01": [-1.0] * 8,
+                "q99": [1.0] * 8,
+            },
+            "action": {
+                "name": "action",
+                "shape": (7,),
+                "mean": [0.0] * 7,
+                "std": [1.0] * 7,
+                "q01": [-1.0] * 7,
+                "q99": [1.0] * 7,
+            },
+        }
+
+    def test_lora_injection_reduces_trainable_params(self) -> None:
+        """Test enabling LoRA drastically reduces the number of trainable parameters."""
+        policy = Pi05(
+            dataset_stats=self._stats(),
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+            lora_enabled=True,
+            lora_rank=4,
+            lora_alpha=8,
+        )
+        assert policy.config.use_lora
+        from physicalai.policies.mixins.peft import is_lora_injected
+
+        assert is_lora_injected(policy.model)
+
+        trainable = sum(p.numel() for p in policy.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in policy.parameters())
+        assert 0 < trainable < total
+        assert trainable / total < 0.01, "LoRA should train well under 1% of parameters"
+
+    def test_lora_adapters_default_to_float32_under_bfloat16_base(self) -> None:
+        """Test LoRA adapter parameters are fp32 even when the base model is bf16."""
+        policy = Pi05(
+            dataset_stats=self._stats(),
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+            dtype="bfloat16",
+            lora_enabled=True,
+            lora_rank=4,
+            lora_alpha=8,
+        )
+        lora_dtypes = {p.dtype for n, p in policy.named_parameters() if "lora_" in n}
+        assert lora_dtypes == {torch.float32}
+
+    def test_lora_adapter_dtype_auto_inherits_base_dtype(self) -> None:
+        """Test lora_adapter_dtype='auto' lets adapters inherit the base layer's dtype."""
+        policy = Pi05(
+            dataset_stats=self._stats(),
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+            dtype="bfloat16",
+            lora_enabled=True,
+            lora_rank=4,
+            lora_alpha=8,
+            lora_adapter_dtype="auto",
+        )
+        lora_dtypes = {p.dtype for n, p in policy.named_parameters() if "lora_" in n}
+        assert torch.bfloat16 in lora_dtypes
+
+    def test_dora_injection_on_full_model(self) -> None:
+        """Test lora_use_dora=True injects DoRA adapters (magnitude vector) on Pi05Model."""
+        policy = Pi05(
+            dataset_stats=self._stats(),
+            paligemma_variant="gemma_300m",
+            action_expert_variant="gemma_300m",
+            lora_enabled=True,
+            lora_rank=4,
+            lora_alpha=8,
+            lora_use_dora=True,
+        )
+        assert policy.config.lora_use_dora is True
+        from physicalai.policies.mixins.peft import is_lora_injected
+
+        assert is_lora_injected(policy.model)
+        param_names = {n for n, _ in policy.named_parameters()}
+        assert any("lora_magnitude_vector" in n for n in param_names)
+
+        trainable = sum(p.numel() for p in policy.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in policy.parameters())
+        assert 0 < trainable < total
+

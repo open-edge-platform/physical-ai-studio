@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -16,6 +17,7 @@ from physicalai.config.mixin import FromConfig
 
 from physicalai.export.mixin_policy import ExportablePolicyMixin
 from physicalai.policies.base import Policy
+from physicalai.policies.mixins.peft import PeftPolicyMixin
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import Pi0Config
@@ -27,8 +29,10 @@ if TYPE_CHECKING:
 
     from .preprocessor import Pi0Postprocessor, Pi0Preprocessor
 
+logger = logging.getLogger(__name__)
 
-class Pi0(ExportablePolicyMixin, Policy, FromConfig):
+
+class Pi0(PeftPolicyMixin, ExportablePolicyMixin, Policy, FromConfig):
     """Pi0 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi0 model.
@@ -59,10 +63,6 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
         tune_paligemma: Whether to tune PaliGemma weights. Default: False.
         tune_action_expert: Whether to tune action expert weights. Default: True.
         tune_vision_encoder: Whether to tune vision encoder weights. Default: False.
-        lora_rank: LoRA rank (0 disables LoRA). Default: 0.
-        lora_alpha: LoRA alpha parameter. Default: 16.
-        lora_dropout: LoRA dropout rate. Default: 0.1.
-        lora_target_modules: Target modules for LoRA. Default: ("q_proj", "v_proj", "k_proj", "o_proj").
         gradient_checkpointing: Whether to enable gradient checkpointing. Default: False.
         learning_rate: Learning rate for optimizer. Default: 2.5e-5.
         weight_decay: Weight decay for optimizer. Default: 1e-10.
@@ -70,6 +70,16 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
         decay_steps: Number of decay steps after warmup. Default: 30000.
         decay_lr: Target learning rate after decay. Default: 2.5e-6.
         grad_clip_norm: Gradient clipping norm value. Default: 1.0.
+        lora_enabled: Whether to enable LoRA/DoRA fine-tuning. Default: False. Disabled by
+            default; requires a pretrained checkpoint to be meaningful. See
+            ``physicalai.policies.mixins.peft.PeftConfigMixin``.
+        lora_rank: LoRA rank. Default: 32.
+        lora_alpha: LoRA alpha scaling factor. ``None`` resolves to ``lora_rank``. Default: None.
+        lora_dropout: LoRA dropout probability. Default: 0.05.
+        lora_target_modules: Override LoRA target modules (regex or suffix tuple). Default: None
+            (uses ``Pi0Model.get_default_peft_targets()``).
+        lora_adapter_dtype: Precision for newly created LoRA parameters. Default: "float32".
+        lora_use_dora: Enable DoRA instead of plain LoRA. Default: False.
         dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
     Example:
@@ -114,11 +124,6 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
         tune_paligemma: bool = False,  # noqa: FBT001, FBT002
         tune_action_expert: bool = True,  # noqa: FBT001, FBT002
         tune_vision_encoder: bool = False,  # noqa: FBT001, FBT002
-        # LoRA settings
-        lora_rank: int = 0,
-        lora_alpha: int = 16,
-        lora_dropout: float = 0.1,
-        lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
         # Gradient checkpointing
         gradient_checkpointing: bool = False,  # noqa: FBT001, FBT002
         compile_model: bool = False,  # noqa: FBT001, FBT002
@@ -129,6 +134,14 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
         decay_steps: int = 30000,
         decay_lr: float = 2.5e-6,
         grad_clip_norm: float = 1.0,
+        # LoRA / DoRA fine-tuning
+        lora_enabled: bool = False,  # noqa: FBT001, FBT002
+        lora_rank: int = 32,
+        lora_alpha: int | None = None,
+        lora_dropout: float = 0.05,
+        lora_target_modules: str | tuple[str, ...] | None = None,
+        lora_adapter_dtype: Literal["float32", "auto"] = "float32",
+        lora_use_dora: bool = False,  # noqa: FBT001, FBT002
         *,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -162,10 +175,6 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
             tune_paligemma=tune_paligemma,
             tune_action_expert=tune_action_expert,
             tune_vision_encoder=tune_vision_encoder,
-            lora_rank=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            lora_target_modules=lora_target_modules,
             gradient_checkpointing=gradient_checkpointing,
             compile_model=compile_model,
             learning_rate=learning_rate,
@@ -174,6 +183,13 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
             decay_steps=decay_steps,
             decay_lr=decay_lr,
             grad_clip_norm=grad_clip_norm,
+            lora_enabled=lora_enabled,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_target_modules=lora_target_modules,
+            lora_adapter_dtype=lora_adapter_dtype,
+            lora_use_dora=lora_use_dora,
         )
 
         # Save config as hyperparameters for checkpoint restoration
@@ -187,6 +203,14 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
         # Preprocessor/postprocessor set in setup() or _initialize_model()
         self._preprocessor: Pi0Preprocessor | None = None
         self._postprocessor: Pi0Postprocessor | None = None
+
+        if self.config.use_lora and dataset_stats is None:
+            logger.warning(
+                "LoRA is enabled (lora_rank=%d) but no pretrained checkpoint is being loaded "
+                "eagerly. LoRA fine-tuning on a randomly initialized model is unlikely to be "
+                "useful; make sure a pretrained checkpoint is loaded before/at fit time.",
+                self.config.lora_rank,
+            )
 
         # Eager initialization if dataset_stats is provided
         if dataset_stats is not None:
@@ -257,6 +281,12 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
         # Enable gradient checkpointing if requested
         if self.config.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
+
+        # Inject LoRA/DoRA adapters if enabled. Also re-injected here when a checkpoint is
+        # restored, since Lightning's load_from_checkpoint reruns model construction from
+        # hyperparameters before restoring the state dict.
+        if self.config.use_lora:
+            self._inject_lora()
 
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy initialization path).
@@ -435,6 +465,10 @@ class Pi0(ExportablePolicyMixin, Policy, FromConfig):
                 gradient_clip_algorithm=gradient_clip_algorithm or "norm",
             )
 
+    # export() is provided by PeftPolicyMixin (merges LoRA adapters into a disposable
+    # copy of self.model before delegating to ExportablePolicyMixin.export() via
+    # cooperative super()); see physicalai.policies.mixins.peft.PeftPolicyMixin.export.
+
 
 class Pi05(Pi0):
     """Pi0.5 Policy - Physical Intelligence's improved flow matching VLA model.
@@ -473,10 +507,6 @@ class Pi05(Pi0):
         tune_paligemma: bool = False,
         tune_action_expert: bool = True,
         tune_vision_encoder: bool = False,
-        lora_rank: int = 0,
-        lora_alpha: int = 16,
-        lora_dropout: float = 0.1,
-        lora_target_modules: tuple[str, ...] = ("q_proj", "v_proj", "k_proj", "o_proj"),
         gradient_checkpointing: bool = False,
         learning_rate: float = 2.5e-5,
         weight_decay: float = 1e-10,
@@ -484,6 +514,13 @@ class Pi05(Pi0):
         decay_steps: int = 30000,
         decay_lr: float = 2.5e-6,
         grad_clip_norm: float = 1.0,
+        lora_enabled: bool = False,
+        lora_rank: int = 32,
+        lora_alpha: int | None = None,
+        lora_dropout: float = 0.05,
+        lora_target_modules: str | tuple[str, ...] | None = None,
+        lora_adapter_dtype: Literal["float32", "auto"] = "float32",
+        lora_use_dora: bool = False,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]] | None = None,
     ) -> None:
         """Initialize Pi0.5 policy with explicit arguments."""
@@ -509,10 +546,6 @@ class Pi05(Pi0):
             tune_paligemma=tune_paligemma,
             tune_action_expert=tune_action_expert,
             tune_vision_encoder=tune_vision_encoder,
-            lora_rank=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            lora_target_modules=lora_target_modules,
             gradient_checkpointing=gradient_checkpointing,
             learning_rate=learning_rate,
             weight_decay=weight_decay,
@@ -520,5 +553,12 @@ class Pi05(Pi0):
             decay_steps=decay_steps,
             decay_lr=decay_lr,
             grad_clip_norm=grad_clip_norm,
+            lora_enabled=lora_enabled,
+            lora_rank=lora_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_target_modules=lora_target_modules,
+            lora_adapter_dtype=lora_adapter_dtype,
+            lora_use_dora=lora_use_dora,
             dataset_stats=dataset_stats,
         )

@@ -30,6 +30,23 @@ model:
     freeze_vision_encoder: false
     train_expert_only: false
 
+    # LoRA (Low-Rank Adaptation) fine-tuning. Requires a pretrained_name_or_path.
+    # `peft` is a core dependency (see pyproject.toml); the `pi0`/`pi05` extras are only
+    # needed for Pi0.5's transformers/tokenizer stack, not for `peft` itself.
+    # Set lora_enabled: true to enable; lora_rank/lora_alpha already have sensible defaults
+    # (rank 32, alpha = rank).
+    # Default target modules adapt the action expert's q/v attention projections plus the
+    # action/time projection heads; see Pi05Config.lora_target_modules to customize.
+    # NOTE: when enabling LoRA, the learning rate can usually be scaled up ~10x versus
+    # full fine-tuning (e.g. optimizer_lr: 2.5e-4, scheduler_decay_lr: 2.5e-5).
+    # lora_enabled: true
+    # lora_rank: 32       # try 16 for a lighter adapter, 64 for higher capacity
+    # lora_alpha: null    # null resolves to lora_rank (scaling = 1.0)
+    # lora_dropout: 0.05
+    # Set lora_use_dora: true to use DoRA (arxiv.org/abs/2402.09353) instead of plain LoRA;
+    # slightly more compute/memory but typically improves quality at low ranks.
+    # lora_use_dora: false
+
     # Optimizer
     optimizer_lr: 2.5e-5
     optimizer_weight_decay: 0.01
