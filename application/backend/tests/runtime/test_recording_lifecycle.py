@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import queue
 import threading
 import time
 
 import pytest
 
 from runtime.callbacks.recording import RecordingState
-from runtime.command_thread import CommandWorker
-from runtime.contract import AckData, DiscardEpisodeCommand, QueueEventSink, SaveEpisodeCommand
+from runtime.command_thread import CommandWorker, _Job
+from runtime.contract import AckData, DiscardEpisodeCommand, QueueEventSink, SaveEpisodeCommand, StateEvent
 from runtime.hosts.session_worker import _watch_subscribers
 from runtime.session import RuntimeSession
 from tests.runtime.test_session import _document, _document_with_cameras
@@ -31,6 +32,7 @@ class _FakeMutation:
 
     def discard_buffer(self) -> None:
         self.discarded += 1
+        self.order.append("discard")
 
     def teardown(self) -> None:
         self.torn_down += 1
@@ -325,3 +327,120 @@ def test_save_episode_stops_recording_before_the_mutation_writes() -> None:
     assert mutation.saved == 1
     assert recording.is_recording is False
     assert recording.episodes_recorded == 1
+
+
+class _FailingSaveMutation(_FakeMutation):
+    def save_episode(self) -> None:
+        raise RuntimeError("video encoding failed")
+
+
+def _last_state(sink: QueueEventSink) -> StateEvent | None:
+    latest: StateEvent | None = None
+    while True:
+        try:
+            event = sink.get_nowait()
+        except queue.Empty:
+            return latest
+        if isinstance(event, StateEvent):
+            latest = event
+
+
+def test_a_job_accepted_before_shutdown_is_never_dropped() -> None:
+    """submit and shutdown race for the queue, and the job must not land behind the sentinel.
+
+    Enqueueing outside the lock let shutdown insert _SHUTDOWN between the
+    closed check and the put, so the worker returned without running a job it
+    had already accepted. Slowing the job's own enqueue widens that window to
+    something a test can observe; under the lock, shutdown simply waits.
+    """
+    worker = CommandWorker()
+    ran = threading.Event()
+    enqueueing = threading.Event()
+    real_put = worker._jobs.put
+
+    def slow_put(item, *args, **kwargs):
+        if isinstance(item, _Job):
+            enqueueing.set()
+            time.sleep(0.2)
+        return real_put(item, *args, **kwargs)
+
+    worker._jobs.put = slow_put
+
+    def stop_once_submitting() -> None:
+        enqueueing.wait(2.0)
+        worker.shutdown(timeout=2.0)
+
+    stopper = threading.Thread(target=stop_once_submitting)
+    stopper.start()
+    worker.submit("save_episode", ran.set)
+    stopper.join(timeout=5.0)
+
+    assert ran.wait(2.0), "a job accepted before shutdown was dropped behind the sentinel"
+
+
+def test_teardown_leaves_the_mutation_to_a_worker_that_did_not_drain(monkeypatch) -> None:
+    """Finalizing on top of a running save stops the image writer mid-encode."""
+    monkeypatch.setattr("runtime.session.RECORDING_TEARDOWN_TIMEOUT_S", 0.05)
+    session = RuntimeSession(_document(), event_sink=QueueEventSink())
+    mutation = _FakeMutation(save_delay=0.5)
+    session._recording.attach_mutation(mutation)
+    session._recording.start("pick")
+    session._command_worker.submit("save_episode", session._save_episode)
+
+    asyncio.run(session.teardown())
+
+    assert mutation.torn_down == 0
+    _wait_until(lambda: mutation.saved == 1)
+    assert mutation.order == ["save"]
+
+
+def test_a_failed_save_publishes_the_stopped_state() -> None:
+    """The ack carries the error, but the browser only moves on a state event."""
+    sink = QueueEventSink()
+    session = RuntimeSession(_document(), event_sink=sink)
+    asyncio.run(session.setup())
+    mutation = _FailingSaveMutation()
+    session._recording.attach_mutation(mutation)
+    session._recording.start("pick")
+
+    with pytest.raises(RuntimeError, match="video encoding failed"):
+        session._save_episode()
+
+    state = _last_state(sink)
+    assert state is not None
+    assert state.data.is_recording is False
+    assert session._recording.episodes_recorded == 0
+
+
+def test_discard_clears_the_buffer_after_a_failed_save() -> None:
+    """Discard is the recovery path, so it cannot require an open episode."""
+    session = RuntimeSession(_document(), event_sink=QueueEventSink())
+    mutation = _FailingSaveMutation()
+    session._recording.attach_mutation(mutation)
+    session._recording.start("pick")
+    with pytest.raises(RuntimeError):
+        session._save_episode()
+
+    session._discard_episode()
+
+    assert mutation.discarded == 1
+    assert session._recording.is_recording is False
+
+
+def test_abandonment_discards_an_open_episode_before_finalizing() -> None:
+    """An open buffer is never copied back, so drop it deliberately and say so."""
+    sink = QueueEventSink()
+    session = RuntimeSession(_document(), event_sink=sink)
+    asyncio.run(session.setup())
+    mutation = _FakeMutation()
+    session._recording.attach_mutation(mutation)
+    session._recording.start("pick")
+
+    session.finalize_recording()
+    _wait_until(lambda: mutation.torn_down == 1)
+    session._command_worker.shutdown(timeout=5.0)
+
+    assert mutation.order == ["discard", "teardown"]
+    state = _last_state(sink)
+    assert state is not None
+    assert state.data.is_recording is False

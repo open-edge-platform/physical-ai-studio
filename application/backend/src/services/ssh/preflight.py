@@ -5,9 +5,9 @@
 
 Tier 1 is cheap and bounded, so it can gate a create/update request. Tier 2
 resolves and inspects the trainer image and runs a one-shot GPU container, so it
-never runs inline in a *create/update* request - it only ever runs from an
-explicit ``/check``, or once automatically the first time an unverified server
-is selected for a job (see
+never runs inline in a *create/update* request - only from an explicit
+``/check``, or once automatically the first time an unverified server is
+selected for a job (see
 :meth:`~services.remote_server_service.RemoteServerService.ensure_verified`).
 
 **Tier 1 performs no image work at all.** Its registry check is an
@@ -28,8 +28,7 @@ the first one.
 The transport is reached through :data:`transport_factory`, so a caller can
 substitute a fake without patching ``asyncssh``. ``IMAGE_SIGNATURE`` is the one
 Tier 2 check that never uses that transport: it runs in this backend process
-against the registry directly, since the reference it checks is fully
-qualified. See :mod:`services.ssh.sigstore_verify`.
+against the registry directly. See :mod:`services.ssh.sigstore_verify`.
 """
 
 import hashlib
@@ -840,8 +839,7 @@ async def _check_signature(recorder: _CheckRecorder, image_ref: str) -> None:
 
     Runs on this backend's own host, not over SSH: ``image_ref`` is a fully
     qualified registry reference, so verifying it needs only this process's
-    own network egress to the registry and to Sigstore, not access to the
-    remote server being checked.
+    own network egress.
 
     Defense in depth rather than required infrastructure, so infrastructure
     being unreachable is ``SKIPPED`` and a failed verification is a
@@ -940,11 +938,8 @@ async def image_present_locally(transport: SshTransport, image_ref: str) -> bool
     """True when the image is already cached in the remote Docker image store.
 
     Shared with `services.ssh.docker_ops.pull_image`, which uses it to skip a
-    redundant `docker pull` when the exact digest Tier 2 already pulled (by tag)
-    is still the one job provisioning resolved: Docker's local image store
-    indexes by content digest, so a tag-pull and a later digest-pull of the same
-    manifest share layers, and there is nothing to gain from asking the daemon
-    to re-fetch a manifest it already has.
+    redundant `docker pull` when the digest Tier 2 already pulled (by tag) is
+    still the one job provisioning resolved.
     """
     result = await transport.run_command(["docker", "image", "inspect", image_ref])
     return result.ok
@@ -977,12 +972,9 @@ async def pull_in_progress(transport: SshTransport, image_ref: str) -> bool:
     """True when a Tier 2 background pull of ``image_ref`` is still running.
 
     Shared with `services.ssh.docker_ops.pull_image`: without this, a job
-    dispatched while Tier 2's own detached `docker pull <tag>` (started by
-    `_start_background_pull`, below) is still transferring cannot see that
-    transfer - the image store is empty until it finishes - and would start a
-    second, concurrent `docker pull` of the same content by digest, which
-    reads in logs as an unrelated image. `pull_image` polls this instead of
-    racing it.
+    dispatched while Tier 2's own detached pull is still transferring would
+    start a second, concurrent `docker pull` of the same content by digest.
+    `pull_image` polls this instead of racing it.
     """
     pidfile, _ = _pull_state_paths(image_ref)
     return await _pull_already_running(transport, pidfile)
@@ -1150,13 +1142,12 @@ async def run_tier2_preflight(
 ) -> PreflightResult:
     """Run the expensive verification tier against one server.
 
-    Invoked by an explicit verify action (the ``/check`` endpoint), or once,
-    automatically, by `services.remote_server_service.RemoteServerService.
-    ensure_verified` the first time a server is selected for a job: neither is
-    a create/update request, which is what this must never run inline in - it
-    inspects the trainer image in the registry and starts a one-shot
-    container. ``protocol_version`` is a parameter so this module stays
-    independent of the trainer package.
+    Invoked by an explicit verify action (the ``/check`` endpoint), or once
+    automatically by `RemoteServerService.ensure_verified` the first time a
+    server is selected for a job - neither is a create/update request, which
+    is what this must never run inline in: it inspects the trainer image in
+    the registry and starts a one-shot container. ``protocol_version`` is a
+    parameter so this module stays independent of the trainer package.
 
     Like Tier 1, does not raise for a server that fails its checks.
 

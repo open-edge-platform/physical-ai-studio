@@ -27,13 +27,9 @@ from services.ssh.preflight import DEFAULT_PROTOCOL_VERSION, run_tier1_preflight
 from services.training_backends.phase import PhaseState
 from settings import Settings, get_settings
 
-# Per-server Tier 1 status: at most one in-flight SSH probe, shared across
-# concurrent callers (multiple browser tabs/components polling the same
-# server), plus a short-lived cached result so repeated polling within
-# `settings.ssh_preflight_throttle_s` never dials out again. This is the
-# per-server throttle the status endpoint shares with provisioning's own
-# per-alias connect throttle (`services.ssh.transport`), so UI polling cannot
-# pile SSH connections onto a server a job is actively using.
+# Per-server Tier 1 status: at most one in-flight SSH probe shared across
+# concurrent pollers, plus a cached result for `settings.ssh_preflight_throttle_s`
+# so repeated UI polling doesn't pile SSH connections onto a busy server.
 _status_checks: dict[UUID, asyncio.Task[PreflightResult]] = {}
 _status_cache: dict[UUID, tuple[float, PreflightResult]] = {}
 
@@ -97,19 +93,11 @@ class RemoteServerService:
     async def record_check_result(self, remote_server_id: UUID, result: PreflightResult) -> RemoteServer:
         """Persist the outcome of a Tier 2 verification (explicit ``/check``, or `ensure_verified`).
 
-        This is the only path that ever moves ``last_check_status`` off its
-        default of ``"unknown"``. Besides the explicit "Test connection"
-        action, `ensure_verified` also calls this - once, automatically - the
-        first time a server is selected for a job, so job submission never
-        has to reject a server for the sole reason that nobody happened to
-        click "Test connection" first. A server whose check already failed
-        (``"degraded"``/``"unreachable"``) still requires the user to
-        re-verify deliberately; neither path retries that automatically.
-
-        Persists the per-check detail (``last_check_checks``) alongside the
-        summary so the "Image pull & verification" card can render the last
-        verification's detail after a page refresh, rather than resetting to
-        "Not verified yet" until the user reruns the check.
+        This is the only path that moves ``last_check_status`` off ``"unknown"``.
+        A server whose check already failed still requires the user to
+        re-verify deliberately - neither this nor `ensure_verified` retries
+        automatically. Also persists the per-check detail (``last_check_checks``)
+        so it survives a page refresh.
         """
         remote_server = await self.repo.get_by_id(remote_server_id)
         if remote_server is None:
@@ -130,16 +118,11 @@ class RemoteServerService:
     ) -> RemoteServer:
         """Run Tier 2 preflight automatically the first time a server is used, then return it.
 
-        Job submission only ever trusts the persisted ``last_check_status`` -
-        a server whose last explicit ``/check`` failed (``"degraded"``/
-        ``"unreachable"``) still requires the user to re-run it deliberately.
-        But ``"unknown"`` (never checked at all) is different: nothing about
-        it says the server is broken, only that nobody has run the one-time
-        verification yet. Rather than reject the job and send the user back
-        to the training-targets page, this runs that verification inline so
-        the job can proceed - the image pull it kicks off (or confirms
-        already ran) is exactly the pull `SshProvisioningService.provision`
-        would need to do anyway.
+        Job submission trusts the persisted ``last_check_status``: a server
+        whose last explicit ``/check`` failed still requires the user to
+        re-run it deliberately. But ``"unknown"`` just means nobody has run
+        the one-time verification yet, so this runs it inline instead of
+        rejecting the job.
         """
         remote_server = await self.get_remote_server(remote_server_id)
         if remote_server.last_check_status != "unknown":
@@ -150,14 +133,10 @@ class RemoteServerService:
     async def get_status(self, remote_server_id: UUID, settings: Settings | None = None) -> RemoteServerStatus:
         """Return one server's live status: a throttled Tier 1 probe plus in-use/GPU-wait state.
 
-        The Tier 1 SSH probe is shared across concurrent callers (multiple
-        browser tabs/components polling the same server) and cached for
-        `settings.ssh_preflight_throttle_s`, so repeated UI polling never dials
-        out more than once per throttle window - on top of, not instead of, the
-        per-alias connect throttle every `SshTransport.connect()` already applies
-        (`services.ssh.transport`). ``in_use_by_job_id``/``waiting_for_gpu`` are
-        cheap DB reads and are never cached: they must reflect the currently
-        provisioning/training job the moment it changes.
+        The Tier 1 probe is shared and cached per `settings.ssh_preflight_throttle_s`
+        so concurrent UI polling never dials out more than once per window.
+        ``in_use_by_job_id``/``waiting_for_gpu`` are cheap DB reads and are
+        never cached, so they reflect the current job the moment it changes.
         """
         settings = settings or get_settings()
         server = await self.get_remote_server(remote_server_id)
@@ -189,11 +168,9 @@ class RemoteServerService:
     def _is_waiting_for_gpu(job: object) -> bool:
         """True when a job's last reported phase is waiting on a busy remote GPU.
 
-        Reads the structured stepper descriptor `services.training_backends.phase`
-        attaches at `extra_info["phase"]` - the same channel
-        `SshTrainingBackend`'s `_on_gpu_wait` reports through while backing off a
-        busy accelerator. Per the `extra_info` contract, this is read only for
-        display: nothing here ever gates a workflow decision.
+        Reads the structured phase descriptor at `extra_info["phase"]`; per
+        the `extra_info` contract, this is display-only and never gates a
+        workflow decision.
         """
         extra_info = getattr(job, "extra_info", None)
         if not isinstance(extra_info, dict):
@@ -224,9 +201,8 @@ class RemoteServerService:
 
             task.add_done_callback(_clear_inflight)
 
-        # Shield so a cancelled caller (e.g. an HTTP request cancelled on
-        # client disconnect) never cancels the shared Task out from under
-        # every other concurrent poller relying on the same in-flight probe.
+        # Shield so a cancelled caller never cancels the shared probe for
+        # other concurrent pollers.
         result = await asyncio.shield(task)
         _status_cache[server.id] = (monotonic(), result)
         return result

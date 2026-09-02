@@ -56,10 +56,6 @@ async def restart_server(background_tasks: BackgroundTasks, health_service: Heal
 
     The shutdown signal is sent after the response is flushed, allowing the
     FastAPI lifespan to stop workers before the process supervisor restarts it.
-
-    Also called directly (not just as an HTTP route) by `api.settings.update_user_settings`
-    when a process-cached setting changes, so both restart triggers share this one
-    implementation instead of duplicating it.
     """
     health_service.mark_plugin_restart_required()
     background_tasks.add_task(request_graceful_restart)

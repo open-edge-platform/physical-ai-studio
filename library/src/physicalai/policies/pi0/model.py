@@ -18,6 +18,7 @@ from torch import nn
 
 from physicalai.data.observation import ACTION, IMAGES, STATE, Observation
 from physicalai.policies.base import Model
+from physicalai.policies.mixins.peft import PeftModelMixin
 
 from .components.attention import make_attention_mask_2d, prepare_4d_attention_mask
 from .components.gemma import GemmaVariant, PaliGemmaWithExpert
@@ -91,8 +92,30 @@ def sample_beta(alpha: float, beta: float, size: int, device: torch.device) -> t
     return dist.sample((size,))
 
 
-class Pi0Model(Model):
+class Pi0Model(PeftModelMixin, Model):
     """Pi0/Pi0.5 Flow Matching Vision-Language-Action Model."""
+
+    @classmethod
+    def get_default_peft_targets(cls) -> str:
+        """Return the default LoRA target modules for Pi0/Pi0.5.
+
+        Targets the action expert's attention projections plus the action/state/time
+        projection heads. Excludes the PaliGemma VLM/vision backbone; pass an explicit
+        ``lora_target_modules`` to target those instead.
+
+        Note: Pi0 and Pi0.5 expose slightly different projection heads (Pi0 additionally
+        has ``state_proj``/``action_time_mlp_in``/``action_time_mlp_out``, Pi0.5 instead has
+        ``time_mlp_in``/``time_mlp_out``). This single regex covers both variants' head
+        names; only the ones actually present on a given variant will match.
+
+        Returns:
+            A regex string matching the default LoRA-adapted submodule names.
+        """
+        return (
+            r"(.*\.paligemma_with_expert\._action_expert\..*\.self_attn\.(q|v)_proj|"
+            r"(action_in_proj|action_out_proj|state_proj|"
+            r"action_time_mlp_in|action_time_mlp_out|time_mlp_in|time_mlp_out))"
+        )
 
     def __init__(  # noqa: PLR0913
         self,

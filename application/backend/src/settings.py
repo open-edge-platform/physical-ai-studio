@@ -79,7 +79,7 @@ _DEFAULT_SSH_MIN_FREE_DISK_BYTES = 50 * 1024 * 1024 * 1024
 
 
 class SshProvisioningSettings(BaseModel):
-    """User-editable settings for SSH-provisioned training, including the master switch.
+    """User-editable settings for SSH-provisioned training.
 
     Deliberately a *subset* of the `SSH_*` settings. The remaining ones - the
     SSH config and `known_hosts` paths, the trainer image registry, and the
@@ -87,20 +87,19 @@ class SshProvisioningSettings(BaseModel):
     Studio trusts a host or an image, which is not something this
     (unauthenticated) settings API should be able to move.
 
-    `enabled` is the feature's master switch (`Settings.ssh_remote_trainer_enabled`).
-    Flipping it only takes effect after a full backend restart:
-    `core.security.get_ssh_feature_availability` is cached for the life of the
-    process and `app.state.ssh_feature_availability` is pinned once at
-    startup, so `api.settings.update_user_settings` schedules the same
-    graceful restart `POST /api/system/restart` uses whenever this field
-    changes (see `api.system.request_graceful_restart`).
+    There is no master on/off switch: the feature is always active (subject
+    only to the fail-closed network-exposure check in
+    `core.security.ssh_network_exposure`). The risk this implies - no
+    authentication model, so anyone who can reach this backend can run
+    arbitrary code as root on a registered server - is surfaced as an
+    explicit warning in the UI when a user registers an SSH target, rather
+    than gated behind a switch here.
 
-    Every other field is a bounded timeout or limit whose worst case is a job
+    Every field below is a bounded timeout or limit whose worst case is a job
     that gives up too early or waits too long, never a job that runs
     somewhere it should not have.
     """
 
-    enabled: bool = Field(default=False)
     connect_timeout_s: float = Field(default=_DEFAULT_SSH_CONNECT_TIMEOUT_S, gt=0)
     command_timeout_s: float = Field(default=_DEFAULT_SSH_COMMAND_TIMEOUT_S, gt=0)
     preflight_timeout_s: float = Field(default=_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S, gt=0)
@@ -120,7 +119,6 @@ class SshProvisioningSettings(BaseModel):
 # storage keys, but - unlike the rest of `Settings` - are no longer readable
 # from the process environment or a `.env` file; see `_EnvExclusionSource`.
 _SSH_FIELD_MAP: dict[str, str] = {
-    "enabled": "ssh_remote_trainer_enabled",
     "connect_timeout_s": "ssh_connect_timeout_s",
     "command_timeout_s": "ssh_command_timeout_s",
     "preflight_timeout_s": "ssh_preflight_timeout_s",
@@ -187,9 +185,8 @@ class UserConfigSettingsSource(JsonConfigSettingsSource):
 class _EnvExclusionSource(PydanticBaseSettingsSource):
     """Wraps an environment/`.env` source and drops the SSH-provisioning settings.
 
-    Those settings - including the `ssh_remote_trainer_enabled` master switch -
-    are exclusively user-editable through the settings page and persisted to
-    the settings JSON file (see `UserConfigSettingsSource`). Blocking them here
+    Those settings are exclusively user-editable through the settings page
+    and persisted to the settings JSON file (see `UserConfigSettingsSource`). Blocking them here
     means a value saved through the settings API can never be silently
     overridden by a stale environment variable or `.env` file on the next
     restart, and there is exactly one place - the settings file - an operator
@@ -292,17 +289,15 @@ class Settings(BaseSettings):
     huggingface: HuggingFaceSettings = HuggingFaceSettings()
 
     # SSH-provisioned remote training
-    # Master switch. Off by default: the feature has no authentication model,
-    # so it must never be on for a deployment that is not a single-user
-    # localhost workstation. See `core.security.ssh_network_exposure`, which
-    # additionally fails this closed at startup if the backend is bound to a
-    # non-loopback address regardless of this setting.
+    # No master on/off switch: the feature is always active, subject only to
+    # the fail-closed network-exposure check in `core.security.ssh_network_exposure`,
+    # which additionally fails this closed at startup if the backend is bound
+    # to a non-loopback address. The absence of an authentication model is
+    # surfaced as a warning in the UI when a user registers an SSH target.
     #
-    # User-editable exclusively through the settings page / `PATCH /api/settings`
-    # (see `SshProvisioningSettings.enabled`) - never through the environment
-    # or a `.env` file; see `_EnvExclusionSource`. Toggling it requires a
-    # backend restart to take effect, which the settings API triggers itself.
-    ssh_remote_trainer_enabled: bool = Field(default=False, alias="SSH_REMOTE_TRAINER_ENABLED")
+    # The knobs below are user-editable exclusively through the settings page
+    # / `PATCH /api/settings` (see `SshProvisioningSettings`) - never through
+    # the environment or a `.env` file; see `_EnvExclusionSource`.
     # Path to the user's SSH client config. asyncssh parses it to resolve a saved
     # `ssh_host_alias` into a hostname, port, user, and identity; Studio never
     # reads key material out of it.
@@ -366,10 +361,8 @@ class Settings(BaseSettings):
 
     # --- SSH provisioning: image signature verification ---------------------
     # Pinned to the Studio release workflow so a Sigstore-signed image cannot
-    # be satisfied by a signature from an unrelated identity/issuer. Despite
-    # the `COSIGN_*` names (kept for backward compatibility with existing
-    # deployments), verification does not shell out to the `cosign` binary:
-    # see `services.ssh.sigstore_verify`, which uses the `sigstore` PyPI
+    # be satisfied by a signature from an unrelated identity/issuer.
+    # See `services.ssh.sigstore_verify`, which uses the `sigstore` PyPI
     # package to check the same certificate identity/issuer `cosign verify
     # --certificate-identity-regexp`/`--certificate-oidc-issuer` would.
     cosign_certificate_identity_regexp: str = Field(
@@ -451,9 +444,9 @@ class Settings(BaseSettings):
         """Resolve init kwargs, user JSON, environment, then .env.
 
         `env_settings` and `dotenv_settings` are wrapped in `_EnvExclusionSource`
-        so the SSH-provisioning settings (including the master switch) can only
-        ever come from an explicit `Settings(...)` kwarg (used by tests) or the
-        user settings file - never from the process environment or `.env`.
+        so the SSH-provisioning settings can only ever come from an explicit
+        `Settings(...)` kwarg (used by tests) or the user settings file -
+        never from the process environment or `.env`.
         """
         return (
             init_settings,

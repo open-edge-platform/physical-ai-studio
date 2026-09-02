@@ -26,10 +26,7 @@ if TYPE_CHECKING:
 
 global_log_config = LogConfig()
 
-# Third-party loggers that are useful at DEBUG but spam INFO-level connection/request
-# chatter (e.g. one line per SSH channel open/close, one line per HTTP request) which
-# drowns out application logs during remote training jobs. Quieting them to WARNING
-# still surfaces real problems while dropping routine noise.
+# Chatty at INFO (e.g. one line per SSH channel/HTTP request); quiet to WARNING.
 _NOISY_LOGGERS = ("asyncssh", "httpx", "httpcore")
 
 

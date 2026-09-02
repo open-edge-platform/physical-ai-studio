@@ -144,14 +144,10 @@ def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None
 def _hf_token_env(token: SecretStr | None):
     """Scope ``HF_TOKEN`` to one training run, restoring whatever was there before.
 
-    ``os.environ`` is process-global, and the trainer service runs jobs
-    sequentially or, with `TRAINER_MAX_CONCURRENT_JOBS` raised, concurrently in
-    separate threads within the same process (see `trainer.queue_worker`). A
-    token set for one job must not leak into the next job's environment (or
-    into a job submitted without one, which would otherwise silently inherit a
-    stranger's token), and must not clobber a value an operator set on the
-    process itself. A no-op when ``token`` is ``None``, so a token configured
-    directly in the trainer's own environment is left untouched.
+    ``os.environ`` is process-global and jobs can run concurrently in the same
+    process (see `trainer.queue_worker`), so a token set for one job must not
+    leak into another's environment or clobber a value an operator set on the
+    process itself. A no-op when ``token`` is ``None``.
     """
     if token is None:
         yield

@@ -3,22 +3,18 @@
 
 """Docker image resolution, verification, GPU-busy waiting, and container lifecycle.
 
-Everything in this module runs a command over an already-connected
-:class:`~services.ssh.transport.SshTransport`. No function here opens or closes
-a connection: :mod:`services.ssh.provisioning` owns connection lifetime, so a
-single SSH connection can span image resolution, launch, and later teardown.
+Everything here runs a command over an already-connected
+:class:`~services.ssh.transport.SshTransport`. No function opens or closes a
+connection: :mod:`services.ssh.provisioning` owns connection lifetime.
 
-Image resolution never pulls a layer. ``docker buildx imagetools inspect``
-reads the registry manifest (and, via ``--format``, the image config's
-labels) over the registry API, the same class of call Tier 1's preflight uses
-for its own registry-reachability probe. The label carrying the
-`physicalai-train` version is read from this same call, before any pull, so a
-version-policy rejection never costs a multi-gigabyte transfer.
+Image resolution never pulls a layer: ``docker buildx imagetools inspect``
+reads the registry manifest and image-config labels (including the
+`physicalai-train` version) over the registry API, so a version-policy
+rejection never costs a multi-gigabyte transfer.
 
 ``verify_image_signature`` is the one exception to "everything here runs over
-SSH": it runs entirely on this backend's own host, not the remote trainer
-server, using the `sigstore` PyPI package rather than a `cosign` binary. See
-`services.ssh.sigstore_verify`.
+SSH": it runs on this backend's own host using the `sigstore` PyPI package
+rather than a `cosign` binary. See `services.ssh.sigstore_verify`.
 """
 
 from __future__ import annotations
@@ -64,23 +60,21 @@ if TYPE_CHECKING:
 # from the registry manifest before any pull.
 LIBRARY_VERSION_LABEL: Final = "org.open-edge-platform.physicalai.trainer.library-version"
 
-# Management labels. `MANAGED_LABEL` alone never proves ownership: two Studio
-# installations can target the same remote server, so the orphan sweep also
-# requires `INSTANCE_LABEL` to match this installation's own backend_instance_id
-# (see `core.backend_instance`).
+# Management labels. `MANAGED_LABEL` alone never proves ownership: the orphan
+# sweep also requires `INSTANCE_LABEL` to match this installation's own
+# backend_instance_id (see `core.backend_instance`).
 MANAGED_LABEL: Final = "org.open-edge-platform.physicalai.managed"
 JOB_LABEL: Final = "org.open-edge-platform.physicalai.job-id"
 SERVER_LABEL: Final = "org.open-edge-platform.physicalai.server-id"
 INSTANCE_LABEL: Final = "org.open-edge-platform.physicalai.backend-instance-id"
-# Recorded so a reattach can detect drift between the persisted `JobProvisioningDB`
-# row and the container actually running, without a second registry round trip.
+# Recorded so a reattach can detect drift between the persisted row and the
+# container actually running, without a second registry round trip.
 IMAGE_DIGEST_LABEL: Final = "org.open-edge-platform.physicalai.image-digest"
 
 _CONTAINER_NAME_PREFIX: Final = "physicalai-trainer-"
 
-# Named volume backing the trainer's writable storage directory
-# (`/var/lib/physicalai-trainer`). Disk-backed, unlike the `/tmp` tmpfs, so
-# uploaded datasets and model artifacts consume disk rather than RAM.
+# Named volume backing the trainer's writable storage directory. Disk-backed,
+# unlike the `/tmp` tmpfs, so datasets/artifacts consume disk rather than RAM.
 _DATA_VOLUME_NAME_PREFIX: Final = "physicalai-trainer-data-"
 
 # Fraction of device memory in use above which an accelerator counts as busy
@@ -202,10 +196,8 @@ class ContainerInspectionError(Exception):
     """`docker inspect` failed for a reason other than the container being absent.
 
     Raised instead of folding into `inspect_container`'s ``None`` return, so a
-    caller can never mistake an operational failure (docker daemon unavailable,
-    permission denied, an unexpected inspect error) for the container
-    legitimately not existing - the two demand very different recovery
-    responses (see `services.ssh.provisioning.ReattachFailureReason`).
+    caller never mistakes an operational failure for the container
+    legitimately not existing (see `services.ssh.provisioning.ReattachFailureReason`).
     """
 
     def __init__(self, name_or_id: str, detail: str | None = None) -> None:
@@ -253,11 +245,9 @@ async def inspect_container(transport: SshTransport, name_or_id: str) -> Contain
         ["docker", "inspect", "--format", "{{json .Config.Labels}}", name_or_id]
     )
     if not labels_result.ok:
-        # The container existed a moment ago (the first call succeeded); a
-        # second failure here is an operational error, not evidence the
-        # container is gone. Folding this into `labels={}` would read as a
-        # confirmed-empty label set and let ownership/digest checks silently
-        # pass as "mismatch" rather than "couldn't tell".
+        # The first inspect call succeeded, so a failure here is operational,
+        # not evidence the container is gone. Folding this into `labels={}`
+        # would let ownership/digest checks read a real error as "mismatch".
         if _container_not_found(labels_result):
             return None
         raise ContainerInspectionError(name_or_id, detail=labels_result.stderr or labels_result.stdout or None)
@@ -354,20 +344,13 @@ async def resolve_protocol_image(
 async def verify_image_signature(image: ResolvedImage, settings: Settings) -> None:
     """Verify the resolved image's signature, pinned to Studio's release identity.
 
-    Delegates to `services.ssh.sigstore_verify`, which uses the `sigstore`
-    PyPI package rather than the `cosign` binary: verification runs entirely
-    in this backend process (never over SSH, never needing anything installed
-    on the remote trainer server) by fetching the image's Sigstore-bundle
-    referrer directly from the registry over HTTPS and verifying it in pure
-    Python.
+    Delegates to `services.ssh.sigstore_verify` (the `sigstore` PyPI package,
+    not the `cosign` binary), so verification runs entirely in this backend
+    process by fetching the image's Sigstore-bundle referrer over HTTPS.
 
     Always fails closed: an unreachable registry/Sigstore infrastructure, an
-    unsigned image, and a signature that fails verification (wrong identity,
-    tampered signature, missing Rekor inclusion proof) all block the job the
-    same way. There is no escape hatch - this backend always has `sigstore`
-    available (it is a regular dependency, not an optional binary), so
-    "verification could not be attempted" is always a real problem worth
-    blocking on, not a missing tool to shrug off.
+    unsigned image, and a failed signature check all block the job the same
+    way - there is no escape hatch, since `sigstore` is always available here.
 
     Args:
         image: The digest-resolved image to verify.
@@ -398,11 +381,10 @@ def check_library_version(
     """Range-check a resolved image's library version against a minimum policy.
 
     Older than the minimum is a non-fatal warning (the job proceeds); equal or
-    newer is silent; a version this policy documents as required but the image
-    does not meet is fatal, raised before any pull. A non-default policy also
-    fails closed when the image carries no version label at all: an image
-    cannot satisfy a required minimum it declines to report, so a missing
-    label is not the same as compliance.
+    newer is silent; failing to meet a required minimum is fatal, raised
+    before any pull. A non-default policy also fails closed when the image
+    carries no version label at all, since it can't satisfy a required
+    minimum it declines to report.
 
     Args:
         image: The digest-resolved image, carrying the registry label.
@@ -465,14 +447,9 @@ def _first_number_pair(stdout: str) -> tuple[float, float] | None:
 async def _cuda_gpu_busy(transport: SshTransport) -> bool | None:
     """Return whether a CUDA GPU is busy, or ``None`` if occupancy is unknown.
 
-    Uses the same memory-utilization heuristic as `_xpu_gpu_busy`, not
-    compute-process *presence*: a GPU carrying an unrelated process that holds
-    only a sliver of its memory (a monitoring agent, another user's idle
-    notebook) must not block a job that would fit comfortably alongside it.
-    `nvidia-smi --query-compute-apps` would flag the GPU busy the moment any
-    process holds it at all, regardless of how much of the device it actually
-    occupies - too strict for a shared box, and the direct cause of jobs
-    refusing to start next to a process using a trivial fraction of memory.
+    Uses a memory-utilization heuristic rather than compute-process presence:
+    a GPU carrying an unrelated process holding only a sliver of memory must
+    not block a job that would fit comfortably alongside it.
     """
     result = await transport.run_command(
         ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
@@ -522,10 +499,9 @@ async def wait_for_gpu_free(
 ) -> None:
     """Wait until the remote GPU reports free, with exponential backoff.
 
-    Opens a fresh transport for each probe (rather than holding one connection
-    for the whole wait) so a long wait does not hold a scarce per-server
-    connection slot the whole time; probes still respect the alias's shared
-    connect throttle.
+    Opens a fresh transport for each probe rather than holding one connection
+    for the whole wait, so a long wait does not hold a scarce per-server
+    connection slot the whole time.
 
     Args:
         open_transport: Returns a new, unconnected transport for one probe.
@@ -609,11 +585,8 @@ def _device_run_args(device_type: DeviceType, render_gid: str | None = None) -> 
     """Return the `docker run` flags that expose the accelerator.
 
     `render_gid`, when known, is added via `--group-add` so the container's
-    fixed non-root user (`--user`, set to `_TRAINER_UID:_TRAINER_GID` below)
-    can actually read/write the render node - `--device /dev/dri` alone passes
-    the node through but its group ownership still gates access, and without
-    this the container's `torch.xpu.is_available()` silently reports zero
-    devices.
+    fixed non-root user can read/write the render node - `--device /dev/dri`
+    alone passes the node through but its group ownership still gates access.
     """
     if device_type is DeviceType.CUDA:
         return ["--gpus", "all"]
@@ -637,27 +610,24 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
     """Build the least-privilege `docker run` command for one trainer container.
 
     * Launches by digest (`image_digest_ref`), never a mutable tag.
-    * `-p 127.0.0.1::<port>` publishes an OS-assigned ephemeral host port bound
-      only to loopback - never reachable from another host on the network.
+    * `-p 127.0.0.1::<port>` publishes an OS-assigned ephemeral port bound
+      only to loopback.
     * `--restart=no` - a crashed container must surface as a failed job, not
-      restart silently out from under a job that already moved on.
-    * Non-root, every Linux capability dropped, no `--privileged`, and only the
+      restart silently.
+    * Non-root, every capability dropped, no `--privileged`, and only the
       device nodes the configured accelerator needs are passed through.
-    * `--read-only` root filesystem, one bounded `--tmpfs` for `/tmp` scratch,
-      and a single job-scoped data volume mounted at the trainer's storage
-      directory (`/var/lib/physicalai-trainer`) for datasets and model
-      artifacts - disk-backed so large uploads consume disk, not RAM.
+    * `--read-only` root filesystem, a bounded `--tmpfs` for `/tmp` scratch,
+      and a job-scoped data volume mounted at the trainer's storage directory
+      for datasets and model artifacts.
 
     `render_gid`, from `resolve_render_group_gid`, is required for a working
-    XPU container: without it `--device /dev/dri` passes the render node
-    through but the fixed non-root user cannot open it, and
-    `torch.xpu.is_available()` reports zero devices. Ignored for CUDA.
+    XPU container: without it the fixed non-root user cannot open the render
+    node and `torch.xpu.is_available()` reports zero devices. Ignored for CUDA.
 
     The `/tmp` tmpfs carries explicit `uid=`/`gid=` mount options matching
-    `--user`: an unqualified `--tmpfs` mounts root-owned, and the trainer's
-    fixed non-root user cannot write it. The data volume needs no such options:
-    Docker initializes a fresh volume with the image's directory ownership
-    (`trainer:trainer` from `Dockerfile.trainer`).
+    `--user`, since an unqualified `--tmpfs` mounts root-owned. The data
+    volume needs no such options: Docker initializes it with the image's
+    directory ownership.
     """
     tmpfs_owner = f"uid={_TRAINER_UID},gid={_TRAINER_GID}"
     return [
@@ -690,40 +660,23 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
 async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Settings) -> None:
     """Pull the resolved image by digest, skipping a no-op re-pull.
 
-    Tier 2's "Pull & verify image" check (`services.ssh.preflight`) already
-    pulls this same image by tag as part of its container device probe, so by
-    the time a job actually starts, the digest job provisioning just resolved
-    is very often already sitting in the remote Docker image store under that
-    tag - Docker records the pulled manifest's digest as a `RepoDigest` on that
-    same local image regardless of which reference (tag or digest) was used to
-    fetch it. Checking first, the same way Tier 2 does before its own device
-    probe, skips asking the daemon to re-fetch a manifest (and re-walk every
-    layer) it already has, and avoids the visible-but-redundant `docker pull`
-    this would otherwise always run, even immediately after a successful Tier 2
-    check. A cold image (protocol tag never verified, or evicted since) still
-    pulls exactly as before.
+    Tier 2's "Pull & verify image" check may already have pulled this same
+    image by tag, so this checks the local image store first (Docker records
+    the pulled digest as a `RepoDigest` regardless of which reference was
+    used) before asking the daemon to re-fetch anything.
 
-    Tier 2's tag pull is detached (`nohup`) and may still be transferring when
-    a job is dispatched moments later - the image store is empty until it
-    finishes, so the digest check above cannot see it yet. Rather than start a
-    second, concurrent `docker pull` of the identical content by digest
-    (indistinguishable in logs from pulling an unrelated image), this waits
-    for that in-flight pull with `pull_in_progress` and re-checks the image
-    store once it ends, before falling back to its own pull.
+    If Tier 2's tag pull is still in flight (detached via `nohup`), this waits
+    for it with `pull_in_progress` rather than starting a second, concurrent
+    pull of identical content, then re-checks the image store.
 
-    Uses `settings.ssh_image_pull_timeout_s` rather than the default
-    `ssh_command_timeout_s`: that budget is sized for cheap probes
-    (`docker version`, `nvidia-smi`), and is far too short for a multi-gigabyte
-    image transfer. A pull that is still legitimately in progress when the
-    short budget elapses would otherwise surface as a spurious pull failure,
-    with only the partial progress output as its (misleading) detail.
+    Uses `settings.ssh_image_pull_timeout_s` rather than the default command
+    timeout, which is sized for cheap probes and far too short for a
+    multi-gigabyte transfer.
 
-    After the digest is confirmed present (whether pulled here, pulled by a
-    Tier 2 background pull this call waited out, or already cached), this
-    prunes any other locally cached image of the same repository via
-    `prune_stale_images` - best effort, never raised - so a long-lived remote
-    server accumulates only the trainer image each job actually needed, not
-    every protocol tag/digest it has ever pulled.
+    Once the digest is confirmed present, prunes any other locally cached
+    image of the same repository via `prune_stale_images` (best effort,
+    never raised), so a long-lived server only accumulates the image each job
+    actually needed.
 
     Raises:
         TrainerImagePullError: The pull failed, or did not finish within
@@ -752,22 +705,16 @@ _TOLERATED_RMI_FAILURES: Final = ("image is being used", "no such image")
 async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> list[str]:
     """Remove other locally cached images of `image`'s repository, freeing disk.
 
-    A remote server keeps every distinct digest it has ever pulled for a
-    given `physicalai-trainer-<device>` repository (one per protocol version
-    Studio has resolved against it) until something removes them - each is
-    multiple gigabytes, so a long-lived server otherwise fills its disk
-    purely from accumulated image history rather than any single job's needs.
-    Called after `pull_image` confirms `image.digest_reference` is present, so
-    disk reclaimed here never costs a re-pull of the image a job just
-    verified it needs.
+    A remote server otherwise keeps every distinct digest it has ever pulled
+    for a `physicalai-trainer-<device>` repository, filling its disk from
+    accumulated image history. Called after `pull_image` confirms
+    `image.digest_reference` is present, so reclaiming here never costs a
+    re-pull of the image a job just verified it needs.
 
-    Never touches `image.digest_reference` itself. Tolerates - silently,
-    without raising - a `docker rmi` refused because a container (this
-    installation's or another's) still references that image: it is still in
-    use and must not be forced out from under it. Also tolerates the listing
-    command itself failing, returning no removals rather than raising:
-    reclaiming disk is best-effort bookkeeping, never something a job's launch
-    should fail over.
+    Never touches `image.digest_reference` itself. Tolerates - without
+    raising - a `docker rmi` refused because a container still references
+    that image, and a failing listing command: reclaiming disk is
+    best-effort bookkeeping, never something a job's launch should fail over.
 
     Args:
         transport: An open transport to the remote server.
@@ -810,21 +757,16 @@ async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> l
     return removed
 
 
-# Interval between polls of an in-flight background pull's PID. Short enough
-# not to waste much of `settings.ssh_image_pull_timeout_s` on the final poll,
-# long enough not to flood the SSH connection with `kill -0` round trips
-# during a multi-gigabyte transfer that can take minutes.
+# Interval between polls of an in-flight background pull's PID.
 _PULL_POLL_INTERVAL_S: Final = 5.0
 
 
 async def _await_background_pull(transport: SshTransport, image_ref: str, settings: Settings) -> None:
     """Wait for a Tier 2 background pull of `image_ref` to finish, best effort.
 
-    Bounded by `settings.ssh_image_pull_timeout_s`, the same budget a direct
-    pull would use. Gives up silently rather than raising when the budget
-    elapses - the caller re-checks the image store either way and falls back
-    to its own pull, so a background pull that stalled degrades to the
-    pre-existing behavior instead of failing the job here.
+    Bounded by `settings.ssh_image_pull_timeout_s`. Gives up silently rather
+    than raising when the budget elapses - the caller re-checks the image
+    store either way and falls back to its own pull.
     """
     deadline = time.monotonic() + settings.ssh_image_pull_timeout_s
     while time.monotonic() < deadline:

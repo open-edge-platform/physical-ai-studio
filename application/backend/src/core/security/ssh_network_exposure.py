@@ -9,13 +9,14 @@ and a compromised backend process can reach every identity in the user's SSH
 agent, not just the registered servers. It is safe only on a single-user
 localhost workstation.
 
-This module is the runtime enforcement of that boundary, on top of - not a
-replacement for - the operator turning the feature on in the first place
-(`Settings.ssh_remote_trainer_enabled`, off by default, exclusively
-user-editable through the Studio settings page - see
-`settings.SshProvisioningSettings`) and the documentation in
-`docs/ssh-remote-trainer.md`. Even when explicitly enabled, the feature
-fails closed if the backend is bound to anything but a loopback address.
+The feature is always active - there is no settings-page or environment
+master switch to turn it off. The risk above is instead surfaced as an
+explicit warning in the UI at the point a user registers an SSH target (see
+`docs/ssh-remote-trainer.md`). This module is the one enforcement the user
+cannot opt out of: even though the feature is always "on", it still fails
+closed if the backend is bound to anything but a loopback address, since
+that combination (no auth model + reachable from the network) is never safe
+regardless of user intent.
 """
 
 from __future__ import annotations
@@ -76,30 +77,28 @@ def is_loopback_host(host: str) -> bool:
 class SshFeatureAvailability:
     """Whether the SSH remote-trainer feature is safe to serve right now, and why not if it isn't.
 
+    The feature has no on/off switch - it is always active except when the
+    single check below fails.
+
     Attributes:
-        enabled: The operator turned the feature on via
-            `Settings.ssh_remote_trainer_enabled`.
         network_exposed: The backend is bound to a non-loopback address.
-            Meaningless (always False) when `enabled` is False - an unreachable
-            feature exposes nothing regardless of the bind address.
-        reason: A user-facing explanation for why the feature is unavailable
-            despite being enabled. Names no host alias, container, or other
-            registered-server detail - this can reach a pre-auth log line or
-            an unauthenticated status endpoint.
+        reason: A user-facing explanation for why the feature is unavailable.
+            Names no host alias, container, or other registered-server detail
+            - this can reach a pre-auth log line or an unauthenticated status
+            endpoint.
     """
 
-    enabled: bool
     network_exposed: bool
     reason: str | None = None
 
     @property
     def active(self) -> bool:
-        """True only when the feature is both turned on and safe to expose."""
-        return self.enabled and not self.network_exposed
+        """True unless the backend is unsafely network-exposed."""
+        return not self.network_exposed
 
 
 def evaluate_ssh_feature_availability(settings: Settings, *, bind_host: str | None = None) -> SshFeatureAvailability:
-    """Evaluate the SSH feature's availability from settings and the actual bind host.
+    """Evaluate the SSH feature's availability from the actual bind host.
 
     Args:
         settings: Application settings.
@@ -110,18 +109,13 @@ def evaluate_ssh_feature_availability(settings: Settings, *, bind_host: str | No
             updating `Settings`.
 
     Returns:
-        The evaluated availability. `network_exposed` is always False when
-        the feature is off: there is nothing to expose.
+        The evaluated availability.
     """
-    if not settings.ssh_remote_trainer_enabled:
-        return SshFeatureAvailability(enabled=False, network_exposed=False)
-
     host = bind_host if bind_host is not None else settings.host
     if is_loopback_host(host):
-        return SshFeatureAvailability(enabled=True, network_exposed=False)
+        return SshFeatureAvailability(network_exposed=False)
 
     return SshFeatureAvailability(
-        enabled=True,
         network_exposed=True,
         reason=(
             "the backend is bound to a non-loopback address and the SSH remote-trainer feature has no "

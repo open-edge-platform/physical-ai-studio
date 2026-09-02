@@ -157,9 +157,8 @@ class SubmitJobRequest(BaseModel):
         description=(
             "Hugging Face token for authenticated dataset/checkpoint downloads during training. "
             "``exclude=True`` keeps it out of every ``model_dump``/``model_dump_json`` call, so it is "
-            "never written to the job store's SQLite database (see `trainer.store.JobStore`, which "
-            "persists jobs precisely that way for restart recovery). It is instead cached in memory "
-            "for the lifetime of the job; see `JobStore.stash_secret`/`take_secret`."
+            "never written to the job store's SQLite database; it's cached in memory instead for the "
+            "lifetime of the job (see `JobStore.stash_secret`/`take_secret`)."
         ),
     )
 

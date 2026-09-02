@@ -39,14 +39,21 @@ class CommandWorker:
         self._thread: threading.Thread | None = None
 
     def submit(self, name: str, fn: Callable[[], None], *, request_id: str | None = None) -> None:
-        """Enqueue ``fn`` for FIFO execution. Optional ``request_id`` can be waited on."""
+        """Enqueue ``fn`` for FIFO execution. Optional ``request_id`` can be waited on.
+
+        The queue insertion happens under ``_lock``, the same lock that guards
+        ``_closed``. Enqueueing after the release would let a concurrent
+        ``shutdown`` slip ``_SHUTDOWN`` in front of a job that passed the closed
+        check, and the worker would exit without running it. The queue is
+        unbounded, so holding the lock across ``put`` cannot block.
+        """
         with self._lock:
             if self._closed:
                 raise RuntimeError(f"Cannot submit {name} after the command worker has shut down")
             if request_id is not None:
                 self._events[request_id] = threading.Event()
             self._ensure_thread_locked()
-        self._jobs.put(_Job(name=name, fn=fn, request_id=request_id))
+            self._jobs.put(_Job(name=name, fn=fn, request_id=request_id))
 
     def wait(self, request_id: str, timeout: float) -> AckData:
         """Block until the job with ``request_id`` finishes, or the timeout elapses."""
@@ -60,22 +67,30 @@ class CommandWorker:
             self._events.pop(request_id, None)
             return self._results.pop(request_id)
 
-    def shutdown(self, timeout: float) -> None:
-        """Drain queued work, then stop. A stop cannot strand an in-flight save."""
+    def shutdown(self, timeout: float) -> bool:
+        """Drain queued work, then stop. Return whether the worker actually drained.
+
+        A caller that owns the same objects as the queued jobs -- the recording
+        mutation, above all -- must not touch them while a job is still running.
+        Returning False says the join timed out and the worker thread is still
+        inside its job.
+        """
         with self._lock:
-            if self._closed:
-                return
+            already_closed = self._closed
             self._closed = True
             thread = self._thread
+            if thread is not None and not already_closed:
+                self._jobs.put(_SHUTDOWN)
         if thread is None:
-            return
-        self._jobs.put(_SHUTDOWN)
+            return True
         thread.join(timeout=timeout)
         if thread.is_alive():
             logger.error(
                 "Command worker did not finish within {}s; in-flight recording work may be lost",
                 timeout,
             )
+            return False
+        return True
 
     def _run(self) -> None:
         while True:
