@@ -366,10 +366,8 @@ class Settings(BaseSettings):
 
     # --- SSH provisioning: image signature verification ---------------------
     # Pinned to the Studio release workflow so a Sigstore-signed image cannot
-    # be satisfied by a signature from an unrelated identity/issuer. Despite
-    # the `COSIGN_*` names (kept for backward compatibility with existing
-    # deployments), verification does not shell out to the `cosign` binary:
-    # see `services.ssh.sigstore_verify`, which uses the `sigstore` PyPI
+    # be satisfied by a signature from an unrelated identity/issuer.
+    # See `services.ssh.sigstore_verify`, which uses the `sigstore` PyPI
     # package to check the same certificate identity/issuer `cosign verify
     # --certificate-identity-regexp`/`--certificate-oidc-issuer` would.
     cosign_certificate_identity_regexp: str = Field(
