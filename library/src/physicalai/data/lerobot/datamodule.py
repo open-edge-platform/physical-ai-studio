@@ -150,6 +150,7 @@ class LeRobotDataModule(DataModule):
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
         pin_memory: bool = True,
+        persistent_workers: bool = True,
     ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
@@ -212,6 +213,9 @@ class LeRobotDataModule(DataModule):
             pin_memory (bool, optional): Whether to use pinned (page-locked) memory for the
                 training and eval-loss validation DataLoaders, which speeds up host-to-GPU
                 transfers. Defaults to `True`.
+            persistent_workers (bool, optional): Whether to keep DataLoader worker processes
+                alive between epochs for the training and eval-loss validation DataLoaders.
+                Has no effect when ``num_workers`` resolves to ``0``. Defaults to `True`.
 
         Raises:
             ValueError: If neither `repo_id` nor `dataset` is provided, or if invalid `data_format`.
@@ -366,6 +370,7 @@ class LeRobotDataModule(DataModule):
             num_rollouts_test=num_rollouts_test,
             max_episode_steps=max_episode_steps,
             pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -390,6 +395,7 @@ class LeRobotDataModule(DataModule):
             shuffle=True,
             drop_last=True,
             pin_memory=self.pin_memory,
+            persistent_workers=self.persistent_workers,
         )
 
     @staticmethod

@@ -145,6 +145,7 @@ class DataModule(LightningDataModule):
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
         pin_memory: bool = True,
+        persistent_workers: bool = True,
     ) -> None:
         """Initialize the ActionDataModule.
 
@@ -166,6 +167,10 @@ class DataModule(LightningDataModule):
             pin_memory (bool): Whether to use pinned (page-locked) memory for the training and
                 eval-loss validation DataLoaders, which speeds up host-to-GPU transfers.
                 Defaults to `True`.
+            persistent_workers (bool): Whether to keep DataLoader worker processes alive between
+                epochs for the training and eval-loss validation DataLoaders, avoiding the cost of
+                re-spawning them every epoch. Has no effect when ``num_workers`` resolves to ``0``.
+                Defaults to `True`.
         """
         super().__init__()
 
@@ -174,6 +179,7 @@ class DataModule(LightningDataModule):
         self.train_batch_size: int = train_batch_size
         self.num_workers: int = resolve_auto_num_workers() if num_workers == "auto" else num_workers
         self.pin_memory: bool = pin_memory
+        self.persistent_workers: bool = persistent_workers and self.num_workers > 0
         logger.info("DataLoader workers: %d%s", self.num_workers, " (auto)" if num_workers == "auto" else "")
 
         # eval-loss validation dataset
@@ -251,6 +257,7 @@ class DataModule(LightningDataModule):
             shuffle=True,
             drop_last=True,
             pin_memory=self.pin_memory,
+            persistent_workers=self.persistent_workers,
             collate_fn=_collate_observations,
         )
 
@@ -273,6 +280,7 @@ class DataModule(LightningDataModule):
                 shuffle=False,
                 drop_last=False,
                 pin_memory=self.pin_memory,
+                persistent_workers=self.persistent_workers,
                 collate_fn=_collate_observations,
             )
 

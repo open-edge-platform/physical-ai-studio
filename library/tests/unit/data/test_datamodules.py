@@ -185,6 +185,43 @@ class TestDataModulePinMemory:
         assert dl.pin_memory is True
 
 
+class TestDataModulePersistentWorkers:
+    """Tests for the DataModule persistent_workers parameter."""
+
+    def test_defaults_to_true_when_workers_positive(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), num_workers=2)
+        assert dm.persistent_workers is True
+
+    def test_forced_false_when_no_workers(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), num_workers=0)
+        assert dm.persistent_workers is False
+
+    def test_explicit_false(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), num_workers=2, persistent_workers=False)
+        assert dm.persistent_workers is False
+
+    def test_train_dataloader_uses_persistent_workers(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), num_workers=2)
+        dl = dm.train_dataloader()
+        assert dl.persistent_workers is True
+
+    def test_val_dataloader_uses_persistent_workers(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), val_eval_dataset=dummy_dataset(), num_workers=2)
+        dm.setup(stage="fit")
+        dl = dm.val_dataloader()
+        assert dl.persistent_workers is True
+
+
 class TestDataModuleLogging:
     """Tests for DataModule num_workers logging."""
 
