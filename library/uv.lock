@@ -238,12 +238,12 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-08-25T13:28:45.477657319Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
 markupsafe = false
-pyrealsense2 = { timestamp = "2026-08-31T13:28:45.477683435Z", span = "P1D" }
+pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
 
 [manifest]
 overrides = [
@@ -4223,6 +4223,11 @@ loggers = [
     { name = "tensorboard" },
     { name = "wandb" },
 ]
+molmoact2 = [
+    { name = "peft" },
+    { name = "safetensors" },
+    { name = "transformers" },
+]
 pi0 = [
     { name = "pillow" },
     { name = "safetensors" },
@@ -4265,6 +4270,7 @@ xpu = [
 dev = [
     { name = "diffusers" },
     { name = "mypy" },
+    { name = "peft" },
     { name = "pyrefly" },
     { name = "ruff" },
 ]
@@ -4296,10 +4302,12 @@ requires-dist = [
     { name = "openvino", specifier = ">=2026.3" },
     { name = "openvino-tokenizers", specifier = ">=2026.3" },
     { name = "peft", specifier = ">=0.20.0,<1.0.0" },
+    { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
     { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=a7ee74d0a65bd8f27dc31d831210c7a905e92309" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["molmoact2"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'pi05'" },
     { name = "physicalai-train", extras = ["pi05"], marker = "extra == 'all'" },
@@ -4316,6 +4324,7 @@ requires-dist = [
     { name = "pytest-examples", marker = "extra == 'tests'", specifier = ">=0.0.13" },
     { name = "pytest-mock", marker = "extra == 'tests'" },
     { name = "safetensors", marker = "extra == 'groot'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "safetensors", marker = "extra == 'molmoact2'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'pi0'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'rldx1'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
@@ -4330,17 +4339,19 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
     { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'molmoact2'", specifier = ">=5.5.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.5.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.3.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "executorch", "executorch-openvino", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "molmoact2", "rldx1", "executorch", "executorch-openvino", "all"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "diffusers", specifier = ">=0.38.0" },
     { name = "mypy", specifier = ">=1.19.1" },
+    { name = "peft", specifier = ">=0.13.0,<1.0.0" },
     { name = "pyrefly", specifier = ">=0.18.0" },
     { name = "ruff", specifier = ">=0.14.14" },
 ]

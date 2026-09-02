@@ -140,6 +140,25 @@ class TestObservationSpace:
         finally:
             gym.close()
 
+    def test_camera_name_mapping_renames_output_keys(self):
+        """Mapping changes public image keys while retaining native input keys."""
+        source_camera = "robot0_eye_in_hand"
+        gym = RoboCasaGym(
+            task="CloseFridge",
+            camera_name_mapping={source_camera: "wrist_image"},
+        )
+        try:
+            pixel_spaces = gym.observation_space.spaces["pixels"].spaces
+            assert "wrist_image" in pixel_spaces
+            assert source_camera not in pixel_spaces
+
+            obs = gym.to_observation(
+                {"pixels": {source_camera: np.zeros((8, 8, 3), dtype=np.uint8)}},
+            )
+            assert set(obs.images) == {"wrist_image"}  # type: ignore[arg-type]
+        finally:
+            gym.close()
+
     def test_invalid_obs_type_raises(self):
         """Unknown ``obs_type`` is rejected."""
         with pytest.raises(ValueError, match="Unsupported obs_type"):
@@ -189,6 +208,17 @@ class TestCreateRobocasaGyms:
         finally:
             for g in gyms:
                 g.close()
+
+    def test_forwards_camera_name_mapping(self):
+        gyms = create_robocasa_gyms(
+            ["CloseFridge"],
+            camera_name_mapping={"robot0_eye_in_hand": "wrist_image"},
+        )
+        try:
+            assert gyms[0].camera_name_mapping == {"robot0_eye_in_hand": "wrist_image"}
+        finally:
+            for gym in gyms:
+                gym.close()
 
     def test_create_from_empty_list_raises(self):
         """An empty list raises before instantiating any gym."""

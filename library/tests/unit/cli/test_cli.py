@@ -45,6 +45,10 @@ def _act_config_path() -> Path:
     return _library_root() / "configs" / "physicalai" / "act.yaml"
 
 
+def _molmoact2_config_path() -> Path:
+    return _library_root() / "configs" / "physicalai" / "molmoact2.yaml"
+
+
 def _libero_config_path() -> Path:
     return _library_root() / "configs" / "benchmark" / "libero.yaml"
 
@@ -81,6 +85,16 @@ class TestConfigParsing:
         assert cfg.model.class_path == "physicalai.policies.ACT"
         assert cfg.data.class_path == "physicalai.data.lerobot.LeRobotDataModule"
         assert cfg.trainer.max_steps == 70000
+
+    def test_fit_parser_accepts_molmoact2_config(self) -> None:
+        parser = fit_module.register().parser
+        cfg = parser.parse_args([f"--config={_molmoact2_config_path()}"])
+
+        assert cfg.model.class_path == "physicalai.policies.MolmoAct2"
+        assert cfg.model.init_args.chunk_size == 10
+        assert cfg.model.init_args.use_random_input_noise is True
+        assert cfg.model.init_args.setup_type.startswith("single 2D point-mass pusher")
+        assert cfg.model.init_args.control_mode == "absolute planar end-effector position"
 
     def test_benchmark_parser_accepts_existing_libero_config(self) -> None:
         parser = benchmark_module.register().parser

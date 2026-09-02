@@ -124,15 +124,13 @@ class FeatureNormalizeTransform(nn.Module):
         if batch[key] is None:
             return
 
+        value = batch[key]
         if norm_mode == NormalizationType.MEAN_STD:
             mean = buffer["mean"]
             std = buffer["std"]
             check_inf(mean, "mean")
             check_inf(std, "std")
-            if inverse:
-                batch[key] = batch[key] * std + mean
-            else:
-                batch[key] = (batch[key] - mean) / (std + 1e-8)
+            transformed = value * std + mean if inverse else (value - mean) / (std + 1e-08)
 
         elif norm_mode == NormalizationType.MIN_MAX:
             min_ = buffer["min"]
@@ -140,13 +138,13 @@ class FeatureNormalizeTransform(nn.Module):
             check_inf(min_, "min")
             check_inf(max_, "max")
             if inverse:
-                batch[key] = (batch[key] + 1) / 2
-                batch[key] = batch[key] * (max_ - min_) + min_
+                transformed = (value + 1) / 2
+                transformed = transformed * (max_ - min_) + min_
             else:
                 # normalize to [0,1]
-                batch[key] = (batch[key] - min_) / (max_ - min_ + 1e-8)
+                transformed = (value - min_) / (max_ - min_ + 1e-8)
                 # normalize to [-1, 1]
-                batch[key] = batch[key] * 2 - 1
+                transformed = transformed * 2 - 1
 
         elif norm_mode == NormalizationType.QUANTILES:
             q01 = buffer["q01"]
@@ -159,20 +157,27 @@ class FeatureNormalizeTransform(nn.Module):
                 torch.tensor(1e-8, device=denom.device, dtype=denom.dtype),
                 denom,
             )
-            if inverse:
-                batch[key] = (batch[key] + 1.0) * denom / 2.0 + q01
-            else:
-                batch[key] = 2.0 * (batch[key] - q01) / denom - 1.0
+            transformed = (value + 1.0) * denom / 2.0 + q01 if inverse else 2.0 * (value - q01) / denom - 1.0
 
         elif norm_mode == NormalizationType.IDENTITY:
             # No transformation for identity normalization
-            pass
+            return
 
         else:
             raise ValueError(norm_mode)
 
+        feature_mask = buffer.get("mask")
+        if feature_mask is None:
+            batch[key] = transformed
+            return
+
+        mask = feature_mask.bool()
+        for _ in range(value.ndim - mask.ndim):
+            mask = mask.unsqueeze(0)
+        batch[key] = torch.where(mask.expand_as(value), transformed, value)
+
     @staticmethod
-    def _create_stats_buffers(  # noqa: C901
+    def _create_stats_buffers(  # noqa: C901, PLR0914, PLR0915
         features: dict[str, Feature],
         norm_map: dict[FeatureType, NormalizationType],
     ) -> dict[str, dict[str, nn.ParameterDict]]:
@@ -291,5 +296,11 @@ class FeatureNormalizeTransform(nn.Module):
                     shape,
                 )
 
+            normalization_data = cast("NormalizationParameters", ft.normalization_data)
+            if normalization_data.mask is not None:
+                buffer["mask"] = nn.Parameter(
+                    torch.tensor(normalization_data.mask, dtype=torch.bool).view(shape),
+                    requires_grad=False,
+                )
             stats_buffers[key] = buffer
         return stats_buffers

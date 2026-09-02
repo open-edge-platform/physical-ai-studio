@@ -104,6 +104,14 @@ smolvla = [
     "safetensors>=0.4.3,<1.0.0",
 ]
 
+# MolmoAct2
+# Supports LoRA fine-tuning for efficient adaptation
+molmoact2 = [
+    "transformers>=5.5.0,<5.6.0",
+    "peft>=0.13.0,<1.0.0",
+    "safetensors>=0.4.3,<1.0.0",
+]
+
 # RLWRLD RLDX-1
 rldx1 = [
     "transformers>=5.3.0,<5.6.0",
@@ -128,6 +136,7 @@ all = [
     "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
+    "physicalai-train[molmoact2]",
     "physicalai-train[rldx1]",
 ]
 
@@ -158,6 +167,7 @@ dev = [
     "pyrefly>=0.18.0",
     "ruff>=0.14.14",
     "diffusers>=0.38.0",
+    "peft>=0.13.0,<1.0.0",
 ]
 
 

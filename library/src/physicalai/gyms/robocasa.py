@@ -52,6 +52,7 @@ from gymnasium import spaces
 
 from physicalai.data.observation import Observation
 from physicalai.gyms.base import Gym
+from physicalai.gyms.utils import validate_camera_name_mapping
 
 __all__ = [
     "ACTION_DIM",
@@ -181,10 +182,8 @@ def _split_fields(order: FieldOrder, flat: np.ndarray) -> dict[str, np.ndarray]:
     return out
 
 
-# Default PandaOmron cameras. Raw RoboCasa names are surfaced verbatim as
-# `Observation.images["robot0_*"]` so the keys match the upstream RoboCasa
-# dataset exactly. Per-policy renames go through the
-# RLDX_CAMERA_REMAP_KITCHEN adapter at policy-input time, not here.
+# Default PandaOmron cameras. Raw RoboCasa names are used to retrieve frames;
+# `camera_name_mapping` optionally renames the resulting Observation image keys.
 DEFAULT_CAMERAS: tuple[str, ...] = (
     "robot0_agentview_left",
     "robot0_agentview_right",
@@ -331,6 +330,7 @@ class RoboCasaGym(Gym):
         *,
         task: str,
         camera_names: Sequence[str] | None = None,
+        camera_name_mapping: dict[str, str] | None = None,
         obs_type: str = "pixels_agent_pos",
         render_mode: str = "rgb_array",
         observation_height: int = 256,
@@ -349,6 +349,8 @@ class RoboCasaGym(Gym):
                 here.
             camera_names: Camera views to include. Defaults to the three
                 ``robot0_*`` cameras in ``DEFAULT_CAMERAS``.
+            camera_name_mapping: Optional rename from native output camera keys
+                to policy-facing image keys.
             obs_type: ``"pixels_agent_pos"`` for images + state, or
                 ``"pixels"`` for images only.
             render_mode: Passed through to RoboCasa (``"rgb_array"`` only).
@@ -385,6 +387,7 @@ class RoboCasaGym(Gym):
         self.split = split
         self.obj_registries = tuple(obj_registries) if obj_registries is not None else DEFAULT_OBJ_REGISTRIES
         self.camera_names = list(camera_names) if camera_names is not None else list(DEFAULT_CAMERAS)
+        self.camera_name_mapping = validate_camera_name_mapping(camera_name_mapping, self.camera_names)
         self.state_order = state_order if state_order is not None else DEFAULT_STATE_ORDER
         self.action_order = action_order if action_order is not None else DEFAULT_ACTION_ORDER
 
@@ -397,6 +400,10 @@ class RoboCasaGym(Gym):
         self.task_description = ""
 
         self._setup_spaces()
+
+    def _mapped_output_camera_key(self, camera_name: str) -> str:
+        """Return the public image key for a native RoboCasa camera name."""
+        return self.camera_name_mapping.get(camera_name, camera_name)
 
     def _setup_spaces(self) -> None:
         """Build observation/action spaces.
@@ -411,7 +418,7 @@ class RoboCasaGym(Gym):
                 shape=(self.observation_height, self.observation_width, 3),
                 dtype=np.uint8,
             )
-            for cam in self.camera_names
+            for cam in (self._mapped_output_camera_key(camera_name) for camera_name in self.camera_names)
         }
 
         if self.obs_type == "pixels":
@@ -498,8 +505,9 @@ class RoboCasaGym(Gym):
         Args:
             raw_obs: Output of ``_format_raw_obs`` (a ``pixels[/agent_pos]``
                 dict).
-            camera_keys: Camera names to include. Defaults to
-                ``self.camera_names``.
+            camera_keys: Native camera names to include. Defaults to
+                ``self.camera_names``; output names apply
+                ``camera_name_mapping``.
 
         Returns:
             ``Observation`` with ``images``, optional ``state``, and
@@ -510,17 +518,17 @@ class RoboCasaGym(Gym):
 
         images: dict[str, torch.Tensor] = {}
         if "pixels" in raw_obs:
-            for cam in camera_keys:
-                if cam not in raw_obs["pixels"]:
+            for camera_name in camera_keys:
+                if camera_name not in raw_obs["pixels"]:
                     continue
-                img = raw_obs["pixels"][cam]
+                img = raw_obs["pixels"][camera_name]
                 if not isinstance(img, torch.Tensor):
                     img = torch.from_numpy(img)
                 if img.ndim == 3 and img.shape[-1] == 3:  # noqa: PLR2004
                     img = img.permute(2, 0, 1)  # HWC → CHW
                 if img.dtype == torch.uint8:
                     img = img.float() / 255.0
-                images[cam] = img.unsqueeze(0)  # (C, H, W) → (1, C, H, W)
+                images[self._mapped_output_camera_key(camera_name)] = img.unsqueeze(0)  # (C, H, W) → (1, C, H, W)
 
         obs_dict: dict[str, Any] = {"images": images or None}
 
@@ -634,6 +642,7 @@ def create_robocasa_gyms(
     tasks: RoboCasaTaskGroup | Sequence[str],
     *,
     camera_names: Sequence[str] | None = None,
+    camera_name_mapping: dict[str, str] | None = None,
     obs_type: str = "pixels_agent_pos",
     observation_height: int = 256,
     observation_width: int = 256,
@@ -655,6 +664,7 @@ def create_robocasa_gyms(
             names. Bare strings are rejected -- pass a list even for a
             single explicit task name (e.g. ``["CloseFridge"]``).
         camera_names: Forwarded to each ``RoboCasaGym``.
+        camera_name_mapping: Forwarded to each ``RoboCasaGym``.
         obs_type: Forwarded to each ``RoboCasaGym``.
         observation_height: Image height in pixels.
         observation_width: Image width in pixels.
@@ -712,6 +722,7 @@ def create_robocasa_gyms(
         RoboCasaGym(
             task=name,
             camera_names=camera_names,
+            camera_name_mapping=camera_name_mapping,
             obs_type=obs_type,
             observation_height=observation_height,
             observation_width=observation_width,

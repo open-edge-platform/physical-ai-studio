@@ -1,0 +1,59 @@
+# MolmoAct2 Policy Training Configuration
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/molmoact2.yaml
+model:
+  class_path: physicalai.policies.MolmoAct2
+  init_args:
+    # Pretrained checkpoint
+    pretrained_name_or_path: allenai/MolmoAct2
+
+    # Observation / action configuration
+    n_obs_steps: 1
+    chunk_size: 10
+    n_action_steps: 10
+
+    # Noise
+    use_random_input_noise: true
+
+    # LoRA
+    use_lora: true
+    enable_lora_action_expert: false
+    lora_rank: 64
+    lora_alpha: 16
+    lora_dropout: 0.05
+    lora_bias: none
+
+    # Memory optimization
+    gradient_checkpointing: true
+
+    # Environment metadata
+    setup_type: "single 2D point-mass pusher robot in the PushT block-pushing simulation"
+    control_mode: "absolute planar end-effector position"
+
+    # Learning rates
+    optimizer_lr: 5e-5
+    optimizer_vit_lr: 5e-5
+    optimizer_connector_lr: 5e-5
+    optimizer_action_expert_lr: 5e-5
+    optimizer_grad_clip_norm: 1.0
+
+    # Scheduler
+    scheduler_warmup_steps: 200
+    scheduler_decay_steps: 15000
+    scheduler_decay_lr: 1e-6
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: lerobot/pusht
+    train_batch_size: 8
+    data_format: physicalai
+
+trainer:
+  max_epochs: 30
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 20
+  check_val_every_n_epoch: 1

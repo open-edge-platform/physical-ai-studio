@@ -15,6 +15,71 @@ from physicalai.policies.utils.normalization import FeatureNormalizeTransform, N
 class TestFeatureNormalizeTransform:
     """Tests for FeatureNormalizeTransform class."""
 
+    @pytest.mark.parametrize(
+        ("normalization_type", "normalization_data", "values", "expected"),
+        [
+            (
+                NormalizationType.MEAN_STD,
+                NormalizationParameters(mean=[1.0, 2.0, 3.0], std=[2.0, 5.0, 1.0], mask=[True, False, True]),
+                torch.tensor([[3.0, 7.0, 5.0]]),
+                torch.tensor([[1.0, 7.0, 2.0]]),
+            ),
+            (
+                NormalizationType.MIN_MAX,
+                NormalizationParameters(min=[0.0, 2.0, -1.0], max=[4.0, 6.0, 1.0], mask=[True, False, True]),
+                torch.tensor([[2.0, 5.0, 0.0]]),
+                torch.tensor([[0.0, 5.0, 0.0]]),
+            ),
+            (
+                NormalizationType.QUANTILES,
+                NormalizationParameters(q01=[0.0, 2.0, 1.0], q99=[2.0, 6.0, 3.0], mask=[True, False, True]),
+                torch.tensor([[1.0, 5.0, 2.0]]),
+                torch.tensor([[0.0, 5.0, 0.0]]),
+            ),
+        ],
+    )
+    def test_masked_normalization_and_inverse(
+        self,
+        normalization_type,
+        normalization_data,
+        values,
+        expected,
+    ):
+        """Only masked dimensions transform in every statistical mode."""
+        features = {
+            "state": Feature(
+                normalization_data=normalization_data,
+                shape=(3,),
+                ftype=FeatureType.STATE,
+            ),
+        }
+        norm_map = {FeatureType.STATE: normalization_type}
+        normalized = FeatureNormalizeTransform(features, norm_map)({"state": values.clone()})
+        torch.testing.assert_close(normalized["state"], expected)
+
+        denormalized = FeatureNormalizeTransform(features, norm_map, inverse=True)(normalized)
+        torch.testing.assert_close(denormalized["state"], values)
+
+    def test_normalization_without_mask_transforms_all_dimensions(self):
+        """An unset mask preserves the original all-dimensions behavior."""
+        features = {
+            "state": Feature(
+                normalization_data=NormalizationParameters(
+                    mean=[1.0, 2.0, 3.0],
+                    std=[2.0, 5.0, 1.0],
+                ),
+                shape=(3,),
+                ftype=FeatureType.STATE,
+            ),
+        }
+        values = torch.tensor([[3.0, 7.0, 5.0]])
+        normalized = FeatureNormalizeTransform(
+            features,
+            {FeatureType.STATE: NormalizationType.MEAN_STD},
+        )({"state": values.clone()})
+
+        torch.testing.assert_close(normalized["state"], torch.tensor([[1.0, 1.0, 2.0]]))
+
     @pytest.fixture
     def sample_features(self):
         """Sample features for testing."""

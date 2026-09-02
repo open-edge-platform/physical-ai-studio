@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from physicalai.benchmark.gyms import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
+from physicalai.benchmark.gyms import Benchmark, BenchmarkResults, LiberoBenchmark, PushTBenchmark, TaskResult
 from physicalai.benchmark.gyms.robocasa.robocasa import RoboCasaBenchmark
 
 
@@ -102,9 +102,27 @@ class TestLiberoBenchmark:
             b = LiberoBenchmark(task_suite="libero_spatial", task_ids=[0, 1, 2])
         assert b.task_ids == [0, 1, 2] and len(b.gyms) == 3
 
+    def test_forwards_camera_name_mapping(self):
+        mapping = {"image2": "wrist_image"}
+        with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock()]) as factory:
+            LiberoBenchmark(task_suite="libero_10", camera_name_mapping=mapping)
+        assert factory.call_args.kwargs["camera_name_mapping"] == mapping
+
     def test_repr(self):
         with patch("physicalai.gyms.create_libero_gyms", return_value=[MagicMock()]):
             assert "libero_10" in repr(LiberoBenchmark(task_suite="libero_10"))
+
+
+class TestPushTBenchmark:
+    def test_forwards_camera_name_mapping(self):
+        with patch("physicalai.benchmark.gyms.pusht.pusht.PushTGym") as gym_cls:
+            gym_cls.return_value = MagicMock()
+            PushTBenchmark(camera_name_mapping={"top": "image"})
+        gym_cls.assert_called_once_with(
+            obs_type="pixels_agent_pos",
+            device="cpu",
+            camera_name_mapping={"top": "image"},
+        )
 
 
 class TestRoboCasaBenchmark:

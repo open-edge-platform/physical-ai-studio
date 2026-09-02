@@ -62,6 +62,8 @@ class PushTBenchmark(Benchmark):
         max_steps: Max steps per episode (default: 300).
         obs_type: Observation type for the underlying gym.
         device: Torch device.
+        camera_name_mapping: Optional rename from the ``"top"`` image key to
+            a policy-facing image key.
         video_dir: Directory to save episode videos. None disables recording.
         record_mode: "all", "successes", "failures", or "none".
         show_progress: Show tqdm progress bar. "auto" = only when stderr is a tty.
@@ -74,6 +76,9 @@ class PushTBenchmark(Benchmark):
         Parallel workers:
         >>> benchmark = PushTBenchmark(num_envs=8)
         >>> results = benchmark.evaluate(policy)
+
+        Rename the camera key:
+        >>> benchmark = PushTBenchmark(camera_name_mapping={"top": "image"})
     """
 
     def __init__(
@@ -84,6 +89,7 @@ class PushTBenchmark(Benchmark):
         max_steps: int = MAX_STEPS,
         obs_type: str = "pixels_agent_pos",
         device: str | torch.device = "cpu",
+        camera_name_mapping: dict[str, str] | None = None,
         video_dir: str | Path | None = None,
         record_mode: str = "failures",
         *,
@@ -97,9 +103,14 @@ class PushTBenchmark(Benchmark):
                 async_mode=True,
                 obs_type=obs_type,
                 device=device,
+                camera_name_mapping=camera_name_mapping,
             )
         else:
-            gym = PushTGym(obs_type=obs_type, device=device)
+            gym = PushTGym(
+                obs_type=obs_type,
+                device=device,
+                camera_name_mapping=camera_name_mapping,
+            )
 
         super().__init__(
             gyms=[gym],
@@ -113,6 +124,7 @@ class PushTBenchmark(Benchmark):
 
         self.num_envs = num_envs
         self.obs_type = obs_type
+        self.camera_name_mapping = camera_name_mapping
         self.frame_key = "top"
 
     def _build_metadata(self, policy: Any) -> dict[str, Any]:  # noqa: ANN401

@@ -38,6 +38,7 @@ class PushTGym(GymnasiumGym):
         gym_id: str = "gym_pusht/PushT-v0",
         obs_type: str = "pixels_agent_pos",
         device: str | torch.device = "cpu",
+        camera_name_mapping: dict[str, str] | None = None,
         **gym_kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize the PushT Gym environment.
@@ -46,12 +47,15 @@ class PushTGym(GymnasiumGym):
             gym_id: Environment ID for ``gym.make``.
             obs_type: Requested observation type.
             device: Torch device.
+            camera_name_mapping: Optional rename from the ``"top"`` image key
+                to the policy-facing image key.
             **gym_kwargs: Additional gym keyword arguments.
         """
         super().__init__(
             gym_id=gym_id,
             obs_type=obs_type,
             device=device,
+            camera_name_mapping=camera_name_mapping,
             **gym_kwargs,
         )
 

@@ -52,6 +52,22 @@ class TestLiberoGym:
         # Action space
         assert gym.action_space.shape == (7,)
 
+    def test_camera_name_mapping_renames_wrist_camera(self):
+        """Camera mappings apply after LIBERO's standard output normalization."""
+        gym_instance = LiberoGym(
+            task_suite="libero_spatial",
+            task_id=0,
+            camera_name_mapping={"image2": "wrist_image"},
+            init_states=False,
+        )
+        try:
+            assert "wrist_image" in gym_instance.observation_space.spaces["pixels"].spaces
+            obs, _ = gym_instance.reset(seed=42)
+            assert "wrist_image" in obs.images
+            assert "image2" not in obs.images
+        finally:
+            gym_instance.close()
+
     def test_reset_and_step(self, gym):
         """Test reset and step methods."""
         obs, info = gym.reset(seed=42)

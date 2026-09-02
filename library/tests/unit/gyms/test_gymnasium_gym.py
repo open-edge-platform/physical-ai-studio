@@ -1,4 +1,5 @@
 """Test gymnasium wrapper."""
+import numpy as np
 import pytest
 import torch
 from physicalai.gyms import GymnasiumGym
@@ -59,6 +60,32 @@ def test_step_returns_batched_elements():
     assert isinstance(info, dict)
 
     env.close()
+
+
+def test_camera_name_mapping_renames_detected_image_outputs():
+    """Camera mapping renames image keys without changing non-image fields."""
+    env = GymnasiumGym(gym_id="CartPole-v1", render_mode=None, camera_name_mapping={"camera": "wrist_image"})
+    try:
+        obs = env.to_observation(
+            {
+                "camera": np.zeros((8, 8, 3), dtype=np.uint8),
+                "agent_pos": np.array([1.0, 2.0], dtype=np.float32),
+            },
+        )
+        assert set(obs.images) == {"wrist_image"}  # type: ignore[arg-type]
+        assert obs.state is not None
+    finally:
+        env.close()
+
+
+def test_camera_name_mapping_rejects_unknown_image_key():
+    """Mapping keys must be present in the converted image outputs."""
+    env = GymnasiumGym(gym_id="CartPole-v1", render_mode=None, camera_name_mapping={"unknown": "wrist_image"})
+    try:
+        with pytest.raises(ValueError, match="Unknown keys"):
+            env.to_observation({"camera": np.zeros((8, 8, 3), dtype=np.uint8)})
+    finally:
+        env.close()
 
 
 @pytest.mark.parametrize("num_envs", [2, 4])
