@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import {
     ActionButton,
@@ -15,10 +15,11 @@ import {
     View,
 } from '@geti-ui/ui';
 import { Add, Delete } from '@geti-ui/ui/icons';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData } from '@tanstack/react-query';
 
-import { SchemaEpisode } from '../../api/openapi-spec';
+import { $api } from '../../api/client';
 import { useDeleteEpisodeQuery } from '../../features/datasets/episodes/use-episodes';
+import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 import { pluralize } from '../../utils';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
@@ -28,15 +29,14 @@ import { EpisodeViewer } from './episode-viewer';
 
 export const DatasetViewer = () => {
     const { dataset, episodes, selectedEpisodes, setSelectedEpisodes } = useDataset();
+    const { project_id } = useProjectId();
 
     const { deleteEpisodes, isPending } = useDeleteEpisodeQuery(dataset.id!);
     const [currentEpisode, setCurrentEpisode] = useState<number | null>(null);
 
-    useEffect(() => {
-        if (episodes.length > 0 && currentEpisode === null) {
-            setCurrentEpisode(episodes[0].episode_index);
-        }
-    }, [episodes, currentEpisode]);
+    if (episodes.length > 0 && currentEpisode === null) {
+        setCurrentEpisode(episodes[0].episode_index);
+    }
 
     const currentEpisodeIndex = useMemo(() => {
         if (currentEpisode !== null && episodes.some((episode) => episode.episode_index === currentEpisode)) {
@@ -46,21 +46,29 @@ export const DatasetViewer = () => {
         return episodes[0]?.episode_index ?? null;
     }, [currentEpisode, episodes]);
 
-    const { data: selectedEpisode, isLoading: isEpisodeLoading } = useQuery({
-        queryKey: ['dataset-episode', dataset.id, currentEpisodeIndex],
-        enabled: currentEpisodeIndex !== null,
-        queryFn: async (): Promise<SchemaEpisode> => {
-            const response = await fetch(
-                `/api/dataset/${encodeURIComponent(dataset.id!)}/episodes/${encodeURIComponent(currentEpisodeIndex!)}`
-            );
+    const { data: environment } = $api.useSuspenseQuery(
+        'get',
+        '/api/projects/{project_id}/environments/{environment_id}',
+        {
+            params: { path: { project_id, environment_id: dataset.environment_id } },
+        }
+    );
 
-            if (!response.ok) {
-                throw new Error(`Failed to load episode ${currentEpisodeIndex}`);
-            }
-
-            return (await response.json()) as SchemaEpisode;
+    const { data: selectedEpisode, isLoading: isEpisodeLoading } = $api.useQuery(
+        'get',
+        '/api/dataset/{dataset_id}/episodes/{episode_index}',
+        {
+            params: {
+                path: {
+                    dataset_id: String(dataset.id),
+                    episode_index: currentEpisodeIndex,
+                },
+            },
         },
-    });
+        {
+            placeholderData: keepPreviousData,
+        }
+    );
 
     const recordPath = paths.project.datasets.record({ project_id: dataset.project_id, dataset_id: dataset.id! });
 
@@ -88,7 +96,7 @@ export const DatasetViewer = () => {
                 {isEpisodeLoading || !selectedEpisode ? (
                     <Loading />
                 ) : (
-                    <EpisodeViewer episode={selectedEpisode} dataset={dataset} />
+                    <EpisodeViewer episode={selectedEpisode} dataset={dataset} environment={environment} />
                 )}
             </View>
             <Divider orientation='vertical' size='S' />
