@@ -194,8 +194,8 @@ class RTCModelMixin:
         correction = err
 
         # Adaptive guidance weight
-        max_gw = max_guidance_weight.float()
-        tau_t = torch.as_tensor(tau)
+        max_gw = max_guidance_weight.to(dtype=torch.float32)
+        tau_t = torch.as_tensor(tau, dtype=max_gw.dtype, device=max_gw.device)
         squared_one_minus_tau = (1.0 - tau_t) ** 2
         inv_r2 = (squared_one_minus_tau + tau_t**2) / squared_one_minus_tau
 
