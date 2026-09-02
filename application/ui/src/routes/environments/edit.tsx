@@ -1,12 +1,11 @@
 import { FormPreviewLayout } from '../../components/form-preview-layout';
-import { EnvironmentForm } from '../../features/robots/environment-form/form';
 import { Preview } from '../../features/robots/environment-form/preview';
 import {
     EnvironmentFormProvider,
     EnvironmentFormState,
     RobotConfiguration,
 } from '../../features/robots/environment-form/provider';
-import { UpdateEnvironmentButton } from '../../features/robots/environment-form/update-environment-button';
+import { UpdateEnvironmentForm } from '../../features/robots/environment-form/update-form';
 import { useEnvironment } from '../../features/robots/use-environment';
 
 export const Edit = () => {
@@ -33,7 +32,7 @@ export const Edit = () => {
     return (
         <EnvironmentFormProvider environment={environmentForm}>
             <FormPreviewLayout
-                form={<EnvironmentForm heading='Update environment' submitButton={<UpdateEnvironmentButton />} />}
+                form={<UpdateEnvironmentForm />}
                 preview={<Preview />}
                 previewProps={{ backgroundColor: 'gray-50' }}
             />
