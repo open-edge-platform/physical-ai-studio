@@ -69,7 +69,8 @@ const EpisodeTimelineComponent = () => {
                     <LiveEpisodeChart episode={episode} player={player} />
                 </DisclosurePanel>
             </Disclosure>
-            <TimelineControls player={player} />
+            {/* We reset the time controls state for the new episode */}
+            <TimelineControls key={episode.episode_index} player={player} />
         </div>
     );
 };

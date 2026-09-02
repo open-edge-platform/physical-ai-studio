@@ -4,24 +4,15 @@ import { fetchClient } from '../../../api/client';
 import { SchemaEpisodeVideo } from '../../../api/openapi-spec';
 import { useFittedMediaSize } from '../../cameras/use-fitted-media-size';
 import { useEpisodeViewer } from './episode-viewer-provider.component';
+import { Player } from './use-player';
 
-export const EpisodeVideoCell = ({ videoId, datasetId }: { videoId: string; datasetId: string | undefined }) => {
-    const { player, episode } = useEpisodeViewer();
+type EpisodeVideoProps = {
+    url: string | undefined;
+    player: Player;
+    episodeVideo: SchemaEpisodeVideo | undefined;
+};
 
-    const episodeVideo: SchemaEpisodeVideo | undefined = episode.videos[videoId];
-
-    const url =
-        episodeVideo === undefined || datasetId === undefined
-            ? undefined
-            : fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
-                  params: {
-                      path: {
-                          dataset_id: datasetId,
-                          video_path: episodeVideo.path,
-                      },
-                  },
-              });
-
+const EpisodeVideo = ({ url, player, episodeVideo }: EpisodeVideoProps) => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
@@ -60,4 +51,24 @@ export const EpisodeVideoCell = ({ videoId, datasetId }: { videoId: string; data
             {url !== undefined && <video ref={videoRef} src={url} width={width} height={height} />}
         </div>
     );
+};
+
+export const EpisodeVideoCell = ({ videoId, datasetId }: { videoId: string; datasetId: string | undefined }) => {
+    const { player, episode } = useEpisodeViewer();
+
+    const episodeVideo: SchemaEpisodeVideo | undefined = episode.videos[videoId];
+
+    const url =
+        episodeVideo === undefined || datasetId === undefined
+            ? undefined
+            : fetchClient.PATH('/api/dataset/{dataset_id}/video/{video_path}', {
+                  params: {
+                      path: {
+                          dataset_id: datasetId,
+                          video_path: episodeVideo.path,
+                      },
+                  },
+              });
+
+    return <EpisodeVideo key={episode.episode_index} url={url} player={player} episodeVideo={episodeVideo} />;
 };
