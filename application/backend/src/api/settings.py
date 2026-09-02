@@ -3,11 +3,9 @@
 
 """User-configurable application settings API."""
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 from pydantic import BaseModel
 
-from api.dependencies import HealthServiceDep
-from api.system import restart_server
 from settings import (
     HuggingFaceSettings,
     Settings,
@@ -52,22 +50,8 @@ async def get_user_settings() -> UserSettingsResponse:
 
 
 @router.patch("")
-async def update_user_settings(
-    update: SettingsUpdate,
-    background_tasks: BackgroundTasks,
-    health_service: HealthServiceDep,
-) -> UserSettingsResponse:
-    """Persist the supplied fields and return effective settings.
-
-    Toggling the SSH remote-trainer master switch (``ssh.enabled``) only takes
-    effect after a full backend restart: `core.security.get_ssh_feature_availability`
-    is cached for the life of the process and `app.state.ssh_feature_availability`
-    is pinned once at startup. So, exactly when that field's effective value
-    changes, this calls the same `POST /api/system/restart` handler directly -
-    the save still completes and is reflected in the response; only the
-    running process's behavior lags until the restart lands.
-    """
-    previously_enabled = get_settings().ssh_remote_trainer_enabled
+async def update_user_settings(update: SettingsUpdate) -> UserSettingsResponse:
+    """Persist the supplied fields and return effective settings."""
     patch = update.model_dump(exclude_unset=True)
     if "ssh" in patch:
         # The SSH knobs are grouped for the API and the UI but stored flat,
@@ -75,7 +59,4 @@ async def update_user_settings(
         # keeps its own documented `SSH_*` environment alias.
         patch.update(ssh_patch_to_flat(patch.pop("ssh")))
     merge_user_settings(patch)
-    response = UserSettingsResponse.from_settings(get_settings())
-    if response.ssh.enabled != previously_enabled:
-        await restart_server(background_tasks, health_service)
-    return response
+    return UserSettingsResponse.from_settings(get_settings())

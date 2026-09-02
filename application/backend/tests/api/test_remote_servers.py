@@ -17,7 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.dependencies import get_remote_server_service, require_ssh_feature_active
-from core.security import SshFeatureAvailability
+from core.security import SshFeatureAvailability, get_ssh_feature_availability
 from exceptions import ResourceNotFoundError, ResourceType
 from main import app
 from schemas.hardware import DeviceType
@@ -110,7 +110,7 @@ def _gpu_busy_warning_result() -> PreflightResult:
 
 
 def _active() -> SshFeatureAvailability:
-    return SshFeatureAvailability(enabled=True, network_exposed=False)
+    return SshFeatureAvailability(network_exposed=False)
 
 
 @pytest.fixture(autouse=True)
@@ -148,28 +148,59 @@ def test_list_remote_servers_non_empty():
     assert body[0]["id"] == str(server.id)
 
 
-def test_list_remote_servers_fails_closed_when_feature_inactive():
-    """No override for `require_ssh_feature_active`: the real (disabled-by-default) check runs."""
+def test_list_remote_servers_fails_closed_when_network_exposed(monkeypatch: pytest.MonkeyPatch):
+    """No override for `require_ssh_feature_active`: the real check runs.
+
+    There is no on/off switch anymore - the feature is always active - so this
+    exercises the one thing that still fails it closed: binding to a
+    non-loopback address.
+    """
     del app.dependency_overrides[require_ssh_feature_active]
+    monkeypatch.setenv("HOST", "0.0.0.0")
+    get_ssh_feature_availability.cache_clear()
     service = AsyncMock()
     service.list_remote_servers.return_value = []
     app.dependency_overrides[get_remote_server_service] = lambda: service
 
-    response = TestClient(app).get("/api/remote-servers")
+    try:
+        response = TestClient(app).get("/api/remote-servers")
+    finally:
+        get_ssh_feature_availability.cache_clear()
 
     assert response.status_code == 503
 
 
-def test_feature_status_endpoint_reports_disabled_by_default():
+def test_feature_status_endpoint_reports_active_on_loopback(monkeypatch: pytest.MonkeyPatch):
     """Reachable with no dependency override and no auth - it explains the 503 above."""
     del app.dependency_overrides[require_ssh_feature_active]
+    monkeypatch.setenv("HOST", "127.0.0.1")
+    get_ssh_feature_availability.cache_clear()
 
-    response = TestClient(app).get("/api/remote-servers/feature-status")
+    try:
+        response = TestClient(app).get("/api/remote-servers/feature-status")
+    finally:
+        get_ssh_feature_availability.cache_clear()
 
     assert response.status_code == 200
     body = response.json()
-    assert body["enabled"] is False
     assert body["network_exposed"] is False
+
+
+def test_feature_status_endpoint_reports_network_exposed(monkeypatch: pytest.MonkeyPatch):
+    """The unauthenticated status endpoint reflects the fail-closed check too."""
+    del app.dependency_overrides[require_ssh_feature_active]
+    monkeypatch.setenv("HOST", "0.0.0.0")
+    get_ssh_feature_availability.cache_clear()
+
+    try:
+        response = TestClient(app).get("/api/remote-servers/feature-status")
+    finally:
+        get_ssh_feature_availability.cache_clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["network_exposed"] is True
+    assert body["reason"] is not None
 
 
 def test_list_ssh_host_aliases_returns_mocked_list(monkeypatch: pytest.MonkeyPatch):

@@ -697,7 +697,7 @@ class TrainerProtocolVersionMismatchError(BaseException):
 
 
 class SshFeatureDisabledError(BaseException):
-    """Raised when the SSH remote-trainer feature is off, or fails closed on network exposure.
+    """Raised when the SSH remote-trainer feature fails closed on network exposure.
 
     Carries the evaluated reason (if any) rather than any server/alias detail,
     since this error can reach an unauthenticated caller.

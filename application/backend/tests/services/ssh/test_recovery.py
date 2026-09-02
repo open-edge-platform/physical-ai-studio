@@ -30,9 +30,8 @@ from services.ssh.recovery import recover_ssh_jobs
 # test individually.
 pytestmark = pytest.mark.anyio
 
-_ACTIVE = SshFeatureAvailability(enabled=True, network_exposed=False)
-_INACTIVE_DISABLED = SshFeatureAvailability(enabled=False, network_exposed=False)
-_INACTIVE_EXPOSED = SshFeatureAvailability(enabled=True, network_exposed=True, reason="network-exposed")
+_ACTIVE = SshFeatureAvailability(network_exposed=False)
+_INACTIVE_EXPOSED = SshFeatureAvailability(network_exposed=True, reason="network-exposed")
 
 
 @pytest.fixture(autouse=True)
@@ -340,13 +339,13 @@ async def test_missing_server_fails_the_active_job_without_touching_other_server
     assert [server_id for server_id, _ in FakeProvisioningService.sweep_calls] == [known_server.id]
 
 
-@pytest.mark.parametrize("inactive", [_INACTIVE_DISABLED, _INACTIVE_EXPOSED])
+@pytest.mark.parametrize("inactive", [_INACTIVE_EXPOSED])
 async def test_recovery_is_skipped_entirely_when_ssh_feature_is_inactive(inactive) -> None:
-    """A disabled or network-exposed feature must never dial SSH or touch a container.
+    """A network-exposed feature must never dial SSH or touch a container.
 
     Regression test for the gap where a prior active run's `JobProvisioningDB`
     rows would still be reattached/swept (real SSH connections, real `docker
-    stop`/`rm`) after the feature was turned off or started failing closed.
+    stop`/`rm`) after the feature started failing closed.
     """
     server = _server()
     row = _row(server)

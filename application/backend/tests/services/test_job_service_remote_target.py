@@ -21,7 +21,7 @@ from services.job_service import JobService
 MODULE = "services.job_service"
 SSH_MODULE = "services.training_targets.ssh"
 
-_ACTIVE = SshFeatureAvailability(enabled=True, network_exposed=False)
+_ACTIVE = SshFeatureAvailability(network_exposed=False)
 
 
 def _session_context() -> AsyncMock:
@@ -322,8 +322,8 @@ async def test_submit_ssh_job_rejects_continuing_from_an_existing_model() -> Non
 
 
 @pytest.mark.anyio
-async def test_submit_ssh_job_rejects_when_feature_disabled() -> None:
-    """The default (feature-off) availability blocks submission before any server lookup."""
+async def test_submit_ssh_job_rejects_when_feature_fails_closed_on_network_exposure_before_lookup() -> None:
+    """A network-exposed availability blocks submission before any server lookup."""
     session = _session_context()
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
@@ -343,7 +343,7 @@ async def test_submit_ssh_job_rejects_when_feature_disabled() -> None:
         patch(f"{MODULE}.JobRepository", return_value=repository),
         patch(
             f"{MODULE}.get_ssh_feature_availability",
-            return_value=SshFeatureAvailability(enabled=False, network_exposed=False),
+            return_value=SshFeatureAvailability(network_exposed=True, reason="bound to a non-loopback address"),
         ),
         pytest.raises(SshFeatureDisabledError),
     ):
@@ -355,7 +355,7 @@ async def test_submit_ssh_job_rejects_when_feature_disabled() -> None:
 
 @pytest.mark.anyio
 async def test_submit_ssh_job_rejects_when_feature_fails_closed_on_network_exposure() -> None:
-    """Enabled but network-exposed is still inactive, and fails closed the same way."""
+    """Network-exposed availability fails closed the same way regardless of caller."""
     session = _session_context()
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
@@ -369,7 +369,7 @@ async def test_submit_ssh_job_rejects_when_feature_fails_closed_on_network_expos
         remote_server_id=uuid4(),
     )
 
-    exposed = SshFeatureAvailability(enabled=True, network_exposed=True, reason="bound to a non-loopback address")
+    exposed = SshFeatureAvailability(network_exposed=True, reason="bound to a non-loopback address")
 
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),
