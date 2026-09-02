@@ -126,6 +126,36 @@ describe('TrainingTargetsPage', () => {
         ).toBeInTheDocument();
     });
 
+    it('hides the SSH target-type toggle in the create dialog when SSH is unavailable', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.get(REMOTE_SERVERS_PATH, () =>
+                HttpResponse.json(
+                    {
+                        error_code: 'ssh_feature_unavailable',
+                        message: 'The SSH remote-trainer feature is not available.',
+                        http_status: 503,
+                    } as never,
+                    { status: 503 }
+                )
+            )
+        );
+
+        render(<TrainingTargetsPage />);
+
+        await user.click(await screen.findByRole('button', { name: /new training target/i }));
+        const dialog = await screen.findByRole('dialog');
+
+        // No choice to make when SSH isn't available in this environment, so
+        // the toggle and its explanatory hint are omitted entirely, and the
+        // form goes straight to the direct-URL trainer fields.
+        expect(within(dialog).queryByText('Target type')).not.toBeInTheDocument();
+        expect(within(dialog).queryByRole('button', { name: 'SSH provisioned' })).not.toBeInTheDocument();
+        expect(within(dialog).getByLabelText(/trainer url/i)).toBeInTheDocument();
+        expect(within(dialog).getByRole('button', { name: 'Add trainer' })).toBeInTheDocument();
+    });
+
     it('creates a configured remote trainer URL', async () => {
         const user = userEvent.setup();
         let trainers: (typeof remoteTrainer)[] = [];

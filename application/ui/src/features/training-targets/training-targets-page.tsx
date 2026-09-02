@@ -76,7 +76,9 @@ export const TrainingTargetsPage = () => {
             )}
 
             <DialogContainer onDismiss={() => setAction(undefined)}>
-                {action?.type === 'create' && <TrainingTargetForm close={() => setAction(undefined)} />}
+                {action?.type === 'create' && (
+                    <TrainingTargetForm close={() => setAction(undefined)} sshAvailable={!sshUnavailable} />
+                )}
                 {action?.type === 'edit' && action.row.kind === 'direct-url' && (
                     <RemoteTrainerForm remoteTrainer={action.row.trainer} close={() => setAction(undefined)} />
                 )}

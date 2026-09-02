@@ -37,6 +37,14 @@ const DEVICE_TYPE_DESCRIPTION = 'Determines which trainer image is provisioned.'
 
 type TrainingTargetFormProps = {
     close: () => void;
+    // Whether the SSH-provisioned target type is selectable at all. The
+    // backend fails closed on every SSH-provisioned route whenever this
+    // Studio instance is not eligible to run the feature (e.g. it is bound to
+    // more than loopback, see `training-targets-page.tsx`), so the type
+    // switch below only makes sense to show when there is an actual choice
+    // to make. When SSH is unavailable, this form always behaves as the
+    // direct-URL trainer form.
+    sshAvailable: boolean;
 };
 
 /**
@@ -45,8 +53,8 @@ type TrainingTargetFormProps = {
  * dialogs — the two target kinds share the Name field and this shell, and
  * only the fields below the switch change.
  */
-export const TrainingTargetForm = ({ close }: TrainingTargetFormProps) => {
-    const [targetType, setTargetType] = useState<TargetType>('ssh');
+export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormProps) => {
+    const [targetType, setTargetType] = useState<TargetType>(sshAvailable ? 'ssh' : 'direct-url');
     const [name, setName] = useState('');
     const [url, setUrl] = useState('');
     const [sshHostAlias, setSshHostAlias] = useState<string | undefined>(undefined);
@@ -137,31 +145,41 @@ export const TrainingTargetForm = ({ close }: TrainingTargetFormProps) => {
                             width='100%'
                         />
 
-                        <Flex direction='column' gap='size-75'>
-                            <Text UNSAFE_className={classes.toggleLabel}>Target type</Text>
-                            <ToggleButtons
-                                options={TARGET_TYPES}
-                                selectedOption={targetType}
-                                onOptionChange={setTargetType}
-                                getLabel={(option) => TARGET_TYPE_LABELS[option]}
-                            />
-                            <Text UNSAFE_className={classes.hint}>
-                                SSH targets launch a trainer container per job. Direct endpoints run an already-managed
-                                trainer.
-                            </Text>
-                        </Flex>
+                        {sshAvailable && (
+                            <Flex direction='column' gap='size-75'>
+                                <Text UNSAFE_className={classes.toggleLabel}>Target type</Text>
+                                <ToggleButtons
+                                    options={TARGET_TYPES}
+                                    selectedOption={targetType}
+                                    onOptionChange={setTargetType}
+                                    getLabel={(option) => TARGET_TYPE_LABELS[option]}
+                                />
+                                <Text UNSAFE_className={classes.hint}>
+                                    SSH targets launch a trainer container per job. Direct endpoints run an
+                                    already-managed trainer.
+                                </Text>
+                            </Flex>
+                        )}
 
-                        {targetType === 'ssh' ? (
-                            <SshTargetFields
-                                sshHostAlias={sshHostAlias}
-                                onSshHostAliasChange={setSshHostAlias}
-                                deviceType={deviceType}
-                                onDeviceTypeChange={(value) => {
-                                    setDeviceTypeTouched(true);
-                                    setDeviceType(value);
-                                }}
-                                deviceTypeDescription={deviceTypeDescription}
-                            />
+                        {sshAvailable && targetType === 'ssh' ? (
+                            <>
+                                <InlineAlert variant='warning'>
+                                    <strong>Security risk:</strong> this target has no built-in authentication. Anyone
+                                    who can reach this Studio backend can run arbitrary code as root on it. Only
+                                    register servers you trust, and only run Studio on a single-user, localhost-only
+                                    workstation.
+                                </InlineAlert>
+                                <SshTargetFields
+                                    sshHostAlias={sshHostAlias}
+                                    onSshHostAliasChange={setSshHostAlias}
+                                    deviceType={deviceType}
+                                    onDeviceTypeChange={(value) => {
+                                        setDeviceTypeTouched(true);
+                                        setDeviceType(value);
+                                    }}
+                                    deviceTypeDescription={deviceTypeDescription}
+                                />
+                            </>
                         ) : (
                             <TextField
                                 isRequired
