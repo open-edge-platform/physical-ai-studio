@@ -3,7 +3,6 @@
 
 """Behaviour shared by more than one first-party policy family."""
 
-
 from physicalai.policies.mixins.peft import (
     PeftConfigMixin,
     PeftModelMixin,
@@ -14,13 +13,15 @@ from physicalai.policies.mixins.peft import (
     log_trainable_parameters,
     merge_lora_,
 )
-from physicalai.policies.mixins.snapflow import SnapFlowConfigMixin, SnapFlowModelMixin, SnapFlowPolicyMixin
 from physicalai.policies.mixins.rtc import RTCModelMixin, RTCPolicyMixin
+from physicalai.policies.mixins.snapflow import SnapFlowConfigMixin, SnapFlowModelMixin, SnapFlowPolicyMixin
 
 __all__ = [
     "PeftConfigMixin",
     "PeftModelMixin",
     "PeftPolicyMixin",
+    "RTCModelMixin",
+    "RTCPolicyMixin",
     "SnapFlowConfigMixin",
     "SnapFlowModelMixin",
     "SnapFlowPolicyMixin",
@@ -29,6 +30,4 @@ __all__ = [
     "is_lora_injected",
     "log_trainable_parameters",
     "merge_lora_",
-    "RTCModelMixin",
-    "RTCPolicyMixin",
 ]
