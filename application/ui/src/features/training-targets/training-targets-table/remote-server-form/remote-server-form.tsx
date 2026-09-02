@@ -70,9 +70,9 @@ export const RemoteServerForm = ({ remoteServer, close }: RemoteServerFormProps)
                             ~/.ssh/config; keys stay on disk (or in your SSH agent).
                         </Text>
                         <InlineAlert variant='warning'>
-                            <strong>Security risk:</strong> this target has no built-in authentication. Anyone who can
-                            reach this Studio backend can run arbitrary code as root on it. Only register servers you
-                            trust, and only run Studio on a single-user, localhost-only workstation.
+                            <strong>Security risk:</strong> SSH servers have no built-in authentication. Anyone who can
+                            reach this Studio backend can run arbitrary code as root on the server. Only connect to
+                            servers you trust, and only run Studio on a single-user, localhost-only workstation.
                         </InlineAlert>
                         <TextField
                             // eslint-disable-next-line jsx-a11y/no-autofocus

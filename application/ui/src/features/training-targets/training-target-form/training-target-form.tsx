@@ -164,9 +164,9 @@ export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormPr
                         {sshAvailable && targetType === 'ssh' ? (
                             <>
                                 <InlineAlert variant='warning'>
-                                    <strong>Security risk:</strong> this target has no built-in authentication. Anyone
-                                    who can reach this Studio backend can run arbitrary code as root on it. Only
-                                    register servers you trust, and only run Studio on a single-user, localhost-only
+                                    <strong>Security risk:</strong> SSH servers have no built-in authentication. Anyone
+                                    who can reach this Studio backend can run arbitrary code as root on the server. Only
+                                    connect to servers you trust, and only run Studio on a single-user, localhost-only
                                     workstation.
                                 </InlineAlert>
                                 <SshTargetFields
