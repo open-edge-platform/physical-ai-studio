@@ -118,16 +118,16 @@ class TorchAdapter(RuntimeAdapter):
                 .eval()
             )
 
-            # ``sample_input`` is contributed by ``ExportablePolicyMixin`` but
-            # ``nn.Module.__getattr__`` widens unknown attributes to
-            # ``Module | Tensor``; narrow it explicitly for the type checker.
-            sample_input = cast(
-                "dict[str, Any] | None",
-                getattr(self._policy, "sample_input", None),
-            )
-            if sample_input and PREV_CHUNK_LEFT_OVER in sample_input and isinstance(self._policy, RTCPolicyMixin):
-                self._policy.rtc_enabled = True
-
+            # Enable RTC based on the exported manifest schema (sample_input depends on rtc_enabled).
+            if isinstance(self._policy, RTCPolicyMixin):
+                manifest_dict = manifest.model_dump()
+                input_features = {
+                    f.get("name")
+                    for f in manifest_dict.get("model", {}).get("input_features", [])
+                    if isinstance(f, dict)
+                }
+                if PREV_CHUNK_LEFT_OVER in input_features:
+                    self._policy.rtc_enabled = True
             # ``extra_export_args`` is contributed by ``ExportablePolicyMixin``
             # but ``nn.Module.__getattr__`` widens unknown attributes to
             # ``Module | Tensor``; narrow it explicitly for the type checker.
