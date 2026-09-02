@@ -256,7 +256,7 @@ policy.to_onnx("model.onnx", input_sample=input_sample)
 
 Flow-matching policies (`SmolVLA`, `Pi05`) support Real-Time Chunking, which guides
 denoising with the unconsumed tail of the previous action chunk. RTC is off by default
-and must be enabled *before* export, because it changes the traced input schema:
+and must be enabled _before_ export, because it changes the traced input schema:
 
 ```python test="skip" reason="requires physicalai install and trained model"
 from physicalai.policies.smolvla import SmolVLA
@@ -272,12 +272,12 @@ policy.to_openvino("model_rtc")
 The exported model then takes four additional inputs alongside the usual state,
 image, and task features:
 
-| Input                  | Shape                       | dtype     | Meaning                                             |
-| ---------------------- | --------------------------- | --------- | --------------------------------------------------- |
-| `prev_chunk_left_over` | `(chunk_size, action_dim)`  | `float32` | Unconsumed tail of the previously predicted chunk    |
-| `inference_delay`      | `()`                        | `int64`   | Steps consumed while inference was running           |
-| `max_guidance_weight`  | `()`                        | `float32` | Upper bound on the RTC guidance strength             |
-| `execution_horizon`    | `()`                        | `int64`   | Number of actions expected to execute per chunk      |
+| Input                  | Shape                      | dtype     | Meaning                                           |
+| ---------------------- | -------------------------- | --------- | ------------------------------------------------- |
+| `prev_chunk_left_over` | `(chunk_size, action_dim)` | `float32` | Unconsumed tail of the previously predicted chunk |
+| `inference_delay`      | `()`                       | `int64`   | Steps consumed while inference was running        |
+| `max_guidance_weight`  | `()`                       | `float32` | Upper bound on the RTC guidance strength          |
+| `execution_horizon`    | `()`                       | `int64`   | Number of actions expected to execute per chunk   |
 
 Notes:
 
