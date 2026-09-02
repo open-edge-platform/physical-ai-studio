@@ -95,7 +95,7 @@ export const VerificationStep = () => {
             ],
         },
     });
-    const robotBody: SchemaRobotInput | null = activeType.startsWith('SO101')
+    const robotBody: SchemaRobotInput | null = activeType?.startsWith('SO101')
         ? buildRobotBody(robotForm, activeType, robotId)
         : null;
 

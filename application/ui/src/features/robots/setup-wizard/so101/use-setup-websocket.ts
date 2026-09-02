@@ -2,6 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 
 import useWebSocket from 'react-use-websocket';
 
+import { SchemaRobotType } from '../../robot-types';
+
 // ---------------------------------------------------------------------------
 // Types — mirrors the backend SO101SetupWorker protocol
 // ---------------------------------------------------------------------------
@@ -123,7 +125,7 @@ export type SetupEvent =
 
 interface UseSetupWebSocketOptions {
     projectId: string;
-    robotType: string;
+    robotType: SchemaRobotType;
     serialNumber?: string;
     connectionString?: string;
     enabled?: boolean;

@@ -195,6 +195,12 @@ def test_robot_field_ui_supports_required_option() -> None:
     assert robot_field_ui({"required": True}) == {"x-physicalai-ui": {"required": True}}
 
 
+def test_robot_field_ui_supports_advanced_configuration_option() -> None:
+    assert robot_field_ui({"advanced_configuration": True}) == {
+        "x-physicalai-ui": {"advanced_configuration": True},
+    }
+
+
 def test_robot_payload_ui_supports_recursive_items() -> None:
     assert robot_payload_ui(
         [
