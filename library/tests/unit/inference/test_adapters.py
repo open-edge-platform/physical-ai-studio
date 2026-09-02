@@ -42,7 +42,7 @@ class TestTorchAdapter:
     """Test Torch inference adapter."""
 
     @staticmethod
-    def _write_policy_manifest(tmp_path: Path) -> Path:
+    def _write_policy_manifest(tmp_path: Path, input_feature_names: list[str] | None = None) -> Path:
         model_path = tmp_path / "model.pt"
         manifest_path = tmp_path / "manifest.json"
         model_path.touch()
@@ -52,6 +52,15 @@ class TestTorchAdapter:
             "policy": {
                 "name": "act",
                 "source": {"class_path": "physicalai.policies.act.ACT"},
+            },
+            "model": {
+                "input_features": [
+                    {
+                        "class_path": "physicalai.inference.data.features.InferenceFeature",
+                        "init_args": {"name": name},
+                    }
+                    for name in input_feature_names or []
+                ],
             },
         }
         with manifest_path.open("w") as f:
@@ -134,13 +143,12 @@ class TestTorchAdapter:
             assert adapter.input_names == []
             assert adapter.output_names == ["action"]
 
-    def test_load_enables_rtc_when_sample_input_has_prev_chunk_left_over(self, tmp_path: Path) -> None:
-        """Test RTC is enabled when the loaded policy exposes the RTC leftover input."""
-        model_path = self._write_policy_manifest(tmp_path)
+    def test_load_enables_rtc_when_manifest_declares_prev_chunk_left_over(self, tmp_path: Path) -> None:
+        """Test RTC is enabled when the manifest declares the RTC leftover input feature."""
+        model_path = self._write_policy_manifest(tmp_path, input_feature_names=["state", PREV_CHUNK_LEFT_OVER])
 
         class _RTCPolicy(RTCPolicyMixin):
             extra_export_args = {"torch": TorchExportParameters()}
-            sample_input = {"state": torch.zeros(1, 2), PREV_CHUNK_LEFT_OVER: torch.zeros(1, 4)}
 
             def to(self, device: str) -> "_RTCPolicy":
                 return self
