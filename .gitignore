@@ -211,6 +211,7 @@ __marimo__/
 tmp*
 lightning_logs
 .DS_Store
+wandb/
 .omo
 .opencode
 

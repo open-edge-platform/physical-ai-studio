@@ -200,8 +200,13 @@ class RuntimeSession:
     async def teardown(self) -> None:
         # Finalize first: a dataset that will not copy back must not prevent
         # the arm from being released, but skipping it loses the recording.
-        self._command_worker.shutdown(timeout=RECORDING_TEARDOWN_TIMEOUT_S)
-        self._finalize_recording()
+        # Only once the worker has drained, though -- a job that is still
+        # running holds this same mutation, and finalizing underneath it stops
+        # the image writer mid-encode or copies a half-written dataset.
+        if self._command_worker.shutdown(timeout=RECORDING_TEARDOWN_TIMEOUT_S):
+            self._finalize_recording()
+        else:
+            logger.error("Command worker did not drain; leaving the recording to its in-flight job")
         if self._recording_callback is not None:
             self._recording_callback.close()
         # Device lifetime belongs to the session, not to a disposable runtime view.
@@ -249,6 +254,7 @@ class RuntimeSession:
         not close ``RecordingState`` -- a client reattaching within the idle
         window records into a fresh mutation over the updated dataset.
         """
+        self._discard_open_episode()
         mutation = self._recording.take_mutation()
         if mutation is None:
             return
@@ -258,6 +264,28 @@ class RuntimeSession:
             logger.exception("Recording mutation teardown failed; the cache may not have been copied back")
         # The cached state is what a returning client recovers, so it must not
         # keep advertising a dataset this session no longer holds.
+        self._emit_state()
+
+    def _discard_open_episode(self) -> None:
+        """Drop an episode that was still open when the session was abandoned.
+
+        The frames cannot be recovered -- the cache is deleted moments later --
+        so drop them deliberately and say so, rather than letting the buffer
+        disappear inside ``teardown()``, which copies back only what
+        ``save_episode`` marked. Safe to check then stop: on abandonment this
+        runs on the command worker, the same thread as save and discard, and on
+        teardown the worker has already drained. Ticks cannot interleave either
+        -- ``add_frame`` and ``stop_episode`` share the recording lock.
+        """
+        if not self._recording.is_recording:
+            return
+        mutation = self._recording.stop_episode()
+        logger.warning("Discarding the episode that was still open when the session was abandoned")
+        try:
+            mutation.discard_buffer()
+        except Exception:
+            logger.exception("Failed to discard the open episode buffer")
+        self._recording.mark_discarded()
         self._emit_state()
 
     def _load_dataset(self, command: LoadDatasetCommand) -> None:
@@ -292,12 +320,26 @@ class RuntimeSession:
 
     def _save_episode(self) -> None:
         mutation = self._recording.stop_episode()
-        mutation.save_episode()
+        try:
+            mutation.save_episode()
+        except Exception:
+            # The episode did not land. ``stop_episode`` already cleared the
+            # recording flag, so publish that state anyway or the browser keeps
+            # offering Save and Discard for an episode the session has stopped.
+            # The buffer stays attached: discard is what clears it. Do not
+            # reopen recording -- that would append frames to a buffer whose
+            # write just failed.
+            self._emit_state()
+            raise
         self._recording.mark_saved()
         self._emit_state()
 
     def _discard_episode(self) -> None:
-        mutation = self._recording.stop_episode()
+        # Not ``stop_episode``: discard is also how a client recovers from a
+        # failed save, which has already cleared the recording flag.
+        mutation = self._recording.current_mutation()
+        if mutation is None:
+            raise RuntimeError("No dataset is loaded.")
         mutation.discard_buffer()
         self._recording.mark_discarded()
         self._emit_state()
