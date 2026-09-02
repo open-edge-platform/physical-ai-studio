@@ -126,7 +126,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                             ? ('notice' as const)
                             : remoteServerStatusVariant(entry?.status, isChecking),
                       statusLabel: isConfirmedBad
-                          ? 'Not verified'
+                          ? `Not ready (${remoteServer.last_check_status})`
                           : isUnverified
                             ? 'Not verified yet'
                             : remoteServerStatusLabel(entry?.status, isChecking),

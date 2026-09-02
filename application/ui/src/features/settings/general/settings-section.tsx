@@ -38,8 +38,8 @@ export const SettingsSection = ({
 }: SettingsSectionProps) => {
     const [isConfirmOpen, setConfirmOpen] = useState(false);
 
-    // Only fetched while the confirmation dialog can be shown, to warn about interrupting active jobs.
-    const { data: jobs } = $api.useQuery('get', '/api/jobs', undefined, { enabled: restartWarning !== undefined });
+    // Only fetched while the confirmation dialog is open, to warn about interrupting active jobs.
+    const { data: jobs } = $api.useQuery('get', '/api/jobs', undefined, { enabled: isConfirmOpen });
     const runningJobCount = jobs?.filter((job) => job.status === 'running').length ?? 0;
 
     const errorMessage = error

@@ -31,6 +31,8 @@ export const TrainingDeviceInfo = ({
             <Flex UNSAFE_style={{ textAlign: 'right' }} direction='column' gap='size-75'>
                 {sshServer === null ? (
                     <StatusLight variant='neutral'>Remote server selected</StatusLight>
+                ) : sshServer.last_check_status === 'unknown' ? (
+                    <StatusLight variant='notice'>Not verified yet</StatusLight>
                 ) : sshServer.last_check_status !== 'healthy' ? (
                     <StatusLight variant='negative'>
                         Remote server not ready ({sshServer.last_check_status})

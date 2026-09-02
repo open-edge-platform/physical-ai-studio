@@ -155,7 +155,7 @@ export const RemoteServerDetail = ({
                                 <div className={classes.emptyState}>
                                     <Text UNSAFE_className={classes.emptyStateTitle}>Not verified yet</Text>
                                     <Text UNSAFE_className={`${detailClasses.checkDetail} ${classes.emptyStateBody}`}>
-                                        Pull &amp; verify image the trainer image.
+                                        Pull &amp; verify to check the trainer image.
                                     </Text>
                                 </div>
                             )}

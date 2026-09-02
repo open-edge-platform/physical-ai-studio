@@ -37,7 +37,6 @@ export const isSerialPermissionDeniedError = (error: unknown): boolean =>
     (error as Record<string, string>).error_code.toLowerCase() === 'serial_permission_denied';
 
 /**
-/**
  * Returns true when a live runtime session holds the robot (HTTP 423).
  *
  * Expected when deleting a robot that is still being driven, or when connecting
