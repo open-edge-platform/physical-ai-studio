@@ -149,6 +149,7 @@ class LeRobotDataModule(DataModule):
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
+        pin_memory: bool = True,
     ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
@@ -208,6 +209,9 @@ class LeRobotDataModule(DataModule):
                 Defaults to `10`.
             max_episode_steps (int | None, optional): Maximum steps per episode.
                 Defaults to `300`.
+            pin_memory (bool, optional): Whether to use pinned (page-locked) memory for the
+                training and eval-loss validation DataLoaders, which speeds up host-to-GPU
+                transfers. Defaults to `True`.
 
         Raises:
             ValueError: If neither `repo_id` nor `dataset` is provided, or if invalid `data_format`.
@@ -361,6 +365,7 @@ class LeRobotDataModule(DataModule):
             test_gym=test_gym,
             num_rollouts_test=num_rollouts_test,
             max_episode_steps=max_episode_steps,
+            pin_memory=pin_memory,
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -384,6 +389,7 @@ class LeRobotDataModule(DataModule):
             batch_size=self.train_batch_size,
             shuffle=True,
             drop_last=True,
+            pin_memory=self.pin_memory,
         )
 
     @staticmethod

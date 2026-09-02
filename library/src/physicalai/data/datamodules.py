@@ -134,6 +134,7 @@ class DataModule(LightningDataModule):
     def __init__(
         self,
         train_dataset: Dataset,
+        *,
         train_batch_size: int = 16,
         num_workers: int | Literal["auto"] = "auto",
         val_gym: Gym | None = None,
@@ -143,6 +144,7 @@ class DataModule(LightningDataModule):
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
+        pin_memory: bool = True,
     ) -> None:
         """Initialize the ActionDataModule.
 
@@ -161,6 +163,9 @@ class DataModule(LightningDataModule):
             test_gym (Gym | None): Test environment.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
+            pin_memory (bool): Whether to use pinned (page-locked) memory for the training and
+                eval-loss validation DataLoaders, which speeds up host-to-GPU transfers.
+                Defaults to `True`.
         """
         super().__init__()
 
@@ -168,6 +173,7 @@ class DataModule(LightningDataModule):
         self.train_dataset: Dataset = train_dataset
         self.train_batch_size: int = train_batch_size
         self.num_workers: int = resolve_auto_num_workers() if num_workers == "auto" else num_workers
+        self.pin_memory: bool = pin_memory
         logger.info("DataLoader workers: %d%s", self.num_workers, " (auto)" if num_workers == "auto" else "")
 
         # eval-loss validation dataset
@@ -244,6 +250,7 @@ class DataModule(LightningDataModule):
             batch_size=self.train_batch_size,
             shuffle=True,
             drop_last=True,
+            pin_memory=self.pin_memory,
             collate_fn=_collate_observations,
         )
 
@@ -265,6 +272,7 @@ class DataModule(LightningDataModule):
                 batch_size=self.val_batch_size,
                 shuffle=False,
                 drop_last=False,
+                pin_memory=self.pin_memory,
                 collate_fn=_collate_observations,
             )
 

@@ -146,6 +146,45 @@ class TestDataModuleTrainDataloader:
         assert dl.num_workers == 3
 
 
+class TestDataModulePinMemory:
+    """Tests for the DataModule pin_memory parameter."""
+
+    def test_defaults_to_true(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset())
+        assert dm.pin_memory is True
+
+    def test_explicit_false(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), pin_memory=False)
+        assert dm.pin_memory is False
+
+    def test_train_dataloader_uses_pin_memory(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), pin_memory=False)
+        dl = dm.train_dataloader()
+        assert dl.pin_memory is False
+
+    def test_val_dataloader_uses_pin_memory(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), val_eval_dataset=dummy_dataset(), pin_memory=False)
+        dm.setup(stage="fit")
+        dl = dm.val_dataloader()
+        assert dl.pin_memory is False
+
+    def test_val_dataloader_pin_memory_defaults_true(self, dummy_dataset):
+        from physicalai.data import DataModule
+
+        dm = DataModule(train_dataset=dummy_dataset(), val_eval_dataset=dummy_dataset())
+        dm.setup(stage="fit")
+        dl = dm.val_dataloader()
+        assert dl.pin_memory is True
+
+
 class TestDataModuleLogging:
     """Tests for DataModule num_workers logging."""
 
