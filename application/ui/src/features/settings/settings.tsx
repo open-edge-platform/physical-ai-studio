@@ -6,6 +6,7 @@ import { useMatch } from 'react-router';
 import { paths } from '../../router';
 import { Compute } from './compute';
 import { GeneralSettings } from './general/general-settings';
+import { HotkeysSettings } from './hotkeys/hotkeys-settings';
 
 type TabItem = {
     key: string;
@@ -39,6 +40,16 @@ export const SettingsView = () => {
             name: 'Compute',
             href: paths.settings.compute.pattern,
             content: <Compute />,
+        },
+        {
+            key: 'hotkeys',
+            name: 'Hotkeys',
+            href: paths.settings.hotkeys.pattern,
+            content: (
+                <Suspense fallback={<Loading />}>
+                    <HotkeysSettings />
+                </Suspense>
+            ),
         },
         /*{
             key: 'storage',

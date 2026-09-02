@@ -75,3 +75,25 @@ def test_huggingface_token_is_loaded_from_json(monkeypatch, tmp_path: Path) -> N
     assert settings.huggingface.hf_token is not None
     assert settings.huggingface.hf_token.get_secret_value() == "hf_example"
     assert load_user_settings_file() == {"huggingface": {"hf_token": "hf_example"}}
+
+
+def test_hotkey_bindings_are_loaded_from_json(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    merge_user_settings({"hotkeys": {"bindings": {"recording.discard_episode": "Shift+ArrowLeft"}}})
+
+    settings = Settings()
+    assert settings.hotkeys.bindings == {"recording.discard_episode": "Shift+ArrowLeft"}
+
+
+def test_hotkey_bindings_patch_replaces_whole_map(monkeypatch, tmp_path: Path) -> None:
+    """The `bindings` dict is a single top-level key of the `hotkeys` group, so
+    merge_user_settings's shallow merge replaces it wholesale rather than deep-merging
+    individual action ids. Callers must always PATCH the complete bindings map."""
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    merge_user_settings({"hotkeys": {"bindings": {"a": "X", "b": "Y"}}})
+    merge_user_settings({"hotkeys": {"bindings": {"a": "Z"}}})
+
+    settings = Settings()
+    assert settings.hotkeys.bindings == {"a": "Z"}

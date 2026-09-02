@@ -6,7 +6,14 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from settings import HuggingFaceSettings, Settings, TrainerClientSettings, get_settings, merge_user_settings
+from settings import (
+    HotkeySettings,
+    HuggingFaceSettings,
+    Settings,
+    TrainerClientSettings,
+    get_settings,
+    merge_user_settings,
+)
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
@@ -16,12 +23,14 @@ class UserSettingsResponse(BaseModel):
 
     trainer: TrainerClientSettings
     huggingface: HuggingFaceSettings
+    hotkeys: HotkeySettings
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "UserSettingsResponse":
         return cls(
             trainer=settings.trainer,
             huggingface=settings.huggingface,
+            hotkeys=settings.hotkeys,
         )
 
 
@@ -30,6 +39,7 @@ class SettingsUpdate(BaseModel):
 
     trainer: TrainerClientSettings | None = None
     huggingface: HuggingFaceSettings | None = None
+    hotkeys: HotkeySettings | None = None
 
 
 @router.get("")
