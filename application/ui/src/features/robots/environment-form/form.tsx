@@ -1,5 +1,6 @@
-import { Button, Divider, Flex, Form, Heading, Icon, Text, TextField, View } from '@geti-ui/ui';
+import { Divider, Flex, Form, Heading, Text, TextField, View } from '@geti-ui/ui';
 import { ChevronLeft } from '@geti-ui/ui/icons';
+import { Link } from 'react-router';
 
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
@@ -7,6 +8,8 @@ import { CameraForm } from './camera-form';
 import { useEnvironmentForm, useSetEnvironmentForm } from './provider';
 import { RobotForm } from './robot-form';
 import { SubmitNewEnvironmentButton } from './submit-new-environment-button';
+
+import classes from './form.module.css';
 
 export const EnvironmentForm = ({ heading = 'Add new environment', submitButton = <SubmitNewEnvironmentButton /> }) => {
     const { project_id } = useProjectId();
@@ -16,15 +19,13 @@ export const EnvironmentForm = ({ heading = 'Add new environment', submitButton 
     return (
         <Flex direction='column' gap='size-200'>
             <Flex alignItems={'center'} gap='size-200'>
-                <Button
-                    href={paths.project.environments.index({ project_id })}
-                    variant='secondary'
-                    UNSAFE_style={{ border: 'none' }}
+                <Link
+                    className={classes.link}
+                    aria-label='Back to environments'
+                    to={paths.project.environments.index({ project_id })}
                 >
-                    <Icon>
-                        <ChevronLeft color='white' fill='white' />
-                    </Icon>
-                </Button>
+                    <ChevronLeft color='white' fill='white' />
+                </Link>
 
                 <Heading>{heading}</Heading>
             </Flex>
