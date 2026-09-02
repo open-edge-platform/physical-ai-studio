@@ -20,8 +20,9 @@ from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.manifest import Manifest
 
-from physicalai.data.observation import Observation
+from physicalai.data.observation import PREV_CHUNK_LEFT_OVER, Observation
 from physicalai.export.backends import TorchExportParameters
+from physicalai.policies.mixins.rtc import RTCPolicyMixin
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -116,6 +117,16 @@ class TorchAdapter(RuntimeAdapter):
                 .to(self.device)
                 .eval()
             )
+
+            # ``sample_input`` is contributed by ``ExportablePolicyMixin`` but
+            # ``nn.Module.__getattr__`` widens unknown attributes to
+            # ``Module | Tensor``; narrow it explicitly for the type checker.
+            sample_input = cast(
+                "dict[str, Any] | None",
+                getattr(self._policy, "sample_input", None),
+            )
+            if sample_input and PREV_CHUNK_LEFT_OVER in sample_input and isinstance(self._policy, RTCPolicyMixin):
+                self._policy.rtc_enabled = True
 
             # ``extra_export_args`` is contributed by ``ExportablePolicyMixin``
             # but ``nn.Module.__getattr__`` widens unknown attributes to
