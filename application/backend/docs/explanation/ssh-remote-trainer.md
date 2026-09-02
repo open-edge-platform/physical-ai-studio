@@ -16,10 +16,9 @@ PATCH /api/settings
 {"ssh": {"enabled": true}}
 ```
 
-This is the only way to turn it on - there is no `SSH_REMOTE_TRAINER_ENABLED`
-environment variable or `.env` entry anymore. The value is persisted to the
-settings JSON file (see `settings.get_settings_file_path`), and the same is
-true of the feature's timeouts and limits (`ssh.connect_timeout_s`,
+The settings page is the only way to turn it on. The value is persisted to
+the settings JSON file (see `settings.get_settings_file_path`), and the same
+is true of the feature's timeouts and limits (`ssh.connect_timeout_s`,
 `ssh.command_timeout_s`, `ssh.preflight_timeout_s`, `ssh.image_pull_timeout_s`,
 `ssh.readiness_timeout_s`, `ssh.gpu_wait_giveup_s`, `ssh.min_free_disk_bytes`):
 all are settings-page-only, and a value in the process environment or a
@@ -35,11 +34,10 @@ they configure *how* Studio trusts a host or an image, which the
 > Signature verification runs on this backend's own host, not on a registered
 > remote trainer server: the image reference it checks is a fully qualified
 > registry digest, so verification needs only this backend's own network
-> egress to the registry and to Sigstore, never SSH access to the remote
-> server. It uses the `sigstore` PyPI package rather than the `cosign`
-> binary, so no remote trainer server - nor this backend - ever needs
-> `cosign` installed at all. See `services.ssh.sigstore_verify`,
-> `services.ssh.oci_registry`, and `services.ssh.docker_ops.verify_image_signature`.
+> egress to the registry and to Sigstore. It uses the `sigstore` PyPI
+> package, so verification needs no other tooling installed anywhere. See
+> `services.ssh.sigstore_verify`, `services.ssh.oci_registry`, and
+> `services.ssh.docker_ops.verify_image_signature`.
 
 > [!IMPORTANT]
 > Flipping `ssh.enabled` only takes effect after a full backend restart:
