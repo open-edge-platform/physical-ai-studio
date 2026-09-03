@@ -66,9 +66,9 @@ export const ModelRow = ({
                 {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
             </Flex>
             <Text>{model.policy.toUpperCase()}</Text>
-            <Text>{dataset?.name ?? '-'}</Text>
-            <Text>{environment?.name ?? '-'}</Text>
-            <Text>{trainer || '-'}</Text>
+            <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
+            <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
+            <Text data-testid='trainer-cell'>{trainer || '-'}</Text>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
             <div onClick={(e) => e.stopPropagation()}>

@@ -131,9 +131,9 @@ export const TrainingRow = ({
                 <TrainJobStatus job={trainJob} />
                 <Text>{loss ? loss.toFixed(2) : '...'}</Text>
                 <Text>{trainJob.payload.policy.toUpperCase()}</Text>
-                <Text>{dataset?.name ?? '-'}</Text>
-                <Text>{environment?.name ?? '-'}</Text>
-                <Text>{trainer || '-'}</Text>
+                <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
+                <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
+                <Text data-testid='trainer-cell'>{trainer || '-'}</Text>
                 <div />
                 <View>
                     <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
@@ -161,9 +161,9 @@ export const TrainingRow = ({
             <TrainJobStatus job={trainJob} />
             <Text>{loss ? loss.toFixed(2) : '...'}</Text>
             <Text>{trainJob.payload.policy.toUpperCase()}</Text>
-            <Text>{dataset?.name ?? '-'}</Text>
-            <Text>{environment?.name ?? '-'}</Text>
-            <Text>{trainer ?? '-'}</Text>
+            <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
+            <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
+            <Text data-testid='trainer-cell'>{trainer ?? '-'}</Text>
             <div onClick={(e) => e.stopPropagation()}>
                 {trainJob.status === 'running' && (
                     <DialogTrigger>
