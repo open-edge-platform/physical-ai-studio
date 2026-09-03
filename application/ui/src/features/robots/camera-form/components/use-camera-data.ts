@@ -1,4 +1,5 @@
 import { $api } from '../../../../api/client';
+import { CameraFingerprint, fingerprintKey } from '../../../cameras/fingerprint';
 import { CameraDriver } from '../provider';
 
 export const useAvailableCameras = (driver: CameraDriver) => {
@@ -14,14 +15,14 @@ export const useAllAvailableCameras = () => {
     return $api.useSuspenseQuery('get', '/api/hardware/cameras');
 };
 
-export const useSupportedFormats = (driver: CameraDriver, fingerprint: string | undefined) => {
+export const useSupportedFormats = (driver: CameraDriver, fingerprint: CameraFingerprint | null | undefined) => {
     const query = $api.useQuery(
         'get',
         '/api/cameras/supported_formats/{driver}',
         {
             params: {
                 path: { driver },
-                query: { fingerprint: fingerprint ?? '' },
+                query: { fingerprint: fingerprintKey(fingerprint) ?? '' },
             },
         },
         { enabled: !!fingerprint }

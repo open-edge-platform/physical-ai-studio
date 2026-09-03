@@ -20,7 +20,7 @@ export const FormPreviewLayout = ({ form, preview, previewProps }: FormPreviewLa
     return (
         <Grid
             areas={['form preview']}
-            columns={[minmax('size-6000', 'auto'), minmax(0, '1fr')]}
+            columns={['size-6000', minmax(0, '1fr')]}
             rows={[minmax(0, '1fr')]}
             height='100%'
             minHeight={0}

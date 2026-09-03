@@ -197,7 +197,7 @@ class EnvironmentWithRelations(BaseModel):
                     {
                         "id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786",
                         "name": "front_camera",
-                        "fingerprint": "/dev/video0",
+                        "fingerprint": {"path": "/dev/video0"},
                         "driver": "webcam",
                         "hardware_name": "Camera 1",
                         "resolution_width": 480,

@@ -201,16 +201,20 @@ def _camera_claims(
     project_id: UUID,
     project_name: str,
 ) -> list[CameraClaim]:
-    return [
-        CameraClaim(
-            fingerprint=camera.fingerprint,
-            settings=settings_from_camera(camera),
-            holder=session_name,
-            project_id=project_id,
-            project_name=project_name,
+    claims: list[CameraClaim] = []
+    for camera in cameras:
+        if camera.fingerprint is None:
+            raise ValueError(f"Camera {camera.name!r} must be reselected")
+        claims.append(
+            CameraClaim(
+                fingerprint=camera.fingerprint,
+                settings=settings_from_camera(camera),
+                holder=session_name,
+                project_id=project_id,
+                project_name=project_name,
+            )
         )
-        for camera in cameras
-    ]
+    return claims
 
 
 @router.get("/ws", tags=["WebSocket"], summary="Runtime session (WebSocket)", status_code=426)

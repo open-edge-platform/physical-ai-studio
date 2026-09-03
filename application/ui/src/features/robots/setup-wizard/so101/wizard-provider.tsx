@@ -167,11 +167,11 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
     const robotType = activeType;
     const connectionString = so101Payload?.connection_string ?? '';
 
-    const wsEnabled = (!!serialNumber || !!connectionString) && robotType.startsWith('SO101');
+    const wsEnabled = (!!serialNumber || !!connectionString) && robotType?.startsWith('SO101') === true;
 
     const { state: wsState, commands } = useSetupWebSocket({
         projectId,
-        robotType,
+        robotType: robotType ?? 'SO101_Follower',
         serialNumber,
         connectionString,
         enabled: wsEnabled,
@@ -241,12 +241,16 @@ export const SetupWizardProvider = ({ children }: { children: ReactNode }) => {
 
 export const useSetupState = () => {
     const ctx = useContext(SetupStateContext);
-    if (ctx === null) throw new Error('useSetupState must be used within SetupWizardProvider');
+    if (ctx === null) {
+        throw new Error('useSetupState must be used within SetupWizardProvider');
+    }
     return ctx;
 };
 
 export const useSetupActions = () => {
     const ctx = useContext(SetupActionsContext);
-    if (ctx === null) throw new Error('useSetupActions must be used within SetupWizardProvider');
+    if (ctx === null) {
+        throw new Error('useSetupActions must be used within SetupWizardProvider');
+    }
     return ctx;
 };

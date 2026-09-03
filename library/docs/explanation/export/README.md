@@ -122,6 +122,19 @@ policy.to_executorch("model.pte")
 - Lightweight runtime
 - Optimized for resource-constrained environments
 
+## Post-Export Hooks
+
+`export(...)` accepts `post_export_hooks`, a list of callables run after the
+artifact is written. Each hook receives the exported model path and can rewrite
+it in place, enabling backend-specific optimization passes without changing the
+export methods themselves.
+
+The built-in `compress_weights_openvino_int8_sym` hook uses
+[NNCF](https://github.com/openvinotoolkit/nncf) to compress an OpenVINO IR to
+INT8 symmetric weights (requires `physicalai-train[nncf]`). See the
+[Export & Inference Guide](../../how-to/export/export_inference.md#int8-weight-compression-openvino)
+for usage.
+
 ## Configuration Serialization for Torch models
 
 The export system automatically serializes model configurations to preserve reproducibility:

@@ -6,6 +6,7 @@
 import logging
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
+from pathlib import Path
 
 import onnx
 import pytest
@@ -759,3 +760,117 @@ class TestDefaultExportInputSample:
         wrapper = ExportWrapper(model)
 
         assert wrapper._get_default_export_input_sample() is None
+
+
+class TestPostExportHooks:
+    """Tests for post_export_hooks in export() and compress_weights_openvino_int8_sym hook."""
+
+    def test_hook_import_succeeds(self):
+        """Test that the hook can be imported without nncf installed."""
+        from physicalai.export.hooks import compress_weights_openvino_int8_sym  # noqa: F401
+
+    def test_hook_raises_import_error_without_nncf(self, tmp_path):
+        """Test that hook raises ImportError with install hint when nncf is missing."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "nncf":
+                raise ImportError("No module named 'nncf'")
+            return real_import(name, *args, **kwargs)
+
+        from physicalai.export.hooks import compress_weights_openvino_int8_sym
+
+        with patch("builtins.__import__", side_effect=mock_import):
+            with pytest.raises(ImportError, match="physicalai-train\\[nncf\\]"):
+                compress_weights_openvino_int8_sym(str(tmp_path / "model.xml"))
+
+    def test_hook_calls_compress_weights_int8_sym(self, tmp_path):
+        """Test that hook calls nncf.compress_weights with INT8_SYM mode."""
+
+        from physicalai.export.hooks import compress_weights_openvino_int8_sym
+
+        mock_nncf = MagicMock()
+        mock_nncf.CompressWeightsMode.INT8_SYM = "int8_sym"
+        mock_compressed = MagicMock()
+        mock_nncf.compress_weights.return_value = mock_compressed
+
+        mock_ov = MagicMock()
+        mock_model = MagicMock()
+        mock_ov.Core.return_value.read_model.return_value = mock_model
+
+        # ``save_model`` writes to a temp path first; emulate it creating the staged
+        # .xml/.bin files so the subsequent atomic ``Path.replace`` can find them.
+        def fake_save_model(_model, path):
+            Path(path).write_text("xml")
+            Path(path).with_suffix(".bin").write_text("bin")
+
+        mock_ov.save_model.side_effect = fake_save_model
+
+        model_path = str(tmp_path / "model.xml")
+
+        with patch.dict("sys.modules", {"nncf": mock_nncf, "openvino": mock_ov}):
+            compress_weights_openvino_int8_sym(model_path)
+
+        mock_ov.Core.return_value.read_model.assert_called_once_with(model_path)
+        mock_nncf.compress_weights.assert_called_once_with(mock_model, mode="int8_sym")
+
+        # The model is saved to a staged temp path (not the final path), then swapped
+        # atomically into place. Assert on the staged call and the final placement.
+        assert mock_ov.save_model.call_count == 1
+        saved_model, saved_path = mock_ov.save_model.call_args.args
+        assert saved_model is mock_compressed
+        assert Path(saved_path).name == "model.xml"
+        assert Path(saved_path) != Path(model_path)
+        assert (tmp_path / "model.xml").exists()
+        assert (tmp_path / "model.bin").exists()
+
+    def test_export_invokes_post_export_hooks(self, tmp_path):
+        """Test that export() calls post_export_hooks after backend dispatch."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        mock_hook = MagicMock()
+        output_path = tmp_path / "model.xml"
+        wrapper.export(backend="openvino", output_path=output_path, post_export_hooks=[mock_hook])
+
+        mock_hook.assert_called_once_with(str(output_path))
+
+    def test_export_invokes_multiple_hooks_in_order(self, tmp_path):
+        """Test that multiple hooks are called in sequence."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        call_order = []
+        hook1 = MagicMock(side_effect=lambda path: call_order.append(("hook1", path)))
+        hook2 = MagicMock(side_effect=lambda path: call_order.append(("hook2", path)))
+
+        output_path = tmp_path / "model.xml"
+        wrapper.export(backend="openvino", output_path=output_path, post_export_hooks=[hook1, hook2])
+
+        expected_path = str(output_path)
+        assert call_order == [("hook1", expected_path), ("hook2", expected_path)]
+
+    @pytest.mark.parametrize("backend", ["onnx", "openvino"])
+    def test_export_hooks_work_for_all_backends(self, tmp_path, backend):
+        """Test that hooks are invoked regardless of export backend."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        mock_hook = MagicMock()
+        ext = {"onnx": ".onnx", "openvino": ".xml"}[backend]
+        output_path = tmp_path / f"model{ext}"
+        wrapper.export(backend=backend, output_path=output_path, post_export_hooks=[mock_hook])
+
+        mock_hook.assert_called_once_with(str(output_path))
+
+    def test_export_no_hooks_does_not_fail(self, tmp_path):
+        """Test that export works normally without hooks (regression)."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.xml"
+        wrapper.export(backend="openvino", output_path=output_path)
+
+        assert output_path.exists()

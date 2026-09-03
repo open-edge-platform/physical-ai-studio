@@ -13,12 +13,12 @@ from main import app
 from services.camera_claims import CameraClaim, CameraClaimRegistry
 
 
-def _camera_query(*, fingerprint: str = "cam-front") -> str:
+def _camera_query(*, fingerprint: dict[str, str] | None = None) -> str:
     return json.dumps(
         {
             "driver": "usb_camera",
             "name": "front",
-            "fingerprint": fingerprint,
+            "fingerprint": fingerprint or {"serial": "cam-front"},
             "hardware_name": None,
             "payload": {"width": 640, "height": 480, "fps": 30},
         }
@@ -37,7 +37,7 @@ def test_stream_endpoint_passes_is_locked_for_a_claimed_fingerprint() -> None:
     claims.claim(
         [
             CameraClaim(
-                fingerprint="cam-front",
+                fingerprint={"serial": "cam-front"},
                 settings=(640, 480, 30),
                 holder="rt-a",
                 project_id=uuid4(),

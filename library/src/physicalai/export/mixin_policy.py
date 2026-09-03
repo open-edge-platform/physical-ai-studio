@@ -6,7 +6,7 @@
 import inspect
 import logging
 import tempfile
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from os import PathLike
 from pathlib import Path
@@ -716,6 +716,7 @@ class ExportablePolicyMixin:
         output_path: PathLike | str,
         backend: ExportBackend | str,
         input_sample: dict[str, torch.Tensor] | None = None,
+        post_export_hooks: list[Callable[[str], None]] | None = None,
         **export_kwargs: dict,
     ) -> None:
         """Export the model to the specified backend format.
@@ -732,6 +733,9 @@ class ExportablePolicyMixin:
                 input tensor dictionary for model tracing.
                 If None, attempts to use the policy's `sample_input` property.
                 Defaults to None.
+            post_export_hooks: Optional list of callables to run after export completes.
+                Each hook receives the exported model file path (str) and can perform
+                post-processing such as quantization or compression.
             **export_kwargs (dict): Additional keyword arguments to pass to the
                 backend-specific export method.
 
@@ -751,6 +755,11 @@ class ExportablePolicyMixin:
         else:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
+
+        if post_export_hooks:
+            model_path = self._prepare_export_path(output_path, backend.extension)
+            for hook in post_export_hooks:
+                hook(str(model_path))
 
     @_quiet_onnx_export_logs()
     def _onnx_core_export_step(
