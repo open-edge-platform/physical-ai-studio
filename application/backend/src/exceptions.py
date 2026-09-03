@@ -140,8 +140,12 @@ class RemoteResumeUnsupportedError(BaseException):
 class RemoteServerNotReadyError(BaseException):
     """Raised when an SSH job targets a server that has not passed preflight.
 
-    Studio never dials SSH from job submission (only the explicit save/check
-    actions do); this only consults the server's persisted last-check summary.
+    Studio never re-dials SSH from job submission for a server that was
+    already checked; this only consults the server's persisted last-check
+    summary. A server that has never been checked at all is verified once,
+    automatically, before this error is raised (see
+    `services.remote_server_service.RemoteServerService.ensure_verified`), so
+    this only ever fires for a server whose last explicit check failed.
     """
 
     def __init__(self, server_name: str, last_check_status: str) -> None:
@@ -516,7 +520,7 @@ class SshConnectionError(BaseException):
     def __init__(self, alias: str, reason: str | None = None) -> None:
         detail = f" ({reason})" if reason else ""
         super().__init__(
-            message=f"Could not connect to '{alias}'{detail}. Check that the server is reachable.",
+            message=f"Could not connect to '{alias}'{detail}. Verify that the server is reachable.",
             error_code="ssh_connection_failed",
             http_status=http.HTTPStatus.BAD_GATEWAY,
         )
@@ -574,11 +578,10 @@ class TrainerImagePullError(BaseException):
 class TrainerImageVerificationError(BaseException):
     """Raised when the trainer image's signature could not be verified.
 
-    Fails closed by default: this covers both a failed `cosign verify` and
-    `cosign` being unavailable on the remote host. `cosign` being unavailable
-    can be downgraded to a non-blocking warning via
-    `Settings.ssh_require_cosign_verification`; a failed `cosign verify`
-    always raises.
+    Always fails closed: a failed verification (wrong identity, no
+    signature, tampered signature) and unreachable verification
+    infrastructure (registry or Sigstore services) are both treated as
+    blocking. See `services.ssh.sigstore_verify.verify_signature`.
     """
 
     def __init__(self, image_ref: str, reason: str) -> None:
@@ -694,7 +697,7 @@ class TrainerProtocolVersionMismatchError(BaseException):
 
 
 class SshFeatureDisabledError(BaseException):
-    """Raised when the SSH remote-trainer feature is off, or fails closed on network exposure.
+    """Raised when the SSH remote-trainer feature fails closed on network exposure.
 
     Carries the evaluated reason (if any) rather than any server/alias detail,
     since this error can reach an unauthenticated caller.

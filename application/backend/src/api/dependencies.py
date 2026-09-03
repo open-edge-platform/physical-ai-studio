@@ -110,11 +110,11 @@ RemoteServerServiceDep = Annotated[RemoteServerService, Depends(get_remote_serve
 
 
 def require_ssh_feature_active() -> SshFeatureAvailability:
-    """Dependency that fails a route closed when the SSH feature is off or network-exposed.
+    """Dependency that fails a route closed when the SSH feature is network-exposed.
 
     Raises:
-        SshFeatureDisabledError: The feature is disabled by configuration, or
-            fails closed because the backend is bound to a non-loopback address.
+        SshFeatureDisabledError: The feature fails closed because the backend
+            is bound to a non-loopback address.
     """
     availability = get_ssh_feature_availability()
     if not availability.active:

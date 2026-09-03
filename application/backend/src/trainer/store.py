@@ -21,6 +21,8 @@ from trainer.schemas import JobState, SubmitJobRequest, TrainerJobStatus
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from pydantic import SecretStr
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id          TEXT PRIMARY KEY,
@@ -57,6 +59,29 @@ class JobStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute(_SCHEMA)
         self._conn.commit()
+        # Per-job secrets (e.g. an HF token) never touch the SQLite row: `create`
+        # persists `request.model_dump_json()` to disk. Holding the secret only
+        # in memory means it is never readable from the job database file, and
+        # a restart already fails any RUNNING/AWAITING_DATASET job outright
+        # (see `reset_orphans`), so there's nothing to recover across restarts.
+        self._secrets: dict[str, SecretStr] = {}
+
+    def stash_secret(self, job_id: str, token: SecretStr | None) -> None:
+        """Cache a job's Hugging Face token in memory, never on disk."""
+        if token is None:
+            return
+        with self._lock:
+            self._secrets[job_id] = token
+
+    def take_secret(self, job_id: str) -> SecretStr | None:
+        """Remove and return a job's cached token, if one was stashed."""
+        with self._lock:
+            return self._secrets.pop(job_id, None)
+
+    def discard_secret(self, job_id: str) -> None:
+        """Drop a job's cached token without returning it (e.g. on cancel/delete)."""
+        with self._lock:
+            self._secrets.pop(job_id, None)
 
     def create(self, request: SubmitJobRequest) -> str:
         """Persist a job and return its id; jobs await their dataset upload."""
@@ -151,6 +176,7 @@ class JobStore:
         with self._lock:
             self._conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
             self._conn.commit()
+        self.discard_secret(job_id)
 
     def reset_orphans(self) -> None:
         """Fail running jobs and incomplete HTTP uploads after a restart."""

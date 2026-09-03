@@ -12,10 +12,12 @@ sweep - independent of the real docker/SSH calls `verify_reattach` makes
 
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
+from core.security import SshFeatureAvailability
 from exceptions import ResourceNotFoundError, ResourceType
 from schemas.hardware import DeviceType
 from schemas.job_provisioning import JobProvisioning
@@ -27,6 +29,17 @@ from services.ssh.recovery import recover_ssh_jobs
 # Every test in this module is async; mark the whole module rather than each
 # test individually.
 pytestmark = pytest.mark.anyio
+
+_ACTIVE = SshFeatureAvailability(network_exposed=False)
+_INACTIVE_EXPOSED = SshFeatureAvailability(network_exposed=True, reason="network-exposed")
+
+
+@pytest.fixture(autouse=True)
+def _ssh_feature_active():
+    """Every test below exercises recovery's per-row behavior, which only runs while the
+    feature is active - `test_recovery_is_skipped_*` below cover the inactive gate itself."""
+    with patch("services.ssh.recovery.get_ssh_feature_availability", return_value=_ACTIVE):
+        yield
 
 
 def _server(name: str = "Lab GPU box") -> RemoteServer:
@@ -93,6 +106,7 @@ class FakeProvisioningService:
     """
 
     verify_outcomes: dict = {}
+    verify_raises: dict = {}
     sweep_results: dict = {}
     teardown_calls: list = []
     verify_calls: list = []
@@ -107,6 +121,9 @@ class FakeProvisioningService:
 
     async def verify_reattach(self, row: JobProvisioning, server: RemoteServer) -> ReattachVerification:
         FakeProvisioningService.verify_calls.append(row.job_id)
+        error = FakeProvisioningService.verify_raises.get(row.job_id)
+        if error is not None:
+            raise error
         return FakeProvisioningService.verify_outcomes[row.job_id]
 
     async def sweep_orphans(self, server: RemoteServer, active_job_ids: set) -> list[str]:
@@ -117,6 +134,7 @@ class FakeProvisioningService:
 @pytest.fixture(autouse=True)
 def _fake_provisioning_service(monkeypatch):
     FakeProvisioningService.verify_outcomes = {}
+    FakeProvisioningService.verify_raises = {}
     FakeProvisioningService.sweep_results = {}
     FakeProvisioningService.teardown_calls = []
     FakeProvisioningService.verify_calls = []
@@ -220,6 +238,31 @@ async def test_inspection_failed_outcome_is_also_treated_as_transient() -> None:
     assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id}))]
 
 
+async def test_verify_reattach_unexpected_exception_is_treated_as_transient() -> None:
+    """An unexpected `verify_reattach` exception must not abort recovery of every other job."""
+    server = _server()
+    row = _row(server)
+    other_row = _row(server)
+    FakeProvisioningService.verify_raises[row.job_id] = RuntimeError("boom")
+    FakeProvisioningService.verify_outcomes[other_row.job_id] = ReattachVerification(ok=True)
+
+    job_service = FakeJobService()
+    report = await recover_ssh_jobs(
+        job_service, FakeProvisioningRepository([row, other_row]), FakeRemoteServerService([server])
+    )
+
+    assert report.transient == 1
+    assert report.confirmed == 1
+    assert report.failed == 0
+    # Requeued to PENDING, same as any other transient outcome, so the next
+    # pickup retries the reattach check instead of stranding the job.
+    statuses = {job_id: status.value for job_id, status, _ in job_service.status_updates}
+    assert statuses[row.job_id] == "pending"
+    assert statuses[other_row.job_id] == "pending"
+    assert FakeProvisioningService.sweep_calls == [(server.id, frozenset({row.job_id, other_row.job_id}))]
+    assert report.handled_job_ids == frozenset({row.job_id, other_row.job_id})
+
+
 async def test_row_with_no_container_yet_is_transient_and_never_calls_verify_reattach() -> None:
     server = _server()
     row = _row(server, container_name=None)
@@ -294,3 +337,28 @@ async def test_missing_server_fails_the_active_job_without_touching_other_server
     # Only the known server was ever swept - there is no transport to dial for
     # a server that no longer exists.
     assert [server_id for server_id, _ in FakeProvisioningService.sweep_calls] == [known_server.id]
+
+
+@pytest.mark.parametrize("inactive", [_INACTIVE_EXPOSED])
+async def test_recovery_is_skipped_entirely_when_ssh_feature_is_inactive(inactive) -> None:
+    """A network-exposed feature must never dial SSH or touch a container.
+
+    Regression test for the gap where a prior active run's `JobProvisioningDB`
+    rows would still be reattached/swept (real SSH connections, real `docker
+    stop`/`rm`) after the feature started failing closed.
+    """
+    server = _server()
+    row = _row(server)
+    FakeProvisioningService.verify_outcomes[row.job_id] = ReattachVerification(ok=True)
+
+    job_service = FakeJobService()
+    repo = FakeProvisioningRepository([row])
+    with patch("services.ssh.recovery.get_ssh_feature_availability", return_value=inactive):
+        report = await recover_ssh_jobs(job_service, repo, FakeRemoteServerService([server]))
+
+    assert report == recovery_module.SshRecoveryReport()
+    assert job_service.status_updates == []
+    assert FakeProvisioningService.verify_calls == []
+    assert FakeProvisioningService.sweep_calls == []
+    assert FakeProvisioningService.teardown_calls == []
+    assert repo.deleted == []

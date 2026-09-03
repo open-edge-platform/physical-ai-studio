@@ -184,13 +184,50 @@ def _run(
 
 
 class TestRunTrainingJob:
-    def test_run_options_export_huggingface_token(self, tmp_path: Path, monkeypatch) -> None:
+    def test_hf_token_is_set_during_the_run_and_cleared_after(self, tmp_path: Path, monkeypatch) -> None:
+        """The token is scoped to this run: visible while training, gone once it returns."""
         monkeypatch.delenv("HF_TOKEN", raising=False)
         spec = TrainingJobSpec(policy="act", run_options=RunOptions(hf_token=SecretStr("hf-secret")))
+        seen_during_fit = {}
+
+        def fake_fit(*_args: object, **_kwargs: object) -> None:
+            seen_during_fit["HF_TOKEN"] = os.environ.get("HF_TOKEN")
+            (tmp_path / "cache" / "job" / CHECKPOINT_NAME).write_text("checkpoint")
+
+        with (
+            patch("physicalai.data.LeRobotDataModule"),
+            patch(f"{JOB}.build_policy", return_value=MagicMock()),
+            patch("physicalai.train.trainer.Trainer") as trainer_class,
+        ):
+            trainer_class.return_value.fit.side_effect = fake_fit
+            run_training_job(
+                spec,
+                dataset_root=tmp_path / "snapshot",
+                output_dir=tmp_path / "model",
+                cache_dir=tmp_path / "cache" / "job",
+                report=MagicMock(),
+                should_stop=lambda: False,
+            )
+
+        assert seen_during_fit["HF_TOKEN"] == "hf-secret"
+        assert "HF_TOKEN" not in os.environ
+
+    def test_hf_token_restores_a_prior_process_environment_value(self, tmp_path: Path, monkeypatch) -> None:
+        """A token set on the trainer's own process (not per-job) is restored, not clobbered."""
+        monkeypatch.setenv("HF_TOKEN", "operator-set-token")
+        spec = TrainingJobSpec(policy="act", run_options=RunOptions(hf_token=SecretStr("job-secret")))
 
         _run(spec, tmp_path)
 
-        assert os.environ["HF_TOKEN"] == "hf-secret"
+        assert os.environ["HF_TOKEN"] == "operator-set-token"
+
+    def test_no_hf_token_leaves_environment_untouched(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        spec = TrainingJobSpec(policy="act")
+
+        _run(spec, tmp_path)
+
+        assert "HF_TOKEN" not in os.environ
 
     def test_trainer_is_configured_from_the_spec(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(

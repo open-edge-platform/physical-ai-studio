@@ -38,8 +38,8 @@ async def get_training_backend(payload: TrainJobPayload, job_id: UUID) -> Traini
 
         # Defense in depth: submission already rejects an SSH job while the
         # feature is inactive, but a job persisted while it was active must
-        # not silently start if the feature was disabled before it was picked
-        # up (e.g. across a restart with a changed config).
+        # not silently start if the feature became network-exposed before it
+        # was picked up (e.g. across a restart with a changed bind address).
         availability = get_ssh_feature_availability()
         if not availability.active:
             raise SshFeatureDisabledError(availability.reason)

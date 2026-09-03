@@ -5,7 +5,10 @@
 
 Tier 1 is cheap and bounded, so it can gate a create/update request. Tier 2
 resolves and inspects the trainer image and runs a one-shot GPU container, so it
-is an explicit action and never runs inline in a request handler.
+never runs inline in a *create/update* request - only from an explicit
+``/check``, or once automatically the first time an unverified server is
+selected for a job (see
+:meth:`~services.remote_server_service.RemoteServerService.ensure_verified`).
 
 **Tier 1 performs no image work at all.** Its registry check is an
 unauthenticated ``HEAD`` against the registry's ``/v2/`` API root, which
@@ -23,7 +26,9 @@ Neither entry point raises for a server that fails its checks. A failure is a
 the first one.
 
 The transport is reached through :data:`transport_factory`, so a caller can
-substitute a fake without patching ``asyncssh``.
+substitute a fake without patching ``asyncssh``. ``IMAGE_SIGNATURE`` is the one
+Tier 2 check that never uses that transport: it runs in this backend process
+against the registry directly. See :mod:`services.ssh.sigstore_verify`.
 """
 
 import hashlib
@@ -47,6 +52,7 @@ from exceptions import (
 from schemas.hardware import DeviceType
 from schemas.remote_server import SSH_SERVER_DEVICE_TYPES, RemoteServer
 from schemas.ssh_preflight import CheckKey, CheckOutcome, PreflightCheck, PreflightResult, PreflightTier
+from services.ssh import sigstore_verify
 from services.ssh.sanitize import sanitize_output
 from services.ssh.transport import CommandResult, SshTransport, open_transport
 from services.ssh_config_reader import resolve_alias
@@ -739,8 +745,8 @@ _TIER2_KEYS: Final = (
     CheckKey.PROTOCOL_COMPATIBLE,
 )
 
-# IMAGE_SIGNATURE is advisory: the images are signed at publish time, so a host
-# without cosign is informative, not broken.
+# IMAGE_SIGNATURE is advisory: the images are signed at publish time, so this
+# backend lacking `cosign` is informative, not broken.
 _TIER2_NON_BLOCKING: Final = frozenset({CheckKey.IMAGE_SIGNATURE})
 
 
@@ -828,37 +834,46 @@ async def _resolve_image(
     return None
 
 
-async def _check_signature(recorder: _CheckRecorder, transport: SshTransport, image_ref: str) -> None:
-    """Verify the image signature when ``cosign`` is available on the host.
+async def _check_signature(recorder: _CheckRecorder, image_ref: str) -> None:
+    """Verify the image signature using `services.ssh.sigstore_verify`.
 
-    Defense in depth rather than required infrastructure, so a host without
-    ``cosign`` is ``SKIPPED`` and a failed verification is a non-blocking
-    ``WARNING``: the publish-time signature is the primary control.
+    Runs on this backend's own host, not over SSH: ``image_ref`` is a fully
+    qualified registry reference, so verifying it needs only this process's
+    own network egress.
+
+    Defense in depth rather than required infrastructure, so infrastructure
+    being unreachable is ``SKIPPED`` and a failed verification is a
+    non-blocking ``WARNING``: the publish-time signature is the primary
+    control.
     """
-    available = await transport.run_command(["cosign", "version"])
-    if not available.ok:
+    settings = get_settings()
+    try:
+        await sigstore_verify.verify_signature(
+            image_ref,
+            identity_regexp=settings.cosign_certificate_identity_regexp,
+            oidc_issuer=settings.cosign_oidc_issuer,
+        )
+    except sigstore_verify.SignatureUnavailableError as error:
         recorder.add(
             CheckKey.IMAGE_SIGNATURE,
             CheckOutcome.SKIPPED,
             blocking=False,
             reason_code=REASON_TOOL_MISSING,
-            detail="cosign is not installed on the remote host, so the signature was not verified there.",
+            detail=f"Signature verification infrastructure is unreachable: {error}",
             method=METHOD_COSIGN,
         )
         return
-
-    verified = await transport.run_command(["cosign", "verify", image_ref])
-    if verified.ok:
-        recorder.add(CheckKey.IMAGE_SIGNATURE, CheckOutcome.PASSED, blocking=False, method=METHOD_COSIGN)
+    except sigstore_verify.SignatureVerificationError as error:
+        recorder.add(
+            CheckKey.IMAGE_SIGNATURE,
+            CheckOutcome.WARNING,
+            blocking=False,
+            reason_code=REASON_COMMAND_FAILED,
+            detail=_detail(str(error)),
+            method=METHOD_COSIGN,
+        )
         return
-    recorder.add(
-        CheckKey.IMAGE_SIGNATURE,
-        CheckOutcome.WARNING,
-        blocking=False,
-        reason_code=REASON_COMMAND_FAILED,
-        detail=_failure_detail(verified) or "cosign could not verify the image signature.",
-        method=METHOD_COSIGN,
-    )
+    recorder.add(CheckKey.IMAGE_SIGNATURE, CheckOutcome.PASSED, blocking=False, method=METHOD_COSIGN)
 
 
 async def resolve_render_group_gid(transport: SshTransport) -> str | None:
@@ -906,7 +921,7 @@ def _device_probe_expression(device_type: DeviceType) -> str:
 # Substrings Docker's own client prints while it pulls an image inline for a
 # `docker run` whose image is not yet cached locally. Matched against a failed
 # probe's output as a defense-in-depth fallback for the race between
-# `_image_present_locally` and the `docker run` a few lines later - e.g.
+# `image_present_locally` and the `docker run` a few lines later - e.g.
 # another process evicting the image in between. The normal path never hits
 # this: the presence check below routes a genuinely absent image to a
 # background pull instead of an inline one.
@@ -919,8 +934,13 @@ def _is_pulling_image(result: CommandResult) -> bool:
     return any(marker in text for marker in _IMAGE_PULL_MARKERS)
 
 
-async def _image_present_locally(transport: SshTransport, image_ref: str) -> bool:
-    """True when the image is already cached in the remote Docker image store."""
+async def image_present_locally(transport: SshTransport, image_ref: str) -> bool:
+    """True when the image is already cached in the remote Docker image store.
+
+    Shared with `services.ssh.docker_ops.pull_image`, which uses it to skip a
+    redundant `docker pull` when the digest Tier 2 already pulled (by tag) is
+    still the one job provisioning resolved.
+    """
     result = await transport.run_command(["docker", "image", "inspect", image_ref])
     return result.ok
 
@@ -946,6 +966,18 @@ async def _pull_already_running(transport: SshTransport, pidfile: str) -> bool:
         ["sh", "-c", 'test -f "$1" && kill -0 "$(cat "$1" 2>/dev/null)" 2>/dev/null', "sh", pidfile]
     )
     return result.ok
+
+
+async def pull_in_progress(transport: SshTransport, image_ref: str) -> bool:
+    """True when a Tier 2 background pull of ``image_ref`` is still running.
+
+    Shared with `services.ssh.docker_ops.pull_image`: without this, a job
+    dispatched while Tier 2's own detached pull is still transferring would
+    start a second, concurrent `docker pull` of the same content by digest.
+    `pull_image` polls this instead of racing it.
+    """
+    pidfile, _ = _pull_state_paths(image_ref)
+    return await _pull_already_running(transport, pidfile)
 
 
 async def _start_background_pull(transport: SshTransport, image_ref: str, pidfile: str, logfile: str) -> None:
@@ -996,7 +1028,7 @@ async def _check_device_probe(
         caller can skip the protocol check rather than have it fail against an
         image that is not there yet.
     """
-    if not await _image_present_locally(transport, image_ref):
+    if not await image_present_locally(transport, image_ref):
         pidfile, logfile = _pull_state_paths(image_ref)
         already_running = await _pull_already_running(transport, pidfile)
         if not already_running:
@@ -1110,10 +1142,12 @@ async def run_tier2_preflight(
 ) -> PreflightResult:
     """Run the expensive verification tier against one server.
 
-    Invoked only by an explicit verify action: it inspects the trainer image in
-    the registry and starts a one-shot container, neither of which belongs inside
-    a create/update request. ``protocol_version`` is a parameter so this module
-    stays independent of the trainer package.
+    Invoked by an explicit verify action (the ``/check`` endpoint), or once
+    automatically by `RemoteServerService.ensure_verified` the first time a
+    server is selected for a job - neither is a create/update request, which
+    is what this must never run inline in: it inspects the trainer image in
+    the registry and starts a one-shot container. ``protocol_version`` is a
+    parameter so this module stays independent of the trainer package.
 
     Like Tier 1, does not raise for a server that fails its checks.
 
@@ -1142,7 +1176,7 @@ async def run_tier2_preflight(
             _complete_tier2(recorder, REASON_IMAGE_UNRESOLVED)
             return _result(server, recorder, started, checked_at)
 
-        await _check_signature(recorder, transport, image_ref)
+        await _check_signature(recorder, image_ref)
         pulling = await _check_device_probe(recorder, transport, server.device_type, image_ref)
         if pulling:
             # The protocol check reads a label off the local image via `docker
@@ -1163,6 +1197,72 @@ async def run_tier2_preflight(
         await transport.close()
 
     return _result(server, recorder, started, checked_at)
+
+
+# --------------------------------------------------------------------------- #
+# Device-type autodetection                                                   #
+# --------------------------------------------------------------------------- #
+
+
+async def _probe_device_type(transport: SshTransport) -> tuple[DeviceType | None, str | None]:
+    """Try each accelerator's cheap signal in turn and return the first match.
+
+    CUDA first, since `nvidia-smi` is unambiguous when present. Falls back to
+    the same XPU signals Tier 1 uses: `xpu-smi`, then the Intel render-node
+    probe for a host whose XPU works but lacks that tool.
+    """
+    cuda = await transport.run_command(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"])
+    if cuda.ok and cuda.first_line():
+        return DeviceType.CUDA, METHOD_NVIDIA_SMI
+
+    xpu = await transport.run_command(["xpu-smi", "discovery"])
+    if xpu.ok:
+        return DeviceType.XPU, METHOD_XPU_SMI
+
+    render = await _probe_intel_render_node(transport)
+    if render.ok:
+        return DeviceType.XPU, METHOD_RENDER_NODE
+
+    return None, None
+
+
+async def detect_device_type(alias: str) -> tuple[DeviceType | None, str | None, str | None]:
+    """Best-effort autodetect of the accelerator reachable via an SSH alias.
+
+    Used to prefill the "Device type" field in the add-target form, so it never
+    raises for a reachable-but-driverless host or an unreachable one - it
+    returns ``(None, None, reason_code)`` instead, and the caller falls back to
+    asking the user to pick manually.
+
+    Args:
+        alias: The SSH config host alias to probe.
+
+    Returns:
+        A ``(device_type, method, reason_code)`` tuple. ``device_type`` and
+        ``method`` are set together on a match; ``reason_code`` is set alone
+        on anything else (unresolved alias, unreachable host, or no signal).
+    """
+    settings = get_settings()
+    resolved = resolve_alias(settings.ssh_config_path, alias)
+    if not resolved.found:
+        return None, None, REASON_ALIAS_NOT_FOUND
+
+    transport = transport_factory(alias)
+    try:
+        await transport.connect()
+    except _CONNECT_FAILURES as error:
+        return None, None, _classify_connect_error(error)[0]
+
+    try:
+        device_type, method = await _probe_device_type(transport)
+    except SshConnectionError:
+        return None, None, REASON_UNREACHABLE
+    finally:
+        await transport.close()
+
+    if device_type is None:
+        return None, None, REASON_NO_SIGNAL
+    return device_type, method, None
 
 
 def set_transport_factory(factory: Callable[[str], SshTransport]) -> None:

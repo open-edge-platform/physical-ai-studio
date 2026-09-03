@@ -30,6 +30,25 @@ def test_huggingface_access_reports_missing_token(monkeypatch, tmp_path: Path) -
     }
 
 
+def test_huggingface_access_reports_missing_token_for_pi0(monkeypatch, tmp_path: Path) -> None:
+    """pi0 also loads a gated PaliGemma backbone, so it must be checked too (regression test)."""
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with TestClient(app) as client:
+        response = client.get("/api/policies/pi0/huggingface-access")
+
+    assert response.json() == {
+        "requirements": [
+            {
+                "repository": "google/paligemma-3b-pt-224",
+                "status": "missing_token",
+                "access_url": "https://huggingface.co/google/paligemma-3b-pt-224",
+                "required": True,
+            },
+        ],
+    }
+
+
 def test_huggingface_access_reports_gated_access_denied(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
     write_user_settings({"huggingface": {"hf_token": "hf-secret"}})

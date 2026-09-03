@@ -11,7 +11,7 @@ from typing import Any
 from uuid import UUID  # noqa: TC003
 
 from loguru import logger
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from training import TrainingJobSpec
@@ -150,6 +150,16 @@ class SubmitJobRequest(BaseModel):
     dataset_transfer: DatasetTransfer = Field(
         default=DatasetTransfer.HTTP,
         description="How the dataset reaches the trainer (http upload)",
+    )
+    hf_token: SecretStr | None = Field(
+        default=None,
+        exclude=True,
+        description=(
+            "Hugging Face token for authenticated dataset/checkpoint downloads during training. "
+            "``exclude=True`` keeps it out of every ``model_dump``/``model_dump_json`` call, so it is "
+            "never written to the job store's SQLite database; it's cached in memory instead for the "
+            "lifetime of the job (see `JobStore.stash_secret`/`take_secret`)."
+        ),
     )
 
     @field_validator("spec")

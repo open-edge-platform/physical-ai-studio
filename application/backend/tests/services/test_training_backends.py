@@ -31,7 +31,7 @@ def _settings() -> MagicMock:
 def _active_ssh_feature():
     from core.security import SshFeatureAvailability
 
-    return SshFeatureAvailability(enabled=True, network_exposed=False)
+    return SshFeatureAvailability(network_exposed=False)
 
 
 def _payload(target: TrainingTarget) -> TrainJobPayload:
@@ -113,12 +113,12 @@ async def test_get_training_backend_raises_without_remote_server_id() -> None:
 
 
 async def test_get_training_backend_rejects_ssh_job_when_feature_inactive() -> None:
-    """Defense in depth: a job persisted while active must not silently start if disabled since."""
+    """Defense in depth: a job persisted while active must not silently start if it becomes network-exposed."""
     from core.security import SshFeatureAvailability
     from exceptions import SshFeatureDisabledError
 
     payload = _payload(TrainingTarget.SSH)
-    inactive = SshFeatureAvailability(enabled=False, network_exposed=False)
+    inactive = SshFeatureAvailability(network_exposed=True, reason="bound to a non-loopback address")
     with (
         patch("core.security.get_ssh_feature_availability", return_value=inactive),
         pytest.raises(SshFeatureDisabledError),
