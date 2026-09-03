@@ -34,6 +34,7 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 
 ## Contribution Notes
 
+- **Before pushing any commit, run `prek run --all-files` (scoped to the changed area, e.g. `prek run --all-files library/`) and make sure it exits clean.** This is what CI's `code-quality` job actually runs; ad hoc `ruff check`/`ruff format --check`/`mypy` calls are not equivalent and can miss real failures (e.g. hook args like ruff's `--fix`, or rules like `unused-noqa` that only show up when a directive stops being necessary). If `prek` modifies files, re-run it until clean and include those changes in the commit.
 - Use Conventional Commits for PR titles and commits.
 - Sign commits when committing changes.
 - Follow `docs/development/coding-standards.md` for repo-wide coding standards.
