@@ -66,7 +66,6 @@ const mockProjectWithRemoteTrainer = () => {
                 },
                 huggingface: { hf_token: null },
                 ssh: {
-                    enabled: false,
                     connect_timeout_s: 10,
                     command_timeout_s: 15,
                     preflight_timeout_s: 30,
