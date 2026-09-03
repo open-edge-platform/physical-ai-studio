@@ -2,12 +2,12 @@ import { useState } from 'react';
 
 import { ActionButton, Button, DialogTrigger, Flex, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
-import { capitalize } from 'lodash-es';
 
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { Table } from '../../../components/table/table';
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
+import { getTrainerLabel } from '../shared/trainer';
 import { ModelDownloadDialog } from './model-download-dialog';
 import { ModelRowContent } from './model-row-content';
 import { StartInferenceDialog } from './start-inference-dialog';
@@ -31,7 +31,7 @@ export const ModelRow = ({
     const { data: dataset } = useDatasetQuery(model.dataset_id);
     const { data: environment } = useEnvironmentQuery(model.project_id, dataset?.environment_id);
 
-    const trainer = trainingJob?.payload.remote_trainer_name ?? capitalize(trainingJob?.payload.training_target);
+    const trainer = getTrainerLabel(trainingJob?.payload);
 
     const onAction = (key: Key) => {
         const action = key.toString();

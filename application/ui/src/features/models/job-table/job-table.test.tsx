@@ -125,10 +125,29 @@ describe('TrainingRow', () => {
 
     it('shows the remote_trainer_name in the Trainer column when present', async () => {
         renderTrainingRow({
-            payload: { ...localJob.payload, training_target: 'remote', remote_trainer_name: remoteTrainer.name },
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: 'remote-trainer-1',
+                remote_trainer_name: remoteTrainer.name,
+            },
         });
 
         await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
+    });
+
+    it('shows Local for a local job in the Trainer column', async () => {
+        renderTrainingRow();
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local'));
+    });
+
+    it('shows SSH for an ssh job in the Trainer column', async () => {
+        renderTrainingRow({
+            payload: { ...localJob.payload, training_target: 'ssh', remote_server_id: 'server-1' },
+        });
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('SSH'));
     });
 
     it('shows "-" in the Dataset and Environment cells when those requests fail', async () => {

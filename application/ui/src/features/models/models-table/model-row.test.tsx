@@ -180,17 +180,33 @@ describe('ModelRow', () => {
         renderModelRow({
             trainingJobOverride: {
                 ...trainingJob,
-                payload: { ...trainingJob.payload, training_target: 'remote', remote_trainer_name: 'managed-trainer' },
+                payload: {
+                    ...trainingJob.payload,
+                    training_target: 'remote',
+                    remote_trainer_id: 'remote-trainer-1',
+                    remote_trainer_name: 'managed-trainer',
+                },
             },
         });
 
         expect(screen.getByTestId('trainer-cell')).toHaveTextContent('managed-trainer');
     });
 
-    it('shows the capitalized training_target in the Trainer column when there is no remote_trainer_name', () => {
+    it('shows Local in the Trainer column for a local job', () => {
         renderModelRow({ trainingJobOverride: trainingJob });
 
         expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local');
+    });
+
+    it('shows SSH in the Trainer column for an ssh job', () => {
+        renderModelRow({
+            trainingJobOverride: {
+                ...trainingJob,
+                payload: { ...trainingJob.payload, training_target: 'ssh', remote_server_id: 'server-1' },
+            },
+        });
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('SSH');
     });
 
     it('shows "-" in the Trainer column when there is no trainingJob at all', () => {

@@ -14,7 +14,6 @@ import {
 } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 import { useQueryClient } from '@tanstack/react-query';
-import { capitalize } from 'lodash-es';
 
 import { $api } from '../../../api/client';
 import { ElapsedDuration } from '../../../components/elapsed-duration.component';
@@ -23,6 +22,7 @@ import { Table } from '../../../components/table/table';
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
 import { SingleBadge, SplitBadge } from '../shared/split-badge';
+import { getTrainerLabel } from '../shared/trainer';
 import { SchemaTrainJob } from '../train-model-dialog/train-model-dialog';
 import { JobRowContent } from './job-row-content';
 
@@ -122,7 +122,7 @@ export const TrainingRow = ({
 
     const { data: dataset } = useDatasetQuery(trainJob.payload.dataset_id);
     const { data: environment } = useEnvironmentQuery(trainJob.payload.project_id, dataset?.environment_id);
-    const trainer = trainJob.payload.remote_trainer_name ?? capitalize(trainJob.payload.training_target);
+    const trainer = getTrainerLabel(trainJob.payload);
 
     if (trainJob.status === 'failed') {
         return (
@@ -163,7 +163,7 @@ export const TrainingRow = ({
             <Text>{trainJob.payload.policy.toUpperCase()}</Text>
             <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
             <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
-            <Text data-testid='trainer-cell'>{trainer ?? '-'}</Text>
+            <Text data-testid='trainer-cell'>{trainer || '-'}</Text>
             <div onClick={(e) => e.stopPropagation()}>
                 {trainJob.status === 'running' && (
                     <DialogTrigger>
