@@ -4,10 +4,11 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from db.schema import Base, ProjectDB
+from db.schema import Base, JobDB, ProjectDB
 from repositories.job_repo import JobRepository
 from repositories.mappers.job_mapper import JobMapper
-from schemas.job import RemoteTrainJobPayload, TrainJob
+from schemas.base_job import JobStatus, JobType
+from schemas.job import RemoteTrainJobPayload, TrainingTarget, TrainJob
 
 
 def test_duplicate_remote_job_payload_with_uuids_is_json_serializable() -> None:
@@ -49,3 +50,95 @@ def test_duplicate_remote_job_payload_with_uuids_is_json_serializable() -> None:
         await engine.dispose()
 
     asyncio.run(check_duplicate())
+
+
+def test_legacy_training_job_missing_training_target_is_backfilled() -> None:
+    """Jobs persisted before `training_target` existed must still load.
+
+    Regression test for `union_tag_not_found` on `training.payload`: a job
+    submitted before remote/SSH training was added has no `training_target`
+    key in its stored payload JSON at all.
+    """
+
+    async def check_legacy_jobs() -> None:
+        engine = create_async_engine("sqlite+aiosqlite://")
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        project_id = uuid4()
+        remote_trainer_id = uuid4()
+
+        async with engine.begin() as connection:
+            await connection.run_sync(lambda sync_connection: Base.metadata.create_all(sync_connection))
+
+        async with session_factory() as session:
+            session.add(ProjectDB(id=str(project_id), name="Test project"))
+            await session.commit()
+            session.add_all(
+                [
+                    JobDB(
+                        id=str(uuid4()),
+                        project_id=str(project_id),
+                        type=JobType.TRAINING,
+                        progress=0,
+                        status=JobStatus.PENDING,
+                        message="Job created",
+                        payload={
+                            "project_id": str(project_id),
+                            "dataset_id": str(uuid4()),
+                            "policy": "act",
+                            "model_name": "legacy-local-model",
+                            "batch_size": 8,
+                            # No `training_target` key: predates the field entirely.
+                        },
+                    ),
+                    JobDB(
+                        id=str(uuid4()),
+                        project_id=str(project_id),
+                        type=JobType.TRAINING,
+                        progress=0,
+                        status=JobStatus.PENDING,
+                        message="Job created",
+                        payload={
+                            "project_id": str(project_id),
+                            "dataset_id": str(uuid4()),
+                            "policy": "act",
+                            "model_name": "legacy-remote-model",
+                            "batch_size": 8,
+                            "remote_trainer_id": str(remote_trainer_id),
+                            # No `training_target` key either.
+                        },
+                    ),
+                    JobDB(
+                        id=str(uuid4()),
+                        project_id=str(project_id),
+                        type=JobType.TRAINING,
+                        progress=0,
+                        status=JobStatus.PENDING,
+                        message="Job created",
+                        payload={
+                            "project_id": str(project_id),
+                            "dataset_id": str(uuid4()),
+                            "policy": "act",
+                            "model_name": "legacy-local-with-stale-fields",
+                            "batch_size": 8,
+                            "training_target": "local",
+                            # Stale fields from before per-target payloads forbade extras.
+                            "remote_trainer_id": None,
+                            "remote_trainer_url": None,
+                            "remote_trainer_name": None,
+                        },
+                    ),
+                ]
+            )
+            await session.commit()
+
+            repository = JobRepository(session)
+            jobs = await repository.get_jobs_by_type(project_id, JobType.TRAINING)
+
+        targets = {job.payload.model_name: job.payload.training_target for job in jobs}
+        assert targets["legacy-local-model"] is TrainingTarget.LOCAL
+        assert targets["legacy-remote-model"] is TrainingTarget.REMOTE
+        assert targets["legacy-local-with-stale-fields"] is TrainingTarget.LOCAL
+
+        await engine.dispose()
+
+    asyncio.run(check_legacy_jobs())
