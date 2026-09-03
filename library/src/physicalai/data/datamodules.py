@@ -131,7 +131,7 @@ class DataModule(LightningDataModule):
     When both are provided, ``val_eval_dataset`` takes precedence (eval-loss mode).
     """
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         train_dataset: Dataset,
         train_batch_size: int = 16,
