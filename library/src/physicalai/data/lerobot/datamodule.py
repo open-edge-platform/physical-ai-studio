@@ -149,8 +149,9 @@ class LeRobotDataModule(DataModule):
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
-        pin_memory: bool = True,
+        pin_memory: bool | Literal["auto"] = "auto",
         persistent_workers: bool = True,
+        val_persistent_workers: bool = False,
     ) -> None:
         """Initialize a LeRobot-specific Action DataModule.
 
@@ -210,12 +211,16 @@ class LeRobotDataModule(DataModule):
                 Defaults to `10`.
             max_episode_steps (int | None, optional): Maximum steps per episode.
                 Defaults to `300`.
-            pin_memory (bool, optional): Whether to use pinned (page-locked) memory for the
-                training and eval-loss validation DataLoaders, which speeds up host-to-GPU
-                transfers. Defaults to `True`.
-            persistent_workers (bool, optional): Whether to keep DataLoader worker processes
-                alive between epochs for the training and eval-loss validation DataLoaders.
-                Has no effect when ``num_workers`` resolves to ``0``. Defaults to `True`.
+            pin_memory (bool | Literal["auto"], optional): Whether to use pinned (page-locked)
+                memory for the training and eval-loss validation DataLoaders, which speeds up
+                host-to-GPU transfers. ``"auto"`` (default) enables it only when an accelerator
+                (CUDA/XPU/etc.) is available, avoiding PyTorch's ``pin_memory=True`` warning on
+                CPU-only setups.
+            persistent_workers (bool, optional): Whether to keep training DataLoader worker
+                processes alive between epochs, avoiding the cost of re-spawning them every
+                epoch. Has no effect when ``num_workers`` resolves to ``0``. Defaults to `True`.
+            val_persistent_workers (bool, optional): Same as ``persistent_workers`` but for the
+                eval-loss validation DataLoader. Defaults to `False`.
 
         Raises:
             ValueError: If neither `repo_id` nor `dataset` is provided, or if invalid `data_format`.
@@ -371,6 +376,7 @@ class LeRobotDataModule(DataModule):
             max_episode_steps=max_episode_steps,
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
+            val_persistent_workers=val_persistent_workers,
         )
 
     def train_dataloader(self) -> DataLoader:

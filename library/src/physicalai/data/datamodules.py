@@ -143,8 +143,9 @@ class DataModule(LightningDataModule):
         test_gym: Gym | None = None,
         num_rollouts_test: int = 10,
         max_episode_steps: int | None = 300,
-        pin_memory: bool = True,  # noqa: FBT001, FBT002
+        pin_memory: bool | Literal["auto"] = "auto",  # noqa: FBT001
         persistent_workers: bool = True,  # noqa: FBT001, FBT002
+        val_persistent_workers: bool = False,  # noqa: FBT001, FBT002
     ) -> None:
         """Initialize the ActionDataModule.
 
@@ -163,13 +164,17 @@ class DataModule(LightningDataModule):
             test_gym (Gym | None): Test environment.
             num_rollouts_test (int): Number of rollouts to run for test environments.
             max_episode_steps (int, None): Maximum steps allowed per episode. If None, no time limit.
-            pin_memory (bool): Whether to use pinned (page-locked) memory for the training and
-                eval-loss validation DataLoaders, which speeds up host-to-GPU transfers.
-                Defaults to `True`.
-            persistent_workers (bool): Whether to keep DataLoader worker processes alive between
-                epochs for the training and eval-loss validation DataLoaders, avoiding the cost of
-                re-spawning them every epoch. Has no effect when ``num_workers`` resolves to ``0``.
-                Defaults to `True`.
+            pin_memory (bool | Literal["auto"]): Whether to use pinned (page-locked) memory for the
+                training and eval-loss validation DataLoaders, which speeds up host-to-GPU transfers.
+                ``"auto"`` (default) enables it only when an accelerator (CUDA/XPU/etc.) is available,
+                avoiding PyTorch's ``pin_memory=True`` warning on CPU-only setups.
+            persistent_workers (bool): Whether to keep training DataLoader worker processes alive
+                between epochs, avoiding the cost of re-spawning them every epoch. Has no effect
+                when ``num_workers`` resolves to ``0``. Defaults to `True`.
+            val_persistent_workers (bool): Same as ``persistent_workers`` but for the eval-loss
+                validation DataLoader. Defaults to `False`, since validation runs far less often
+                than training and keeping its workers alive for the whole run has limited benefit
+                relative to the extra worker processes it holds open.
         """
         super().__init__()
 
@@ -177,8 +182,9 @@ class DataModule(LightningDataModule):
         self.train_dataset: Dataset = train_dataset
         self.train_batch_size: int = train_batch_size
         self.num_workers: int = resolve_auto_num_workers() if num_workers == "auto" else num_workers
-        self.pin_memory: bool = pin_memory
+        self._pin_memory: bool | Literal["auto"] = pin_memory
         self.persistent_workers: bool = persistent_workers and self.num_workers > 0
+        self.val_persistent_workers: bool = val_persistent_workers and self.num_workers > 0
         logger.info("DataLoader workers: %d%s", self.num_workers, " (auto)" if num_workers == "auto" else "")
 
         # eval-loss validation dataset
@@ -224,6 +230,22 @@ class DataModule(LightningDataModule):
     @val_batch_size.setter
     def val_batch_size(self, value: int | None) -> None:
         self._val_batch_size = value
+
+    @property
+    def pin_memory(self) -> bool:
+        """Effective ``pin_memory`` setting for train/val DataLoaders.
+
+        Resolves ``"auto"`` lazily (each access) to whether an accelerator (CUDA/XPU/etc.)
+        is currently available, so the check happens per-process (relevant for spawned
+        DataLoader workers) rather than once at construction time.
+        """
+        if self._pin_memory == "auto":
+            return torch.accelerator.is_available()
+        return self._pin_memory
+
+    @pin_memory.setter
+    def pin_memory(self, value: bool | Literal["auto"]) -> None:
+        self._pin_memory = value
 
     def setup(self, stage: str) -> None:
         """Set up datasets depending on the stage (fit or test).
@@ -279,7 +301,7 @@ class DataModule(LightningDataModule):
                 shuffle=False,
                 drop_last=False,
                 pin_memory=self.pin_memory,
-                persistent_workers=self.persistent_workers,
+                persistent_workers=self.val_persistent_workers,
                 collate_fn=_collate_observations,
             )
 
