@@ -1,23 +1,9 @@
 import { Suspense } from 'react';
 
-import {
-    ActionButton,
-    Button,
-    Divider,
-    Flex,
-    Grid,
-    Heading,
-    Icon,
-    Item,
-    Loading,
-    Menu,
-    MenuTrigger,
-    minmax,
-    View,
-} from '@geti-ui/ui';
+import { ActionButton, Flex, Grid, Heading, Item, Loading, Menu, MenuTrigger, minmax, Text, View } from '@geti-ui/ui';
 import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { NavLink, Outlet, useParams } from 'react-router';
+import { Link, NavLink, Outlet, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
 import { SchemaEnvironmentOutput } from '../../api/openapi-spec';
@@ -100,26 +86,13 @@ export const EnvironmentsList = () => {
     });
 
     return (
-        <Flex direction='column' gap='size-100'>
-            {/* TODO:  */}
-            <View isHidden>
-                <Flex justifyContent={'space-between'} alignItems={'end'}>
-                    <span>Step 3: create an environment</span>
-                    <Button>Next</Button>
-                </Flex>
-                <Divider size='S' marginY='size-200' />
-            </View>
-
-            <Button
-                variant='secondary'
-                href={paths.project.environments.new({ project_id })}
-                UNSAFE_className={classes.addNewRobotButton}
-            >
-                <Icon marginEnd='size-50'>
+        <Flex direction='column' gap='size-200'>
+            <Link to={paths.project.environments.new({ project_id })} className={classes.addNewRobotButton}>
+                <Flex alignItems={'center'} justifyContent={'center'} gap={'size-75'}>
                     <Add />
-                </Icon>
-                Configure a new environment
-            </Button>
+                    <Text UNSAFE_style={{ lineHeight: '1.2' }}>Configure a new environment</Text>
+                </Flex>
+            </Link>
 
             <Flex direction='column' gap='size-100'>
                 {environmentsQuery.data.map((environment) => {
