@@ -13,6 +13,7 @@ from physicalai_studio_plugin import (
     RobotAsset,
     RobotCatalogDefinition,
     RobotProbe,
+    robot_field_ui,
     robot_payload_ui,
 )
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -38,9 +39,10 @@ class SO101RobotPayload(BaseModel):
         default="",
         description="USB serial number of the robot (when available)",
     )
-    calibration: dict[str, SO101JointCalibration] | None = Field(
+    calibration: dict[str, SO101JointCalibration] | None = Field(  # pyrefly: ignore[no-matching-overload]
         default=None,
         description="Per-joint calibration values (id, drive_mode, homing_offset, range_min, range_max)",
+        json_schema_extra=robot_field_ui({"advanced_configuration": True}),
     )
 
     model_config = ConfigDict(

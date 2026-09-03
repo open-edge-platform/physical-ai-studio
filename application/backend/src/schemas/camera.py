@@ -15,13 +15,15 @@ class CameraProfile(BaseModel):
 
 class Camera(BaseModel):
     name: str = Field(description="Camera name")
-    fingerprint: str = Field(description="Either serial id for  RealSense or port for OpenCV")
+    fingerprint: dict[str, Any] = Field(description="Backend-specific camera identity from hardware discovery")
     driver: str = Field(description="Driver used for Camera access")
     default_stream_profile: CameraProfile
 
     @field_validator("fingerprint", mode="before")
-    def cast_id_to_str(cls, v: Any) -> str:
-        return str(v)
+    def require_object(cls, v: Any) -> dict[str, Any]:
+        if not isinstance(v, dict) or not v:
+            raise ValueError("Camera fingerprint must be a non-empty JSON object")
+        return v
 
 
 class SupportedCameraFormat(BaseModel):
