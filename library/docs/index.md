@@ -65,7 +65,7 @@ graph LR
 | **Pi0.5**   | Vision-Language-Action model with open-world generalization     | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)    |
 | **RLDX-1**  | Flow-matching VLA with a Qwen3-VL backbone and MSAT action head | [RLWRLD RLDX-1](https://huggingface.co/RLWRLD/RLDX-1-PT) |
 
-Additional policies (ACT, Diffusion, SmolVLA, Pi0, Pi0.5, Pi0-FAST, GR00T, X-VLA) are also available
+Additional policies (Pi0, Pi0-FAST, GR00T, X-VLA) are also available
 through the LeRobot wrapper via `get_policy(..., source="lerobot")`.
 
 ## Need Help?
