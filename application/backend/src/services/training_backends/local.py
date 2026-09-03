@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from pydantic import SecretStr
 
-from schemas.job import _DEFAULT_MAX_EPOCHS
 from services.training_backends._log_format import render_progress_log
 from settings import get_settings
 
@@ -102,20 +101,29 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
     return TrainingJobSpec(
         # A resumed run's architecture is dictated by the base model's checkpoint.
         policy=(context.base_model or context.model).policy,
-        max_epochs=payload.max_epochs if payload.max_epochs is not None else _DEFAULT_MAX_EPOCHS,
+        # SnapFlow distillation epochs are additive: the trainer's epoch budget
+        # is the teacher run plus the distillation phase, not carved out of it.
+        max_epochs=payload.total_epochs,
         batch_size=payload.batch_size,
         num_workers=payload.num_workers,
         val_split=payload.val_split,
         precision=str(payload.precision),
         compile_model=payload.compile_model,
         auto_scale_batch_size=payload.auto_scale_batch_size,
+        snapflow_start_epoch=payload.snapflow_start_epoch,
         device_type=str(device.type) if device else None,
         device_index=device.index if device else None,
     )
 
 
 def _resume_checkpoint(context: TrainingContext) -> Path | None:
-    """Return the base model's checkpoint to resume from, if the job has one."""
+    """Return the base model's checkpoint to resume from, if the job has one.
+
+    Deliberately always the plain checkpoint, never the SnapFlow one: SnapFlow
+    permanently freezes the VLM backbone and switches to 1-step sampling once
+    activated, baked into the checkpoint's hparams. Resuming from it would
+    silently carry that into a run that never asked for SnapFlow.
+    """
     from training.job import CHECKPOINT_NAME
 
     if context.base_model is None:

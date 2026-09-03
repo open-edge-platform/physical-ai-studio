@@ -95,3 +95,78 @@ class TestSshTarget:
                 remote_server_id=uuid4(),
                 **extra,
             )
+
+
+class TestSnapFlowDistillation:
+    """The payload expresses the distillation budget; the runner needs a boundary.
+
+    Distillation epochs are additive on top of ``max_epochs`` (the teacher
+    phase always runs the full budget, then distillation extends the run),
+    so `snapflow_start_epoch` is always just `max_epochs`.
+    """
+
+    def test_training_is_flow_matching_by_default(self) -> None:
+        payload = LocalTrainJobPayload(**_base_kwargs())
+
+        assert payload.snapflow_enabled is False
+        assert payload.snapflow_start_epoch is None
+
+    @pytest.mark.parametrize("policy", ["pi05", "smolvla", "Pi05", "SmolVLA"])
+    def test_flow_matching_policies_can_be_distilled(self, policy: str) -> None:
+        payload = LocalTrainJobPayload(
+            **{**_base_kwargs(), "policy": policy},
+            max_epochs=8,
+            snapflow_enabled=True,
+            snapflow_distill_epochs=3,
+        )
+
+        assert payload.snapflow_start_epoch == 8
+        assert payload.total_epochs == 11
+
+    @pytest.mark.parametrize("policy", ["act", "pi0", "groot"])
+    def test_other_policies_are_rejected_rather_than_silently_trained_without_it(self, policy: str) -> None:
+        with pytest.raises(ValidationError, match="not available for policy"):
+            LocalTrainJobPayload(**{**_base_kwargs(), "policy": policy}, snapflow_enabled=True)
+
+    def test_the_distillation_budget_is_not_bounded_by_max_epochs(self) -> None:
+        """Distillation is additive, so it may exceed max_epochs without error."""
+        payload = LocalTrainJobPayload(
+            **{**_base_kwargs(), "policy": "pi05"},
+            max_epochs=3,
+            snapflow_enabled=True,
+            snapflow_distill_epochs=3,
+        )
+
+        assert payload.snapflow_start_epoch == 3
+        assert payload.total_epochs == 6
+
+    def test_the_boundary_is_measured_against_the_default_epoch_count_when_unset(self) -> None:
+        """`max_epochs` is filled in by `resolve_training_limit`, which runs first."""
+        payload = LocalTrainJobPayload(
+            **{**_base_kwargs(), "policy": "pi05"},
+            snapflow_enabled=True,
+            snapflow_distill_epochs=2,
+        )
+
+        assert payload.snapflow_start_epoch == payload.max_epochs
+        assert payload.total_epochs == payload.max_epochs + 2
+
+    def test_a_distillation_budget_on_an_unsupported_policy_is_fine_while_disabled(self) -> None:
+        """The field carries a default, so it must not gate an ordinary ACT run."""
+        payload = LocalTrainJobPayload(**_base_kwargs(), snapflow_distill_epochs=99)
+
+        assert payload.snapflow_start_epoch is None
+
+    def test_every_target_can_distil(self) -> None:
+        remote = RemoteTrainJobPayload(
+            **{**_base_kwargs(), "policy": "pi05"},
+            remote_trainer_id=uuid4(),
+            snapflow_enabled=True,
+        )
+        ssh = SshTrainJobPayload(
+            **{**_base_kwargs(), "policy": "pi05"},
+            remote_server_id=uuid4(),
+            snapflow_enabled=True,
+        )
+
+        assert (remote.snapflow_start_epoch, ssh.snapflow_start_epoch) == (5, 5)

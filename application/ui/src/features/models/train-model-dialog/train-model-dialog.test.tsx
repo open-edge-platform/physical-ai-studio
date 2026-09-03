@@ -180,6 +180,71 @@ describe('TrainModelDialog', () => {
         expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
     });
 
+    it('offers SnapFlow distillation only for flow-matching policies', async () => {
+        // ACT has no flow-matching sampler to distil, so the backend would
+        // reject the request; don't offer what can't be submitted.
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+
+        expect(await screen.findByLabelText('Select ACT policy')).toBeInTheDocument();
+        expect(screen.queryByRole('checkbox', { name: /snapflow distillation/i })).not.toBeInTheDocument();
+
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+
+        expect(await screen.findByRole('checkbox', { name: /snapflow distillation/i })).toBeInTheDocument();
+    });
+
+    it('submits the distillation budget when SnapFlow is enabled', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(await screen.findByRole('checkbox', { name: /snapflow distillation/i }));
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).toMatchObject({
+            policy: 'smolvla',
+            snapflow_enabled: true,
+            snapflow_distill_epochs: 3,
+        });
+    });
+
+    it('does not ask for distillation when the box is left unchecked', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).toMatchObject({ snapflow_enabled: false });
+    });
+
     it('blocks Pi0.5 training when the token lacks gated-model access', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();

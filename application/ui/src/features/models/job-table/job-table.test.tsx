@@ -51,6 +51,8 @@ const localJob: SchemaTrainJob = {
         val_split: 0.1,
         precision: 'bf16-mixed',
         compile_model: false,
+        snapflow_enabled: false,
+        snapflow_distill_epochs: 3,
         training_target: 'local',
     },
 };
@@ -122,6 +124,21 @@ describe('TrainingRow', () => {
         renderTrainingRow();
 
         expect(screen.queryByText(/^Remote ·/)).not.toBeInTheDocument();
+    });
+
+    it.each(['running', 'completed', 'failed'] as const)('badges a %s SnapFlow job', (status) => {
+        renderTrainingRow({
+            status,
+            payload: { ...localJob.payload, policy: 'pi05', snapflow_enabled: true },
+        });
+
+        expect(screen.getByText('SnapFlow')).toBeInTheDocument();
+    });
+
+    it('leaves an ordinary flow-matching job unbadged', () => {
+        renderTrainingRow();
+
+        expect(screen.queryByText('SnapFlow')).not.toBeInTheDocument();
     });
 
     it('reveals the panel tabs when the row is clicked', async () => {

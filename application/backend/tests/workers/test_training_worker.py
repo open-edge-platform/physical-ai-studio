@@ -597,3 +597,54 @@ class TestTrainingScheduling:
             await asyncio.gather(*worker._active_training_tasks.values())
 
         assert run_job.await_count == 2
+
+
+class TestSnapFlowProvenance:
+    """The models list badges a distilled checkpoint from `Model.properties`.
+
+    A model row is only persisted for a run that finished without being
+    canceled, and the distillation boundary is validated to fall inside the
+    epoch budget, so a completed SnapFlow job always produced a distilled
+    checkpoint and the request is a sound source for the flag.
+    """
+
+    @staticmethod
+    async def _built_model(worker, tmp_path, payload: TrainJobPayload) -> Model:
+        job = _make_job(payload)
+        train = AsyncMock()
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.DatasetService") as MockDatasetService,
+            patch(f"{MODULE}.SnapshotService") as MockSnapshotService,
+            patch.object(type(worker), "_train_model", train),
+        ):
+            MockDatasetService.return_value.get_dataset_by_id = AsyncMock()
+            snapshot_service = MockSnapshotService.return_value
+            snapshot_service.create_snapshot_for_dataset = AsyncMock(return_value=_make_snapshot(tmp_path))
+            await worker._run_training_job(job, payload)
+
+        assert train.await_args is not None
+        return train.await_args.args[1]
+
+    @pytest.mark.anyio
+    async def test_a_flow_matching_run_is_not_marked_distilled(self, worker, tmp_path):
+        model = await self._built_model(worker, tmp_path, _make_payload())
+
+        assert model.snapflow_enabled is False
+
+    @pytest.mark.anyio
+    async def test_a_distillation_run_is_marked_on_the_model(self, worker, tmp_path):
+        payload = LocalTrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="pi05",
+            model_name="test-model",
+            max_epochs=8,
+            snapflow_enabled=True,
+            snapflow_distill_epochs=3,
+        )
+
+        model = await self._built_model(worker, tmp_path, payload)
+
+        assert model.snapflow_enabled is True

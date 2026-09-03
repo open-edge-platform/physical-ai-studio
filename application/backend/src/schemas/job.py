@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer
 from schemas.base_job import BaseJob, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.hardware import DeviceType
+from training.job import SNAPFLOW_POLICIES
 
 
 class TrainingPrecision(StrEnum):
@@ -69,6 +70,7 @@ class TrainingDevice(BaseModel):
 
 
 _DEFAULT_MAX_EPOCHS = 5
+_DEFAULT_SNAPFLOW_DISTILL_EPOCHS = 3
 
 
 class TrainJobPayloadBase(BaseModel):
@@ -140,6 +142,81 @@ class TrainJobPayloadBase(BaseModel):
         description="Training precision ('32-true', 'bf16-mixed')",
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
+    snapflow_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable SnapFlow self-distillation, producing a policy that generates an action chunk "
+            "in a single denoising step. This results in much faster inference but can reduce accuracy. "
+            f"Only available for flow-matching policies (e.g. {sorted(SNAPFLOW_POLICIES)})."
+        ),
+    )
+    snapflow_distill_epochs: int = Field(
+        default=_DEFAULT_SNAPFLOW_DISTILL_EPOCHS,
+        ge=1,
+        le=10_000,
+        description=(
+            "How many additional epochs to spend distilling, appended after the "
+            "max_epochs teacher run. Ignored when snapflow_enabled is false."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_snapflow(self) -> "TrainJobPayloadBase":
+        """Reject a distillation request the policy cannot honour.
+
+        Runs after ``resolve_training_limit``, so ``max_epochs`` is resolved.
+
+        Returns:
+            The validated payload.
+
+        Raises:
+            ValueError: If the policy has no SnapFlow implementation.
+        """
+        if not self.snapflow_enabled:
+            return self
+
+        if self.policy.lower() not in SNAPFLOW_POLICIES:
+            msg = (
+                f"SnapFlow distillation is not available for policy {self.policy!r}; "
+                f"it requires a flow-matching policy ({sorted(SNAPFLOW_POLICIES)})."
+            )
+            raise ValueError(msg)
+        return self
+
+    @property
+    def snapflow_start_epoch(self) -> int | None:
+        """Epoch at which distillation begins, or None when it is disabled.
+
+        Zero-based, matching ``SnapFlowPhaseCallback(start_epoch=...)``: with
+        ``max_epochs=8`` and ``snapflow_distill_epochs=3``, epochs 0-7 train
+        with flow matching and epochs 8-10 distill (11 epochs total).
+        ``snapflow_distill_epochs`` is additive on top of ``max_epochs``, not
+        carved out of it, so raising the teacher budget never shortens
+        distillation (and vice versa).
+
+        Returns:
+            The phase boundary, or None for an ordinary flow-matching run.
+        """
+        if not self.snapflow_enabled:
+            return None
+        return self.max_epochs or _DEFAULT_MAX_EPOCHS
+
+    @property
+    def total_epochs(self) -> int:
+        """Total training epochs, including the SnapFlow distillation phase.
+
+        This is what should be handed to the trainer's epoch budget: the
+        teacher phase always runs the full ``max_epochs``, and distillation
+        (when enabled) extends the run rather than eating into it.
+
+        Returns:
+            ``max_epochs`` when SnapFlow is disabled, otherwise
+            ``max_epochs + snapflow_distill_epochs``.
+        """
+        max_epochs = self.max_epochs or _DEFAULT_MAX_EPOCHS
+        if not self.snapflow_enabled:
+            return max_epochs
+        return max_epochs + self.snapflow_distill_epochs
 
     # Set by the worker for every target (not just remote ones): a snapshot is
     # taken up front so a job's model has stable provenance, and a remote/SSH

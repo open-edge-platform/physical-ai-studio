@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, computed_field
 
 from schemas.base import BaseIDModel, Field
 
+SNAPFLOW_PROPERTY = "snapflow_enabled"
+
 
 class Model(BaseIDModel):
     name: str
@@ -41,6 +43,17 @@ class Model(BaseIDModel):
             backends.append(backend_dir.name)
 
         return sorted(backends)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def snapflow_enabled(self) -> bool:
+        """Whether this model's checkpoint is a SnapFlow-distilled one.
+
+        Read from ``properties`` rather than a column so surfacing it needed no
+        migration, but exposed as a typed field so clients do not have to reach
+        into an untyped bag to render it.
+        """
+        return bool(self.properties.get(SNAPFLOW_PROPERTY))
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -181,6 +194,8 @@ class TrainingSummary(BaseModel):
     compile_model: bool | None = None
     val_split: float | None = None
     device_type: str | None = None
+    snapflow_enabled: bool | None = None
+    snapflow_distill_epochs: int | None = None
 
 
 class ModelDetailResponse(BaseModel):

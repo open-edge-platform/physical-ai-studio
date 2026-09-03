@@ -32,6 +32,12 @@ export const TrainingParameters = ({ summary }: { summary: SchemaModelDetailResp
                     <DetailRow name='Validation split' value={summary.val_split} />
                 )}
                 {summary.device_type && <DetailRow name='Device' value={summary.device_type} />}
+                {summary.snapflow_enabled !== null && summary.snapflow_enabled !== undefined && (
+                    <DetailRow name='SnapFlow distillation' value={summary.snapflow_enabled ? 'Yes' : 'No'} />
+                )}
+                {summary.snapflow_distill_epochs !== null && summary.snapflow_distill_epochs !== undefined && (
+                    <DetailRow name='Distillation epochs' value={summary.snapflow_distill_epochs} />
+                )}
             </Flex>
         </View>
     );
