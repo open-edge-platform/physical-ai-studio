@@ -663,11 +663,37 @@ class TestHttpDatasetTransfer:
 
         body = await _submitted_body(settings, context)
 
-        assert body["spec"] == build_spec(context).model_dump(mode="json", exclude={"run_options"}) | {
+        lora_fields = {"lora_enabled", "lora_rank", "lora_alpha", "lora_dropout", "lora_use_dora"}
+        assert body["spec"] == build_spec(context).model_dump(mode="json", exclude={"run_options"} | lora_fields) | {
             "device_type": None,
             "device_index": None,
         }
         assert (body["spec"]["policy"], body["spec"]["max_epochs"], body["spec"]["batch_size"]) == ("act", 5, 16)
+
+    @pytest.mark.anyio
+    async def test_submit_body_includes_lora_fields_when_enabled(self, tmp_path):
+        """An older trainer predating lora_* fields still validates an ordinary run's body."""
+        settings = _settings()
+        context = _context(tmp_path)
+        context.model = context.model.model_copy(update={"policy": "pi05"})
+        context.payload = context.payload.model_copy(
+            update={"policy": "pi05", "lora_enabled": True, "lora_rank": 16, "lora_use_dora": True}
+        )
+
+        body = await _submitted_body(settings, context)
+
+        assert body["spec"]["lora_enabled"] is True
+        assert (body["spec"]["lora_rank"], body["spec"]["lora_use_dora"]) == (16, True)
+
+    @pytest.mark.anyio
+    async def test_submit_body_omits_lora_fields_when_disabled(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+
+        body = await _submitted_body(settings, context)
+
+        for key in ("lora_enabled", "lora_rank", "lora_alpha", "lora_dropout", "lora_use_dora"):
+            assert key not in body["spec"]
 
     @pytest.mark.anyio
     async def test_submit_body_omits_the_studios_device_selection(self, tmp_path):

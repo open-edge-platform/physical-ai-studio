@@ -173,3 +173,52 @@ async def test_delete_model_skips_snapshot_delete_when_no_snapshot_id() -> None:
 
     mock_model_repo.delete_by_id.assert_awaited_once_with(model.id)
     mock_snapshot_repo.delete_by_id.assert_not_awaited()
+
+
+def _make_train_job(**payload_overrides):
+    from schemas.job import LocalTrainJobPayload, TrainingTarget
+    from schemas.job import TrainJob as TrainJobSchema
+
+    payload_kwargs = {
+        "project_id": uuid4(),
+        "dataset_id": uuid4(),
+        "policy": "pi05",
+        "model_name": "test-model",
+        "training_target": TrainingTarget.LOCAL,
+        **payload_overrides,
+    }
+    return TrainJobSchema(
+        id=uuid4(),
+        project_id=payload_kwargs["project_id"],
+        payload=LocalTrainJobPayload(**payload_kwargs),
+    )
+
+
+def test_get_training_summary_omits_lora_fields_when_disabled() -> None:
+    train_job = _make_train_job(lora_enabled=False)
+
+    summary = ModelService.get_training_summary(train_job)
+
+    assert summary is not None
+    assert summary.lora_enabled is False
+    assert (summary.lora_rank, summary.lora_alpha, summary.lora_dropout, summary.lora_use_dora) == (
+        None,
+        None,
+        None,
+        None,
+    )
+
+
+def test_get_training_summary_carries_lora_fields_when_enabled() -> None:
+    train_job = _make_train_job(lora_enabled=True, lora_rank=16, lora_alpha=32, lora_dropout=0.1, lora_use_dora=True)
+
+    summary = ModelService.get_training_summary(train_job)
+
+    assert summary is not None
+    assert summary.lora_enabled is True
+    assert (summary.lora_rank, summary.lora_alpha, summary.lora_dropout, summary.lora_use_dora) == (
+        16,
+        32,
+        0.1,
+        True,
+    )

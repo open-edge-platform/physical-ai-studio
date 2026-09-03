@@ -32,6 +32,21 @@ export const TrainingParameters = ({ summary }: { summary: SchemaModelDetailResp
                     <DetailRow name='Validation split' value={summary.val_split} />
                 )}
                 {summary.device_type && <DetailRow name='Device' value={summary.device_type} />}
+                {summary.lora_enabled !== null && summary.lora_enabled !== undefined && (
+                    <DetailRow name='LoRA fine-tuning' value={summary.lora_enabled ? 'Yes' : 'No'} />
+                )}
+                {summary.lora_enabled && summary.lora_rank !== null && summary.lora_rank !== undefined && (
+                    <DetailRow name='LoRA rank' value={summary.lora_rank} />
+                )}
+                {summary.lora_enabled && summary.lora_alpha !== null && summary.lora_alpha !== undefined && (
+                    <DetailRow name='LoRA alpha' value={summary.lora_alpha} />
+                )}
+                {summary.lora_enabled && summary.lora_dropout !== null && summary.lora_dropout !== undefined && (
+                    <DetailRow name='LoRA dropout' value={summary.lora_dropout} />
+                )}
+                {summary.lora_enabled && summary.lora_use_dora !== null && summary.lora_use_dora !== undefined && (
+                    <DetailRow name='DoRA' value={summary.lora_use_dora ? 'Yes' : 'No'} />
+                )}
             </Flex>
         </View>
     );

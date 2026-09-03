@@ -25,6 +25,18 @@ interface TrainingParametersProps {
     onCompileModelChange: (value: boolean) => void;
     isAutoScaleBatchDisabled: boolean;
     deviceType: string | undefined;
+    /** False for policies without a LoRA/DoRA mixin; hides the LoRA controls entirely. */
+    isLoraSupported: boolean;
+    loraEnabled: boolean;
+    onLoraEnabledChange: (value: boolean) => void;
+    loraRank: number;
+    onLoraRankChange: (value: number) => void;
+    loraAlpha: number | null;
+    onLoraAlphaChange: (value: number | null) => void;
+    loraDropout: number;
+    onLoraDropoutChange: (value: number) => void;
+    loraUseDora: boolean;
+    onLoraUseDoraChange: (value: boolean) => void;
 }
 
 export const TrainingParameters = ({
@@ -42,6 +54,17 @@ export const TrainingParameters = ({
     onCompileModelChange,
     isAutoScaleBatchDisabled,
     deviceType,
+    isLoraSupported,
+    loraEnabled,
+    onLoraEnabledChange,
+    loraRank,
+    onLoraRankChange,
+    loraAlpha,
+    onLoraAlphaChange,
+    loraDropout,
+    onLoraDropoutChange,
+    loraUseDora,
+    onLoraUseDoraChange,
 }: TrainingParametersProps) => (
     <Flex direction='column' gap='size-150' width='100%'>
         <Flex direction='row' gap='size-150' width='100%'>
@@ -170,5 +193,101 @@ export const TrainingParameters = ({
                 </Flex>
             </Flex>
         </Flex>
+        {isLoraSupported && (
+            <Flex direction='column' gap='size-150' width='100%'>
+                <Flex direction='row' gap='size-100' alignItems='center'>
+                    <Checkbox isEmphasized isSelected={loraEnabled} onChange={onLoraEnabledChange}>
+                        LoRA fine-tuning
+                    </Checkbox>
+                    <ContextualHelp variant='info'>
+                        <Heading>LoRA fine-tuning</Heading>
+                        <Content>
+                            <Text>
+                                Freezes the base model and trains small low-rank adapters instead of every parameter.
+                                Uses far less memory and trains faster, at the cost of some capacity versus full
+                                fine-tuning. The learning rate is automatically scaled up to suit adapter training.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                </Flex>
+                {loraEnabled && (
+                    <Flex direction='row' gap='size-150' width='100%'>
+                        <NumberField
+                            label='LoRA rank'
+                            value={loraRank}
+                            onChange={onLoraRankChange}
+                            minValue={1}
+                            maxValue={256}
+                            step={8}
+                            width='100%'
+                            contextualHelp={
+                                <ContextualHelp variant='info'>
+                                    <Heading>LoRA rank</Heading>
+                                    <Content>
+                                        <Text>
+                                            Dimension of the low-rank decomposition. Higher rank means more trainable
+                                            parameters and closer to full fine-tuning. 16 is lighter, 32 is a reasonable
+                                            default, 64 gives more capacity for larger datasets.
+                                        </Text>
+                                    </Content>
+                                </ContextualHelp>
+                            }
+                        />
+                        <NumberField
+                            label='LoRA alpha'
+                            value={loraAlpha ?? undefined}
+                            onChange={onLoraAlphaChange}
+                            minValue={1}
+                            width='100%'
+                            contextualHelp={
+                                <ContextualHelp variant='info'>
+                                    <Heading>LoRA alpha</Heading>
+                                    <Content>
+                                        <Text>
+                                            Scaling numerator (scaling = alpha / rank). Leave empty to default to the
+                                            rank (scaling = 1.0). Increase for a stronger adaptation signal.
+                                        </Text>
+                                    </Content>
+                                </ContextualHelp>
+                            }
+                        />
+                        <NumberField
+                            label='LoRA dropout'
+                            value={loraDropout}
+                            onChange={onLoraDropoutChange}
+                            minValue={0}
+                            maxValue={0.99}
+                            step={0.01}
+                            width='100%'
+                            contextualHelp={
+                                <ContextualHelp variant='info'>
+                                    <Heading>LoRA dropout</Heading>
+                                    <Content>
+                                        <Text>Dropout probability applied to LoRA adapter inputs.</Text>
+                                    </Content>
+                                </ContextualHelp>
+                            }
+                        />
+                        <Flex direction='column' gap='size-150' width='100%' justifyContent='center'>
+                            <Flex direction='row' gap='size-100' alignItems='center'>
+                                <Checkbox isEmphasized isSelected={loraUseDora} onChange={onLoraUseDoraChange}>
+                                    Use DoRA
+                                </Checkbox>
+                                <ContextualHelp variant='info'>
+                                    <Heading>Use DoRA</Heading>
+                                    <Content>
+                                        <Text>
+                                            Weight-Decomposed Low-Rank Adaptation: learns a per-column magnitude vector
+                                            on top of the LoRA update. Typically improves quality at low ranks at the
+                                            cost of slightly more compute/memory.
+                                        </Text>
+                                    </Content>
+                                </ContextualHelp>
+                            </Flex>
+                        </Flex>
+                    </Flex>
+                )}
+            </Flex>
+        )}
     </Flex>
 );

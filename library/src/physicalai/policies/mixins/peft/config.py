@@ -65,6 +65,14 @@ class PeftConfigMixin:
             direction update, which typically improves quality at low ranks at the cost of
             slightly more compute/memory. Only takes effect when ``lora_enabled`` is True.
             See arxiv.org/abs/2402.09353. Defaults to False.
+        lora_lr_scale: Multiplier applied to the optimizer's learning rate (and, where the
+            policy has one, its scheduler decay LR) when ``lora_enabled`` is True. Training
+            only a small fraction of parameters tolerates, and benefits from, a much higher
+            learning rate than full fine-tuning; 10x is a reasonable default. Applied by each
+            policy's own ``configure_optimizers`` via ``lora_lr_multiplier``, on top of
+            whatever ``optimizer_lr``/``learning_rate`` you set, so set that field to the
+            full-fine-tune value you would otherwise use, not the already-scaled one. Set to
+            1.0 to disable scaling. Ignored when ``lora_enabled`` is False.
     """
 
     lora_enabled: bool = False
@@ -74,6 +82,7 @@ class PeftConfigMixin:
     lora_target_modules: str | tuple[str, ...] | None = None
     lora_adapter_dtype: Literal["float32", "auto"] = "float32"
     lora_use_dora: bool = False
+    lora_lr_scale: float = 10.0
 
     _PEFT_EXCLUSIVE_FLAGS: ClassVar[dict[str, object]] = {}
     """Maps flag name -> default value for fields that ``inject_lora`` overrides.
@@ -117,6 +126,10 @@ class PeftConfigMixin:
             msg = f"Invalid lora_adapter_dtype: {self.lora_adapter_dtype}"
             raise ValueError(msg)
 
+        if self.lora_lr_scale <= 0:
+            msg = f"lora_lr_scale must be > 0, got {self.lora_lr_scale}"
+            raise ValueError(msg)
+
         if self.lora_enabled and self._PEFT_EXCLUSIVE_FLAGS:
             conflicting = {
                 name: getattr(self, name)
@@ -143,3 +156,11 @@ class PeftConfigMixin:
     def effective_lora_alpha(self) -> int:
         """Resolve ``lora_alpha``, defaulting to ``lora_rank`` (scaling = 1.0) when unset."""
         return self.lora_alpha if self.lora_alpha is not None else self.lora_rank
+
+    @property
+    def lora_lr_multiplier(self) -> float:
+        """Learning-rate multiplier a policy's ``configure_optimizers`` should apply.
+
+        ``lora_lr_scale`` when LoRA is enabled, 1.0 (no-op) otherwise.
+        """
+        return self.lora_lr_scale if self.lora_enabled else 1.0

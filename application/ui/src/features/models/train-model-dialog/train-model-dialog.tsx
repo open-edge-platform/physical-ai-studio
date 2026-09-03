@@ -22,6 +22,7 @@ import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-s
 import { useProject } from '../../projects/use-project';
 import { useRemoteTrainerHealth } from '../../remote-trainers/use-remote-trainer-health';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
+import { supportsLora } from '../shared/peft';
 import { MODELS } from './policies';
 import { PolicyAccessAlert } from './policy-access-alert';
 import { PolicySelection } from './policy-selection';
@@ -76,7 +77,14 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
     const [precision, setPrecision] = useState<Key | null>(bestDevice?.type === 'cuda' ? 'bf16-mixed' : '32-true');
     const [compileModel, setCompileModel] = useState<boolean>(false);
+    const [loraEnabled, setLoraEnabled] = useState<boolean>(false);
+    const [loraRank, setLoraRank] = useState<number>(32);
+    const [loraAlpha, setLoraAlpha] = useState<number | null>(null);
+    const [loraDropout, setLoraDropout] = useState<number>(0.05);
+    const [loraUseDora, setLoraUseDora] = useState<boolean>(false);
     const [remoteTrainerId, setRemoteTrainerId] = useState<Key | null>('local');
+    const isLoraSupported = supportsLora(selectedPolicy);
+    const isLoraRequested = isLoraSupported && loraEnabled;
     const isRemoteTarget = remoteTrainerId !== null && remoteTrainerId !== 'local';
     const {
         health: remoteTrainerHealth,
@@ -150,6 +158,11 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             auto_scale_batch_size: autoScaleBatchSize,
             precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
             compile_model: compileModel,
+            lora_enabled: isLoraRequested,
+            lora_rank: loraRank,
+            lora_alpha: loraAlpha,
+            lora_dropout: loraDropout,
+            lora_use_dora: isLoraRequested && loraUseDora,
             val_split: 0.1,
             ...extraPayload,
         } as const;
@@ -246,6 +259,17 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onCompileModelChange={setCompileModel}
                                 isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
                                 deviceType={activeDevice?.type}
+                                isLoraSupported={isLoraSupported}
+                                loraEnabled={loraEnabled}
+                                onLoraEnabledChange={setLoraEnabled}
+                                loraRank={loraRank}
+                                onLoraRankChange={setLoraRank}
+                                loraAlpha={loraAlpha}
+                                onLoraAlphaChange={setLoraAlpha}
+                                loraDropout={loraDropout}
+                                onLoraDropoutChange={setLoraDropout}
+                                loraUseDora={loraUseDora}
+                                onLoraUseDoraChange={setLoraUseDora}
                             />
                         </DisclosurePanel>
                     </Disclosure>

@@ -95,3 +95,39 @@ class TestSshTarget:
                 remote_server_id=uuid4(),
                 **extra,
             )
+
+
+class TestLoraFields:
+    def test_lora_disabled_by_default(self) -> None:
+        payload = LocalTrainJobPayload(**_base_kwargs())
+
+        assert payload.lora_enabled is False
+        assert (payload.lora_rank, payload.lora_alpha, payload.lora_dropout, payload.lora_use_dora) == (
+            32,
+            None,
+            0.05,
+            False,
+        )
+
+    def test_lora_is_accepted_for_a_peft_capable_policy(self) -> None:
+        payload = LocalTrainJobPayload(**{**_base_kwargs(), "policy": "pi05"}, lora_enabled=True, lora_use_dora=True)
+
+        assert (payload.lora_enabled, payload.lora_use_dora) == (True, True)
+
+    def test_lora_is_rejected_for_a_policy_without_peft_support(self) -> None:
+        with pytest.raises(ValidationError):
+            LocalTrainJobPayload(**_base_kwargs(), lora_enabled=True)
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"lora_rank": 0},
+            {"lora_rank": 257},
+            {"lora_alpha": 0},
+            {"lora_dropout": 1.0},
+            {"lora_dropout": -0.1},
+        ],
+    )
+    def test_lora_out_of_range_values_are_rejected(self, extra: dict) -> None:
+        with pytest.raises(ValidationError):
+            LocalTrainJobPayload(**{**_base_kwargs(), "policy": "pi05"}, lora_enabled=True, **extra)

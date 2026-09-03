@@ -18,6 +18,7 @@ from repositories.job_provisioning_repo import JobProvisioningRepository
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
 from schemas.job import TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
+from schemas.model import DORA_PROPERTY, LORA_PROPERTY
 from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
@@ -139,7 +140,7 @@ class TrainingWorker(BaseProcessWorker):
                 name=payload.model_name,
                 snapshot_id=snapshot_id,
                 policy=payload.policy,
-                properties={},
+                properties={LORA_PROPERTY: payload.lora_enabled, DORA_PROPERTY: payload.lora_use_dora},
                 train_job_id=job.id,
                 parent_model_id=payload.base_model_id,
                 version=base_model.version + 1 if base_model else 1,

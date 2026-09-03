@@ -343,8 +343,15 @@ class RemoteTrainingBackend:
             else {"device_type": None, "device_index": None}
         )
         spec = build_spec(context).model_copy(update=device_update)
+
+        # Older remote trainers may run a TrainingJobSpec (extra="forbid") predating the
+        # lora_* fields; only send them when a LoRA run was actually requested, so an
+        # ordinary run's body still validates against an old trainer.
+        excluded = {"run_options"}
+        if not spec.lora_enabled:
+            excluded.update({"lora_enabled", "lora_rank", "lora_alpha", "lora_dropout", "lora_use_dora"})
         body: dict[str, Any] = {
-            "spec": spec.model_dump(mode="json", exclude={"run_options"}),
+            "spec": spec.model_dump(mode="json", exclude=excluded),
             "dataset_transfer": "http",
         }
         async with await self._client() as client:

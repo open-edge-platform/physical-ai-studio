@@ -206,4 +206,31 @@ describe('TrainModelDialog', () => {
         expect(await screen.findByText(/does not have access to this policy/i)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
     });
+
+    it('hides LoRA fine-tuning controls for a policy without PEFT support', async () => {
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        // Advanced settings default-expand on non-CUDA devices (the test environment has none).
+        await screen.findByRole('button', { name: /advanced settings/i });
+
+        expect(screen.queryByText('LoRA fine-tuning')).not.toBeInTheDocument();
+    });
+
+    it('shows LoRA fine-tuning controls for Pi0.5', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        expect(await screen.findByText('LoRA fine-tuning')).toBeInTheDocument();
+
+        // Rank/alpha/dropout/DoRA are hidden until LoRA itself is enabled.
+        expect(screen.queryByText('LoRA rank')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('checkbox', { name: 'LoRA fine-tuning' }));
+        expect(await screen.findByText('LoRA rank')).toBeInTheDocument();
+    });
 });

@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, computed_field
 
 from schemas.base import BaseIDModel, Field
 
+LORA_PROPERTY = "lora_enabled"
+DORA_PROPERTY = "lora_use_dora"
+
 
 class Model(BaseIDModel):
     name: str
@@ -41,6 +44,22 @@ class Model(BaseIDModel):
             backends.append(backend_dir.name)
 
         return sorted(backends)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def lora_enabled(self) -> bool:
+        """Whether this model was fine-tuned with LoRA/DoRA.
+
+        Read from ``properties`` (no column, no migration needed) but typed here so
+        clients don't reach into an untyped bag.
+        """
+        return bool(self.properties.get(LORA_PROPERTY))
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def lora_use_dora(self) -> bool:
+        """Whether this model's LoRA fine-tuning used the DoRA variant."""
+        return bool(self.properties.get(DORA_PROPERTY))
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -181,6 +200,11 @@ class TrainingSummary(BaseModel):
     compile_model: bool | None = None
     val_split: float | None = None
     device_type: str | None = None
+    lora_enabled: bool | None = None
+    lora_rank: int | None = None
+    lora_alpha: int | None = None
+    lora_dropout: float | None = None
+    lora_use_dora: bool | None = None
 
 
 class ModelDetailResponse(BaseModel):

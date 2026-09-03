@@ -267,6 +267,49 @@ class TestPi0Policy:
             getattr(policy, method)(dummy_obs)
 
 
+class TestPi0ConfigureOptimizersLoraLR:
+    """LoRA/DoRA scales the learning rate via PeftConfigMixin.lora_lr_multiplier; this is a
+    library concern, not the application's, so it must hold regardless of caller (UI, CLI,
+    or a raw YAML config)."""
+
+    @staticmethod
+    def _policy_with_dummy_param(**kwargs: object) -> Pi0:
+        policy = Pi0(**kwargs)
+        policy.dummy_param = torch.nn.Parameter(torch.randn(3))
+        return policy
+
+    def test_lr_unscaled_when_lora_disabled(self) -> None:
+        policy = self._policy_with_dummy_param(learning_rate=2.5e-5)
+        scheduler = policy.configure_optimizers()["lr_scheduler"]["scheduler"]
+        assert scheduler.base_lrs[0] == pytest.approx(2.5e-5)
+
+    def test_lr_scaled_by_default_multiplier_when_lora_enabled(self) -> None:
+        policy = self._policy_with_dummy_param(learning_rate=2.5e-5, lora_enabled=True)
+        scheduler = policy.configure_optimizers()["lr_scheduler"]["scheduler"]
+        assert scheduler.base_lrs[0] == pytest.approx(2.5e-4)
+
+    def test_lr_scaled_by_explicit_lora_lr_scale(self) -> None:
+        policy = self._policy_with_dummy_param(learning_rate=2.5e-5, lora_enabled=True, lora_lr_scale=4.0)
+        scheduler = policy.configure_optimizers()["lr_scheduler"]["scheduler"]
+        assert scheduler.base_lrs[0] == pytest.approx(1e-4)
+
+    def test_lr_scaling_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        policy = self._policy_with_dummy_param(learning_rate=2.5e-5, lora_enabled=True)
+        with caplog.at_level(logging.INFO):
+            policy.configure_optimizers()
+        assert "scaling learning_rate" in caplog.text.lower()
+
+    def test_no_scaling_log_when_lora_disabled(self, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        policy = self._policy_with_dummy_param(learning_rate=2.5e-5)
+        with caplog.at_level(logging.INFO):
+            policy.configure_optimizers()
+        assert "scaling learning_rate" not in caplog.text.lower()
+
+
 class TestPi05Policy:
     """Tests for Pi05 (Pi0.5) policy alias."""
 

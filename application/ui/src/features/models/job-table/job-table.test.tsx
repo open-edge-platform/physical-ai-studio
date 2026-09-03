@@ -51,6 +51,11 @@ const localJob: SchemaTrainJob = {
         val_split: 0.1,
         precision: 'bf16-mixed',
         compile_model: false,
+        lora_enabled: false,
+        lora_rank: 32,
+        lora_alpha: null,
+        lora_dropout: 0.05,
+        lora_use_dora: false,
         training_target: 'local',
     },
 };
@@ -122,6 +127,24 @@ describe('TrainingRow', () => {
         renderTrainingRow();
 
         expect(screen.queryByText(/^Remote ·/)).not.toBeInTheDocument();
+    });
+
+    it('does not render a LoRA badge when lora_enabled is false', () => {
+        renderTrainingRow();
+
+        expect(screen.queryByText('LoRA')).not.toBeInTheDocument();
+    });
+
+    it('renders a LoRA badge when lora_enabled is true', () => {
+        renderTrainingRow({ payload: { ...localJob.payload, lora_enabled: true, lora_use_dora: false } });
+
+        expect(screen.getByText('LoRA')).toBeInTheDocument();
+    });
+
+    it('renders a DoRA badge when lora_use_dora is true', () => {
+        renderTrainingRow({ payload: { ...localJob.payload, lora_enabled: true, lora_use_dora: true } });
+
+        expect(screen.getByText('DoRA')).toBeInTheDocument();
     });
 
     it('reveals the panel tabs when the row is clicked', async () => {

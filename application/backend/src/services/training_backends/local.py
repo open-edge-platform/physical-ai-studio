@@ -109,6 +109,11 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
         precision=str(payload.precision),
         compile_model=payload.compile_model,
         auto_scale_batch_size=payload.auto_scale_batch_size,
+        lora_enabled=payload.lora_enabled,
+        lora_rank=payload.lora_rank,
+        lora_alpha=payload.lora_alpha,
+        lora_dropout=payload.lora_dropout,
+        lora_use_dora=payload.lora_use_dora,
         device_type=str(device.type) if device else None,
         device_index=device.index if device else None,
     )

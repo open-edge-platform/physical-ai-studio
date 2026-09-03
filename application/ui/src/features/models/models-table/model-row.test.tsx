@@ -43,6 +43,8 @@ const model: SchemaModel = {
     version: 1,
     created_at: '2026-07-14T12:00:00Z',
     available_backends: [],
+    lora_enabled: false,
+    lora_use_dora: false,
 };
 
 const trainingJob: SchemaTrainJob = {
@@ -66,6 +68,11 @@ const trainingJob: SchemaTrainJob = {
         val_split: 0.1,
         precision: 'bf16-mixed',
         compile_model: false,
+        lora_enabled: false,
+        lora_rank: 32,
+        lora_alpha: null,
+        lora_dropout: 0.05,
+        lora_use_dora: false,
         training_target: 'local',
     },
 };
@@ -138,6 +145,25 @@ describe('ModelRow', () => {
         renderModelRow();
 
         expect(screen.getByText('—')).toBeInTheDocument();
+    });
+
+    it('does not render a LoRA badge when lora_enabled is false', () => {
+        renderModelRow();
+
+        expect(screen.queryByText('LoRA')).not.toBeInTheDocument();
+        expect(screen.queryByText('DoRA')).not.toBeInTheDocument();
+    });
+
+    it('renders a LoRA badge when lora_enabled is true', () => {
+        renderModelRow({ modelOverride: { lora_enabled: true, lora_use_dora: false } });
+
+        expect(screen.getByText('LoRA')).toBeInTheDocument();
+    });
+
+    it('renders a DoRA badge when lora_use_dora is true', () => {
+        renderModelRow({ modelOverride: { lora_enabled: true, lora_use_dora: true } });
+
+        expect(screen.getByText('DoRA')).toBeInTheDocument();
     });
 
     it('renders the v{n} suffix only when version > 1', () => {

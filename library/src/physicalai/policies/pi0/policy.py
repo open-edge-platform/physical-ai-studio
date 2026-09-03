@@ -80,6 +80,8 @@ class Pi0(PeftPolicyMixin, ExportablePolicyMixin, Policy, FromConfig):
             (uses ``Pi0Model.get_default_peft_targets()``).
         lora_adapter_dtype: Precision for newly created LoRA parameters. Default: "float32".
         lora_use_dora: Enable DoRA instead of plain LoRA. Default: False.
+        lora_lr_scale: Learning-rate multiplier applied by ``configure_optimizers`` when
+            ``lora_enabled`` is True. Default: 10.0.
         dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
     Example:
@@ -142,6 +144,7 @@ class Pi0(PeftPolicyMixin, ExportablePolicyMixin, Policy, FromConfig):
         lora_target_modules: str | tuple[str, ...] | None = None,
         lora_adapter_dtype: Literal["float32", "auto"] = "float32",
         lora_use_dora: bool = False,  # noqa: FBT001, FBT002
+        lora_lr_scale: float = 10.0,
         *,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -190,6 +193,7 @@ class Pi0(PeftPolicyMixin, ExportablePolicyMixin, Policy, FromConfig):
             lora_target_modules=lora_target_modules,
             lora_adapter_dtype=lora_adapter_dtype,
             lora_use_dora=lora_use_dora,
+            lora_lr_scale=lora_lr_scale,
         )
 
         # Save config as hyperparameters for checkpoint restoration
@@ -403,16 +407,32 @@ class Pi0(PeftPolicyMixin, ExportablePolicyMixin, Policy, FromConfig):
     def configure_optimizers(self) -> Any:  # noqa: ANN401
         """Configure optimizer and scheduler.
 
+        When LoRA/DoRA is enabled, ``learning_rate`` is scaled by
+        ``self.config.lora_lr_multiplier`` (see ``PeftConfigMixin.lora_lr_scale``), since
+        adapter training tolerates a much higher learning rate than full fine-tuning. The
+        decay floor (``decay_lr``) is expressed below as a ratio to ``learning_rate``, so it
+        scales along with it automatically.
+
         Returns:
             Optimizer configuration dict.
         """
         # Get trainable parameters
         params = [p for p in self.parameters() if p.requires_grad]
 
+        lr_multiplier = self.config.lora_lr_multiplier
+        learning_rate = self.config.learning_rate * lr_multiplier
+        if self.config.lora_enabled:
+            logger.info(
+                "LoRA/DoRA enabled: scaling learning_rate %.3g -> %.3g (x%.3g)",
+                self.config.learning_rate,
+                learning_rate,
+                lr_multiplier,
+            )
+
         # Create optimizer
         optimizer = torch.optim.AdamW(
             params,
-            lr=self.config.learning_rate,
+            lr=learning_rate,
             weight_decay=self.config.weight_decay,
         )
 
@@ -521,6 +541,7 @@ class Pi05(Pi0):
         lora_target_modules: str | tuple[str, ...] | None = None,
         lora_adapter_dtype: Literal["float32", "auto"] = "float32",
         lora_use_dora: bool = False,
+        lora_lr_scale: float = 10.0,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]] | None = None,
     ) -> None:
         """Initialize Pi0.5 policy with explicit arguments."""
@@ -560,5 +581,6 @@ class Pi05(Pi0):
             lora_target_modules=lora_target_modules,
             lora_adapter_dtype=lora_adapter_dtype,
             lora_use_dora=lora_use_dora,
+            lora_lr_scale=lora_lr_scale,
             dataset_stats=dataset_stats,
         )

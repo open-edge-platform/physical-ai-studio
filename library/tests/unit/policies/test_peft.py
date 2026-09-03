@@ -122,6 +122,28 @@ class TestPeftConfigMixin:
         config = PeftConfigMixin(lora_enabled=True, lora_use_dora=True)
         assert config.lora_use_dora is True
 
+    def test_lora_lr_scale_default(self) -> None:
+        """Test lora_lr_scale defaults to 10x."""
+        config = PeftConfigMixin()
+        assert config.lora_lr_scale == 10.0
+
+    def test_lora_lr_multiplier_is_one_when_lora_disabled(self) -> None:
+        """Test the multiplier is a no-op when LoRA is off, regardless of lora_lr_scale."""
+        config = PeftConfigMixin(lora_enabled=False, lora_lr_scale=10.0)
+        assert config.lora_lr_multiplier == 1.0
+
+    def test_lora_lr_multiplier_applies_scale_when_lora_enabled(self) -> None:
+        """Test the multiplier equals lora_lr_scale when LoRA is on."""
+        config = PeftConfigMixin(lora_enabled=True, lora_lr_scale=5.0)
+        assert config.lora_lr_multiplier == 5.0
+
+    def test_lora_lr_scale_zero_or_negative_rejected(self) -> None:
+        """Test lora_lr_scale must be > 0."""
+        with pytest.raises(ValueError, match="lora_lr_scale"):
+            PeftConfigMixin(lora_lr_scale=0)
+        with pytest.raises(ValueError, match="lora_lr_scale"):
+            PeftConfigMixin(lora_lr_scale=-1.0)
+
 
 class TestPeftHelpers:
     """Tests for the shared LoRA helpers in physicalai.policies.mixins.peft.functions."""

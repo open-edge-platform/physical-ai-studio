@@ -6,6 +6,7 @@ import { MoreMenu } from '@geti-ui/ui/icons';
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { Table } from '../../../components/table/table';
 import { durationBetween } from '../shared/duration';
+import { PeftBadge } from '../shared/peft-badge';
 import { ModelDownloadDialog } from './model-download-dialog';
 import { ModelRowContent } from './model-row-content';
 import { StartInferenceDialog } from './start-inference-dialog';
@@ -58,6 +59,7 @@ export const ModelRow = ({
             <Flex alignItems='center' gap='size-100'>
                 <Text>{model.name}</Text>
                 {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
+                <PeftBadge isEnabled={model.lora_enabled} isDora={model.lora_use_dora} />
             </Flex>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>

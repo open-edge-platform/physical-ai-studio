@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer
 from schemas.base_job import BaseJob, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.hardware import DeviceType
+from training.job import PEFT_POLICIES
 
 
 class TrainingPrecision(StrEnum):
@@ -140,6 +141,53 @@ class TrainJobPayloadBase(BaseModel):
         description="Training precision ('32-true', 'bf16-mixed')",
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
+    lora_enabled: bool = Field(
+        default=False,
+        description=(
+            "Fine-tune with LoRA/DoRA instead of full fine-tuning: freezes the base model and trains "
+            f"small low-rank adapters, using much less memory. Only available for {sorted(PEFT_POLICIES)}."
+        ),
+    )
+    lora_rank: int = Field(
+        default=32,
+        ge=1,
+        le=256,
+        description="LoRA rank (dimension of the low-rank decomposition). Ignored unless lora_enabled.",
+    )
+    lora_alpha: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "LoRA scaling numerator (scaling = lora_alpha / lora_rank). None defaults to lora_rank "
+            "(scaling = 1.0). Ignored unless lora_enabled."
+        ),
+    )
+    lora_dropout: float = Field(
+        default=0.05,
+        ge=0.0,
+        lt=1.0,
+        description="Dropout probability applied to LoRA adapter inputs. Ignored unless lora_enabled.",
+    )
+    lora_use_dora: bool = Field(
+        default=False,
+        description=(
+            "Use DoRA (Weight-Decomposed Low-Rank Adaptation) instead of plain LoRA; typically improves "
+            "quality at low ranks at the cost of slightly more compute/memory. Ignored unless lora_enabled."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_lora(self) -> "TrainJobPayloadBase":
+        """Reject a LoRA request the policy cannot honour."""
+        if not self.lora_enabled:
+            return self
+        if self.policy.lower() not in PEFT_POLICIES:
+            msg = (
+                f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
+                f"it requires one of {sorted(PEFT_POLICIES)}."
+            )
+            raise ValueError(msg)
+        return self
 
     # Set by the worker for every target (not just remote ones): a snapshot is
     # taken up front so a job's model has stable provenance, and a remote/SSH
