@@ -68,7 +68,7 @@ export const ModelRow = ({
             <Text>{model.policy.toUpperCase()}</Text>
             <Text>{dataset?.name ?? '-'}</Text>
             <Text>{environment?.name ?? '-'}</Text>
-            <Text>{trainer ?? '-'}</Text>
+            <Text>{trainer || '-'}</Text>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
             <div onClick={(e) => e.stopPropagation()}>

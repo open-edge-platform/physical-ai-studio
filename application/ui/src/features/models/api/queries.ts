@@ -1,8 +1,3 @@
-import { useState } from 'react';
-
-import { Key } from '@geti-ui/ui';
-import { capitalize } from 'lodash-es';
-
 import { $api } from '../../../api/client';
 
 export const useDatasetQuery = (datasetId: string | undefined | null) => {

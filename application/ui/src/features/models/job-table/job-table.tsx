@@ -124,6 +124,24 @@ export const TrainingRow = ({
     const { data: environment } = useEnvironmentQuery(trainJob.payload.project_id, dataset?.environment_id);
     const trainer = trainJob.payload.remote_trainer_name ?? capitalize(trainJob.payload.training_target);
 
+    if (trainJob.status === 'failed') {
+        return (
+            <Table.Row id={trainJob.id}>
+                <div />
+                <TrainJobStatus job={trainJob} />
+                <Text>{loss ? loss.toFixed(2) : '...'}</Text>
+                <Text>{trainJob.payload.policy.toUpperCase()}</Text>
+                <Text>{dataset?.name ?? '-'}</Text>
+                <Text>{environment?.name ?? '-'}</Text>
+                <Text>{trainer || '-'}</Text>
+                <div />
+                <View>
+                    <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
+                </View>
+            </Table.Row>
+        );
+    }
+
     return (
         <Table.ExpandableRow
             id={trainJob.id}
