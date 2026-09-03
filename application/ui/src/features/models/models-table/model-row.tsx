@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ActionButton, Button, DialogTrigger, Flex, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
+import { $api } from '../../../api/client';
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { Table } from '../../../components/table/table';
 import { durationBetween } from '../shared/duration';
@@ -11,6 +12,37 @@ import { ModelRowContent } from './model-row-content';
 import { StartInferenceDialog } from './start-inference-dialog';
 
 import classes from './model-table.module.css';
+
+const useDatasetQuery = (datasetId: string | undefined | null) => {
+    return $api.useQuery(
+        'get',
+        '/api/dataset/{dataset_id}',
+        {
+            params: { path: { dataset_id: String(datasetId) } },
+        },
+        {
+            enabled: datasetId != null,
+        }
+    );
+};
+
+const useEnvironmentQuery = (projectId: string, environmentId: string | undefined) => {
+    return $api.useQuery(
+        'get',
+        '/api/projects/{project_id}/environments/{environment_id}',
+        {
+            params: {
+                path: {
+                    environment_id: String(environmentId),
+                    project_id: projectId,
+                },
+            },
+        },
+        {
+            enabled: environmentId !== undefined,
+        }
+    );
+};
 
 export const ModelRow = ({
     model,
@@ -26,6 +58,8 @@ export const ModelRow = ({
     onViewLogs?: () => void;
 }) => {
     const [isDownloadDialogOpen, setDownloadDialogOpen] = useState(false);
+    const { data: dataset } = useDatasetQuery(model.dataset_id);
+    const { data: environment } = useEnvironmentQuery(model.project_id, dataset?.environment_id);
 
     const onAction = (key: Key) => {
         const action = key.toString();
@@ -59,9 +93,11 @@ export const ModelRow = ({
                 <Text>{model.name}</Text>
                 {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
             </Flex>
+            <Text>{model.policy.toUpperCase()}</Text>
+            <Text>{dataset?.name ?? '-'}</Text>
+            <Text>{environment?.name ?? '-'}</Text>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
-            <Text>{model.policy.toUpperCase()}</Text>
             <div onClick={(e) => e.stopPropagation()}>
                 <DialogTrigger>
                     <Button variant='secondary'>Run model</Button>
