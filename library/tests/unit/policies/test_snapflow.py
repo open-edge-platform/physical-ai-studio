@@ -336,7 +336,7 @@ class TestSnapFlowMixedLoss:
         model = _StubFlowModel(alpha=1.0)
         inputs = _mixed_loss_inputs(bsize=6)
 
-        losses = model.snapflow_mixed_loss(
+        losses, _cd_idx = model.snapflow_mixed_loss(
             sample_noise=model.sample_noise, predict_velocity=model.predict_velocity, **inputs
         )
 
@@ -348,7 +348,7 @@ class TestSnapFlowMixedLoss:
         model = _StubFlowModel(alpha=0.0)
         inputs = _mixed_loss_inputs(bsize=6)
 
-        losses = model.snapflow_mixed_loss(
+        losses, _cd_idx = model.snapflow_mixed_loss(
             sample_noise=model.sample_noise, predict_velocity=model.predict_velocity, **inputs
         )
 
@@ -362,7 +362,7 @@ class TestSnapFlowMixedLoss:
         model = _StubFlowModel(alpha=0.5)
         inputs = _mixed_loss_inputs(bsize)
 
-        losses = model.snapflow_mixed_loss(
+        losses, cd_idx = model.snapflow_mixed_loss(
             sample_noise=model.sample_noise, predict_velocity=model.predict_velocity, **inputs
         )
 
@@ -372,6 +372,8 @@ class TestSnapFlowMixedLoss:
         assert torch.equal(all_indices, torch.arange(bsize, dtype=all_indices.dtype))
         assert losses.shape == inputs["actions"].shape
         assert not torch.any(losses == 0)
+        # cd_idx must match the rows actually routed through the CD branch.
+        assert torch.equal(cd_idx.sort().values, cd_markers.sort().values.to(cd_idx.dtype))
 
     def test_split_membership_matches_alpha_marginal_across_many_trials(self) -> None:
         """A single batch has a static split *size*, but the point of using

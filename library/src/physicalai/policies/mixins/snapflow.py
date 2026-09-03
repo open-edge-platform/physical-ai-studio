@@ -324,7 +324,7 @@ class SnapFlowModelMixin:
             [torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
             torch.Tensor,
         ],
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the SnapFlow mixed FM/consistency-distillation loss.
 
         Splits the batch into a flow-matching (FM) fraction (``alpha``) and a
@@ -365,7 +365,11 @@ class SnapFlowModelMixin:
                 predicting the velocity field.
 
         Returns:
-            Per-element loss tensor, same shape as ``actions``.
+            Tuple of (per-element loss tensor same shape as ``actions``, indices
+            of samples routed through the consistency-distillation branch). CD
+            samples do not regress onto the dataset action, so callers should
+            treat ``cd_idx`` as exempt from action-padding masking (see
+            :func:`physicalai.policies.base.in_episode_bound`).
         """
         bsize = actions.shape[0]
         device = actions.device
@@ -429,7 +433,7 @@ class SnapFlowModelMixin:
             v_pred = predict_velocity(x_1, t1, t_zero, cd_prefix_embs, cd_prefix_pad_masks, cd_prefix_att_masks)
             losses[cd_idx] = self._snapflow_lambda * F.mse_loss(v_pred, v_target.detach(), reduction="none")
 
-        return losses
+        return losses, cd_idx
 
     def snapflow_num_inference_steps(self, default: int) -> int:
         """Return the number of inference denoising steps to use.
