@@ -48,6 +48,22 @@ export const isRuntimeSessionBusyError = (error: unknown): boolean =>
     'error_code' in error &&
     (error as Record<string, unknown>).error_code === 'runtime_session_busy';
 
+/**
+ * Returns true when the API error is the SSH-provisioned-trainer feature
+ * reporting itself unavailable (HTTP 503, `{ error_code: "ssh_feature_unavailable" }`).
+ *
+ * The backend fails closed whenever this Studio instance is not eligible to
+ * run SSH-provisioned training (e.g. it is bound to more than loopback), so
+ * this is an expected, often-permanent environment state - not a page-breaking
+ * failure. Callers should degrade gracefully (hide SSH-only UI) instead of
+ * surfacing it as a crash.
+ */
+export const isSshFeatureUnavailableError = (error: unknown): boolean =>
+    typeof error === 'object' &&
+    error !== null &&
+    'error_code' in error &&
+    (error as Record<string, unknown>).error_code === 'ssh_feature_unavailable';
+
 interface ApiErrorBody {
     error_code?: string;
     message?: string;

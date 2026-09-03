@@ -1,6 +1,6 @@
 import { $api } from '../../api/client';
 
-const REMOTE_UNAVAILABLE_POLL_MS = 5000;
+const REMOTE_UNAVAILABLE_POLL_MS = 15000;
 
 /**
  * Reads a remote trainer's health and retries unavailable trainers until they recover.

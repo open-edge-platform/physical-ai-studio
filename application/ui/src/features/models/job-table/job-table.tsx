@@ -26,9 +26,16 @@ import { JobRowContent } from './job-row-content';
 
 import classes from './job-table.module.css';
 
-/** Small pill naming the remote trainer a job runs on. Hidden entirely for local jobs. */
+/** Small pill naming the remote trainer or SSH server a job runs on. Hidden entirely for local jobs. */
 const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+    const { data: remoteServers = [] } = $api.useQuery('get', '/api/remote-servers');
+
+    if (payload.training_target === 'ssh') {
+        const remoteServer = remoteServers.find((server) => server.id === payload.remote_server_id);
+        const text = `SSH · ${remoteServer?.name ?? 'unknown'}`;
+        return <SingleBadge color='var(--spectrum-global-color-purple-600)' text={text} title={text} preserveCase />;
+    }
 
     if (payload.training_target !== 'remote') {
         return null;

@@ -36,7 +36,7 @@ export const SettingsView = () => {
         },
         {
             key: 'compute',
-            name: 'Compute',
+            name: 'Training Targets',
             href: paths.settings.compute.pattern,
             content: <Compute />,
         },
