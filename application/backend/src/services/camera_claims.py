@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from exceptions import CameraSettingsConflictError
 
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class CameraClaim:
-    fingerprint: str
+    fingerprint: dict[str, Any]
     settings: tuple[int, int, int]
     holder: str
     project_id: UUID
@@ -30,6 +31,10 @@ def settings_from_camera(camera: Camera) -> tuple[int, int, int]:
         int(getattr(payload, "height", None) or 0),
         int(getattr(payload, "fps", None) or 0),
     )
+
+
+def _fingerprint_key(fingerprint: dict[str, Any]) -> str:
+    return json.dumps(fingerprint, sort_keys=True, separators=(",", ":"))
 
 
 class CameraClaimRegistry:
@@ -54,7 +59,7 @@ class CameraClaimRegistry:
         """
         with self._lock:
             for incoming in claims:
-                holders = self._claims.get(incoming.fingerprint)
+                holders = self._claims.get(_fingerprint_key(incoming.fingerprint))
                 if not holders:
                     continue
                 pinned = next(iter(holders.values()))
@@ -65,7 +70,7 @@ class CameraClaimRegistry:
                         requested=incoming.settings,
                     )
             for incoming in claims:
-                holders = self._claims.setdefault(incoming.fingerprint, {})
+                holders = self._claims.setdefault(_fingerprint_key(incoming.fingerprint), {})
                 holders[incoming.holder] = incoming
             if not claims:
                 return 0
@@ -85,9 +90,9 @@ class CameraClaimRegistry:
             for fingerprint in empty:
                 del self._claims[fingerprint]
 
-    def holder_of(self, fingerprint: str) -> CameraClaim | None:
+    def holder_of(self, fingerprint: dict[str, Any]) -> CameraClaim | None:
         with self._lock:
-            holders = self._claims.get(fingerprint)
+            holders = self._claims.get(_fingerprint_key(fingerprint))
             if not holders:
                 return None
             return next(iter(holders.values()))

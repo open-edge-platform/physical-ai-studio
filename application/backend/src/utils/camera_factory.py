@@ -6,7 +6,6 @@ filters per-driver kwargs so that only constructor-safe parameters reach the cam
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -48,17 +47,6 @@ _ALLOWED_KWARGS: dict[str, frozenset[str]] = {
 }
 
 
-def _get_fingerprint_dict(fingerprint_str: str) -> dict[str, Any]:
-    try:
-        d = json.loads(fingerprint_str)
-        if isinstance(d, dict):
-            return d
-    except ValueError:  # This is not a valid fingerprint
-        pass
-    logger.error(f"Could not convert `{fingerprint_str}` into a valid fingerprint dict")
-    raise ValueError("Unable to parse fingerprint into a dict")
-
-
 def build_camera_config(config: Camera) -> Config:
     """Build a camera configuration from a config schema."""
     class_path = _DRIVER_TO_CLASS_PATH[config.driver]
@@ -67,12 +55,17 @@ def build_camera_config(config: Camera) -> Config:
     payload = config.payload.model_dump()
     init_args: dict[str, Any] = {k: v for k, v in payload.items() if k in allowed and v is not None}
 
-    fingerprint = _get_fingerprint_dict(config.fingerprint)
+    fingerprint = config.fingerprint
+    if not fingerprint:
+        raise ValueError("Camera must be reselected")
 
     if config.driver == "usb_camera":
         init_args["device"] = fingerprint
     elif config.driver != "ipcam":
-        init_args["serial_number"] = fingerprint["serial"]
+        serial = fingerprint.get("serial")
+        if not isinstance(serial, str) or not serial:
+            raise ValueError(f"Camera fingerprint for {config.driver!r} must include a non-empty 'serial'")
+        init_args["serial_number"] = serial
 
     return Config(class_path, init_args)
 

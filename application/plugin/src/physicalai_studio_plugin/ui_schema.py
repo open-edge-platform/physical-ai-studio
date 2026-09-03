@@ -21,6 +21,7 @@ class RobotFieldUiOptions(TypedDict, total=False):
     """Per-field UI overrides understood by the Studio robot form."""
 
     required: bool
+    advanced_configuration: bool
 
 
 class RobotUiConnectionBinding(TypedDict, total=False):

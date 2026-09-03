@@ -43,9 +43,9 @@ export const useCatalogIdentifyMutation = () => {
 const useRobotCatalogMap = () => {
     const query = useRobotCatalogQuery();
 
-    const byType = new Map<SchemaRobotType, SchemaRobotCatalogDefinitionResponse>();
+    const byType = new Map<string, SchemaRobotCatalogDefinitionResponse>();
     query.data.forEach((entry) => {
-        byType.set(entry.type as SchemaRobotType, entry);
+        byType.set(entry.type, entry);
     });
 
     return byType;

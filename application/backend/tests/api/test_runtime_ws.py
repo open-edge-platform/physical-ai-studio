@@ -72,7 +72,7 @@ def _camera() -> object:
             "id": str(CAMERA_ID),
             "driver": "usb_camera",
             "name": "front",
-            "fingerprint": "cam-front",
+            "fingerprint": {"serial": "cam-front"},
             "hardware_name": None,
             "payload": {"width": 640, "height": 480, "fps": 30},
         }
@@ -157,7 +157,7 @@ def test_a_failed_connect_releases_the_claim(mock_robot_client_factory, claims: 
         app.dependency_overrides.clear()
 
     assert payload["event"] == "error"
-    assert claims.holder_of("cam-front") is None
+    assert claims.holder_of({"serial": "cam-front"}) is None
 
 
 def test_waiter_releases_when_the_owner_dies() -> None:
@@ -167,7 +167,7 @@ def test_waiter_releases_when_the_owner_dies() -> None:
     generation = claims.claim(
         [
             CameraClaim(
-                fingerprint="cam-front",
+                fingerprint={"serial": "cam-front"},
                 settings=(640, 480, 30),
                 holder="rt-a",
                 project_id=PROJECT_ID,
@@ -184,4 +184,4 @@ def test_waiter_releases_when_the_owner_dies() -> None:
 
     asyncio.run(_run())
 
-    assert claims.holder_of("cam-front") is None
+    assert claims.holder_of({"serial": "cam-front"}) is None

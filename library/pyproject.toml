@@ -113,12 +113,14 @@ rldx1 = [
     "peft>=0.13.0,<1.0.0",
     "diffusers>=0.38.0",
 ]
+# Neural Network Compression Framework (optional, for post-export quantization hooks)
+nncf = ["nncf>=3.0.0"]
 
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
 
 # ExecuTorch with OpenVINO delegate (requires nncf for export)
-executorch-openvino = ["executorch>=1.1.0", "nncf>=3.0.0"]
+executorch-openvino = ["executorch>=1.1.0", "physicalai-train[nncf]"]
 
 # All optional dependencies
 all = [
@@ -206,7 +208,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "a7ee74d0a65bd8f27dc31d831210c7a905e92309" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "8e4021703ef43387a835c6647b993cecc069ca85" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

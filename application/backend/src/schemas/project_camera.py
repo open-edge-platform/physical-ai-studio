@@ -1,6 +1,6 @@
 from abc import ABC
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -22,7 +22,10 @@ class BaseCamera(BaseIDModel, ABC):
     updated_at: datetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable camera name")
-    fingerprint: str = Field(..., description="Camera fingerprint/source identifier")
+    fingerprint: dict[str, Any] | None = Field(
+        ...,
+        description="Backend-specific camera identity from hardware discovery, or null when reselection is required",
+    )
     hardware_name: str | None = Field(..., description="Camera hardware name from discovery")
 
 
@@ -103,7 +106,7 @@ class USBCamera(BaseCamera):
             "example": {
                 "name": "front_camera",
                 "driver": "usb_camera",
-                "fingerprint": '{"serial":"12345678AB"}',
+                "fingerprint": {"serial": "12345678AB"},
                 "hardware_name": "Logitech C920 HD Pro Webcam",
                 "payload": {
                     "width": 1920,
@@ -126,7 +129,7 @@ class IPCamera(BaseCamera):
             "example": {
                 "name": "security_camera",
                 "driver": "ipcam",
-                "fingerprint": '{"url":"rtsp://192.168.1.100:554/stream1"}',
+                "fingerprint": {"url": "rtsp://192.168.1.100:554/stream1"},
                 "hardware_name": None,
                 "payload": {
                     "url": "rtsp://192.168.1.100:554/stream1",
@@ -147,7 +150,7 @@ class BaslerCamera(BaseCamera):
             "example": {
                 "name": "inspection_camera",
                 "driver": "basler",
-                "fingerprint": '{"serial":"40123456"}',
+                "fingerprint": {"serial": "40123456"},
                 "hardware_name": "Basler acA1920-40gm",
                 "payload": {
                     "serial_number": "40123456",
@@ -170,7 +173,7 @@ class RealsenseCamera(BaseCamera):
             "example": {
                 "name": "depth_camera",
                 "driver": "realsense",
-                "fingerprint": '{"serial":"123456789"}',
+                "fingerprint": {"serial": "123456789"},
                 "hardware_name": "Intel RealSense D435",
                 "payload": {
                     "width": 640,
@@ -193,7 +196,7 @@ class GenicamCamera(BaseCamera):
             "example": {
                 "name": "genicam_camera",
                 "driver": "genicam",
-                "fingerprint": '{"serial":"GC123456"}',
+                "fingerprint": {"serial": "GC123456"},
                 "hardware_name": "Genicam camera",
                 "payload": {
                     "serial_number": "GC123456",

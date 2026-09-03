@@ -55,6 +55,49 @@ exports/
 └── metadata.json
 ```
 
+## Post-Export Hooks
+
+`export(...)` accepts `post_export_hooks`, a list of callables run after the model
+is written. Each hook receives the exported model file path (a `str`) and can
+apply post-processing such as quantization or weight compression in place.
+
+```python test="skip" reason="requires checkpoint"
+def my_hook(model_path: str) -> None:
+    ...  # inspect or rewrite the exported artifact at model_path
+
+policy.export("./exports", backend="openvino", post_export_hooks=[my_hook])
+```
+
+### INT8 Weight Compression (OpenVINO)
+
+`compress_weights_openvino_int8_sym` is a built-in hook that compresses an
+exported OpenVINO IR to INT8 symmetric weights using
+[NNCF](https://github.com/openvinotoolkit/nncf), shrinking the model and
+speeding up inference on Intel hardware. It rewrites the `.xml`/`.bin` in place.
+
+Install the optional dependency first:
+
+```bash
+pip install physicalai-train[nncf]
+```
+
+Then pass the hook to `export(...)`:
+
+```python test="skip" reason="requires checkpoint and nncf"
+from physicalai.policies import Pi05
+from physicalai.export import compress_weights_openvino_int8_sym
+
+policy = Pi05.load_from_checkpoint("checkpoints/best.ckpt")
+policy.export(
+    "./exports",
+    backend="openvino",
+    post_export_hooks=[compress_weights_openvino_int8_sym],
+)
+```
+
+The exported `model.xml` / `model.bin` are replaced with their INT8-compressed
+counterparts and load transparently through `InferenceModel("./exports")`.
+
 ## Inference
 
 ```python test="skip" reason="requires exported model and environment"
