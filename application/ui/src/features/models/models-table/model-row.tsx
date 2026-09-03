@@ -61,6 +61,8 @@ export const ModelRow = ({
     const { data: dataset } = useDatasetQuery(model.dataset_id);
     const { data: environment } = useEnvironmentQuery(model.project_id, dataset?.environment_id);
 
+    const trainer = trainingJob?.payload.remote_trainer_name ?? trainingJob?.payload.training_target;
+
     const onAction = (key: Key) => {
         const action = key.toString();
         if (action === 'delete') {
@@ -96,6 +98,7 @@ export const ModelRow = ({
             <Text>{model.policy.toUpperCase()}</Text>
             <Text>{dataset?.name ?? '-'}</Text>
             <Text>{environment?.name ?? '-'}</Text>
+            <Text>{trainer ?? '-'}</Text>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
             <div onClick={(e) => e.stopPropagation()}>
