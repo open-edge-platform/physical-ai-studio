@@ -96,21 +96,24 @@ export const useLoadModelQuery = (robotType: SchemaRobotType) => {
     const path = definition.urdf_path;
     const packageMap = definition.package_map ?? {};
 
-    const cachedModel = getModel(path);
+    const cachedModel = path == null ? undefined : getModel(path);
 
     const query = useQuery({
         queryKey: ['robotModel', robotType, path],
         queryFn: () => {
+            if (path == null) {
+                return undefined;
+            }
             return cachedModel ?? loadURDFModel(packageMap, path);
         },
         initialData: cachedModel,
         staleTime: Infinity,
         gcTime: 1000 * 60 * 30,
-        enabled: !cachedModel,
+        enabled: path != null && !cachedModel,
     });
 
     useEffect(() => {
-        if (query.data && getModel(path) !== query.data) {
+        if (path != null && query.data && getModel(path) !== query.data) {
             setModel(path, query.data);
         }
     }, [getModel, path, query.data, setModel]);

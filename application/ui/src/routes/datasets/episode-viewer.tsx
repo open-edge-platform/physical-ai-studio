@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { Disclosure, DisclosurePanel, DisclosureTitle, Divider, Flex, Text } from '@geti-ui/ui';
 
-import { $api } from '../../api/client';
-import { SchemaDatasetOutput, SchemaEpisode } from '../../api/openapi-spec';
+import { SchemaDatasetOutput, SchemaEnvironmentWithRelations, SchemaEpisode } from '../../api/openapi-spec';
 import EpisodeChart from '../../components/episode-chart/episode-chart';
 import { EpisodeDockView } from '../../features/datasets/episodes/episode-dock-view';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
@@ -12,7 +11,6 @@ import {
     useEpisodeViewer,
 } from '../../features/datasets/episodes/episode-viewer-provider.component';
 import { Player } from '../../features/datasets/episodes/use-player';
-import { useProjectId } from '../../features/projects/use-project';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { TimelineControls } from './timeline-controls';
 
@@ -21,6 +19,7 @@ import classes from './episode-viewer.module.css';
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
     dataset: SchemaDatasetOutput;
+    environment: SchemaEnvironmentWithRelations;
 }
 
 interface LiveEpisodeChartProps {
@@ -70,22 +69,13 @@ const EpisodeTimelineComponent = () => {
                     <LiveEpisodeChart episode={episode} player={player} />
                 </DisclosurePanel>
             </Disclosure>
-            <TimelineControls player={player} />
+            {/* We reset the time controls state for the new episode */}
+            <TimelineControls key={episode.episode_index} player={player} />
         </div>
     );
 };
 
-export const EpisodeViewer = ({ episode, dataset }: EpisodeViewerProps) => {
-    const { project_id } = useProjectId();
-
-    const { data: environment } = $api.useSuspenseQuery(
-        'get',
-        '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: { path: { project_id, environment_id: dataset.environment_id } },
-        }
-    );
-
+export const EpisodeViewer = ({ episode, dataset, environment }: EpisodeViewerProps) => {
     return (
         <EpisodeViewerProvider episode={episode} environment={environment}>
             <RobotModelsProvider>

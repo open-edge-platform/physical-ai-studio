@@ -319,7 +319,7 @@ class JobDB(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    payload: Mapped[str] = mapped_column(JSON, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     extra_info: Mapped[str] = mapped_column(JSON, nullable=True)
 
     model: Mapped["ModelDB"] = relationship(

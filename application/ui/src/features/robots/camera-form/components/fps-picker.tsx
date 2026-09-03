@@ -1,11 +1,12 @@
 import { Item, Picker } from '@geti-ui/ui';
 
+import { CameraFingerprint } from '../../../cameras/fingerprint';
 import { CameraDriver } from '../provider';
 import { useSupportedFormats } from './use-camera-data';
 
 interface FpsPickerProps {
     driver: CameraDriver;
-    fingerprint: string | undefined;
+    fingerprint: CameraFingerprint | null | undefined;
     width: number | undefined;
     height: number | undefined;
     selectedFps: number | undefined;
@@ -17,7 +18,7 @@ export const FpsPicker = ({ driver, fingerprint, width, height, selectedFps, onS
 
     const resolution = supportedFormats.find((r) => r.width === width && r.height === height);
     const supportedFps = resolution?.fps ?? [];
-    const isDisabled = fingerprint === undefined;
+    const isDisabled = !fingerprint;
 
     return (
         <Picker

@@ -1,5 +1,4 @@
 import asyncio
-import json
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -7,7 +6,7 @@ from fastapi.testclient import TestClient
 from physicalai.capture import DeviceInfo
 
 from api.dependencies import get_robot_manager_service
-from api.hardware import get_cameras
+from api.hardware import _fingerprint_from_device_info, get_cameras
 from main import app
 from schemas import SerialPortInfo
 
@@ -34,26 +33,18 @@ def event_loop():
 
 
 class TestFingerprintFromDeviceInfo:
-    def test_stable_prefers_hardware_id(self):
+    def test_returns_hardware_payload(self):
         info = _make_device(device_id="/dev/video0", hardware_fingerprint={"id": "usb-cam"})
-        assert info.hardware_payload["id"] == "usb-cam"
+        assert _fingerprint_from_device_info(info) == {"id": "usb-cam"}
 
-    def test_unstable_falls_back_to_device_id(self):
+    def test_returns_none_without_hardware_payload(self):
         info = _make_device(device_id="/dev/video0", hardware_fingerprint=None)
-        assert info.device_id == "/dev/video0"
-
-    def test_stable_but_no_hardware_id_falls_back(self):
-        info = _make_device(device_id="/dev/video0", hardware_fingerprint=None)
-        assert info.device_id == "/dev/video0"
-
-    def test_unstable_ignores_hardware_id(self):
-        info = _make_device(device_id="/dev/video0", hardware_fingerprint={"id": "usb-cam"})
-        assert info.device_id == "/dev/video0"
+        assert _fingerprint_from_device_info(info) is None
 
 
 class TestGetCameras:
     def test_maps_uvc_to_usb_camera(self, event_loop):
-        devices = {"uvc": [_make_device(name="Logitech C920")]}
+        devices = {"uvc": [_make_device(name="Logitech C920", hardware_fingerprint={"serial": "abc"})]}
         with patch("api.hardware.discover_all", return_value=devices):
             cameras = event_loop.run_until_complete(get_cameras())
         assert len(cameras) == 1
@@ -73,7 +64,13 @@ class TestGetCameras:
             cameras = event_loop.run_until_complete(get_cameras())
         assert len(cameras) == 1
         assert cameras[0].driver == "realsense"
-        assert json.loads(cameras[0].fingerprint) == {"serial": "123456789"}
+        assert cameras[0].fingerprint == {"serial": "123456789"}
+
+    def test_skips_devices_without_hardware_payload(self, event_loop):
+        devices = {"uvc": [_make_device()]}
+        with patch("api.hardware.discover_all", return_value=devices):
+            cameras = event_loop.run_until_complete(get_cameras())
+        assert cameras == []
 
     def test_skips_unknown_drivers(self, event_loop):
         devices = {"ip": [_make_device(name="IP cam")], "genicam": [_make_device(name="GenICam cam")]}
@@ -89,7 +86,7 @@ class TestGetCameras:
     def test_all_false_uses_only_usable(self, event_loop):
         def fake_discover(*, only_usable: bool = True):
             assert only_usable is True
-            return {"uvc": [_make_device(name="Cam A")]}
+            return {"uvc": [_make_device(name="Cam A", hardware_fingerprint={"serial": "abc"})]}
 
         with patch("api.hardware.discover_all", side_effect=fake_discover):
             cameras = event_loop.run_until_complete(get_cameras(all=False))

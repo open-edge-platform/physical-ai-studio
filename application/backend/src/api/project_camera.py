@@ -1,7 +1,7 @@
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from api.dependencies import CameraClaimRegistryDep, get_camera_id, get_camera_service, get_project_id
 from exceptions import RecordingLockError
@@ -14,7 +14,15 @@ router = APIRouter(prefix="/api/projects/{project_id}/cameras", tags=["Project C
 ProjectID = Annotated[UUID, Depends(get_project_id)]
 
 
-def _ensure_not_claimed(fingerprint: str, claims: CameraClaimRegistry) -> None:
+def _require_fingerprint(fingerprint: dict[str, Any] | None) -> dict[str, Any]:
+    if not fingerprint:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Camera must be reselected")
+    return fingerprint
+
+
+def _ensure_not_claimed(fingerprint: dict[str, Any] | None, claims: CameraClaimRegistry) -> None:
+    if fingerprint is None:
+        return
     holder = claims.holder_of(fingerprint)
     if holder is not None:
         raise RecordingLockError(f"Camera is in use by project {holder.project_name!r}.")
@@ -36,6 +44,7 @@ async def create_project_camera(
     camera_service: Annotated[ProjectCameraService, Depends(get_camera_service)],
 ) -> Camera:
     """Create a new camera."""
+    _require_fingerprint(camera.fingerprint)
     return await camera_service.create_camera(project_id, camera)
 
 
@@ -60,7 +69,7 @@ async def update_project_camera(
     """Set camera."""
     existing = await camera_service.get_camera_by_id(project_id, camera_id)
     _ensure_not_claimed(existing.fingerprint, claims)
-    _ensure_not_claimed(camera.fingerprint, claims)
+    _ensure_not_claimed(_require_fingerprint(camera.fingerprint), claims)
     camera_with_id = camera.model_copy(update={"id": camera_id})
 
     return await camera_service.update_camera(
