@@ -2,47 +2,17 @@ import { useState } from 'react';
 
 import { ActionButton, Button, DialogTrigger, Flex, Item, Key, Menu, MenuTrigger, Text, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
+import { capitalize } from 'lodash-es';
 
-import { $api } from '../../../api/client';
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { Table } from '../../../components/table/table';
+import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
 import { ModelDownloadDialog } from './model-download-dialog';
 import { ModelRowContent } from './model-row-content';
 import { StartInferenceDialog } from './start-inference-dialog';
 
 import classes from './model-table.module.css';
-
-const useDatasetQuery = (datasetId: string | undefined | null) => {
-    return $api.useQuery(
-        'get',
-        '/api/dataset/{dataset_id}',
-        {
-            params: { path: { dataset_id: String(datasetId) } },
-        },
-        {
-            enabled: datasetId != null,
-        }
-    );
-};
-
-const useEnvironmentQuery = (projectId: string, environmentId: string | undefined) => {
-    return $api.useQuery(
-        'get',
-        '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: {
-                path: {
-                    environment_id: String(environmentId),
-                    project_id: projectId,
-                },
-            },
-        },
-        {
-            enabled: environmentId !== undefined,
-        }
-    );
-};
 
 export const ModelRow = ({
     model,
@@ -61,7 +31,7 @@ export const ModelRow = ({
     const { data: dataset } = useDatasetQuery(model.dataset_id);
     const { data: environment } = useEnvironmentQuery(model.project_id, dataset?.environment_id);
 
-    const trainer = trainingJob?.payload.remote_trainer_name ?? trainingJob?.payload.training_target;
+    const trainer = trainingJob?.payload.remote_trainer_name ?? capitalize(trainingJob?.payload.training_target);
 
     const onAction = (key: Key) => {
         const action = key.toString();
