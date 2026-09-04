@@ -2,7 +2,7 @@ import { Grid, StatusLight } from '@adobe/react-spectrum';
 import { ActionButton, Button, Flex, Heading, Icon, Item, Menu, MenuTrigger, toast, View } from '@geti-ui/ui';
 import { Add, MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { NavLink } from 'react-router';
+import { NavLink, useNavigate, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
@@ -36,11 +36,18 @@ const exportCalibration = async (_project_id: string, robot: SchemaRobot) => {
 
 const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
     const { project_id } = useProjectId();
+    const { robot_id: activeRobotId } = useParams<{ robot_id?: string }>();
+    const navigate = useNavigate();
     const deleteRobotMutation = $api.useMutation('delete', '/api/projects/{project_id}/robots/{robot_id}', {
         meta: {
             invalidates: [
                 ['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }],
                 ['get', '/api/projects/{project_id}/robots/online', { params: { path: { project_id } } }],
+                [
+                    'get',
+                    '/api/projects/{project_id}/robots/{robot_id}',
+                    { params: { path: { project_id, robot_id: robot.id } } },
+                ],
             ],
         },
     });
@@ -64,6 +71,11 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                         await deleteRobotMutation.mutateAsync(
                             { params: { path: { project_id, robot_id: robot.id } } },
                             {
+                                onSuccess: () => {
+                                    if (robot.id === activeRobotId) {
+                                        navigate(paths.project.robots.index({ project_id }));
+                                    }
+                                },
                                 onError: (error) => {
                                     if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
                                         toast.info(

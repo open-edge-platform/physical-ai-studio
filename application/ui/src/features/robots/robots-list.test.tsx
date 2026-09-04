@@ -1,10 +1,16 @@
-import { screen, waitFor } from '@testing-library/react';
+import { ReactNode, Suspense } from 'react';
+
+import { ThemeProvider } from '@geti-ui/ui';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
+import { createQueryClient } from '../../query-client/query-client';
 import { render } from '../../test-utils/render';
 import { RobotsList } from './robots-list';
 
@@ -35,6 +41,32 @@ const renderRobotsList = () =>
 const openRobotMenu = async (user: ReturnType<typeof userEvent.setup>) => {
     await screen.findByText(so101Robot.name);
     await user.click(screen.getByRole('button', { name: `Actions for ${so101Robot.name}` }));
+};
+
+const renderRobotsListAtShowRoute = () => {
+    const queryClient = createQueryClient();
+    const providers = (children: ReactNode) => (
+        <QueryClientProvider client={queryClient}>
+            <ThemeProvider>
+                <Suspense>{children}</Suspense>
+            </ThemeProvider>
+        </QueryClientProvider>
+    );
+    const router = createMemoryRouter(
+        [
+            {
+                path: '/projects/:project_id/robots/:robot_id',
+                element: providers(<RobotsList />),
+            },
+            {
+                path: '/projects/:project_id/robots',
+                element: providers(<div>Robots index</div>),
+            },
+        ],
+        { initialEntries: [`/projects/${PROJECT_ID}/robots/${ROBOT_ID}`], initialIndex: 0 }
+    );
+
+    return rtlRender(<RouterProvider router={router} />);
 };
 
 describe('RobotsList', () => {
@@ -124,6 +156,21 @@ describe('RobotsList', () => {
         });
         expect(click).toHaveBeenCalledOnce();
         expect(revokeObjectUrl).toHaveBeenCalledWith('blob:calibration');
+    });
+
+    it('navigates to the robots index when the viewed robot is deleted', async () => {
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
+            http.delete('/api/projects/{project_id}/robots/{robot_id}', () => HttpResponse.json(null, { status: 204 }))
+        );
+        const user = userEvent.setup();
+
+        renderRobotsListAtShowRoute();
+        await openRobotMenu(user);
+        await user.click(await screen.findByText('Delete', { selector: '[role]' }));
+
+        expect(await screen.findByText('Robots index')).toBeInTheDocument();
     });
 
     it('shows unavailable robots without treating their status as loading', async () => {

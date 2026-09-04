@@ -7,6 +7,7 @@ import { path } from 'static-path';
 import { fetchClient } from './api/client';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
+import { RobotDetailError } from './features/robots/robot-detail-error';
 import { AppLayout } from './routes/app/app.layout';
 import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
@@ -271,6 +272,7 @@ export const router = createBrowserRouter([
                                     {
                                         path: paths.project.robots.show.pattern,
                                         element: <Robot />,
+                                        errorElement: <RobotDetailError />,
                                     },
                                 ],
                             },
