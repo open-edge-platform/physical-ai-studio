@@ -32,7 +32,12 @@ class TrossenSingleArmPayload(BaseModel):
             },
             **robot_payload_ui(
                 [
-                    {"kind": "field", "name": "connection_string"},
+                    {
+                        "kind": "ip_address",
+                        "name": "connection_string",
+                        "label": "Robot IP address",
+                        "identify": True,
+                    },
                 ]
             ),
         },
@@ -53,8 +58,20 @@ class TrossenBimanualPayload(BaseModel):
             },
             **robot_payload_ui(
                 [
-                    {"kind": "field", "name": "connection_string_left"},
-                    {"kind": "field", "name": "connection_string_right"},
+                    {
+                        "kind": "ip_address",
+                        "name": "connection_string_left",
+                        "label": "Left arm IP address",
+                        "identify": True,
+                        "identify_robot_type": "Trossen_WidowXAI_Follower",
+                    },
+                    {
+                        "kind": "ip_address",
+                        "name": "connection_string_right",
+                        "label": "Right arm IP address",
+                        "identify": True,
+                        "identify_robot_type": "Trossen_WidowXAI_Follower",
+                    },
                 ]
             ),
         },

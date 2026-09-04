@@ -92,6 +92,7 @@ Create `.env.local` for custom configuration:
 | ------------------------- | ----------------------------------------------- | ----------------------- |
 | `PUBLIC_API_BASE_URL`     | Backend API base URL                            | `http://localhost:3000` |
 | `PUBLIC_API_PROXY_TARGET` | Backend target for the development `/api` proxy | `http://localhost:7860` |
+| `PUBLIC_ENABLE_PLUGINS`   | Enable the plugin management page and nav item  | disabled                |
 
 ### Development Proxy
 

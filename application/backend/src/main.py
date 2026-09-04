@@ -18,6 +18,7 @@ from api.hardware import router as hardware_router
 from api.job import router as job_router
 from api.logs import router as logs_router
 from api.models import router as models_router
+from api.plugins import router as plugins_router
 from api.policies import router as policies_router
 from api.project import router as project_router
 from api.project_camera import router as project_cameras_router
@@ -64,6 +65,7 @@ app.include_router(remote_servers_router)
 app.include_router(settings_router)
 app.include_router(models_router)
 app.include_router(policies_router)
+app.include_router(plugins_router)
 app.include_router(job_router)
 app.include_router(imports_router)
 app.include_router(logs_router)

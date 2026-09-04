@@ -1,5 +1,6 @@
 import { Tabs } from '@geti-ui/ui';
 import { screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { render } from '../../test-utils/render';
 import { AppSidebar } from './app-sidebar';
@@ -19,6 +20,14 @@ const renderSidebar = (selectedKey = 'projects') =>
     );
 
 describe('AppSidebar', () => {
+    beforeEach(() => {
+        process.env.PUBLIC_ENABLE_PLUGINS = 'true';
+    });
+
+    afterEach(() => {
+        delete process.env.PUBLIC_ENABLE_PLUGINS;
+    });
+
     it('renders the logo, linking to the projects page', () => {
         renderSidebar();
 
@@ -59,5 +68,12 @@ describe('AppSidebar', () => {
             .forEach((item) => {
                 expect(screen.queryByRole('tab', { name: item.label })).not.toBeInTheDocument();
             });
+    });
+
+    it('hides the Plugins nav item when the plugins feature is disabled', () => {
+        process.env.PUBLIC_ENABLE_PLUGINS = 'false';
+        renderSidebar();
+
+        expect(screen.queryByRole('tab', { name: 'Plugins' })).not.toBeInTheDocument();
     });
 });

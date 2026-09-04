@@ -23,23 +23,22 @@ const CameraCanvas = ({ camera, width, height }: { camera: SchemaProjectCamera; 
 
         processingRef.current = true;
         try {
-            const bitmap = await createImageBitmap(blobData);
-            const canvas = canvasRef.current;
-            const ctx = canvas?.getContext('2d', { alpha: false });
+            let currentBlob: Blob | null = blobData;
 
-            if (canvas && ctx) {
-                ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-                setIsLoading(false);
-            }
+            while (currentBlob) {
+                const bitmap = await createImageBitmap(currentBlob);
+                const canvas = canvasRef.current;
+                const ctx = canvas?.getContext('2d', { alpha: false });
 
-            bitmap.close();
+                if (canvas && ctx) {
+                    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+                    setIsLoading(false);
+                }
 
-            if (frameQueueRef.current) {
-                const queuedBlob = frameQueueRef.current;
+                bitmap.close();
+
+                currentBlob = frameQueueRef.current;
                 frameQueueRef.current = null;
-                processingRef.current = false;
-                await processFrame(queuedBlob);
-                return;
             }
         } catch (error) {
             console.error('Failed to process camera frame:', error);

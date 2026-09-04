@@ -21,6 +21,7 @@ import { EnvironmentShow } from './routes/environments/show';
 import { Index as Models } from './routes/models/index';
 import { Index as Inference } from './routes/models/inference/index';
 import { OpenApi } from './routes/openapi';
+import { Plugins } from './routes/plugins';
 import { Index as Projects } from './routes/projects/index';
 import { ProjectLayout } from './routes/projects/project.layout';
 import { Edit as RobotEdit } from './routes/robots/edit';
@@ -34,6 +35,7 @@ import { Settings } from './routes/settings';
 
 const root = path('/');
 const settings = root.path('/settings');
+const plugins = root.path('/plugins');
 const projects = root.path('/projects');
 const project = root.path('/projects/:project_id');
 const robots = project.path('robots');
@@ -55,6 +57,9 @@ export const paths = {
         about: settings.path('/about'),
     },
     openapi: root.path('/openapi'),
+    plugins: {
+        index: plugins,
+    },
     projects: {
         index: projects,
     },
@@ -142,6 +147,10 @@ export const router = createBrowserRouter([
                                 element: <Settings />,
                             },
                         ],
+                    },
+                    {
+                        path: paths.plugins.index.pattern,
+                        element: <Plugins />,
                     },
                 ],
             },

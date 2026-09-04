@@ -4,11 +4,16 @@ import { Grid, Loading, Tabs, View } from '@geti-ui/ui';
 import { Outlet, useLocation } from 'react-router';
 
 import { AppFooter } from '../../components/app-footer/app-footer';
+import { featureFlags } from '../../config/feature-flags';
 import { AppSidebar } from './app-sidebar';
 import { disabledNavItemKeys } from './nav-items';
 
 const getSelectedNavKey = (pathname: string) => {
     const [, firstSegment] = pathname.split('/');
+
+    if (firstSegment === 'plugins' && !featureFlags.plugins) {
+        return 'projects';
+    }
 
     return firstSegment || 'projects';
 };

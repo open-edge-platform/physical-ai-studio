@@ -6,6 +6,7 @@ import { SchemaRobotType } from '../../robot-types';
 import { useRobotForm } from '../provider';
 import { ConnectionField } from './components/connection-field';
 import { InfoField } from './components/info-field';
+import { IpAddressField } from './components/ip-address-field';
 import { SchemaField } from './schema-field';
 import {
     asRecord,
@@ -34,6 +35,9 @@ const fieldNamesOwnedByItems = (items: RobotUiItem[]): Set<string> =>
                     item.bind.connection,
                     ...(item.bind.serial_number === undefined ? [] : [item.bind.serial_number]),
                 ];
+            }
+            if (item.kind === 'ip_address') {
+                return [item.name];
             }
             if (item.kind === 'section') {
                 return [...fieldNamesOwnedByItems(item.items)];
@@ -68,16 +72,41 @@ type SchemaFormFieldProps = Omit<SchemaFormItemsProps, 'items' | 'renderUnownedF
     field: FieldSchema;
 };
 
+const getResolvedField = ({ properties, definitions }: SchemaFormItemsProps, name: string) => {
+    const field = properties[name];
+    return field === undefined ? undefined : resolveReference(field, definitions);
+};
+
 const SchemaFormItem = ({ item, ...props }: SchemaFormItemProps) => {
     if (item.kind === 'info') {
         return <InfoField info={item} />;
     }
     if (item.kind === 'connection') {
+        const field = getResolvedField(props, item.bind.connection);
+        if (field === undefined) {
+            return null;
+        }
         return (
             <ConnectionField
                 robotType={props.robotType}
                 payload={props.values}
                 options={item}
+                isRequired={isRequiredField(item.bind.connection, field, props.required)}
+                onChange={props.onChange}
+            />
+        );
+    }
+    if (item.kind === 'ip_address') {
+        const field = getResolvedField(props, item.name);
+        if (field === undefined) {
+            return null;
+        }
+        return (
+            <IpAddressField
+                robotType={props.robotType}
+                payload={props.values}
+                options={item}
+                isRequired={isRequiredField(item.name, field, props.required)}
                 onChange={props.onChange}
             />
         );
@@ -201,7 +230,7 @@ export const SchemaForm = ({ schema }: { schema: JsonSchema }) => {
     };
 
     const isRenderable: IsRenderable = (item, itemProperties, itemRequired) => {
-        if (item.kind === 'info' || item.kind === 'connection') {
+        if (item.kind === 'info' || item.kind === 'connection' || item.kind === 'ip_address') {
             return true;
         }
         if (item.kind === 'field') {

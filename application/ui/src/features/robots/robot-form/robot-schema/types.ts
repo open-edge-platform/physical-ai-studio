@@ -1,3 +1,5 @@
+import { SchemaRobotType } from '../../robot-types';
+
 export type InfoItem = {
     kind: 'info';
     title?: string;
@@ -20,6 +22,15 @@ export type ConnectionItem = {
     bind: RobotUiConnectionBinding;
 };
 
+export type IpAddressItem = {
+    kind: 'ip_address';
+    name: string;
+    label?: string;
+    description?: string;
+    identify?: boolean;
+    identify_robot_type?: SchemaRobotType;
+};
+
 export type FieldItem = {
     kind: 'field';
     name: string;
@@ -33,7 +44,7 @@ export type SectionItem = {
     items: RobotUiItem[];
 };
 
-export type RobotUiItem = InfoItem | ConnectionItem | FieldItem | SectionItem;
+export type RobotUiItem = InfoItem | ConnectionItem | IpAddressItem | FieldItem | SectionItem;
 
 export type FieldOptions = {
     required?: boolean;

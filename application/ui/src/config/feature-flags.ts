@@ -10,7 +10,7 @@
  *   setFeatureFlag('someFlag')         // clear override, use build default
  */
 
-type FeatureFlagName = 'ipcam';
+type FeatureFlagName = 'ipcam' | 'plugins';
 
 const STORAGE_KEY_PREFIX = 'physicalai:featureFlags:';
 
@@ -52,6 +52,9 @@ void resolveFlag;
 export const featureFlags = {
     get ipCamera(): boolean {
         return resolveFlag('ipcam', typeof process !== 'undefined' ? process.env.PUBLIC_ENABLE_IP_CAM : undefined);
+    },
+    get plugins(): boolean {
+        return resolveFlag('plugins', typeof process !== 'undefined' ? process.env.PUBLIC_ENABLE_PLUGINS : undefined);
     },
 };
 

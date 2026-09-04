@@ -43,6 +43,17 @@ class RobotUiConnectionItem(TypedDict, total=False):
     bind: Required[RobotUiConnectionBinding]
 
 
+class RobotUiIpAddressItem(TypedDict, total=False):
+    """Options for a first-party IP address control."""
+
+    kind: Required[Literal["ip_address"]]
+    name: Required[str]
+    label: NotRequired[str]
+    description: NotRequired[str]
+    identify: NotRequired[bool]
+    identify_robot_type: NotRequired[str]
+
+
 class RobotUiFieldItem(TypedDict):
     """A standard payload field rendered in the form."""
 
@@ -60,7 +71,7 @@ class RobotUiSectionOptions(TypedDict, total=False):
     items: Required[list[RobotUiItem]]
 
 
-RobotUiItem = RobotUiInfoItem | RobotUiConnectionItem | RobotUiFieldItem | RobotUiSectionOptions
+RobotUiItem = RobotUiInfoItem | RobotUiConnectionItem | RobotUiIpAddressItem | RobotUiFieldItem | RobotUiSectionOptions
 
 RobotPayloadUiOptions = list[RobotUiItem]
 
@@ -100,7 +111,7 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
         resolved = definitions.get(name)
         return resolved if isinstance(resolved, dict) else field_schema
 
-    def validate_items(  # noqa: C901, PLR0912
+    def validate_items(  # noqa: C901, PLR0912, PLR0915
         items: list[object],
         properties: dict[str, Any],
         path: str,
@@ -155,6 +166,18 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
                     if field_name in owned_fields:
                         error(item_path, f"field '{field_name}' is owned more than once")
                     owned_fields.add(field_name)
+                continue
+
+            if kind == "ip_address":
+                name = item.get("name")
+                if not isinstance(name, str) or name not in properties:
+                    error(item_path, "ip_address items must reference an existing payload field")
+                    continue
+                if resolve(properties[name]).get("type") != "string":
+                    error(item_path, "ip_address items must reference a string payload field")
+                if name in owned_fields:
+                    error(item_path, f"field '{name}' is owned more than once")
+                owned_fields.add(name)
                 continue
 
             error(item_path, "has an unsupported or missing kind")

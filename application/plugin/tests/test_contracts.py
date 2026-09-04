@@ -237,6 +237,28 @@ def test_robot_payload_ui_supports_recursive_items() -> None:
     }
 
 
+def test_robot_payload_ui_supports_ip_address_items() -> None:
+    assert robot_payload_ui(
+        [
+            {
+                "kind": "ip_address",
+                "name": "connection_string",
+                "identify": True,
+                "identify_robot_type": "Trossen_WidowXAI_Follower",
+            },
+        ],
+    ) == {
+        "x-physicalai-ui": [
+            {
+                "kind": "ip_address",
+                "name": "connection_string",
+                "identify": True,
+                "identify_robot_type": "Trossen_WidowXAI_Follower",
+            },
+        ],
+    }
+
+
 def test_validate_robot_payload_ui_accepts_nested_item_lists() -> None:
     class ConnectionPayload(BaseModel):
         connection_string: str
@@ -274,10 +296,19 @@ def test_validate_robot_payload_ui_ignores_field_options() -> None:
         ({"groups": {}}, "must be a list of items"),
         ([{"kind": "field", "name": "missing"}], "must reference an existing payload field"),
         ([{"kind": "connection", "bind": {"connection": "port"}}], "must reference a string payload field"),
+        ([{"kind": "ip_address", "name": "missing"}], "must reference an existing payload field"),
+        ([{"kind": "ip_address", "name": "port"}], "must reference a string payload field"),
         (
             [
                 {"kind": "field", "name": "connection_string"},
                 {"kind": "connection", "bind": {"connection": "connection_string"}},
+            ],
+            "owned more than once",
+        ),
+        (
+            [
+                {"kind": "field", "name": "connection_string"},
+                {"kind": "ip_address", "name": "connection_string"},
             ],
             "owned more than once",
         ),
