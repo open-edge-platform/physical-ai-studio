@@ -504,6 +504,30 @@ class TestObservationWithOptionalFields:
         assert obs.info["key"] == "value"
         assert obs.extra["custom"] == 123
 
+    def test_observation_with_prev_chunk_left_over(self):
+        """Test observation carries the RTC prev_chunk_left_over field."""
+        prev_chunk = torch.randn(1, 50, 32)
+        obs = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            prev_chunk_left_over=prev_chunk,
+        )
+
+        assert obs.prev_chunk_left_over is not None
+        assert torch.equal(obs.prev_chunk_left_over, prev_chunk)
+
+    def test_prev_chunk_left_over_roundtrip(self):
+        """Test prev_chunk_left_over survives to_dict → from_dict roundtrip."""
+        prev_chunk = torch.randn(1, 50, 32)
+        original = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            prev_chunk_left_over=prev_chunk,
+        )
+
+        restored = Observation.from_dict(original.to_dict())
+
+        assert restored.prev_chunk_left_over is not None
+        assert torch.equal(restored.prev_chunk_left_over, prev_chunk)
+
 
 class TestObservationDeviceTransfer:
     """Test Observation.to() method for device transfer."""

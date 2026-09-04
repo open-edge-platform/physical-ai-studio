@@ -17,10 +17,17 @@ import torch.nn.functional as F  # noqa: N812
 from torch import Tensor, nn
 from transformers.cache_utils import DynamicCache
 
-from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.data.observation import ACTION, IMAGES
+from physicalai.data.constants import (
+    IMAGE_MASKS,
+    RTC_EXECUTION_HORIZON,
+    RTC_INFERENCE_DELAY,
+    RTC_MAX_GUIDANCE_WEIGHT,
+    TOKENIZED_PROMPT,
+    TOKENIZED_PROMPT_MASK,
+)
+from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER
 from physicalai.policies.base import Model
-from physicalai.policies.mixins import SnapFlowModelMixin
+from physicalai.policies.mixins import RTCModelMixin, SnapFlowModelMixin
 from physicalai.policies.mixins.peft import PeftModelMixin
 
 from .pi_gemma import (
@@ -538,7 +545,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         return [prefix_output, suffix_output], prefix_past_key_values
 
 
-class Pi05Model(PeftModelMixin, SnapFlowModelMixin, Model):
+class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
     """Core Pi05 PyTorch model for flow matching VLA.
 
     This is the nn.Module that contains the actual model logic,
@@ -698,8 +705,6 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, Model):
         self.target_time_mlp_out = nn.Linear(action_expert_config.width, action_expert_config.width)
         nn.init.zeros_(self.target_time_mlp_out.weight)
         nn.init.zeros_(self.target_time_mlp_out.bias)
-
-        self.enable_rtc = False
 
         self.gradient_checkpointing_enabled = False
         if gradient_checkpointing:
@@ -1176,6 +1181,10 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, Model):
 
         Returns:
             Denoised action tensor, unpadded and clipped to n_action_steps.
+
+        Raises:
+            ValueError: If RTC is enabled and the batch is missing
+                ``prev_chunk_left_over`` or carries out-of-range RTC control values.
         """
         images = batch[IMAGES]
         img_masks = batch[IMAGE_MASKS]
@@ -1184,11 +1193,20 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, Model):
 
         rtc_kwargs: dict[str, Any] = {}
         if self.enable_rtc:
+            max_guidance = batch.get(RTC_MAX_GUIDANCE_WEIGHT, 0.0)
+            execution_horizon = batch.get(RTC_EXECUTION_HORIZON, 0)
+            inference_delay = batch.get(RTC_INFERENCE_DELAY, 0.0)
+            self._validate_rtc_inputs(inference_delay, execution_horizon, max_guidance)
+
+            if PREV_CHUNK_LEFT_OVER not in batch:
+                msg = f"Expected {PREV_CHUNK_LEFT_OVER} in batch when RTC is enabled."
+                raise ValueError(msg)
+
             rtc_kwargs = {
-                "rtc_max_guidance": batch.get("max_guidance_weight", 0.0),
-                "rtc_execution_horizon": batch.get("execution_horizon", 0),
-                "rtc_latency": batch.get("inference_delay", 0.0),
-                "rtc_prev_action_chunk": batch.get("prev_chunk_left_over"),
+                "rtc_max_guidance": max_guidance,
+                "rtc_execution_horizon": execution_horizon,
+                "rtc_latency": inference_delay,
+                "rtc_prev_action_chunk": self._pad_prev_chunk(batch[PREV_CHUNK_LEFT_OVER]),
             }
 
         actions = self.sample_actions(
@@ -1209,78 +1227,6 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, Model):
             actions = actions[:, : self._n_action_steps]
 
         return actions
-
-    def _compute_prefix_weights(
-        self,
-        inference_delay: Tensor,
-        execution_horizon: Tensor,
-        prefix_attention_schedule: Literal["linear", "exp"] = "linear",
-    ) -> Tensor:
-        """Compute prefix attention weights inside the graph.
-
-        Args:
-            inference_delay: Scalar tensor — the dynamic latency estimate.
-            execution_horizon: Scalar tensor — number of fresh actions per chunk.
-            prefix_attention_schedule: Schedule type for prefix attention weights ("linear" or "exp").
-
-        Returns:
-            ``(1, chunk_size, 1)`` weight tensor.
-        """
-        chunk_size = self._chunk_size
-        end = execution_horizon.float()
-        start = torch.minimum(inference_delay.float(), end)
-
-        idx = torch.arange(chunk_size, dtype=torch.float32, device=inference_delay.device)
-        denom = end - start + 1.0
-        weights = (end - idx) / denom
-        weights = torch.clamp(weights, min=0.0, max=1.0)
-
-        if prefix_attention_schedule == "exp":
-            weights = weights * (torch.exp(weights) - 1.0) / (math.e - 1.0)
-        # "linear" → no-op
-
-        return weights.unsqueeze(0).unsqueeze(-1)  # (1, chunk_size, 1)
-
-    @staticmethod
-    def _rtc_correct(
-        x_t: Tensor,
-        v_t: Tensor,
-        prev_chunk_left_over: Tensor,
-        prefix_weights: Tensor,
-        time: float,
-        max_guidance_weight: Tensor,
-    ) -> Tensor:
-        """Apply RTC guidance correction to velocity prediction.
-
-        Uses direct error (not autograd.grad) for OV traceability.
-
-        Returns:
-            Corrected velocity tensor.
-        """
-        tau = 1.0 - time
-
-        # Predicted clean actions at t=0
-        x1_t = x_t - time * v_t
-
-        # Weighted error between previous chunk and prediction
-        err = (prev_chunk_left_over - x1_t) * prefix_weights
-        correction = err
-
-        # Adaptive guidance weight
-        max_gw = max_guidance_weight.float()
-        tau_t = torch.as_tensor(tau)
-        squared_one_minus_tau = (1.0 - tau_t) ** 2
-        inv_r2 = (squared_one_minus_tau + tau_t**2) / squared_one_minus_tau
-
-        # Manual nan_to_num — torch.nan_to_num not supported by OV
-        c_raw = (1.0 - tau_t) / tau_t
-        c = torch.where(torch.isinf(c_raw), max_gw, c_raw)
-
-        guidance_weight_raw = c * inv_r2
-        guidance_weight = torch.where(torch.isinf(guidance_weight_raw), max_gw, guidance_weight_raw)
-        guidance_weight = torch.minimum(guidance_weight, max_gw)
-
-        return v_t - guidance_weight * correction
 
     @torch.no_grad()
     def sample_actions(  # noqa: PLR0914
@@ -1344,8 +1290,8 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, Model):
 
             if rtc_prev_action_chunk is not None:
                 prefix_weights = self._compute_prefix_weights(
-                    inference_delay=torch.tensor(rtc_latency, device=device),
-                    execution_horizon=torch.tensor(rtc_execution_horizon, device=device),
+                    inference_delay=torch.as_tensor(rtc_latency, device=device),
+                    execution_horizon=torch.as_tensor(rtc_execution_horizon, device=device),
                 )
                 v_t = self._rtc_correct(
                     x_t,
@@ -1353,7 +1299,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, Model):
                     prev_chunk_left_over=rtc_prev_action_chunk,
                     prefix_weights=prefix_weights,
                     time=time,
-                    max_guidance_weight=torch.tensor(rtc_max_guidance, device=device),
+                    max_guidance_weight=torch.as_tensor(rtc_max_guidance, device=device),
                 )
 
             x_t += dt * v_t

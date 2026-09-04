@@ -57,6 +57,11 @@ class Observation:
     state: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | np.ndarray | None = None
     images: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | np.ndarray | None = None
 
+    # Inference-only Fields
+    # Unconsumed tail of the previously predicted action chunk, injected at
+    # inference time to condition Real-Time Chunking (RTC) denoising.
+    prev_chunk_left_over: torch.Tensor | np.ndarray | None = None
+
     # Optional RL & Metadata Fields
     next_reward: torch.Tensor | np.ndarray | None = None
     next_success: bool | None = None
@@ -75,6 +80,8 @@ class Observation:
         TASK = "task"
         STATE = "state"
         IMAGES = "images"
+
+        PREV_CHUNK_LEFT_OVER = "prev_chunk_left_over"
 
         NEXT_REWARD = "next_reward"
         NEXT_SUCCESS = "next_success"
@@ -504,6 +511,7 @@ INDEX = Observation.FieldName.INDEX.value
 INFO = Observation.FieldName.INFO.value
 NEXT_REWARD = Observation.FieldName.NEXT_REWARD.value
 NEXT_SUCCESS = Observation.FieldName.NEXT_SUCCESS.value
+PREV_CHUNK_LEFT_OVER = Observation.FieldName.PREV_CHUNK_LEFT_OVER.value
 STATE = Observation.FieldName.STATE.value
 TASK = Observation.FieldName.TASK.value
 TASK_INDEX = Observation.FieldName.TASK_INDEX.value
