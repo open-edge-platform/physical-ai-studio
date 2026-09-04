@@ -29,6 +29,7 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
     """Configuration for SmolVLA flow matching model.
 
     Attributes:
+        dtype: Model precision type, either "bfloat16" or "float32". Defaults to "bfloat16".
         n_obs_steps: Number of observation steps to use. Defaults to 1.
         chunk_size: Size of action chunks for prediction. Defaults to 50.
         n_action_steps: Number of action steps to execute per model invocation. Defaults to 50.
@@ -77,6 +78,8 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
     See :class:`~physicalai.policies.mixins.SnapFlowConfigMixin` for the
     inherited ``snapflow_*`` attributes.
     """
+
+    dtype: Literal["bfloat16", "float32"] = "bfloat16"
 
     n_obs_steps: int = 1
     chunk_size: int = 50
@@ -156,3 +159,7 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
             raise ValueError(msg)
 
         self._validate_snapflow()
+
+        if self.dtype not in {"bfloat16", "float32"}:
+            msg = f"Invalid dtype: {self.dtype}"
+            raise ValueError(msg)
