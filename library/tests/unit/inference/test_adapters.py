@@ -17,6 +17,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import torch
+from physicalai.inference.model import InferenceModel
 
 from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
@@ -24,6 +25,42 @@ from physicalai.export.mixin_policy import ExportBackend
 from physicalai.inference.adapters import get_adapter
 from physicalai.inference.adapters.executorch import ExecuTorchAdapter
 from physicalai.inference.adapters.pytorch import TorchAdapter
+
+
+class _TinyLeRobotRuntimePolicy(torch.nn.Module):
+    """Minimal LeRobot-like module for Torch export/load contract tests."""
+
+    config_class: type | None = None
+
+    def __init__(self, config: object, action_chunk: torch.Tensor | None = None) -> None:
+        super().__init__()
+        self.config = config
+        if action_chunk is None:
+            action_feature = config.output_features["action"]  # type: ignore[attr-defined]
+            action_shape = action_feature["shape"] if isinstance(action_feature, dict) else action_feature.shape
+            action_chunk = torch.zeros(
+                1,
+                int(config.n_action_steps),  # type: ignore[attr-defined]
+                int(action_shape[0]),
+            )
+        self.register_buffer("action_chunk", action_chunk.clone())
+        self.last_batch: dict[str, torch.Tensor] | None = None
+
+    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        self.last_batch = batch
+        return torch.tensor(0.0, device=self.action_chunk.device)
+
+    def predict_action_chunk(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        self.last_batch = batch
+        env_state = batch.get("observation.environment_state")
+        device = env_state.device if isinstance(env_state, torch.Tensor) else self.action_chunk.device
+        return self.action_chunk.to(device)
+
+    def select_action(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        return self.predict_action_chunk(batch)[:, 0, :]
+
+    def reset(self) -> None:
+        self.last_batch = None
 
 
 class TestGetAdapter:
@@ -226,6 +263,64 @@ class TestTorchAdapter:
 
             adapter.load(model_path)
             assert mock_load.call_args.kwargs["compile_model"] is True
+
+    def test_lerobot_diffusion_torch_export_loads_with_inference_model(self, tmp_path: Path) -> None:
+        """Torch export for LeRobot diffusion loads through Runtime InferenceModel."""
+        pytest.importorskip("lerobot")
+        from lerobot.configs.types import FeatureType, PolicyFeature  # noqa: PLC0415
+        from lerobot.policies.diffusion.configuration_diffusion import DiffusionConfig  # noqa: PLC0415
+
+        from physicalai.policies.lerobot import LeRobotPolicy  # noqa: PLC0415
+
+        _TinyLeRobotRuntimePolicy.config_class = DiffusionConfig
+        config = DiffusionConfig(
+            input_features={
+                "observation.environment_state": PolicyFeature(type=FeatureType.ENV, shape=(2,)),
+            },
+            output_features={
+                "action": PolicyFeature(type=FeatureType.ACTION, shape=(2,)),
+            },
+            horizon=8,
+            n_action_steps=3,
+            num_inference_steps=1,
+        )
+        expected_chunk = torch.tensor([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]])
+
+        export_policy = LeRobotPolicy(policy_name="diffusion")
+        export_policy._config = config
+        export_policy._preprocessor = torch.nn.Identity()
+        export_policy._postprocessor = torch.nn.Identity()
+        export_policy._lerobot_policy = _TinyLeRobotRuntimePolicy(config, expected_chunk)
+
+        export_policy.to_torch(tmp_path)
+
+        manifest = json.loads((tmp_path / "manifest.json").read_text())
+        assert (tmp_path / "diffusion.pt").exists()
+        assert manifest["policy"]["name"] == "diffusion"
+        assert manifest["model"]["artifacts"]["torch"] == "diffusion.pt"
+        assert manifest["model"]["input_features"][0]["init_args"]["name"] == "observation.environment_state"
+        assert manifest["model"]["input_features"][0]["init_args"]["shape"] == [2]
+        assert manifest["model"]["output_features"][0]["init_args"]["name"] == "action"
+        assert manifest["model"]["output_features"][0]["init_args"]["shape"] == [3, 2]
+
+        with (
+            patch("physicalai.policies.lerobot.policy.get_policy_class", return_value=_TinyLeRobotRuntimePolicy),
+            patch(
+                "physicalai.policies.lerobot.policy.make_pre_post_processors",
+                return_value=(torch.nn.Identity(), torch.nn.Identity()),
+            ),
+        ):
+            model = InferenceModel(tmp_path, backend="torch", device="cpu")
+
+        chunk = model.predict_action_chunk({
+            "observation.environment_state": np.zeros((1, 2), dtype=np.float32),
+        })
+
+        assert chunk.shape == (3, 2)
+        np.testing.assert_allclose(chunk, expected_chunk.numpy()[0])
+        loaded_policy = model.adapter._policy
+        assert loaded_policy is not None
+        assert "observation.environment_state" in loaded_policy.lerobot_policy.last_batch
 
 
 class TestExecuTorchAdapter:

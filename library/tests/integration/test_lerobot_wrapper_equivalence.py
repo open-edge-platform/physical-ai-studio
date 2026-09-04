@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -707,6 +708,21 @@ def _make_training_batch(config: Any, device: torch.device) -> dict[str, torch.T
     return batch
 
 
+def _make_single_observation_batch(
+    batch: dict[str, torch.Tensor],
+    config: Any,
+) -> dict[str, torch.Tensor]:
+    """Drop temporal observation windows for LeRobot ``select_action`` calls."""
+    single: dict[str, torch.Tensor] = {}
+    for key, value in batch.items():
+        feature = config.input_features.get(key)
+        if feature is not None and value.ndim == len(feature.shape) + 2:
+            single[key] = value[:, -1]
+        else:
+            single[key] = value
+    return single
+
+
 @pytest.fixture(scope="module")
 def pusht_dataset() -> Any:
     """Load pusht dataset once per module for inference-equivalence tests."""
@@ -904,6 +920,45 @@ class TestTrainingForwardContract:
         _, loss_dict = policy(batch)
 
         assert loss_dict is None
+
+    def test_diffusion_validation_step_produces_loss(self, training_policy_and_batch):
+        policy, batch, policy_name = training_policy_and_batch
+        if policy_name != "diffusion":
+            pytest.skip("Diffusion-specific: validation contract")
+
+        policy.eval()
+        with torch.no_grad(), patch.object(policy, "log") as log:
+            loss = policy.validation_step(_clone_batch(batch), batch_idx=0)
+
+        assert isinstance(loss, torch.Tensor)
+        assert loss.ndim == 0
+        logged_names = [call.args[0] for call in log.call_args_list]
+        assert "val/loss" in logged_names
+
+    def test_diffusion_inference_shapes_and_reset(self, training_policy_and_batch):
+        policy, batch, policy_name = training_policy_and_batch
+        if policy_name != "diffusion":
+            pytest.skip("Diffusion-specific: inference contract")
+
+        policy.eval()
+        infer_batch = {k: v for k, v in batch.items() if k not in {"action", "action_is_pad"}}
+        action_dim = policy._config.output_features["action"].shape[0]
+
+        policy.reset()
+        with torch.no_grad():
+            chunk = policy.predict_action_chunk(_clone_batch(infer_batch))
+
+        assert chunk.dim() == 3, f"Expected 3D tensor, got shape {chunk.shape}"
+        assert chunk.shape[0] == 1
+        assert chunk.shape[1] == policy._config.n_action_steps
+        assert chunk.shape[2] == action_dim
+
+        policy.reset()
+        single_step_batch = _make_single_observation_batch(infer_batch, policy._config)
+        with torch.no_grad():
+            action = policy.select_action(_clone_batch(single_step_batch))
+
+        assert action.shape == (1, action_dim)
 
     def test_gradient_flows_through_wrapper(self, training_policy_and_batch):
         policy, batch, _ = training_policy_and_batch
