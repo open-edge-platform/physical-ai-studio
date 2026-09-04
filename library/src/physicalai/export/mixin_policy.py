@@ -510,6 +510,7 @@ class ExportablePolicyMixin:
                 )
             _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
+        _rename_openvino_inputs(ov_model, extra_model_args.input_name_map)
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
         if extra_model_args.export_tokenizer:
             ov_tokenizer = openvino_tokenizers.convert_tokenizer(
@@ -716,7 +717,8 @@ class ExportablePolicyMixin:
         output_path: PathLike | str,
         backend: ExportBackend | str,
         input_sample: dict[str, torch.Tensor] | None = None,
-        post_export_hooks: list[Callable[[str], None]] | None = None,
+        pre_export_hooks: list[Callable[[], object]] | None = None,
+        post_export_hooks: list[Callable[[str | Path], object]] | None = None,
         **export_kwargs: dict,
     ) -> None:
         """Export the model to the specified backend format.
@@ -733,9 +735,13 @@ class ExportablePolicyMixin:
                 input tensor dictionary for model tracing.
                 If None, attempts to use the policy's `sample_input` property.
                 Defaults to None.
-            post_export_hooks: Optional list of callables to run after export completes.
-                Each hook receives the exported model file path (str) and can perform
-                post-processing such as quantization or compression.
+            pre_export_hooks: Optional list of callables to run before export starts,
+                after any policy-declared pre-export hooks. Each hook takes no
+                arguments and may mutate the model in place. Any return value is ignored.
+            post_export_hooks: Optional list of callables to run after export completes,
+                after any policy-declared post-export hooks. Each hook receives the
+                exported model file path and can perform post-processing.
+                Any return value is ignored.
             **export_kwargs (dict): Additional keyword arguments to pass to the
                 backend-specific export method.
 
@@ -743,6 +749,13 @@ class ExportablePolicyMixin:
             ValueError: If an unsupported backend is specified.
         """
         backend = ExportBackend(backend)
+
+        extra_model_args = self._get_export_extra_args(backend)
+        pre_hooks = [*extra_model_args.pre_export_hooks, *(pre_export_hooks or [])]
+        post_hooks = [*extra_model_args.post_export_hooks, *(post_export_hooks or [])]
+
+        for pre_hook in pre_hooks:
+            pre_hook()
 
         if backend == ExportBackend.ONNX:
             self.to_onnx(output_path, input_sample, **export_kwargs)
@@ -756,9 +769,9 @@ class ExportablePolicyMixin:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
 
-        if post_export_hooks:
+        if post_hooks:
             model_path = self._prepare_export_path(output_path, backend.extension)
-            for hook in post_export_hooks:
+            for hook in post_hooks:
                 hook(str(model_path))
 
     @_quiet_onnx_export_logs()
@@ -881,3 +894,26 @@ def _postprocess_openvino_model(ov_model: openvino.Model, output_names: list[str
     if output_names is not None and len(ov_model.outputs) >= len(output_names):
         for i, name in enumerate(output_names):
             ov_model.outputs[i].tensor.set_names({name})
+
+
+def _rename_openvino_inputs(ov_model: openvino.Model, name_map: dict[str, str] | None) -> None:
+    """Rename converted-model input tensors in place.
+
+    Renames each input tensor whose current name is a key of ``name_map`` to the
+    mapped value, so the exported graph ports line up with the keys produced by
+    the preprocessor pipeline (e.g. an ``ov_tokenizer`` emitting
+    ``tokenized_prompt`` / ``tokenized_prompt_mask``).
+
+    Args:
+        ov_model: The converted OpenVINO model to modify.
+        name_map: Optional ``{current_name: new_name}`` mapping. Missing keys are
+            ignored so partial maps are safe.
+    """
+    if not name_map:
+        return
+    for old_name, new_name in name_map.items():
+        try:
+            port = ov_model.input(old_name)
+        except RuntimeError:
+            continue
+        port.get_tensor().set_names({new_name})

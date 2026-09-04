@@ -55,17 +55,32 @@ exports/
 └── metadata.json
 ```
 
-## Post-Export Hooks
+## Export Hooks
 
-`export(...)` accepts `post_export_hooks`, a list of callables run after the model
-is written. Each hook receives the exported model file path (a `str`) and can
-apply post-processing such as quantization or weight compression in place.
+`export(...)` accepts `pre_export_hooks` and `post_export_hooks`. Pre-hooks run
+before the model is traced/converted (take no arguments, may mutate the model in
+place); post-hooks run after the artifact is written (each receives the exported
+model file path and can rewrite it in place, e.g. quantization or weight
+compression). Both run for every backend.
+
+Hooks come from two sources, run in order: any policy-declared hooks from the
+backend's export parameters first, then the caller-supplied hooks passed here.
+Calling a backend method (`to_openvino`/`to_onnx`/...) directly bypasses this
+hook orchestration.
 
 ```python test="skip" reason="requires checkpoint"
-def my_hook(model_path: str) -> None:
+def my_pre_hook() -> None:
+    ...  # mutate the model in place before tracing
+
+def my_post_hook(model_path: str) -> None:
     ...  # inspect or rewrite the exported artifact at model_path
 
-policy.export("./exports", backend="openvino", post_export_hooks=[my_hook])
+policy.export(
+    "./exports",
+    backend="openvino",
+    pre_export_hooks=[my_pre_hook],
+    post_export_hooks=[my_post_hook],
+)
 ```
 
 ### INT8 Weight Compression (OpenVINO)

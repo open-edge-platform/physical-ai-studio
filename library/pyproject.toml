@@ -116,6 +116,14 @@ rldx1 = [
 # Neural Network Compression Framework (optional, for post-export quantization hooks)
 nncf = ["nncf>=3.0.0"]
 
+# Xiaomi-Robotics-0 (XR0) foundation model
+# Requires a Qwen3-VL backbone (transformers>=5.5.0 ships the qwen3_vl models)
+xr0 = [
+    "transformers>=5.5.0,<5.6.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
+
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
 
@@ -131,6 +139,7 @@ all = [
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
     "physicalai-train[rldx1]",
+    "physicalai-train[xr0]",
 ]
 
 # Contribute Torch and ExecuTorch as inference backends to the registry
@@ -253,6 +262,9 @@ project-excludes = [
     # main `.venv`; guarded at runtime with a clear ImportError if missing.
     "src/physicalai/policies/rldx1/model.py",
     "src/physicalai/policies/rldx1/components/backbone/modeling_qwen3_vl.py",
+    # xr0's Qwen3-VL backbone wrapper is dynamically typed (transformers modules
+    # resolve to `Module | Tensor`); same rationale as pi_gemma / qwen3_vl above.
+    "src/physicalai/policies/xr0/qwen3_vlm.py",
 ]
 
 

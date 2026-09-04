@@ -2159,6 +2159,54 @@
       "description": "Argument `Dataset | None` is not assignable to parameter `object` with type `Dataset` in function `list.append`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
       "concise_description": "Argument `Dataset | None` is not assignable to parameter `object` with type `Dataset` in function `list.append`",
       "severity": "error"
+    },
+    {
+      "line": 249,
+      "column": 14,
+      "stop_line": 249,
+      "stop_column": 19,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR0.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner\n  `XR0.model` has type `XR0Model | None`, which is not consistent with `Module` in `ExportablePolicyMixin.model` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR0.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 249,
+      "column": 14,
+      "stop_line": 249,
+      "stop_column": 19,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner\n  `XR0.model` has type `XR0Model | None`, which is not consistent with `Model | None` in `Policy.model` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 250,
+      "column": 14,
+      "stop_line": 250,
+      "stop_column": 27,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR0._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner\n  `XR0._preprocessor` has type `XR0Preprocessor | None`, which is not consistent with `Module` in `ExportablePolicyMixin._preprocessor` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR0._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 599,
+      "column": 9,
+      "stop_line": 599,
+      "stop_column": 29,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override",
+      "description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner\n  `XR0.configure_optimizers` has type `(self: XR0) -> dict[str, Any]`, which is not assignable to `(self: XR0) -> OptimizerLRScheduler`, the type of `Policy.configure_optimizers`\n  Signature mismatch:\n  expected: def configure_optimizers(self: XR0) -> OptimizerLRScheduler: ...\n                                                   ^^^^^^^^^^^^^^^^^^^^ return type\n  found:    def configure_optimizers(self: XR0) -> dict[str, Any]: ...\n                                                   ^^^^^^^^^^^^^^ return type",
+      "concise_description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
     }
   ]
 }

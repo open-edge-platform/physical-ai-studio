@@ -1035,6 +1035,9 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel):
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Union[tuple, BaseModelOutputWithPast]:
         r"""
+        cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
+            Indices depicting the position of the input sequence tokens in the sequence. Used to update the
+            cache in the correct position and to infer the complete sequence length.
         visual_pos_masks (`torch.Tensor` of shape `(batch_size, seqlen)`, *optional*):
             The mask of the visual positions.
         deepstack_visual_embeds (`list[torch.Tensor]`, *optional*):
@@ -1436,6 +1439,9 @@ class Qwen3VLModel(Qwen3VLPreTrainedModel):
             The temporal, height and width of feature shape of each image in LLM.
         video_grid_thw (`torch.LongTensor` of shape `(num_videos, 3)`, *optional*):
             The temporal, height and width of feature shape of each video in LLM.
+        cache_position (`torch.LongTensor` of shape `(sequence_length)`, *optional*):
+            Indices depicting the position of the input sequence tokens in the sequence. Used to update the
+            cache in the correct position and to infer the complete sequence length.
         """
 
         if inputs_embeds is None:

@@ -1,0 +1,75 @@
+# =============================================================================
+# XR0 (Xiaomi-Robotics-0) Policy Training Configuration
+# Flow-matching VLA with a Qwen3-VL-4B backbone and a DiT action head
+# =============================================================================
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/xr0.yaml
+#
+# Override examples:
+#   # Intel XPU
+#   physicalai fit --config configs/physicalai/xr0.yaml \
+#       --trainer.accelerator xpu
+#
+#   # Change dataset
+#   physicalai fit --config configs/physicalai/xr0.yaml \
+#       --data.repo_id lerobot/pusht
+#
+# =============================================================================
+
+model:
+  class_path: physicalai.policies.XR0
+  init_args:
+    # Model source
+    vlm_model_id: "Qwen/Qwen3-VL-4B-Instruct"
+    # Options: "eager", "sdpa", "flash_attention_2" (flash-attn requires CUDA)
+    vlm_attn_implementation: sdpa
+    dtype: bfloat16
+
+    # Input / output structure
+    n_obs_steps: 1
+    chunk_size: 30
+    n_action_steps: 30
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Ordered camera view names embedded into the prompt
+    camera_views:
+      - base
+      - wrist_left
+
+    # Image preprocessing
+    image_resolution:
+      - 256
+      - 256
+
+    # Flow matching parameters
+    num_inference_steps: 5
+
+    # Finetuning settings
+    gradient_checkpointing: true
+    freeze_vision_encoder: false
+    # Frequency-domain auxiliary loss (enabled in the original recipe)
+    enable_freq: true
+
+    # Optimizer
+    optimizer_lr: 1.0e-4
+    optimizer_weight_decay: 0.1
+    optimizer_grad_clip_norm: 1.0
+
+    # Scheduler
+    scheduler_warmup_steps: 2000
+    scheduler_decay_steps: 30000
+    scheduler_decay_lr: 5.0e-7
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    train_batch_size: 16
+    data_format: "physicalai"
+
+trainer:
+  max_epochs: 100
+  accelerator: gpu
+  devices: 1

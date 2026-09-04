@@ -23,7 +23,7 @@ A config wires three pieces via `class_path` / `init_args`:
 - `data` — a `DataModule`, usually `physicalai.data.lerobot.LeRobotDataModule` with a `repo_id` (e.g. `lerobot/pusht`).
 - `trainer` — Lightning args (`max_epochs`, `accelerator`, `devices`, callbacks…).
 
-Configs live in `library/configs/physicalai/` (first-party: `act.yaml`, `pi0.yaml`, `pi05.yaml`, `groot.yaml`, `smolvla.yaml`) and `library/configs/lerobot/` (LeRobot-wrapped). Compose with `__base__` and override any field on the CLI (`--trainer.max_epochs 200 --data.train_batch_size 64`).
+Configs live in `library/configs/physicalai/` (first-party: `act.yaml`, `pi0.yaml`, `pi05.yaml`, `groot.yaml`, `smolvla.yaml`, `xr0.yaml`) and `library/configs/lerobot/` (LeRobot-wrapped). Compose with `__base__` and override any field on the CLI (`--trainer.max_epochs 200 --data.train_batch_size 64`).
 
 ## Python API workflow
 

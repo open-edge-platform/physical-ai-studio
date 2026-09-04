@@ -3101,10 +3101,12 @@ requires-dist = [
     { name = "physicalai-train", extras = ["rldx1"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["smolvla"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["tests"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["xr0"], marker = "extra == 'all'" },
     { name = "pillow" },
     { name = "pillow", marker = "extra == 'groot'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'pi0'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'rldx1'", specifier = ">=10.0.0,<13.0.0" },
+    { name = "pillow", marker = "extra == 'xr0'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pydantic" },
     { name = "pymunk", specifier = ">=6.6.0,<7.0.0" },
     { name = "pytest", marker = "extra == 'tests'" },
@@ -3114,6 +3116,7 @@ requires-dist = [
     { name = "safetensors", marker = "extra == 'pi0'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'rldx1'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "safetensors", marker = "extra == 'xr0'", specifier = ">=0.4.3,<1.0.0" },
     { name = "scipy", marker = "extra == 'rldx1'", specifier = ">=1.11.0,<2.0.0" },
     { name = "sentencepiece", marker = "extra == 'pi0'", specifier = "<=0.2.1" },
     { name = "tensorboard", marker = "extra == 'loggers'", specifier = ">=2.20" },
@@ -3128,9 +3131,10 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.5.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.3.0,<5.6.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'xr0'", specifier = ">=5.5.0,<5.6.0" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "nncf", "executorch", "executorch-openvino", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "nncf", "xr0", "executorch", "executorch-openvino", "all"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -26,7 +26,7 @@ from physicalai.train import Trainer
 DEPLOYMENT_EXPORT_BACKENDS = ["openvino", "onnx", "executorch"]
 
 # Policy names for parametrization
-FIRST_PARTY_VLA_POLICIES = ["groot", "pi0"]
+FIRST_PARTY_VLA_POLICIES = ["groot", "pi0", "xr0"]
 FIRST_PARTY_POLICIES_WITH_EXPORT = ["act", "smolvla", "pi05"]
 
 
@@ -210,6 +210,16 @@ class TestE2ECore(CoreE2ETests):
                 source="physicalai",
                 freeze_vision_encoder=True,
                 train_expert_only=True,
+            )
+        if policy_name == "xr0":
+            return get_policy(
+                policy_name,
+                source="physicalai",
+                # Memory-efficient settings for 24GB GPU; single camera view to
+                # match the aloha datamodule below.
+                freeze_vision_encoder=True,
+                camera_views=("top",),
+                vlm_attn_implementation="sdpa",
             )
         # Other VLA policies use defaults (already memory-efficient)
         return get_policy(policy_name, source="physicalai")
