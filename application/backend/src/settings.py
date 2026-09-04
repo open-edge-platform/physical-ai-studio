@@ -65,7 +65,19 @@ class HuggingFaceSettings(BaseModel):
         return value
 
 
-_USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface")
+class HotkeySettings(BaseModel):
+    """User-configurable keyboard shortcut bindings.
+
+    Opaque action_id -> serialized key combo map (e.g. {"recording.discard_episode":
+    "Shift+ArrowLeft"}). The frontend hotkey registry owns action ids and default
+    combos; only overrides are stored here, so a stale id from a renamed/removed
+    frontend action is simply ignored rather than validated.
+    """
+
+    bindings: dict[str, str] = Field(default_factory=dict)
+
+
+_USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface", "hotkeys")
 
 
 class UserConfigSettingsSource(JsonConfigSettingsSource):
@@ -158,6 +170,8 @@ class Settings(BaseSettings):
     trainer: TrainerClientSettings = TrainerClientSettings()
     # User-configurable Hugging Face credentials.
     huggingface: HuggingFaceSettings = HuggingFaceSettings()
+    # User-configurable keyboard shortcut bindings.
+    hotkeys: HotkeySettings = HotkeySettings()
 
     # SSH-provisioned remote training
     # Master switch. Off by default: the feature has no authentication model,

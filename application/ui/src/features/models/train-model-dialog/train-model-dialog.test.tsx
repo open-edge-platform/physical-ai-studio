@@ -65,6 +65,7 @@ const mockProjectWithRemoteTrainer = () => {
                     stream_reconnect_backoff_max_s: 30,
                 },
                 huggingface: { hf_token: null },
+                hotkeys: { bindings: {} },
             })
         ),
         http.get('/api/policies/{policy}/huggingface-access', ({ params }) => {

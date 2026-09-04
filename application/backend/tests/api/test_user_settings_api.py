@@ -57,3 +57,27 @@ def test_patch_empty_huggingface_token_clears_setting(monkeypatch, tmp_path: Pat
 
     assert response.status_code == 200
     assert get_settings().huggingface.hf_token is None
+
+
+def test_get_settings_returns_default_hotkey_bindings(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with TestClient(app) as client:
+        response = client.get("/api/settings")
+
+    assert response.status_code == 200
+    assert response.json()["hotkeys"]["bindings"] == {}
+
+
+def test_patch_hotkey_bindings_round_trips(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with TestClient(app) as client:
+        response = client.patch(
+            "/api/settings",
+            json={"hotkeys": {"bindings": {"recording.discard_episode": "Shift+ArrowLeft"}}},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["hotkeys"]["bindings"] == {"recording.discard_episode": "Shift+ArrowLeft"}
+    assert get_settings().hotkeys.bindings == {"recording.discard_episode": "Shift+ArrowLeft"}
