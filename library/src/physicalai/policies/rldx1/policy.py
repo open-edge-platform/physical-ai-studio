@@ -44,19 +44,46 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from huggingface_hub import hf_hub_download
 from huggingface_hub.errors import RemoteEntryNotFoundError
+from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, InferenceFeatureType
+from physicalai.inference.manifest import ComponentSpec
 from transformers.optimization import Adafactor
 
 from physicalai.data import Dataset, Observation
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Feature, FeatureType
+from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.export.backends import (
+    ExportParameters,
+    ONNXExportParameters,
+    OpenVINOExportParameters,
+    TorchExportParameters,
+)
 from physicalai.policies.base import Policy
+from physicalai.policies.rldx1.components.backbone.graph_safe_rldx1 import GraphSafeRldx1Model
 from physicalai.policies.rldx1.config import Rldx1Config
+from physicalai.policies.rldx1.export_helpers import (
+    build_compress_reference_ids,
+    build_rldx1_token_composer_params,
+    export_image_resolution_from_stats,
+)
 from physicalai.policies.rldx1.model import Rldx1Model
-from physicalai.policies.rldx1.pretrained_utils import extract_dataset_stats, retrieve_safetensors_shards
+from physicalai.policies.rldx1.pretrained_utils import (
+    extract_camera_names,
+    retrieve_safetensors_shards,
+)
+from physicalai.policies.rldx1.stats_helpers import (
+    extract_dataset_stats,
+    get_dataset_stats_entry,
+    infer_num_views_from_stats,
+    merge_explicit_features,
+    resolve_feature_shape,
+)
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -65,16 +92,21 @@ try:
 except ImportError:
     OptimizerLRScheduler = Any  # type: ignore[assignment, misc]
 
+from .constants import ATTENTION_MASK, INPUT_IDS, PIXEL_VALUES, POSITION_IDS
+from .export_helpers import build_padded_sample, cast_sample_fp32, fp32_weights_for_export, trim_export_sample
 from .preprocessor import make_rldx1_transforms
 from .vtc_buffer import VtcWindowBuffer
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+    from os import PathLike
+
     from .preprocessor import Rldx1Postprocessor, Rldx1Preprocessor
 
 logger = logging.getLogger(__name__)
 
 
-class Rldx1(Policy):
+class Rldx1(ExportablePolicyMixin, Policy):
     """RLDX-1 Policy - first-party Lightning wrapper.
 
     All hyperparameters are explicit in the signature for discoverability.
@@ -132,6 +164,18 @@ class Rldx1(Policy):
             truncate task-critical extremes (e.g. PushT).
         env_action_dim: Environment action dimension. If provided, enables eager init.
         dataset_stats: Dataset normalization statistics for eager init.
+        input_features: Explicit observation feature overrides (e.g. camera shapes), merged
+            into ``dataset_stats`` and taking precedence over it. Required for export when
+            ``dataset_stats`` carries no visual entries -- true for every RLWRLD release
+            checkpoint (their ``statistics.json`` is pretrain-stage state/action stats only;
+            no file in the repo records pixel resolution). Camera *names* are auto-discovered
+            from the checkpoint's ``processor_config.json`` in :meth:`_from_hf` (see
+            ``self._camera_names``) purely to guide this override -- only the shape must be
+            supplied. For ``RLWRLD/RLDX-1-FT-LIBERO``:
+            ``{"front_view": Feature(ftype=FeatureType.VISUAL, shape=(3, 256, 256)),
+            "left_wrist_view": Feature(ftype=FeatureType.VISUAL, shape=(3, 256, 256))}``.
+        output_features: Explicit action feature overrides, merged into ``dataset_stats``
+            the same way as ``input_features``.
     """
 
     def __init__(  # noqa: PLR0913
@@ -176,16 +220,20 @@ class Rldx1(Policy):
         clip_outliers: bool = True,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
         embodiment_tag: str = "general_embodiment",
+        input_features: dict[str, Feature] | None = None,
+        output_features: dict[str, Feature] | None = None,
+        tokenizer_max_length: int = 1024,
     ) -> None:
         """Initialize the RLDX-1 policy and save hyperparameters."""
         super().__init__(n_action_steps=n_action_steps)
+        self._camera_names: list[str] = []
 
         shard_files = None
         if pretrained_name_or_path is not None:
             # dataset_stats already provided (e.g. restored from a checkpoint's
             # hparams during load_from_checkpoint) takes precedence -- _from_hf's
             # own extract_dataset_stats() is only a narrow, defaulted fallback.
-            self.config, hf_dataset_stats, shard_files = self._from_hf(
+            self.config, hf_dataset_stats, shard_files, self._camera_names = self._from_hf(
                 pretrained_name_or_path,
                 revision=revision,
                 max_state_dim=max_state_dim,
@@ -222,6 +270,8 @@ class Rldx1(Policy):
                 # Action prediciton
                 action_horizon=n_action_steps,
                 embodiment_tag=embodiment_tag,
+                # tokenizer config
+                tokenizer_max_length=tokenizer_max_length,
             )
             if dataset_stats is None:
                 dataset_stats = hf_dataset_stats
@@ -262,6 +312,7 @@ class Rldx1(Policy):
                 clip_outliers=clip_outliers,
                 action_horizon=n_action_steps,
                 embodiment_tag=embodiment_tag,
+                tokenizer_max_length=tokenizer_max_length,
             )
 
         # Save `pretrained_name_or_path` so load_from_checkpoint() reconstructs
@@ -270,7 +321,7 @@ class Rldx1(Policy):
         self.save_hyperparameters(ignore=["config"])
 
         self.model: Rldx1Model | None = None  # type: ignore[assignment]
-        self._preprocessor: Rldx1Preprocessor | None = None
+        self._preprocessor: torch.nn.Module = cast("torch.nn.Module", None)
         self._postprocessor: Rldx1Postprocessor | None = None
 
         # Per-view VTC frame buffer for rollout. Populated every env-step via
@@ -280,9 +331,28 @@ class Rldx1(Policy):
             video_length=self.config.video_length,
             video_stride=self.config.video_stride,
         )
+        # Explicit Feature overrides win over anything auto-fetched/user-supplied above --
+        # required for RLWRLD checkpoints, which never record camera shapes anywhere.
+        dataset_stats = merge_explicit_features(dataset_stats, input_features, output_features)
+        self._sync_num_views_from_dataset_stats(dataset_stats)
 
+        self._dataset_stats = dataset_stats
         if dataset_stats is not None:
             self._initialize_model(dataset_stats, shard_files)
+
+    def _sync_num_views_from_dataset_stats(
+        self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None,
+    ) -> None:
+        """Update ``config.num_views`` from available visual dataset stats.
+
+        Keeps ``num_views`` derived from the same merged stats source used for
+        preprocessing/export so init, training setup, and fine-tune refresh all
+        agree on view count.
+        """
+        inferred_num_views = infer_num_views_from_stats(dataset_stats)
+        if inferred_num_views is not None:
+            self.config.num_views = inferred_num_views
 
     def _from_hf(  # noqa: PLR6301, PLR0913, PLR0917
         self,
@@ -320,9 +390,11 @@ class Rldx1(Policy):
         # Normalization
         clip_outliers: bool,  # noqa: FBT001
         embodiment_tag: str,
-        # Action prediciton
+        # Action prediction
         action_horizon: int,
-    ) -> tuple[Rldx1Config, dict[str, dict[str, list[float] | str | tuple]], list[Path]]:
+        # Tokenizer
+        tokenizer_max_length: int,
+    ) -> tuple[Rldx1Config, dict[str, dict[str, list[float] | str | tuple]], list[Path], list[str]]:
         config_file = Path(hf_hub_download(pretrained_name_or_path, "config.json", revision=revision))  # nosec B615
         shard_files = retrieve_safetensors_shards(pretrained_name_or_path, revision=revision)
         try:
@@ -333,6 +405,12 @@ class Rldx1(Policy):
             except RemoteEntryNotFoundError as e2:
                 msg = "statistics.json not found in the root of the repo. Falling back to processor/statistics.json"
                 raise RuntimeError(msg) from e2
+        try:
+            processor_config_file = Path(
+                hf_hub_download(pretrained_name_or_path, "processor_config.json", revision=revision),  # nosec B615
+            )
+        except RemoteEntryNotFoundError:
+            processor_config_file = None
 
         # --- parse config.json ---
         with Path(config_file).open(encoding="utf-8") as f:
@@ -366,6 +444,7 @@ class Rldx1(Policy):
         hf_config["image_min_area"] = image_min_area
         hf_config["action_horizon"] = action_horizon
         hf_config["embodiment_tag"] = embodiment_tag
+        hf_config["tokenizer_max_length"] = tokenizer_max_length
 
         # strict=False: ignore upstream config.json keys with no Rldx1Config field
         # (e.g. architectures, model_type, rtc_inference_*) instead of denylisting
@@ -379,7 +458,8 @@ class Rldx1(Policy):
             max_state_dim=max_state_dim,
             max_action_dim=max_action_dim,
         )
-        return config, dataset_stats, shard_files
+        camera_names = extract_camera_names(processor_config_file, embodiment_tag=embodiment_tag)
+        return config, dataset_stats, shard_files, camera_names
 
     def _initialize_model(
         self,
@@ -441,6 +521,7 @@ class Rldx1(Policy):
             image_min_area=config.image_min_area or 0,  # type: ignore[arg-type]
             image_resize_m=config.image_resize_m,
             embodiment_id=int(config.embodiment_id),  # type: ignore[arg-type]
+            max_token_len=config.tokenizer_max_length,
         )
 
     def setup(self, stage: str) -> None:
@@ -466,6 +547,7 @@ class Rldx1(Policy):
             raise TypeError(msg)
 
         stats_dict = train_dataset.stats
+        self._sync_num_views_from_dataset_stats(stats_dict)
 
         if self.model is not None:
             # Fine-tuning path: model exists from pretrained, but the
@@ -504,8 +586,10 @@ class Rldx1(Policy):
             image_min_area=config.image_min_area or 0,  # type: ignore[arg-type]
             image_resize_m=config.image_resize_m,
             embodiment_id=int(config.embodiment_id),  # type: ignore[arg-type]
+            max_token_len=config.tokenizer_max_length,
         )
         self._dataset_stats = dataset_stats
+        self._sync_num_views_from_dataset_stats(dataset_stats)
         self.hparams["dataset_stats"] = dataset_stats
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
@@ -745,3 +829,454 @@ class Rldx1(Policy):
 
         # Fallback for tasks without compatible state-to-action mapping.
         return torch.zeros(batch_size, env_action_dim, dtype=torch.bfloat16, device=self.device)
+
+    @staticmethod
+    def get_supported_export_backends() -> list[str | ExportBackend]:
+        """Get a list of export backends supported by policy.
+
+        This method returns a list of supported export backends as strings.
+
+        Returns:
+            list[str | ExportBackend]: A list of supported export backends.
+        """
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+
+    @property
+    def inputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's expected model inputs for export tracing.
+
+        Returns:
+            A list of feature descriptors matching the model's expected input format,
+            covering the robot state, image observations, language task, and any
+            real-time chunking control tensors when ``enable_rtc`` is set on the model.
+            Returns ``None`` if the underlying model or dataset stats have not been
+            initialized yet.
+
+        Raises:
+            ValueError: If no visual feature is present in dataset stats.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        dataset_stats = self._dataset_stats
+
+        schema: list[InferenceFeature] = []
+
+        num_image_features = sum(
+            1 for feature in dataset_stats.values() if str(FeatureType.VISUAL) in str(feature.get("type", ""))
+        )
+        for feature_id, feature in dataset_stats.items():
+            feature_type = str(feature.get("type", ""))
+            if STATE in feature_id:
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.STATE,
+                        shape=resolve_feature_shape(feature),
+                        name=STATE,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+            elif str(FeatureType.VISUAL) in feature_type:
+                feature_name = (
+                    str(feature.get("name", feature_id)).removeprefix("observation.").removeprefix(f"{IMAGES}.")
+                )
+                name = IMAGES if num_image_features == 1 else f"{IMAGES}.{feature_name}"
+                schema.append(
+                    InferenceFeature(
+                        ftype=InferenceFeatureType.VISUAL,
+                        shape=resolve_feature_shape(feature),
+                        name=name,
+                        dtype=InferenceFeatureDtype.FLOAT32,
+                    ),
+                )
+
+        if num_image_features == 0:
+            msg = (
+                "dataset_stats carries no visual features. Pass input_features={'<view>': "
+                "Feature(ftype=FeatureType.VISUAL, shape=(3, height, width)), ...} to "
+                f"Rldx1(...) to export this policy. Camera names discovered from "
+                f"processor_config.json: {self._camera_names or '(none found)'}."
+            )
+            raise ValueError(msg)
+
+        schema.append(
+            InferenceFeature(
+                ftype=InferenceFeatureType.LANGUAGE,
+                shape=(),
+                name=TASK,
+                dtype=InferenceFeatureDtype.STRING,
+            ),
+        )
+
+        return schema
+
+    @property
+    def outputs_schema(self) -> list[InferenceFeature] | None:
+        """Describe the policy's model output for export.
+
+        Returns:
+            A list with a single ``action`` feature of shape
+            ``(chunk_size, *action_dim)``, where ``action_dim`` is the actual
+            action dimension taken from the dataset stats. Returns ``None`` if the
+            underlying model or dataset stats have not been initialized yet.
+        """
+        if self.model is None or self._dataset_stats is None:
+            return None
+
+        action_shape = resolve_feature_shape(get_dataset_stats_entry(self._dataset_stats, ACTION))
+
+        return [
+            InferenceFeature(
+                ftype=InferenceFeatureType.ACTION,
+                shape=(self.config.action_horizon, *action_shape),
+                name=ACTION,
+                dtype=InferenceFeatureDtype.FLOAT32,
+            ),
+        ]
+
+    @property
+    def extra_export_args(self) -> dict[str, ExportParameters]:
+        """Additional export arguments for model conversion.
+
+        Returns:
+            dict[str, ExportParameters]: A dictionary mapping format names to their export parameters.
+
+        Raises:
+            ValueError: If dataset stats are not available for export.
+            RuntimeError: If policy transforms are not initialized.
+        """
+        if self._dataset_stats is None:
+            msg = (
+                "Dataset stats are required for export. Initialize the policy with dataset_stats"
+                " or train for at least one epoch to populate them."
+            )
+            raise ValueError(msg)
+
+        # RLWRLD release checkpoints never carry visual entries in dataset_stats
+        # (see inputs_schema) unless input_features merged one in -- find the first
+        # visual entry, whatever its key (single observation.images or per-camera
+        # observation.images.<name>); the Runtime rldx1 preprocessor assumes one
+        # shared resolution across views.
+        try:
+            image_resolution = export_image_resolution_from_stats(self._dataset_stats)
+        except RuntimeError as exc:
+            msg = (
+                "dataset_stats carries no visual features. Pass input_features={'<view>': "
+                "Feature(ftype=FeatureType.VISUAL, shape=(3, height, width)), ...} to "
+                "Rldx1(...) to export this policy."
+            )
+            raise ValueError(msg) from exc
+
+        normalize_spec = ComponentSpec(
+            type="normalize",
+            stats={STATE: get_dataset_stats_entry(self._dataset_stats, f"observation.{STATE}", STATE)},
+            mode="quantiles",
+        )
+        postproc_specs = [
+            ComponentSpec(
+                type="denormalize",
+                stats={ACTION: self._dataset_stats[ACTION]},
+                mode="quantiles",
+            ),
+        ]
+        if self._preprocessor is None:
+            msg = "Cannot build token composer params before transforms are initialized."
+            raise RuntimeError(msg)
+        preprocessor = cast("Rldx1Preprocessor", self._preprocessor)
+        token_composer_params = build_rldx1_token_composer_params(
+            tokenizer=preprocessor.tokenizer,
+            image_resolution=image_resolution,
+            num_views=int(self.config.num_views or 1),
+            num_frames=int(self.config.video_length),
+            max_token_len=int(self.config.tokenizer_max_length),
+        )
+
+        # Dynamic-prompt export keeps input_ids dynamic, so runtime rebuilds
+        # position_ids / attention_mask (numpy get_rope_index) after tokenization.
+        rope_specs: list[ComponentSpec] = []
+        if self.model is not None:
+            # During export self.model may be a GraphSafeRldx1Model (gs_backbone)
+            # or the regular Rldx1Model (backbone).
+            backbone = getattr(self.model, "backbone", None) or getattr(self.model, "gs_backbone", None)
+            if backbone is not None:
+                qwen_config = backbone.qwen_config
+                rope_specs = [
+                    ComponentSpec(
+                        type="rldx1_rope",
+                        image_token_id=qwen_config.image_token_id,
+                        vision_start_token_id=qwen_config.vision_start_token_id,
+                        spatial_merge_size=qwen_config.vision_config.spatial_merge_size,
+                        n_cog_tokens=self.config.n_cog_tokens,
+                    ),
+                ]
+
+        extra_args: dict[str, ExportParameters] = {}
+        num_views = int(self.config.num_views or 1)
+        num_frames = int(self.config.video_length)
+        output_names = [feature.name for feature in (self.outputs_schema or [])]
+        extra_args["onnx"] = ONNXExportParameters(
+            exporter_kwargs={
+                "output_names": output_names,
+            },
+            export_tokenizer=False,
+            preprocessors_specs=[
+                normalize_spec,
+                ComponentSpec(
+                    type="rldx1",
+                    image_resolution=image_resolution,
+                    num_views=num_views,
+                    num_frames=num_frames,
+                    max_state_dim=self.config.max_state_dim,
+                ),
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name="RLWRLD/RLDX-1-VLM",
+                    max_token_len=self.config.tokenizer_max_length,
+                ),
+                ComponentSpec(
+                    type="rldx1_token_composer",
+                    **token_composer_params,
+                ),
+                *rope_specs,
+            ],
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["openvino"] = OpenVINOExportParameters(
+            inputs=[PIXEL_VALUES, INPUT_IDS, POSITION_IDS, ATTENTION_MASK, STATE],
+            outputs=output_names,
+            compress_to_fp16=True,
+            via_onnx=False,
+            export_tokenizer=True,
+            exporter_kwargs={},
+            preprocessors_specs=[
+                normalize_spec,
+                ComponentSpec(
+                    type="rldx1",
+                    image_resolution=image_resolution,
+                    num_views=num_views,
+                    num_frames=num_frames,
+                    max_state_dim=self.config.max_state_dim,
+                ),
+                ComponentSpec(
+                    type="ov_tokenizer",
+                    artifact="tokenizer.xml",
+                ),
+                ComponentSpec(
+                    type="rldx1_token_composer",
+                    **token_composer_params,
+                ),
+                *rope_specs,
+            ],
+            postprocessors_specs=postproc_specs,
+        )
+        extra_args["torch"] = TorchExportParameters(
+            preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
+            postprocessors_specs=[],
+        )
+
+        return extra_args
+
+    # ------------------------------------------------------------------ #
+    # Export (graph-safe tracing)                                        #
+    # ------------------------------------------------------------------ #
+    # RLDX-1's eager forward runs data-dependent ops (fast_pos_embed_interpolate,
+    # rot_pos_emb, cu_seqlens, VTC token compression, M-RoPE get_rope_index) that
+    # torch.export / torch.onnx.export cannot trace. For tracing backends we swap
+    # ``self.model`` for a graph-safe view that shares the trained parameters by
+    # reference and precomputes every data-dependent tensor from the eager sample.
+    # Export always uses the graph-safe model swap.
+
+    def _build_graph_safe_model(
+        self,
+        model: Rldx1Model,
+        *,
+        input_ids: torch.Tensor,
+        image_grid_thw: torch.Tensor,
+        num_views: torch.Tensor,
+        embodiment_id: torch.Tensor,
+    ) -> GraphSafeRldx1Model:
+        """Build the export-only graph-safe view over a trained model.
+
+        The returned module shares parameters with ``model`` by reference (no
+        state-dict copy) and precomputes all data-dependent buffers from
+        ``input_sample`` in its constructor, so its ``forward(batch)`` is a
+        static graph. Imported lazily to keep the graph-safe port off the
+        training import path.
+
+        Returns:
+            An ``nn.Module`` with the same ``forward(batch)`` contract as
+            :class:`Rldx1Model`, safe to hand to the tracer.
+
+        Raises:
+            RuntimeError: If preprocessor state required for static compression
+                references is unavailable.
+        """
+        outputs_schema = self.outputs_schema or []
+        action_dim = self.config.max_action_dim
+        if outputs_schema and outputs_schema[0].shape:
+            action_dim = int(outputs_schema[0].shape[-1])
+
+        if self._preprocessor is None or self._dataset_stats is None:
+            msg = "No preprocessor available to build compress reference ids."
+            raise RuntimeError(msg)
+        preprocessor = cast("Rldx1Preprocessor", self._preprocessor)
+        image_resolution = export_image_resolution_from_stats(self._dataset_stats)
+        token_composer_params = build_rldx1_token_composer_params(
+            tokenizer=preprocessor.tokenizer,
+            image_resolution=image_resolution,
+            num_views=int(self.config.num_views or 1),
+            num_frames=int(self.config.video_length),
+            max_token_len=int(self.config.tokenizer_max_length),
+        )
+        compress_input_ids = build_compress_reference_ids(token_composer_params)
+        return GraphSafeRldx1Model(
+            model,
+            input_ids=input_ids,
+            image_grid_thw=image_grid_thw,
+            num_views=num_views,
+            config=self.config,
+            output_action_dim=action_dim,
+            embodiment_id=embodiment_id,
+            compress_input_ids=compress_input_ids,
+        )
+
+    @contextmanager
+    def _graph_safe_export_model(
+        self,
+        *,
+        input_ids: torch.Tensor,
+        image_grid_thw: torch.Tensor,
+        embodiment_id: torch.Tensor,
+        num_views: torch.Tensor,
+    ) -> Generator[None, None, None]:
+        """Temporarily swap ``self.model`` for its graph-safe export view.
+
+        Restores the trained model on exit (including on error) so exporting
+        never mutates the in-memory model.
+
+        Raises:
+            RuntimeError: If the model has not been initialized yet.
+        """
+        if self.model is None:
+            msg = "Cannot export before the model is initialized (call setup / load a checkpoint first)."
+            raise RuntimeError(msg)
+
+        original = self.model
+
+        graph_safe = self._build_graph_safe_model(
+            original,
+            input_ids=input_ids,
+            image_grid_thw=image_grid_thw,
+            num_views=num_views,
+            embodiment_id=embodiment_id,
+        )
+        try:
+            self.model = graph_safe  # type: ignore[assignment]
+            yield
+        finally:
+            # Undo any in-place submodule swaps before restoring the trained model.
+            if hasattr(graph_safe, "restore"):
+                graph_safe.restore()
+            self.model = original
+
+    @torch.no_grad()
+    def to_onnx(  # pyrefly: ignore[bad-override, bad-override-param-name]
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: dict[str, object],
+    ) -> None:
+        """Export to ONNX using graph-safe tracing."""
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+        sample_tensors = input_sample
+        # OV/ONNX mislower a bf16-traced graph; trace in fp32 (lossless round-trip).
+        with (
+            fp32_weights_for_export(self.model),
+            self._graph_safe_export_model(
+                input_ids=sample_tensors["input_ids"],
+                image_grid_thw=sample_tensors["image_grid_thw"],
+                embodiment_id=sample_tensors["embodiment_id"],
+                num_views=sample_tensors["num_views"],
+            ),
+        ):
+            traced_sample = cast_sample_fp32(sample_tensors)
+            trimmed_sample = trim_export_sample(traced_sample)
+            super().to_onnx(output_path, input_sample=trimmed_sample, **export_kwargs)
+
+    @torch.no_grad()
+    def to_openvino(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        **export_kwargs: object,
+    ) -> None:
+        """Export to OpenVINO using graph-safe tracing."""
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
+        # OV mislowers a bf16-traced graph (garbage vision features); trace in
+        # fp32, which is lossless (bf16 -> fp32 -> bf16) and OV-faithful.
+        with (
+            fp32_weights_for_export(self.model),
+            self._graph_safe_export_model(
+                input_ids=input_sample["input_ids"],
+                image_grid_thw=input_sample["image_grid_thw"],
+                embodiment_id=input_sample["embodiment_id"],
+                num_views=input_sample["num_views"],
+            ),
+        ):
+            traced_sample = cast_sample_fp32(input_sample)
+            trimmed_sample = trim_export_sample(traced_sample)
+            base = cast("Any", super())
+            base.to_openvino(output_path, input_sample=trimmed_sample, **export_kwargs)
+
+    @torch.no_grad()
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor]:
+        """Build the default export sample using VTC-prepared model input.
+
+        RLDX-1 inference stacks rollout frames through ``VtcWindowBuffer`` before
+        preprocessing. Export tracing should mirror that ordering to produce model
+        inputs representative of inference. This override keeps export sampling
+        side-effect free by using an isolated buffer instead of the live rollout
+        history owned by ``self._vtc_buffer``.
+
+        Returns:
+            Preprocessed tensor-only input sample suitable for export tracing.
+
+        Raises:
+            RuntimeError: If the policy does not provide a sample input or
+                preprocessor for export tracing.
+        """
+        sample = self.sample_input
+        if sample is None:
+            msg = "No sample input available for export."
+            raise RuntimeError(msg)
+        sample = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in sample.items()}
+
+        export_vtc = VtcWindowBuffer(
+            video_length=int(self.config.video_length),
+            video_stride=int(self.config.video_stride),
+        )
+        model_input = export_vtc.prepare(sample)
+
+        if self._preprocessor is None:
+            msg = "No preprocessor available to build export sample."
+            raise RuntimeError(msg)
+        preprocessor = cast("Rldx1Preprocessor", self._preprocessor)
+        processed_sample = preprocessor(model_input)
+        tensor_sample = {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
+
+        if self.model is None:
+            return tensor_sample
+
+        padded_sample = build_padded_sample(
+            self.model,
+            input_ids=tensor_sample["input_ids"],
+            image_grid_thw=tensor_sample["image_grid_thw"],
+            embodiment_id=tensor_sample["embodiment_id"],
+            config=self.config,
+        )
+        # Keep live observation tensors and replace prompt tensors with the
+        # fixed-layout export contract.
+        tensor_sample.update(padded_sample)
+        return tensor_sample

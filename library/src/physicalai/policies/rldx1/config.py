@@ -72,12 +72,22 @@ class Rldx1Config(Config):
     use_percentiles: bool = True
     conversation_image_first: bool = False
 
+    # Fixed tokenized-prompt length used only at export (static ONNX/OpenVINO
+    # graph + baked OV tokenizer). Must cover the FULL multimodal sequence, not
+    # just the instruction text: the runtime rldx1 preprocessor expands vision
+    # blocks into the prompt, so length >= num_views * num_frames *
+    # tokens_per_image + vision start/end + text + template. Undersizing
+    # truncates image-pad tokens and breaks the pixel_values alignment.
+    tokenizer_max_length: int = 1024
+
     # Video input configuration
     # ``use_video`` is an architectural invariant: every supported
     # checkpoint embeds VTC video tokens.
     use_video: bool = True
     video_length: int = 4
     video_stride: int = 2  # Action-step stride between video frames in context window
+
+    num_views: int | None = None
 
     # Action head architecture (MSAT)
     max_state_dim: int = 64  # Default from state_shape

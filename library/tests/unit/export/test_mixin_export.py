@@ -21,6 +21,7 @@ from physicalai.export.backends import (
 from physicalai.export.mixin_policy import (
     ExportablePolicyMixin,
     ExportBackend,
+    _set_openvino_input_names,  # noqa: PLC2701
     _quiet_onnx_export_logs,  # noqa: PLC2701
 )
 from physicalai.inference.data import (
@@ -468,6 +469,48 @@ class TestToOpenVINO:
 
         assert output_path.exists()
         assert (tmp_path / "model.bin").exists()
+
+
+class TestOpenVINOInputNames:
+    """Tests for OpenVINO input name normalization."""
+
+    def test_set_openvino_input_names_matches_alias_sets(self) -> None:
+        """Configured names collapse the matching port's aliases to one name."""
+        port_a = MagicMock()
+        port_b = MagicMock()
+        port_a.get_names.return_value = {"3497", "position_ids", "3496"}
+        port_b.get_names.return_value = {"input_ids"}
+        ov_model = MagicMock()
+        ov_model.inputs = [port_a, port_b]
+
+        _set_openvino_input_names(ov_model, ["position_ids", "input_ids"])
+
+        port_a.tensor.set_names.assert_called_once_with({"position_ids"})
+        port_b.tensor.set_names.assert_called_once_with({"input_ids"})
+
+    def test_set_openvino_input_names_is_noop_when_not_configured(self) -> None:
+        """Policies that do not opt in leave OpenVINO input names untouched."""
+        port = MagicMock()
+        ov_model = MagicMock()
+        ov_model.inputs = [port]
+
+        _set_openvino_input_names(ov_model, [])
+
+        port.tensor.set_names.assert_not_called()
+
+    def test_set_openvino_input_names_skips_unmatched_names(self) -> None:
+        """Unmatched configured names leave unrelated ports untouched."""
+        port_a = MagicMock()
+        port_b = MagicMock()
+        port_a.get_names.return_value = {"pixel_values"}
+        port_b.get_names.return_value = {"input_ids"}
+        ov_model = MagicMock()
+        ov_model.inputs = [port_a, port_b]
+
+        _set_openvino_input_names(ov_model, ["position_ids", "input_ids"])
+
+        port_a.tensor.set_names.assert_not_called()
+        port_b.tensor.set_names.assert_called_once_with({"input_ids"})
 
 
 class TestToExecutorch:

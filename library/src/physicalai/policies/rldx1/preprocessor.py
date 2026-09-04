@@ -40,7 +40,7 @@ streams.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import numpy as np
 import torch
@@ -52,6 +52,7 @@ from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform
 
 from .augmentations import AspectAreaResizeAndCrop
+from .constants import ATTENTION_MASK, EMBODIMENT_ID, IMAGE_GRID_THW, INPUT_IDS, PIXEL_VALUES
 from .preprocessing import (
     build_qwen_conversation,
     build_state_action_degenerate_masks,
@@ -70,6 +71,10 @@ if TYPE_CHECKING:
     from physicalai.data import Feature
 
 logger = logging.getLogger(__name__)
+
+
+class _ProcessorWithTokenizer(Protocol):
+    tokenizer: Any
 
 
 def _module_device(module: nn.Module) -> torch.device:
@@ -97,14 +102,7 @@ OBSERVATION_IMAGES_PREFIX = "observation.images."
 OBSERVATION_IMAGE = "observation.image"
 
 # Transform output keys (RLDX inputs dict).
-INPUT_IDS = "input_ids"
-ATTENTION_MASK = "attention_mask"
-PIXEL_VALUES = "pixel_values"
-IMAGE_GRID_THW = "image_grid_thw"
-MM_TOKEN_TYPE_IDS = "mm_token_type_ids"  # noqa: S105 # nosec B105 -- dict key name, not a secret
-IMAGE_WISE_ENCODING = "image_wise_encoding"
 NUM_VIEWS = "num_views"
-NUM_FRAMES = "num_frames"
 ACTION_MASK = "action_mask"
 
 # Default padded dimensions (match RLDX PT config.json).
@@ -180,6 +178,9 @@ class Rldx1Preprocessor(nn.Module):
             Default 0 (general_embodiment) for a fresh new-robot fine-tune; set
             the slot a released checkpoint was trained on to reuse it.
         stats: Dataset statistics ``{key: {min, max, mean, std, q01, q99}}``.
+        max_token_len: Fixed tokenized-prompt length for export (baked into the
+            OpenVINO tokenizer graph). Must cover the full multimodal sequence
+            including expanded vision blocks; see ``Rldx1Config``.
 
     Examples:
         >>> pre = Rldx1Preprocessor(stats=dataset.stats)
@@ -203,6 +204,7 @@ class Rldx1Preprocessor(nn.Module):
         image_resize_m: int = 32,
         default_task: str = DEFAULT_TASK,
         embodiment_id: int = DEFAULT_EMBODIMENT_ID,
+        max_token_len: int = 1024,
         stats: dict[str, dict[str, list[float]]] | None = None,
     ) -> None:
         """Initialize the preprocessor and build the normalization blocks."""
@@ -221,6 +223,7 @@ class Rldx1Preprocessor(nn.Module):
         self.image_resize_m = image_resize_m
         self.default_task = default_task
         self.embodiment_id = embodiment_id
+        self.max_token_len = max_token_len
 
         # Deterministic image geometry, shared by train and eval (no stochastic
         # augmentation).
@@ -273,6 +276,17 @@ class Rldx1Preprocessor(nn.Module):
             processor.tokenizer.padding_side = "left"
             self._vlm_processor_cache = processor
         return self._vlm_processor_cache
+
+    @property
+    def tokenizer(self) -> Any:  # noqa: ANN401
+        """Underlying HF tokenizer, exposed for the OpenVINO tokenizer export.
+
+        Returns:
+            The Qwen3-VL processor's ``tokenizer`` (left padding), used by
+            ``openvino_tokenizers.convert_tokenizer`` with ``max_token_len``.
+        """
+        processor = cast("_ProcessorWithTokenizer", self._vlm_processor)
+        return processor.tokenizer
 
     # -- image geometry ------------------------------------------------------ #
     def _transform_frames(self, frames: list[np.ndarray]) -> list[Image.Image]:
@@ -433,7 +447,7 @@ class Rldx1Preprocessor(nn.Module):
         has_action = batch_dict.get(ACTION) is not None
 
         sa_inputs = self._normalize_pad_state_action(batch_dict, has_action=has_action)
-        conversations, num_frames = self._build_conversations(batch_dict, view_keys, tasks, batch_size)
+        conversations, _ = self._build_conversations(batch_dict, view_keys, tasks, batch_size)
         vlm = tokenize_vlm_batch(self._vlm_processor, conversations)
 
         inputs: dict[str, torch.Tensor] = {
@@ -441,15 +455,10 @@ class Rldx1Preprocessor(nn.Module):
             ATTENTION_MASK: vlm[ATTENTION_MASK],
             PIXEL_VALUES: vlm[PIXEL_VALUES],
             IMAGE_GRID_THW: vlm[IMAGE_GRID_THW],
-            # vtc scalars: bool image-wise flag, per-sample view/frame counts.
-            IMAGE_WISE_ENCODING: torch.tensor([True] * batch_size),
-            NUM_VIEWS: torch.tensor([len(view_keys)] * batch_size),
-            NUM_FRAMES: torch.tensor([num_frames] * batch_size),
+            NUM_VIEWS: torch.tensor(len(view_keys)),
             STATE: sa_inputs[STATE],
-            "embodiment_id": torch.tensor([self.embodiment_id] * batch_size),
+            EMBODIMENT_ID: torch.tensor([self.embodiment_id] * batch_size),
         }
-        if MM_TOKEN_TYPE_IDS in vlm:
-            inputs[MM_TOKEN_TYPE_IDS] = vlm[MM_TOKEN_TYPE_IDS]
         if has_action:
             inputs[ACTION] = sa_inputs[ACTION]
             inputs[ACTION_MASK] = sa_inputs[ACTION_MASK]
@@ -667,6 +676,7 @@ def make_rldx1_transforms(
     image_min_area: int = 50176,
     image_resize_m: int = 32,
     embodiment_id: int = DEFAULT_EMBODIMENT_ID,
+    max_token_len: int = 1024,
 ) -> tuple[Rldx1Preprocessor, Rldx1Postprocessor]:
     """Build the matched RLDX-1 preprocessor / postprocessor pair.
 
@@ -693,6 +703,8 @@ def make_rldx1_transforms(
         image_resize_m: Alignment multiple for resized/cropped dimensions.
         embodiment_id: Per-embodiment projector slot in the MSAT action head
             (default 0 = general_embodiment for a fresh new-robot fine-tune).
+        max_token_len: Fixed tokenized-prompt length baked into the OpenVINO
+            tokenizer at export; see ``Rldx1Config.tokenizer_max_length``.
 
     Returns:
         Tuple of ``(preprocessor, postprocessor)``.
@@ -710,6 +722,7 @@ def make_rldx1_transforms(
         image_min_area=image_min_area,
         image_resize_m=image_resize_m,
         embodiment_id=embodiment_id,
+        max_token_len=max_token_len,
         stats=stats,
     )
     action_feature = build_state_action_features(stats).get(ACTION)

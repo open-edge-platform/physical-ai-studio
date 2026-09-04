@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from safetensors.torch import load_file
 
 from physicalai.data.observation import ACTION
+from physicalai.policies.utils.features import infer_shape_from_stats
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -231,13 +232,8 @@ def resolve_feature_shape(feat_name: str, hf_config: dict[str, Any], feat_stats:
             if isinstance(feat_info, dict) and "shape" in feat_info:
                 return tuple(feat_info["shape"])
 
-    # Infer from stats tensor lengths
-    for key in ("mean", "std", "q01", "q99", "min", "max"):
-        val = feat_stats.get(key)
-        if isinstance(val, list):
-            return (len(val),)
-
-    return (1,)
+    # Infer from stats tensor lengths, falling back to a scalar shape.
+    return infer_shape_from_stats(feat_stats) or (1,)
 
 
 def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:

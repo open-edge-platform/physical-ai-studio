@@ -22,6 +22,8 @@ from physicalai.policies.rldx1.components.action_model.physics import init_physi
 from physicalai.policies.rldx1.components.action_model.physics_head import NoOpPhysicsHead, PhysicsHead
 from physicalai.policies.rldx1.components.backbone.adapter import VTCQwen3VLBackbone
 
+from .constants import ACTION_PRED, BACKBONE_FEATURES
+
 
 def compute_video_window_offsets(video_length: int, video_stride: int) -> list[int]:
     """Return the VTC video-window frame offsets relative to the current timestep.
@@ -351,9 +353,9 @@ class RLDXActionModel(nn.Module):
             Updated :class:`~transformers.feature_extraction_utils.BatchFeature`
             with normed ``backbone_features``.
         """
-        backbone_features = backbone_output["backbone_features"]
+        backbone_features = backbone_output[BACKBONE_FEATURES]
         backbone_features = self.vlln(backbone_features)
-        backbone_output["backbone_features"] = backbone_features
+        backbone_output[BACKBONE_FEATURES] = backbone_features
         return backbone_output
 
     def forward(  # noqa: PLR0915, PLR0914
@@ -483,7 +485,7 @@ class RLDXActionModel(nn.Module):
             "loss": loss,
             "action_loss": action_loss,
             "action_mask": action_mask,
-            "backbone_features": vl_embeds,
+            BACKBONE_FEATURES: vl_embeds,
             "state_features": state_features,
         }
 
@@ -535,7 +537,7 @@ class RLDXActionModel(nn.Module):
         # Embed state.
         state_features = self.state_encoder(action_input.state, embodiment_id)
 
-        return BatchFeature(data={"backbone_features": vl_embeds, "state_features": state_features})
+        return BatchFeature(data={BACKBONE_FEATURES: vl_embeds, "state_features": state_features})
 
     def get_action_with_features(  # noqa: PLR0914
         self,
@@ -638,8 +640,8 @@ class RLDXActionModel(nn.Module):
 
         return BatchFeature(
             data={
-                "action_pred": actions,
-                "backbone_features": vl_embeds,
+                ACTION_PRED: actions,
+                BACKBONE_FEATURES: vl_embeds,
                 "state_features": state_features,
             },
         )
@@ -1015,7 +1017,7 @@ class Rldx1Model(Model):
         backbone_outputs = self.backbone(backbone_inputs)
 
         outputs = self.action_model.get_action(backbone_outputs, action_inputs)
-        return outputs["action_pred"]
+        return outputs[ACTION_PRED]
 
     @property
     def device(self) -> torch.device:

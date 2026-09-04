@@ -508,6 +508,7 @@ class ExportablePolicyMixin:
                     input=input_shapes,
                     **extra_export_kwargs,
                 )
+            _set_openvino_input_names(ov_model, extra_model_args.inputs)
             _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
@@ -881,3 +882,22 @@ def _postprocess_openvino_model(ov_model: openvino.Model, output_names: list[str
     if output_names is not None and len(ov_model.outputs) >= len(output_names):
         for i, name in enumerate(output_names):
             ov_model.outputs[i].tensor.set_names({name})
+
+
+def _set_openvino_input_names(ov_model: openvino.Model, input_names: list[str]) -> None:
+    """Collapse each OpenVINO input tensor to one canonical name.
+
+    OpenVINO may attach multiple aliases to a single input tensor during
+    conversion. Runtime input routing expects one deterministic key, so policies
+    can opt in to replacing that alias set with a single configured name.
+    """
+    if not input_names:
+        return
+
+    remaining_ports = list(ov_model.inputs)
+    for name in input_names:
+        for index, port in enumerate(remaining_ports):
+            if name in port.get_names():
+                port.tensor.set_names({name})
+                remaining_ports.pop(index)
+                break

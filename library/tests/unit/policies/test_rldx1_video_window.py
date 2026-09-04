@@ -80,10 +80,28 @@ def test_vlln_defaults_to_upstream_checkpoint_architecture() -> None:
     assert not _bare_policy().config.use_vlln
 
 
+def test_tokenizer_max_length_defaults_to_1024() -> None:
+    """RLDX-1 uses a fixed-width token contract with a 1024 default."""
+    assert _bare_policy().config.tokenizer_max_length == 1024
+
+
 def test_vlln_can_be_enabled_explicitly() -> None:
     """Fine-tuning configurations may opt into the additional VLLN layer."""
     with patch("physicalai.policies.rldx1.model.VTCQwen3VLBackbone", _StubBackbone):
         assert Rldx1(pretrained_name_or_path=None, use_vlln=True).config.use_vlln
+
+
+def test_export_input_keys_are_fixed() -> None:
+    """Graph-safe export keeps the fixed Pi0.5-style tensor input contract."""
+    with patch("physicalai.policies.rldx1.model.VTCQwen3VLBackbone", _StubBackbone):
+        policy = Rldx1(pretrained_name_or_path=None)
+
+    # Mirrors GraphSafeRldx1Model input tuple.
+    expected = ("pixel_values", "input_ids", "position_ids", "attention_mask", "state")
+
+    from physicalai.policies.rldx1.components.backbone import graph_safe_rldx1 as gs  # noqa: PLC0415
+
+    assert expected == (gs.PIXEL_VALUES, gs.INPUT_IDS, gs.POSITION_IDS, gs.ATTENTION_MASK, gs.STATE)
 
 
 def test_window_clamps_when_history_short() -> None:

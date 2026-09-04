@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Vendored from RLWRLD/RLDX-1 (Apache-2.0)
 
-"""Checkpoint loading helpers for the RLDX-1 policy.
+"""Checkpoint and policy utility helpers for the RLDX-1 policy.
 
 The RLDX-1 weights ship as sharded ``safetensors`` files alongside a
 ``config.json``. These helpers resolve a HuggingFace repo (or local directory)
 to a local snapshot and load the merged state dict using the ``safetensors``
 backend only — never ``torch.load`` / pickle (lib.security rule 8).
+
+This module also hosts lightweight policy utilities shared by construction,
+schema resolution, and export-graph preparation paths.
 """
 
 from __future__ import annotations
@@ -15,7 +18,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
 
 from huggingface_hub import snapshot_download
 
@@ -24,19 +26,6 @@ logger = logging.getLogger(__name__)
 # Only these files are pulled from a remote checkpoint repo (lib.security rule 8:
 # safetensors allowlist; no pickled ``*.bin`` / ``*.pt`` weights).
 ALLOW_PATTERNS = ["*.safetensors", "*.safetensors.index.json", "config.json"]
-
-# Neutral fallback stats, used whenever a joint or stat field is missing from
-# the on-disk statistics: mean=0/std=1 is a no-op for MEAN_STD normalization,
-# min=-1/max=1/q01=-1/q99=1 keeps MIN_MAX/QUANTILES normalization well-defined
-# (see FeatureNormalizeTransform in physicalai.policies.utils.normalization).
-_DEFAULT_STAT_VALUES: dict[str, float] = {
-    "min": -1.0,
-    "max": 1.0,
-    "mean": 0.0,
-    "std": 1.0,
-    "q01": -1.0,
-    "q99": 1.0,
-}
 
 
 def resolve_checkpoint_dir(
@@ -95,78 +84,42 @@ def retrieve_safetensors_shards(base_model_path: str, revision: str | None) -> l
     return shards
 
 
-def extract_dataset_stats(
-    stats_path: Path | None,
+def extract_camera_names(
+    processor_config_path: Path | None,
     embodiment_tag: str = "general_embodiment",
-    max_state_dim: int = 64,
-    max_action_dim: int = 64,
-) -> dict[str, dict[str, Any]]:
-    """Build ``{"state": {...}, "action": {...}}`` normalization stats.
+) -> list[str]:
+    """Read camera view names for one embodiment from ``processor_config.json``.
 
-    Robust to a missing/unreadable stats file, an ``embodiment_tag`` absent
-    from the file, or a missing ``state``/``action`` section: any of those
-    fall back to neutral stats (see ``_DEFAULT_STAT_VALUES``) padded to
-    ``max_state_dim`` / ``max_action_dim`` so model construction never fails
-    for lack of dataset statistics.
+    Robust to a missing/unreadable file or an ``embodiment_tag``/``video`` section
+    absent from it: any of those return an empty list rather than raising. Note
+    RLWRLD checkpoints never record pixel resolution here (or anywhere else in
+    the repo) -- callers must still supply that separately.
 
     Args:
-        stats_path: Path to the ``statistics.json`` file, or ``None``.
-        embodiment_tag: Key selecting the embodiment's stats block.
-        max_state_dim: Fallback vector length for the ``state`` section.
-        max_action_dim: Fallback vector length for the ``action`` section.
+        processor_config_path: Path to the ``processor_config.json`` file, or ``None``.
+        embodiment_tag: Key selecting the embodiment's modality config block.
 
     Returns:
-        Dict with ``"state"`` and ``"action"`` keys, each mapping
-        ``min``/``max``/``mean``/``std``/``q01``/``q99`` to flat float lists.
+        Ordered camera view names (``video.modality_keys`` for ``embodiment_tag``
+        under ``processor_kwargs.modality_configs``), or an empty list when
+        unavailable.
     """
-    state_keys = ("min", "max", "mean", "std", "q01", "q99")
+    if processor_config_path is None or not processor_config_path.exists():
+        logger.warning("No processor_config.json found; camera names must be supplied explicitly.")
+        return []
 
-    stats: dict[str, Any] = {}
-    if stats_path is None:
-        logger.warning("No dataset stats path provided; using default normalization stats.")
-    elif not stats_path.exists():
-        logger.warning("Dataset stats file %s not found; using default normalization stats.", stats_path)
-    else:
-        with stats_path.open(encoding="utf-8") as f:
-            stats = json.load(f)
+    with processor_config_path.open(encoding="utf-8") as f:
+        processor_config = json.load(f)
 
-    embodiment_stats = stats.get(embodiment_tag)
-    if embodiment_stats is None:
+    video_config = (
+        processor_config.get("processor_kwargs", {}).get("modality_configs", {}).get(embodiment_tag, {}).get("video")
+    )
+    if not video_config:
         logger.warning(
-            "Embodiment tag %r not found in dataset stats%s; using default normalization stats.",
+            "Embodiment tag %r has no video modality config in %s; camera names must be supplied explicitly.",
             embodiment_tag,
-            f" ({stats_path})" if stats_path is not None else "",
+            processor_config_path,
         )
-        embodiment_stats = {}
+        return []
 
-    def _concat(
-        section_name: str,
-        section: dict | None,
-        dim: int,
-    ) -> dict[str, list[float]]:
-        if not section:
-            logger.warning(
-                "No %r stats for embodiment %r; filling %d-dim defaults.",
-                section_name,
-                embodiment_tag,
-                dim,
-            )
-            return {stat_key: [_DEFAULT_STAT_VALUES[stat_key]] * dim for stat_key in state_keys}
-
-        out: dict[str, list[float]] = {}
-        order = []
-        for joint, joint_stats in section.items():
-            order.append(joint)
-            joint_dim = len(next(iter(joint_stats.values())))
-            for stat_key in state_keys:
-                values = joint_stats.get(stat_key)
-                if values is None:
-                    values = [_DEFAULT_STAT_VALUES[stat_key]] * joint_dim
-                out.setdefault(stat_key, []).extend(values)
-        logger.debug("%s.%s fields: %s", embodiment_tag, section_name, order)
-        return out
-
-    return {
-        "action": _concat("action", embodiment_stats.get("action"), max_action_dim),
-        "state": _concat("state", embodiment_stats.get("state"), max_state_dim),
-    }
+    return list(video_config.get("modality_keys", []))

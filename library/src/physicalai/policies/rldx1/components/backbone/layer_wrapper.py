@@ -29,7 +29,7 @@ class LayerWrapper(nn.Module):
         layer_idx: int,
         internal_projection: int = 4,
         img_pattern: Sequence[int] = (151652,),
-        motion_token: int = 0,
+        motion_token: int = 1,
     ) -> None:
         """Initialize the wrapper.
 
@@ -109,7 +109,7 @@ class LayerWrapper(nn.Module):
         padded_rev = torch.nn.utils.rnn.pad_sequence(rev, batch_first=True, padding_value=0)
         return padded_rev.flip(1)
 
-    def forward(  # noqa: PLR0912, PLR0914, PLR0915
+    def forward(  # noqa: C901, PLR0912, PLR0914, PLR0915
         self,
         hidden_states: torch.Tensor,
         input_ids: torch.Tensor | None = None,
@@ -147,7 +147,12 @@ class LayerWrapper(nn.Module):
             else:
                 kwargs["image_wise_encoding"] = kwargs["image_wise_encoding"].bool().item()
 
-        num_views = kwargs["num_views"] if kwargs.get("image_wise_encoding") else None
+        num_views: list[int] | None = None
+        if kwargs.get("image_wise_encoding") and kwargs.get("num_views") is not None:
+            raw_num_views = kwargs["num_views"]
+            if isinstance(raw_num_views, torch.Tensor):
+                raw_num_views = raw_num_views.flatten()[0].item()
+            num_views = [int(raw_num_views)]
 
         bsz, seq_len, _dim = hidden_states.shape
 
