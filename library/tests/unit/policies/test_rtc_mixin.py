@@ -236,6 +236,14 @@ class TestValidateRtcInputs:
         with pytest.raises(ValueError, match="RTC timing values must satisfy"):
             model._validate_rtc_inputs(inference_delay, execution_horizon, 10.0)
 
+    @pytest.mark.parametrize("execution_horizon", [0, -1])
+    def test_rejects_non_positive_horizon(self, execution_horizon: int) -> None:
+        """An execution horizon of zero or less leaves no fresh actions to emit."""
+        model = _ModelStub(chunk_size=8)
+
+        with pytest.raises(ValueError, match="execution_horizon must be positive"):
+            model._validate_rtc_inputs(0, execution_horizon, 10.0)
+
     def test_rejects_negative_guidance_weight(self) -> None:
         """A negative guidance weight raises."""
         model = _ModelStub(chunk_size=8)

@@ -262,7 +262,8 @@ class RTCModelMixin:
 
         Raises:
             ValueError: If the timing values do not satisfy
-                ``0 <= inference_delay <= execution_horizon <= chunk_size``, or if
+                ``0 <= inference_delay <= execution_horizon <= chunk_size``, if
+                ``execution_horizon`` is not positive, or if
                 ``max_guidance_weight`` is negative.
         """
         if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
@@ -272,6 +273,10 @@ class RTCModelMixin:
             float(value.flatten()[0]) if isinstance(value, torch.Tensor) else float(value)
             for value in (inference_delay, execution_horizon, max_guidance_weight)
         )
+
+        if horizon <= 0:
+            msg = f"RTC execution_horizon must be positive, got {horizon}."
+            raise ValueError(msg)
 
         if not 0 <= delay <= horizon <= self._chunk_size:
             msg = (

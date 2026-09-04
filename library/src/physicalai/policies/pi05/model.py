@@ -1181,6 +1181,10 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
         Returns:
             Denoised action tensor, unpadded and clipped to n_action_steps.
+
+        Raises:
+            ValueError: If RTC is enabled and the batch is missing
+                ``prev_chunk_left_over`` or carries out-of-range RTC control values.
         """
         images = batch[IMAGES]
         img_masks = batch[IMAGE_MASKS]
@@ -1193,11 +1197,16 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
             execution_horizon = batch.get(RTC_EXECUTION_HORIZON, 0)
             inference_delay = batch.get(RTC_INFERENCE_DELAY, 0.0)
             self._validate_rtc_inputs(inference_delay, execution_horizon, max_guidance)
+
+            if PREV_CHUNK_LEFT_OVER not in batch:
+                msg = f"Expected {PREV_CHUNK_LEFT_OVER} in batch when RTC is enabled."
+                raise ValueError(msg)
+
             rtc_kwargs = {
                 "rtc_max_guidance": max_guidance,
                 "rtc_execution_horizon": execution_horizon,
                 "rtc_latency": inference_delay,
-                "rtc_prev_action_chunk": self._pad_prev_chunk(batch.get(PREV_CHUNK_LEFT_OVER)),
+                "rtc_prev_action_chunk": self._pad_prev_chunk(batch[PREV_CHUNK_LEFT_OVER]),
             }
 
         actions = self.sample_actions(
