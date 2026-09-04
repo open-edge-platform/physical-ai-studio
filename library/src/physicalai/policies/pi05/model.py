@@ -1281,8 +1281,8 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
             if rtc_prev_action_chunk is not None:
                 prefix_weights = self._compute_prefix_weights(
-                    inference_delay=torch.tensor(rtc_latency, device=device),
-                    execution_horizon=torch.tensor(rtc_execution_horizon, device=device),
+                    inference_delay=torch.as_tensor(rtc_latency, device=device),
+                    execution_horizon=torch.as_tensor(rtc_execution_horizon, device=device),
                 )
                 v_t = self._rtc_correct(
                     x_t,
@@ -1290,7 +1290,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
                     prev_chunk_left_over=rtc_prev_action_chunk,
                     prefix_weights=prefix_weights,
                     time=time,
-                    max_guidance_weight=torch.tensor(rtc_max_guidance, device=device),
+                    max_guidance_weight=torch.as_tensor(rtc_max_guidance, device=device),
                 )
 
             x_t += dt * v_t
