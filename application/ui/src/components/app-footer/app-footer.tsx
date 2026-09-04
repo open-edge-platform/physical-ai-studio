@@ -3,6 +3,7 @@ import { Manifest } from '@geti-ui/ui/icons';
 
 import { JobStatus } from '../../features/jobs/footer/job-status';
 import { LogsDialog } from '../../features/logs/logs-dialog';
+import { RuntimeSessionStatus } from '../../features/runtime-sessions/runtime-sessions';
 import { RestartRequiredBanner } from '../../features/system/restart-required-banner';
 
 export const AppFooter = ({ gridArea = 'footer' }: { gridArea?: string }) => {
@@ -37,6 +38,7 @@ export const AppFooter = ({ gridArea = 'footer' }: { gridArea?: string }) => {
                     </View>
                     <Divider orientation='vertical' size='S' />
                     <JobStatus />
+                    <RuntimeSessionStatus />
                 </Flex>
                 <RestartRequiredBanner />
             </Flex>

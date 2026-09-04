@@ -19,6 +19,7 @@ import {
 import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
+import { AppFooter } from '../../../components/app-footer/app-footer';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
 import { RuntimeSessionProvider, useRuntimeSession } from '../../../features/robots/runtime-session-provider';
 import { paths } from '../../../router';
@@ -92,9 +93,12 @@ const RecordingPage = () => {
     return (
         <RuntimeSessionProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
             <Grid
-                areas={['header', 'content']}
+                areas={['header', 'content', 'footer']}
                 UNSAFE_style={{
-                    gridTemplateRows: `var(--spectrum-global-dimension-size-800, 4rem) ${minmax(0, '1fr')}`,
+                    // Footer track matches ProjectLayout's so the strip is the
+                    // same height here as on every other page.
+                    // eslint-disable-next-line max-len
+                    gridTemplateRows: `var(--spectrum-global-dimension-size-800, 4rem) ${minmax(0, '1fr')} var(--spectrum-global-dimension-size-400)`,
                 }}
                 minHeight={0}
                 height={'100%'}
@@ -133,6 +137,7 @@ const RecordingPage = () => {
                         <RecordingViewer />
                     </View>
                 </View>
+                <AppFooter />
             </Grid>
         </RuntimeSessionProvider>
     );

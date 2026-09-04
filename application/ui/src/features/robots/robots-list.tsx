@@ -6,8 +6,15 @@ import { NavLink } from 'react-router';
 
 import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
+import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
+import {
+    sessionActivity,
+    sessionForRobot,
+    sessionStatusVariant,
+    useRuntimeSessions,
+} from '../runtime-sessions/use-runtime-sessions';
 import RobotArm from './../../assets/robot-arm.webp';
 import { isUnavailableRobot, SchemaRobot } from './robot-types';
 
@@ -90,6 +97,18 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
     );
 };
 
+export const SessionStatus = ({ session }: { session: SchemaRuntimeSessionInfo | undefined }) => {
+    if (session === undefined) {
+        return null;
+    }
+
+    return (
+        <StatusLight variant={sessionStatusVariant(session)}>
+            <View>Session · {sessionActivity(session)}</View>
+        </StatusLight>
+    );
+};
+
 export const ConnectionStatus = ({
     status,
     isUnavailable = false,
@@ -121,10 +140,12 @@ const RobotListItem = ({
     robot,
     status,
     isActive,
+    session,
 }: {
     robot: SchemaRobot;
     status: 'online' | 'offline' | 'unknown';
     isActive: boolean;
+    session: SchemaRuntimeSessionInfo | undefined;
 }) => {
     const isUnavailable = isUnavailableRobot(robot);
     const connectionString = isUnavailable
@@ -157,6 +178,7 @@ const RobotListItem = ({
                     </View>
                     <View gridArea='status'>
                         <ConnectionStatus status={status} isUnavailable={isUnavailable} />
+                        <SessionStatus session={session} />
                     </View>
                 </Grid>
                 <Flex direction={'row'} justifyContent={'space-between'}>
@@ -207,6 +229,10 @@ export const RobotsList = () => {
         suspense: false,
     });
 
+    // Sessions are host-wide, so this is one query for the page rather than one
+    // per row. A session name is rt-<robot id>, which makes the match exact.
+    const { data: runtimeSessions } = useRuntimeSessions();
+
     return (
         <Flex direction='column' gap='size-100'>
             <Button
@@ -238,6 +264,7 @@ export const RobotsList = () => {
                                     robot={robot}
                                     status={onlineProjectRobots === undefined ? 'unknown' : status}
                                     isActive={isActive}
+                                    session={sessionForRobot(runtimeSessions, robot.id)}
                                 />
                             );
                         }}

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { AriaListBox, AriaListBoxItem, Flex, ListLayout, Text, View, Virtualizer } from '@geti-ui/ui';
 
+import { JumpToLatestButton } from './jump-to-latest-button';
 import { LogEntry } from './log-entry';
 import { LogFilters } from './log-filters';
 import { DEFAULT_LOG_FILTERS, type LogEntry as LogEntryType, type LogFilters as LogFiltersType } from './log-types';
@@ -70,18 +71,112 @@ const NoLogs = ({ isLoading, totalLogs }: { isLoading: boolean; totalLogs: numbe
     );
 };
 
-const useScrollToBottom = (totalLogs: number) => {
-    const logsListRef = useRef<HTMLDivElement | null>(null);
-    const [enabled, setEnabled] = useState(true);
+const virtualizedContainerWithDefinedHeight = (virtualizedList: HTMLDivElement | null) => {
+    if (virtualizedList === null) {
+        return null;
+    }
+
+    return virtualizedList.firstElementChild;
+};
+
+const SCROLL_TRESHOLD = 10;
+
+const useScrollLogs = () => {
+    // The list is rendered conditionally, so its DOM node does not exist on the first render.
+    // Keeping the node in state makes its attachment observable to the effects below, a ref
+    // mutation would not re-run them.
+    const [logsList, setLogsList] = useState<HTMLDivElement | null>(null);
+    const [autoScroll, setAutoScroll] = useState<boolean>(true);
+    const [isAtTheBottom, setIsAtTheBottom] = useState<boolean>(true);
+    const lastScrollPositionRef = useRef(0);
+    const isAutomaticScroll = useRef(false);
+
+    const handleAutoScroll = (value: boolean) => {
+        if (value) {
+            logsList?.scrollTo({ top: logsList.scrollHeight });
+            setIsAtTheBottom(true);
+        }
+
+        setAutoScroll(value);
+    };
+
+    const jumpToLatest = () => {
+        logsList?.scrollTo({ top: logsList.scrollHeight });
+        setIsAtTheBottom(true);
+    };
 
     useEffect(() => {
-        if (!enabled || !logsListRef.current) {
+        if (logsList === null || !autoScroll) {
             return;
         }
-        logsListRef.current.scrollTop = logsListRef.current.scrollHeight;
-    }, [enabled, totalLogs]);
 
-    return [enabled, setEnabled, logsListRef] as const;
+        const resizeObserver = new ResizeObserver(() => {
+            isAutomaticScroll.current = true;
+            logsList?.scrollTo({ top: logsList.scrollHeight });
+
+            logsList.addEventListener(
+                'scrollend',
+                () => {
+                    isAutomaticScroll.current = false;
+                },
+                { once: true }
+            );
+
+            setIsAtTheBottom(true);
+        });
+
+        const container = virtualizedContainerWithDefinedHeight(logsList);
+
+        if (container !== null) {
+            resizeObserver.observe(container);
+        }
+
+        return () => {
+            resizeObserver.disconnect();
+        };
+    }, [autoScroll, logsList]);
+
+    useEffect(() => {
+        if (logsList === null) {
+            return;
+        }
+
+        const abortController = new AbortController();
+
+        logsList.addEventListener(
+            'scroll',
+            (event) => {
+                const target = event.currentTarget as HTMLDivElement;
+
+                const currentScrollPosition = target.scrollTop;
+
+                if (
+                    isAtTheBottom &&
+                    !isAutomaticScroll.current &&
+                    currentScrollPosition > lastScrollPositionRef.current
+                ) {
+                    setAutoScroll(false);
+
+                    lastScrollPositionRef.current = currentScrollPosition;
+                }
+
+                setIsAtTheBottom(target.scrollHeight - target.clientHeight - currentScrollPosition < SCROLL_TRESHOLD);
+            },
+            { passive: true, signal: abortController.signal }
+        );
+
+        return () => {
+            abortController.abort();
+        };
+    }, [logsList, isAtTheBottom]);
+
+    return {
+        autoScroll,
+        setAutoScroll: handleAutoScroll,
+        setLogsList,
+        isAtTheBottom,
+        jumpToLatest,
+    };
 };
 
 const useFilteredLogs = (logs: Array<LogEntryType>, filters: LogFiltersType) => {
@@ -99,7 +194,7 @@ export const LogContent = ({ logs, isLoading = false }: { logs: LogEntryType[]; 
         await navigator.clipboard.writeText(formattedLogs);
     };
 
-    const [autoScroll, setAutoScroll, logsListRef] = useScrollToBottom(filteredLogs.length);
+    const { autoScroll, setAutoScroll, setLogsList, isAtTheBottom, jumpToLatest } = useScrollLogs();
 
     return (
         <View UNSAFE_className={styles.logViewer}>
@@ -121,7 +216,7 @@ export const LogContent = ({ logs, isLoading = false }: { logs: LogEntryType[]; 
                         <Virtualizer layout={ListLayout} layoutOptions={{ estimatedRowHeight: 36 }}>
                             <AriaListBox
                                 aria-label='Log entries'
-                                ref={logsListRef}
+                                ref={setLogsList}
                                 items={filteredLogs}
                                 className={styles.virtualizedList}
                             >
@@ -132,6 +227,8 @@ export const LogContent = ({ logs, isLoading = false }: { logs: LogEntryType[]; 
                                 )}
                             </AriaListBox>
                         </Virtualizer>
+
+                        <JumpToLatestButton isVisible={!autoScroll && !isAtTheBottom} onPress={jumpToLatest} />
                     </View>
                 )}
             </div>

@@ -69,7 +69,7 @@ def _camera(*, name: str = "Overhead Camera") -> Any:
             "id": str(uuid4()),
             "driver": "usb_camera",
             "name": name,
-            "fingerprint": '{"serial":"test-camera"}',
+            "fingerprint": {"serial": "test-camera"},
             "hardware_name": "Camera",
             "payload": {"width": 640, "height": 480, "fps": 30},
         }

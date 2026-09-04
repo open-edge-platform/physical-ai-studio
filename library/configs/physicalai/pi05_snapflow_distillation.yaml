@@ -9,18 +9,24 @@
 #   # Phase 1 — standard flow-matching training
 #   physicalai fit --config configs/physicalai/pi05.yaml
 #
-#   # Phase 2 — SnapFlow distillation, VLM frozen
+#   # Phase 2 — SnapFlow distillation, VLM frozen, weights-only warm start
 #   physicalai fit \
 #       --config configs/physicalai/pi05_snapflow_distillation.yaml \
-#       --fit.ckpt_path ./experiments/lightning_logs/version_0/checkpoints/last.ckpt \
-#       --trainer.max_steps 30000
+#       --weights_from ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
 #
-# Note that `--fit.ckpt_path` is a full Lightning *resume*: it restores the
-# global step, optimizer state, and LR schedule from phase 1. Set
-# `--trainer.max_steps` to the combined phase-1 + phase-2 budget accordingly.
-# This does NOT give phase 2 its own optimizer state or LR horizon — if you
-# need that, warm-start from phase-1 weights only via the Python API instead
-# (see `Policy.load_from_checkpoint` in docs/how-to/training/snapflow_distillation.md).
+# `--weights_from` loads only the phase-1 state_dict and then re-applies this
+# config's model init_args (train_expert_only, snapflow_enabled, ...) on top of
+# it. It does NOT resume the optimizer, LR schedule, or global step — training
+# starts fresh at step 0 with this file's own trainer.max_steps budget.
+#
+# Do not use `--fit.ckpt_path` for the phase-2 handoff: that performs a full
+# Lightning resume, which restores the phase-1 optimizer state (one param group
+# per trainable phase-1 tensor) into an optimizer built over the frozen-VLM
+# phase-2 model (many fewer trainable tensors) and fails with
+# "loaded state dict contains a parameter group that doesn't match the size of
+# optimizer's group". `--fit.ckpt_path` is only correct for resuming a run
+# that was itself already using this same config (i.e. resuming phase 2 from
+# its own earlier checkpoint).
 #
 # Single-run alternative (recommended):
 #   configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml uses
@@ -60,6 +66,14 @@ model:
     train_expert_only: true
     freeze_vision_encoder: false # train_expert_only already covers the VLM
 
+    # Memory / throughput. Phase 2 only trains ~10% of params, so the
+    # compile-friendly SnapFlow loss split (static FM/CD branch sizes) keeps
+    # torch.compile stable across steps instead of recompiling on every batch.
+    # compile_model: true
+    # compile_mode: max-autotune
+    gradient_checkpointing: true
+    compile_model: true # disable compile_model if you hit OOM
+
     # Optimizer
     optimizer_lr: 2.5e-5
     optimizer_weight_decay: 0.01
@@ -78,7 +92,9 @@ data:
     data_format: "physicalai"
 
 trainer:
-  max_steps: 30000
+  # Weights-only warm start via --weights_from starts step/epoch counting at 0,
+  # so this is the phase-2 budget alone (not phase-1 + phase-2).
+  max_epochs: 2
   accelerator: gpu
   devices: 1
   precision: 32

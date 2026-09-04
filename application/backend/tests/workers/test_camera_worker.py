@@ -16,7 +16,7 @@ def _make_config(width=640, height=480, fps=30):
         {
             "driver": "usb_camera",
             "name": "test_cam",
-            "fingerprint": "/dev/video0",
+            "fingerprint": {"path": "/dev/video0"},
             "hardware_name": None,
             "payload": {"width": width, "height": height, "fps": fps},
         }

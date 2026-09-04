@@ -140,6 +140,28 @@
     box-sizing: border-box;
 }
 
+.jumpToLatest {
+    position: absolute;
+    bottom: var(--spectrum-global-dimension-size-200);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+    opacity: 1;
+    visibility: visible;
+    transition:
+        opacity 130ms ease-in-out,
+        visibility 0s;
+}
+
+.jumpToLatestHidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+        opacity 130ms ease-in-out,
+        visibility 0s linear 130ms;
+}
+
 .virtualizedList {
     scrollbar-gutter: stable;
     display: block;

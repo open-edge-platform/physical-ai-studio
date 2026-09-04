@@ -9,18 +9,24 @@
 #   # Phase 1 — standard flow-matching training
 #   physicalai fit --config configs/physicalai/smolvla.yaml
 #
-#   # Phase 2 — SnapFlow distillation, VLM frozen
+#   # Phase 2 — SnapFlow distillation, VLM frozen, weights-only warm start
 #   physicalai fit \
 #       --config configs/physicalai/smolvla_snapflow_distillation.yaml \
-#       --fit.ckpt_path ./experiments/lightning_logs/version_0/checkpoints/last.ckpt \
-#       --trainer.max_steps 30000
+#       --weights_from ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
 #
-# Note that `--fit.ckpt_path` is a full Lightning *resume*: it restores the
-# global step, optimizer state, and LR schedule from phase 1. Set
-# `--trainer.max_steps` to the combined phase-1 + phase-2 budget accordingly.
-# This does NOT give phase 2 its own optimizer state or LR horizon — if you
-# need that, warm-start from phase-1 weights only via the Python API instead
-# (see `Policy.load_from_checkpoint` in docs/how-to/training/snapflow_distillation.md).
+# `--weights_from` loads only the phase-1 state_dict and then re-applies this
+# config's model init_args (train_expert_only, snapflow_enabled, ...) on top of
+# it. It does NOT resume the optimizer, LR schedule, or global step — training
+# starts fresh at step 0 with this file's own trainer.max_steps budget.
+#
+# Do not use `--fit.ckpt_path` for the phase-2 handoff: that performs a full
+# Lightning resume, which restores the phase-1 optimizer state (one param group
+# per trainable phase-1 tensor) into an optimizer built over the frozen-VLM
+# phase-2 model (many fewer trainable tensors) and fails with
+# "loaded state dict contains a parameter group that doesn't match the size of
+# optimizer's group". `--fit.ckpt_path` is only correct for resuming a run
+# that was itself already using this same config (i.e. resuming phase 2 from
+# its own earlier checkpoint).
 #
 # Single-run alternative (recommended):
 #   Add SnapFlowPhaseCallback to smolvla.yaml trainer.callbacks with a
@@ -65,7 +71,7 @@ data:
                 - 1.3
 
 trainer:
-  max_steps: 30000
+  max_epochs: 2
   accelerator: gpu
   devices: 1
   precision: 32

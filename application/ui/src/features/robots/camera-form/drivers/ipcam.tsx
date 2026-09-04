@@ -37,9 +37,9 @@ export const IpCamFormFields = () => {
                 isRequired
                 label='Stream URL'
                 width='100%'
-                value={formData.fingerprint ?? ''}
+                value={typeof formData.fingerprint?.url === 'string' ? formData.fingerprint.url : ''}
                 onChange={(url) => {
-                    updateField('fingerprint', url);
+                    updateField('fingerprint', { url });
                     updatePayload({ url });
                 }}
             />

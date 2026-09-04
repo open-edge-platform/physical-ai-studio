@@ -43,9 +43,16 @@ class _FakeServer:
     def __init__(self) -> None:
         self.matching = True
         self.events: list = []
+        self.metadata: dict = {}
 
     def has_matching_subscribers(self) -> bool:
         return self.matching
+
+    def update_metadata(self, **values: object) -> None:
+        # The watcher publishes attachment so a session list can show which arms
+        # nobody is watching. Not what these tests are about, but the watcher
+        # calls it, so the fake has to answer.
+        self.metadata.update(values)
 
     def emit(self, event: object, *, fatal: bool = False) -> None:
         self.events.append(event)

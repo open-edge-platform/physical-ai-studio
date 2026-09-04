@@ -316,6 +316,35 @@ describe('Table', () => {
         expect(screen.getByText('Alpha progress')).toBeInTheDocument();
     });
 
+    it('places the after slot above the expanded detail panel', async () => {
+        const user = userEvent.setup();
+
+        render(
+            <Table columns={EXPANDABLE_COLUMNS}>
+                <Table.ExpandableRow
+                    label='Alpha'
+                    detail={<div>Alpha details</div>}
+                    after={<div>Alpha progress</div>}
+                    id='alpha-row'
+                >
+                    <div>Alpha</div>
+                    <div>Ready</div>
+                    <div>Action</div>
+                </Table.ExpandableRow>
+            </Table>
+        );
+
+        await user.click(screen.getByRole('button', { name: 'Show details for Alpha' }));
+
+        // The after slot belongs to the row itself -- a confirmation bar or a
+        // progress bar reads as part of it -- so it must not be pushed below the
+        // detail panel when a row is expanded.
+        const after = screen.getByTestId('alpha-row-after');
+        const panel = screen.getByText('Alpha details');
+
+        expect(after.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
     it('does not render the after wrapper when after is a falsy conditional expression', () => {
         render(
             <Table columns={EXPANDABLE_COLUMNS}>

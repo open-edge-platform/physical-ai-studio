@@ -150,14 +150,14 @@ const ExpandableRow = ({
                 </ActionButton>
                 {renderCells(children, columns.slice(1))}
             </div>
-            {isExpanded && (
-                <div id={contentId} className={clsx(classes.panel, { [classes.accentBar]: isEmphasized })}>
-                    {detail}
-                </div>
-            )}
             {Boolean(after) && (
                 <div className={classes.after} data-testid={id ? `${id}-after` : 'after'}>
                     {after}
+                </div>
+            )}
+            {isExpanded && (
+                <div id={contentId} className={clsx(classes.panel, { [classes.accentBar]: isEmphasized })}>
+                    {detail}
                 </div>
             )}
         </>

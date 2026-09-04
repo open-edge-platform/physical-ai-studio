@@ -249,11 +249,10 @@ job). Note that `--fit.ckpt_path` is a full Lightning resume, so this does
 # Phase 1 — standard flow-matching training
 physicalai fit --config configs/physicalai/pi05.yaml
 
-# Phase 2 — SnapFlow distillation, VLM frozen, resumed from phase 1
+# Phase 2 — SnapFlow distillation, VLM frozen, weights-only warm start from phase 1
 physicalai fit \
     --config configs/physicalai/pi05_snapflow_distillation.yaml \
-    --fit.ckpt_path ./experiments/lightning_logs/version_0/checkpoints/last.ckpt \
-    --trainer.max_steps 60000
+    --weights_from ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
 ```
 
 Substitute `pi05` with `smolvla` for the SmolVLA policy. Phase-2 templates:
@@ -267,18 +266,24 @@ defaults (`snapflow_alpha: 0.5`, `snapflow_lambda: 0.1`,
 
 Two things to be aware of:
 
-- The flag is **`--fit.ckpt_path`**, not `--ckpt_path`. Method-level arguments
-  are namespaced under the subcommand (`--validate.ckpt_path`,
-  `--test.ckpt_path`, `--predict.ckpt_path`).
-- `--fit.ckpt_path` is a full Lightning **resume**: it restores the global step,
-  optimizer state, and LR schedule from phase 1. Set `--trainer.max_steps` to
-  the _combined_ phase-1 + phase-2 budget, not the phase-2 budget alone. This
-  means Option 2 does **not** give phase 2 an independent LR horizon either —
-  the LR schedule still spans both phases, exactly like Option 1's
-  single-run caveat above. There is currently no supported way to warm-start
-  phase 2 from a checkpoint's weights only (a fresh optimizer/LR schedule);
-  doing so would require loading just the `state_dict` manually instead of
-  passing `--fit.ckpt_path` (see Option 3 below).
+- **Use `--weights_from`, not `--fit.ckpt_path`, for the phase-1 -> phase-2
+  handoff.** `--weights_from` loads only the phase-1 `state_dict` and then
+  re-applies this config's `model` init*args on top of it (`train_expert_only`,
+  `snapflow_enabled`, ...), so training starts fresh at step 0 with the
+  optimizer built over the now-frozen-VLM model.
+  `--fit.ckpt_path` performs a full Lightning **resume** instead: it restores
+  the phase-1 optimizer state verbatim, which was built over the \_full* model
+  (every parameter trainable). Phase 2's optimizer only covers the ~10% of
+  parameters left trainable after `train_expert_only: true` freezes the VLM, so
+  the shapes never match and `Trainer.fit` fails with `ValueError: loaded state
+dict contains a parameter group that doesn't match the size of optimizer's
+group`. `--fit.ckpt_path` is only correct for resuming a run that was itself
+  already using this same phase-2 config (i.e. continuing an interrupted phase
+  2 from its own checkpoint), never for the phase-1 -> phase-2 transition.
+- Set `trainer.max_steps`/`trainer.max_epochs` (or `--trainer.max_steps`/
+  `--trainer.max_epochs`) to the phase-2 budget alone, not phase-1 + phase-2 —
+  `--weights_from` does not restore the global step, so epoch/step counting
+  starts at 0.
 
 ---
 
@@ -321,22 +326,24 @@ Or flip an already-constructed policy after `setup()` has run:
 policy.enable_snapflow(alpha=0.5, lambda_=0.1, num_inference_steps=1)
 ```
 
+This is exactly what `--weights_from` does under the hood (see Option 2).
+
 ---
 
 ## Hyperparameter guidance
 
-| Parameter                | Paper default            | Notes                                                                                                                           |
-| ------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| `alpha`                  | `0.5`                    | FM-loss weight. Keep at or above `0.5` to preserve multi-step ability.                                                          |
-| `lambda_`                | `0.1`                    | Shortcut-loss scale, balances the two gradient magnitudes.                                                                      |
-| `num_inference_steps`    | `1`                      | `1` gives the full SnapFlow speedup; raise it for intermediate modes.                                                           |
-| `checkpoint_prefix`      | `"snapflow-"`            | Marks phase-2 checkpoints on disk. `null` disables the rewrite.                                                                 |
-| `restore_best_teacher`   | `true`                   | Restore the monitored `ModelCheckpoint`'s best-val-loss weights before enabling SnapFlow, instead of distilling the live model. |
-| `best_teacher_monitor`   | `None`                   | Disambiguates which monitored `ModelCheckpoint` to restore from when more than one is configured.                               |
-| `scope_best_to_phase`    | `true`                   | Reset best-checkpoint tracking at the boundary, since `val/loss` is not comparable across `num_inference_steps`.                |
-| Phase-1 budget           | 5-10 epochs              | Fewer for a warm-started VLA than for from-scratch training.                                                                    |
-| Phase-2 budget           | ~3-5 epochs (~30k steps) | Short because the target-time embedding is zero-initialised.                                                                    |
-| `scheduler_warmup_steps` | ~5% of total steps       | No fractional option exists; compute it from your dataset (below).                                                              |
+| Parameter                | Paper default      | Notes                                                                                                                           |
+| ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `alpha`                  | `0.5`              | FM-loss weight. Keep at or above `0.5` to preserve multi-step ability.                                                          |
+| `lambda_`                | `0.1`              | Shortcut-loss scale, balances the two gradient magnitudes.                                                                      |
+| `num_inference_steps`    | `1`                | `1` gives the full SnapFlow speedup; raise it for intermediate modes.                                                           |
+| `checkpoint_prefix`      | `"snapflow-"`      | Marks phase-2 checkpoints on disk. `null` disables the rewrite.                                                                 |
+| `restore_best_teacher`   | `true`             | Restore the monitored `ModelCheckpoint`'s best-val-loss weights before enabling SnapFlow, instead of distilling the live model. |
+| `best_teacher_monitor`   | `None`             | Disambiguates which monitored `ModelCheckpoint` to restore from when more than one is configured.                               |
+| `scope_best_to_phase`    | `true`             | Reset best-checkpoint tracking at the boundary, since `val/loss` is not comparable across `num_inference_steps`.                |
+| Phase-1 budget           | 5-10 epochs        | Fewer for a warm-started VLA than for from-scratch training.                                                                    |
+| Phase-2 budget           | ~2-3 epochs        | Short because the target-time embedding is zero-initialised.                                                                    |
+| `scheduler_warmup_steps` | ~5% of total steps | No fractional option exists; compute it from your dataset (below).                                                              |
 
 Converting an epoch budget into steps, for warmup sizing:
 
