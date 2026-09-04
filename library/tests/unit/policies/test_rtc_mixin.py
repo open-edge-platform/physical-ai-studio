@@ -210,6 +210,40 @@ class TestCheckpointPersistence:
         assert policy.rtc_enabled is False
 
 
+class TestValidateRtcInputs:
+    """Tests for the RTC control-value validation."""
+
+    def test_accepts_valid_values(self) -> None:
+        """Ordered timing values within the chunk size pass."""
+        model = _ModelStub(chunk_size=8)
+
+        model._validate_rtc_inputs(2, 5, 10.0)
+
+    def test_accepts_scalar_tensors(self) -> None:
+        """Values carried as scalar tensors are unwrapped before comparison."""
+        model = _ModelStub(chunk_size=8)
+
+        model._validate_rtc_inputs(torch.tensor(2), torch.tensor(5), torch.tensor(10.0))
+
+    @pytest.mark.parametrize(
+        ("inference_delay", "execution_horizon"),
+        [(-1, 4), (5, 4), (2, 16)],
+    )
+    def test_rejects_unordered_timing(self, inference_delay: int, execution_horizon: int) -> None:
+        """Timing values outside ``0 <= delay <= horizon <= chunk_size`` raise."""
+        model = _ModelStub(chunk_size=8)
+
+        with pytest.raises(ValueError, match="RTC timing values must satisfy"):
+            model._validate_rtc_inputs(inference_delay, execution_horizon, 10.0)
+
+    def test_rejects_negative_guidance_weight(self) -> None:
+        """A negative guidance weight raises."""
+        model = _ModelStub(chunk_size=8)
+
+        with pytest.raises(ValueError, match="must be non-negative"):
+            model._validate_rtc_inputs(2, 5, -1.0)
+
+
 class TestModelMixinFlag:
     """Tests for the model-side ``enable_rtc`` flag."""
 

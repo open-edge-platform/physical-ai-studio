@@ -20,9 +20,8 @@ from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.manifest import Manifest
 
-from physicalai.data.observation import PREV_CHUNK_LEFT_OVER, Observation
+from physicalai.data.observation import Observation
 from physicalai.export.backends import TorchExportParameters
-from physicalai.policies.mixins.rtc import RTCPolicyMixin
 
 if TYPE_CHECKING:
     from collections.abc import Callable

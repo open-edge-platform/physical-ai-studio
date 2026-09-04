@@ -299,10 +299,14 @@ class SmolVLAModel(RTCModelMixin, Model):
 
         rtc_kwargs: dict[str, Any] = {}
         if self.enable_rtc:
+            max_guidance = batch.get(RTC_MAX_GUIDANCE_WEIGHT, 0.0)
+            execution_horizon = batch.get(RTC_EXECUTION_HORIZON, 0)
+            inference_delay = batch.get(RTC_INFERENCE_DELAY, 0.0)
+            self._validate_rtc_inputs(inference_delay, execution_horizon, max_guidance)
             rtc_kwargs = {
-                "rtc_max_guidance": batch.get(RTC_MAX_GUIDANCE_WEIGHT, 0.0),
-                "rtc_execution_horizon": batch.get(RTC_EXECUTION_HORIZON, 0),
-                "rtc_latency": batch.get(RTC_INFERENCE_DELAY, 0.0),
+                "rtc_max_guidance": max_guidance,
+                "rtc_execution_horizon": execution_horizon,
+                "rtc_latency": inference_delay,
                 "rtc_prev_action_chunk": self._pad_prev_chunk(batch.get(PREV_CHUNK_LEFT_OVER)),
             }
 

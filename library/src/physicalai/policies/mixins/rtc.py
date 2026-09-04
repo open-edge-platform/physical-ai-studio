@@ -241,3 +241,45 @@ class RTCModelMixin:
         guidance_weight = torch.minimum(guidance_weight, max_gw)
 
         return v_t - guidance_weight * correction
+
+    def _validate_rtc_inputs(
+        self,
+        inference_delay: float | Tensor,
+        execution_horizon: float | Tensor,
+        max_guidance_weight: float | Tensor,
+    ) -> None:
+        """Validate the RTC control values parsed from an inference batch.
+
+        Values may arrive as Python numbers or as scalar tensors carried in the
+        batch. Validation is skipped while tracing or exporting, where the values
+        are graph placeholders rather than concrete numbers.
+
+        Args:
+            inference_delay: Number of actions expected to be consumed while the
+                new chunk is still being computed.
+            execution_horizon: Number of fresh actions taken from the new chunk.
+            max_guidance_weight: Upper bound on the RTC guidance weight.
+
+        Raises:
+            ValueError: If the timing values do not satisfy
+                ``0 <= inference_delay <= execution_horizon <= chunk_size``, or if
+                ``max_guidance_weight`` is negative.
+        """
+        if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
+            return
+
+        delay, horizon, guidance = (
+            float(value.flatten()[0]) if isinstance(value, torch.Tensor) else float(value)
+            for value in (inference_delay, execution_horizon, max_guidance_weight)
+        )
+
+        if not 0 <= delay <= horizon <= self._chunk_size:
+            msg = (
+                "RTC timing values must satisfy 0 <= inference_delay <= execution_horizon <= chunk_size, "
+                f"got inference_delay={delay}, execution_horizon={horizon}, chunk_size={self._chunk_size}."
+            )
+            raise ValueError(msg)
+
+        if guidance < 0:
+            msg = f"RTC max_guidance_weight must be non-negative, got {guidance}."
+            raise ValueError(msg)
