@@ -537,6 +537,8 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         populating any missing target-time parameters from the current model
         initialization.
         """
+        super().on_load_checkpoint(checkpoint)
+
         state_dict = checkpoint.get("state_dict")
         if not isinstance(state_dict, dict) or self.model is None:
             return

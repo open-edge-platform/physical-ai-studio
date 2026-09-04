@@ -12,7 +12,9 @@ denoising process with the unconsumed tail of the previous chunk.
 and forwards it to the underlying :class:`RTCModelMixin` model's ``enable_rtc``
 flag. Because policies may build their model lazily (e.g. during Lightning
 ``setup``), the desired state is cached on the policy and applied to the model
-via :meth:`RTCPolicyMixin._sync_rtc_to_model` once the model exists.
+via :meth:`RTCPolicyMixin._sync_rtc_to_model` once the model exists. The state
+is also written to (and restored from) Lightning checkpoints under the
+``rtc_enabled`` key.
 
 :class:`RTCModelMixin` carries that ``enable_rtc`` flag on the flow-matching
 model together with the guidance correction applied at each denoising step.
@@ -21,12 +23,15 @@ model together with the guidance correction applied at each denoising step.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 
 if TYPE_CHECKING:
     from torch import Tensor
+
+RTC_CHECKPOINT_KEY = "rtc_enabled"
+"""Top-level checkpoint key holding the persisted RTC toggle."""
 
 
 class RTCPolicyMixin:
@@ -94,6 +99,34 @@ class RTCPolicyMixin:
         model = getattr(self, "model", None)
         if isinstance(model, RTCModelMixin):
             model.enable_rtc = self._rtc_enabled
+
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Persist the RTC toggle alongside the Lightning checkpoint.
+
+        Args:
+            checkpoint: Checkpoint dictionary being written.
+        """
+        hook = getattr(super(), "on_save_checkpoint", None)
+        if hook is not None:
+            hook(checkpoint)
+        checkpoint[RTC_CHECKPOINT_KEY] = self.rtc_enabled
+
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Restore the RTC toggle from a Lightning checkpoint.
+
+        Checkpoints written before RTC was persisted simply leave the current
+        state untouched.
+
+        Args:
+            checkpoint: Checkpoint dictionary being loaded.
+        """
+        hook = getattr(super(), "on_load_checkpoint", None)
+        if hook is not None:
+            hook(checkpoint)
+        stored = checkpoint.get(RTC_CHECKPOINT_KEY)
+        if stored is None:
+            return
+        self.rtc_enabled = bool(stored) and self.supports_rtc
 
 
 class RTCModelMixin:

@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from physicalai.policies.mixins.rtc import RTCModelMixin, RTCPolicyMixin
+from physicalai.policies.mixins.rtc import RTC_CHECKPOINT_KEY, RTCModelMixin, RTCPolicyMixin
 
 
 class _ModelStub(RTCModelMixin):
@@ -151,6 +151,63 @@ class TestModelWithoutRtcSupport:
         policy._sync_rtc_to_model()
 
         assert not hasattr(policy.model, "enable_rtc")
+
+
+class TestCheckpointPersistence:
+    """Tests for saving/restoring the RTC toggle through checkpoints."""
+
+    def test_save_writes_flag(self) -> None:
+        """The enabled state is written to the checkpoint dict."""
+        policy = _PolicyStub(model=_ModelStub())
+        policy.rtc_enabled = True
+
+        checkpoint: dict[str, object] = {}
+        policy.on_save_checkpoint(checkpoint)
+
+        assert checkpoint[RTC_CHECKPOINT_KEY] is True
+
+    def test_load_restores_flag(self) -> None:
+        """A saved state is restored onto the policy and its model."""
+        model = _ModelStub()
+        policy = _PolicyStub(model=model)
+
+        policy.on_load_checkpoint({RTC_CHECKPOINT_KEY: True})
+
+        assert policy.rtc_enabled is True
+        assert model.enable_rtc is True
+
+    def test_load_before_model_exists(self) -> None:
+        """A restored state is applied once the model is built."""
+        policy = _PolicyStub(model=None)
+
+        policy.on_load_checkpoint({RTC_CHECKPOINT_KEY: True})
+        model = _ModelStub()
+        policy.model = model
+        policy._sync_rtc_to_model()
+
+        assert model.enable_rtc is True
+
+    def test_load_legacy_checkpoint_is_noop(self) -> None:
+        """Checkpoints without the RTC key leave the current state untouched."""
+        model = _ModelStub()
+        policy = _PolicyStub(model=model)
+        policy.rtc_enabled = True
+
+        policy.on_load_checkpoint({})
+
+        assert policy.rtc_enabled is True
+
+    def test_load_enabled_on_unsupported_policy(self) -> None:
+        """Restoring an enabled flag onto an unsupported policy stays disabled."""
+
+        class _NoRtcPolicy(_PolicyStub):
+            supports_rtc = False
+
+        policy = _NoRtcPolicy(model=_ModelStub())
+
+        policy.on_load_checkpoint({RTC_CHECKPOINT_KEY: True})
+
+        assert policy.rtc_enabled is False
 
 
 class TestModelMixinFlag:

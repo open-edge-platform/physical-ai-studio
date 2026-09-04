@@ -118,13 +118,6 @@ class TorchAdapter(RuntimeAdapter):
                 .eval()
             )
 
-            # Enable RTC based on the exported manifest schema
-            if isinstance(self._policy, RTCPolicyMixin):
-                input_feature_names = {
-                    spec.init_args.get("name") for spec in manifest.model.input_features if spec.init_args
-                }
-                if PREV_CHUNK_LEFT_OVER in input_feature_names:
-                    self._policy.rtc_enabled = True
             # ``extra_export_args`` is contributed by ``ExportablePolicyMixin``
             # but ``nn.Module.__getattr__`` widens unknown attributes to
             # ``Module | Tensor``; narrow it explicitly for the type checker.
