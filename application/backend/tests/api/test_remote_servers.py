@@ -17,12 +17,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.dependencies import get_remote_server_service, require_ssh_feature_active
-from core.security import SshFeatureAvailability
+from core.security import SshFeatureAvailability, get_ssh_feature_availability
 from exceptions import ResourceNotFoundError, ResourceType
 from main import app
 from schemas.hardware import DeviceType
 from schemas.remote_server import RemoteServer, SshHostAliasOption
-from schemas.ssh_preflight import CheckKey, CheckOutcome, PreflightCheck, PreflightResult
+from schemas.ssh_preflight import CheckKey, CheckOutcome, PreflightCheck, PreflightResult, RemoteServerStatus
 
 CHECKED_AT = datetime.now(UTC)
 
@@ -110,7 +110,7 @@ def _gpu_busy_warning_result() -> PreflightResult:
 
 
 def _active() -> SshFeatureAvailability:
-    return SshFeatureAvailability(enabled=True, network_exposed=False)
+    return SshFeatureAvailability(network_exposed=False)
 
 
 @pytest.fixture(autouse=True)
@@ -148,28 +148,59 @@ def test_list_remote_servers_non_empty():
     assert body[0]["id"] == str(server.id)
 
 
-def test_list_remote_servers_fails_closed_when_feature_inactive():
-    """No override for `require_ssh_feature_active`: the real (disabled-by-default) check runs."""
+def test_list_remote_servers_fails_closed_when_network_exposed(monkeypatch: pytest.MonkeyPatch):
+    """No override for `require_ssh_feature_active`: the real check runs.
+
+    There is no on/off switch anymore - the feature is always active - so this
+    exercises the one thing that still fails it closed: binding to a
+    non-loopback address.
+    """
     del app.dependency_overrides[require_ssh_feature_active]
+    monkeypatch.setenv("HOST", "0.0.0.0")
+    get_ssh_feature_availability.cache_clear()
     service = AsyncMock()
     service.list_remote_servers.return_value = []
     app.dependency_overrides[get_remote_server_service] = lambda: service
 
-    response = TestClient(app).get("/api/remote-servers")
+    try:
+        response = TestClient(app).get("/api/remote-servers")
+    finally:
+        get_ssh_feature_availability.cache_clear()
 
     assert response.status_code == 503
 
 
-def test_feature_status_endpoint_reports_disabled_by_default():
+def test_feature_status_endpoint_reports_active_on_loopback(monkeypatch: pytest.MonkeyPatch):
     """Reachable with no dependency override and no auth - it explains the 503 above."""
     del app.dependency_overrides[require_ssh_feature_active]
+    monkeypatch.setenv("HOST", "127.0.0.1")
+    get_ssh_feature_availability.cache_clear()
 
-    response = TestClient(app).get("/api/remote-servers/feature-status")
+    try:
+        response = TestClient(app).get("/api/remote-servers/feature-status")
+    finally:
+        get_ssh_feature_availability.cache_clear()
 
     assert response.status_code == 200
     body = response.json()
-    assert body["enabled"] is False
     assert body["network_exposed"] is False
+
+
+def test_feature_status_endpoint_reports_network_exposed(monkeypatch: pytest.MonkeyPatch):
+    """The unauthenticated status endpoint reflects the fail-closed check too."""
+    del app.dependency_overrides[require_ssh_feature_active]
+    monkeypatch.setenv("HOST", "0.0.0.0")
+    get_ssh_feature_availability.cache_clear()
+
+    try:
+        response = TestClient(app).get("/api/remote-servers/feature-status")
+    finally:
+        get_ssh_feature_availability.cache_clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["network_exposed"] is True
+    assert body["reason"] is not None
 
 
 def test_list_ssh_host_aliases_returns_mocked_list(monkeypatch: pytest.MonkeyPatch):
@@ -200,6 +231,41 @@ def test_list_ssh_host_aliases_response_never_leaks_credential_fields(monkeypatc
     body_text = response.text.lower()
     for forbidden in ("identityfile", "identityagent", "certificatefile", "password"):
         assert forbidden not in body_text
+
+
+def test_detect_device_type_returns_detected_cuda(monkeypatch: pytest.MonkeyPatch):
+    detect = AsyncMock(return_value=(DeviceType.CUDA, "nvidia-smi", None))
+    monkeypatch.setattr("api.remote_servers.preflight.detect_device_type", detect)
+
+    response = TestClient(app).get("/api/remote-servers/aliases/gpu-box/device-type")
+
+    assert response.status_code == 200
+    assert response.json() == {"device_type": "cuda", "method": "nvidia-smi", "reason_code": None}
+    detect.assert_awaited_once_with("gpu-box")
+
+
+def test_detect_device_type_reports_reason_code_when_undetected(monkeypatch: pytest.MonkeyPatch):
+    detect = AsyncMock(return_value=(None, None, "no_signal"))
+    monkeypatch.setattr("api.remote_servers.preflight.detect_device_type", detect)
+
+    response = TestClient(app).get("/api/remote-servers/aliases/gpu-box/device-type")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["device_type"] is None
+    assert body["reason_code"] == "no_signal"
+
+
+def test_detect_device_type_times_out_gracefully(monkeypatch: pytest.MonkeyPatch):
+    async def _hangs(_alias: str):
+        raise TimeoutError
+
+    monkeypatch.setattr("api.remote_servers.preflight.detect_device_type", _hangs)
+
+    response = TestClient(app).get("/api/remote-servers/aliases/gpu-box/device-type")
+
+    assert response.status_code == 200
+    assert response.json()["reason_code"] == "timed_out"
 
 
 def test_create_remote_server_success(monkeypatch: pytest.MonkeyPatch):
@@ -234,6 +300,41 @@ def test_create_remote_server_blocking_failure_returns_400_and_never_persists(mo
     assert response.json()["error_code"] == "remote_server_preflight_failed"
     service.create_remote_server.assert_not_called()
     service.create_remote_server.assert_not_awaited()
+
+
+def test_create_remote_server_blocking_failure_names_the_failed_checks(monkeypatch: pytest.MonkeyPatch):
+    """The rejection message must name which check failed and why, not just
+    that "required checks" failed - a user cannot fix what they cannot see.
+    """
+    failing = PreflightCheck(
+        key=CheckKey.DISK_SPACE,
+        tier=1,  # type: ignore[arg-type]
+        outcome=CheckOutcome.FAILED,
+        blocking=True,
+        checked_at=CHECKED_AT,
+        reason_code="insufficient_disk",
+        detail="3.2 GiB free, 20.0 GiB required",
+    )
+    result = PreflightResult(
+        remote_server_id=None,
+        tiers_run=[1],  # type: ignore[list-item]
+        checks=[failing],
+        checked_at=CHECKED_AT,
+        latency_ms=10,
+    )
+    monkeypatch.setattr("api.remote_servers.run_tier1_preflight", AsyncMock(return_value=result))
+
+    service = AsyncMock()
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    payload = {"name": "gpu-box", "ssh_host_alias": "gpu-box", "device_type": "cuda"}
+    response = TestClient(app).post("/api/remote-servers", json=payload)
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "remote_server_preflight_failed"
+    assert "Storage available" in body["message"]
+    assert "3.2 GiB free, 20.0 GiB required" in body["message"]
 
 
 def test_create_remote_server_succeeds_when_only_gpu_free_warns(monkeypatch: pytest.MonkeyPatch):
@@ -430,13 +531,26 @@ def test_check_remote_server_persists_degraded_status_on_blocking_failure(monkey
     assert tier2_result.passed is False
 
 
-def test_status_endpoint_assembles_from_mocked_tier1(monkeypatch: pytest.MonkeyPatch):
+def test_status_endpoint_assembles_from_mocked_service_status():
+    """The route is a thin pass-through: `RemoteServerService.get_status` owns
+    the Tier 1 probe, its own coalescing/throttling, and the in-use/GPU-wait
+    reads (see `test_remote_server_service.py` for those behaviors).
+    """
     server = _make_server()
-    run_tier1 = AsyncMock(return_value=_passing_tier1_result())
-    monkeypatch.setattr("api.remote_servers.run_tier1_preflight", run_tier1)
-
+    tier1_result = _passing_tier1_result()
+    status_response = RemoteServerStatus(
+        remote_server_id=server.id,
+        status="healthy",
+        device_type=server.device_type.value,
+        checks=tier1_result.checks,
+        checked_at=tier1_result.checked_at,
+        latency_ms=tier1_result.latency_ms,
+        reason_code=None,
+        in_use_by_job_id=None,
+        waiting_for_gpu=False,
+    )
     service = AsyncMock()
-    service.get_remote_server.return_value = server
+    service.get_status.return_value = status_response
     app.dependency_overrides[get_remote_server_service] = lambda: service
 
     response = TestClient(app).get(f"/api/remote-servers/{server.id}/status")
@@ -449,6 +563,51 @@ def test_status_endpoint_assembles_from_mocked_tier1(monkeypatch: pytest.MonkeyP
     assert len(body["checks"]) == 9
     assert body["in_use_by_job_id"] is None
     assert body["waiting_for_gpu"] is False
+    service.get_status.assert_awaited_once_with(server.id)
+
+
+def test_status_endpoint_surfaces_in_use_and_waiting_for_gpu():
+    """A busy server's in-use job id and GPU-wait state pass straight through."""
+    server = _make_server()
+    job_id = uuid4()
+    status_response = RemoteServerStatus(
+        remote_server_id=server.id,
+        status="healthy",
+        device_type=server.device_type.value,
+        checks=[],
+        checked_at=CHECKED_AT,
+        latency_ms=10,
+        reason_code=None,
+        in_use_by_job_id=job_id,
+        waiting_for_gpu=True,
+    )
+    service = AsyncMock()
+    service.get_status.return_value = status_response
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    response = TestClient(app).get(f"/api/remote-servers/{server.id}/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["in_use_by_job_id"] == str(job_id)
+    assert body["waiting_for_gpu"] is True
+
+
+def test_status_endpoint_converts_timeout_into_connection_error():
+    """A Tier 1 probe that exceeds its budget surfaces as a connection error,
+    not a bare 500 - the route still needs the server's alias for the message,
+    which it fetches separately once `get_status` times out.
+    """
+    server = _make_server()
+    service = AsyncMock()
+    service.get_status.side_effect = TimeoutError()
+    service.get_remote_server.return_value = server
+    app.dependency_overrides[get_remote_server_service] = lambda: service
+
+    response = TestClient(app).get(f"/api/remote-servers/{server.id}/status")
+
+    assert response.status_code == 502
+    service.get_remote_server.assert_awaited_once_with(server.id)
 
 
 @pytest.mark.parametrize(

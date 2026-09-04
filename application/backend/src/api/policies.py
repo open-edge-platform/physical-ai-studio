@@ -7,7 +7,7 @@ from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
 from pydantic import BaseModel
 
-from settings import get_settings
+from services.training_backends.local import resolve_hf_token
 
 router = APIRouter(prefix="/api/policies", tags=["Policies"])
 
@@ -26,6 +26,7 @@ _HUGGINGFACE_REQUIREMENTS = {
     # download. When adding/changing a policy, inspect its `from_pretrained`,
     # `hf_hub_download`, and `Auto*from_pretrained` calls and list every default
     # repository that Studio training needs here.
+    "pi0": (("google/paligemma-3b-pt-224", True),),
     "pi05": (
         ("lerobot/pi05_base", True),
         ("google/paligemma-3b-pt-224", True),
@@ -69,7 +70,7 @@ async def check_huggingface_access(policy: str) -> HuggingFaceAccessResponse:
     requirements = _HUGGINGFACE_REQUIREMENTS.get(policy, ())
     if not requirements:
         return HuggingFaceAccessResponse(requirements=[])
-    token = get_settings().huggingface.hf_token
+    token = resolve_hf_token()
     token_value = token.get_secret_value() if token is not None else ""
     if not token_value:
         return HuggingFaceAccessResponse(

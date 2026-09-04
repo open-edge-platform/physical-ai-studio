@@ -4,8 +4,13 @@
 """Startup recovery for SSH-provisioned training jobs.
 
 Runs once at studio startup, before the generic orphan-job abort in
-`services.training_service.TrainingService.abort_orphan_jobs`. For every
-non-terminal job with a persisted `JobProvisioningDB` row, `recover_ssh_jobs`:
+`services.training_service.TrainingService.abort_orphan_jobs`. Fails closed
+like the other SSH gates: if `core.security.get_ssh_feature_availability`
+reports the feature inactive, this never dials SSH or touches a container -
+every `JobProvisioningDB` row is left untouched for a future pass.
+
+For every non-terminal job with a persisted `JobProvisioningDB` row while the
+feature is active, `recover_ssh_jobs`:
 
 1. Reconciles stale rows - a row whose job already reached a terminal state,
    left behind by a crash between stopping a container and deleting its row.
@@ -38,6 +43,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from core.logging.utils import job_logging_ctx
+from core.security import get_ssh_feature_availability
 from exceptions import ResourceNotFoundError
 from schemas.base_job import JobStatus
 from services.ssh.provisioning import ReattachFailureReason, SshProvisioningService
@@ -184,7 +190,16 @@ async def _process_active_row(
         )
         return _RowVerdict(outcome="failed", active_on_server=None, failure_reason="server_not_registered")
 
-    outcome = await provisioning_service.verify_reattach(row, server)
+    try:
+        outcome = await provisioning_service.verify_reattach(row, server)
+    except Exception:  # one job's failure must not abort recovery of the rest
+        logger.exception(
+            "Reattach check for job {} on server '{}' raised unexpectedly; leaving pending for retry",
+            row.job_id,
+            server.name,
+        )
+        await _requeue_pending(job_service, row.job_id)
+        return _RowVerdict(outcome="transient", active_on_server=server.id)
 
     if outcome.ok:
         logger.info("Confirmed reattach for job {} on server '{}'", row.job_id, server.name)
@@ -258,6 +273,9 @@ async def recover_ssh_jobs(
     Safe to call with no SSH servers registered and no provisioning rows at
     all: every step degrades to a no-op.
     """
+    if not get_ssh_feature_availability().active:
+        return SshRecoveryReport()
+
     provisioning_service = SshProvisioningService(provisioning_repo, settings)
     active_rows = await provisioning_repo.list_active()
 

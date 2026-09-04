@@ -51,40 +51,21 @@ async def _run_startup_and_capture_logs(app: FastAPI) -> list[str]:
 
 
 @pytest.mark.anyio
-async def test_ssh_feature_enabled_on_non_loopback_logs_critical_and_deactivates(
-    monkeypatch, _stub_heavy_startup
-) -> None:
-    monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "true")
+async def test_ssh_feature_on_non_loopback_logs_critical_and_deactivates(monkeypatch, _stub_heavy_startup) -> None:
     monkeypatch.setenv("HOST", "0.0.0.0")
     get_ssh_feature_availability.cache_clear()
     app = FastAPI()
     messages = await _run_startup_and_capture_logs(app)
-    assert app.state.ssh_feature_availability.enabled is True
     assert app.state.ssh_feature_availability.network_exposed is True
     assert app.state.ssh_feature_availability.active is False
     assert any("SSH remote-trainer feature disabled at startup" in message for message in messages)
 
 
 @pytest.mark.anyio
-async def test_ssh_feature_enabled_on_loopback_logs_no_warning_and_stays_active(
-    monkeypatch, _stub_heavy_startup
-) -> None:
-    monkeypatch.setenv("SSH_REMOTE_TRAINER_ENABLED", "true")
+async def test_ssh_feature_on_loopback_logs_no_warning_and_stays_active(monkeypatch, _stub_heavy_startup) -> None:
     monkeypatch.setenv("HOST", "127.0.0.1")
     get_ssh_feature_availability.cache_clear()
     app = FastAPI()
     messages = await _run_startup_and_capture_logs(app)
     assert app.state.ssh_feature_availability.active is True
-    assert not any("SSH remote-trainer feature disabled at startup" in message for message in messages)
-
-
-@pytest.mark.anyio
-async def test_ssh_feature_disabled_by_default_logs_no_warning(monkeypatch, _stub_heavy_startup) -> None:
-    monkeypatch.delenv("SSH_REMOTE_TRAINER_ENABLED", raising=False)
-    monkeypatch.setenv("HOST", "0.0.0.0")
-    get_ssh_feature_availability.cache_clear()
-    app = FastAPI()
-    messages = await _run_startup_and_capture_logs(app)
-    assert app.state.ssh_feature_availability.enabled is False
-    assert app.state.ssh_feature_availability.active is False
     assert not any("SSH remote-trainer feature disabled at startup" in message for message in messages)

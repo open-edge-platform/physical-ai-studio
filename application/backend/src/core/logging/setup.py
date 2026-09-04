@@ -26,6 +26,15 @@ if TYPE_CHECKING:
 
 global_log_config = LogConfig()
 
+# Chatty at INFO (e.g. one line per SSH channel/HTTP request); quiet to WARNING.
+_NOISY_LOGGERS = ("asyncssh", "httpx", "httpcore")
+
+
+def _quiet_noisy_loggers() -> None:
+    """Raise the level of chatty third-party loggers to reduce log noise."""
+    for logger_name in _NOISY_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
 
 def setup_logging(config: LogConfig | None = None) -> None:
     """Configure application-wide logging with worker-specific log files.
@@ -51,6 +60,8 @@ def setup_logging(config: LogConfig | None = None) -> None:
 
     logger.remove()
     logger.add(sys.stderr, level=global_log_config.level)
+
+    _quiet_noisy_loggers()
 
     for worker_name, log_file in global_log_config.worker_log_info.items():
 

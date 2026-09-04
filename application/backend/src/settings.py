@@ -65,15 +65,144 @@ class HuggingFaceSettings(BaseModel):
         return value
 
 
+# Defaults for the SSH-provisioned training knobs that are both user-editable
+# (via `SshProvisioningSettings`) and read by the services (via the flat
+# `Settings.ssh_*` fields below). Declared once so the two views of the same
+# setting can never drift apart.
+_DEFAULT_SSH_CONNECT_TIMEOUT_S = 10.0
+_DEFAULT_SSH_COMMAND_TIMEOUT_S = 15.0
+_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S = 30.0
+_DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S = 1800.0
+_DEFAULT_SSH_READINESS_TIMEOUT_S = 120.0
+_DEFAULT_SSH_GPU_WAIT_GIVEUP_S = 1800.0
+_DEFAULT_SSH_MIN_FREE_DISK_BYTES = 50 * 1024 * 1024 * 1024
+
+
+class SshProvisioningSettings(BaseModel):
+    """User-editable settings for SSH-provisioned training.
+
+    Deliberately a *subset* of the `SSH_*` settings. The remaining ones - the
+    SSH config and `known_hosts` paths, the trainer image registry, and the
+    cosign signature policy - stay environment-only: they configure *how*
+    Studio trusts a host or an image, which is not something this
+    (unauthenticated) settings API should be able to move.
+
+    There is no master on/off switch: the feature is always active (subject
+    only to the fail-closed network-exposure check in
+    `core.security.ssh_network_exposure`). The risk this implies - no
+    authentication model, so anyone who can reach this backend can run
+    arbitrary code as root on a registered server - is surfaced as an
+    explicit warning in the UI when a user registers an SSH target, rather
+    than gated behind a switch here.
+
+    Every field below is a bounded timeout or limit whose worst case is a job
+    that gives up too early or waits too long, never a job that runs
+    somewhere it should not have.
+    """
+
+    connect_timeout_s: float = Field(default=_DEFAULT_SSH_CONNECT_TIMEOUT_S, gt=0)
+    command_timeout_s: float = Field(default=_DEFAULT_SSH_COMMAND_TIMEOUT_S, gt=0)
+    preflight_timeout_s: float = Field(default=_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S, gt=0)
+    image_pull_timeout_s: float = Field(default=_DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S, gt=0)
+    readiness_timeout_s: float = Field(default=_DEFAULT_SSH_READINESS_TIMEOUT_S, gt=0)
+    gpu_wait_giveup_s: float = Field(default=_DEFAULT_SSH_GPU_WAIT_GIVEUP_S, gt=0)
+    min_free_disk_bytes: int = Field(default=_DEFAULT_SSH_MIN_FREE_DISK_BYTES, ge=0)
+
+    @classmethod
+    def from_settings(cls, settings: "Settings") -> "SshProvisioningSettings":
+        """Project the flat `Settings.ssh_*` fields into the grouped view."""
+        return cls(**{group_key: getattr(settings, flat_key) for group_key, flat_key in _SSH_FIELD_MAP.items()})
+
+
+# Maps the grouped, UI-facing field names onto the flat `Settings` field names
+# the services read. The flat fields keep their aliases as the settings-file
+# storage keys, but - unlike the rest of `Settings` - are no longer readable
+# from the process environment or a `.env` file; see `_EnvExclusionSource`.
+_SSH_FIELD_MAP: dict[str, str] = {
+    "connect_timeout_s": "ssh_connect_timeout_s",
+    "command_timeout_s": "ssh_command_timeout_s",
+    "preflight_timeout_s": "ssh_preflight_timeout_s",
+    "image_pull_timeout_s": "ssh_image_pull_timeout_s",
+    "readiness_timeout_s": "ssh_readiness_timeout_s",
+    "gpu_wait_giveup_s": "ssh_gpu_wait_giveup_s",
+    "min_free_disk_bytes": "ssh_min_free_disk_bytes",
+}
+
 _USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface")
 
 
+def _storage_key(field_name: str) -> str:
+    """Return the key a top-level setting is stored under in the settings file.
+
+    Settings sources resolve a top-level field by its validation alias, not its
+    Python name, so an override has to be written under the alias - which is
+    also the setting's documented environment variable name - to be picked up.
+    """
+    field_info = Settings.model_fields[field_name]
+    return field_info.alias or field_name
+
+
+def _user_config_scalar_keys() -> tuple[str, ...]:
+    """Return the top-level (non-grouped) keys the settings API may write.
+
+    Unlike `_USER_CONFIG_GROUPS`, these settings live directly on `Settings`
+    rather than in a nested model, so they are stored under their alias.
+    """
+    return tuple(_storage_key(field_name) for field_name in _SSH_FIELD_MAP.values())
+
+
+def ssh_patch_to_flat(values: dict[str, Any] | None) -> dict[str, Any]:
+    """Translate a partial `SshProvisioningSettings` patch into stored overrides.
+
+    A `None` patch clears every SSH override, restoring each field's built-in
+    default. `_EnvExclusionSource` deliberately excludes these settings from
+    the environment/`.env` sources, so there is no environment value to fall
+    back to - only the field default (or an explicit `Settings(...)` init
+    kwarg, e.g. in tests).
+
+    Args:
+        values: Fields supplied by the caller, keyed by grouped field name, or
+            `None` to clear the whole group.
+
+    Returns:
+        The equivalent settings-file keys mapped to their values. Unknown keys
+        are dropped rather than written through.
+    """
+    if values is None:
+        return dict.fromkeys(_user_config_scalar_keys())
+    return {_storage_key(_SSH_FIELD_MAP[key]): value for key, value in values.items() if key in _SSH_FIELD_MAP}
+
+
 class UserConfigSettingsSource(JsonConfigSettingsSource):
-    """JSON settings source restricted to user-configurable groups."""
+    """JSON settings source restricted to user-configurable settings."""
 
     def __call__(self) -> dict[str, Any]:
         data: dict[str, Any] = super().__call__()
-        return {key: value for key, value in data.items() if key in _USER_CONFIG_GROUPS}
+        allowed = (*_USER_CONFIG_GROUPS, *_user_config_scalar_keys())
+        return {key: value for key, value in data.items() if key in allowed}
+
+
+class _EnvExclusionSource(PydanticBaseSettingsSource):
+    """Wraps an environment/`.env` source and drops the SSH-provisioning settings.
+
+    Those settings are exclusively user-editable through the settings page
+    and persisted to the settings JSON file (see `UserConfigSettingsSource`). Blocking them here
+    means a value saved through the settings API can never be silently
+    overridden by a stale environment variable or `.env` file on the next
+    restart, and there is exactly one place - the settings file - an operator
+    or the UI needs to look to know the effective value.
+    """
+
+    def __init__(self, wrapped: PydanticBaseSettingsSource) -> None:
+        self._wrapped = wrapped
+
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
+        return self._wrapped.get_field_value(field, field_name)
+
+    def __call__(self) -> dict[str, Any]:
+        data: dict[str, Any] = self._wrapped()
+        excluded = _user_config_scalar_keys()
+        return {key: value for key, value in data.items() if key not in excluded}
 
 
 class Settings(BaseSettings):
@@ -160,12 +289,15 @@ class Settings(BaseSettings):
     huggingface: HuggingFaceSettings = HuggingFaceSettings()
 
     # SSH-provisioned remote training
-    # Master switch. Off by default: the feature has no authentication model,
-    # so it must never be on for a deployment that is not a single-user
-    # localhost workstation. See `core.security.ssh_network_exposure`, which
-    # additionally fails this closed at startup if the backend is bound to a
-    # non-loopback address regardless of this setting.
-    ssh_remote_trainer_enabled: bool = Field(default=False, alias="SSH_REMOTE_TRAINER_ENABLED")
+    # No master on/off switch: the feature is always active, subject only to
+    # the fail-closed network-exposure check in `core.security.ssh_network_exposure`,
+    # which additionally fails this closed at startup if the backend is bound
+    # to a non-loopback address. The absence of an authentication model is
+    # surfaced as a warning in the UI when a user registers an SSH target.
+    #
+    # The knobs below are user-editable exclusively through the settings page
+    # / `PATCH /api/settings` (see `SshProvisioningSettings`) - never through
+    # the environment or a `.env` file; see `_EnvExclusionSource`.
     # Path to the user's SSH client config. asyncssh parses it to resolve a saved
     # `ssh_host_alias` into a hostname, port, user, and identity; Studio never
     # reads key material out of it.
@@ -174,13 +306,13 @@ class Settings(BaseSettings):
     # asyncssh, which fails closed on an unknown or changed key.
     ssh_known_hosts_path: Path = Field(default=Path("~/.ssh/known_hosts"), alias="SSH_KNOWN_HOSTS_PATH")
     # Overall budget for one SSH connect + auth. Bounds a save request.
-    ssh_connect_timeout_s: float = Field(default=10.0, alias="SSH_CONNECT_TIMEOUT_S")
+    ssh_connect_timeout_s: float = Field(default=_DEFAULT_SSH_CONNECT_TIMEOUT_S, alias="SSH_CONNECT_TIMEOUT_S")
     # Per-command budget for the cheap Tier 1 probes (docker version, nvidia-smi).
-    ssh_command_timeout_s: float = Field(default=15.0, alias="SSH_COMMAND_TIMEOUT_S")
+    ssh_command_timeout_s: float = Field(default=_DEFAULT_SSH_COMMAND_TIMEOUT_S, alias="SSH_COMMAND_TIMEOUT_S")
     # Budget for `docker pull` of the (multi-gigabyte) trainer image.
-    ssh_image_pull_timeout_s: float = Field(default=1800.0, alias="SSH_IMAGE_PULL_TIMEOUT_S")
+    ssh_image_pull_timeout_s: float = Field(default=_DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S, alias="SSH_IMAGE_PULL_TIMEOUT_S")
     # Overall budget for a full Tier 1 preflight, so a save can never hang.
-    ssh_preflight_timeout_s: float = Field(default=30.0, alias="SSH_PREFLIGHT_TIMEOUT_S")
+    ssh_preflight_timeout_s: float = Field(default=_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S, alias="SSH_PREFLIGHT_TIMEOUT_S")
     # Minimum time between preflight/status SSH connections to one server. Shared
     # by the status endpoint and the GPU-busy re-check so UI polling cannot
     # disrupt a running job or pile up connections.
@@ -193,7 +325,7 @@ class Settings(BaseSettings):
     # Free disk a server must have at save time for the image plus a nominal job.
     # The actual dataset size is re-checked at provisioning time.
     ssh_min_free_disk_bytes: int = Field(
-        default=50 * 1024 * 1024 * 1024,
+        default=_DEFAULT_SSH_MIN_FREE_DISK_BYTES,
         alias="SSH_MIN_FREE_DISK_BYTES",
     )
     # Maximum characters of streamed remote command output forwarded per line and
@@ -211,14 +343,14 @@ class Settings(BaseSettings):
     ssh_gpu_wait_initial_backoff_s: float = Field(default=5.0, alias="SSH_GPU_WAIT_INITIAL_BACKOFF_S")
     ssh_gpu_wait_max_backoff_s: float = Field(default=60.0, alias="SSH_GPU_WAIT_MAX_BACKOFF_S")
     # A job waiting this long for a busy GPU fails rather than waiting forever.
-    ssh_gpu_wait_giveup_s: float = Field(default=1800.0, alias="SSH_GPU_WAIT_GIVEUP_S")
+    ssh_gpu_wait_giveup_s: float = Field(default=_DEFAULT_SSH_GPU_WAIT_GIVEUP_S, alias="SSH_GPU_WAIT_GIVEUP_S")
 
     # --- SSH provisioning: container lifecycle ------------------------------
     # `docker stop`'s grace period before SIGKILL, bounding teardown latency.
     ssh_container_stop_timeout_s: int = Field(default=30, alias="SSH_CONTAINER_STOP_TIMEOUT_S")
     # Budget for the container to report healthy after launch, before the job
     # fails rather than uploading a dataset to a trainer that never came up.
-    ssh_readiness_timeout_s: float = Field(default=120.0, alias="SSH_READINESS_TIMEOUT_S")
+    ssh_readiness_timeout_s: float = Field(default=_DEFAULT_SSH_READINESS_TIMEOUT_S, alias="SSH_READINESS_TIMEOUT_S")
     ssh_readiness_poll_interval_s: float = Field(default=2.0, alias="SSH_READINESS_POLL_INTERVAL_S")
 
     # --- SSH provisioning: tunnel reconnect ---------------------------------
@@ -228,8 +360,11 @@ class Settings(BaseSettings):
     ssh_tunnel_reconnect_backoff_max_s: float = Field(default=15.0, alias="SSH_TUNNEL_RECONNECT_BACKOFF_MAX_S")
 
     # --- SSH provisioning: image signature verification ---------------------
-    # Pinned to the Studio release workflow so `cosign verify` cannot be
-    # satisfied by a signature from an unrelated identity/issuer.
+    # Pinned to the Studio release workflow so a Sigstore-signed image cannot
+    # be satisfied by a signature from an unrelated identity/issuer.
+    # See `services.ssh.sigstore_verify`, which uses the `sigstore` PyPI
+    # package to check the same certificate identity/issuer `cosign verify
+    # --certificate-identity-regexp`/`--certificate-oidc-issuer` would.
     cosign_certificate_identity_regexp: str = Field(
         default=r"https://github\.com/open-edge-platform/physical-ai-studio/\.github/workflows/.+",
         alias="COSIGN_CERTIFICATE_IDENTITY_REGEXP",
@@ -238,12 +373,6 @@ class Settings(BaseSettings):
         default="https://token.actions.githubusercontent.com",
         alias="COSIGN_OIDC_ISSUER",
     )
-    # Fails closed by default: a remote trainer host without `cosign` installed
-    # blocks the job rather than launching an unverified image. Set to `false`
-    # only for hosts where installing `cosign` is not viable; a failed
-    # `cosign verify` (as opposed to `cosign` being absent) still always blocks,
-    # since that indicates a signature mismatch rather than missing tooling.
-    ssh_require_cosign_verification: bool = Field(default=True, alias="SSH_REQUIRE_COSIGN_VERIFICATION")
 
     # --- SSH provisioning: library-version policy ---------------------------
     # Minimum `physicalai-train` version a trainer image must report. A job
@@ -292,6 +421,17 @@ class Settings(BaseSettings):
         """Get synchronous database URL"""
         return f"sqlite:///{self.data_dir / self.database_file}"
 
+    @property
+    def ssh(self) -> SshProvisioningSettings:
+        """The user-editable subset of the SSH-provisioning settings.
+
+        A read-only projection: the flat `ssh_*` fields above stay the single
+        source of truth that the services read, so an operator's `SSH_*`
+        environment variable and a value saved from the settings API resolve
+        through exactly the same field.
+        """
+        return SshProvisioningSettings.from_settings(self)
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -301,12 +441,18 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Resolve init kwargs, user JSON, environment, then .env."""
+        """Resolve init kwargs, user JSON, environment, then .env.
+
+        `env_settings` and `dotenv_settings` are wrapped in `_EnvExclusionSource`
+        so the SSH-provisioning settings can only ever come from an explicit
+        `Settings(...)` kwarg (used by tests) or the user settings file -
+        never from the process environment or `.env`.
+        """
         return (
             init_settings,
             UserConfigSettingsSource(settings_cls, json_file=get_settings_file_path()),
-            env_settings,
-            dotenv_settings,
+            _EnvExclusionSource(env_settings),
+            _EnvExclusionSource(dotenv_settings),
             file_secret_settings,
         )
 
@@ -315,7 +461,8 @@ def write_user_settings(data: dict[str, Any]) -> None:
     """Atomically persist allowed user-configurable settings."""
     path = get_settings_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    filtered = {key: value for key, value in data.items() if key in _USER_CONFIG_GROUPS and value is not None}
+    allowed = (*_USER_CONFIG_GROUPS, *_user_config_scalar_keys())
+    filtered = {key: value for key, value in data.items() if key in allowed and value is not None}
     fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix="settings.", suffix=".json.tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
@@ -363,6 +510,16 @@ def merge_user_settings(patch: dict[str, Any]) -> None:
             current.pop(group, None)
         elif isinstance(value, dict):
             current.setdefault(group, {}).update(value)
+    for key in _user_config_scalar_keys():
+        if key not in patch:
+            continue
+        value = patch[key]
+        if value is None:
+            # An explicit null clears the override so the setting falls back to
+            # its environment variable, or to the built-in default.
+            current.pop(key, None)
+        else:
+            current[key] = value
     write_user_settings(current)
 
 

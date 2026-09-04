@@ -18,6 +18,7 @@ class RemoteServerMapper(IBaseMapper):
             last_check_at=db_schema.last_check_at,
             last_check_latency_ms=db_schema.last_check_latency_ms,
             last_check_reason_code=db_schema.last_check_reason_code,
+            last_check_checks=[check.model_dump(mode="json") for check in db_schema.last_check_checks],
         )
 
     @staticmethod
@@ -33,6 +34,7 @@ class RemoteServerMapper(IBaseMapper):
                 "last_check_at": model.last_check_at,
                 "last_check_latency_ms": model.last_check_latency_ms,
                 "last_check_reason_code": model.last_check_reason_code,
+                "last_check_checks": model.last_check_checks or [],
                 "created_at": model.created_at,
                 "updated_at": model.updated_at,
             }

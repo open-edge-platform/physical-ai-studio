@@ -49,6 +49,11 @@ class RemoteServerDB(Base):
     last_check_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_check_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_check_reason_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Per-check detail (image resolution, signature, device probe, protocol) for
+    # the most recent Tier 2 ``/check`` run, serialized `PreflightCheck` list.
+    # Persisted so the UI can render the last verification's detail after a page
+    # refresh instead of resetting to "Not verified yet" until the user reruns it.
+    last_check_checks: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -314,7 +319,7 @@ class JobDB(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     end_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    payload: Mapped[str] = mapped_column(JSON, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
     extra_info: Mapped[str] = mapped_column(JSON, nullable=True)
 
     model: Mapped["ModelDB"] = relationship(
