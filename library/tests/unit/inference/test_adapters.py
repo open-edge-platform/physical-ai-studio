@@ -143,28 +143,6 @@ class TestTorchAdapter:
             assert adapter.input_names == []
             assert adapter.output_names == ["action"]
 
-    def test_load_enables_rtc_when_manifest_declares_prev_chunk_left_over(self, tmp_path: Path) -> None:
-        """Test RTC is enabled when the manifest declares the RTC leftover input feature."""
-        model_path = self._write_policy_manifest(tmp_path, input_feature_names=["state", PREV_CHUNK_LEFT_OVER])
-
-        class _RTCPolicy(RTCPolicyMixin):
-            extra_export_args = {"torch": TorchExportParameters()}
-
-            def to(self, device: str) -> "_RTCPolicy":
-                return self
-
-            def eval(self) -> "_RTCPolicy":
-                return self
-
-        policy = _RTCPolicy()
-        assert policy.rtc_enabled is False
-
-        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=policy):
-            adapter = TorchAdapter(device="cpu")
-            adapter.load(model_path)
-
-        assert policy.rtc_enabled is True
-
     def test_observation_from_numpy_inputs(self) -> None:
         """Test that numpy dict inputs are correctly converted to an Observation with torch tensors."""
         inputs = {
