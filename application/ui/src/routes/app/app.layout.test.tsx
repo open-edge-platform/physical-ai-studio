@@ -4,7 +4,7 @@ import { render as rtlRender, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { vi } from 'vitest';
 
-import { RestartStateProvider } from '../../features/system/restart-state';
+import { RestartStateProvider } from '../../features/system/restart-state-provider';
 import { createQueryClient } from '../../query-client/query-client';
 import { render } from '../../test-utils/render';
 import { AppLayout } from './app.layout';

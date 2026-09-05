@@ -9,7 +9,7 @@ import {
 } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 
-import { RestartStateProvider } from '../features/system/restart-state';
+import { RestartStateProvider } from '../features/system/restart-state-provider';
 import { createQueryClient } from '../query-client/query-client';
 
 type RenderOptions = RTLRenderOptions & {

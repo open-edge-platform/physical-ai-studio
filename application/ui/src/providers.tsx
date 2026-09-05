@@ -6,7 +6,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouterProps, MemoryRouter as Router, RouterProvider } from 'react-router';
 
 import { ZoomProvider } from './components/zoom/zoom';
-import { RestartStateProvider } from './features/system/restart-state';
+import { RestartStateProvider } from './features/system/restart-state-provider';
 import { queryClient } from './query-client/query-client';
 import { router } from './router';
 

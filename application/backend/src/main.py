@@ -36,6 +36,7 @@ from api.webui import SPAStaticFiles
 from core.lifecycle import lifespan
 from exception_handlers import register_application_exception_handlers
 from middleware.upload_size_guard import upload_size_guard_middleware
+from schemas.health import HealthResponse
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 
@@ -80,15 +81,15 @@ async def _upload_size_guard(request: Request, call_next: RequestResponseEndpoin
 
 
 @app.get("/api/health")
-async def health_check(response: Response, health_service: HealthServiceDep) -> dict[str, str | bool]:
+async def health_check(response: Response, health_service: HealthServiceDep) -> HealthResponse:
     """Health check endpoint."""
     response.headers["Cache-Control"] = "no-store"
     health_service.refresh_plugin_restart_required()
-    return {
-        "status": "healthy",
-        "instance_id": health_service.instance_id,
-        "restart_required": health_service.plugin_restart_required,
-    }
+    return HealthResponse(
+        status="healthy",
+        instance_id=health_service.instance_id,
+        restart_required=health_service.plugin_restart_required,
+    )
 
 
 # In docker deployment, the UI is built and served statically

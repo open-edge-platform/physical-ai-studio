@@ -16,12 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { $api } from '../../api/client';
 import { SchemaTrainJob } from '../../api/openapi-spec';
-
-type HealthResponse = {
-    status?: string;
-    instance_id?: string;
-    restart_required?: boolean;
-};
+import { pluralize } from '../../utils';
 
 type RestartStateValue = {
     restartRequired: boolean;
@@ -61,8 +56,8 @@ const RestartPromptDialog = ({
                     <Text>Plugin changes require a server restart to become active.</Text>
                     {activeTrainingJobCount > 0 ? (
                         <Text>
-                            Restarting now will interrupt {activeTrainingJobCount} active training job
-                            {activeTrainingJobCount === 1 ? '' : 's'}.
+                            Restarting now will interrupt {activeTrainingJobCount} active{' '}
+                            {pluralize(activeTrainingJobCount, 'training job', 'training jobs')}.
                         </Text>
                     ) : null}
                     {isRestarting ? (
@@ -104,13 +99,31 @@ export const RestartStateProvider = ({ children }: { children: ReactNode }) => {
         refetchOnWindowFocus: false,
         refetchOnReconnect: 'always',
     });
-    const health = healthQuery.data as HealthResponse | undefined;
-    const restartRequired = restartRequested || health?.restart_required === true;
+    const restartRequired = restartRequested || healthQuery.data?.restart_required === true;
 
     const activeTrainingJobCount = jobs.filter(
         (job): job is SchemaTrainJob =>
             job.type === 'training' && (job.status === 'running' || job.status === 'pending')
     ).length;
+
+    const refetchHealth = useCallback(async () => {
+        const { data } = await healthQuery.refetch();
+        const instanceId = data?.instance_id;
+        if (instanceId === undefined) {
+            return;
+        }
+
+        if (lastInstanceId.current !== undefined && instanceId !== lastInstanceId.current) {
+            // The server has restarted, so clear the query cache. Queries may hold stale data from
+            // before the restart, for example a project whose installed plugin was removed, or
+            // plugin data that only becomes available again after the restart.
+            queryClient.clear();
+            setIsRestarting(false);
+            setRestartRequested(false);
+            setRestartPromptOpen(false);
+        }
+        lastInstanceId.current = instanceId;
+    }, [healthQuery, queryClient]);
 
     const triggerRestartRequired = () => {
         setRestartRequested(true);
@@ -131,11 +144,8 @@ export const RestartStateProvider = ({ children }: { children: ReactNode }) => {
             return;
         }
 
-        const { data } = await healthQuery.refetch();
-        const instanceId = (data as HealthResponse | undefined)?.instance_id;
-        if (instanceId !== undefined) {
-            lastInstanceId.current = instanceId;
-        }
+        // Record the current instance id so we can confirm the restart once it changes.
+        await refetchHealth();
 
         setRestartPromptOpen(true);
         setIsRestarting(true);
@@ -145,22 +155,7 @@ export const RestartStateProvider = ({ children }: { children: ReactNode }) => {
         } catch {
             // The backend may replace itself before the response is returned.
         }
-    }, [healthQuery, isRestarting, restartMutation]);
-
-    useEffect(() => {
-        const instanceId = health?.instance_id;
-        if (instanceId === undefined) {
-            return;
-        }
-
-        if (lastInstanceId.current !== undefined && instanceId !== lastInstanceId.current) {
-            queryClient.clear();
-            setIsRestarting(false);
-            setRestartRequested(false);
-            setRestartPromptOpen(false);
-        }
-        lastInstanceId.current = instanceId;
-    }, [health?.instance_id, queryClient]);
+    }, [isRestarting, refetchHealth, restartMutation]);
 
     useEffect(() => {
         if (!isRestarting || healthQuery.isFetching) {
@@ -168,11 +163,11 @@ export const RestartStateProvider = ({ children }: { children: ReactNode }) => {
         }
 
         const timeout = window.setTimeout(() => {
-            void healthQuery.refetch();
+            void refetchHealth();
         }, HEALTH_POLL_INTERVAL_MS);
 
         return () => window.clearTimeout(timeout);
-    }, [healthQuery, isRestarting]);
+    }, [healthQuery, isRestarting, refetchHealth]);
 
     const value = useMemo(
         (): RestartStateValue => ({

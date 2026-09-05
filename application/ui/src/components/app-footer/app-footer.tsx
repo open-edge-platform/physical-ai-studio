@@ -1,4 +1,4 @@
-import { ActionButton, DialogTrigger, Divider, Flex, Icon, View } from '@geti-ui/ui';
+import { ActionButton, DialogTrigger, dimensionValue, Divider, Flex, Icon, View } from '@geti-ui/ui';
 import { Manifest } from '@geti-ui/ui/icons';
 
 import { JobStatus } from '../../features/jobs/footer/job-status';
@@ -25,7 +25,7 @@ export const AppFooter = ({ gridArea = 'footer' }: { gridArea?: string }) => {
                             <ActionButton
                                 isQuiet
                                 UNSAFE_style={{
-                                    paddingRight: 'var(--spectrum-global-dimension-size-100)',
+                                    paddingRight: dimensionValue('size-100'),
                                 }}
                             >
                                 <Icon>

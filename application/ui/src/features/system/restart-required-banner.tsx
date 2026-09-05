@@ -1,6 +1,6 @@
-import { Button, Flex, Text, View } from '@geti-ui/ui';
+import { Button, dimensionValue, Flex, Text, View } from '@geti-ui/ui';
 
-import { useRestartState } from './restart-state';
+import { useRestartState } from './restart-state-provider';
 
 export const RestartRequiredBanner = () => {
     const { restartRequired, isRestarting, openRestartPrompt } = useRestartState();
@@ -28,8 +28,8 @@ export const RestartRequiredBanner = () => {
                     isDisabled={isRestarting}
                     onPress={openRestartPrompt}
                     UNSAFE_style={{
-                        minHeight: '24px',
-                        paddingInline: 'var(--spectrum-global-dimension-size-200)',
+                        minHeight: dimensionValue('size-300'),
+                        paddingInline: dimensionValue('size-200'),
                         borderRadius: 0,
                     }}
                 >
