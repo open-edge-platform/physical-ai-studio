@@ -288,3 +288,9 @@ class RTCModelMixin:
         if guidance < 0:
             msg = f"RTC max_guidance_weight must be non-negative, got {guidance}."
             raise ValueError(msg)
+
+        if horizon > self._chunk_size // 2:
+            msg = (
+                "RTC execution horizon is restricted to be not greater than half of the chunk size:"
+                f" {horizon} > {self._chunk_size // 2}"
+            )
