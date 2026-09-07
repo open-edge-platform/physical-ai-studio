@@ -125,7 +125,7 @@ class ExportablePolicyMixin:
             # a leading batch dimension; tensor-shaped features get a batch of 1.
             shape = feature.shape if feature.shape == () else (1, *feature.shape)
             if feature.dtype is InferenceFeatureDtype.INT64:
-                input_sample[feature.name] = torch.zeros(shape, dtype=torch.int64)
+                input_sample[feature.name] = torch.randint(low=1, high=10**2, size=shape, dtype=torch.int64)
             else:
                 input_sample[feature.name] = torch.randn(shape, dtype=torch.float32)
 
