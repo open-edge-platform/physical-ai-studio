@@ -147,10 +147,7 @@ class RTCPolicyMixin:
             raise ValueError(msg)
 
         if self.config.n_action_steps != chunk_size:
-            msg = (
-                "RTC requires n_action_steps to match the chunk size: "
-                f"{self.config.n_action_steps} != {chunk_size}"
-            )
+            msg = f"RTC requires n_action_steps to match the chunk size: {self.config.n_action_steps} != {chunk_size}"
             raise ValueError(msg)
 
     def _sync_rtc_to_model(self) -> None:
