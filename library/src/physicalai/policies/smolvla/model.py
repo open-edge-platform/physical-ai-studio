@@ -314,8 +314,10 @@ class SmolVLAModel(RTCModelMixin, Model):
 
             rtc_kwargs = {
                 "rtc_max_guidance": max_guidance,
-                "rtc_execution_horizon": execution_horizon,
-                "rtc_latency": inference_delay,
+                "rtc_prefix_weights": self._compute_prefix_weights(
+                    inference_delay=torch.as_tensor(inference_delay, device=state.device),
+                    execution_horizon=torch.as_tensor(execution_horizon, device=state.device),
+                ),
                 "rtc_prev_action_chunk": self._pad_prev_chunk(batch.get(PREV_CHUNK_LEFT_OVER)),
             }
 
@@ -674,7 +676,7 @@ def _pad_tensor(tensor: torch.Tensor, max_len: int, pad_value: float = 0) -> tor
     return padded_tensor
 
 
-class VLAFlowMatching(SnapFlowModelMixin, RTCModelMixin, nn.Module):
+class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
     """SmolVLA internal model.
 
     [Paper](https://arxiv.org/abs/2506.01844)
@@ -1228,8 +1230,7 @@ class VLAFlowMatching(SnapFlowModelMixin, RTCModelMixin, nn.Module):
         state: torch.Tensor,
         noise: torch.Tensor | None = None,
         rtc_max_guidance: float = 0.0,
-        rtc_execution_horizon: int = 0,
-        rtc_latency: float = 0.0,
+        rtc_prefix_weights: torch.Tensor | None = None,
         rtc_prev_action_chunk: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Perform full inference forward pass to compute actions using a diffusion-based sampling process.
@@ -1248,8 +1249,7 @@ class VLAFlowMatching(SnapFlowModelMixin, RTCModelMixin, nn.Module):
             noise: Optional pre-sampled noise tensor. If None, noise will be sampled
                 with shape (batch_size, chunk_size, max_action_dim).
             rtc_max_guidance: Real-Time Chunking maximum guidance weight.
-            rtc_execution_horizon: Real-Time Chunking execution horizon (fresh actions per chunk).
-            rtc_latency: Real-Time Chunking inference delay estimate.
+            rtc_prefix_weights: Precomputed ``(1, chunk_size, 1)`` prefix attention weights.
             rtc_prev_action_chunk: Unconsumed tail of the previous chunk. RTC guidance is
                 applied only when this is provided.
 
@@ -1299,16 +1299,12 @@ class VLAFlowMatching(SnapFlowModelMixin, RTCModelMixin, nn.Module):
                 target_time=target_time,
             )
 
-            if rtc_prev_action_chunk is not None:
-                prefix_weights = self._compute_prefix_weights(
-                    inference_delay=torch.as_tensor(rtc_latency, device=device),
-                    execution_horizon=torch.as_tensor(rtc_execution_horizon, device=device),
-                )
-                v_t = self._rtc_correct(
+            if rtc_prev_action_chunk is not None and rtc_prefix_weights is not None:
+                v_t = RTCModelMixin._rtc_correct(  # noqa: SLF001
                     x_t,
                     v_t,
                     prev_chunk_left_over=rtc_prev_action_chunk,
-                    prefix_weights=prefix_weights,
+                    prefix_weights=rtc_prefix_weights,
                     time=time,
                     max_guidance_weight=torch.as_tensor(rtc_max_guidance, device=device),
                 )
