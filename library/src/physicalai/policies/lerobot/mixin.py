@@ -348,6 +348,10 @@ class LeRobotFromConfig(FromConfigMixin):
     ) -> Self:
         """Generic method to instantiate from any configuration format.
 
+        Raises:
+            TypeError: If a keyed configuration is not a mapping or overrides
+                are supplied for an unsupported configuration type.
+
         This method extends the base FromConfig.from_config() to additionally
         support LeRobot's PreTrainedConfig dataclasses.
 
@@ -400,11 +404,11 @@ class LeRobotFromConfig(FromConfigMixin):
             values.update(kwargs)
             return super().from_config(values)  # type: ignore[misc]
         if isinstance(config, dict):
-            values: Any = config[key] if key is not None else config
-            if not isinstance(values, dict):
-                msg = f"Configuration at key {key!r} must be a mapping, got {type(values)}"
+            mapping: Any = config[key] if key is not None else config
+            if not isinstance(mapping, dict):
+                msg = f"Configuration at key {key!r} must be a mapping, got {type(mapping)}"
                 raise TypeError(msg)
-            values = dict(values)
+            values = dict(mapping)
             values.update(kwargs)
             return super().from_config(values)  # type: ignore[misc]
         if key is not None or kwargs:
@@ -414,7 +418,11 @@ class LeRobotFromConfig(FromConfigMixin):
 
     @classmethod
     def from_dict(cls, config: dict[str, Any], **kwargs: Any) -> Self:  # noqa: ANN401
-        """Instantiate from a parameter mapping."""
+        """Instantiate from a parameter mapping.
+
+        Returns:
+            An instance of the policy class.
+        """
         return cls.from_config(config, **kwargs)
 
     @classmethod
@@ -452,7 +460,7 @@ class LeRobotFromConfig(FromConfigMixin):
                 >>> from lerobot.policies.act.configuration_act import ACTConfig
                 >>> policy = ACT.from_dataclass(ACTConfig(dim_model=512))
         """
-        if not dataclasses.is_dataclass(config):
+        if isinstance(config, type) or not dataclasses.is_dataclass(config):
             msg = f"Expected dataclass instance, got {type(config)}"
             raise TypeError(msg)
 
@@ -460,7 +468,8 @@ class LeRobotFromConfig(FromConfigMixin):
         if hasattr(config, "input_features") and hasattr(config, "output_features"):
             return cls.from_lerobot_config(config, **kwargs)  # type: ignore[arg-type]
 
-        values: Any = dataclasses.asdict(config)
+        config_obj: Any = config
+        values: Any = dataclasses.asdict(config_obj)
         if key is not None:
             values = values[key]
         if not isinstance(values, dict):

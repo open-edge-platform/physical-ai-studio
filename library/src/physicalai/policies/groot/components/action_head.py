@@ -135,15 +135,23 @@ class FlowMatchingActionHead(FromConfigMixin, nn.Module):
     """
 
     @classmethod
-    def from_config(cls, config: str | dict[str, Any] | FlowMatchingActionHeadConfig) -> FlowMatchingActionHead:
-        """Instantiate from a jsonargparse config or this class's dataclass."""
+    def from_config(cls, config: Any) -> FlowMatchingActionHead:  # noqa: ANN401
+        """Instantiate from a jsonargparse config or this class's dataclass.
+
+        Returns:
+            A configured action head.
+        """
         if dataclasses.is_dataclass(config) and not isinstance(config, type):
             config = dataclasses.asdict(config)
         return super().from_config(config)  # type: ignore[arg-type]
 
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> FlowMatchingActionHead:
-        """Instantiate from a parameter dictionary."""
+        """Instantiate from a parameter dictionary.
+
+        Returns:
+            A configured action head.
+        """
         return cls.from_config(config)
 
     def __init__(  # noqa: PLR0913

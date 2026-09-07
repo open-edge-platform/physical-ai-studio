@@ -66,7 +66,7 @@ class TestLeRobotFromConfig:
         """Generic dataclasses and mappings preserve constructor overrides."""
         from physicalai.policies.lerobot.mixin import LeRobotFromConfig
 
-        policy_cls = type("FallbackPolicy", (_FallbackPolicy, LeRobotFromConfig), {})
+        policy_cls: Any = type("FallbackPolicy", (_FallbackPolicy, LeRobotFromConfig), {})
         from_dataclass = policy_cls.from_config(_FallbackConfig(width=16), learning_rate=2e-3)
         from_dict = policy_cls.from_dict({"width": 32}, learning_rate=3e-3)
 
@@ -77,7 +77,7 @@ class TestLeRobotFromConfig:
         """Keyed mappings are extracted before applying configuration."""
         from physicalai.policies.lerobot.mixin import LeRobotFromConfig
 
-        policy_cls = type("FallbackPolicy", (_FallbackPolicy, LeRobotFromConfig), {})
+        policy_cls: Any = type("FallbackPolicy", (_FallbackPolicy, LeRobotFromConfig), {})
         policy = policy_cls.from_config({"policy": {"width": 24}}, key="policy")
 
         assert policy.width == 24

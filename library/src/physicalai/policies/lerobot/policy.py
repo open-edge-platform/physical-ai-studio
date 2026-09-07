@@ -81,7 +81,11 @@ dataset_to_policy_features = _load_dataset_to_policy_features()
 
 
 def _to_plain(value: object) -> object:  # noqa: PLR0911
-    """Convert nested dataclasses and tensors to checkpoint-safe plain values."""
+    """Convert nested dataclasses and tensors to checkpoint-safe plain values.
+
+    Returns:
+        A value containing only checkpoint-safe plain Python values.
+    """
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {field.name: _to_plain(getattr(value, field.name)) for field in dataclasses.fields(value)}
     if isinstance(value, dict):
@@ -100,7 +104,11 @@ def _to_plain(value: object) -> object:  # noqa: PLR0911
 
 
 def _parse_dataclass(config_cls: type[Any], values: dict[str, Any]) -> Any:  # noqa: ANN401
-    """Parse a dataclass through jsonargparse, including nested dataclasses."""
+    """Parse a dataclass through jsonargparse, including nested dataclasses.
+
+    Returns:
+        An instantiated configuration dataclass.
+    """
     field_names = {field.name for field in dataclasses.fields(config_cls)}
     parser = ArgumentParser(exit_on_error=False)
     parser.add_class_arguments(config_cls, "object")
@@ -509,6 +517,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         Raises:
             KeyError: If checkpoint doesn't contain required model config.
             ImportError: If LeRobot is not installed.
+            TypeError: If the policy configuration cannot be reconstructed.
 
         Examples:
             Load checkpoint for inference:
@@ -565,6 +574,9 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         # Reconstruct LeRobot config from dict
         policy_cls = get_policy_class(policy_name)
         config_cls = policy_cls.config_class  # type: ignore[attr-defined]
+        if config_cls is None:
+            msg = f"Policy '{policy_name}' does not expose a configuration dataclass."
+            raise TypeError(msg)
         config = _parse_dataclass(config_cls, config_dict)
         dataset_stats = checkpoint.get(DATASET_STATS_KEY)
 
