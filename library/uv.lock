@@ -4053,7 +4053,7 @@ requires-dist = [
     { name = "gymnasium", specifier = ">=0.29.1" },
     { name = "hf-libero", marker = "extra == 'libero'", specifier = ">=0.1.3,<0.2.0" },
     { name = "httpx", marker = "extra == 'tests'" },
-    { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.27.0" },
+    { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.50,<5" },
     { name = "lerobot", extras = ["dataset"], specifier = "==0.6.0" },
     { name = "lightning" },
     { name = "lightning-utilities" },
