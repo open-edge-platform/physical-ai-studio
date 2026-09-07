@@ -109,10 +109,17 @@ def _parse_dataclass(config_cls: type[Any], values: dict[str, Any]) -> Any:  # n
     Returns:
         An instantiated configuration dataclass.
     """
-    field_names = {field.name for field in dataclasses.fields(config_cls)}
+    fields = {field.name: field for field in dataclasses.fields(config_cls)}
     parser = ArgumentParser(exit_on_error=False)
     parser.add_class_arguments(config_cls, "object")
-    namespace = parser.parse_object({"object": {key: value for key, value in values.items() if key in field_names}})
+    filtered_values = {key: value for key, value in values.items() if key in fields}
+    # Some LeRobot releases annotate this legacy flag as ``int`` while
+    # serializing its boolean default. Normalize it before jsonargparse's
+    # strict type validation without changing the resulting config value.
+    for key, value in filtered_values.items():
+        if fields[key].type is int and isinstance(value, bool):
+            filtered_values[key] = int(value)
+    namespace = parser.parse_object({"object": filtered_values}, defaults=False)
     return parser.instantiate(namespace).object
 
 
@@ -508,7 +515,11 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
             map_location: Device to map tensors to. If None, uses default device.
             hparams_file: Unused. Kept for Lightning compatibility.
             strict: Unused. Kept for Lightning compatibility.
-            weights_only: Whether to load only weights (default True for security).
+            weights_only: Whether to restrict deserialization to tensors and safe
+                primitives. When omitted, defaults to ``False`` because Lightning
+                checkpoints contain trusted LeRobot configuration/dataclass metadata
+                required to reconstruct the policy. Pass ``True`` explicitly when
+                loading a checkpoint that contains only weights and safe metadata.
             **kwargs: Additional arguments passed to the policy constructor.
 
         Returns:
@@ -549,7 +560,12 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         checkpoint = torch.load(  # nosec B614
             checkpoint_path,
             map_location=map_location,
-            weights_only=weights_only if weights_only is not None else True,
+            # Lightning checkpoints contain trusted LeRobot config/dataclass
+            # metadata (for example FeatureType) that PyTorch's weights-only
+            # unpickler rejects. Preserve an explicit True for callers that need
+            # restricted deserialization, but use the Lightning-compatible full
+            # unpickler by default for these trusted checkpoints.
+            weights_only=False if weights_only is None else weights_only,
         )
 
         # Extract model config dict
