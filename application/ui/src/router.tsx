@@ -279,6 +279,33 @@ export const router = createBrowserRouter([
                                     },
                                     {
                                         path: paths.project.robots.show.pattern,
+                                        loader: async ({ params }) => {
+                                            const { robot_id, project_id } = params;
+
+                                            if (project_id === undefined || robot_id === undefined) {
+                                                return redirect(paths.projects.index({}));
+                                            }
+
+                                            const { error } = await fetchClient.GET(
+                                                '/api/projects/{project_id}/robots/{robot_id}',
+                                                {
+                                                    params: {
+                                                        path: {
+                                                            robot_id,
+                                                            project_id,
+                                                        },
+                                                    },
+                                                }
+                                            );
+
+                                            if (
+                                                error !== undefined &&
+                                                'http_status' in error &&
+                                                error.http_status === 404
+                                            ) {
+                                                return redirect(paths.project.robots.index({ project_id }));
+                                            }
+                                        },
                                         element: <Robot />,
                                     },
                                 ],
