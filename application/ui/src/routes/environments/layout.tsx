@@ -1,12 +1,13 @@
 import { Suspense } from 'react';
 
-import { ActionButton, Flex, Grid, Heading, Item, Loading, Menu, MenuTrigger, minmax, Text, View } from '@geti-ui/ui';
-import { Add, MoreMenu } from '@geti-ui/ui/icons';
+import { ActionButton, Flex, Grid, Heading, Item, Loading, Menu, MenuTrigger, minmax, View } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { Link, NavLink, Outlet, useParams } from 'react-router';
+import { NavLink, Outlet, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
 import { SchemaEnvironmentOutput } from '../../api/openapi-spec';
+import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../router';
 
@@ -87,12 +88,9 @@ export const EnvironmentsList = () => {
 
     return (
         <Flex direction='column' gap='size-200'>
-            <Link to={paths.project.environments.new({ project_id })} className={classes.addNewRobotButton}>
-                <Flex alignItems={'center'} justifyContent={'center'} gap={'size-75'}>
-                    <Add />
-                    <Text UNSAFE_style={{ lineHeight: '1.2' }}>Configure a new environment</Text>
-                </Flex>
-            </Link>
+            <AddResourceButton to={paths.project.environments.new({ project_id })}>
+                Configure a new environment
+            </AddResourceButton>
 
             <Flex direction='column' gap='size-100'>
                 {environmentsQuery.data.map((environment) => {

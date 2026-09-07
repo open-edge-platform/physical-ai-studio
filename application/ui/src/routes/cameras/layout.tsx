@@ -11,7 +11,6 @@ import {
     Flex,
     Grid,
     Heading,
-    Icon,
     Item,
     Loading,
     Menu,
@@ -20,13 +19,14 @@ import {
     toast,
     View,
 } from '@geti-ui/ui';
-import { Add, MoreMenu } from '@geti-ui/ui/icons';
+import { MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 import { NavLink, Outlet, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
 import { getApiErrorMessage, isRecordingLockedError, isResourceInUseError } from '../../api/errors';
 import { SchemaProjectCamera } from '../../api/types';
+import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
 import { fingerprintKey, formatFingerprint } from '../../features/cameras/fingerprint';
 import { useProjectId } from '../../features/projects/use-project';
 import { ConnectionStatus } from '../../features/robots/robots-list';
@@ -229,16 +229,7 @@ export const CamerasList = () => {
                 </Flex>
                 <Divider size='S' marginY='size-200' />
             </View>
-            <Button
-                variant='secondary'
-                href={paths.project.cameras.new({ project_id })}
-                UNSAFE_className={classes.addNewRobotButton}
-            >
-                <Icon marginEnd='size-50'>
-                    <Add />
-                </Icon>
-                Configure new camera
-            </Button>
+            <AddResourceButton to={paths.project.cameras.new({ project_id })}>Configure new camera</AddResourceButton>
 
             <Flex direction='column' gap='size-100'>
                 {projectCameras.map((camera) => {
