@@ -63,3 +63,35 @@ class ModelDownloadService:
                 archive.write(path, arcname=path.relative_to(export_dir))
 
         return archive_path
+
+    def create_runtime_export(
+        self,
+        export_dir: Path,
+        backend: str,
+        *,
+        runtime_yaml: str,
+        readme: str,
+    ) -> Path:
+        """Zip runtime.yaml, README.md, and ``exports/<backend>/`` artifacts.
+
+        :param export_dir: Path to the backend export directory on disk.
+        :param backend: Backend name used under ``exports/`` in the archive.
+        :param runtime_yaml: Runnable ``physicalai`` config text.
+        :param readme: Instructions and CHANGE_ME paths.
+        :return: Path to the temporary zip archive.
+        """
+        if not export_dir.exists() or not export_dir.is_dir():
+            raise FileNotFoundError(f"Backend export path not found or not a directory: {export_dir}")
+
+        archive_path = Path(tempfile.gettempdir()) / f"studio-runtime-{backend}-{uuid4()}.zip"
+        prefix = Path("exports") / backend
+
+        with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
+            archive.writestr("runtime.yaml", runtime_yaml)
+            archive.writestr("README.md", readme)
+            for path in export_dir.rglob("*"):
+                if not path.is_file():
+                    continue
+                archive.write(path, arcname=(prefix / path.relative_to(export_dir)).as_posix())
+
+        return archive_path

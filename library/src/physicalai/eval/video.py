@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 if TYPE_CHECKING:
     import numpy as np
@@ -81,6 +81,8 @@ class VideoRecorder:
             - "failures": Only save failed episodes (for debugging)
             - "successes": Only save successful episodes
             - "none": Disable recording
+        caption: Optional text (e.g. task description) burned into a black bar
+            at the bottom of every recorded frame.
 
     Attributes:
         output_dir: Directory where videos are saved.
@@ -140,6 +142,7 @@ class VideoRecorder:
         fps: int = 30,
         codec: str = "h264",
         record_mode: RecordMode = "all",
+        caption: str | None = None,
     ) -> None:
         """Initialize video recorder.
 
@@ -148,6 +151,7 @@ class VideoRecorder:
             fps: Frames per second for output video.
             codec: Video codec for encoding.
             record_mode: When to save videos.
+            caption: Optional text burned into a bar at the bottom of every frame.
         """
         _check_imageio_available()
 
@@ -156,6 +160,7 @@ class VideoRecorder:
         self.fps = fps
         self.codec = codec
         self.record_mode = record_mode
+        self.caption = caption
 
         self._frames: list[np.ndarray] = []
         self._current_episode_name: str | None = None
@@ -204,6 +209,9 @@ class VideoRecorder:
         # Ensure uint8
         if frame.dtype != np.uint8:
             frame = (frame * 255).astype(np.uint8) if frame.max() <= 1.0 else frame.astype(np.uint8)
+
+        if self.caption:
+            frame = _overlay_caption(frame, self.caption)
 
         self._frames.append(frame.copy())
 
@@ -308,6 +316,65 @@ class VideoRecorder:
     ) -> None:
         """Context manager exit."""
         self.close()
+
+
+def _overlay_caption(frame: np.ndarray, caption: str) -> np.ndarray:
+    """Return a copy of `frame` with `caption` burned into a black bar at the bottom.
+
+    Returns:
+        New (H + bar_height, W, C) uint8 array; `frame` itself is unmodified.
+    """
+    import numpy as np  # noqa: PLC0415
+    from PIL import Image, ImageDraw, ImageFont  # noqa: PLC0415
+
+    height, width = frame.shape[:2]
+    font_size = max(14, width // 24)
+    try:
+        font = ImageFont.load_default(size=font_size)
+    except TypeError:
+        # Older Pillow releases don't support the `size` kwarg on load_default.
+        font = ImageFont.load_default()
+
+    image = Image.fromarray(frame)
+    draw = ImageDraw.Draw(image)
+    lines = _wrap_caption(draw, font, caption, max_width=width - 16)
+
+    line_height = int(draw.textbbox((0, 0), "Ayg", font=font)[3]) + 6
+    bar_height = line_height * len(lines) + 10
+
+    canvas = Image.new("RGB", (width, height + bar_height), color=(0, 0, 0))
+    canvas.paste(image, (0, 0))
+    draw = ImageDraw.Draw(canvas)
+    y = height + 5
+    for line in lines:
+        text_width = draw.textlength(line, font=font)
+        draw.text((max(0, (width - text_width) / 2), y), line, fill=(255, 255, 255), font=font)
+        y += line_height
+
+    return np.array(canvas)
+
+
+def _wrap_caption(draw: Any, font: Any, text: str, max_width: int) -> list[str]:  # noqa: ANN401
+    """Greedily wrap `text` into lines that fit within `max_width` pixels.
+
+    Returns:
+        List of wrapped text lines (at least one, even if empty).
+    """
+    words = text.split()
+    if not words:
+        return [text]
+
+    lines: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if draw.textlength(candidate, font=font) <= max_width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
 
 
 __all__ = ["RecordMode", "VideoRecorder"]

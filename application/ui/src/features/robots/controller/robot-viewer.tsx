@@ -101,6 +101,19 @@ interface RobotViewerProps {
     featureValues?: number[];
     featureNames?: string[];
 }
+
+export const UnavailableRobotViewer = ({ robotType }: { robotType: string }) => (
+    <div className={classes.viewer}>
+        <div className={classes.canvas}>
+            <div className={classes.errorOverlay} role='alert'>
+                <span>
+                    Plugin unavailable: reinstall <strong>{robotType}</strong> to view or interact with this robot.
+                </span>
+            </div>
+        </div>
+    </div>
+);
+
 export const RobotViewer = ({ robot = { type: 'SO101_Follower' }, featureValues, featureNames }: RobotViewerProps) => {
     const angle = degToRad(-45);
     const isTrossen = robot.type.toLowerCase().includes('trossen');

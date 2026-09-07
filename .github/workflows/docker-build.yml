@@ -21,7 +21,7 @@ jobs:
     steps:
       - &harden-runner
         name: Harden the runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -103,7 +103,7 @@ jobs:
       - *checkout
 
       - name: Log in to Container Registry
-        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -136,6 +136,13 @@ jobs:
         working-directory: application/docker
         run: |
           SERVICE_NAME="physical-ai-studio-${DEVICE}"
+
+          # Remove any container left over from a prior run on this runner
+          # (e.g. a cancelled job via the workflow's concurrency group never
+          # reaches the cleanup step below), otherwise `docker run --name`
+          # below fails with "Conflict. The container name ... is already
+          # in use".
+          docker rm -f "${SERVICE_NAME}" > /dev/null 2>&1 || true
 
           # CUDA requires GPU hardware, test with docker run instead of compose
           # CPU and XPU test via compose to validate the full deployment config

@@ -17,7 +17,7 @@ from core.scheduler import Scheduler
 from exceptions import ResourceNotFoundError, ResourceType
 from schemas import Job
 from schemas.base_job import JobStatus
-from schemas.job import TrainingTarget, TrainJob, TrainJobPayload
+from schemas.job import RemoteTrainJobPayload, TrainJob, TrainJobPayload
 from services import JobService, ModelMetricsService
 from services.event_processor import EventProcessor, EventType
 
@@ -90,7 +90,7 @@ async def get_model_job_metrics(
         return EventSourceResponse(model_metrics_service.tail_csv_file(metrics_path))
     if (
         isinstance(job, TrainJob)
-        and job.payload.training_target is TrainingTarget.REMOTE
+        and isinstance(job.payload, RemoteTrainJobPayload)
         and job.payload.remote_trainer_url is not None
         and job.payload.remote_job_id is not None
     ):

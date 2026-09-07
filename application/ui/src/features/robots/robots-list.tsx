@@ -5,11 +5,18 @@ import { clsx } from 'clsx';
 import { NavLink } from 'react-router';
 
 import { $api } from '../../api/client';
-import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
+import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
+import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
+import {
+    sessionActivity,
+    sessionForRobot,
+    sessionStatusVariant,
+    useRuntimeSessions,
+} from '../runtime-sessions/use-runtime-sessions';
 import RobotArm from './../../assets/robot-arm.webp';
-import { SchemaRobot } from './robot-types';
+import { isUnavailableRobot, SchemaRobot } from './robot-types';
 
 import classes from './robots-list.module.css';
 
@@ -40,14 +47,11 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
 
     const editPath = paths.project.robots.edit({ project_id, robot_id: robot.id });
     const isSO101 = robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader';
+    const isUnavailable = isUnavailableRobot(robot);
 
     return (
         <MenuTrigger>
-            <ActionButton
-                aria-label={`Actions for ${robot.name}`}
-                isQuiet
-                UNSAFE_style={{ fill: 'var(--spectrum-gray-900)' }}
-            >
+            <ActionButton aria-label={`Actions for ${robot.name}`} isQuiet>
                 <MoreMenu />
             </ActionButton>
             <Menu
@@ -61,7 +65,7 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                             { params: { path: { project_id, robot_id: robot.id } } },
                             {
                                 onError: (error) => {
-                                    if (isResourceInUseError(error)) {
+                                    if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
                                         toast.info(
                                             getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.'
                                         );
@@ -81,9 +85,11 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                     }
                 }}
             >
-                <Item key='edit' href={editPath}>
-                    Edit
-                </Item>
+                {isUnavailable ? null : (
+                    <Item key='edit' href={editPath}>
+                        Edit
+                    </Item>
+                )}
                 {isSO101 ? <Item key='export-calibration'>Export calibration</Item> : null}
                 <Item key='delete'>Delete</Item>
             </Menu>
@@ -91,17 +97,41 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
     );
 };
 
-export const ConnectionStatus = ({ status }: { status: 'online' | 'offline' | 'unknown' }) => {
+export const SessionStatus = ({ session }: { session: SchemaRuntimeSessionInfo | undefined }) => {
+    if (session === undefined) {
+        return null;
+    }
+
+    return (
+        <StatusLight variant={sessionStatusVariant(session)}>
+            <View>Session · {sessionActivity(session)}</View>
+        </StatusLight>
+    );
+};
+
+export const ConnectionStatus = ({
+    status,
+    isUnavailable = false,
+}: {
+    status: 'online' | 'offline' | 'unknown';
+    isUnavailable?: boolean;
+}) => {
     const Capitalize = (str: string) => {
         return str.charAt(0).toUpperCase() + str.slice(1);
     };
 
     return (
         <StatusLight
-            variant={status === 'online' ? 'positive' : status == 'unknown' ? 'notice' : 'negative'}
+            variant={status === 'online' ? 'positive' : status === 'unknown' ? 'notice' : 'negative'}
             UNSAFE_className={classes.connectionStatus}
         >
-            {status === 'unknown' ? <View>Loading...</View> : <View>{Capitalize(status)}</View>}
+            {isUnavailable ? (
+                <View>Unavailable</View>
+            ) : status === 'unknown' ? (
+                <View>Loading...</View>
+            ) : (
+                <View>{Capitalize(status)}</View>
+            )}
         </StatusLight>
     );
 };
@@ -110,18 +140,21 @@ const RobotListItem = ({
     robot,
     status,
     isActive,
+    session,
 }: {
     robot: SchemaRobot;
     status: 'online' | 'offline' | 'unknown';
     isActive: boolean;
+    session: SchemaRuntimeSessionInfo | undefined;
 }) => {
-    const payload = robot.payload;
-    const connectionString =
-        ('connection_string' in payload ? payload.connection_string : undefined) ??
-        ('connection_string_left' in payload && 'connection_string_right' in payload
-            ? `${payload.connection_string_left} | ${payload.connection_string_right}`
-            : undefined);
-    const serialNumber = 'serial_number' in robot.payload ? robot.payload.serial_number : undefined;
+    const isUnavailable = isUnavailableRobot(robot);
+    const connectionString = isUnavailable
+        ? undefined
+        : (('connection_string' in robot.payload ? robot.payload.connection_string : undefined) ??
+          ('connection_string_left' in robot.payload && 'connection_string_right' in robot.payload
+              ? `${robot.payload.connection_string_left} | ${robot.payload.connection_string_right}`
+              : undefined));
+    const serialNumber = !isUnavailable && 'serial_number' in robot.payload ? robot.payload.serial_number : undefined;
 
     return (
         <View
@@ -141,9 +174,11 @@ const RobotListItem = ({
                     </Heading>
                     <View gridArea='type' UNSAFE_style={{ fontSize: '14px' }}>
                         {robot.type.replaceAll('_', ' ')}
+                        {isUnavailable ? ' (plugin unavailable)' : ''}
                     </View>
                     <View gridArea='status'>
-                        <ConnectionStatus status={status} />
+                        <ConnectionStatus status={status} isUnavailable={isUnavailable} />
+                        <SessionStatus session={session} />
                     </View>
                 </Grid>
                 <Flex direction={'row'} justifyContent={'space-between'}>
@@ -194,6 +229,10 @@ export const RobotsList = () => {
         suspense: false,
     });
 
+    // Sessions are host-wide, so this is one query for the page rather than one
+    // per row. A session name is rt-<robot id>, which makes the match exact.
+    const { data: runtimeSessions } = useRuntimeSessions();
+
     return (
         <Flex direction='column' gap='size-100'>
             <Button
@@ -225,6 +264,7 @@ export const RobotsList = () => {
                                     robot={robot}
                                     status={onlineProjectRobots === undefined ? 'unknown' : status}
                                     isActive={isActive}
+                                    session={sessionForRobot(runtimeSessions, robot.id)}
                                 />
                             );
                         }}

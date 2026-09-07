@@ -4,15 +4,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from exceptions import ResourceNotFoundError, ResourceType
 from repositories.project_environment_repo import ProjectEnvironmentRepository
+from robots.catalog.registry import RobotCatalogRegistry
 from schemas.environment import Environment, EnvironmentWithRelations
 
 
 class EnvironmentService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, catalog_registry: RobotCatalogRegistry) -> None:
         self.session = session
+        self.catalog_registry = catalog_registry
 
     def _repo(self, project_id: UUID) -> ProjectEnvironmentRepository:
-        return ProjectEnvironmentRepository(self.session, project_id)
+        return ProjectEnvironmentRepository(self.session, project_id, self.catalog_registry)
 
     async def get_environment_list(self, project_id: UUID) -> list[Environment]:
         return await self._repo(project_id).get_all()

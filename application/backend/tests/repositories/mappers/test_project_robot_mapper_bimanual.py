@@ -10,7 +10,10 @@ from uuid import uuid4
 import pytest
 
 from repositories.mappers.project_robot_mapper import ProjectRobotMapper
+from robots.catalog.registry import RobotCatalogRegistry
 from robots.catalog.widowxai import TrossenBimanualPayload, TrossenBimanualRobot
+from schemas.environment import RobotWithTeleoperator, TeleoperatorNoneWithRobot
+from schemas.robot import UnavailableRobot
 
 
 def _make_bimanual_db_model(robot_type: str):
@@ -37,7 +40,7 @@ class TestProjectRobotMapperBimanual:
     )
     def test_from_schema_returns_bimanual_robot(self, robot_type):
         db_model = _make_bimanual_db_model(robot_type)
-        result = ProjectRobotMapper.from_schema(db_model)
+        result = ProjectRobotMapper.from_schema(db_model, RobotCatalogRegistry())
 
         assert result.type == robot_type
         assert isinstance(result.payload, TrossenBimanualPayload)
@@ -73,7 +76,26 @@ class TestProjectRobotMapperBimanual:
         db_model.created_at = None
         db_model.updated_at = None
 
-        restored = ProjectRobotMapper.from_schema(db_model)
+        restored = ProjectRobotMapper.from_schema(db_model, RobotCatalogRegistry())
 
         assert restored.payload.connection_string_left == "192.168.10.1"
         assert restored.payload.connection_string_right == "192.168.10.2"
+
+    def test_from_schema_preserves_robot_from_unavailable_plugin(self):
+        db_model = _make_bimanual_db_model("MuJoCo_SO101_Follower")
+
+        result = ProjectRobotMapper.from_schema(db_model, RobotCatalogRegistry())
+
+        assert isinstance(result, UnavailableRobot)
+        assert result.type == "MuJoCo_SO101_Follower"
+        assert result.unavailable is True
+        assert result.payload == db_model.payload
+
+    def test_from_schema_uses_schema_adapter_for_available_robot(self):
+        registry = RobotCatalogRegistry()
+        db_model = _make_bimanual_db_model("Trossen_Bimanual_WidowXAI_Follower")
+
+        result = ProjectRobotMapper.from_schema(db_model, registry)
+        relation = RobotWithTeleoperator(robot=result, tele_operator=TeleoperatorNoneWithRobot())
+
+        assert relation.robot is result

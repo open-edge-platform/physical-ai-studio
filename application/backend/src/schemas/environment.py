@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.project_camera import Camera
-from schemas.robot import Robot
+from schemas.robot import ReadableRobot
 
 
 class TeleoperatorRobot(BaseModel):
@@ -109,7 +109,7 @@ class TeleoperatorRobotWithRobot(BaseModel):
 
     type: Literal["robot"] = "robot"
     robot_id: UUID = Field(..., description="ID of the robot acting as teleoperator")
-    robot: Robot | None = Field(None, description="Eager-loaded robot object")
+    robot: ReadableRobot | None = Field(None, description="Eager-loaded robot object")
 
 
 class TeleoperatorNoneWithRobot(BaseModel):
@@ -124,7 +124,7 @@ TeleoperatorWithRobot = Annotated[TeleoperatorRobotWithRobot | TeleoperatorNoneW
 class RobotWithTeleoperator(BaseModel):
     """Robot configuration with eager-loaded robot and teleoperator."""
 
-    robot: Robot = Field(..., description="The robot in this environment")
+    robot: ReadableRobot = Field(..., description="The robot in this environment")
     tele_operator: TeleoperatorWithRobot = Field(..., description="Teleoperator configuration with eager-loaded data")
 
     model_config = ConfigDict(
@@ -197,7 +197,7 @@ class EnvironmentWithRelations(BaseModel):
                     {
                         "id": "c8g5dfh9-269e-7d2h-d546-31ggc3dic786",
                         "name": "front_camera",
-                        "fingerprint": "/dev/video0",
+                        "fingerprint": {"path": "/dev/video0"},
                         "driver": "webcam",
                         "hardware_name": "Camera 1",
                         "resolution_width": 480,

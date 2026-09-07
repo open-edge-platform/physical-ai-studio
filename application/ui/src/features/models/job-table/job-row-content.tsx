@@ -1,9 +1,10 @@
-import { Heading, Item, TabList, TabPanels, Tabs, View } from '@geti-ui/ui';
+import { Item, TabList, TabPanels, Tabs, View } from '@geti-ui/ui';
 
 import { SchemaTrainJob } from '../../../api/openapi-spec';
 import { JobMetricsContent } from '../metrics/metrics';
+import { ComingSoon } from '../shared/coming-soon';
 
-import classes from '../model-table/model-row-content.module.css';
+import classes from '../models-table/model-row-content.module.css';
 
 interface JobRowContentProps {
     job: SchemaTrainJob;
@@ -13,7 +14,7 @@ export const JobRowContent = ({ job }: JobRowContentProps) => {
     return (
         <View UNSAFE_className={classes.modelRowContent}>
             <Tabs>
-                <TabList>
+                <TabList marginBottom={'size-200'}>
                     <Item key='metrics'>Model Metrics</Item>
                     <Item key='datasets'>Training Datasets</Item>
                 </TabList>
@@ -22,7 +23,7 @@ export const JobRowContent = ({ job }: JobRowContentProps) => {
                         <JobMetricsContent jobId={job.id!} />
                     </Item>
                     <Item key='datasets'>
-                        <Heading>Coming soon</Heading>
+                        <ComingSoon />
                     </Item>
                 </TabPanels>
             </Tabs>

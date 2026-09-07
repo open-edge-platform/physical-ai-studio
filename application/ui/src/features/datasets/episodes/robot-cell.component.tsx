@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 
 import { View } from '@geti-ui/ui';
 
-import { RobotViewer } from '../../robots/controller/robot-viewer';
+import { RobotViewer, UnavailableRobotViewer } from '../../robots/controller/robot-viewer';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
+import { isUnavailableRobot } from '../../robots/robot-types';
 import { useEpisodeViewer } from './episode-viewer-provider.component';
 
 const InnerCell = ({ robotId }: { robotId: string }) => {
@@ -23,6 +24,10 @@ const InnerCell = ({ robotId }: { robotId: string }) => {
     const robot = environment.robots?.find((r) => r.robot.id === robotId)?.robot;
     if (robot === undefined) {
         return <></>;
+    }
+
+    if (isUnavailableRobot(robot)) {
+        return <UnavailableRobotViewer robotType={robot.type} />;
     }
 
     return (

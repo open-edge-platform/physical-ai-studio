@@ -50,6 +50,8 @@ from physicalai.eval.rollout import evaluate_policy
 from physicalai.policies.base import Policy
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from physicalai.data import Observation
     from physicalai.eval.video import VideoRecorder
     from physicalai.gyms import Gym
@@ -204,7 +206,7 @@ class Benchmark:
 
         return results
 
-    frame_key: str = "image"
+    frame_key: str | Sequence[str] = "image"
 
     def _evaluate_gym(
         self,
@@ -234,7 +236,7 @@ class Benchmark:
 
         logger.info("Evaluating task %d/%d: %s", gym_idx + 1, total_gyms, task_id)
 
-        video_recorder = self._create_video_recorder(policy, task_id)
+        video_recorder = self._create_video_recorder(policy, task_id, caption=task_name)
 
         try:
             eval_result = evaluate_policy(
@@ -282,12 +284,14 @@ class Benchmark:
         self,
         policy: Policy | InferenceModel,
         task_id: str,
+        caption: str | None = None,
     ) -> VideoRecorder | None:
         """Create a VideoRecorder for the current task if video recording is enabled.
 
         Args:
             policy: Policy being evaluated (used for naming).
             task_id: Task identifier (used for naming).
+            caption: Optional text (e.g. task description) burned into every frame.
 
         Returns:
             VideoRecorder instance or None if recording is disabled.
@@ -304,6 +308,7 @@ class Benchmark:
             output_dir=video_path,
             fps=30,
             record_mode=self.record_mode,  # type: ignore[arg-type]
+            caption=caption,
         )
 
     def _build_metadata(self, policy: Policy) -> dict[str, Any]:

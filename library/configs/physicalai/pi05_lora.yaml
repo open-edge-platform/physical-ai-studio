@@ -1,0 +1,110 @@
+# Pi05 Policy Training Configuration - LoRA Fine-Tuning
+#
+# Fine-tunes a pretrained Pi05 checkpoint with LoRA (Low-Rank Adaptation) instead of
+# full fine-tuning. We target full attention + MLP on two experts using rank 32 with
+# alpha 32 (scaling = alpha / rank = 1.0). Drop rank to 16 if you see overfitting on
+# a small dataset, or raise to 64 for more capacity if you have plenty of data.
+# Learning rate is scaled up ~10x versus full fine-tuning, since only a small fraction
+# of parameters are being updated
+# Default LoRA target modules (see Pi05Model.get_default_peft_targets, and
+# Pi05Config.lora_target_modules to override) adapt, on *both* the action expert and the
+# PaliGemma VLM's language model:
+#   - full attention: q/k/v/o_proj (the original LoRA paper's ablation (Hu et al.
+#     2021, Table 6) found adapting all four attention matrices at lower rank beats q/v
+#     alone at higher rank for the same parameter budget)
+#   - MLP: gate/up/down_proj (holds the bulk of a transformer block's parameters; q/v-only
+#     attention adaptation touches a disproportionately small slice of model capacity)
+#   - the always-trainable action/time projection heads
+# The vision tower (SigLIP backbone) is still left frozen by default.
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/pi05_lora.yaml
+
+model:
+  class_path: physicalai.policies.Pi05
+  init_args:
+    # Pretrained checkpoint to adapt. LoRA fine-tuning from scratch is not meaningful.
+    pretrained_name_or_path: lerobot/pi05_base
+
+    # Model architecture
+    paligemma_variant: gemma_2b
+    action_expert_variant: gemma_300m
+    dtype: bfloat16
+
+    # Input / output structure
+    n_obs_steps: 1
+    chunk_size: 50
+    n_action_steps: 50
+    max_state_dim: 32
+    max_action_dim: 32
+
+    # Image preprocessing
+    image_resolution:
+      - 224
+      - 224
+
+    # Flow matching parameters
+    num_inference_steps: 10
+
+    # Finetuning settings: leave the base model fully frozen; LoRA adapters are the only
+    # trainable parameters (aside from the always-trainable action/time projection heads).
+    freeze_vision_encoder: false
+    train_expert_only: false
+    gradient_checkpointing: false
+    compile_model: true
+
+    # LoRA (Low-Rank Adaptation) fine-tuning.
+    lora_enabled: true
+    lora_rank: 32
+    lora_alpha: 32
+    lora_dropout: 0.05
+    # Set lora_use_dora: true to use DoRA (arxiv.org/abs/2402.09353) instead of plain LoRA;
+    # slightly more compute/memory but typically improves quality at low ranks.
+    lora_use_dora: false
+
+    # Optimizer: learning rate scaled ~10x versus full fine-tuning (2.5e-5 -> 2.5e-4).
+    optimizer_lr: 2.5e-4
+    optimizer_weight_decay: 0.01
+    optimizer_grad_clip_norm: 1.0
+
+    # Scheduler: decay LR scaled ~10x versus full fine-tuning (2.5e-6 -> 2.5e-5).
+    scheduler_warmup_steps: 1000
+    scheduler_decay_steps: null # auto determine
+    scheduler_decay_lr: 2.5e-5
+
+    # SnapFlow self-distillation (arxiv.org/abs/2604.05656)
+    # Uncomment to enable 1-step inference via progressive self-distillation:
+    # snapflow_enabled: true
+    # snapflow_alpha: 0.5
+    # snapflow_lambda: 1.0
+    # snapflow_num_inference_steps: 1
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    # Example public dataset. Swap in your own recorded dataset repo_id;
+    # the phase budgets below are epoch-based, so they carry over unchanged.
+    repo_id: "lerobot/aloha_sim_transfer_cube_human"
+    train_batch_size: 16 # change this depending on your GPU memory
+    data_format: "physicalai"
+    revision: "main"
+    val_split: 0.1
+    val_split_seed: 42
+    val_batch_size: 16
+
+trainer:
+  max_epochs: 25
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  check_val_every_n_epoch: 1
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        every_n_epochs: 5
+        save_top_k: -1
+        dirpath: "outputs/pi05_lora"
+        save_last: true
+        filename: "epoch{epoch:03d}"
+        save_weights_only: true
+        auto_insert_metric_name: false

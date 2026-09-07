@@ -24,7 +24,7 @@ class LiberoPi05ModelServer(PhysicalAIModelServer):
 
     def __init__(
         self,
-        pretrained_name_or_path: str = "lerobot/pi05_libero_finetuned_v044",
+        pretrained_name_or_path: str = "lerobot/pi05_libero_finetuned",
         device: str = "cuda",
         **kwargs: Any,  # noqa: ANN401
     ) -> None:

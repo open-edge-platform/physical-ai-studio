@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio.session import AsyncSession
 from db.schema import EnvironmentCameraDB, EnvironmentRobotDB, ProjectEnvironmentDB
 from repositories.base import ProjectBaseRepository
 from repositories.mappers import ProjectCameraMapper, ProjectEnvironmentMapper, ProjectRobotMapper
+from robots.catalog.registry import RobotCatalogRegistry
 from schemas.environment import (
     Environment,
     EnvironmentWithRelations,
@@ -18,8 +19,9 @@ from schemas.environment import (
 
 
 class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnvironmentDB]):
-    def __init__(self, db: AsyncSession, project_id: UUID):
+    def __init__(self, db: AsyncSession, project_id: UUID, catalog_registry: RobotCatalogRegistry):
         super().__init__(db, project_id, ProjectEnvironmentDB)
+        self.catalog_registry = catalog_registry
 
     @property
     def to_schema(self) -> Callable[[Environment], ProjectEnvironmentDB]:
@@ -91,8 +93,8 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
             updated_at=env.updated_at,
         )
 
-    @staticmethod
     def _build_robots_with_teleoperators(
+        self,
         environment_id: UUID,
         robot_links: list[EnvironmentRobotDB],
     ) -> list[RobotWithTeleoperator]:
@@ -107,7 +109,7 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
                 )
                 continue
 
-            robot = ProjectRobotMapper.from_schema(link.robot)
+            robot = ProjectRobotMapper.from_schema(link.robot, self.catalog_registry)
 
             if link.tele_operator_type == "robot" and link.tele_operator_robot_id is not None:
                 if link.tele_operator_robot is None:
@@ -125,7 +127,7 @@ class ProjectEnvironmentRepository(ProjectBaseRepository[Environment, ProjectEnv
                 else:
                     tele_operator = TeleoperatorRobotWithRobot(
                         robot_id=UUID(link.tele_operator_robot_id),
-                        robot=ProjectRobotMapper.from_schema(link.tele_operator_robot),
+                        robot=ProjectRobotMapper.from_schema(link.tele_operator_robot, self.catalog_registry),
                     )
             elif link.tele_operator_type == "robot":
                 logger.warning(

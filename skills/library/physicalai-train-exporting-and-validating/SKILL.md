@@ -29,7 +29,7 @@ Run export → validate → fix → repeat until both parity and structure pass:
 ```bash
 # from library/
 physicalai export --policy <ClassPath> --ckpt_path <model.ckpt> --backend <backend> --output_dir ./export
-uv run pytest tests/unit/export -k <backend>
+uv run --no-sync pytest tests/unit/export -k <backend>
 ```
 
 For API-facing changes, add or run an equivalent Python script/test that loads the checkpoint, calls `policy.export("./export-api", backend=ExportBackend.<BACKEND>)`, and compares artifact metadata with the CLI output.

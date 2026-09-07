@@ -116,6 +116,10 @@ class StepLimit(Gym):
         """
         return self.gym.render(*args, **kwargs)
 
+    def get_max_episode_steps(self) -> int:
+        """Return the configured step limit."""
+        return self.max_steps
+
     def close(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
         """Release environment resources.
 

@@ -76,27 +76,27 @@ class GymnasiumGym(Gym):
 
     @property
     def device(self) -> torch.device:
-        """Return the configured torch device."""
+        """The configured torch device."""
         return self._device
 
     @property
     def is_vectorized(self) -> bool:
-        """Return whether the environment is vectorized."""
+        """Whether the environment is vectorized."""
         return self._is_vectorized
 
     @property
     def render_mode(self) -> str | None:
-        """Return the underlying render mode."""
+        """The underlying render mode."""
         return getattr(self._env, "render_mode", None)
 
     @property
     def observation_space(self) -> gym.Space | None:
-        """Return the observation space."""
+        """The observation space."""
         return getattr(self._env, "observation_space", None)
 
     @property
     def action_space(self) -> gym.Space | None:
-        """Return the action space."""
+        """The action space."""
         return getattr(self._env, "action_space", None)
 
     def _normalize_raw_obs(
@@ -236,6 +236,9 @@ class GymnasiumGym(Gym):
             A tuple ``(Observation, reward, terminated, truncated, info)``.
         """
         action_for_env = self._normalize_action_for_env(action)
+        # NumPy has no bfloat16/float16 support; upcast to float32 before conversion.
+        if action_for_env.dtype in {torch.bfloat16, torch.float16}:
+            action_for_env = action_for_env.to(torch.float32)
         raw_action = action_for_env.detach().cpu().numpy()
         raw_obs, reward, terminated, truncated, info = self._env.step(raw_action)
         raw_obs = self._normalize_raw_obs(raw_obs)

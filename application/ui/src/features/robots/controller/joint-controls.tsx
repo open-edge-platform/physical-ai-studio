@@ -7,8 +7,9 @@ import { radToDeg } from 'three/src/math/MathUtils.js';
 import { getRobotConnectionErrorTitle } from '../../../api/errors';
 import { useLoadModelQuery } from '../robot-models-context';
 import { InlineAlert } from '../setup-wizard/shared/inline-alert';
-import { useJointState, useSynchronizeModelJoints } from '../use-joint-state';
+import { useSynchronizeModelJoints } from '../use-joint-state';
 import { useRobot, useRobotId } from '../use-robot';
+import { useRobotObservations } from '../use-robot-observations';
 
 type JointState = {
     name: string;
@@ -77,12 +78,16 @@ const useModelJoints = (): JointsState => {
 };
 
 // Combine the joint range of the urdf model with actual joint state from robot
-const useRobotJointsState = (): { joints: JointsState; error: string | null; errorCode: string | null } => {
+const useRobotJointsState = (): {
+    joints: JointsState;
+    error: string | null;
+    errorCode: string | null;
+} => {
     const robot = useRobot();
     const modelJoints = useModelJoints();
 
     const { project_id, robot_id } = useRobotId();
-    const { joints, error, errorCode } = useJointState(project_id, robot_id);
+    const { joints, error, errorCode } = useRobotObservations(project_id, robot_id);
     useSynchronizeModelJoints(joints, robot.type);
 
     return {
@@ -166,7 +171,7 @@ export const JointControls = ({
                         </Heading>
                     </ActionButton>
 
-                    <Switch isSelected={isConnected} onChange={setIsConnected}>
+                    <Switch isEmphasized isSelected={isConnected} onChange={setIsConnected}>
                         Connect
                     </Switch>
                 </Flex>

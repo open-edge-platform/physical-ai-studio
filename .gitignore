@@ -211,6 +211,9 @@ __marimo__/
 tmp*
 lightning_logs
 .DS_Store
+wandb/
+.omo
+.opencode
 
 # Training artifacts (checkpoints, logs) written by `physicalai fit` / benchmark runs
 experiments/

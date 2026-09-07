@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from cli.database import _run_migrations
+from core.security import get_ssh_feature_availability
 from robots.catalog.assets import builtin_robot_assets_are_available
 from robots.catalog.sync_robot_assets import sync_robot_assets
 from settings import get_settings
@@ -27,13 +28,19 @@ def _configure_packaged_runtime() -> None:
     os.environ.setdefault("ALEMBIC_CONFIG_PATH", str(package_root / "alembic.ini"))
     os.environ.setdefault("ALEMBIC_SCRIPT_LOCATION", str(package_root / "alembic"))
 
-    # Refresh cached settings so downstream DB/migration modules observe packaged paths.
-    get_settings.cache_clear()
+    # Settings are resolved for each call, so downstream modules observe these paths.
 
 
 def start_server(host: str, port: int) -> None:
     """Configure the packaged runtime, run migrations, and launch the API server."""
     _configure_packaged_runtime()
+    # `--host`/`--port` can override the settings-derived default below; keep
+    # `Settings.host` in agreement with the address actually handed to uvicorn,
+    # so anything that reasons about the real bind address (the SSH feature's
+    # loopback-only enforcement) never checks a stale default instead of it.
+    os.environ["HOST"] = host
+    os.environ["PORT"] = str(port)
+    get_ssh_feature_availability.cache_clear()
     _sync_missing_robot_assets()
     _run_migrations()
 

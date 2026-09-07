@@ -179,7 +179,12 @@ export const LogFilters = ({
                     onClearAll={handleClearAll}
                 />
 
-                <Checkbox isSelected={autoScroll} onChange={onAutoScrollChange} UNSAFE_className={styles.autoScroll}>
+                <Checkbox
+                    isEmphasized
+                    isSelected={autoScroll}
+                    onChange={onAutoScrollChange}
+                    UNSAFE_className={styles.autoScroll}
+                >
                     Auto-scroll
                 </Checkbox>
 

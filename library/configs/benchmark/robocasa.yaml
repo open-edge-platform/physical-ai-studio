@@ -1,0 +1,146 @@
+# =============================================================================
+# RoboCasa Benchmark Evaluation Configuration
+# Kitchen subset (robocasa v1.0 task groups) for imitation-learning policies
+# =============================================================================
+#
+# Usage:
+#   physicalai benchmark --config configs/benchmark/robocasa.yaml \
+#       --policy physicalai.policies.ACT \
+#       --ckpt_path ./checkpoints/model.ckpt
+#
+# Common overrides:
+#   # Quick smoke test on a different group
+#   physicalai benchmark --config configs/benchmark/robocasa.yaml \
+#       --policy physicalai.policies.ACT \
+#       --ckpt_path ./checkpoints/model.ckpt \
+#       --benchmark.task composite_unseen \
+#       --benchmark.num_episodes 5
+#
+#   # Headless server (MuJoCo EGL backend)
+#   MUJOCO_GL=egl physicalai benchmark --config configs/benchmark/robocasa.yaml \
+#       --policy physicalai.policies.ACT \
+#       --ckpt_path ./checkpoints/model.ckpt
+#
+# -----------------------------------------------------------------------------
+# PREREQUISITE — Dedicated venv required
+# -----------------------------------------------------------------------------
+# RoboCasa is NOT a `pyproject.toml` extra. The unified uv resolve is unsolvable
+# (robocasa pins `lerobot==0.3.3` against our `lerobot>=0.5.1`, and requires
+# `robosuite` master >=1.5dev while `[libero]` needs `robosuite==1.4.0`).
+#
+# Install into a dedicated `.venv-robocasa`:
+#
+#   uv venv .venv-robocasa
+#   source .venv-robocasa/bin/activate
+#   uv sync --active --extra cu128          # or cpu / xpu — do NOT use --extra all or --extra libero
+#   bash library/scripts/benchmark/install_robocasa.sh
+#
+#   # Download kitchen assets (~4.4 GB on disk; prompts interactively)
+#   yes y | python -m robocasa.scripts.download_kitchen_assets \
+#       --type tex tex_generative fixtures_lw objs_lw
+#
+#   # Headless servers
+#   export MUJOCO_GL=egl
+#
+# SHAs in `install_robocasa.sh` match the lerobot Dockerfile pins:
+# `robocasa@56e355c` and `robosuite@aaa8b9b`. Bump them together.
+#
+# -----------------------------------------------------------------------------
+# ROBOCASA TASK GROUPS REFERENCE
+# -----------------------------------------------------------------------------
+#
+# | Group            | Tasks | Split       | Notes                              |
+# |------------------|-------|-------------|------------------------------------|
+# | atomic_seen      | 18    | "target"    | v1.0 atomic tasks (smoke testing)  |
+# | composite_seen   | v1.0  | "target"    | Composite tasks, seen layouts      |
+# | composite_unseen | v1.0  | "target"    | Composite tasks, unseen layouts    |
+# | pretrain50       | 50    | "pretrain"  | Pretrain partition, 50-task slice  |
+# | pretrain100      | 100   | "pretrain"  | Pretrain partition, 100-task slice |
+# | pretrain200      | 200   | "pretrain"  | Pretrain partition, 200-task slice |
+# | pretrain300      | 300   | "pretrain"  | Pretrain partition, 300-task slice |
+#
+# Resolved counts come from `robocasa.utils.dataset_registry`. Eval-specific
+# task slices (e.g. paper-parity subsets) live alongside the benchmark that
+# consumes them, not in this config.
+#
+# =============================================================================
+
+benchmark:
+  class_path: physicalai.benchmark.gyms.RoboCasaBenchmark
+  init_args:
+    # -------------------------------------------------------------------------
+    # Task Configuration
+    # -------------------------------------------------------------------------
+    # RoboCasa v1.0 task-group keyword (see TASK GROUPS REFERENCE above).
+    # Atomic/composite groups resolve to split "target"; pretrain groups
+    # resolve to split "pretrain". To pin a specific subset of named tasks,
+    # pass a comma-separated string (e.g. "CloseFridge,OpenDrawer") instead
+    # of a group keyword.
+    task: atomic_seen
+
+    # Other valid task-group keywords (uncomment to switch):
+    # task: composite_seen
+    # task: composite_unseen
+    # task: pretrain50
+    # task: pretrain100
+    # task: pretrain200
+    # task: pretrain300
+
+    # -------------------------------------------------------------------------
+    # Evaluation Parameters
+    # -------------------------------------------------------------------------
+    # Number of episodes per task (standard: 20 for paper results)
+    num_episodes: 20
+
+    # Maximum steps per episode (use null to defer to the gym's
+    # `episode_length`, which is the robocasa v1.0 MuJoCo horizon).
+    max_steps: null
+
+    # Random seed for reproducibility
+    seed: 42
+
+    # -------------------------------------------------------------------------
+    # Observation Configuration
+    # -------------------------------------------------------------------------
+    observation_height: 256
+    observation_width: 256
+
+    # -------------------------------------------------------------------------
+    # Video Recording
+    # -------------------------------------------------------------------------
+    # Directory for video output (null = no recording)
+    video_dir: ./results/benchmark/robocasa/videos
+
+    # Recording mode:
+    #   - "all"       : Save all episodes
+    #   - "failures"  : Only save failed episodes (for debugging)
+    #   - "successes" : Only save successful episodes
+    #   - "none"      : Disable recording
+    record_mode: failures
+
+# -----------------------------------------------------------------------------
+# Policy Configuration
+# -----------------------------------------------------------------------------
+# Policy class to evaluate (must have load_from_checkpoint method)
+#
+# CLI: --policy physicalai.policies.ACT
+#
+# Uncomment and configure:
+# policy: physicalai.policies.ACT
+
+# Checkpoint or export path (required for evaluation)
+#
+# For Policy subclasses (Lightning checkpoints):
+#   CLI: --ckpt_path ./checkpoints/model.ckpt
+#
+# For InferenceModel (exported models):
+#   CLI: --ckpt_path ./exports/act_policy
+#
+# Uncomment and configure:
+# ckpt_path: ./checkpoints/act_robocasa.ckpt
+
+# -----------------------------------------------------------------------------
+# Output Configuration
+# -----------------------------------------------------------------------------
+# Directory for benchmark results (JSON, CSV exports)
+output_dir: ./results/benchmark/robocasa

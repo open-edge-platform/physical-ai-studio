@@ -59,7 +59,7 @@ Return the plain driver (for example ``physicalai.robot.SO101``), not a
 The driver's class must therefore be decorated with
 ``physicalai.config.export_config``, because Studio exports it with
 ``to_config`` to hand the owner a construction recipe. An undecorated class
-fails the build with ``ComponentConfigError``.
+fails the build with ``ConfigError``.
 """
 
 

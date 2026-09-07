@@ -82,6 +82,14 @@ class Gym(ABC):
         """
         return None
 
+    def get_max_episode_steps(self) -> int | None:  # noqa: PLR6301
+        """Return this gym's own default step limit, if it has one.
+
+        Returns:
+            int | None: Per-gym default max steps, or None if unspecified.
+        """
+        return None
+
     @abstractmethod
     def close(self) -> None:
         """Closes the environment and releases resources."""

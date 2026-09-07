@@ -8,6 +8,7 @@ from physicalai.robot.interface import Robot, RobotObservation
 
 from robots.robot_client import RobotClient
 from robots.shared_robot_errors import translate_robot_error
+from runtime.features import feature_names, observation_to_dict
 
 
 @dataclass(frozen=True)
@@ -48,21 +49,11 @@ class PhysicalAIRobotAdapter(RobotClient):
         return self._robot_role == "follower"
 
     def _observation_to_state(self, observation: RobotObservation) -> dict[str, float]:
-        state: dict[str, float] = {}
-        for i, name in enumerate(self._robot.joint_names):
-            raw_position = float(observation.joint_positions[i])
-            state[f"{name}.pos"] = raw_position
-
-        if self._config.include_velocities:
-            sensor_data = observation.sensor_data
-            if sensor_data is None or "velocities" not in sensor_data:
-                msg = "Robot observation is missing velocity data"
-                raise RuntimeError(msg)
-            velocities = sensor_data["velocities"]
-            for i, name in enumerate(self._robot.joint_names):
-                state[f"{name}.vel"] = float(velocities[i])
-
-        return state
+        return observation_to_dict(
+            self._robot.joint_names,
+            observation,
+            include_velocities=self._config.include_velocities,
+        )
 
     def _state_to_action(self, joints: dict[str, float]) -> np.ndarray:
         action = np.empty(len(self._robot.joint_names), dtype=np.float32)
@@ -182,8 +173,4 @@ class PhysicalAIRobotAdapter(RobotClient):
         return forces
 
     def features(self) -> list[str]:
-        position_features = [f"{name}.pos" for name in self._robot.joint_names]
-        if not self._config.include_velocities:
-            return position_features
-        velocity_features = [f"{name}.vel" for name in self._robot.joint_names]
-        return position_features + velocity_features
+        return feature_names(self._robot.joint_names, include_velocities=self._config.include_velocities)

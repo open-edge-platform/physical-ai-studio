@@ -18,7 +18,7 @@ import pytest
 import torch
 from physicalai.config import Config
 from physicalai.policies import Pi05, SmolVLA
-from physicalai.policies.mixins import SnapFlowConfigMixin, SnapFlowPolicyMixin
+from physicalai.policies.mixins import SnapFlowConfigMixin, SnapFlowModelMixin, SnapFlowPolicyMixin
 from physicalai.policies.pi05 import Pi05Config
 from physicalai.policies.smolvla import SmolVLAConfig
 
@@ -223,3 +223,180 @@ class TestPoliciesShareTheMixin:
             policy.enable_snapflow()
         with pytest.raises(RuntimeError, match="before the model was initialized"):
             _ = policy.inner_model
+
+
+
+
+# ============================================================================ #
+# Mixed FM/consistency loss                                                    #
+# ============================================================================ #
+
+
+class _StubFlowModel(SnapFlowModelMixin):
+    """Minimal host for ``snapflow_mixed_loss``: records which indices each
+    velocity-prediction call touches, so tests can assert on the FM/CD split
+    without a real flow-matching model."""
+
+    def __init__(self, *, alpha: float, lambda_: float = 0.1) -> None:
+        self.init_snapflow_state(enabled=True, alpha=alpha, lambda_=lambda_, num_inference_steps=1)
+        self.predict_velocity_call_shapes: list[int] = []
+        self.predict_velocity_call_markers: list[torch.Tensor] = []
+
+    def sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
+        return torch.randn(shape, device=device)
+
+    def predict_velocity(
+        self,
+        x_t: torch.Tensor,
+        _timestep: torch.Tensor,
+        _target_time: torch.Tensor,
+        prefix_embs: torch.Tensor,
+        _prefix_pad_masks: torch.Tensor,
+        _prefix_att_masks: torch.Tensor,
+    ) -> torch.Tensor:
+        self.predict_velocity_call_shapes.append(x_t.shape[0])
+        # prefix_embs[:, 0, 0] carries a per-row identity marker in these
+        # tests (see _mixed_loss_inputs), which lets tests recover exactly
+        # which original rows landed in this call's branch.
+        self.predict_velocity_call_markers.append(prefix_embs[:, 0, 0].clone())
+        # A predictable function of the conditioning, so FM and CD losses are
+        # both well-defined and distinguishable in tests.
+        return x_t + prefix_embs.mean(dim=(1, 2), keepdim=True).expand_as(x_t)
+
+
+def _mixed_loss_inputs(bsize: int, chunk: int = 4, dim: int = 3) -> dict[str, torch.Tensor]:
+    """Build minimal-but-real tensors for ``snapflow_mixed_loss``.
+
+    ``prefix_embs[:, 0, 0]`` is set to ``arange(bsize)`` so tests can recover
+    exactly which original rows a given ``predict_velocity`` call touched.
+    """
+    prefix_embs = torch.randn(bsize, 2, dim)
+    prefix_embs[:, 0, 0] = torch.arange(bsize, dtype=prefix_embs.dtype)
+    return {
+        "u_t": torch.randn(bsize, chunk, dim),
+        "x_t": torch.randn(bsize, chunk, dim),
+        "time": torch.rand(bsize),
+        "actions": torch.randn(bsize, chunk, dim),
+        "prefix_embs": prefix_embs,
+        "prefix_pad_masks": torch.ones(bsize, 2, dtype=torch.bool),
+        "prefix_att_masks": torch.ones(bsize, 2, dtype=torch.bool),
+    }
+
+
+class TestSnapFlowMixedLoss:
+    """The FM/CD split must be a static-size, compile-friendly partition.
+
+    See docs/explanation/policy/snapflow-two-phase-distillation.md ("Proposed
+    design: compile-friendly SnapFlow loss") for the rationale: a fixed-size
+    ``torch.randperm`` split instead of a per-sample Bernoulli mask, so
+    ``torch.compile`` sees a static shape per branch instead of a
+    data-dependent one.
+    """
+
+    @pytest.mark.parametrize(
+        ("alpha", "bsize", "expected_n_fm"),
+        [
+            (0.5, 8, 4),
+            (0.5, 7, 4),  # round(3.5) == 4 (banker's rounding lands here for .5)
+            (0.25, 8, 2),
+            (0.3, 7, 2),
+            (0.0, 8, 0),
+            (1.0, 8, 8),
+        ],
+    )
+    def test_split_size_is_deterministic_given_alpha_and_bsize(
+        self, alpha: float, bsize: int, expected_n_fm: int
+    ) -> None:
+        """The split size must be an exact function of (alpha, bsize), not a
+        random count, so torch.compile only ever sees one shape per config."""
+        model = _StubFlowModel(alpha=alpha)
+        inputs = _mixed_loss_inputs(bsize)
+
+        for _ in range(5):
+            model.predict_velocity_call_shapes.clear()
+            model.snapflow_mixed_loss(
+                sample_noise=model.sample_noise,
+                predict_velocity=model.predict_velocity,
+                **inputs,
+            )
+            shapes = model.predict_velocity_call_shapes
+            # Every call must be one of exactly two sizes: the (constant) FM
+            # branch size or the (constant) CD branch size. No other shape
+            # should ever appear, across repeated calls with fresh randomness.
+            assert all(s in (expected_n_fm, bsize - expected_n_fm) for s in shapes)
+            # Exactly one FM call (if the branch runs) and exactly three CD
+            # calls (v_1, v_half, v_pred, if that branch runs). Counted by
+            # call count rather than by size, because alpha=0.5 on an even
+            # batch makes the two branch sizes coincide.
+            expected_n_calls = (1 if expected_n_fm > 0 else 0) + (3 if expected_n_fm < bsize else 0)
+            assert len(shapes) == expected_n_calls
+
+    def test_pure_fm_skips_the_cd_branch_entirely(self) -> None:
+        """alpha=1.0: no CD velocity calls, and every sample gets a real FM loss."""
+        model = _StubFlowModel(alpha=1.0)
+        inputs = _mixed_loss_inputs(bsize=6)
+
+        losses = model.snapflow_mixed_loss(
+            sample_noise=model.sample_noise, predict_velocity=model.predict_velocity, **inputs
+        )
+
+        assert model.predict_velocity_call_shapes == [6]  # only the FM branch call
+        assert not torch.any(losses == 0)
+
+    def test_pure_cd_skips_the_fm_branch_entirely(self) -> None:
+        """alpha=0.0: no FM velocity calls, every sample goes through CD."""
+        model = _StubFlowModel(alpha=0.0)
+        inputs = _mixed_loss_inputs(bsize=6)
+
+        losses = model.snapflow_mixed_loss(
+            sample_noise=model.sample_noise, predict_velocity=model.predict_velocity, **inputs
+        )
+
+        assert model.predict_velocity_call_shapes == [6, 6, 6]  # v_1, v_half, v_pred
+        assert not torch.any(losses == 0)
+
+    def test_fm_and_cd_index_sets_partition_the_batch(self) -> None:
+        """The FM and CD branches must not overlap and must cover every row,
+        and every row of `losses` must be written by exactly one branch."""
+        bsize = 10
+        model = _StubFlowModel(alpha=0.5)
+        inputs = _mixed_loss_inputs(bsize)
+
+        losses = model.snapflow_mixed_loss(
+            sample_noise=model.sample_noise, predict_velocity=model.predict_velocity, **inputs
+        )
+
+        fm_markers = model.predict_velocity_call_markers[0]
+        cd_markers = model.predict_velocity_call_markers[1]  # v_1's call; identical across v_1/v_half/v_pred
+        all_indices = torch.cat([fm_markers, cd_markers]).sort().values
+        assert torch.equal(all_indices, torch.arange(bsize, dtype=all_indices.dtype))
+        assert losses.shape == inputs["actions"].shape
+        assert not torch.any(losses == 0)
+
+    def test_split_membership_matches_alpha_marginal_across_many_trials(self) -> None:
+        """A single batch has a static split *size*, but the point of using
+        ``torch.randperm`` (over a fixed-order slice) is that which physical
+        row lands in which branch still varies uniformly, so every sample
+        keeps the same marginal probability ``alpha`` of landing in FM that
+        the Bernoulli mask it replaces gave it."""
+        alpha = 0.3
+        bsize = 20
+        model = _StubFlowModel(alpha=alpha)
+        fm_hit_counts = torch.zeros(bsize)
+        n_trials = 300
+
+        for _ in range(n_trials):
+            inputs = _mixed_loss_inputs(bsize)
+            model.predict_velocity_call_markers.clear()
+            model.snapflow_mixed_loss(
+                sample_noise=model.sample_noise, predict_velocity=model.predict_velocity, **inputs
+            )
+            fm_markers = model.predict_velocity_call_markers[0]
+            fm_hit_counts[fm_markers.long()] += 1
+
+        empirical_rate = fm_hit_counts / n_trials
+        assert abs(empirical_rate.mean().item() - alpha) < 0.02
+        # No row should be systematically favored or excluded by the
+        # permutation -- every row's individual empirical rate should also
+        # sit close to alpha, not just the batch-wide average.
+        assert (empirical_rate - alpha).abs().max().item() < 0.15

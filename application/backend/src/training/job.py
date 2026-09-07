@@ -31,11 +31,12 @@ from __future__ import annotations
 
 import gc
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 if TYPE_CHECKING:
     from physicalai.policies.base import Policy
@@ -63,6 +64,13 @@ _WEIGHTS_ONLY_RESUME_POLICIES = frozenset({"pi0"})
 
 _COMPILED_EXPORT_RELOAD_POLICIES = frozenset({"act", "smolvla"})
 """Policies that cannot be exported while ``torch.compile``d, so are reloaded first."""
+
+
+class RunOptions(BaseModel):
+    """Runtime-only controls which are not part of the training payload."""
+
+    resume_from: Path | str | None = None
+    hf_token: SecretStr | None = None
 
 
 class TrainingJobSpec(BaseModel):
@@ -103,6 +111,7 @@ class TrainingJobSpec(BaseModel):
         ge=0,
         description="Zero-based index of the accelerator to train on. None lets Lightning pick one.",
     )
+    run_options: RunOptions = Field(default_factory=RunOptions)
 
 
 def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None) -> Policy:
@@ -138,7 +147,6 @@ def run_training_job(
     cache_dir: Path | str,
     report: ReportFn,
     should_stop: StopFn,
-    resume_from: Path | str | None = None,
 ) -> None:
     """Train one policy end to end: fit, checkpoint, and export.
 
@@ -173,8 +181,6 @@ def run_training_job(
             moved to ``output_dir`` on success.
         report: Telemetry sink, called with ``(progress, message, extra_info)``.
         should_stop: Cooperative cancellation probe.
-        resume_from: Checkpoint to continue training from, e.g. a previously
-            trained model's ``model.ckpt``. None trains from scratch.
     """
     from lightning.pytorch.callbacks import ModelCheckpoint
     from lightning.pytorch.loggers import CSVLogger
@@ -184,6 +190,8 @@ def run_training_job(
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
 
+    if spec.run_options.hf_token is not None:
+        os.environ["HF_TOKEN"] = spec.run_options.hf_token.get_secret_value()
     accelerator = resolve_accelerator(spec.device_type)
     output_dir, cache_dir = Path(output_dir), Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -195,7 +203,7 @@ def run_training_job(
         num_workers=spec.num_workers,
         val_split=spec.val_split,
     )
-    policy = build_policy(spec, resume_from=resume_from)
+    policy = build_policy(spec, resume_from=spec.run_options.resume_from)
 
     trainer = Trainer(
         logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),

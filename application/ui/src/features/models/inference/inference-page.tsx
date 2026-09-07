@@ -1,7 +1,7 @@
 import { ToastQueue } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
-import { RobotControlProvider } from '../../robots/robot-control-provider';
+import { RuntimeSessionProvider } from '../../robots/runtime-session-provider';
 import { getDefaultInferenceDevice, getSupportedInferenceDevices } from '../backend-selection/backend-selection';
 import { InferenceViewer } from './inference-viewer';
 import { useInferenceParams } from './use-inference-params';
@@ -38,13 +38,13 @@ export const InferencePage = () => {
     const inferenceDevice = selectedDevice ?? getDefaultInferenceDevice(inferenceDevices, backend);
 
     return (
-        <RobotControlProvider
+        <RuntimeSessionProvider
             environment={initialEnvironment}
             model={model}
             inferenceDevice={inferenceDevice}
             onError={ToastQueue.negative}
         >
             <InferenceViewer tasks={tasks} />
-        </RobotControlProvider>
+        </RuntimeSessionProvider>
     );
 };

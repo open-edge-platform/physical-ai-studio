@@ -87,6 +87,11 @@ Physical AI Trainer service from
 as a remote trainer in the Studio UI. The backend sends dataset snapshots to
 the service, monitors the training job, and imports the resulting model.
 
+Alternatively, the backend can provision a job-scoped trainer over SSH on a
+server you can reach directly. This feature is off by default and has no
+authentication model of its own — see
+[`docs/explanation/ssh-remote-trainer.md`](docs/explanation/ssh-remote-trainer.md) before enabling it.
+
 ### Database Migrations
 
 ```bash

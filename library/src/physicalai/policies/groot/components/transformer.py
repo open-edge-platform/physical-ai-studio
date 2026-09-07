@@ -21,6 +21,8 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
+from physicalai.policies.components import TimestepEncoder
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,36 +58,6 @@ def _import_diffusers() -> tuple:
             TimestepEmbedding,
             Timesteps,
         )
-
-
-class TimestepEncoder(nn.Module):
-    """Encode diffusion timesteps into embeddings."""
-
-    def __init__(self, embedding_dim: int, compute_dtype: torch.dtype = torch.float32) -> None:
-        """Initialize timestep encoder.
-
-        Args:
-            embedding_dim: Output embedding dimension.
-            compute_dtype: Compute dtype (not used, for API compatibility).
-        """
-        super().__init__()
-        _, _, _, _, _, _, timestep_embedding_cls, timesteps_cls = _import_diffusers()
-
-        self.time_proj = timesteps_cls(num_channels=256, flip_sin_to_cos=True, downscale_freq_shift=1)
-        self.timestep_embedder = timestep_embedding_cls(in_channels=256, time_embed_dim=embedding_dim)
-
-    def forward(self, timesteps: torch.Tensor) -> torch.Tensor:
-        """Encode timesteps.
-
-        Args:
-            timesteps: Timestep indices.
-
-        Returns:
-            Timestep embeddings.
-        """
-        dtype = next(self.parameters()).dtype
-        timesteps_proj = self.time_proj(timesteps).to(dtype)
-        return self.timestep_embedder(timesteps_proj)
 
 
 class AdaLayerNorm(nn.Module):

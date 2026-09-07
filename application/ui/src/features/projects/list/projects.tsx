@@ -51,7 +51,7 @@ const ProjectsList = ({ projects }: ProjectsListProps) => {
     }, [filteredProjects, sortDirection]);
 
     return (
-        <View height={'100%'} padding={'size-800'} paddingBottom={0}>
+        <View height={'100%'} padding={'size-500'} paddingBottom={0}>
             <View position={'absolute'} top={0} left={0} right={0} bottom={0} UNSAFE_className={classes.container} />
             <Flex
                 direction={'column'}

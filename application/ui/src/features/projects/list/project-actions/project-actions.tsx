@@ -40,7 +40,6 @@ export const ProjectActions = ({
                 >
                     {sortDirection === 'desc' ? 'Newest first' : 'Oldest first'}
                     <SortUp
-                        style={{ fill: 'var(--spectrum-global-color-gray-900)' }}
                         className={[classes.sortIcon, sortDirection === 'desc' ? classes.sortIconDown : ''].join(' ')}
                     />
                 </ActionButton>
@@ -60,7 +59,7 @@ export const ProjectActions = ({
             <CreateProject
                 trigger={
                     <Button variant={'primary'}>
-                        <Add style={{ fill: 'var(--spectrum-global-color-gray-900)' }} />
+                        <Add />
                         <Text marginStart={'size-50'}>Create new project</Text>
                     </Button>
                 }

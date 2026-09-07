@@ -6,7 +6,7 @@
 import inspect
 import logging
 import tempfile
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
 from os import PathLike
 from pathlib import Path
@@ -575,7 +575,6 @@ class ExportablePolicyMixin:
                 implement ``sample_input`` property.
             ImportError: If the required ``executorch`` package (or selected delegate
                 dependencies) is not installed.
-            ValueError: If an unsupported delegate is specified.
         """
         if ExportBackend.EXECUTORCH not in self.get_supported_export_backends():
             msg = (
@@ -612,10 +611,68 @@ class ExportablePolicyMixin:
             msg = "executorch package is required for ExecuTorch export. Install with: pip install executorch"
             raise ImportError(msg) from e
 
+        # ExecuTorch doesn't support CUDA/XPU tensors (segfaults instead of
+        # raising), so trace on CPU. Original device/train mode are always
+        # restored.
+        original_device = self.device
+        was_training = self.model.training
+        self.model.to("cpu")
         self.model.eval()
+        try:
+            self._export_executorch_pte(
+                model_path=model_path,
+                input_sample=input_sample,
+                extra_export_kwargs=extra_export_kwargs,
+                delegate=delegate,
+                delegate_config=delegate_config,
+                to_edge_transform_and_lower=to_edge_transform_and_lower,
+            )
+        finally:
+            self.model.to(original_device)
+            self.model.train(was_training)
+
+        self.create_manifest(
+            export_dir,
+            ExportBackend.EXECUTORCH,
+            runner=ComponentSpec.from_class(SinglePass),
+            input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
+            output_names=extra_model_args.output_names,
+            input_features=self._to_component_specs(self.inputs_schema or []),
+            output_features=self._to_component_specs(self.outputs_schema or []),
+        )
+
+        return model_path
+
+    def _export_executorch_pte(
+        self,
+        model_path: Path,
+        input_sample: dict[str, torch.Tensor],
+        extra_export_kwargs: dict,
+        delegate: "ExecuTorchDelegate | None",
+        delegate_config: dict[str, Any] | None,
+        to_edge_transform_and_lower: Any,  # noqa: ANN401
+    ) -> None:
+        """Trace, lower, and serialize ``self.model`` to a ``.pte`` file.
+
+        Assumes ``self.model`` is already on CPU and in eval mode; the caller
+        is responsible for restoring the original device/train mode.
+
+        Args:
+            model_path: Destination path for the serialized ``.pte`` file.
+            input_sample: Input tensor dictionary used to trace the model.
+            extra_export_kwargs: Extra keyword arguments for ``torch.export.export``.
+            delegate: ExecuTorch delegate backend to use.
+            delegate_config: Optional delegate-specific configuration.
+            to_edge_transform_and_lower: The imported ``executorch.exir.to_edge_transform_and_lower`` function.
+
+        Raises:
+            ValueError: If an unsupported delegate is specified.
+            ImportError: If the selected delegate's dependencies are not installed.
+        """
+        cpu_input_sample = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in input_sample.items()}
         aten_dialect = torch.export.export(
             self.model,
-            args=(input_sample,),
+            args=(cpu_input_sample,),
             **extra_export_kwargs,
         )
 
@@ -654,23 +711,12 @@ class ExportablePolicyMixin:
         with model_path.open("wb") as f:
             exec_program.write_to_file(f)
 
-        self.create_manifest(
-            export_dir,
-            ExportBackend.EXECUTORCH,
-            runner=ComponentSpec.from_class(SinglePass),
-            input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
-            output_names=extra_model_args.output_names,
-            input_features=self._to_component_specs(self.inputs_schema or []),
-            output_features=self._to_component_specs(self.outputs_schema or []),
-        )
-
-        return model_path
-
     def export(
         self,
         output_path: PathLike | str,
         backend: ExportBackend | str,
         input_sample: dict[str, torch.Tensor] | None = None,
+        post_export_hooks: list[Callable[[str], None]] | None = None,
         **export_kwargs: dict,
     ) -> None:
         """Export the model to the specified backend format.
@@ -687,6 +733,9 @@ class ExportablePolicyMixin:
                 input tensor dictionary for model tracing.
                 If None, attempts to use the policy's `sample_input` property.
                 Defaults to None.
+            post_export_hooks: Optional list of callables to run after export completes.
+                Each hook receives the exported model file path (str) and can perform
+                post-processing such as quantization or compression.
             **export_kwargs (dict): Additional keyword arguments to pass to the
                 backend-specific export method.
 
@@ -706,6 +755,11 @@ class ExportablePolicyMixin:
         else:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
+
+        if post_export_hooks:
+            model_path = self._prepare_export_path(output_path, backend.extension)
+            for hook in post_export_hooks:
+                hook(str(model_path))
 
     @_quiet_onnx_export_logs()
     def _onnx_core_export_step(

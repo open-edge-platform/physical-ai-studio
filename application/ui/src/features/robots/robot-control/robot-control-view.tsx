@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef } from 'react';
+import { createContext, RefObject, Suspense, useContext, useEffect, useRef } from 'react';
 
 import { Flex, Loading, View } from '@geti-ui/ui';
 import {
@@ -11,7 +11,6 @@ import {
 
 import { SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { physicalAiTheme } from '../../dockview';
-import { useRobotControl } from '../robot-control-provider';
 import { CameraCell } from './camera-cell.component';
 import { RobotCell } from './robot-cell.component';
 
@@ -23,12 +22,25 @@ const CenteredLoading = () => {
     );
 };
 
+interface RobotViewContextValue {
+    environment: SchemaEnvironmentWithRelations;
+    joints: RefObject<Record<string, number> | undefined>;
+}
+
+const RobotViewContext = createContext<RobotViewContextValue | null>(null);
+
+const FollowerPanel = (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
+    const view = useContext(RobotViewContext);
+    if (view === null) {
+        return null;
+    }
+    return <RobotCell robot_id={props.params.robot_id} environment={view.environment} joints={view.joints} />;
+};
+
 const components = {
-    follower: (props: IDockviewPanelProps<{ title: string; robot_id: string }>) => {
-        return <RobotCell robot_id={props.params.robot_id} />;
-    },
-    camera: (props: IDockviewPanelProps<{ camera_id: string; camera_name: string }>) => {
-        return <CameraCell camera_id={props.params.camera_id} camera_name={props.params.camera_name} />;
+    follower: FollowerPanel,
+    camera: (props: IDockviewPanelProps<{ camera_id: string }>) => {
+        return <CameraCell camera_id={props.params.camera_id} />;
     },
     default: (props: IDockviewPanelProps<{ title: string }>) => {
         return <div style={{ padding: '20px', color: 'white' }}>{props.params.title}</div>;
@@ -55,7 +67,6 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Schema
                 params: {
                     title: camera.name,
                     camera_id: camera.id,
-                    camera_name: camera.name,
                 },
                 position: {
                     direction: 'left',
@@ -82,7 +93,6 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Schema
         }
     });
 
-    // Remove any panels that are no longer part of the environment
     api.panels
         .filter((panel) => panels.has(panel.id) === false)
         .forEach((panel) => {
@@ -92,8 +102,15 @@ const buildDockviewPanels = (api: DockviewReadyEvent['api'], environment: Schema
     return api;
 };
 
-export const RobotControlView = () => {
-    const { environment, state } = useRobotControl();
+export const RobotControlView = ({
+    environment,
+    isReady,
+    joints,
+}: {
+    environment: SchemaEnvironmentWithRelations;
+    isReady: boolean;
+    joints: RefObject<Record<string, number> | undefined>;
+}) => {
     const api = useRef<DockviewApi>(null);
 
     const onReady = (event: DockviewReadyEvent): void => {
@@ -101,20 +118,22 @@ export const RobotControlView = () => {
     };
 
     useEffect(() => {
-        if (!api.current || !state.environment_loaded) {
+        if (!api.current || !isReady) {
             return;
         }
 
         buildDockviewPanels(api.current, environment);
-    }, [environment, state.environment_loaded]);
+    }, [environment, isReady]);
 
     return (
-        <View flex>
-            <View backgroundColor={'gray-200'} height={'100%'} maxHeight='100vh' position={'relative'}>
-                <Suspense fallback={<CenteredLoading />}>
-                    <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />
-                </Suspense>
+        <RobotViewContext.Provider value={{ environment, joints }}>
+            <View flex>
+                <View backgroundColor={'gray-200'} height={'100%'} maxHeight='100vh' position={'relative'}>
+                    <Suspense fallback={<CenteredLoading />}>
+                        <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />
+                    </Suspense>
+                </View>
             </View>
-        </View>
+        </RobotViewContext.Provider>
     );
 };

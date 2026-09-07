@@ -43,7 +43,7 @@ export const DeleteDatasetDialog = ({ dataset, onDone }: { dataset: Dataset; onD
         <AlertDialog title='Delete dataset' variant='warning' primaryActionLabel='Delete' onPrimaryAction={onDelete}>
             <Flex direction='column' gap='size-200'>
                 <Text>Are you sure you want to delete this dataset?</Text>
-                <Checkbox isSelected={removeFiles} onChange={setRemoveFiles}>
+                <Checkbox isEmphasized isSelected={removeFiles} onChange={setRemoveFiles}>
                     Also remove dataset files from disk
                 </Checkbox>
             </Flex>

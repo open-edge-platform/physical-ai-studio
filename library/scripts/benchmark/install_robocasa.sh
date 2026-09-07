@@ -84,9 +84,9 @@ fi
 
 echo
 echo "robocasa + robosuite installed."
-echo "Next: download kitchen assets (~4.4 GB on disk; the script prompts"
-echo "with a hardcoded '~10 Gb' that counts the two object packs we skip):"
+echo "Next: download kitchen assets (~34 GB on disk, including the objaverse"
+echo "object pack; the script prompts with a hardcoded '~10 Gb' estimate):"
 echo "    yes y | python -m robocasa.scripts.download_kitchen_assets \\"
-echo "        --type tex tex_generative fixtures_lw objs_lw"
+echo "        --type tex tex_generative fixtures_lw objs_lw objs_objaverse"
 echo
 echo "For headless servers also set:    export MUJOCO_GL=egl"

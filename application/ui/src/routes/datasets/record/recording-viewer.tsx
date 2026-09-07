@@ -14,15 +14,25 @@ import {
     Text,
 } from '@geti-ui/ui';
 
-import { useRobotControl } from '../../../features/robots/robot-control-provider';
 import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
+import { useRuntimeSession } from '../../../features/robots/runtime-session-provider';
 import { paths } from '../../../router';
 
 import classes from './recording-viewer.module.css';
 
 export const RecordingViewer = () => {
-    const { dataset, state, startEpisode, discardEpisode, saveEpisode, readyForRecording } = useRobotControl();
+    const {
+        dataset,
+        state,
+        startEpisode,
+        discardEpisode,
+        saveEpisode,
+        readyForRecording,
+        environment,
+        observation,
+        actions,
+    } = useRuntimeSession();
 
     if (dataset === undefined) {
         throw 'Cannot load recording viewer without dataset.';
@@ -64,7 +74,7 @@ export const RecordingViewer = () => {
                 </Heading>
                 <Flex direction='column' margin='size-200'>
                     <StatusLight variant={state.dataset_loaded ? 'positive' : 'yellow'}>Dataset</StatusLight>
-                    <StatusLight variant={state.environment_loaded ? 'positive' : 'yellow'}>Environment</StatusLight>
+                    <StatusLight variant={state.connected ? 'positive' : 'yellow'}>Environment</StatusLight>
                 </Flex>
                 <Button
                     variant={'secondary'}
@@ -119,7 +129,15 @@ export const RecordingViewer = () => {
                         )}
                     </Flex>
                 </Form>
-                <RobotControlView />
+                <RobotControlView
+                    environment={environment}
+                    isReady={state.connected}
+                    joints={{
+                        get current() {
+                            return actions.current ?? observation.current;
+                        },
+                    }}
+                />
             </Flex>
         </RobotModelsProvider>
     );

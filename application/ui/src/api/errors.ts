@@ -36,6 +36,18 @@ export const isSerialPermissionDeniedError = (error: unknown): boolean =>
     typeof (error as Record<string, unknown>).error_code === 'string' &&
     (error as Record<string, string>).error_code.toLowerCase() === 'serial_permission_denied';
 
+/**
+ * Returns true when a live runtime session holds the robot (HTTP 423).
+ *
+ * Expected when deleting a robot that is still being driven, or when connecting
+ * with a different rig (leader, fps) than the session that already owns it.
+ */
+export const isRuntimeSessionBusyError = (error: unknown): boolean =>
+    typeof error === 'object' &&
+    error !== null &&
+    'error_code' in error &&
+    (error as Record<string, unknown>).error_code === 'runtime_session_busy';
+
 interface ApiErrorBody {
     error_code?: string;
     message?: string;
@@ -60,6 +72,7 @@ export const getApiErrorMessage = (error: unknown): string | undefined => {
 export const getRobotConnectionErrorTitle = (errorCode: string | null): string => {
     switch (errorCode) {
         case 'robot_device_already_owned':
+        case 'runtime_session_busy':
             return 'Robot already in use';
         case 'robot_name_conflict':
             return 'Robot name conflict';

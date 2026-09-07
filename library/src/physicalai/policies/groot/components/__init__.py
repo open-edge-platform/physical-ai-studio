@@ -21,18 +21,18 @@ Note:
     pretrained Eagle2 model from HuggingFace.
 """
 
-from physicalai.policies.groot.components.action_head import (
-    FlowMatchingActionHead,
-    FlowMatchingActionHeadConfig,
-)
-from physicalai.policies.groot.components.backbone import EagleBackbone, EagleProcessor
-from physicalai.policies.groot.components.nn import (
+from physicalai.policies.components.nn import (
     CategorySpecificLinear,
     CategorySpecificMLP,
     MultiEmbodimentActionEncoder,
     SinusoidalPositionalEncoding,
     swish,
 )
+from physicalai.policies.groot.components.action_head import (
+    FlowMatchingActionHead,
+    FlowMatchingActionHeadConfig,
+)
+from physicalai.policies.groot.components.backbone import EagleBackbone, EagleProcessor
 from physicalai.policies.groot.components.transformer import (
     AdaLayerNorm,
     BasicTransformerBlock,

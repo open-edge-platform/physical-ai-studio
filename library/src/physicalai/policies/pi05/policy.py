@@ -29,6 +29,7 @@ from physicalai.export.backends import (
 )
 from physicalai.policies.base import Policy
 from physicalai.policies.mixins import SnapFlowPolicyMixin
+from physicalai.policies.mixins.peft import PeftPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -47,7 +48,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
+class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
     """Pi05 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi05 model.
@@ -149,6 +150,14 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         # Finetuning
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = False,
+        # LoRA
+        lora_enabled: bool = False,
+        lora_rank: int = 32,
+        lora_alpha: int | None = None,
+        lora_dropout: float = 0.05,
+        lora_target_modules: str | tuple[str, ...] | None = None,
+        lora_adapter_dtype: Literal["float32", "auto"] = "float32",
+        lora_use_dora: bool = False,
         # Normalization
         normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         # Optimizer
@@ -181,6 +190,13 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
                 compile_mode=compile_mode,
                 freeze_vision_encoder=freeze_vision_encoder,
                 train_expert_only=train_expert_only,
+                lora_enabled=lora_enabled,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                lora_target_modules=lora_target_modules,
+                lora_adapter_dtype=lora_adapter_dtype,
+                lora_use_dora=lora_use_dora,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
                 optimizer_eps=optimizer_eps,
@@ -224,6 +240,13 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
                 compile_mode=compile_mode,
                 freeze_vision_encoder=freeze_vision_encoder,
                 train_expert_only=train_expert_only,
+                lora_enabled=lora_enabled,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                lora_target_modules=lora_target_modules,
+                lora_adapter_dtype=lora_adapter_dtype,
+                lora_use_dora=lora_use_dora,
                 normalization_mode=normalization_mode,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
@@ -245,6 +268,13 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         self._postprocessor: Pi05Postprocessor | None = None
 
         self._dataset_stats = dataset_stats
+
+        if self.config.use_lora and pretrained_name_or_path is None and weight_file is None:
+            logger.warning(
+                "LoRA is enabled (lora_rank=%d) but no pretrained_name_or_path was given. "
+                "LoRA fine-tuning on a randomly initialized model is unlikely to be useful.",
+                self.config.lora_rank,
+            )
 
         if dataset_stats is not None:
             self._initialize_model(dataset_stats, weight_file)
@@ -319,6 +349,9 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             self.model.paligemma_with_expert.to_bfloat16_for_selected_params(self.config.dtype)
             self.model.paligemma_with_expert._set_requires_grad()  # noqa: SLF001
 
+        if self.config.use_lora:
+            self._inject_lora()
+
         self._preprocessor, self._postprocessor = make_pi05_preprocessors(
             max_action_dim=self.config.max_action_dim,
             stats=dataset_stats,
@@ -330,7 +363,7 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
-    def _from_hf(  # noqa: PLR6301, PLR0913, PLR0912, PLR0915
+    def _from_hf(  # noqa: PLR6301, PLR0913, PLR0912, PLR0915, C901
         self,
         pretrained_name_or_path: str | Path,
         *,
@@ -348,6 +381,13 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         compile_mode: str | None = "max-autotune",
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = False,
+        lora_enabled: bool = False,
+        lora_rank: int = 32,
+        lora_alpha: int | None = None,
+        lora_dropout: float = 0.05,
+        lora_target_modules: str | tuple[str, ...] | None = None,
+        lora_adapter_dtype: Literal["float32", "auto"] = "float32",
+        lora_use_dora: bool = False,
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
         optimizer_eps: float = 1e-8,
@@ -386,6 +426,13 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             compile_mode: Override torch compile mode.
             freeze_vision_encoder: Override whether to freeze the vision encoder.
             train_expert_only: Override whether to train only the action expert.
+            lora_enabled: Override whether LoRA/DoRA fine-tuning is enabled.
+            lora_rank: Override LoRA rank.
+            lora_alpha: Override LoRA alpha scaling factor. ``None`` resolves to lora_rank.
+            lora_dropout: Override LoRA dropout probability.
+            lora_target_modules: Override LoRA target modules (regex or suffix tuple).
+            lora_adapter_dtype: Override precision for newly created LoRA parameters.
+            lora_use_dora: Override whether to use DoRA instead of plain LoRA.
             optimizer_lr: Override learning rate.
             optimizer_betas: Override Adam beta coefficients.
             optimizer_eps: Override optimizer epsilon.
@@ -472,6 +519,15 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             hf_config["compile_mode"] = compile_mode
         hf_config["freeze_vision_encoder"] = freeze_vision_encoder
         hf_config["train_expert_only"] = train_expert_only
+        hf_config["lora_enabled"] = lora_enabled
+        hf_config["lora_rank"] = lora_rank
+        if lora_alpha is not None:
+            hf_config["lora_alpha"] = lora_alpha
+        hf_config["lora_dropout"] = lora_dropout
+        if lora_target_modules is not None:
+            hf_config["lora_target_modules"] = lora_target_modules
+        hf_config["lora_adapter_dtype"] = lora_adapter_dtype
+        hf_config["lora_use_dora"] = lora_use_dora
         hf_config["optimizer_lr"] = optimizer_lr
         hf_config["optimizer_betas"] = optimizer_betas
         hf_config["optimizer_eps"] = optimizer_eps
@@ -725,6 +781,10 @@ class Pi05(SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             list[str | ExportBackend]: A list of supported export backends.
         """
         return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+
+    # export() is provided by PeftPolicyMixin (merges LoRA adapters into a disposable
+    # copy of self.model before delegating to ExportablePolicyMixin.export() via
+    # cooperative super()); see physicalai.policies.mixins.peft.PeftPolicyMixin.export.
 
     @property
     def inputs_schema(self) -> list[InferenceFeature] | None:

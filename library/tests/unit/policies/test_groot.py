@@ -125,7 +125,7 @@ class TestNNPrimitives:
 
     def test_swish_activation(self) -> None:
         """Test swish computes x * sigmoid(x) and preserves gradients."""
-        from physicalai.policies.groot.components.nn import swish
+        from physicalai.policies.components.nn import swish
 
         x = torch.tensor([-1.0, 0.0, 1.0, 2.0], requires_grad=True)
         out = swish(x)
@@ -136,7 +136,7 @@ class TestNNPrimitives:
 
     def test_sinusoidal_encoding(self) -> None:
         """Test sinusoidal positional encoding produces unique, deterministic outputs."""
-        from physicalai.policies.groot.components.nn import SinusoidalPositionalEncoding
+        from physicalai.policies.components.nn import SinusoidalPositionalEncoding
 
         encoder = SinusoidalPositionalEncoding(embedding_dim=128)
         t = torch.tensor([[0.0, 100.0, 500.0]])
@@ -152,7 +152,7 @@ class TestNNPrimitives:
 
     def test_category_specific_linear(self) -> None:
         """Test category-specific linear layer routes by category ID."""
-        from physicalai.policies.groot.components.nn import CategorySpecificLinear
+        from physicalai.policies.components.nn import CategorySpecificLinear
 
         layer = CategorySpecificLinear(num_categories=4, input_dim=16, hidden_dim=32)
         x = torch.randn(2, 5, 16, requires_grad=True)
@@ -167,7 +167,7 @@ class TestNNPrimitives:
 
     def test_multi_embodiment_action_encoder(self) -> None:
         """Test multi-embodiment action encoder combines actions and timesteps."""
-        from physicalai.policies.groot.components.nn import MultiEmbodimentActionEncoder
+        from physicalai.policies.components.nn import MultiEmbodimentActionEncoder
 
         encoder = MultiEmbodimentActionEncoder(action_dim=7, hidden_size=64, num_embodiments=4)
         actions = torch.randn(2, 10, 7)

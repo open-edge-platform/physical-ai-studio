@@ -38,6 +38,7 @@ from .benchmark import Benchmark
 from .libero.libero import LiberoBenchmark
 from .pusht.pusht import PushTBenchmark
 from .results import BenchmarkResults, TaskResult
+from .robocasa.robocasa import RoboCasaBenchmark
 
 __all__ = [
     "Benchmark",
@@ -45,6 +46,7 @@ __all__ = [
     "LiberoBenchmark",
     "PushTBenchmark",
     "RecordMode",
+    "RoboCasaBenchmark",
     "TaskResult",
     "VideoRecorder",
 ]

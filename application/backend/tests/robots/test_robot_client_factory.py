@@ -32,11 +32,19 @@ JOINT_NAMES = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wri
 class _FakeConnectionManager:
     """Stands in for RobotConnectionManager with one discovered SO101 port."""
 
-    def __init__(self) -> None:
-        self.robots = [SerialPortInfo(connection_string="/dev/ttyACM0", serial_number="ABC123")]
+    def __init__(self, *, serial_number: str | None = "ABC123") -> None:
+        self.robots = [SerialPortInfo(connection_string="/dev/ttyACM0", serial_number=serial_number)]
 
     async def find_robots(self) -> list[SerialPortInfo]:
         return self.robots
+
+    async def find_port(self, port_info: SerialPortInfo) -> str | None:
+        for port in self.robots:
+            if port_info.serial_number and port.serial_number == port_info.serial_number:
+                return port.connection_string
+            if not port_info.serial_number and port.connection_string == port_info.connection_string:
+                return port.connection_string
+        return None
 
 
 def _calibration() -> dict[str, dict[str, int]]:
@@ -70,6 +78,15 @@ def _factory() -> RobotClientFactory:
 
 
 class TestBuild:
+    async def test_build_shared_robot_returns_transport_and_definition(self) -> None:
+        robot = _so101_robot()
+
+        shared, definition = await _factory().build_shared_robot(robot)
+
+        assert isinstance(shared, SharedRobot)
+        assert shared.name == str(robot.id)
+        assert definition.type == "SO101_Follower"
+
     async def test_wraps_the_driver_in_a_shared_robot(self) -> None:
         client = await _factory().build(_so101_robot())
 
@@ -90,8 +107,11 @@ class TestBuild:
 
         assert client._display_name == DISPLAY_NAME
 
-    async def test_shared_robot_carries_the_driver_recipe(self) -> None:
+    async def test_shared_robot_carries_the_driver_recipe(self, mocker: Any) -> None:
         """The owner process rebuilds the driver from this nested recipe."""
+        # Pin the by-id lookup: it reads /dev, so it is machine dependent.
+        mocker.patch("robots.robot_client_factory.resolve_serial_device", side_effect=lambda device: device)
+
         client = await _factory().build(_so101_robot("SO101_Leader"))
 
         recipe = to_config(client._robot)["init_args"]["robot"]
@@ -134,3 +154,38 @@ class TestBuild:
 
         with pytest.raises(ValueError, match="not part of the catalog"):
             await _factory().build(robot)
+
+
+class TestFindPort:
+    """Port resolution is shared by the adapter path, the runtime and the export."""
+
+    async def test_a_discovered_port_is_reported_as_its_stable_alias(self, mocker: Any) -> None:
+        mocker.patch(
+            "robots.robot_client_factory.resolve_serial_device",
+            return_value="/dev/serial/by-id/usb-test",
+        )
+
+        port = await _factory().find_port(SerialPortInfo(connection_string="/dev/ttyACM0", serial_number="ABC123"))
+
+        assert port == "/dev/serial/by-id/usb-test"
+
+    async def test_a_robot_without_a_serial_number_keeps_the_raw_path(self, mocker: Any) -> None:
+        """Matching by path locates a device without identifying it.
+
+        A by-id alias would make that guess look verified, and in an exported
+        config it would hide the path behind a name that no longer needs a
+        CHANGE_ME marker.
+        """
+        resolve = mocker.patch("robots.robot_client_factory.resolve_serial_device")
+        factory = RobotClientFactory(robot_manager=_FakeConnectionManager(serial_number=None))  # type: ignore[arg-type]
+
+        port = await factory.find_port(SerialPortInfo(connection_string="/dev/ttyACM0", serial_number=None))
+
+        assert port == "/dev/ttyACM0"
+        resolve.assert_not_called()
+
+    async def test_an_absent_robot_resolves_to_nothing(self) -> None:
+        """Not falling back to the stored port is deliberate: it may be another robot by now."""
+        port = await _factory().find_port(SerialPortInfo(connection_string="/dev/ttyACM0", serial_number="GONE"))
+
+        assert port is None

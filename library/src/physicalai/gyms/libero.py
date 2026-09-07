@@ -400,6 +400,8 @@ class LiberoGym(Gym):
         """
         # Convert tensor to numpy if needed
         if isinstance(action, torch.Tensor):
+            if action.dtype == torch.bfloat16:
+                action = action.float()
             action = action.cpu().numpy()
 
         # Validate action shape

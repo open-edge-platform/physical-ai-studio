@@ -41,9 +41,10 @@ classDiagram
       PhysicalAIModelServer --> Policy : loads or receives
 ```
 
-`PhysicalAIModelServer` owns the reusable protocol bridge. A benchmark-specific
-server such as `LiberoPi05ModelServer` only owns policy construction and stable
-defaults for a model-benchmark pair.
+`PhysicalAIModelServer` owns the reusable protocol bridge and is the supported
+Pi0.5 integration path. An optional benchmark-specific server such as
+`LiberoPi05ModelServer` only owns policy construction and stable defaults for a
+model-benchmark pair.
 
 Class names follow vla-eval conventions: package adapters use
 `{Package}ModelServer`, while benchmark-specific adapters use
@@ -121,11 +122,10 @@ construct the policy and delegate shared behavior to `PhysicalAIModelServer`:
 ```python
 class LiberoPi05ModelServer(PhysicalAIModelServer):
     def __init__(
-        self,
-        pretrained_name_or_path: str = "lerobot/pi05_libero_finetuned_v044",
-        device: str = "cuda",
-        **kwargs: Any,
-    ) -> None:
+      self,
+      pretrained_name_or_path: str = "lerobot/pi05_libero_finetuned",
+      device: str = "cuda",
+      **kwargs: Any) -> None:
         policy = Pi05(pretrained_name_or_path=pretrained_name_or_path)
         super().__init__(
             _policy=policy,
@@ -175,7 +175,9 @@ benchmarks/vla-evaluation-harness/
 │   └── benchmarks/
 │       └── libero/
 │           ├── smoke_test.yaml
-│           └── 10.yaml
+│           ├── 10.yaml
+│           └── libero.yaml
+├── shard.sh
 └── model_servers/
    ├── physicalai.py
    └── libero_pi05.py
@@ -213,7 +215,7 @@ sequenceDiagram
 
 1. **Choose a model:** Select a Physical AI policy, such as Pi0.5.
 2. **Find compatible weights:** Identify the benchmark targeted by the
-   checkpoint. For example, `lerobot/pi05_libero_finetuned_v044` targets
+   checkpoint. For example, `lerobot/pi05_libero_finetuned` targets
    LIBERO.
 3. **Select the benchmark:** Confirm that `vla-eval` supports it and choose the
    repository-owned run config.
@@ -257,7 +259,7 @@ args:
   policy:
     class_path: physicalai.policies.pi05.Pi05
     init_args:
-      pretrained_name_or_path: lerobot/pi05_libero_finetuned_v044
+      pretrained_name_or_path: lerobot/pi05_libero_finetuned
   image_keys:
     agentview: image
     wrist: image2
@@ -272,7 +274,7 @@ python model_servers/physicalai.py \
    --config configs/physicalai_pi05_libero.yaml
 ```
 
-### Benchmark-Specific Server
+### Optional Benchmark-Specific Server
 
 ```bash
 cd library/benchmarks/vla-evaluation-harness
@@ -281,12 +283,35 @@ python model_servers/libero_pi05.py --port 8000
 
 ### Run LIBERO
 
-In a second terminal:
+In a second terminal, smoke-test one episode:
 
 ```bash
 cd library/benchmarks/vla-evaluation-harness
-uv run vla-eval run --config configs/benchmarks/libero/10.yaml
+uv run --no-sync vla-eval run \
+   --config configs/benchmarks/libero/smoke_test.yaml
 ```
+
+Then run the complete standard protocol: four suites, 40 tasks, and 2,000
+episodes.
+
+```bash
+uv run --no-sync vla-eval run \
+   --config configs/benchmarks/libero/libero.yaml
+```
+
+To distribute the same protocol across four simulator processes and merge the
+shared recording afterward:
+
+```bash
+./shard.sh \
+   --config configs/benchmarks/libero/libero.yaml \
+   --shards 4 \
+   --output-dir results/pi05-pytorch-libero
+```
+
+Sharding parallelizes simulator episodes. The Physical AI adapter currently
+implements `predict()` rather than `predict_batch()`, so the shared model
+server can become the bottleneck and speedup must be measured end to end.
 
 ## Integration Points
 

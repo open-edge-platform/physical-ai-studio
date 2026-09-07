@@ -1,9 +1,9 @@
 .card {
     border-width: var(--spectrum-global-dimension-size-25);
-    border-color: var(--spectrum-global-color-gray-200);
+    border-color: var(--spectrum-global-color-gray-300);
     border-style: solid;
     border-radius: var(--spectrum-global-dimension-size-50);
-    background-color: var(--spectrum-global-color-gray-300);
+    background-color: var(--spectrum-global-color-gray-200);
     overflow: hidden;
 
     transition:
@@ -13,7 +13,7 @@
 
 .card:hover {
     transition-delay: 0ms, 0ms;
-    background-color: var(--spectrum-global-color-gray-200);
+    background-color: var(--spectrum-global-color-gray-300);
     border-color: var(--energy-blue);
 }
 
@@ -27,37 +27,10 @@
     );
 }
 
-/* Darken the baseline image naturally */
 .imgWrapper img {
     display: block;
     width: 100%;
     height: auto;
-    filter: brightness(80%) saturate(90%);
-}
-
-/* The Steel Blue Tint Mask */
-.imgWrapper::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-
-    /* Blue Steel Shade 2, with opacity */
-    background-color: rgba(24, 53, 68, 0.4);
-    mix-blend-mode: color;
-
-    pointer-events: none; /* Allows clicks to pass through to the image */
-    transition: opacity 0.3s ease;
-}
-
-/* Optional: Fade out the steel-blue tint on hover */
-.card:hover .imgWrapper::after {
-    opacity: 0;
-}
-.card:hover .imgWrapper img {
-    filter: brightness(100%) saturate(100%);
 }
 
 .activeCard {

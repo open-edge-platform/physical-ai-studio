@@ -39,6 +39,7 @@ dependencies = [
     "openvino>=2026.3",
     "openvino_tokenizers>=2026.3",
     "onnxscript",
+    "peft>=0.20.0,<1.0.0",
     "jsonargparse[signatures]>=4.27.0", # This could be extra
     "pydantic",                         # This could be extra
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
@@ -76,7 +77,6 @@ diffusion = ["diffusers>=0.38.0"]
 # Supports LoRA fine-tuning for efficient adaptation
 pi0 = [
     "transformers>=5.5.0,<5.6.0",
-    "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
     "sentencepiece<=0.2.1",
@@ -88,7 +88,6 @@ pi05 = ["physicalai-train[pi0]"]
 # Note: transformers>=4.54.0 required for _prepare_image_like_inputs fix
 groot = [
     "transformers>=5.5.0,<5.6.0",
-    "peft>=0.13.0,<1.0.0",
     "diffusers>=0.38.0",
     "dm-tree>=0.1.8,<1.0.0",
     "timm>=1.0.0,<1.1.0",
@@ -105,11 +104,23 @@ smolvla = [
     "safetensors>=0.4.3,<1.0.0",
 ]
 
+# RLWRLD RLDX-1
+rldx1 = [
+    "transformers>=5.3.0,<5.6.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+    "scipy>=1.11.0,<2.0.0",
+    "peft>=0.13.0,<1.0.0",
+    "diffusers>=0.38.0",
+]
+# Neural Network Compression Framework (optional, for post-export quantization hooks)
+nncf = ["nncf>=3.0.0"]
+
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
 
 # ExecuTorch with OpenVINO delegate (requires nncf for export)
-executorch-openvino = ["executorch>=1.1.0", "nncf>=3.0.0"]
+executorch-openvino = ["executorch>=1.1.0", "physicalai-train[nncf]"]
 
 # All optional dependencies
 all = [
@@ -119,6 +130,7 @@ all = [
     "physicalai-train[pi05]",
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
+    "physicalai-train[rldx1]",
 ]
 
 # Contribute Torch and ExecuTorch as inference backends to the registry
@@ -156,6 +168,7 @@ dev = [
 # ============================================================================ #
 [tool.uv]
 exclude-newer = "7 days"
+exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
@@ -195,7 +208,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "2528309e55ab6a5f7f71c6dc23b8baae21f80108" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "8e4021703ef43387a835c6647b993cecc069ca85" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -236,6 +249,10 @@ project-excludes = [
     "src/physicalai/gyms/robocasa.py",
     "src/physicalai/policies/pi05/pi_gemma.py",
     "src/physicalai/policies/groot/components/backbone.py",
+    # rldx1's model.py lazily imports peft, an optional dep not present in the
+    # main `.venv`; guarded at runtime with a clear ImportError if missing.
+    "src/physicalai/policies/rldx1/model.py",
+    "src/physicalai/policies/rldx1/components/backbone/modeling_qwen3_vl.py",
 ]
 
 
@@ -255,6 +272,8 @@ extend-exclude = [
     "examples",
     "tests",
     "notebooks", # Jupyter notebooks have different style requirements
+    # Auto-generated from transformers' modular_qwen3_vl.py; not hand-maintained.
+    "src/physicalai/policies/rldx1/components/backbone/modeling_qwen3_vl.py",
 ]
 
 [tool.ruff.lint]

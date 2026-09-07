@@ -1,0 +1,25 @@
+.section {
+    border: 1px solid var(--spectrum-global-color-gray-300);
+    border-radius: var(--spectrum-global-dimension-size-75);
+    margin-block: var(--spectrum-global-dimension-size-300);
+}
+
+.description {
+    display: block;
+    margin-top: var(--spectrum-global-dimension-size-50);
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.fields {
+    margin-top: var(--spectrum-global-dimension-size-200);
+}
+
+.error {
+    display: block;
+    margin-top: var(--spectrum-global-dimension-size-100);
+    color: var(--spectrum-red-600);
+}
+
+.saved {
+    color: var(--spectrum-global-color-gray-700);
+}

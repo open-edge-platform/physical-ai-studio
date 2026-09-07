@@ -31,9 +31,10 @@ uv sync --active --extra cu128          # or cpu / xpu — do NOT use --extra al
 
 bash library/scripts/benchmark/install_robocasa.sh
 
-# Download kitchen assets (~4.4 GB on disk; prompts interactively)
+# Download kitchen assets (~34 GB on disk, including the objaverse object
+# pack; prompts interactively)
 yes y | python -m robocasa.scripts.download_kitchen_assets \
-    --type tex tex_generative fixtures_lw objs_lw
+    --type tex tex_generative fixtures_lw objs_lw objs_objaverse
 
 # Headless servers
 export MUJOCO_GL=egl
@@ -55,9 +56,9 @@ next_obs, reward, terminated, truncated, info = gym.step(action)
 gym.close()
 
 # Task-group keyword (18 atomic tasks in robocasa v1.0)
-from physicalai.gyms import create_robocasa_gyms
+from physicalai.gyms import RoboCasaTaskGroup, create_robocasa_gyms
 
-gyms = create_robocasa_gyms(tasks="atomic_seen")
+gyms = create_robocasa_gyms(tasks=RoboCasaTaskGroup.ATOMIC_SEEN)
 ```
 
 ## API
@@ -72,67 +73,117 @@ RoboCasaGym(
    render_mode: str,                   # "rgb_array" (default)
    observation_height: int,            # default 256
    observation_width: int,             # default 256
-   split: str | None,                  # overrides auto-resolved split
+   split: RoboCasaSplit | None,        # overrides auto-resolved split
    episode_length: int | None,         # MuJoCo horizon
-   obj_registries: Sequence[str],      # default ("lightwheel",)
+   obj_registries: Sequence[str],      # default ("objaverse", "lightwheel")
+   state_order: FieldOrder | None,     # default: DEFAULT_STATE_ORDER
+   action_order: FieldOrder | None,    # default: DEFAULT_ACTION_ORDER
 )
 ```
 
 **`task` values for `RoboCasaGym`:**
 
-| Value                     | Resolves to                                   |
-| ------------------------- | --------------------------------------------- |
-| `"TaskName"` or `"T1,T2"` | explicit names, split `None` (auto = `"all"`) |
+| Value        | Resolves to                                              |
+| ------------ | -------------------------------------------------------- |
+| `"TaskName"` | explicit name, split `None` (auto = `RoboCasaSplit.ALL`) |
 
 Task-group keywords are expanded by `create_robocasa_gyms(...)`, not by `RoboCasaGym(...)`.
 
-**task-group values for `create_robocasa_gyms(tasks=...)`:**
+**`RoboCasaTaskGroup` values for `create_robocasa_gyms(tasks=...)`:**
 
-| Value                            | Resolves to                            |
-| -------------------------------- | -------------------------------------- |
-| `"atomic_seen"`                  | 18 v1.0 atomic tasks, split `"target"` |
-| `"composite_seen"`               | composite tasks, split `"target"`      |
-| `"composite_unseen"`             | composite tasks, split `"target"`      |
-| `"pretrain50"` … `"pretrain300"` | pretrain partition, split `"pretrain"` |
+| Value                                          | Resolves to                                        |
+| ---------------------------------------------- | -------------------------------------------------- |
+| `RoboCasaTaskGroup.ATOMIC_SEEN`                | 18 v1.0 atomic tasks, split `RoboCasaSplit.TARGET` |
+| `RoboCasaTaskGroup.COMPOSITE_SEEN`             | composite tasks, split `RoboCasaSplit.TARGET`      |
+| `RoboCasaTaskGroup.COMPOSITE_UNSEEN`           | composite tasks, split `RoboCasaSplit.TARGET`      |
+| `RoboCasaTaskGroup.PRETRAIN50` … `PRETRAIN300` | pretrain partition, split `RoboCasaSplit.PRETRAIN` |
 
 **Observation:**
 
 `reset()` and `step()` return `physicalai.data.observation.Observation`:
 
-| Field                              | Shape                | dtype     | Notes                                                            |
-| ---------------------------------- | -------------------- | --------- | ---------------------------------------------------------------- |
-| `images["robot0_agentview_left"]`  | `(1, 3, H, W)`       | `float32` | normalized to `[0, 1]`                                           |
-| `images["robot0_agentview_right"]` | `(1, 3, H, W)`       | `float32` |                                                                  |
-| `images["robot0_eye_in_hand"]`     | `(1, 3, H, W)`       | `float32` |                                                                  |
-| `state`                            | `(1, 16)`            | `float32` | base_pos(3)+base_quat(4)+ee_pos_rel(3)+ee_quat_rel(4)+gripper(2) |
-| `task`                             | `list[str]` length 1 |           | language description                                             |
+| Field                              | Shape                | dtype     | Notes                                                                                                                                                      |
+| ---------------------------------- | -------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `images["robot0_agentview_left"]`  | `(1, 3, H, W)`       | `float32` | normalized to `[0, 1]`                                                                                                                                     |
+| `images["robot0_agentview_right"]` | `(1, 3, H, W)`       | `float32` |                                                                                                                                                            |
+| `images["robot0_eye_in_hand"]`     | `(1, 3, H, W)`       | `float32` |                                                                                                                                                            |
+| `state`                            | `(1, 16)`            | `float32` | `end_effector_position_relative(3) + end_effector_rotation_relative(4) + gripper_qpos(2) + base_position(3) + base_rotation(4)`, per `DEFAULT_STATE_ORDER` |
+| `task`                             | `list[str]` length 1 |           | language description                                                                                                                                       |
 
 Camera names are raw RoboCasa v1.0 names. Per-policy renames go through a policy-side adapter, not here.
 
 **Action:**
 
-Flat `(12,)` `torch.Tensor`: `base_motion(4) + control_mode(1) + ee_pos(3) + ee_rot(3) + gripper(1)`.
-`step()` splits it internally via `convert_action()`.
+Flat `(12,)` `torch.Tensor`: `end_effector_position(3) + end_effector_rotation(3) + gripper_close(1) + base_motion(4) + control_mode(1)`,
+per `DEFAULT_ACTION_ORDER`. `step()` splits it internally via `convert_action()`.
+
+**Field order is checkpoint-configurable, not hardcoded:**
+
+`state`/action field order is a real training-time contract -- a different checkpoint can be trained with a
+different field order for the same robot. Rather than hardcode one order, `RoboCasaGym`/`create_robocasa_gyms`/
+`RoboCasaBenchmark` accept `state_order`/`action_order`: ordered `FieldOrder = tuple[tuple[str, int], ...]`
+`(name, dim)` pairs. Both default to the native PandaOmron order (`DEFAULT_STATE_ORDER`/`DEFAULT_ACTION_ORDER`)
+but can be overridden to match a specific checkpoint, e.g. built directly from that checkpoint's own
+`statistics.json` field names/widths instead of a hand-transcribed constant:
+
+```python
+from physicalai.gyms.robocasa import RoboCasaGym
+
+stats = checkpoint_stats["general_embodiment"]["state"]  # dict preserving training-time field order
+state_order = tuple((name, len(v["mean"])) for name, v in stats.items())
+
+gym = RoboCasaGym(task="CloseFridge", state_order=state_order)
+```
+
+`state_order`/`action_order` can also be written out by hand -- e.g. a checkpoint trained with
+`base_motion`/`control_mode` first in the action vector instead of last:
+
+```python
+from physicalai.gyms.robocasa import RoboCasaGym
+
+state_order = (
+    ("base_position", 3),
+    ("base_rotation", 4),
+    ("end_effector_position_relative", 3),
+    ("end_effector_rotation_relative", 4),
+    ("gripper_qpos", 2),
+)
+action_order = (
+    ("base_motion", 4),
+    ("control_mode", 1),
+    ("end_effector_position", 3),
+    ("end_effector_rotation", 3),
+    ("gripper_close", 1),
+)
+
+gym = RoboCasaGym(task="CloseFridge", state_order=state_order, action_order=action_order)
+```
+
+Same params on `create_robocasa_gyms(...)` and `RoboCasaBenchmark(...)`, forwarded to every gym they create.
 
 ### `create_robocasa_gyms`
 
 ```python
 create_robocasa_gyms(
-    tasks: str | list[str],   # group keyword or list of task names
+    tasks: RoboCasaTaskGroup | list[str],   # group keyword or list of explicit task names
+    split: RoboCasaSplit | None = None,
     **gym_kwargs,             # forwarded to RoboCasaGym
 ) -> list[RoboCasaGym]
 ```
 
-Returns one `RoboCasaGym` per task name.
+Returns one `RoboCasaGym` per task name. Bare strings (e.g. `"atomic_seen"`) are rejected —
+pass a `RoboCasaTaskGroup` member for groups, or a list even for a single explicit task name.
 
 ### Module-level constants
 
-| Name                     | Value                                                                       | Notes                          |
-| ------------------------ | --------------------------------------------------------------------------- | ------------------------------ |
-| `OBS_STATE_DIM`          | `16`                                                                        | proprioceptive state dimension |
-| `ACTION_DIM`             | `12`                                                                        | flat action dimension          |
-| `DEFAULT_CAMERAS`        | `("robot0_agentview_left", "robot0_eye_in_hand", "robot0_agentview_right")` |                                |
-| `DEFAULT_OBJ_REGISTRIES` | `("lightwheel",)`                                                           | avoids objaverse NaN crash     |
+| Name                     | Value                                                                       | Notes                                                  |
+| ------------------------ | --------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `OBS_STATE_DIM`          | `16`                                                                        | proprioceptive state dimension                         |
+| `ACTION_DIM`             | `12`                                                                        | flat action dimension                                  |
+| `DEFAULT_CAMERAS`        | `("robot0_agentview_left", "robot0_eye_in_hand", "robot0_agentview_right")` |                                                        |
+| `DEFAULT_OBJ_REGISTRIES` | `("objaverse", "lightwheel")`                                               | pass `("lightwheel",)` if objaverse assets are missing |
+| `DEFAULT_STATE_ORDER`    | see above                                                                   | native PandaOmron `agent_pos` field order              |
+| `DEFAULT_ACTION_ORDER`   | see above                                                                   | native PandaOmron action field order                   |
 
 ## Known upstream gotchas
 
@@ -142,8 +193,9 @@ Three bugs from the lerobot port are already encoded as workarounds:
    `create_env` rejects. The wrapper always passes `split="all"` when no split is set.
 
 2. **objaverse NaN crash** — sampling from a registry with zero objects causes
-   `Probabilities contain NaN`. Fixed by defaulting to `obj_registries=("lightwheel",)`.
-   If you see this error at `reset()`, re-run the asset download with `--type objs_lw`.
+   `Probabilities contain NaN`. If you hit this at `reset()`, either re-run the
+   asset download with `--type objs_objaverse` or pass `obj_registries=("lightwheel",)`
+   explicitly to drop objaverse from the default.
 
 3. **`atomic_seen` → `split="target"`** — robocasa's own group maps to `split="target"`,
    not `"all"`. `_TASK_GROUP_SPLITS` encodes this mapping for all group keywords.

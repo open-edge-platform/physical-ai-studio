@@ -92,3 +92,4 @@ exclude_dirs = ["tests"]
 
 [tool.uv]
 exclude-newer = "7 days"
+exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false }

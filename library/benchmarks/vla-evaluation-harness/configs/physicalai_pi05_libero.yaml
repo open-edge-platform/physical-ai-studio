@@ -4,7 +4,7 @@ args:
   policy:
     class_path: physicalai.policies.pi05.Pi05
     init_args:
-      pretrained_name_or_path: lerobot/pi05_libero_finetuned_v044
+      pretrained_name_or_path: lerobot/pi05_libero_finetuned
   image_keys:
     agentview: image
     wrist: image2

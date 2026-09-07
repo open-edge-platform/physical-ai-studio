@@ -1,8 +1,9 @@
 import { ReactNode } from 'react';
 
-import { Flex, Grid, Heading, minmax, View } from '@geti-ui/ui';
+import { Flex, Grid, Heading, minmax, Text, View } from '@geti-ui/ui';
 
 import { SchemaProjectCamera } from '../../api/types';
+import { formatFingerprint } from './fingerprint';
 import { WebsocketCamera } from './websocket-camera';
 
 const CameraWell = ({
@@ -55,7 +56,7 @@ const CameraHeading = ({ camera }: { camera: SchemaProjectCamera }) => {
                                 borderRadius: '2px',
                             }}
                         >
-                            {camera.fingerprint}
+                            {formatFingerprint(camera.fingerprint)}
                         </span>
                         <span
                             style={{
@@ -87,7 +88,13 @@ export const CameraFeed = ({ camera, empty = false }: { camera: SchemaProjectCam
                 minHeight={0}
             >
                 <CameraWell width={camera.payload.width} height={camera.payload.height}>
-                    <WebsocketCamera camera={camera} />
+                    {camera.fingerprint ? (
+                        <WebsocketCamera camera={camera} />
+                    ) : (
+                        <Flex width='100%' height='100%' justifyContent='center' alignItems='center'>
+                            <Text>Reselect this camera to preview it.</Text>
+                        </Flex>
+                    )}
                 </CameraWell>
             </Grid>
         </Flex>

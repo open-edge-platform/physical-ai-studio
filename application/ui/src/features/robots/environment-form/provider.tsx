@@ -27,7 +27,7 @@ export const useEnvironmentFormBody = (environment_id: string) => {
 
     return {
         id: environment_id,
-        name: environmentForm.name,
+        name: environmentForm.name.trim(),
         cameras: environmentForm.cameras.map((camera) => {
             return {
                 camera_id: camera.camera_id,

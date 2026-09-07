@@ -1,9 +1,22 @@
-import { Badge, Button, Content, ContextualHelp, Divider, Flex, Heading, Icon, Text, View } from '@geti-ui/ui';
+import {
+    Badge,
+    Button,
+    Content,
+    ContextualHelp,
+    DialogTrigger,
+    Divider,
+    Flex,
+    Heading,
+    Icon,
+    Text,
+    View,
+} from '@geti-ui/ui';
 import { DownloadIcon } from '@geti-ui/ui/icons';
 
 import { fetchClient } from '../../../api/client';
 import type { components, SchemaModel } from '../../../api/openapi-spec';
 import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-backends';
+import { RuntimeExportDialog } from './runtime-export-dialog';
 
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
 type ExportBackend = components['schemas']['ExportBackend'];
@@ -145,25 +158,44 @@ export const BackendCard = ({ modelDetail, backendType, model }: BackendCardProp
                         <ModelPrecision exportDetail={exportDetail} />
                         {isAvailable && (
                             <View marginStart='auto' alignSelf={'center'}>
-                                <Button
-                                    href={downloadUrl}
-                                    aria-label={`Download ${backend.label} export`}
-                                    UNSAFE_style={{
-                                        color: 'inherit',
-                                        display: 'inline-flex',
-                                        textDecoration: 'none',
-                                        paddingInline: 'var(--spectrum-global-dimension-size-200)',
-                                        alignItems: 'center',
-                                    }}
-                                    target='_blank'
-                                    rel='noopener noreferrer'
-                                    variant='secondary'
-                                >
-                                    <Icon marginEnd='size-100'>
-                                        <DownloadIcon />
-                                    </Icon>
-                                    <span>Download</span>
-                                </Button>
+                                <Flex gap='size-100'>
+                                    {backendType === 'openvino' && (
+                                        <DialogTrigger>
+                                            <Button
+                                                aria-label={`Download ${backend.label} runtime export`}
+                                                variant='secondary'
+                                            >
+                                                Runtime export
+                                            </Button>
+                                            {(close) => (
+                                                <RuntimeExportDialog
+                                                    close={close}
+                                                    model={model}
+                                                    backend={backendType}
+                                                />
+                                            )}
+                                        </DialogTrigger>
+                                    )}
+                                    <Button
+                                        href={downloadUrl}
+                                        aria-label={`Download ${backend.label} export`}
+                                        UNSAFE_style={{
+                                            color: 'inherit',
+                                            display: 'inline-flex',
+                                            textDecoration: 'none',
+                                            paddingInline: 'var(--spectrum-global-dimension-size-200)',
+                                            alignItems: 'center',
+                                        }}
+                                        target='_blank'
+                                        rel='noopener noreferrer'
+                                        variant='secondary'
+                                    >
+                                        <Icon marginEnd='size-100'>
+                                            <DownloadIcon />
+                                        </Icon>
+                                        <span>Download</span>
+                                    </Button>
+                                </Flex>
                             </View>
                         )}
                     </Flex>

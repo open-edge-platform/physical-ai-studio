@@ -1,0 +1,42 @@
+import { Item, TabList, TabPanels, Tabs, View } from '@geti-ui/ui';
+
+import { SchemaModel } from '../../../api/openapi-spec';
+import { MetricsContent } from '../metrics/metrics';
+import { ModelDetails } from '../model-details/model-details';
+import { ModelFormats } from '../model-formats/model-formats';
+import { ComingSoon } from '../shared/coming-soon';
+
+import classes from './model-row-content.module.css';
+
+interface ModelRowContentProps {
+    model: SchemaModel;
+}
+
+export const ModelRowContent = ({ model }: ModelRowContentProps) => {
+    return (
+        <View UNSAFE_className={classes.modelRowContent}>
+            <Tabs>
+                <TabList marginBottom={'size-200'}>
+                    <Item key='model_formats'>Model formats</Item>
+                    <Item key='metrics'>Model Metrics</Item>
+                    <Item key='datasets'>Training Datasets</Item>
+                    <Item key='training_details'>Training Details</Item>
+                </TabList>
+                <TabPanels>
+                    <Item key='model_formats'>
+                        <ModelFormats model={model} />
+                    </Item>
+                    <Item key='metrics'>
+                        <MetricsContent modelId={model.id!} />
+                    </Item>
+                    <Item key='datasets'>
+                        <ComingSoon />
+                    </Item>
+                    <Item key='training_details'>
+                        <ModelDetails model={model} />
+                    </Item>
+                </TabPanels>
+            </Tabs>
+        </View>
+    );
+};

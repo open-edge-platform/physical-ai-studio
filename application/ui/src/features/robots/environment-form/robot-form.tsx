@@ -6,6 +6,7 @@ import { Add, Close } from '@geti-ui/ui/icons';
 import { $api } from '../../../api/client';
 import { useProjectId } from '../../../features/projects/use-project';
 import { useIsRobotRole } from '../robot-catalog.hooks';
+import { isUnavailableRobot } from '../robot-types';
 import { RobotConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
 import classes from './form.module.css';
@@ -74,6 +75,10 @@ export const AddRobotForm = ({
     const environment = useEnvironmentForm();
 
     const availableRobots = robotsQuery.data.filter((robot) => {
+        if (isUnavailableRobot(robot)) {
+            return false;
+        }
+
         return (
             environment.robots.some(({ robot_id, teleoperator }) => {
                 if (robot_id === robot.id) {

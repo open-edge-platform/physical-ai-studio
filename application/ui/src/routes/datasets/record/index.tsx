@@ -19,8 +19,9 @@ import {
 import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
+import { AppFooter } from '../../../components/app-footer/app-footer';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
-import { RobotControlProvider, useRobotControl } from '../../../features/robots/robot-control-provider';
+import { RuntimeSessionProvider, useRuntimeSession } from '../../../features/robots/runtime-session-provider';
 import { paths } from '../../../router';
 import { RecordingViewer } from './recording-viewer';
 
@@ -28,7 +29,7 @@ import classes from './index.module.css';
 
 const TotalRecordedEpisodes = () => {
     const { dataset_id } = useDatasetId();
-    const { state } = useRobotControl();
+    const { state } = useRuntimeSession();
 
     const episodeQuery = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}/episodes', {
         params: {
@@ -90,11 +91,14 @@ const RecordingPage = () => {
         }
     );
     return (
-        <RobotControlProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
+        <RuntimeSessionProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
             <Grid
-                areas={['header', 'content']}
+                areas={['header', 'content', 'footer']}
                 UNSAFE_style={{
-                    gridTemplateRows: `var(--spectrum-global-dimension-size-800, 4rem) ${minmax(0, '1fr')}`,
+                    // Footer track matches ProjectLayout's so the strip is the
+                    // same height here as on every other page.
+                    // eslint-disable-next-line max-len
+                    gridTemplateRows: `var(--spectrum-global-dimension-size-800, 4rem) ${minmax(0, '1fr')} var(--spectrum-global-dimension-size-400)`,
                 }}
                 minHeight={0}
                 height={'100%'}
@@ -133,8 +137,9 @@ const RecordingPage = () => {
                         <RecordingViewer />
                     </View>
                 </View>
+                <AppFooter />
             </Grid>
-        </RobotControlProvider>
+        </RuntimeSessionProvider>
     );
 };
 

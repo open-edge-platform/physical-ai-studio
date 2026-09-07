@@ -8,6 +8,11 @@ class RobotCatalogService:
     def __init__(self) -> None:
         self._registry: RobotCatalogRegistry = RobotCatalogRegistry()
 
+    @property
+    def registry(self) -> RobotCatalogRegistry:
+        """Return the process-wide catalog registry."""
+        return self._registry
+
     def list_entries(self) -> list[RobotCatalogDefinition]:
         return self._registry.list_definitions()
 

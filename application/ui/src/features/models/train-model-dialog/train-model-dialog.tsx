@@ -23,6 +23,7 @@ import { useProject } from '../../projects/use-project';
 import { useRemoteTrainerHealth } from '../../remote-trainers/use-remote-trainer-health';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { MODELS } from './policies';
+import { PolicyAccessAlert } from './policy-access-alert';
 import { PolicySelection } from './policy-selection';
 import { TrainingDeviceInfo } from './training-device-info';
 import { TrainingParameters } from './training-parameters';
@@ -83,6 +84,19 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         checkHealth: checkRemoteTrainerHealth,
     } = useRemoteTrainerHealth(isRemoteTarget ? (remoteTrainerId?.toString() ?? null) : null);
     const remoteUnavailable = isRemoteTarget && remoteTrainerHealth?.status === 'unreachable';
+    const { data: policyAccess, isLoading: isCheckingPolicyAccess } = $api.useQuery(
+        'get',
+        '/api/policies/{policy}/huggingface-access',
+        {
+            params: { path: { policy: selectedPolicy } },
+        }
+    );
+    const policyAccessBlocksTraining =
+        isCheckingPolicyAccess ||
+        policyAccess?.requirements.some(
+            (requirement) =>
+                requirement.required && (requirement.status === 'missing_token' || requirement.status === 'denied')
+        ) === true;
     const bestRemoteDevice = useMemo(() => pickBestDevice(remoteTrainerHealth?.devices ?? []), [remoteTrainerHealth]);
     // The device actually driving this job: the local GPU when training locally,
     // or the remote trainer's reported GPU once its health check resolves. Auto
@@ -125,7 +139,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
         const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
 
-        const payload: SchemaJob['payload'] = {
+        const commonPayload = {
             dataset_id,
             project_id: projectId,
             model_name: name,
@@ -137,10 +151,19 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
             compile_model: compileModel,
             val_split: 0.1,
-            training_target: isRemoteTarget ? 'remote' : 'local',
-            ...(isRemoteTarget ? { remote_trainer_id: remoteTrainerId?.toString() } : {}),
             ...extraPayload,
-        };
+        } as const;
+
+        const payload: SchemaJob['payload'] = isRemoteTarget
+            ? {
+                  ...commonPayload,
+                  training_target: 'remote',
+                  remote_trainer_id: remoteTrainerId?.toString() ?? '',
+              }
+            : {
+                  ...commonPayload,
+                  training_target: 'local',
+              };
         trainMutation.mutateAsync({ body: payload }).then((response) => {
             close(response as SchemaTrainJob | undefined);
         });
@@ -196,6 +219,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                         isDisabled={baseModel !== undefined}
                         trainingDevice={activeDevice}
                     />
+                    <PolicyAccessAlert policy={selectedPolicy} />
 
                     <Disclosure
                         isQuiet
@@ -234,7 +258,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 <Button
                     variant='accent'
                     onPress={save}
-                    isDisabled={!selectedDataset || !selectedPolicy || remoteTrainerId === null || remoteUnavailable}
+                    isDisabled={
+                        !selectedDataset ||
+                        !selectedPolicy ||
+                        remoteTrainerId === null ||
+                        remoteUnavailable ||
+                        policyAccessBlocksTraining
+                    }
                 >
                     Train
                 </Button>

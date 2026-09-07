@@ -19,3 +19,7 @@
     border-color: var(--spectrum-global-color-gray-600) !important;
     background-color: var(--spectrum-global-color-gray-100) !important;
 }
+
+.link {
+    display: flex;
+}

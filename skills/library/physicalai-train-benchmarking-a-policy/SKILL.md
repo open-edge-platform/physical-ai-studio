@@ -76,7 +76,7 @@ Override benchmark settings on the CLI, e.g. `--benchmark.num_episodes 10 --benc
 1. Subclass `Benchmark` in `benchmark/gyms/` (study `PushTBenchmark` / `LiberoBenchmark`); the gym itself comes from `physicalai.gyms` (`pusht.py`, `libero.py`, …).
 2. Add a matching config in `library/configs/benchmark/`.
 3. Add tests under `library/tests/unit/benchmark/`.
-   - Done when: `uv run pytest tests/unit/benchmark` passes and a 1-episode run succeeds.
+   - Done when: `uv run --no-sync pytest tests/unit/benchmark` passes and a 1-episode run succeeds.
 
 ## Required checks
 

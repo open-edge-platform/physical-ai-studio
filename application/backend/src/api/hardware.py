@@ -10,8 +10,8 @@ from utils.camera_factory import DRIVER_KEY_MAP
 router = APIRouter(prefix="/api/hardware", tags=["Hardware"])
 
 
-def _fingerprint_from_device_info(info: DeviceInfo) -> str:
-    return info.hardware_id if (info.id_stable and info.hardware_id) else info.device_id
+def _fingerprint_from_device_info(info: DeviceInfo) -> dict[str, object] | None:
+    return info.hardware_payload
 
 
 def _build_camera_list(discovered: dict[str, list[DeviceInfo]]) -> list[Camera]:
@@ -24,10 +24,14 @@ def _build_camera_list(discovered: dict[str, list[DeviceInfo]]) -> list[Camera]:
         if backend_driver is None:
             continue
         for info in devices:
+            fingerprint = _fingerprint_from_device_info(info)
+            if not fingerprint:
+                logger.warning("Skipping camera without a hardware fingerprint: {}", info.name)
+                continue
             res.append(
                 Camera(
                     name=info.name,
-                    fingerprint=_fingerprint_from_device_info(info),
+                    fingerprint=fingerprint,
                     driver=backend_driver,
                     default_stream_profile=sp,
                 ),
