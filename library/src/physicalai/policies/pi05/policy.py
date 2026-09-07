@@ -671,13 +671,15 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
             Action chunk tensor after post-processing.
 
         Raises:
-            ValueError: If the model is not initialized.
+            ValueError: If the model is not initialized, or if RTC is enabled and
+                the batch carries out-of-range RTC control values.
         """
         if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model is not initialized"
             raise ValueError(msg)
 
         processed_batch = self._preprocessor(batch.to(self.device).to_dict())
+        self._validate_rtc_inputs(processed_batch)
         actions = self.model.predict_action_chunk(processed_batch)
 
         return self._postprocessor({ACTION: actions})[ACTION]

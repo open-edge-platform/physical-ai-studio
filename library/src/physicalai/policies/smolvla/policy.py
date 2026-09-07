@@ -601,13 +601,15 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             torch.Tensor: The predicted action chunk after post-processing.
 
         Raises:
-            ValueError: If the model has not been initialized.
+            ValueError: If the model has not been initialized, or if RTC is enabled
+                and the batch carries out-of-range RTC control values.
         """
         if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model is not initialized"
             raise ValueError(msg)
 
         processed_batch = self._preprocessor(batch.to(self.device).to_dict())
+        self._validate_rtc_inputs(processed_batch)
         chunk = self.model.predict_action_chunk(processed_batch)
         return self._postprocessor({ACTION: chunk})[ACTION]
 

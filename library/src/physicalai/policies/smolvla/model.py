@@ -293,7 +293,7 @@ class SmolVLAModel(RTCModelMixin, Model):
 
         Raises:
             ValueError: If RTC is enabled and the batch is missing
-                ``prev_chunk_left_over`` or carries out-of-range RTC control values.
+                ``prev_chunk_left_over``.
         """
         processed_batch = self._preprocess_batch(batch)
         images, img_masks = processed_batch[IMAGES], processed_batch[IMAGE_MASKS]
@@ -306,7 +306,6 @@ class SmolVLAModel(RTCModelMixin, Model):
             max_guidance = batch.get(RTC_MAX_GUIDANCE_WEIGHT, 0.0)
             execution_horizon = batch.get(RTC_EXECUTION_HORIZON, 0)
             inference_delay = batch.get(RTC_INFERENCE_DELAY, 0.0)
-            self._validate_rtc_inputs(inference_delay, execution_horizon, max_guidance)
 
             if PREV_CHUNK_LEFT_OVER not in batch:
                 msg = f"Expected {PREV_CHUNK_LEFT_OVER} in batch when RTC is enabled."

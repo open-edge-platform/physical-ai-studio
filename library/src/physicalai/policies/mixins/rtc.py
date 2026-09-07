@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import torch
 
+from physicalai.data.constants import RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
+
 if TYPE_CHECKING:
     from torch import Tensor
 
@@ -50,6 +52,9 @@ class RTCPolicyMixin:
     supports_rtc: bool = True
 
     _rtc_enabled: bool = False
+
+    # Declared for type checkers only; provided by the host policy.
+    config: Any
 
     @property
     def rtc_enabled(self) -> bool:
@@ -89,6 +94,57 @@ class RTCPolicyMixin:
         model = getattr(self, "model", None)
         if isinstance(model, RTCModelMixin):
             model.enable_rtc = enabled
+
+    def _validate_rtc_inputs(self, batch: dict[str, Any]) -> None:
+        """Validate the RTC control values carried by an inference batch.
+
+        Values may arrive as Python numbers or as scalar tensors. Validation
+        lives at the policy level because only inference feeds concrete values;
+        export traces the model with placeholder inputs.
+
+        Args:
+            batch: Inference batch, optionally carrying ``inference_delay``,
+                ``execution_horizon``, and ``max_guidance_weight``.
+
+        Raises:
+            ValueError: If the timing values do not satisfy
+                ``0 <= inference_delay <= execution_horizon <= chunk_size // 2``
+                or if ``max_guidance_weight`` is negative.
+        """
+        if not self.rtc_enabled:
+            return
+
+        chunk_size = int(self.config.chunk_size)
+        delay, horizon, guidance = (
+            float(value.flatten()[0]) if isinstance(value, torch.Tensor) else float(value)
+            for value in (
+                batch.get(RTC_INFERENCE_DELAY, 0.0),
+                batch.get(RTC_EXECUTION_HORIZON, 0),
+                batch.get(RTC_MAX_GUIDANCE_WEIGHT, 0.0),
+            )
+        )
+
+        if horizon <= 0:
+            msg = f"RTC execution_horizon must be positive, got {horizon}."
+            raise ValueError(msg)
+
+        if not 0 <= delay <= horizon <= chunk_size:
+            msg = (
+                "RTC timing values must satisfy 0 <= inference_delay <= execution_horizon <= chunk_size, "
+                f"got inference_delay={delay}, execution_horizon={horizon}, chunk_size={chunk_size}."
+            )
+            raise ValueError(msg)
+
+        if guidance < 0:
+            msg = f"RTC max_guidance_weight must be non-negative, got {guidance}."
+            raise ValueError(msg)
+
+        if horizon > chunk_size // 2:
+            msg = (
+                "RTC execution horizon is restricted to be not greater than half of the chunk size:"
+                f" {horizon} > {chunk_size // 2}"
+            )
+            raise ValueError(msg)
 
     def _sync_rtc_to_model(self) -> None:
         """Apply the cached RTC state to the underlying model.
@@ -241,56 +297,3 @@ class RTCModelMixin:
         guidance_weight = torch.minimum(guidance_weight, max_gw)
 
         return v_t - guidance_weight * correction
-
-    def _validate_rtc_inputs(
-        self,
-        inference_delay: float | Tensor,
-        execution_horizon: float | Tensor,
-        max_guidance_weight: float | Tensor,
-    ) -> None:
-        """Validate the RTC control values parsed from an inference batch.
-
-        Values may arrive as Python numbers or as scalar tensors carried in the
-        batch. Validation is skipped while tracing or exporting, where the values
-        are graph placeholders rather than concrete numbers.
-
-        Args:
-            inference_delay: Number of actions expected to be consumed while the
-                new chunk is still being computed.
-            execution_horizon: Number of fresh actions taken from the new chunk.
-            max_guidance_weight: Upper bound on the RTC guidance weight.
-
-        Raises:
-            ValueError: If the timing values do not satisfy
-                ``0 <= inference_delay <= execution_horizon <= chunk_size``, if
-                ``execution_horizon`` is not positive, or if
-                ``max_guidance_weight`` is negative.
-        """
-        if torch.jit.is_tracing() or torch.onnx.is_in_onnx_export():
-            return
-
-        delay, horizon, guidance = (
-            float(value.flatten()[0]) if isinstance(value, torch.Tensor) else float(value)
-            for value in (inference_delay, execution_horizon, max_guidance_weight)
-        )
-
-        if horizon <= 0:
-            msg = f"RTC execution_horizon must be positive, got {horizon}."
-            raise ValueError(msg)
-
-        if not 0 <= delay <= horizon <= self._chunk_size:
-            msg = (
-                "RTC timing values must satisfy 0 <= inference_delay <= execution_horizon <= chunk_size, "
-                f"got inference_delay={delay}, execution_horizon={horizon}, chunk_size={self._chunk_size}."
-            )
-            raise ValueError(msg)
-
-        if guidance < 0:
-            msg = f"RTC max_guidance_weight must be non-negative, got {guidance}."
-            raise ValueError(msg)
-
-        if horizon > self._chunk_size // 2:
-            msg = (
-                "RTC execution horizon is restricted to be not greater than half of the chunk size:"
-                f" {horizon} > {self._chunk_size // 2}"
-            )

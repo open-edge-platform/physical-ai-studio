@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 
@@ -213,17 +215,47 @@ class TestCheckpointPersistence:
 class TestValidateRtcInputs:
     """Tests for the RTC control-value validation."""
 
-    def test_accepts_valid_values(self) -> None:
-        """Ordered timing values within the chunk size pass."""
-        model = _ModelStub(chunk_size=8)
+    @staticmethod
+    def _policy(chunk_size: int = 8) -> _PolicyStub:
+        """Build a policy stub with RTC enabled and the given chunk size."""
+        policy = _PolicyStub(model=_ModelStub(chunk_size=chunk_size))
+        policy.config = SimpleNamespace(chunk_size=chunk_size)
+        policy.rtc_enabled = True
+        return policy
 
-        model._validate_rtc_inputs(2, 5, 10.0)
+    @staticmethod
+    def _batch(
+        inference_delay: float | torch.Tensor,
+        execution_horizon: float | torch.Tensor,
+        max_guidance_weight: float | torch.Tensor,
+    ) -> dict:
+        """Build an inference batch carrying the RTC control values."""
+        return {
+            "inference_delay": inference_delay,
+            "execution_horizon": execution_horizon,
+            "max_guidance_weight": max_guidance_weight,
+        }
+
+    def test_skipped_when_rtc_disabled(self) -> None:
+        """Out-of-range values are ignored while RTC is off."""
+        policy = _PolicyStub(model=_ModelStub(chunk_size=8))
+        policy.config = SimpleNamespace(chunk_size=8)
+
+        policy._validate_rtc_inputs(self._batch(-1, 0, -1.0))
+
+    def test_accepts_valid_values(self) -> None:
+        """Ordered timing values within half the chunk size pass."""
+        policy = self._policy(chunk_size=16)
+
+        policy._validate_rtc_inputs(self._batch(2, 5, 10.0))
 
     def test_accepts_scalar_tensors(self) -> None:
         """Values carried as scalar tensors are unwrapped before comparison."""
-        model = _ModelStub(chunk_size=8)
+        policy = self._policy(chunk_size=16)
 
-        model._validate_rtc_inputs(torch.tensor(2), torch.tensor(5), torch.tensor(10.0))
+        policy._validate_rtc_inputs(
+            self._batch(torch.tensor(2), torch.tensor(5), torch.tensor(10.0)),
+        )
 
     @pytest.mark.parametrize(
         ("inference_delay", "execution_horizon"),
@@ -231,25 +263,32 @@ class TestValidateRtcInputs:
     )
     def test_rejects_unordered_timing(self, inference_delay: int, execution_horizon: int) -> None:
         """Timing values outside ``0 <= delay <= horizon <= chunk_size`` raise."""
-        model = _ModelStub(chunk_size=8)
+        policy = self._policy(chunk_size=8)
 
         with pytest.raises(ValueError, match="RTC timing values must satisfy"):
-            model._validate_rtc_inputs(inference_delay, execution_horizon, 10.0)
+            policy._validate_rtc_inputs(self._batch(inference_delay, execution_horizon, 10.0))
 
     @pytest.mark.parametrize("execution_horizon", [0, -1])
     def test_rejects_non_positive_horizon(self, execution_horizon: int) -> None:
         """An execution horizon of zero or less leaves no fresh actions to emit."""
-        model = _ModelStub(chunk_size=8)
+        policy = self._policy(chunk_size=8)
 
         with pytest.raises(ValueError, match="execution_horizon must be positive"):
-            model._validate_rtc_inputs(0, execution_horizon, 10.0)
+            policy._validate_rtc_inputs(self._batch(0, execution_horizon, 10.0))
+
+    def test_rejects_horizon_above_half_chunk(self) -> None:
+        """A horizon past half the chunk leaves too little overlap to guide on."""
+        policy = self._policy(chunk_size=8)
+
+        with pytest.raises(ValueError, match="not greater than half of the chunk size"):
+            policy._validate_rtc_inputs(self._batch(2, 5, 10.0))
 
     def test_rejects_negative_guidance_weight(self) -> None:
         """A negative guidance weight raises."""
-        model = _ModelStub(chunk_size=8)
+        policy = self._policy(chunk_size=16)
 
         with pytest.raises(ValueError, match="must be non-negative"):
-            model._validate_rtc_inputs(2, 5, -1.0)
+            policy._validate_rtc_inputs(self._batch(2, 5, -1.0))
 
 
 class TestModelMixinFlag:
