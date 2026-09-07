@@ -531,7 +531,7 @@ class TestExportHooks:
         output_path = tmp_path / "model.xml"
         wrapper.export(output_path, backend="openvino")
 
-        assert recorded_paths == [str(output_path)]
+        assert recorded_paths == [output_path]
         assert output_path.exists()
 
     def test_pre_hook_can_mutate_model_before_conversion(self, tmp_path):
@@ -888,7 +888,7 @@ class TestPostExportHooks:
 
         with patch("builtins.__import__", side_effect=mock_import):
             with pytest.raises(ImportError, match="physicalai-train\\[nncf\\]"):
-                compress_weights_openvino_int8_sym(str(tmp_path / "model.xml"))
+                compress_weights_openvino_int8_sym(tmp_path / "model.xml")
 
     def test_hook_calls_compress_weights_int8_sym(self, tmp_path):
         """Test that hook calls nncf.compress_weights with INT8_SYM mode."""
@@ -912,12 +912,12 @@ class TestPostExportHooks:
 
         mock_ov.save_model.side_effect = fake_save_model
 
-        model_path = str(tmp_path / "model.xml")
+        model_path = tmp_path / "model.xml"
 
         with patch.dict("sys.modules", {"nncf": mock_nncf, "openvino": mock_ov}):
             compress_weights_openvino_int8_sym(model_path)
 
-        mock_ov.Core.return_value.read_model.assert_called_once_with(model_path)
+        mock_ov.Core.return_value.read_model.assert_called_once_with(str(model_path))
         mock_nncf.compress_weights.assert_called_once_with(mock_model, mode="int8_sym")
 
         # The model is saved to a staged temp path (not the final path), then swapped
@@ -939,7 +939,7 @@ class TestPostExportHooks:
         output_path = tmp_path / "model.xml"
         wrapper.export(backend="openvino", output_path=output_path, post_export_hooks=[mock_hook])
 
-        mock_hook.assert_called_once_with(str(output_path))
+        mock_hook.assert_called_once_with(output_path)
 
     def test_export_invokes_multiple_hooks_in_order(self, tmp_path):
         """Test that multiple hooks are called in sequence."""
@@ -953,7 +953,7 @@ class TestPostExportHooks:
         output_path = tmp_path / "model.xml"
         wrapper.export(backend="openvino", output_path=output_path, post_export_hooks=[hook1, hook2])
 
-        expected_path = str(output_path)
+        expected_path = output_path
         assert call_order == [("hook1", expected_path), ("hook2", expected_path)]
 
     @pytest.mark.parametrize("backend", ["onnx", "openvino"])
@@ -967,7 +967,7 @@ class TestPostExportHooks:
         output_path = tmp_path / f"model{ext}"
         wrapper.export(backend=backend, output_path=output_path, post_export_hooks=[mock_hook])
 
-        mock_hook.assert_called_once_with(str(output_path))
+        mock_hook.assert_called_once_with(output_path)
 
     def test_export_no_hooks_does_not_fail(self, tmp_path):
         """Test that export works normally without hooks (regression)."""
@@ -1016,7 +1016,7 @@ class TestPostExportHooks:
         wrapper.export(backend="openvino", output_path=output_path)
 
         pre_hook.assert_called_once_with()
-        post_hook.assert_called_once_with(str(output_path))
+        post_hook.assert_called_once_with(output_path)
 
     def test_export_runs_policy_hooks_before_caller_hooks(self, tmp_path):
         """Policy-declared hooks run before caller-supplied hooks; pre before post."""

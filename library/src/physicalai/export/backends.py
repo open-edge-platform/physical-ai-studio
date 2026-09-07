@@ -61,7 +61,7 @@ class ExportParameters:
         post_export_hooks: Callables invoked in order after the model has been
             written to disk. Each hook receives the path to the exported file
             and may modify the file in place (e.g. to patch the graph for a
-            specific runtime). Signature: ``(export_path: str | Path) -> object``
+            specific runtime). Signature: ``(export_path: Path) -> object``
             (any return value is ignored).
     """
 
@@ -69,7 +69,7 @@ class ExportParameters:
     preprocessors_specs: list = field(default_factory=list)
     postprocessors_specs: list = field(default_factory=list)
     pre_export_hooks: list[Callable[[], object]] = field(default_factory=list)
-    post_export_hooks: list[Callable[[str | Path], object]] = field(default_factory=list)
+    post_export_hooks: list[Callable[[Path], object]] = field(default_factory=list)
 
 
 @dataclass

@@ -69,10 +69,12 @@ Calling a backend method (`to_openvino`/`to_onnx`/...) directly bypasses this
 hook orchestration.
 
 ```python test="skip" reason="requires checkpoint"
+from pathlib import Path
+
 def my_pre_hook() -> None:
     ...  # mutate the model in place before tracing
 
-def my_post_hook(model_path: str) -> None:
+def my_post_hook(model_path: Path) -> None:
     ...  # inspect or rewrite the exported artifact at model_path
 
 policy.export(

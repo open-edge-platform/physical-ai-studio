@@ -718,7 +718,7 @@ class ExportablePolicyMixin:
         backend: ExportBackend | str,
         input_sample: dict[str, torch.Tensor] | None = None,
         pre_export_hooks: list[Callable[[], object]] | None = None,
-        post_export_hooks: list[Callable[[str | Path], object]] | None = None,
+        post_export_hooks: list[Callable[[Path], object]] | None = None,
         **export_kwargs: dict,
     ) -> None:
         """Export the model to the specified backend format.
@@ -772,7 +772,7 @@ class ExportablePolicyMixin:
         if post_hooks:
             model_path = self._prepare_export_path(output_path, backend.extension)
             for hook in post_hooks:
-                hook(str(model_path))
+                hook(model_path)
 
     @_quiet_onnx_export_logs()
     def _onnx_core_export_step(
