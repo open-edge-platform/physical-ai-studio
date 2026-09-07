@@ -119,6 +119,11 @@ jobs:
     steps:
       - *harden-runner
 
+      - name: Cleanup runner
+        uses: open-edge-platform/geti-ci/actions/cleanup-runner@7e686c1248b3939f8ee8e04e2612da727e379d91
+        with:
+          type: all
+  
       - *checkout
 
       - *set-up-python
