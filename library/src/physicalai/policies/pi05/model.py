@@ -26,7 +26,7 @@ from physicalai.data.constants import (
     TOKENIZED_PROMPT_MASK,
 )
 from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER
-from physicalai.policies.base import Model
+from physicalai.policies.base import Model, in_episode_bound, reduce_losses
 from physicalai.policies.mixins import RTCModelMixin, SnapFlowModelMixin
 from physicalai.policies.mixins.peft import PeftModelMixin
 
@@ -1087,9 +1087,14 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
         and target velocities.  When SnapFlow is enabled, uses a mixture
         of standard FM loss and consistency distillation loss.
 
+        Action steps flagged by ``extra.action_is_pad`` are excluded from both
+        the numerator and the denominator, so end-of-episode padding neither
+        supervises the policy nor scales down the gradient.
+
         Args:
             batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
-                TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK, and ACTION.
+                TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK, and ACTION, and
+                optionally ``extra.action_is_pad``.
 
         Returns:
             Tuple of (mean loss tensor, loss dict with ``"loss"`` key).
@@ -1110,6 +1115,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
         u_t = noise - actions
 
         prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix(images, img_masks, tokens, masks)
+        cd_idx: Tensor | None = None
         if not self._snapflow_enabled:
             v_t = self._predict_velocity(
                 x_t,
@@ -1121,7 +1127,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
             )
             losses = F.mse_loss(u_t, v_t, reduction="none")
         else:
-            losses = self.snapflow_mixed_loss(
+            losses, cd_idx = self.snapflow_mixed_loss(
                 u_t=u_t,
                 x_t=x_t,
                 time=time,
@@ -1133,11 +1139,15 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
                 predict_velocity=self._predict_velocity,
             )
 
+        # Mask out action steps that only exist because the chunk query was
+        # clamped at an episode boundary.
+        bound = in_episode_bound(batch, cd_idx)
+
         # Truncate losses to actual action dimensions to avoid dilution from padding
         original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
         losses = losses[:, :, :original_action_dim]
 
-        loss = losses.mean()
+        loss = reduce_losses(losses, bound)
         # Detached tensor, not `.item()` float: see Model.compute_loss docstring.
         return loss, {"loss": loss.detach()}
 
@@ -1150,9 +1160,14 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
         deterministic and gives a direct measure of action prediction
         quality — unlike the stochastic flow matching training loss.
 
+        Action steps flagged by ``extra.action_is_pad`` are excluded, so the
+        metric is not diluted by the repeated terminal actions LeRobot inserts
+        at episode boundaries.
+
         Args:
             batch: Preprocessed batch dict containing IMAGES, IMAGE_MASKS,
-                TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK, and ACTION.
+                TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK, and ACTION, and
+                optionally ``extra.action_is_pad``.
 
         Returns:
             Tuple of (mean MSE loss tensor, loss dict with ``"loss"`` key).
@@ -1167,7 +1182,12 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
         # Align chunk lengths (predicted may be clipped by n_action_steps)
         min_len = min(gt_trimmed.shape[1], pred_trimmed.shape[1])
-        loss = F.mse_loss(pred_trimmed[:, :min_len], gt_trimmed[:, :min_len])
+        losses = F.mse_loss(pred_trimmed[:, :min_len], gt_trimmed[:, :min_len], reduction="none")
+
+        bound = in_episode_bound(batch)
+        if bound is not None:
+            bound = bound[:, :min_len]
+        loss = reduce_losses(losses, bound)
         return loss, {"loss": loss.item()}
 
     def predict_action_chunk(self, batch: dict[str, Any]) -> Tensor:

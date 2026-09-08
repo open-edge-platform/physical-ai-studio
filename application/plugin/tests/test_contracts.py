@@ -259,6 +259,26 @@ def test_robot_payload_ui_supports_ip_address_items() -> None:
     }
 
 
+def test_robot_payload_ui_supports_calibration_items() -> None:
+    assert robot_payload_ui(
+        [
+            {
+                "kind": "calibration",
+                "name": "calibration",
+                "label": "Calibration",
+            },
+        ],
+    ) == {
+        "x-physicalai-ui": [
+            {
+                "kind": "calibration",
+                "name": "calibration",
+                "label": "Calibration",
+            },
+        ],
+    }
+
+
 def test_validate_robot_payload_ui_accepts_nested_item_lists() -> None:
     class ConnectionPayload(BaseModel):
         connection_string: str
@@ -298,6 +318,8 @@ def test_validate_robot_payload_ui_ignores_field_options() -> None:
         ([{"kind": "connection", "bind": {"connection": "port"}}], "must reference a string payload field"),
         ([{"kind": "ip_address", "name": "missing"}], "must reference an existing payload field"),
         ([{"kind": "ip_address", "name": "port"}], "must reference a string payload field"),
+        ([{"kind": "calibration", "name": "missing"}], "must reference an existing payload field"),
+        ([{"kind": "calibration", "name": "connection_string"}], "must reference an object payload field"),
         (
             [
                 {"kind": "field", "name": "connection_string"},
@@ -312,12 +334,20 @@ def test_validate_robot_payload_ui_ignores_field_options() -> None:
             ],
             "owned more than once",
         ),
+        (
+            [
+                {"kind": "field", "name": "connection_string"},
+                {"kind": "calibration", "name": "connection_string"},
+            ],
+            "owned more than once",
+        ),
     ],
 )
 def test_validate_robot_payload_ui_rejects_invalid_metadata(items: object, message: str) -> None:
     class InvalidPayload(BaseModel):
         connection_string: str
         port: int
+        calibration: dict[str, int]
 
         model_config = ConfigDict(json_schema_extra={"x-physicalai-ui": items})
 

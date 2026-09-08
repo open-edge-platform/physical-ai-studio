@@ -54,6 +54,15 @@ class RobotUiIpAddressItem(TypedDict, total=False):
     identify_robot_type: NotRequired[str]
 
 
+class RobotUiCalibrationItem(TypedDict, total=False):
+    """Options for a first-party calibration JSON upload control."""
+
+    kind: Required[Literal["calibration"]]
+    name: Required[str]
+    label: NotRequired[str]
+    description: NotRequired[str]
+
+
 class RobotUiFieldItem(TypedDict):
     """A standard payload field rendered in the form."""
 
@@ -71,7 +80,14 @@ class RobotUiSectionOptions(TypedDict, total=False):
     items: Required[list[RobotUiItem]]
 
 
-RobotUiItem = RobotUiInfoItem | RobotUiConnectionItem | RobotUiIpAddressItem | RobotUiFieldItem | RobotUiSectionOptions
+RobotUiItem = (
+    RobotUiInfoItem
+    | RobotUiConnectionItem
+    | RobotUiIpAddressItem
+    | RobotUiCalibrationItem
+    | RobotUiFieldItem
+    | RobotUiSectionOptions
+)
 
 RobotPayloadUiOptions = list[RobotUiItem]
 
@@ -110,6 +126,15 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
         name = reference.removeprefix("#/$defs/")
         resolved = definitions.get(name)
         return resolved if isinstance(resolved, dict) else field_schema
+
+    def is_object_field(field_schema: dict[str, Any]) -> bool:
+        resolved = resolve(field_schema)
+        if resolved.get("type") == "object":
+            return True
+        variants = resolved.get("anyOf")
+        if not isinstance(variants, list):
+            return False
+        return any(isinstance(variant, dict) and resolve(variant).get("type") == "object" for variant in variants)
 
     def validate_items(  # noqa: C901, PLR0912, PLR0915
         items: list[object],
@@ -175,6 +200,18 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
                     continue
                 if resolve(properties[name]).get("type") != "string":
                     error(item_path, "ip_address items must reference a string payload field")
+                if name in owned_fields:
+                    error(item_path, f"field '{name}' is owned more than once")
+                owned_fields.add(name)
+                continue
+
+            if kind == "calibration":
+                name = item.get("name")
+                if not isinstance(name, str) or name not in properties:
+                    error(item_path, "calibration items must reference an existing payload field")
+                    continue
+                if not is_object_field(properties[name]):
+                    error(item_path, "calibration items must reference an object payload field")
                 if name in owned_fields:
                     error(item_path, f"field '{name}' is owned more than once")
                 owned_fields.add(name)

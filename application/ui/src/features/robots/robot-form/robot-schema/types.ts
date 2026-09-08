@@ -31,6 +31,13 @@ export type IpAddressItem = {
     identify_robot_type?: SchemaRobotType;
 };
 
+export type CalibrationItem = {
+    kind: 'calibration';
+    name: string;
+    label?: string;
+    description?: string;
+};
+
 export type FieldItem = {
     kind: 'field';
     name: string;
@@ -44,7 +51,7 @@ export type SectionItem = {
     items: RobotUiItem[];
 };
 
-export type RobotUiItem = InfoItem | ConnectionItem | IpAddressItem | FieldItem | SectionItem;
+export type RobotUiItem = InfoItem | ConnectionItem | IpAddressItem | CalibrationItem | FieldItem | SectionItem;
 
 export type FieldOptions = {
     required?: boolean;
