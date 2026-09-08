@@ -108,8 +108,9 @@ class RTCPolicyMixin:
 
         Raises:
             ValueError: If the timing values do not satisfy
-                ``0 <= inference_delay <= execution_horizon <= chunk_size // 2``
-                or if ``max_guidance_weight`` is negative.
+                ``0 <= inference_delay <= execution_horizon <= chunk_size // 2``,
+                if ``max_guidance_weight`` is negative, or if ``n_action_steps``
+                does not span the whole chunk.
         """
         if not self.rtc_enabled:
             return

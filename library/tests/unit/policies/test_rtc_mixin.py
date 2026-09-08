@@ -216,10 +216,13 @@ class TestValidateRtcInputs:
     """Tests for the RTC control-value validation."""
 
     @staticmethod
-    def _policy(chunk_size: int = 8) -> _PolicyStub:
+    def _policy(chunk_size: int = 8, n_action_steps: int | None = None) -> _PolicyStub:
         """Build a policy stub with RTC enabled and the given chunk size."""
         policy = _PolicyStub(model=_ModelStub(chunk_size=chunk_size))
-        policy.config = SimpleNamespace(chunk_size=chunk_size)
+        policy.config = SimpleNamespace(
+            chunk_size=chunk_size,
+            n_action_steps=chunk_size if n_action_steps is None else n_action_steps,
+        )
         policy.rtc_enabled = True
         return policy
 
@@ -239,7 +242,7 @@ class TestValidateRtcInputs:
     def test_skipped_when_rtc_disabled(self) -> None:
         """Out-of-range values are ignored while RTC is off."""
         policy = _PolicyStub(model=_ModelStub(chunk_size=8))
-        policy.config = SimpleNamespace(chunk_size=8)
+        policy.config = SimpleNamespace(chunk_size=8, n_action_steps=8)
 
         policy._validate_rtc_inputs(self._batch(-1, 0, -1.0))
 
@@ -289,6 +292,13 @@ class TestValidateRtcInputs:
 
         with pytest.raises(ValueError, match="must be non-negative"):
             policy._validate_rtc_inputs(self._batch(2, 5, -1.0))
+
+    def test_rejects_partial_chunk_execution(self) -> None:
+        """RTC needs the whole chunk queued, so n_action_steps must span it."""
+        policy = self._policy(chunk_size=16, n_action_steps=8)
+
+        with pytest.raises(ValueError, match="n_action_steps to match the chunk size"):
+            policy._validate_rtc_inputs(self._batch(2, 5, 10.0))
 
 
 class TestModelMixinFlag:
