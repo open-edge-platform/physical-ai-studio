@@ -19,8 +19,9 @@ from torch import nn
 
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, IMAGES, STATE
-from physicalai.policies.base import Model, in_episode_bound, reduce_losses
+from physicalai.policies.base import Model
 from physicalai.policies.mixins import SnapFlowModelMixin
+from physicalai.policies.utils import in_episode_bound, reduce_losses
 
 if TYPE_CHECKING:
     from collections.abc import Callable
