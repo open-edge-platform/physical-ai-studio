@@ -445,14 +445,16 @@ def _first_number_pair(stdout: str) -> tuple[float, float] | None:
 
 
 async def _cuda_gpu_busy(transport: SshTransport) -> bool | None:
-    """Return whether a CUDA GPU is busy, or ``None`` if occupancy is unknown.
+    """Return whether the CUDA GPU is busy, or ``None`` if occupancy is unknown.
 
     Uses a memory-utilization heuristic rather than compute-process presence:
     a GPU carrying an unrelated process holding only a sliver of memory must
-    not block a job that would fit comfortably alongside it.
+    not block a job that would fit comfortably alongside it. Queries GPU index
+    0 explicitly (``-i 0``) - the device the trainer container actually uses -
+    mirroring `_xpu_gpu_busy`'s ``-d 0``.
     """
     result = await transport.run_command(
-        ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
+        ["nvidia-smi", "-i", "0", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
     )
     if not result.ok:
         return None
@@ -464,7 +466,11 @@ async def _cuda_gpu_busy(transport: SshTransport) -> bool | None:
 
 
 async def _xpu_gpu_busy(transport: SshTransport) -> bool | None:
-    """Return whether an XPU is busy by a memory-utilization heuristic, or ``None``."""
+    """Return whether the XPU is busy by a memory-utilization heuristic, or ``None``.
+
+    Queries device index 0 explicitly (``-d 0``) - the device the trainer
+    container actually uses.
+    """
     result = await transport.run_command(["xpu-smi", "stats", "-d", "0"])
     if not result.ok:
         return None

@@ -190,7 +190,7 @@ class RemoteServerService:
 
         task = _status_checks.get(server.id)
         if task is None:
-            task = asyncio.ensure_future(
+            task = asyncio.create_task(
                 asyncio.wait_for(run_tier1_preflight(server), timeout=settings.ssh_preflight_timeout_s)
             )
             _status_checks[server.id] = task

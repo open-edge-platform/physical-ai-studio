@@ -266,17 +266,17 @@ def test_check_library_version_invalid_minimum_version_fails_fast() -> None:
 
 async def test_is_gpu_busy_cuda_low_memory_usage_is_not_busy() -> None:
     """A process holding a trivial slice of GPU memory must not block a job."""
-    transport = FakeTransport({"nvidia-smi --query-gpu=memory.used": _ok("1000, 40000\n")})
+    transport = FakeTransport({"nvidia-smi -i 0 --query-gpu=memory.used": _ok("1000, 40000\n")})
     assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is False
 
 
 async def test_is_gpu_busy_cuda_high_memory_usage_is_busy() -> None:
-    transport = FakeTransport({"nvidia-smi --query-gpu=memory.used": _ok("30000, 40000\n")})
+    transport = FakeTransport({"nvidia-smi -i 0 --query-gpu=memory.used": _ok("30000, 40000\n")})
     assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is True
 
 
 async def test_is_gpu_busy_cuda_unknown_when_command_fails() -> None:
-    transport = FakeTransport({"nvidia-smi --query-gpu=memory.used": _fail()})
+    transport = FakeTransport({"nvidia-smi -i 0 --query-gpu=memory.used": _fail()})
     assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is None
 
 
