@@ -229,3 +229,144 @@ def test_loader_instantiates_async_execution(tmp_path, monkeypatch: pytest.Monke
     assert isinstance(source._policy._execution, AsyncExecution)
     assert source._policy._execution._threshold_frac == POLICY_REQUEST_THRESHOLD
     source.shutdown_policy()
+
+
+def _load_and_wait(source, mailbox, follower, command: LoadModelCommand, step: int) -> None:
+    mailbox.apply(command)
+    source.update(follower.get_observation(), {}, step)
+    _wait_until(lambda: source._policy is not None and source._model_loaded)
+
+
+def _count_load_requests(source) -> list[LoadModelCommand]:
+    """Record what actually reaches the loader, so a skip is observable directly."""
+    requested: list[LoadModelCommand] = []
+    real_request = source._loader.request
+
+    def tracking_request(command, *args, **kwargs):
+        requested.append(command)
+        return real_request(command, *args, **kwargs)
+
+    source._loader.request = tracking_request
+    return requested
+
+
+def test_reloading_the_same_model_is_skipped(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model_id = uuid4()
+    _export_dir(tmp_path, model_id)
+    monkeypatch.setattr("physicalai.inference.InferenceModel", FakeInferenceModel)
+    source, mailbox, events, follower = _source(models_dir=tmp_path)
+    _load_and_wait(source, mailbox, follower, LoadModelCommand(model_id=model_id, inference_device=_DEVICE), 0)
+
+    attached = source._policy
+    requested = _count_load_requests(source)
+    _drain(events)
+    mailbox.apply(LoadModelCommand(model_id=model_id, inference_device=_DEVICE))
+    source.update(follower.get_observation(), {}, 1)
+
+    assert requested == []
+    assert source._policy is attached
+    assert source._model_loaded is True
+    # No False -> True flicker: the client is already past its readiness gate.
+    assert _drain(events) == []
+    source.shutdown_policy()
+
+
+def test_a_forced_reload_rebuilds_the_same_model(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model_id = uuid4()
+    _export_dir(tmp_path, model_id)
+    monkeypatch.setattr("physicalai.inference.InferenceModel", FakeInferenceModel)
+    source, mailbox, _events, follower = _source(models_dir=tmp_path)
+    _load_and_wait(source, mailbox, follower, LoadModelCommand(model_id=model_id, inference_device=_DEVICE), 0)
+
+    attached = source._policy
+    mailbox.apply(LoadModelCommand(model_id=model_id, inference_device=_DEVICE, force=True))
+    source.update(follower.get_observation(), {}, 1)
+
+    _wait_until(lambda: source._policy is not None and source._policy is not attached and source._model_loaded)
+    source.shutdown_policy()
+
+
+def test_the_same_model_on_another_device_is_not_a_match(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model_id = uuid4()
+    _export_dir(tmp_path, model_id)
+    monkeypatch.setattr("physicalai.inference.InferenceModel", FakeInferenceModel)
+    source, mailbox, _events, follower = _source(models_dir=tmp_path)
+    _load_and_wait(source, mailbox, follower, LoadModelCommand(model_id=model_id, inference_device=_DEVICE), 0)
+
+    attached = source._policy
+    other_device = InferenceDevice(backend=InferenceBackend.TORCH, device="gpu")
+    mailbox.apply(LoadModelCommand(model_id=model_id, inference_device=other_device))
+    source.update(follower.get_observation(), {}, 1)
+
+    _wait_until(lambda: source._policy is not None and source._policy is not attached and source._model_loaded)
+    source.shutdown_policy()
+
+
+def test_a_failed_load_does_not_leave_a_matching_identity(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The identity must be cleared before a load, not after it succeeds.
+
+    Otherwise: session holds A, a load for B fails, ``_policy`` is still A with
+    ``model_loaded`` False -- and a later request for A matches the stale
+    identity, skips, and leaves the client on "Initializing" forever with a
+    perfectly good policy attached.
+    """
+    loaded_id = uuid4()
+    missing_id = uuid4()
+    _export_dir(tmp_path, loaded_id)
+    monkeypatch.setattr("physicalai.inference.InferenceModel", FakeInferenceModel)
+    source, mailbox, events, follower = _source(models_dir=tmp_path)
+    _load_and_wait(source, mailbox, follower, LoadModelCommand(model_id=loaded_id, inference_device=_DEVICE), 0)
+
+    mailbox.apply(LoadModelCommand(model_id=missing_id, inference_device=_DEVICE))
+    source.update(follower.get_observation(), {}, 1)
+    seen: list = []
+
+    def _failed() -> bool:
+        seen.extend(_drain(events))
+        return any(isinstance(event, ErrorEvent) and event.error_code == "model_not_found" for event in seen)
+
+    _wait_until(_failed)
+    assert source._model_loaded is False
+
+    requested = _count_load_requests(source)
+    mailbox.apply(LoadModelCommand(model_id=loaded_id, inference_device=_DEVICE))
+    source.update(follower.get_observation(), {}, 2)
+
+    assert len(requested) == 1
+    _wait_until(lambda: source._model_loaded)
+    source.shutdown_policy()
+
+
+def test_a_skipped_load_leaves_a_running_policy_alone(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model_id = uuid4()
+    _export_dir(tmp_path, model_id)
+    monkeypatch.setattr("physicalai.inference.InferenceModel", FakeInferenceModel)
+    source, mailbox, _events, follower = _source(models_dir=tmp_path)
+    _load_and_wait(source, mailbox, follower, LoadModelCommand(model_id=model_id, inference_device=_DEVICE), 0)
+
+    mailbox.apply(StartTaskCommand(task="pick"))
+    source.update(follower.get_observation(), {}, 1)
+    _wait_until(lambda: source.follower_source == "policy")
+    attached = source._policy
+
+    requested = _count_load_requests(source)
+    mailbox.apply(LoadModelCommand(model_id=model_id, inference_device=_DEVICE))
+    source.update(follower.get_observation(), {}, 2)
+
+    # No rebuild is even started, so nothing can swap the PolicySource out from
+    # under the control loop or cancel the arming that put it in policy mode.
+    assert requested == []
+    assert source.follower_source == "policy"
+    assert source._policy is attached
+    source.shutdown_policy()
+
+
+def test_shutdown_clears_the_identity_so_a_later_load_rebuilds(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model_id = uuid4()
+    _export_dir(tmp_path, model_id)
+    monkeypatch.setattr("physicalai.inference.InferenceModel", FakeInferenceModel)
+    source, mailbox, _events, follower = _source(models_dir=tmp_path)
+    _load_and_wait(source, mailbox, follower, LoadModelCommand(model_id=model_id, inference_device=_DEVICE), 0)
+
+    source.shutdown_policy()
+    assert source._loaded_identity is None

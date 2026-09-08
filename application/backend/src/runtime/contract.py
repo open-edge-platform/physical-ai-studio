@@ -41,6 +41,10 @@ class LoadModelCommand(CommandBase):
     # name comes from the export manifest, not from the model row.
     model_id: UUID
     inference_device: InferenceDevice
+    # Rebuild even when this exact policy is already attached. The session skips
+    # a load whose identity matches what it holds, so a client that needs the
+    # export re-read from disk has to ask for it.
+    force: bool = False
 
 
 class LoadDatasetCommand(CommandBase):

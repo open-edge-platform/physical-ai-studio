@@ -34,6 +34,7 @@ from services.health_service import HealthService
 from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_catalog_service import RobotCatalogService
+from services.runtime_session_service import RuntimeSessionService
 from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
 from settings import Settings, get_settings
@@ -63,6 +64,12 @@ def get_system_service() -> SystemService:
 
 
 SystemServiceDep = Annotated[SystemService, Depends(get_system_service)]
+
+
+@lru_cache
+def get_runtime_session_service() -> RuntimeSessionService:
+    """Provide a RuntimeSessionService for listing and stopping runtime sessions."""
+    return RuntimeSessionService()
 
 
 def get_health_service(request: HTTPConnection) -> HealthService:

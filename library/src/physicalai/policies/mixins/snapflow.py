@@ -335,6 +335,21 @@ class SnapFlowModelMixin:
         velocity predictions (with gradients detached) and trains a single-step
         shortcut to match it, scaled by ``snapflow_lambda``.
 
+        The split uses a random permutation cut at a fixed size
+        (``round(alpha * bsize)``) rather than an independent per-sample
+        Bernoulli draw. Both give every sample the same marginal probability
+        ``alpha`` of landing in the FM branch, but the permutation keeps the
+        branch sizes a static Python int instead of a data-dependent
+        ``Binomial(bsize, alpha)`` count. That makes this method safe to run
+        under ``torch.compile``: with a data-dependent split, ``nonzero()`` and
+        the two branches' varying shapes force a graph break and a recompile
+        for nearly every step, which trips ``torch._dynamo.config.recompile_limit``
+        and silently falls back to eager. With a static split size, Dynamo
+        guards once on ``(alpha, bsize)`` and compiles a stable graph for the
+        rest of phase 2. See
+        ``docs/explanation/policy/snapflow-two-phase-distillation.md`` ("Proposed
+        design: compile-friendly SnapFlow loss") for the full rationale.
+
         Args:
             u_t: Target velocity ``noise - actions``, shape ``(B, T, D)``.
             x_t: Noisy interpolated actions ``time * noise + (1 - time) * actions``.
@@ -354,13 +369,28 @@ class SnapFlowModelMixin:
         """
         bsize = actions.shape[0]
         device = actions.device
-        fm_mask = torch.rand(bsize, device=device) < self._snapflow_alpha
-        fm_idx = fm_mask.nonzero(as_tuple=True)[0]
-        cd_idx = (~fm_mask).nonzero(as_tuple=True)[0]
+
+        # n_fm is a Python int: self._snapflow_alpha only changes in
+        # enable_snapflow (which already forces a recompile via the
+        # _snapflow_enabled flag flip), and bsize is the batch's static shape.
+        # Everything indexed by fm_idx/cd_idx below therefore has a shape fixed
+        # at trace time, unlike a Bernoulli-mask-and-nonzero split.
+        n_fm = round(self._snapflow_alpha * bsize)
+
+        # A random permutation preserves the original per-sample marginal
+        # (every sample still lands in the FM branch with probability alpha)
+        # while making the two branch *sizes* static. Advanced indexing with a
+        # fixed-length index tensor compiles cleanly even though its contents
+        # are randomized.
+        perm = torch.randperm(bsize, device=device)
+        fm_idx, cd_idx = perm[:n_fm], perm[n_fm:]
 
         losses = torch.zeros_like(actions)
 
-        if fm_idx.numel() > 0:
+        # Guards on n_fm (a Python int), not on fm_idx.numel() (a tensor
+        # property) -- so these branches are only "data-dependent" in the
+        # sense that alpha is, and alpha is already a recompile boundary.
+        if n_fm > 0:
             v_fm = predict_velocity(
                 x_t[fm_idx],
                 time[fm_idx],
@@ -371,8 +401,8 @@ class SnapFlowModelMixin:
             )
             losses[fm_idx] = F.mse_loss(u_t[fm_idx], v_fm, reduction="none")
 
-        if cd_idx.numel() > 0:
-            cd_bsize = cd_idx.numel()
+        if n_fm < bsize:
+            cd_bsize = bsize - n_fm
             cd_actions_shape = (cd_bsize, *actions.shape[1:])
             x_1 = sample_noise(cd_actions_shape, device)
             cd_prefix_embs = prefix_embs[cd_idx]

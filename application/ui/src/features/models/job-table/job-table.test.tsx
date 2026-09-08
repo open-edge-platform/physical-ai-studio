@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 import { vi } from 'vitest';
@@ -6,6 +6,9 @@ import { vi } from 'vitest';
 import { SchemaTrainJob } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
+import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
+import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
 import { render } from '../../../test-utils/render';
 import { TrainingRow } from './job-table';
 
@@ -55,12 +58,11 @@ const localJob: SchemaTrainJob = {
     },
 };
 
-const remoteTrainer = {
-    id: 'trainer-1',
-    name: 'managed-trainer',
-    url: 'https://trainer.example.test/api',
-    created_at: '2026-07-14T12:00:00Z',
-};
+const remoteTrainer = getMockedRemoteTrainer();
+
+const dataset = getMockedDataset();
+
+const environment = getMockedEnvironment();
 
 const renderTrainingRow = (
     trainJobOverride: Partial<SchemaTrainJob> = {},
@@ -80,7 +82,11 @@ describe('TrainingRow', () => {
     });
 
     beforeEach(() => {
-        server.use(http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])));
+        server.use(
+            http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])),
+            http.get('/api/dataset/{dataset_id}', () => HttpResponse.json(dataset)),
+            http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.json(environment))
+        );
     });
 
     it('renders the model name, loss to two decimal places, and the uppercased architecture', () => {
@@ -110,18 +116,62 @@ describe('TrainingRow', () => {
         expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     });
 
-    it('renders a Remote · {name} badge for a remote job', async () => {
-        renderTrainingRow({
-            payload: { ...localJob.payload, training_target: 'remote', remote_trainer_id: remoteTrainer.id },
-        });
-
-        expect(await screen.findByText(`Remote · ${remoteTrainer.name}`)).toBeInTheDocument();
-    });
-
-    it('renders no location badge for a local job', () => {
+    it('renders the Dataset name and the Environment name resolved via dataset.environment_id', async () => {
         renderTrainingRow();
 
-        expect(screen.queryByText(/^Remote ·/)).not.toBeInTheDocument();
+        await waitFor(() => expect(screen.getByTestId('dataset-cell')).toHaveTextContent(dataset.name));
+        await waitFor(() => expect(screen.getByTestId('environment-cell')).toHaveTextContent(environment.name));
+    });
+
+    it('shows the remote_trainer_name in the Trainer column when present', async () => {
+        renderTrainingRow({
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: 'remote-trainer-1',
+                remote_trainer_name: remoteTrainer.name,
+            },
+        });
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
+    });
+
+    it('shows Local for a local job in the Trainer column', async () => {
+        renderTrainingRow();
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local'));
+    });
+
+    it('shows SSH for an ssh job in the Trainer column', async () => {
+        renderTrainingRow({
+            payload: { ...localJob.payload, training_target: 'ssh', remote_server_id: 'server-1' },
+        });
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('SSH'));
+    });
+
+    it('shows "-" in the Dataset and Environment cells when those requests fail', async () => {
+        server.use(
+            http.get('/api/dataset/{dataset_id}', () => HttpResponse.error()),
+            http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.error())
+        );
+
+        renderTrainingRow();
+
+        await waitFor(() => expect(screen.getByTestId('dataset-cell')).toHaveTextContent('-'));
+        expect(screen.getByTestId('environment-cell')).toHaveTextContent('-');
+    });
+
+    it('does not display the job detail panel for a failed job', async () => {
+        const user = userEvent.setup();
+        renderTrainingRow({ status: 'failed' });
+
+        expect(screen.queryByRole('button', { name: 'Show details for pick-and-place' })).not.toBeInTheDocument();
+
+        await user.click(screen.getByText('pick-and-place'));
+
+        expect(screen.queryByRole('tab', { name: 'Model Metrics' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('tab', { name: 'Training Datasets' })).not.toBeInTheDocument();
     });
 
     it('reveals the panel tabs when the row is clicked', async () => {

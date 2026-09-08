@@ -18,6 +18,7 @@ from api.hardware import router as hardware_router
 from api.job import router as job_router
 from api.logs import router as logs_router
 from api.models import router as models_router
+from api.plugins import router as plugins_router
 from api.policies import router as policies_router
 from api.project import router as project_router
 from api.project_camera import router as project_cameras_router
@@ -27,6 +28,7 @@ from api.robot_catalog import router as robot_catalog_router
 from api.robot_observations import router as robot_observations_router
 from api.robot_setup import router as robot_setup_router
 from api.robots import router as project_robots_router
+from api.runtime_sessions import router as runtime_sessions_router
 from api.runtime_ws import router as runtime_ws_router
 from api.settings import router as settings_router
 from api.system import system_router
@@ -52,6 +54,7 @@ app.include_router(robot_catalog_router)
 app.include_router(project_cameras_router)
 app.include_router(robot_setup_router)
 app.include_router(runtime_ws_router)
+app.include_router(runtime_sessions_router)
 app.include_router(robot_observations_router)
 app.include_router(project_environments_router)
 app.include_router(hardware_router)
@@ -62,6 +65,7 @@ app.include_router(remote_servers_router)
 app.include_router(settings_router)
 app.include_router(models_router)
 app.include_router(policies_router)
+app.include_router(plugins_router)
 app.include_router(job_router)
 app.include_router(imports_router)
 app.include_router(logs_router)

@@ -1,10 +1,16 @@
-import { screen, waitFor } from '@testing-library/react';
+import { ReactNode, Suspense } from 'react';
+
+import { ThemeProvider } from '@geti-ui/ui';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
+import { createQueryClient } from '../../query-client/query-client';
 import { render } from '../../test-utils/render';
 import { RobotsList } from './robots-list';
 
@@ -31,6 +37,32 @@ const renderRobotsList = () =>
         route: `/projects/${PROJECT_ID}/robots`,
         path: '/projects/:project_id/robots',
     });
+
+const renderRobotsListAtShowRoute = () => {
+    const queryClient = createQueryClient();
+    const providers = (children: ReactNode) => (
+        <QueryClientProvider client={queryClient}>
+            <ThemeProvider>
+                <Suspense>{children}</Suspense>
+            </ThemeProvider>
+        </QueryClientProvider>
+    );
+    const router = createMemoryRouter(
+        [
+            {
+                path: '/projects/:project_id/robots/:robot_id',
+                element: providers(<RobotsList />),
+            },
+            {
+                path: '/projects/:project_id/robots',
+                element: providers(<div>Robots index</div>),
+            },
+        ],
+        { initialEntries: [`/projects/${PROJECT_ID}/robots/${ROBOT_ID}`], initialIndex: 0 }
+    );
+
+    return rtlRender(<RouterProvider router={router} />);
+};
 
 const openRobotMenu = async (user: ReturnType<typeof userEvent.setup>) => {
     await screen.findByText(so101Robot.name);
@@ -146,5 +178,73 @@ describe('RobotsList', () => {
         expect(await screen.findByText('Unavailable')).toBeInTheDocument();
         expect(screen.getByText(/plugin unavailable/)).toBeInTheDocument();
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
+    });
+
+    it('navigates to the robots index when the viewed robot is deleted', async () => {
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
+            http.delete('/api/projects/{project_id}/robots/{robot_id}', () => HttpResponse.json(null, { status: 204 }))
+        );
+
+        const user = userEvent.setup();
+
+        renderRobotsListAtShowRoute();
+        await openRobotMenu(user);
+        await user.click(screen.getByRole('menuitemradio', { name: 'Delete' }));
+
+        expect(await screen.findByText('Robots index')).toBeInTheDocument();
+    });
+});
+
+describe('RobotsList runtime sessions', () => {
+    const idleRobot = {
+        id: 'idle-robot-id',
+        name: 'Idle arm',
+        type: 'SO101_Follower' as const,
+        payload: { connection_string: '', serial_number: 'SO101-002' },
+    };
+
+    const busySession = {
+        session_name: `rt-${ROBOT_ID}`,
+        follower_id: ROBOT_ID,
+        status: 'running' as const,
+        pid: 41273,
+        follower_name: so101Robot.name,
+        camera_keys: [],
+        activity: {
+            connected: true,
+            follower_source: 'teleop' as const,
+            is_recording: true,
+            episodes_recorded: 2,
+        },
+        error: null,
+    };
+
+    it('marks only the robot a session is driving', async () => {
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot, idleRobot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
+            http.get('/api/runtime/sessions', () => HttpResponse.json([busySession]))
+        );
+
+        renderRobotsList();
+
+        // Matching is by rt-<robot id>, so exactly one of the two rows lights up.
+        expect(await screen.findByText(/Session · recording/)).toBeInTheDocument();
+        expect(screen.getAllByText(/Session ·/)).toHaveLength(1);
+    });
+
+    it('marks no robot when nothing is running', async () => {
+        server.use(
+            http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot, idleRobot])),
+            http.get(ONLINE_ROBOTS_PATH, () => HttpResponse.json([])),
+            http.get('/api/runtime/sessions', () => HttpResponse.json([]))
+        );
+
+        renderRobotsList();
+
+        await screen.findByText(so101Robot.name);
+        expect(screen.queryByText(/Session ·/)).not.toBeInTheDocument();
     });
 });

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 
 import { Button, Flex, Heading, Loading, Text } from '@geti-ui/ui';
 
+import { CalibrationTable } from '../../calibration-table';
 import { InlineAlert } from '../shared/inline-alert';
 import { StatusBadge } from '../shared/status-badge';
 import { CalibrationPhase, useSetupActions, useSetupState, WizardStep } from './wizard-provider';
@@ -237,26 +238,11 @@ export const CalibrationStep = () => {
                             <div className={classes.sectionCard}>
                                 <Flex direction='column' gap='size-100'>
                                     <Heading level={4}>Calibration Values</Heading>
-                                    <table className={classes.rangeTable}>
-                                        <thead>
-                                            <tr>
-                                                <th>Joint</th>
-                                                <th>Homing Offset</th>
-                                                <th>Min</th>
-                                                <th>Max</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {Object.entries(calibrationResult.calibration).map(([name, cal]) => (
-                                                <tr key={name}>
-                                                    <td>{name}</td>
-                                                    <td>{cal.homing_offset}</td>
-                                                    <td>{cal.range_min}</td>
-                                                    <td>{cal.range_max}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                    <CalibrationTable
+                                        calibration={calibrationResult.calibration}
+                                        columns={['homing_offset', 'range_min', 'range_max']}
+                                        className={classes.rangeTable}
+                                    />
                                 </Flex>
                             </div>
                             <InlineAlert variant='success'>

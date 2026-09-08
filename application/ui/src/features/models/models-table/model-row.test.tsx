@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 import { vi } from 'vitest';
@@ -6,6 +6,8 @@ import { vi } from 'vitest';
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
+import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
 import { render } from '../../../test-utils/render';
 import { durationBetween } from '../shared/duration';
 import { ModelRow } from './model-row';
@@ -77,6 +79,10 @@ const modelDetailResponse = {
     hparams: null,
 };
 
+const dataset = getMockedDataset();
+
+const environment = getMockedEnvironment();
+
 const renderModelRow = ({
     modelOverride,
     trainingJobOverride,
@@ -113,7 +119,9 @@ describe('ModelRow', () => {
     beforeEach(() => {
         server.use(
             http.get('/api/models/{model_id}', () => HttpResponse.json(modelDetailResponse)),
-            http.get('/api/policies/backends', () => HttpResponse.json({}))
+            http.get('/api/policies/backends', () => HttpResponse.json({})),
+            http.get('/api/dataset/{dataset_id}', () => HttpResponse.json(dataset)),
+            http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.json(environment))
         );
     });
 
@@ -141,21 +149,70 @@ describe('ModelRow', () => {
     });
 
     it('renders the v{n} suffix only when version > 1', () => {
-        const { rerender } = renderModelRow({ modelOverride: { version: 1 } });
+        renderModelRow({ modelOverride: { version: 1 } });
 
         expect(screen.queryByText(/^v\d+$/)).not.toBeInTheDocument();
 
-        rerender(
-            <ModelRow
-                model={{ ...model, version: 2 }}
-                trainingJob={undefined}
-                onDelete={vi.fn()}
-                onRetrain={vi.fn()}
-                onViewLogs={vi.fn()}
-            />
-        );
+        renderModelRow({ modelOverride: { version: 2 } });
 
         expect(screen.getByText('v2')).toBeInTheDocument();
+    });
+
+    it('renders the Dataset and Environment names', async () => {
+        renderModelRow({ modelOverride: { dataset_id: 'dataset-1' } });
+
+        await waitFor(() => expect(screen.getByTestId('dataset-cell')).toHaveTextContent(dataset.name));
+        await waitFor(() => expect(screen.getByTestId('environment-cell')).toHaveTextContent(environment.name));
+    });
+
+    it('shows "-" in the Dataset and Environment cells and makes no dataset request when dataset_id is null', async () => {
+        const datasetHandler = vi.fn(() => HttpResponse.error());
+        server.use(http.get('/api/dataset/{dataset_id}', datasetHandler));
+
+        renderModelRow({ modelOverride: { dataset_id: null }, trainingJobOverride: trainingJob });
+
+        expect(await screen.findByTestId('dataset-cell')).toHaveTextContent('-');
+        expect(screen.getByTestId('environment-cell')).toHaveTextContent('-');
+        expect(datasetHandler).not.toHaveBeenCalled();
+    });
+
+    it('shows the remote_trainer_name in the Trainer column when set', () => {
+        renderModelRow({
+            trainingJobOverride: {
+                ...trainingJob,
+                payload: {
+                    ...trainingJob.payload,
+                    training_target: 'remote',
+                    remote_trainer_id: 'remote-trainer-1',
+                    remote_trainer_name: 'managed-trainer',
+                },
+            },
+        });
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('managed-trainer');
+    });
+
+    it('shows Local in the Trainer column for a local job', () => {
+        renderModelRow({ trainingJobOverride: trainingJob });
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local');
+    });
+
+    it('shows SSH in the Trainer column for an ssh job', () => {
+        renderModelRow({
+            trainingJobOverride: {
+                ...trainingJob,
+                payload: { ...trainingJob.payload, training_target: 'ssh', remote_server_id: 'server-1' },
+            },
+        });
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('SSH');
+    });
+
+    it('shows "-" in the Trainer column when there is no trainingJob at all', () => {
+        renderModelRow();
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('-');
     });
 
     it('does not render the detail panel initially', () => {

@@ -19,8 +19,10 @@ import { $api } from '../../../api/client';
 import { ElapsedDuration } from '../../../components/elapsed-duration.component';
 import { notify } from '../../../components/notification/notification.component';
 import { Table } from '../../../components/table/table';
+import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
 import { SingleBadge, SplitBadge } from '../shared/split-badge';
+import { getTrainerLabel } from '../shared/trainer';
 import { SchemaTrainJob } from '../train-model-dialog/train-model-dialog';
 import { JobRowContent } from './job-row-content';
 
@@ -141,6 +143,28 @@ export const TrainingRow = ({
 }) => {
     const loss = trainJob.extra_info && (trainJob.extra_info['train/loss_step'] as number | undefined);
 
+    const { data: dataset } = useDatasetQuery(trainJob.payload.dataset_id);
+    const { data: environment } = useEnvironmentQuery(trainJob.payload.project_id, dataset?.environment_id);
+    const trainer = getTrainerLabel(trainJob.payload);
+
+    if (trainJob.status === 'failed') {
+        return (
+            <Table.Row id={trainJob.id}>
+                <div />
+                <TrainJobStatus job={trainJob} />
+                <Text>{loss ? loss.toFixed(2) : '...'}</Text>
+                <Text>{trainJob.payload.policy.toUpperCase()}</Text>
+                <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
+                <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
+                <Text data-testid='trainer-cell'>{trainer || '-'}</Text>
+                <div />
+                <View>
+                    <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
+                </View>
+            </Table.Row>
+        );
+    }
+
     return (
         <Table.ExpandableRow
             id={trainJob.id}
@@ -159,8 +183,10 @@ export const TrainingRow = ({
         >
             <TrainJobStatus job={trainJob} />
             <Text>{loss ? loss.toFixed(2) : '...'}</Text>
-            <div />
             <Text>{trainJob.payload.policy.toUpperCase()}</Text>
+            <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
+            <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
+            <Text data-testid='trainer-cell'>{trainer || '-'}</Text>
             <div onClick={(e) => e.stopPropagation()}>
                 {trainJob.status === 'running' && (
                     <DialogTrigger>

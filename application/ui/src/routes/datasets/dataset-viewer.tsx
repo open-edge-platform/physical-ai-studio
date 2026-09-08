@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import {
     ActionButton,
@@ -33,6 +33,12 @@ export const DatasetViewer = () => {
 
     const { deleteEpisodes, isPending } = useDeleteEpisodeQuery(dataset.id!);
     const [currentEpisode, setCurrentEpisode] = useState<number | null>(null);
+    const prevDatasetId = useRef(dataset.id);
+
+    if (prevDatasetId.current !== dataset.id) {
+        prevDatasetId.current = dataset.id;
+        setCurrentEpisode(null);
+    }
 
     if (episodes.length > 0 && currentEpisode === null) {
         setCurrentEpisode(episodes[0].episode_index);

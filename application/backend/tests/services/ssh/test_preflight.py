@@ -59,7 +59,7 @@ from services.ssh.preflight import (
     REASON_PROTOCOL_TAG_UNRESOLVED,
     REASON_PROTOCOL_UNKNOWN,
     REASON_REGISTRY_UNREACHABLE,
-    REASON_TOOL_MISSING,
+    REASON_SIGSTORE_UNAVAILABLE,
     REASON_UNPARSEABLE_OUTPUT,
     REASON_UNREACHABLE,
     registry_probe_url,
@@ -1033,7 +1033,7 @@ async def test_tier2_signature_infrastructure_unavailable_is_skipped_not_failed(
     check = result.check(CheckKey.IMAGE_SIGNATURE)
     assert check is not None
     assert check.outcome is CheckOutcome.SKIPPED
-    assert check.reason_code == REASON_TOOL_MISSING
+    assert check.reason_code == REASON_SIGSTORE_UNAVAILABLE
     assert check.blocking is False
     assert result.passed is True
 

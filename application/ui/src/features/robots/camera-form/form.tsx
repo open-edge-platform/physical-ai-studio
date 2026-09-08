@@ -1,8 +1,8 @@
 import { ReactNode } from 'react';
 
-import { Button, Divider, Flex, Heading, Icon, View } from '@geti-ui/ui';
-import { ChevronLeft } from '@geti-ui/ui/icons';
+import { Divider, Flex, View } from '@geti-ui/ui';
 
+import { FormHeading } from '../../../components/form-heading/form-heading';
 import { RadioDisclosure } from '../../../components/radio-disclosure-group/radio-disclosure-group';
 import { featureFlags } from '../../../config/feature-flags';
 import { useProjectId } from '../../../features/projects/use-project';
@@ -22,19 +22,11 @@ const Header = ({ heading }: { heading: ReactNode }) => {
     const { project_id } = useProjectId();
 
     return (
-        <Flex alignItems={'center'} gap='size-200'>
-            <Button
-                href={paths.project.cameras.index({ project_id })}
-                variant='secondary'
-                UNSAFE_style={{ border: 'none' }}
-            >
-                <Icon>
-                    <ChevronLeft color='white' fill='white' />
-                </Icon>
-            </Button>
-
-            <Heading>{heading}</Heading>
-        </Flex>
+        <FormHeading
+            heading={heading}
+            backTo={paths.project.cameras.index({ project_id })}
+            backLabel='Back to cameras'
+        />
     );
 };
 

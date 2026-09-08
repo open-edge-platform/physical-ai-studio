@@ -237,6 +237,48 @@ def test_robot_payload_ui_supports_recursive_items() -> None:
     }
 
 
+def test_robot_payload_ui_supports_ip_address_items() -> None:
+    assert robot_payload_ui(
+        [
+            {
+                "kind": "ip_address",
+                "name": "connection_string",
+                "identify": True,
+                "identify_robot_type": "Trossen_WidowXAI_Follower",
+            },
+        ],
+    ) == {
+        "x-physicalai-ui": [
+            {
+                "kind": "ip_address",
+                "name": "connection_string",
+                "identify": True,
+                "identify_robot_type": "Trossen_WidowXAI_Follower",
+            },
+        ],
+    }
+
+
+def test_robot_payload_ui_supports_calibration_items() -> None:
+    assert robot_payload_ui(
+        [
+            {
+                "kind": "calibration",
+                "name": "calibration",
+                "label": "Calibration",
+            },
+        ],
+    ) == {
+        "x-physicalai-ui": [
+            {
+                "kind": "calibration",
+                "name": "calibration",
+                "label": "Calibration",
+            },
+        ],
+    }
+
+
 def test_validate_robot_payload_ui_accepts_nested_item_lists() -> None:
     class ConnectionPayload(BaseModel):
         connection_string: str
@@ -274,10 +316,28 @@ def test_validate_robot_payload_ui_ignores_field_options() -> None:
         ({"groups": {}}, "must be a list of items"),
         ([{"kind": "field", "name": "missing"}], "must reference an existing payload field"),
         ([{"kind": "connection", "bind": {"connection": "port"}}], "must reference a string payload field"),
+        ([{"kind": "ip_address", "name": "missing"}], "must reference an existing payload field"),
+        ([{"kind": "ip_address", "name": "port"}], "must reference a string payload field"),
+        ([{"kind": "calibration", "name": "missing"}], "must reference an existing payload field"),
+        ([{"kind": "calibration", "name": "connection_string"}], "must reference an object payload field"),
         (
             [
                 {"kind": "field", "name": "connection_string"},
                 {"kind": "connection", "bind": {"connection": "connection_string"}},
+            ],
+            "owned more than once",
+        ),
+        (
+            [
+                {"kind": "field", "name": "connection_string"},
+                {"kind": "ip_address", "name": "connection_string"},
+            ],
+            "owned more than once",
+        ),
+        (
+            [
+                {"kind": "field", "name": "connection_string"},
+                {"kind": "calibration", "name": "connection_string"},
             ],
             "owned more than once",
         ),
@@ -287,6 +347,7 @@ def test_validate_robot_payload_ui_rejects_invalid_metadata(items: object, messa
     class InvalidPayload(BaseModel):
         connection_string: str
         port: int
+        calibration: dict[str, int]
 
         model_config = ConfigDict(json_schema_extra={"x-physicalai-ui": items})
 

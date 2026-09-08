@@ -95,12 +95,10 @@ REASON_UNSUPPORTED_DEVICE: Final = "unsupported_device_type"
 REASON_PROTOCOL_TAG_UNRESOLVED: Final = "protocol_tag_unresolved"
 REASON_IMAGE_UNRESOLVED: Final = "image_unresolved"
 REASON_TOOL_MISSING: Final = "tool_missing"
+REASON_SIGSTORE_UNAVAILABLE: Final = "sigstore_unavailable"
 REASON_DEVICE_UNAVAILABLE: Final = "device_unavailable"
 REASON_PROTOCOL_MISMATCH: Final = "protocol_mismatch"
 REASON_PROTOCOL_UNKNOWN: Final = "protocol_unknown"
-# The image was not yet present locally when the probe ran, so it was handed
-# to a background pull. Distinct from REASON_DEVICE_UNAVAILABLE: this is a
-# multi-gigabyte transfer still in flight, not a broken accelerator.
 REASON_IMAGE_PULLING: Final = "image_pulling"
 
 # Which probe answered a check, so the UI can show how a result was obtained.
@@ -114,6 +112,7 @@ METHOD_XPU_SMI: Final = "xpu-smi"
 METHOD_RENDER_NODE: Final = "render-node"
 METHOD_DOCKER_MANIFEST: Final = "docker-manifest"
 METHOD_COSIGN: Final = "cosign"
+METHOD_SIGSTORE: Final = "sigstore"
 METHOD_CONTAINER: Final = "container"
 
 # `df -B1 -P` prints one header line, then rows of:
@@ -858,9 +857,9 @@ async def _check_signature(recorder: _CheckRecorder, image_ref: str) -> None:
             CheckKey.IMAGE_SIGNATURE,
             CheckOutcome.SKIPPED,
             blocking=False,
-            reason_code=REASON_TOOL_MISSING,
+            reason_code=REASON_SIGSTORE_UNAVAILABLE,
             detail=f"Signature verification infrastructure is unreachable: {error}",
-            method=METHOD_COSIGN,
+            method=METHOD_SIGSTORE,
         )
         return
     except sigstore_verify.SignatureVerificationError as error:
@@ -870,10 +869,10 @@ async def _check_signature(recorder: _CheckRecorder, image_ref: str) -> None:
             blocking=False,
             reason_code=REASON_COMMAND_FAILED,
             detail=_detail(str(error)),
-            method=METHOD_COSIGN,
+            method=METHOD_SIGSTORE,
         )
         return
-    recorder.add(CheckKey.IMAGE_SIGNATURE, CheckOutcome.PASSED, blocking=False, method=METHOD_COSIGN)
+    recorder.add(CheckKey.IMAGE_SIGNATURE, CheckOutcome.PASSED, blocking=False, method=METHOD_SIGSTORE)
 
 
 async def resolve_render_group_gid(transport: SshTransport) -> str | None:

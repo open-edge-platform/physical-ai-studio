@@ -18,6 +18,7 @@ import {
 import { AlertCircle } from '@geti-ui/ui/icons';
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
+import { batchAsyncIterable } from '../../api/batch-async-iterable';
 import { fetchClient } from '../../api/client';
 import { fetchSSE } from '../../api/fetch-sse';
 import { ErrorBoundary } from '../../components/error-boundary/error-boundary';
@@ -63,6 +64,12 @@ const isValidLogEntry = (entry: unknown): entry is LogEntry => {
     );
 };
 
+const LOGS_BATCH_INTERVAL_MS = 200;
+
+const selectLogs = (logs: LogEntry[][]): LogEntry[] => {
+    return logs.flat();
+};
+
 const LogStreamContent = ({ sourceId }: { sourceId: string }) => {
     const query = useQuery({
         queryKey: ['get', '/api/logs/{source_id}/stream', sourceId],
@@ -72,9 +79,10 @@ const LogStreamContent = ({ sourceId }: { sourceId: string }) => {
                     params: { path: { source_id: sourceId } },
                 });
 
-                return fetchSSE<LogEntry>(url, { signal: context.signal });
+                return batchAsyncIterable(fetchSSE<LogEntry>(url, { signal: context.signal }), LOGS_BATCH_INTERVAL_MS);
             },
         }),
+        select: selectLogs,
         staleTime: Infinity,
     });
 
