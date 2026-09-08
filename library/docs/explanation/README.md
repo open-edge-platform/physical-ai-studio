@@ -18,6 +18,10 @@ Detailed design documentation for each module (for contributors and advanced use
 | [Export](export/README.md)       | Model export (OpenVINO, ONNX, Torch Export)                                                                                             |
 | [Inference](inference/README.md) | Production deployment                                                                                                                   |
 
+## Design Proposals
+
+- [Engine and Upstream Providers](model-providers.md) — Draft library-first design for Lightning and native framework integration, API/CLI/GUI parity, environments, and benchmark plugins. The proposed APIs are not implemented.
+
 ## See Also
 
 - [Getting Started](../getting-started/) - Learn by doing
