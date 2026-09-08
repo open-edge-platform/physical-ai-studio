@@ -118,7 +118,7 @@ jobs:
       contents: read
     steps:
       - *harden-runner
-  
+
       - *checkout
 
       - *set-up-python
