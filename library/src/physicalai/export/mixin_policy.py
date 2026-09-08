@@ -282,7 +282,12 @@ class ExportablePolicyMixin:
 
         return path
 
-    def to_torch(self, checkpoint_path: PathLike | str) -> None:
+    def to_torch(
+        self,
+        checkpoint_path: PathLike | str,
+        pre_export_hooks: list[Callable[[], object]] | None = None,
+        post_export_hooks: list[Callable[[Path], object]] | None = None,
+    ) -> None:
         """Export the model as a checkpoint with model configuration.
 
         This method saves the model's state dictionary along with its configuration
@@ -291,6 +296,12 @@ class ExportablePolicyMixin:
 
         Args:
             checkpoint_path: Path where the checkpoint will be saved.
+            pre_export_hooks: Optional pre-export hooks run before the checkpoint is
+                written, after any policy-declared pre-export hooks. Each takes no
+                arguments and may mutate the model in place.
+            post_export_hooks: Optional post-export hooks run after the checkpoint is
+                written, after any policy-declared post-export hooks. Each receives
+                the exported model file path.
 
         Note:
             - If the model has a 'config' attribute, it will be serialized and
@@ -308,6 +319,14 @@ class ExportablePolicyMixin:
                 f"Supported backends: {self.get_supported_export_backends()}"
             )
             raise NotImplementedError(msg)
+
+        pre_hooks, post_hooks = self._collect_export_hooks(
+            ExportBackend.TORCH,
+            pre_export_hooks,
+            post_export_hooks,
+        )
+        for pre_hook in pre_hooks:
+            pre_hook()
 
         model_path = self._prepare_export_path(checkpoint_path, ".pt")
         export_dir = model_path.parent
@@ -344,11 +363,16 @@ class ExportablePolicyMixin:
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
 
+        for hook in post_hooks:
+            hook(model_path)
+
     @torch.no_grad()
     def to_onnx(
         self,
         output_path: PathLike | str,
         input_sample: dict[str, torch.Tensor] | None = None,
+        pre_export_hooks: list[Callable[[], object]] | None = None,
+        post_export_hooks: list[Callable[[Path], object]] | None = None,
         **export_kwargs: dict,
     ) -> None:
         """Export the model to ONNX format.
@@ -363,6 +387,12 @@ class ExportablePolicyMixin:
             input_sample (dict[str, torch.Tensor] | None): A sample input dictionary.
                 If `None`, the method will attempt to use the policy's `sample_input`
                 property. This input is used to trace the model during export.
+            pre_export_hooks: Optional pre-export hooks run before tracing, after any
+                policy-declared pre-export hooks. Each takes no arguments and may
+                mutate the model in place.
+            post_export_hooks: Optional post-export hooks run after the artifact is
+                written, after any policy-declared post-export hooks. Each receives
+                the exported model file path.
             **export_kwargs: Additional keyword arguments to pass to `torch.onnx.export`.
 
         Raises:
@@ -377,6 +407,14 @@ class ExportablePolicyMixin:
                 f"Supported backends: {self.get_supported_export_backends()}"
             )
             raise NotImplementedError(msg)
+
+        pre_hooks, post_hooks = self._collect_export_hooks(
+            ExportBackend.ONNX,
+            pre_export_hooks,
+            post_export_hooks,
+        )
+        for pre_hook in pre_hooks:
+            pre_hook()
 
         enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
         with self._scoped_rtc(enable=enable_rtc):
@@ -419,11 +457,16 @@ class ExportablePolicyMixin:
                 output_features=self._to_component_specs(self.outputs_schema or []),
             )
 
+        for hook in post_hooks:
+            hook(model_path)
+
     @torch.no_grad()
     def to_openvino(
         self,
         output_path: PathLike | str,
         input_sample: dict[str, torch.Tensor] | None = None,
+        pre_export_hooks: list[Callable[[], object]] | None = None,
+        post_export_hooks: list[Callable[[Path], object]] | None = None,
         **export_kwargs: dict,
     ) -> None:
         """Export the model to OpenVINO format.
@@ -433,6 +476,12 @@ class ExportablePolicyMixin:
                 If directory, creates {policy_name}.xml. If file, uses as-is.
             input_sample (dict[str, torch.Tensor] | None, optional): Sample input tensor(s) for model tracing.
                 If None, attempts to use the policy's `sample_input` property. Defaults to None.
+            pre_export_hooks: Optional pre-export hooks run before conversion, after
+                any policy-declared pre-export hooks. Each takes no arguments and may
+                mutate the model in place.
+            post_export_hooks: Optional post-export hooks run after the artifact is
+                written, after any policy-declared post-export hooks. Each receives
+                the exported model file path.
             **export_kwargs (dict): Additional keyword arguments to pass to the OpenVINO conversion process.
 
         Raises:
@@ -456,6 +505,14 @@ class ExportablePolicyMixin:
                 f"Supported backends: {self.get_supported_export_backends()}"
             )
             raise NotImplementedError(msg)
+
+        pre_hooks, post_hooks = self._collect_export_hooks(
+            ExportBackend.OPENVINO,
+            pre_export_hooks,
+            post_export_hooks,
+        )
+        for pre_hook in pre_hooks:
+            pre_hook()
 
         enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
         with self._scoped_rtc(enable=enable_rtc):
@@ -538,6 +595,9 @@ class ExportablePolicyMixin:
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
 
+        for hook in post_hooks:
+            hook(model_path)
+
     @torch.no_grad()
     def to_executorch(
         self,
@@ -546,6 +606,8 @@ class ExportablePolicyMixin:
         *,
         delegate: ExecuTorchDelegate | None = None,
         delegate_config: dict[str, Any] | None = None,
+        pre_export_hooks: list[Callable[[], object]] | None = None,
+        post_export_hooks: list[Callable[[Path], object]] | None = None,
         **export_kwargs: dict,
     ) -> Path:
         """Export the model to ExecuTorch format.
@@ -565,6 +627,12 @@ class ExportablePolicyMixin:
                   custom-built ExecuTorch runtime with OpenVINO backend for inference.
             delegate_config: Optional delegate-specific configuration. For ``"openvino"``,
                 supports ``{"device": "CPU"}`` (or other supported target device).
+            pre_export_hooks: Optional pre-export hooks run before tracing, after any
+                policy-declared pre-export hooks. Each takes no arguments and may
+                mutate the model in place.
+            post_export_hooks: Optional post-export hooks run after the artifact is
+                written, after any policy-declared post-export hooks. Each receives
+                the exported model file path.
             **export_kwargs: Additional keyword arguments passed to ``torch.export.export``.
 
         Returns:
@@ -583,6 +651,14 @@ class ExportablePolicyMixin:
                 f"Supported backends: {self.get_supported_export_backends()}"
             )
             raise NotImplementedError(msg)
+
+        pre_hooks, post_hooks = self._collect_export_hooks(
+            ExportBackend.EXECUTORCH,
+            pre_export_hooks,
+            post_export_hooks,
+        )
+        for pre_hook in pre_hooks:
+            pre_hook()
 
         if input_sample is None:
             input_sample = self._get_default_export_input_sample()
@@ -641,6 +717,9 @@ class ExportablePolicyMixin:
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
+
+        for hook in post_hooks:
+            hook(model_path)
 
         return model_path
 
@@ -735,13 +814,14 @@ class ExportablePolicyMixin:
                 input tensor dictionary for model tracing.
                 If None, attempts to use the policy's `sample_input` property.
                 Defaults to None.
-            pre_export_hooks: Optional list of callables to run before export starts,
-                after any policy-declared pre-export hooks. Each hook takes no
-                arguments and may mutate the model in place. Any return value is ignored.
-            post_export_hooks: Optional list of callables to run after export completes,
-                after any policy-declared post-export hooks. Each hook receives the
-                exported model file path and can perform post-processing.
-                Any return value is ignored.
+            pre_export_hooks: Optional list of callables forwarded to the backend
+                export method, run before export starts, after any policy-declared
+                pre-export hooks. Each hook takes no arguments and may mutate the
+                model in place. Any return value is ignored.
+            post_export_hooks: Optional list of callables forwarded to the backend
+                export method, run after export completes, after any policy-declared
+                post-export hooks. Each hook receives the exported model file path
+                and can perform post-processing. Any return value is ignored.
             **export_kwargs (dict): Additional keyword arguments to pass to the
                 backend-specific export method.
 
@@ -750,29 +830,39 @@ class ExportablePolicyMixin:
         """
         backend = ExportBackend(backend)
 
-        extra_model_args = self._get_export_extra_args(backend)
-        pre_hooks = [*extra_model_args.pre_export_hooks, *(pre_export_hooks or [])]
-        post_hooks = [*extra_model_args.post_export_hooks, *(post_export_hooks or [])]
-
-        for pre_hook in pre_hooks:
-            pre_hook()
-
         if backend == ExportBackend.ONNX:
-            self.to_onnx(output_path, input_sample, **export_kwargs)
+            self.to_onnx(
+                output_path,
+                input_sample,
+                pre_export_hooks=pre_export_hooks,
+                post_export_hooks=post_export_hooks,
+                **export_kwargs,
+            )
         elif backend == ExportBackend.OPENVINO:
-            self.to_openvino(output_path, input_sample, **export_kwargs)
+            self.to_openvino(
+                output_path,
+                input_sample,
+                pre_export_hooks=pre_export_hooks,
+                post_export_hooks=post_export_hooks,
+                **export_kwargs,
+            )
         elif backend == ExportBackend.EXECUTORCH:
-            self.to_executorch(output_path, input_sample, **export_kwargs)
+            self.to_executorch(
+                output_path,
+                input_sample,
+                pre_export_hooks=pre_export_hooks,
+                post_export_hooks=post_export_hooks,
+                **export_kwargs,
+            )
         elif backend == ExportBackend.TORCH:
-            self.to_torch(output_path)
+            self.to_torch(
+                output_path,
+                pre_export_hooks=pre_export_hooks,
+                post_export_hooks=post_export_hooks,
+            )
         else:
             msg = f"Unsupported export backend: {backend}"
             raise ValueError(msg)
-
-        if post_hooks:
-            model_path = self._prepare_export_path(output_path, backend.extension)
-            for hook in post_hooks:
-                hook(model_path)
 
     @_quiet_onnx_export_logs()
     def _onnx_core_export_step(
@@ -817,6 +907,33 @@ class ExportablePolicyMixin:
         sample = {k: v.to(self.device) if isinstance(v, torch.Tensor) else v for k, v in sample.items()}
         processed_sample = self._preprocessor(sample)
         return {k: v for k, v in processed_sample.items() if isinstance(v, torch.Tensor)}
+
+    def _collect_export_hooks(
+        self,
+        backend: ExportBackend,
+        pre_export_hooks: list[Callable[[], object]] | None,
+        post_export_hooks: list[Callable[[Path], object]] | None,
+    ) -> tuple[list[Callable[[], object]], list[Callable[[Path], object]]]:
+        """Merge policy-declared and caller-supplied export hooks for a backend.
+
+        The policy's backend export parameters (``extra_export_args``) may declare
+        ``pre_export_hooks`` / ``post_export_hooks``; those run first, followed by
+        the caller-supplied hooks. Centralizing this here keeps every backend
+        method's hook-collection logic identical.
+
+        Args:
+            backend: The export backend whose declared hooks should be collected.
+            pre_export_hooks: Caller-supplied pre-export hooks, or ``None``.
+            post_export_hooks: Caller-supplied post-export hooks, or ``None``.
+
+        Returns:
+            A ``(pre_hooks, post_hooks)`` tuple with the policy-declared hooks first,
+            then the caller-supplied hooks.
+        """
+        extra_model_args = self._get_export_extra_args(backend)
+        pre_hooks = [*extra_model_args.pre_export_hooks, *(pre_export_hooks or [])]
+        post_hooks = [*extra_model_args.post_export_hooks, *(post_export_hooks or [])]
+        return pre_hooks, post_hooks
 
     def _get_export_extra_args(self, backend: ExportBackend | str) -> ExportParameters:
         """Retrieve extra export arguments for a specific format.

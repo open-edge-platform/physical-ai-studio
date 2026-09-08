@@ -1043,3 +1043,30 @@ class TestPostExportHooks:
         )
 
         assert order == ["policy_pre", "caller_pre", "policy_post", "caller_post"]
+
+    @pytest.mark.parametrize("backend_method", ["to_onnx", "to_openvino", "to_torch", "to_executorch"])
+    def test_backend_methods_apply_hooks_directly(self, tmp_path, backend_method):
+        """Every backend method runs both pre and post hooks when called directly."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        pre_hook = MagicMock()
+        post_hook = MagicMock()
+        kwargs = {"pre_export_hooks": [pre_hook], "post_export_hooks": [post_hook]}
+
+        if backend_method == "to_onnx":
+            ExportWrapper(model).to_onnx(tmp_path / "model.onnx", **kwargs)
+        elif backend_method == "to_openvino":
+            ExportWrapper(model).to_openvino(tmp_path / "model.xml", **kwargs)
+        elif backend_method == "to_torch":
+            TorchExportWrapper(model, chunk_size=5, n_action_steps=5).to_torch(tmp_path, **kwargs)
+        else:  # to_executorch
+            mocks = TestToExecutorch()._mock_executorch_modules()
+            with (
+                patch.dict("sys.modules", mocks["modules"]),
+                patch("torch.export.export", return_value=MagicMock()),
+            ):
+                ExportWrapper(model).to_executorch(tmp_path / "model.pte", **kwargs)
+
+        pre_hook.assert_called_once_with()
+        assert post_hook.call_count == 1
+        (called_path,) = post_hook.call_args.args
+        assert isinstance(called_path, Path)

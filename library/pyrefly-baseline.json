@@ -361,58 +361,58 @@
       "severity": "error"
     },
     {
-      "line": 609,
+      "line": 686,
       "column": 13,
-      "stop_line": 609,
+      "stop_line": 686,
       "stop_column": 68,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.exir`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.exir`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.exir`",
       "severity": "error"
     },
     {
-      "line": 681,
+      "line": 761,
       "column": 17,
-      "stop_line": 681,
+      "stop_line": 761,
       "stop_column": 89,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.backends.openvino.partitioner`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.backends.openvino.partitioner`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.backends.openvino.partitioner`",
       "severity": "error"
     },
     {
-      "line": 682,
+      "line": 762,
       "column": 17,
-      "stop_line": 682,
+      "stop_line": 762,
       "stop_column": 80,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.exir.backend.backend_details`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.exir.backend.backend_details`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.exir.backend.backend_details`",
       "severity": "error"
     },
     {
-      "line": 687,
+      "line": 767,
       "column": 17,
-      "stop_line": 689,
+      "stop_line": 769,
       "stop_column": 18,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.backends.xnnpack.partition.xnnpack_partitioner`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.backends.xnnpack.partition.xnnpack_partitioner`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.backends.xnnpack.partition.xnnpack_partitioner`",
       "severity": "error"
     },
     {
-      "line": 748,
-      "column": 59,
-      "stop_line": 748,
-      "stop_column": 74,
+      "line": 855,
+      "column": 17,
+      "stop_line": 855,
+      "stop_column": 32,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "bad-argument-type",
@@ -421,9 +421,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -433,9 +433,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -445,9 +445,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -457,9 +457,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -469,9 +469,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -481,9 +481,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -493,9 +493,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -505,9 +505,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -517,9 +517,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -529,9 +529,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -541,9 +541,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -553,9 +553,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -565,9 +565,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -577,9 +577,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -589,9 +589,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -601,9 +601,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -613,9 +613,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 889,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 889,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -656,7 +656,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `libero.libero.benchmark`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `libero.libero.benchmark`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `libero.libero.benchmark`",
       "severity": "error"
     },
@@ -668,7 +668,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `libero.libero`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `libero.libero`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `libero.libero`",
       "severity": "error"
     },
@@ -680,7 +680,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `libero.libero`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `libero.libero`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `libero.libero`",
       "severity": "error"
     },
@@ -692,7 +692,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `libero.libero.envs`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `libero.libero.envs`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `libero.libero.envs`",
       "severity": "error"
     },
@@ -704,7 +704,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `robosuite.utils.transform_utils`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `robosuite.utils.transform_utils`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `robosuite.utils.transform_utils`",
       "severity": "error"
     },
@@ -920,7 +920,7 @@
       "path": "src/physicalai/inference/adapters/executorch.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.runtime`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.runtime`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physicalai/src\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.runtime`",
       "severity": "error"
     },
@@ -2053,6 +2053,54 @@
       "severity": "error"
     },
     {
+      "line": 250,
+      "column": 14,
+      "stop_line": 250,
+      "stop_column": 19,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR0.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner\n  `XR0.model` has type `XR0Model | None`, which is not consistent with `Module` in `ExportablePolicyMixin.model` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR0.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 250,
+      "column": 14,
+      "stop_line": 250,
+      "stop_column": 19,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner\n  `XR0.model` has type `XR0Model | None`, which is not consistent with `Model | None` in `Policy.model` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 251,
+      "column": 14,
+      "stop_line": 251,
+      "stop_column": 27,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR0._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner\n  `XR0._preprocessor` has type `XR0Preprocessor | None`, which is not consistent with `Module` in `ExportablePolicyMixin._preprocessor` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR0._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 572,
+      "column": 9,
+      "stop_line": 572,
+      "stop_column": 29,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override",
+      "description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner\n  `XR0.configure_optimizers` has type `(self: XR0) -> dict[str, Any]`, which is not assignable to `(self: XR0) -> OptimizerLRScheduler`, the type of `Policy.configure_optimizers`\n  Signature mismatch:\n  expected: def configure_optimizers(self: XR0) -> OptimizerLRScheduler: ...\n                                                   ^^^^^^^^^^^^^^^^^^^^ return type\n  found:    def configure_optimizers(self: XR0) -> dict[str, Any]: ...\n                                                   ^^^^^^^^^^^^^^ return type",
+      "concise_description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
       "line": 223,
       "column": 9,
       "stop_line": 223,
@@ -2158,54 +2206,6 @@
       "name": "bad-argument-type",
       "description": "Argument `Dataset | None` is not assignable to parameter `object` with type `Dataset` in function `list.append`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
       "concise_description": "Argument `Dataset | None` is not assignable to parameter `object` with type `Dataset` in function `list.append`",
-      "severity": "error"
-    },
-    {
-      "line": 249,
-      "column": 14,
-      "stop_line": 249,
-      "stop_column": 19,
-      "path": "src/physicalai/policies/xr0/policy.py",
-      "code": -2,
-      "name": "bad-override-mutable-attribute",
-      "description": "Class member `XR0.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner\n  `XR0.model` has type `XR0Model | None`, which is not consistent with `Module` in `ExportablePolicyMixin.model` (the type of read-write attributes cannot be changed)",
-      "concise_description": "Class member `XR0.model` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
-      "severity": "error"
-    },
-    {
-      "line": 249,
-      "column": 14,
-      "stop_line": 249,
-      "stop_column": 19,
-      "path": "src/physicalai/policies/xr0/policy.py",
-      "code": -2,
-      "name": "bad-override-mutable-attribute",
-      "description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner\n  `XR0.model` has type `XR0Model | None`, which is not consistent with `Model | None` in `Policy.model` (the type of read-write attributes cannot be changed)",
-      "concise_description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner",
-      "severity": "error"
-    },
-    {
-      "line": 250,
-      "column": 14,
-      "stop_line": 250,
-      "stop_column": 27,
-      "path": "src/physicalai/policies/xr0/policy.py",
-      "code": -2,
-      "name": "bad-override-mutable-attribute",
-      "description": "Class member `XR0._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner\n  `XR0._preprocessor` has type `XR0Preprocessor | None`, which is not consistent with `Module` in `ExportablePolicyMixin._preprocessor` (the type of read-write attributes cannot be changed)",
-      "concise_description": "Class member `XR0._preprocessor` overrides parent class `ExportablePolicyMixin` in an inconsistent manner",
-      "severity": "error"
-    },
-    {
-      "line": 599,
-      "column": 9,
-      "stop_line": 599,
-      "stop_column": 29,
-      "path": "src/physicalai/policies/xr0/policy.py",
-      "code": -2,
-      "name": "bad-override",
-      "description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner\n  `XR0.configure_optimizers` has type `(self: XR0) -> dict[str, Any]`, which is not assignable to `(self: XR0) -> OptimizerLRScheduler`, the type of `Policy.configure_optimizers`\n  Signature mismatch:\n  expected: def configure_optimizers(self: XR0) -> OptimizerLRScheduler: ...\n                                                   ^^^^^^^^^^^^^^^^^^^^ return type\n  found:    def configure_optimizers(self: XR0) -> dict[str, Any]: ...\n                                                   ^^^^^^^^^^^^^^ return type",
-      "concise_description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
       "severity": "error"
     }
   ]
