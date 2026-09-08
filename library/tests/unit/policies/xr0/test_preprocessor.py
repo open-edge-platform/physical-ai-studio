@@ -190,6 +190,19 @@ class TestExtractViewImages:
         assert grid.shape == expected.shape
         assert torch.equal(grid, expected)
 
+    def test_selected_in_camera_views_order(self) -> None:
+        # camera_views is not alphabetical -> images must follow camera_views,
+        # not sorted keys, so they stay aligned with the prompt view sections.
+        pre = XR0Preprocessor(camera_views=("wrist_left", "base"))
+        batch = {
+            "images.base": torch.zeros(1, 3, 32, 32),
+            "images.wrist_left": torch.ones(1, 3, 32, 32),
+        }
+        images = pre._extract_view_images(batch)[0]  # noqa: SLF001
+        # First image is wrist_left (255), second is base (0).
+        assert np.asarray(images[0]).max() == 255
+        assert np.asarray(images[1]).max() == 0
+
 
 class TestPrepareAction:
     """Action normalize + pad + validity mask, incl. delta corner cases."""

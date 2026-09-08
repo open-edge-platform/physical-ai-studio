@@ -187,7 +187,9 @@ class XR0Preprocessor(torch.nn.Module):
 
     Args:
         camera_views: Ordered view names embedded into the prompt. The framework
-            ``IMAGES.*`` keys are mapped to these positionally (sorted).
+            ``IMAGES.*`` keys are matched to these by name (``images.<view>``) so
+            the images stay aligned with the prompt view sections; unmatched keys
+            fall back to sorted order.
         max_state_dim: State dimension after padding.
         max_action_dim: Action dimension after padding.
         features: Optional feature map (from dataset stats) used to normalize the
@@ -375,7 +377,11 @@ class XR0Preprocessor(torch.nn.Module):
             ValueError: If the batch contains no image observation.
         """
         image_keys = [key for key in Observation.get_flattened_keys(batch, IMAGES) if "is_pad" not in key]
-        image_keys = sorted(image_keys)[: len(self.camera_views)]
+        # Select images in ``camera_views`` order so the per-view prompt sections
+        # (title + image block) stay aligned with the correct view; fall back to
+        # sorted keys when no observation key matches a view name.
+        ordered_keys = [f"{IMAGES}.{view}" for view in self.camera_views if f"{IMAGES}.{view}" in image_keys]
+        image_keys = ordered_keys or sorted(image_keys)[: len(self.camera_views)]
         if not image_keys:
             msg = "XR0Preprocessor requires at least one image observation"
             raise ValueError(msg)
