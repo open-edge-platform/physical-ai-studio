@@ -43,6 +43,46 @@ def pusht_act_policy(lerobot_imports, pusht_dataset):
     return LeRobotPolicy.from_dataset("act", pusht_dataset)
 
 
+@dataclass
+class _FallbackConfig:
+    """Minimal generic dataclass for configuration fallback tests."""
+
+    width: int = 8
+    learning_rate: float = 1e-3
+
+
+class _FallbackPolicy:
+    """Minimal constructor used to exercise LeRobotFromConfig fallbacks."""
+
+    def __init__(self, width: int, learning_rate: float = 1e-3) -> None:
+        self.width = width
+        self.learning_rate = learning_rate
+
+
+class TestLeRobotFromConfig:
+    """Test generic dataclass and mapping compatibility."""
+
+    def test_dataclass_and_dict_support_overrides(self) -> None:
+        """Generic dataclasses and mappings preserve constructor overrides."""
+        from physicalai.policies.lerobot.mixin import LeRobotFromConfig
+
+        policy_cls: Any = type("FallbackPolicy", (_FallbackPolicy, LeRobotFromConfig), {})
+        from_dataclass = policy_cls.from_config(_FallbackConfig(width=16), learning_rate=2e-3)
+        from_dict = policy_cls.from_dict({"width": 32}, learning_rate=3e-3)
+
+        assert (from_dataclass.width, from_dataclass.learning_rate) == (16, 2e-3)
+        assert (from_dict.width, from_dict.learning_rate) == (32, 3e-3)
+
+    def test_mapping_key_is_supported(self) -> None:
+        """Keyed mappings are extracted before applying configuration."""
+        from physicalai.policies.lerobot.mixin import LeRobotFromConfig
+
+        policy_cls: Any = type("FallbackPolicy", (_FallbackPolicy, LeRobotFromConfig), {})
+        policy = policy_cls.from_config({"policy": {"width": 24}}, key="policy")
+
+        assert policy.width == 24
+
+
 class TestLeRobotPolicyLazyInit:
     """Tests for lazy initialization pattern."""
 

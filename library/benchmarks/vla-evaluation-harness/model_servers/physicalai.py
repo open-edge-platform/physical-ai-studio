@@ -71,7 +71,7 @@ def _instantiate_policy(declaration: dict[str, Any]) -> Policy | InferenceModel:
     parser = ArgumentParser()
     parser.add_subclass_arguments((Policy, InferenceModel), "policy", required=True)
     config = parser.parse_object({"policy": declaration})
-    instantiated = parser.instantiate_classes(config)
+    instantiated = parser.instantiate(config)
     return cast("Policy | InferenceModel", instantiated["policy"])
 
 

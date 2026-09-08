@@ -40,7 +40,7 @@ dependencies = [
     "openvino_tokenizers>=2026.3",
     "onnxscript",
     "peft>=0.20.0,<1.0.0",
-    "jsonargparse[signatures]>=4.27.0", # This could be extra
+    "jsonargparse[signatures]>=4.50,<5", # This could be extra
     "pydantic",                         # This could be extra
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
