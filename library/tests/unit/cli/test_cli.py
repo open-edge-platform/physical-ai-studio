@@ -49,6 +49,10 @@ def _libero_config_path() -> Path:
     return _library_root() / "configs" / "benchmark" / "libero.yaml"
 
 
+def _pi05_snapflow_config_path() -> Path:
+    return _library_root() / "configs" / "physicalai" / "pi05_snapflow_distillation.yaml"
+
+
 class TestRegister:
     """ST-1 register() returns expected names and specs."""
 
@@ -157,6 +161,109 @@ class TestDispatch:
 
         assert exit_code == 0
         assert trainer.validate.call_args.kwargs["ckpt_path"] == "/tmp/best.ckpt"
+
+    def test_fit_dispatch_weights_from_warm_starts_without_resuming(self) -> None:
+        """``--weights_from`` must load weights only, replaying --model init_args as overrides."""
+        parser = fit_module.register().parser
+        cfg = parser.parse_args(
+            [
+                f"--config={_act_config_path()}",
+                "--weights_from=/tmp/phase1.ckpt",
+            ],
+        )
+        trainer = MagicMock()
+        datamodule = object()
+
+        class _FakePolicy:
+            last_call: tuple[str, dict[str, object]] | None = None
+
+            @classmethod
+            def load_from_checkpoint(cls, checkpoint_path: str, **kwargs: object) -> _FakePolicy:
+                cls.last_call = (checkpoint_path, kwargs)
+                return cls()
+
+        discarded_model = _FakePolicy()
+
+        with patch.object(
+            parser,
+            "instantiate_classes",
+            return_value=Namespace(trainer=trainer, model=discarded_model, data=datamodule),
+        ):
+            exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
+
+        assert exit_code == 0
+        assert _FakePolicy.last_call is not None
+        ckpt_path, init_args = _FakePolicy.last_call
+        assert ckpt_path == "/tmp/phase1.ckpt"
+        assert init_args["map_location"] == "cpu"
+        # The model's own class_path/init_args from --config are replayed as overrides.
+        assert "chunk_size" in init_args
+        warm_started_model = trainer.fit.call_args.kwargs["model"]
+        assert isinstance(warm_started_model, _FakePolicy)
+        assert warm_started_model is not discarded_model
+
+    def test_fit_dispatch_weights_from_strips_pretrained_path_and_unset_dataset_stats(self) -> None:
+        """``--weights_from`` must not shadow the checkpoint's own weights/dataset stats.
+
+        Both ``pretrained_name_or_path`` and ``dataset_stats`` are filled in by
+        jsonargparse with their class defaults (``None``) when a config omits them.
+        Passing that ``None`` through to ``load_from_checkpoint`` would overwrite the
+        checkpoint's saved pretrained path / dataset stats and, for ``dataset_stats``,
+        prevent the policy from being built eagerly (regression: see
+        ``docs/how-to/training/snapflow_distillation.md``).
+        """
+        parser = fit_module.register().parser
+        cfg = parser.parse_args(
+            [
+                f"--config={_pi05_snapflow_config_path()}",
+                "--weights_from=/tmp/phase1.ckpt",
+            ],
+        )
+        trainer = MagicMock()
+        datamodule = object()
+
+        class _FakePolicy:
+            last_call: tuple[str, dict[str, object]] | None = None
+
+            @classmethod
+            def load_from_checkpoint(cls, checkpoint_path: str, **kwargs: object) -> _FakePolicy:
+                cls.last_call = (checkpoint_path, kwargs)
+                return cls()
+
+        with patch.object(
+            parser,
+            "instantiate_classes",
+            return_value=Namespace(trainer=trainer, model=_FakePolicy(), data=datamodule),
+        ):
+            exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
+
+        assert exit_code == 0
+        assert _FakePolicy.last_call is not None
+        _, init_args = _FakePolicy.last_call
+        assert "pretrained_name_or_path" not in init_args
+        assert "dataset_stats" not in init_args
+        # Real config overrides for the phase-2 handoff must still come through.
+        assert init_args["train_expert_only"] is True
+        assert init_args["snapflow_enabled"] is True
+        assert init_args["compile_model"] is True
+
+    def test_fit_dispatch_without_weights_from_uses_instantiated_model(self) -> None:
+        """Without ``--weights_from``, the normally instantiated model must be used untouched."""
+        parser = fit_module.register().parser
+        cfg = parser.parse_args([f"--config={_act_config_path()}"])
+        trainer = MagicMock()
+        model = object()
+        datamodule = object()
+
+        with patch.object(
+            parser,
+            "instantiate_classes",
+            return_value=Namespace(trainer=trainer, model=model, data=datamodule),
+        ):
+            exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
+
+        assert exit_code == 0
+        trainer.fit.assert_called_once_with(model=model, datamodule=datamodule)
 
     def test_benchmark_dispatch_calls_benchmark_evaluate(self, tmp_path: Path) -> None:
         parser = benchmark_module.register().parser

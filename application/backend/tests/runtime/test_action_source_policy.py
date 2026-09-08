@@ -4,6 +4,7 @@ import threading
 import time
 from itertools import pairwise
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -366,3 +367,31 @@ def test_set_follower_source_policy_is_allowed_when_loaded() -> None:
 
     assert source.follower_source == "policy"
     np.testing.assert_array_equal(action, [9.0, 9.0])
+
+
+def test_a_policy_that_failed_inference_is_not_reused() -> None:
+    """A failed policy must stop matching, or re-entry skips back onto it.
+
+    ``_drop_policy_to_hold`` leaves the broken PolicySource attached, so without
+    clearing the identity the next load would be treated as a cache hit and the
+    user would get the same failure again with no way to rebuild.
+    """
+    identity = (uuid4(), "torch", "cpu")
+    source, mailbox, events = _source()
+    policy = _FakePolicy()
+    source._set_policy(policy, generation=1, identity=identity)  # type: ignore[arg-type]
+    assert source._loaded_identity == identity
+
+    mailbox.apply(StartTaskCommand(task="pick"))
+    source.update(_observation([0.0, 0.0]), {}, 0)
+    _wait_for_policy(source)
+    # Arm first, then break it: failing during the arm would race the switch
+    # into policy mode and drop back to hold before this test could see it.
+    policy._update_error = RuntimeError("inference exploded")
+    _drain(events)
+    source.update(_observation([0.0, 0.0]), {}, 1)
+
+    assert source.follower_source == "hold"
+    assert source._loaded_identity is None
+    errors = [event for event in _drain(events) if isinstance(event, ErrorEvent)]
+    assert [error.error_code for error in errors] == ["policy_inference_failed"]

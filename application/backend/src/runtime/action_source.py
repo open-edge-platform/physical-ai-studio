@@ -17,7 +17,7 @@ from runtime.contract import (
     StateEvent,
     StopTaskCommand,
 )
-from runtime.policy_loader import PolicyLoader
+from runtime.policy_loader import PolicyLoader, model_identity
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
     from runtime.callbacks.recording import RecordingState
     from runtime.contract import CommandMailbox, EventSink, FollowerSource
-    from runtime.policy_loader import ObservationSnapshot
+    from runtime.policy_loader import ModelIdentity, ObservationSnapshot
 
 
 class StudioActionSource:
@@ -66,6 +66,7 @@ class StudioActionSource:
         self._arm_generation = 0
         self._arming = False
         self._model_loaded = False
+        self._loaded_identity: ModelIdentity | None = None
         self._task: str | None = None
         self._policy_error_emitted = False
         self._last_robot_state: RobotObservation | None = None
@@ -150,10 +151,11 @@ class StudioActionSource:
             policy = self._policy
             self._policy = None
             self._model_loaded = False
+            self._loaded_identity = None
         if policy is not None:
             policy.disconnect()
 
-    def _set_policy(self, source: PolicySource, generation: int) -> None:
+    def _set_policy(self, source: PolicySource, generation: int, identity: ModelIdentity | None = None) -> None:
         with self._policy_lock:
             if generation < self._attached_generation:
                 stale = True
@@ -165,6 +167,7 @@ class StudioActionSource:
                 self._policy = source
                 self._attached_generation = generation
                 self._model_loaded = True
+                self._loaded_identity = identity
                 self._policy_error_emitted = False
         if stale:
             source.disconnect()
@@ -200,6 +203,10 @@ class StudioActionSource:
         self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
         changed = self._follower_source != "hold"
         self._follower_source = "hold"
+        # A policy that raised is not a policy worth reusing, so stop matching
+        # it: re-entering inference should rebuild rather than skip back onto
+        # the one that just failed.
+        self._loaded_identity = None
         if not self._policy_error_emitted:
             logger.exception("Policy update failed; switching to hold")
             self._policy_error_emitted = True
@@ -226,6 +233,20 @@ class StudioActionSource:
                 self._handle_start_recording(command)
 
     def _handle_load_model(self, command: LoadModelCommand) -> None:
+        if not command.force and self._loaded_identity == model_identity(command):
+            # Rebuilding costs a compile, a warmup and a second copy of the
+            # weights resident beside the running one, to arrive back where we
+            # started. Return before touching anything: a policy already running
+            # under this model must not be cancelled or dropped to hold, and the
+            # client is past its readiness gate, so re-publishing model_loaded
+            # False then True would only flash "Initializing" at someone already
+            # watching a loaded model.
+            logger.info("Model {} is already loaded; skipping the rebuild", command.model_id)
+            return
+        # Clear before the load, not after it fails: leaving the previous
+        # identity in place would let a later request for that model match a
+        # policy this load is about to replace.
+        self._loaded_identity = None
         self._cancel_arming()
         self._model_loaded = False
         self._emit_state()

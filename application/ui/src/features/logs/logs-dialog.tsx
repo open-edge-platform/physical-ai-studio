@@ -6,11 +6,18 @@ import { Suspense, useMemo, useState } from 'react';
 import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Loading, Text } from '@geti-ui/ui';
 import { experimental_streamedQuery as streamedQuery, useQuery } from '@tanstack/react-query';
 
+import { batchAsyncIterable } from '../../api/batch-async-iterable';
 import { fetchClient } from '../../api/client';
 import { fetchSSE } from '../../api/fetch-sse';
 import { LogContent } from './log-content';
 import type { LogEntry } from './log-types';
 import { SourcesPicker } from './sources-picker';
+
+const LOGS_BATCH_INTERVAL_MS = 200;
+
+const selectLogs = (logs: LogEntry[][]): LogEntry[] => {
+    return logs.flat();
+};
 
 const LogStreamContent = ({ sourceId }: { sourceId: string }) => {
     const query = useQuery({
@@ -21,9 +28,10 @@ const LogStreamContent = ({ sourceId }: { sourceId: string }) => {
                     params: { path: { source_id: sourceId } },
                 });
 
-                return fetchSSE<LogEntry>(url, { signal: context.signal });
+                return batchAsyncIterable(fetchSSE<LogEntry>(url, { signal: context.signal }), LOGS_BATCH_INTERVAL_MS);
             },
         }),
+        select: selectLogs,
         staleTime: Infinity,
     });
 

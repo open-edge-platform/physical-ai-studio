@@ -52,9 +52,16 @@ def _watch_subscribers(
     """
     subscribers_present = True
     idle_since: float | None = None
+    # Mirrors what ``attached`` currently says in the metadata, so the write
+    # below happens on a transition rather than on every 0.1s poll. Starts True
+    # because _open_locked_session published that before starting this thread.
+    published_attached: bool | None = True
 
     while not stop.wait(_IDLE_POLL_INTERVAL_S):
         if server.has_matching_subscribers():
+            if published_attached is not True:
+                server.update_metadata(attached=True, idle_deadline=None)
+                published_attached = True
             subscribers_present = True
             idle_since = None
             continue
@@ -75,6 +82,11 @@ def _watch_subscribers(
         now = time.monotonic()
         if idle_since is None:
             idle_since = now
+            if published_attached is not False:
+                # Wall clock, not the monotonic clock the countdown runs on, so
+                # a reader can compare it against started_at and its own now.
+                server.update_metadata(attached=False, idle_deadline=time.time() + idle_timeout_s)
+                published_attached = False
         elif now - idle_since > idle_timeout_s:
             if server.has_matching_subscribers():
                 # A client attached on the deadline. Without this re-check they
@@ -244,6 +256,13 @@ def _open_locked_session(
         pid=os.getpid(),
         started_at=time.time(),
         idle_timeout_s=payload.idle_timeout_s,
+        # Names for whoever lists sessions later. The child already has these
+        # for its error text; publishing them means a listing does not have to
+        # resolve rt-<uuid> against a database row the session may outlive.
+        follower_name=payload.follower_name,
+        leader_name=payload.leader_name,
+        attached=True,
+        idle_deadline=None,
     )
     session = RuntimeSession(
         payload.document,
