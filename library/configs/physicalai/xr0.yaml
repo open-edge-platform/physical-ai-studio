@@ -33,11 +33,6 @@ model:
     max_state_dim: 32
     max_action_dim: 32
 
-    # Ordered camera view names embedded into the prompt
-    camera_views:
-      - base
-      - wrist_left
-
     # Image preprocessing
     image_resolution:
       - 256

@@ -18,12 +18,11 @@ def test_defaults() -> None:
     assert cfg.n_action_steps == 30
     assert cfg.max_action_dim == 32
     assert cfg.dit_num_layers == 16
-    assert cfg.camera_views == ("base", "wrist_left")
 
 
 def test_dict_roundtrip() -> None:
     """Config survives a to_dict / from_dict round trip."""
-    cfg = XR0Config(chunk_size=16, n_action_steps=16, camera_views=("base",))
+    cfg = XR0Config(chunk_size=16, n_action_steps=16)
     restored = XR0Config.from_dict(cfg.to_dict())
     assert restored == cfg
 
@@ -58,9 +57,3 @@ def test_dit_kv_heads_bound() -> None:
     """DiT num_heads must be >= dit_kv_heads."""
     with pytest.raises(ValueError, match="dit_kv_heads"):
         XR0Config(dit_hidden_size=64, dit_head_dim=32, dit_kv_heads=8)
-
-
-def test_requires_camera_views() -> None:
-    """At least one camera view is required."""
-    with pytest.raises(ValueError, match="camera_views"):
-        XR0Config(camera_views=())

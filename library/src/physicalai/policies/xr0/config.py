@@ -9,7 +9,7 @@ vision-language-action model (Qwen3-VL-4B backbone + DiT action expert).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 from physicalai.config import Config
@@ -62,8 +62,6 @@ class XR0Config(Config):
             Defaults to False.
         image_resolution: Target image resolution (height, width). Defaults to
             (256, 256).
-        camera_views: Ordered camera view names embedded into the prompt.
-            Defaults to ("base", "wrist_left").
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to
             256.
         gradient_checkpointing: Enable gradient checkpointing for memory
@@ -141,7 +139,6 @@ class XR0Config(Config):
     async_train: bool = False
 
     image_resolution: tuple[int, int] = (256, 256)
-    camera_views: tuple[str, ...] = field(default_factory=lambda: ("base", "wrist_left"))
     tokenizer_max_length: int = 256
 
     gradient_checkpointing: bool = True
@@ -190,8 +187,4 @@ class XR0Config(Config):
         num_heads = self.dit_hidden_size // self.dit_head_dim
         if num_heads < self.dit_kv_heads:
             msg = f"DiT num_heads ({num_heads}) must be >= dit_kv_heads ({self.dit_kv_heads})"
-            raise ValueError(msg)
-
-        if not self.camera_views:
-            msg = "camera_views must contain at least one view"
             raise ValueError(msg)

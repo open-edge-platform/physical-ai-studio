@@ -215,10 +215,9 @@ class TestE2ECore(CoreE2ETests):
             return get_policy(
                 policy_name,
                 source="physicalai",
-                # Memory-efficient settings for 24GB GPU; single camera view to
-                # match the aloha datamodule below.
+                # Memory-efficient settings for 24GB GPU. The camera views are
+                # derived from the aloha datamodule's image observation keys.
                 freeze_vision_encoder=True,
-                camera_views=("top",),
                 vlm_attn_implementation="sdpa",
             )
         # Other VLA policies use defaults (already memory-efficient)

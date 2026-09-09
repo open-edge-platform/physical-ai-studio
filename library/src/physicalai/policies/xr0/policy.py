@@ -78,7 +78,6 @@ class XR0(ExportablePolicyMixin, Policy):
         enable_freq: Add the frequency-domain loss term.
         prefix_mask_prob: Probability of masking a prefix token in training.
         async_train: Randomly condition on an action prefix in training.
-        camera_views: Ordered camera view names for the prompt.
         image_resolution: Target image resolution (unused placeholder kept for
             config parity; the Qwen3-VL processor performs area-based resizing).
         tokenizer_max_length: Maximum tokenizer length.
@@ -150,7 +149,6 @@ class XR0(ExportablePolicyMixin, Policy):
         enable_freq: bool = True,
         prefix_mask_prob: float = 0.5,
         async_train: bool = False,
-        camera_views: tuple[str, ...] = ("base", "wrist_left"),
         image_resolution: tuple[int, int] = (256, 256),
         tokenizer_max_length: int = 256,
         gradient_checkpointing: bool = True,
@@ -210,7 +208,6 @@ class XR0(ExportablePolicyMixin, Policy):
             enable_freq=enable_freq,
             prefix_mask_prob=prefix_mask_prob,
             async_train=async_train,
-            camera_views=camera_views,
             image_resolution=image_resolution,
             tokenizer_max_length=tokenizer_max_length,
             gradient_checkpointing=gradient_checkpointing,
@@ -314,7 +311,6 @@ class XR0(ExportablePolicyMixin, Policy):
             self._load_pretrained_weights(self._pretrained_path)
 
         self._preprocessor, self._postprocessor = make_xr0_preprocessors(
-            camera_views=cfg.camera_views,
             max_state_dim=cfg.max_state_dim,
             max_action_dim=cfg.max_action_dim,
             stats=dataset_stats,
@@ -340,7 +336,6 @@ class XR0(ExportablePolicyMixin, Policy):
         """
         cfg = self.config
         self._preprocessor, self._postprocessor = make_xr0_preprocessors(
-            camera_views=cfg.camera_views,
             max_state_dim=cfg.max_state_dim,
             max_action_dim=cfg.max_action_dim,
             stats=dataset_stats,
@@ -932,7 +927,6 @@ class XR0(ExportablePolicyMixin, Policy):
             image_processor = self._preprocessor.processor.image_processor
             ov_preproc = ComponentSpec(
                 type="xr0",
-                camera_views=list(cfg.camera_views),
                 max_state_dim=cfg.max_state_dim,
                 image_factor=self._preprocessor.image_factor,
                 image_max_pixels=self._preprocessor.image_max_pixels,

@@ -6,8 +6,8 @@
 """Preprocessor / postprocessor for the XR0 model.
 
 * **Prompt & vision** -- a Qwen3-VL multi-view chat prompt is assembled (one
-  ``<|vision_start|><|image_pad|><|vision_end|>`` block per configured camera
-  view) and tokenized with the stock ``Qwen3VLProcessor`` (via
+  ``<|vision_start|><|image_pad|><|vision_end|>`` block per camera view present
+  in the observation) and tokenized with the stock ``Qwen3VLProcessor`` (via
   ``AutoProcessor``) Images are resized with
   :func:`resize_image` and passed
   to the processor with ``do_resize=False``.
@@ -186,10 +186,6 @@ class XR0Preprocessor(torch.nn.Module):
     during training -- ``action`` / ``action_mask``).
 
     Args:
-        camera_views: Ordered view names embedded into the prompt. The framework
-            ``IMAGES.*`` keys are matched to these by name (``images.<view>``) so
-            the images stay aligned with the prompt view sections; unmatched keys
-            fall back to sorted order.
         max_state_dim: State dimension after padding.
         max_action_dim: Action dimension after padding.
         features: Optional feature map (from dataset stats) used to normalize the
@@ -216,7 +212,6 @@ class XR0Preprocessor(torch.nn.Module):
 
     def __init__(
         self,
-        camera_views: Sequence[str] = ("base", "wrist_left"),
         max_state_dim: int = 32,
         max_action_dim: int = 32,
         features: dict[str, Feature] | None = None,
@@ -234,7 +229,6 @@ class XR0Preprocessor(torch.nn.Module):
     ) -> None:
         """Initialize the XR0 preprocessor."""
         super().__init__()
-        self.camera_views = tuple(camera_views)
         self.max_state_dim = max_state_dim
         self.max_action_dim = max_action_dim
         self.image_factor = image_factor
@@ -348,14 +342,19 @@ class XR0Preprocessor(torch.nn.Module):
         """
         return self.processor.tokenizer
 
-    def _build_message(self, instruction: str, images: list[Image.Image]) -> list[dict[str, Any]]:
+    @staticmethod
+    def _build_message(
+        instruction: str,
+        views: list[str],
+        images: list[Image.Image],
+    ) -> list[dict[str, Any]]:
         """Assemble the Qwen3-VL multi-view chat message for one sample.
 
         Returns:
             The Qwen3-VL chat message (user + assistant primer) for one sample.
         """
         content: list[dict[str, Any]] = [{"type": "text", "text": _MULTI_VIEW_HEADER}]
-        for view, image in zip(self.camera_views, images, strict=False):
+        for view, image in zip(views, images, strict=False):
             content.extend((
                 {"type": "text", "text": f"# {view_title(view)} View\n"},
                 {"type": "image", "image": image},
@@ -367,24 +366,21 @@ class XR0Preprocessor(torch.nn.Module):
             {"role": "assistant", "content": [{"type": "text", "text": _ASSISTANT_PRIMER}]},
         ]
 
-    def _extract_view_images(self, batch: dict[str, Any]) -> list[list[Image.Image]]:
-        """Return, per sample, the list of resized PIL images for each camera view.
+    def _extract_view_images(self, batch: dict[str, Any]) -> tuple[list[str], list[list[Image.Image]]]:
+        """Return the ordered view names and, per sample, the resized PIL images.
 
         Returns:
-            Per sample, the list of resized PIL images (one per camera view).
+            A ``(views, images)`` tuple: the ordered view names and, per sample,
+            the list of resized PIL images (one per view).
 
         Raises:
             ValueError: If the batch contains no image observation.
         """
         image_keys = [key for key in Observation.get_flattened_keys(batch, IMAGES) if "is_pad" not in key]
-        # Select images in ``camera_views`` order so the per-view prompt sections
-        # (title + image block) stay aligned with the correct view; fall back to
-        # sorted keys when no observation key matches a view name.
-        ordered_keys = [f"{IMAGES}.{view}" for view in self.camera_views if f"{IMAGES}.{view}" in image_keys]
-        image_keys = ordered_keys or sorted(image_keys)[: len(self.camera_views)]
         if not image_keys:
             msg = "XR0Preprocessor requires at least one image observation"
             raise ValueError(msg)
+        views = [key.removeprefix(f"{IMAGES}.") for key in image_keys]
 
         per_view: list[torch.Tensor] = []
         for key in image_keys:
@@ -401,7 +397,7 @@ class XR0Preprocessor(torch.nn.Module):
                 for view in per_view
             ]
             images.append(sample_images)
-        return images
+        return views, images
 
     def image_grid(self, batch: dict[str, Any]) -> np.ndarray:
         """Build the pre-patchify normalized image grid the exported graph consumes.
@@ -416,7 +412,7 @@ class XR0Preprocessor(torch.nn.Module):
             The ``(num_images, C, H, W)`` float32 grid, views concatenated
             sample-major to match the processor's ``pixel_values`` ordering.
         """
-        images = self._extract_view_images(batch)
+        _, images = self._extract_view_images(batch)
         image_processor = self.processor.image_processor
         flat_images = [image for sample in images for image in sample]
         return build_pixel_grid(
@@ -500,7 +496,7 @@ class XR0Preprocessor(torch.nn.Module):
         batch = dict(batch)
         device = batch[STATE].device
 
-        images = self._extract_view_images(batch)
+        views, images = self._extract_view_images(batch)
         batch_size = len(images)
 
         task = batch.get(TASK)
@@ -509,7 +505,7 @@ class XR0Preprocessor(torch.nn.Module):
         elif isinstance(task, str):
             task = [task]
 
-        messages = [self._build_message(str(task[i]).strip(), images[i]) for i in range(batch_size)]
+        messages = [self._build_message(str(task[i]).strip(), views, images[i]) for i in range(batch_size)]
         encoded = self.processor.apply_chat_template(
             messages,
             tokenize=True,
@@ -635,7 +631,6 @@ class XR0Postprocessor(torch.nn.Module):
 
 
 def make_xr0_preprocessors(
-    camera_views: Sequence[str] = ("base", "wrist_left"),
     max_state_dim: int = 32,
     max_action_dim: int = 32,
     stats: dict[str, dict[str, Any]] | None = None,
@@ -651,7 +646,6 @@ def make_xr0_preprocessors(
     """Create the XR0 preprocessor / postprocessor pair from dataset stats.
 
     Args:
-        camera_views: Ordered camera view names for the prompt.
         max_state_dim: Padded state dimension.
         max_action_dim: Padded action dimension.
         stats: Dataset statistics as nested dicts (LeRobot format).
@@ -702,7 +696,6 @@ def make_xr0_preprocessors(
         override_std = torch.as_tensor(action_delta_std, dtype=torch.float32)
 
     preprocessor = XR0Preprocessor(
-        camera_views=camera_views,
         max_state_dim=max_state_dim,
         max_action_dim=max_action_dim,
         features=features,

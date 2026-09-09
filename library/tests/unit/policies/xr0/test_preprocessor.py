@@ -55,7 +55,7 @@ def _batch(batch_size: int = 2) -> dict:
 
 def _processor_available() -> bool:
     try:
-        XR0Preprocessor(camera_views=("base",)).processor  # noqa: B018
+        XR0Preprocessor().processor  # noqa: B018
     except Exception:  # noqa: BLE001
         return False
     return True
@@ -74,7 +74,7 @@ class TestVisionPrompt:
     def test_image_grid(self) -> None:
         # image_grid builds the pre-patchify (num_images, C, H, W) grid the
         # exported graph consumes: one entry per (sample, view), sample-major.
-        pre, _ = make_xr0_preprocessors(camera_views=("base", "wrist_left"), stats=_stats())
+        pre, _ = make_xr0_preprocessors(stats=_stats())
         grid = pre.image_grid(_batch(2))
         assert isinstance(grid, np.ndarray)
         assert grid.dtype == np.float32
@@ -84,8 +84,8 @@ class TestVisionPrompt:
 
     def test_apply_chat_template(self) -> None:
         # The built message tokenizes into the model input keys via the processor.
-        pre, _ = make_xr0_preprocessors(camera_views=("base",), stats=_stats())
-        message = pre._build_message("pick up the cube", [Image.new("RGB", (32, 32))])  # noqa: SLF001
+        pre, _ = make_xr0_preprocessors(stats=_stats())
+        message = pre._build_message("pick up the cube", ["base"], [Image.new("RGB", (32, 32))])  # noqa: SLF001
         encoded = pre.processor.apply_chat_template(
             [message],
             tokenize=True,
@@ -98,7 +98,7 @@ class TestVisionPrompt:
 
     def test_forward_keys_and_shapes(self) -> None:
         # End-to-end glue: batch -> model input keys with batched leading dims.
-        pre, _ = make_xr0_preprocessors(camera_views=("base", "wrist_left"), stats=_stats())
+        pre, _ = make_xr0_preprocessors(stats=_stats())
         out = pre(_batch(2))
         assert {"input_ids", "attention_mask", "pixel_values", "image_grid_thw", "state", ACTION, "action_mask"} <= set(
             out
@@ -116,9 +116,9 @@ class TestBuildMessage:
     """Multi-view chat message assembly (processor-free)."""
 
     def test_message_structure(self) -> None:
-        pre = XR0Preprocessor(camera_views=("base", "wrist_left"))
+        pre = XR0Preprocessor()
         img = Image.new("RGB", (32, 32))
-        messages = pre._build_message("pick up the cube", [img, img])  # noqa: SLF001
+        messages = pre._build_message("pick up the cube", ["base", "wrist_left"], [img, img])  # noqa: SLF001
 
         assert [m["role"] for m in messages] == ["user", "assistant"]
         user_content = messages[0]["content"]
@@ -173,12 +173,12 @@ class TestExtractViewImages:
     """Per-sample, per-view image extraction + resize (processor-free)."""
 
     def test_matches_reference(self) -> None:
-        pre = XR0Preprocessor(camera_views=("base", "wrist_left"))
+        pre = XR0Preprocessor()
         batch = {
             "images.base": torch.zeros(1, 3, 32, 32),
             "images.wrist_left": torch.ones(1, 3, 32, 32),
         }
-        images = pre._extract_view_images(batch)  # noqa: SLF001
+        views, images = pre._extract_view_images(batch)  # noqa: SLF001
         grid = torch.stack([torch.from_numpy(np.asarray(img)) for img in images[0]])
 
         # base -> 0, wrist_left -> 255 (rescaled uint8), each 32x32 RGB, in view order.
@@ -186,22 +186,25 @@ class TestExtractViewImages:
             torch.zeros(32, 32, 3, dtype=torch.uint8),
             torch.full((32, 32, 3), 255, dtype=torch.uint8),
         ])
+        assert views == ["base", "wrist_left"]
         assert len(images) == 1  # one sample
         assert grid.shape == expected.shape
         assert torch.equal(grid, expected)
 
-    def test_selected_in_camera_views_order(self) -> None:
-        # camera_views is not alphabetical -> images must follow camera_views,
-        # not sorted keys, so they stay aligned with the prompt view sections.
-        pre = XR0Preprocessor(camera_views=("wrist_left", "base"))
+    def test_selected_in_observation_order(self) -> None:
+        # Views follow the observation key insertion order, so the images stay
+        # aligned with the prompt view sections.
+        pre = XR0Preprocessor()
         batch = {
-            "images.base": torch.zeros(1, 3, 32, 32),
             "images.wrist_left": torch.ones(1, 3, 32, 32),
+            "images.base": torch.zeros(1, 3, 32, 32),
         }
-        images = pre._extract_view_images(batch)[0]  # noqa: SLF001
+        views, images = pre._extract_view_images(batch)  # noqa: SLF001
+        sample = images[0]
         # First image is wrist_left (255), second is base (0).
-        assert np.asarray(images[0]).max() == 255
-        assert np.asarray(images[1]).max() == 0
+        assert views == ["wrist_left", "base"]
+        assert np.asarray(sample[0]).max() == 255
+        assert np.asarray(sample[1]).max() == 0
 
 
 class TestPrepareAction:
