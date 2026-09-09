@@ -808,3 +808,78 @@ class TestActionPaddingMask:
         assert source.grad is not None
         assert torch.all(source.grad[0, :2] != 0), "valid steps must receive gradient"
         assert torch.all(source.grad[0, 2:] == 0), "padded steps must receive zero gradient"
+
+    @staticmethod
+    def _compute_val_loss(
+        squared_error: torch.Tensor,
+        action_is_pad: torch.Tensor | None,
+        pred_len: int | None = None,
+    ) -> float:
+        """Run ``SmolVLAModel.compute_val_loss`` against a stubbed model.
+
+        Ground truth is pinned to zeros and the prediction to ``sqrt(error)``, so
+        the per-element squared error is exactly ``squared_error``.
+
+        Args:
+            squared_error: Desired per-element squared error, shaped
+                ``(batch, chunk, action_dim)``.
+            action_is_pad: Optional ``(batch, chunk)`` bool padding mask.
+            pred_len: Optional shorter prediction length, emulating a chunk
+                clipped by ``n_action_steps``.
+
+        Returns:
+            The scalar validation loss.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.observation import ACTION, EXTRA
+        from physicalai.policies.smolvla.model import SmolVLAModel
+
+        bsize, chunk, action_dim = squared_error.shape
+        predicted = squared_error.sqrt()
+        if pred_len is not None:
+            predicted = predicted[:, :pred_len]
+
+        batch: dict = {}
+        if action_is_pad is not None:
+            batch[EXTRA + ".action_is_pad"] = action_is_pad
+
+        stub = SimpleNamespace(
+            _preprocess_batch=lambda b: b,
+            _prepare_action=lambda _b: torch.zeros(bsize, chunk, action_dim),
+            _dataset_stats={ACTION: {"shape": (action_dim,)}},
+            predict_action_chunk=lambda _b: predicted,
+        )
+        loss, _ = SmolVLAModel.compute_val_loss(stub, batch)
+        return float(loss)
+
+    def test_val_loss_excludes_padded_steps(self) -> None:
+        """``val/loss`` must measure real frames, not repeated terminal actions."""
+        squared_error = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        masked = self._compute_val_loss(squared_error, action_is_pad)
+        unmasked = self._compute_val_loss(squared_error, None)
+
+        assert masked == pytest.approx(1.0)
+        assert unmasked == pytest.approx(50.0), "without a mask the padding dominates"
+
+    def test_val_loss_denominator_counts_only_valid_steps(self) -> None:
+        """Valid elements set the denominator, so the metric keeps its scale."""
+        squared_error = torch.tensor([[[2.0, 2.0], [2.0, 2.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        assert self._compute_val_loss(squared_error, action_is_pad) == pytest.approx(2.0)
+
+    def test_val_loss_mask_is_clipped_to_the_prediction_length(self) -> None:
+        """The mask is sliced to ``min_len`` when ``n_action_steps`` clips the chunk."""
+        squared_error = torch.tensor([[[5.0, 5.0], [5.0, 5.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        # pred_len=3 leaves one padded step inside the compared window, so the
+        # mask still has to do work after being trimmed from 4 to 3.
+        assert self._compute_val_loss(squared_error, action_is_pad, pred_len=3) == pytest.approx(5.0)
+
+    def test_val_loss_without_mask_falls_back_to_plain_mean(self) -> None:
+        """Batches without the key keep the previous behaviour."""
+        assert self._compute_val_loss(torch.full((2, 3, 2), 4.0), None) == pytest.approx(4.0)

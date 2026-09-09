@@ -44,6 +44,7 @@ const robots = project.path('robots');
 const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
 const dataset = datasets.path(':dataset_id');
+const datasetEpisode = dataset.path('episodes').path(':episode_index');
 const models = project.path('/models');
 const remoteServers = project.path('/remote-servers');
 const cameras = project.path('cameras');
@@ -55,6 +56,7 @@ export const paths = {
     settings: {
         index: settings,
         compute: settings.path('/compute'),
+        hotkeys: settings.path('/hotkeys'),
         storage: settings.path('/storage'),
         about: settings.path('/about'),
     },
@@ -70,6 +72,7 @@ export const paths = {
         datasets: {
             index: datasets,
             show: dataset,
+            showEpisode: datasetEpisode,
             record: dataset.path('record'),
         },
         robots: {
@@ -148,6 +151,10 @@ export const router = createBrowserRouter([
                                 path: paths.settings.compute.pattern,
                                 element: <Settings />,
                             },
+                            {
+                                path: paths.settings.hotkeys.pattern,
+                                element: <Settings />,
+                            },
                         ],
                     },
                     {
@@ -212,6 +219,10 @@ export const router = createBrowserRouter([
                             },
                             {
                                 path: paths.project.datasets.show.pattern,
+                                element: <Datasets />,
+                            },
+                            {
+                                path: paths.project.datasets.showEpisode.pattern,
                                 element: <Datasets />,
                             },
                         ],

@@ -1329,6 +1329,320 @@ class TestEmbedPrefix:
 
 
 # ============================================================================ #
+# Action Padding Mask                                                          #
+# ============================================================================ #
+
+
+class TestActionPaddingMask:
+    """Regression tests for end-of-episode action padding in the training loss.
+
+    LeRobot clamps action-chunk queries at episode boundaries (repeating the
+    final action) and flags the clamped steps as ``action_is_pad``. Those steps
+    must not contribute to the flow-matching loss, and must not count towards
+    its denominator either.
+    """
+
+    @staticmethod
+    def _compute_loss(
+        losses: torch.Tensor,
+        action_is_pad: torch.Tensor | None,
+        key_suffix: str = ".action_is_pad",
+    ) -> float:
+        """Run ``Pi05Model._flow_matching_loss`` against a stubbed model.
+
+        The stub pins noise to zeros and the ground-truth action to zeros, so the
+        flow-matching target ``u_t`` is zero and the per-element loss collapses to
+        ``_predict_velocity(...) ** 2``. Feeding back ``sqrt(losses)`` therefore
+        reproduces ``losses`` exactly.
+
+        Args:
+            losses: Per-element losses to materialise, shaped
+                ``(batch, chunk, action_dim)``.
+            action_is_pad: Optional ``(batch, chunk)`` bool padding mask.
+            key_suffix: Batch key the mask is stored under, relative to ``EXTRA``.
+                Overridable so a wrong key can be exercised.
+
+        Returns:
+            The scalar loss produced by ``_flow_matching_loss``.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+        from physicalai.data.observation import ACTION, EXTRA, IMAGES
+
+        bsize, chunk, action_dim = losses.shape
+        batch: dict = {
+            IMAGES: None,
+            IMAGE_MASKS: None,
+            TOKENIZED_PROMPT: None,
+            TOKENIZED_PROMPT_MASK: None,
+            ACTION: torch.zeros(bsize, chunk, action_dim),
+        }
+        if action_is_pad is not None:
+            batch[EXTRA + key_suffix] = action_is_pad
+
+        velocity = losses.clone().sqrt()
+        stub = SimpleNamespace(
+            _snapflow_enabled=False,
+            _dataset_stats={ACTION: {"shape": (action_dim,)}},
+            sample_noise=lambda shape, _device: torch.zeros(shape),
+            sample_time=lambda b, _device: torch.full((b,), 0.5),
+            embed_prefix=lambda *_a, **_kw: (None, None, None),
+            _predict_velocity=lambda *_a, **_kw: velocity,
+        )
+        loss, _ = Pi05Model._flow_matching_loss(stub, batch)
+        return float(loss)
+
+    def test_mask_is_read_from_lerobot_key_only(self) -> None:
+        """The mask must be read as ``action_is_pad``, LeRobot's actual key.
+
+        The lookup uses ``.get()``, so a typo'd key silently disables masking with
+        no error. This pins the exact spelling that
+        ``lerobot/datasets/dataset_reader.py`` emits.
+        """
+        losses = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        correct_key = self._compute_loss(losses, action_is_pad)
+        typo_key = self._compute_loss(losses, action_is_pad, key_suffix=".actions_id_pad")
+
+        assert correct_key == pytest.approx(1.0), "mask under the LeRobot key must apply"
+        assert typo_key == pytest.approx(50.0), "a wrong key must not silently half-apply"
+
+    def test_padded_steps_are_excluded_from_the_loss(self) -> None:
+        """Padded steps contribute nothing, regardless of their magnitude."""
+        losses = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        masked = self._compute_loss(losses, action_is_pad)
+        unmasked = self._compute_loss(losses, None)
+
+        assert masked == pytest.approx(1.0), "padded steps must not affect the loss"
+        assert unmasked == pytest.approx(50.0), "without a mask the padding dominates"
+
+    def test_denominator_counts_only_valid_steps(self) -> None:
+        """The loss divides by valid elements, not by the full tensor.
+
+        Chosen so all three behaviours are distinguishable:
+        correct = 2.0, mask-with-plain-mean = 1.0, no-mask = 50.5.
+        A plain ``.mean()`` over the zeroed tensor would scale the loss - and
+        therefore the gradient - down by the padding fraction.
+        """
+        losses = torch.tensor([[[2.0, 2.0], [2.0, 2.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        masked = self._compute_loss(losses, action_is_pad)
+
+        assert masked == pytest.approx(2.0)
+        assert masked != pytest.approx(1.0), "denominator must exclude padded elements"
+        assert masked != pytest.approx(50.5), "mask must be applied at all"
+
+    def test_padding_fraction_does_not_change_the_loss_scale(self) -> None:
+        """Two batches with identical valid steps but different padding agree.
+
+        This is the property that actually matters for training: the gradient
+        magnitude on real frames must not depend on how close to the end of an
+        episode the sample was drawn.
+        """
+        one_padded = torch.tensor([[[3.0, 3.0], [3.0, 3.0], [3.0, 3.0], [99.0, 99.0]]])
+        three_padded = torch.tensor([[[3.0, 3.0], [99.0, 99.0], [99.0, 99.0], [99.0, 99.0]]])
+
+        loss_one = self._compute_loss(one_padded, torch.tensor([[False, False, False, True]]))
+        loss_three = self._compute_loss(three_padded, torch.tensor([[False, True, True, True]]))
+
+        assert loss_one == pytest.approx(3.0)
+        assert loss_three == pytest.approx(3.0)
+
+    def test_fully_padded_chunk_does_not_divide_by_zero(self) -> None:
+        """An all-padded chunk clamps the denominator instead of producing NaN."""
+        losses = torch.ones(1, 4, 2)
+        action_is_pad = torch.ones(1, 4, dtype=torch.bool)
+
+        masked = self._compute_loss(losses, action_is_pad)
+
+        assert masked == pytest.approx(0.0)
+
+    def test_no_mask_falls_back_to_plain_mean(self) -> None:
+        """Batches without the key (e.g. non-chunked datasets) keep the old path."""
+        losses = torch.full((2, 3, 2), 4.0)
+        assert self._compute_loss(losses, None) == pytest.approx(4.0)
+
+    def test_mask_applies_per_sample_across_the_batch(self) -> None:
+        """Each row uses its own mask, not a batch-wide reduction."""
+        losses = torch.tensor([
+            [[1.0], [99.0]],
+            [[3.0], [3.0]],
+        ])
+        action_is_pad = torch.tensor([[False, True], [False, False]])
+
+        # Valid elements: 1.0 (row 0), 3.0 and 3.0 (row 1) -> 7/3.
+        assert self._compute_loss(losses, action_is_pad) == pytest.approx(7.0 / 3.0)
+
+    def test_masking_is_autograd_safe(self) -> None:
+        """Gradients flow to valid steps and are exactly zero on padded steps."""
+        from types import SimpleNamespace
+
+        from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+        from physicalai.data.observation import ACTION, EXTRA, IMAGES
+
+        source = torch.ones(1, 4, 2, requires_grad=True)
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        stub = SimpleNamespace(
+            _snapflow_enabled=False,
+            _dataset_stats={ACTION: {"shape": (2,)}},
+            sample_noise=lambda shape, _device: torch.zeros(shape),
+            sample_time=lambda b, _device: torch.full((b,), 0.5),
+            embed_prefix=lambda *_a, **_kw: (None, None, None),
+            _predict_velocity=lambda *_a, **_kw: source * 2.0,
+        )
+        batch: dict = {
+            IMAGES: None,
+            IMAGE_MASKS: None,
+            TOKENIZED_PROMPT: None,
+            TOKENIZED_PROMPT_MASK: None,
+            ACTION: torch.zeros(1, 4, 2),
+            EXTRA + ".action_is_pad": action_is_pad,
+        }
+
+        loss, _ = Pi05Model._flow_matching_loss(stub, batch)
+        loss.backward()
+
+        assert source.grad is not None
+        assert torch.all(source.grad[0, :2] != 0), "valid steps must receive gradient"
+        assert torch.all(source.grad[0, 2:] == 0), "padded steps must receive zero gradient"
+
+    def test_snapflow_distillation_steps_ignore_the_pad_mask(self) -> None:
+        """Consistency-distillation samples stay fully weighted.
+
+        The SnapFlow branch regresses the one-step student onto a self-generated
+        two-step teacher, so it never reads the dataset action. Padded steps carry
+        no bad supervision there, and masking them would silently drop valid
+        distillation signal from the tail of every chunk.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+        from physicalai.data.observation import ACTION, EXTRA, IMAGES
+        from physicalai.policies.mixins import SnapFlowModelMixin
+
+        velocity = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]]).sqrt()
+
+        calls: list[int] = []
+
+        def predict(*_a: object, **_kw: object) -> torch.Tensor:
+            # Call order inside the CD branch: v_1, v_half, then v_pred.
+            calls.append(1)
+            return velocity if len(calls) >= 3 else torch.zeros_like(velocity)
+
+        stub = SimpleNamespace(
+            # alpha=0 routes every sample down the consistency-distillation path.
+            _snapflow_enabled=True,
+            _snapflow_alpha=0.0,
+            _snapflow_lambda=1.0,
+            _dataset_stats={ACTION: {"shape": (2,)}},
+            sample_noise=lambda shape, _device: torch.zeros(shape),
+            sample_time=lambda b, _device: torch.full((b,), 0.5),
+            embed_prefix=lambda *_a, **_kw: (torch.zeros(1, 1, 1),) * 3,
+            _predict_velocity=predict,
+        )
+        stub.snapflow_mixed_loss = SnapFlowModelMixin.snapflow_mixed_loss.__get__(stub)
+        batch: dict = {
+            IMAGES: None,
+            IMAGE_MASKS: None,
+            TOKENIZED_PROMPT: None,
+            TOKENIZED_PROMPT_MASK: None,
+            ACTION: torch.zeros(1, 4, 2),
+            EXTRA + ".action_is_pad": torch.tensor([[False, False, True, True]]),
+        }
+
+        loss, _ = Pi05Model._flow_matching_loss(stub, batch)
+
+        assert float(loss) == pytest.approx(50.0), "distillation steps must not be masked"
+
+    @staticmethod
+    def _compute_val_loss(
+        squared_error: torch.Tensor,
+        action_is_pad: torch.Tensor | None,
+        pred_len: int | None = None,
+    ) -> float:
+        """Run ``Pi05Model.compute_val_loss`` against a stubbed model.
+
+        Ground truth is pinned to zeros and the prediction to ``sqrt(error)``, so
+        the per-element squared error is exactly ``squared_error``.
+
+        Args:
+            squared_error: Desired per-element squared error, shaped
+                ``(batch, chunk, action_dim)``.
+            action_is_pad: Optional ``(batch, chunk)`` bool padding mask.
+            pred_len: Optional shorter prediction length, emulating a chunk
+                clipped by ``n_action_steps``.
+
+        Returns:
+            The scalar validation loss.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.observation import ACTION, EXTRA
+
+        bsize, chunk, action_dim = squared_error.shape
+        predicted = squared_error.sqrt()
+        if pred_len is not None:
+            predicted = predicted[:, :pred_len]
+
+        batch: dict = {ACTION: torch.zeros(bsize, chunk, action_dim)}
+        if action_is_pad is not None:
+            batch[EXTRA + ".action_is_pad"] = action_is_pad
+
+        stub = SimpleNamespace(
+            _dataset_stats={ACTION: {"shape": (action_dim,)}},
+            predict_action_chunk=lambda _b: predicted,
+        )
+        loss, _ = Pi05Model.compute_val_loss(stub, batch)
+        return float(loss)
+
+    def test_val_loss_excludes_padded_steps(self) -> None:
+        """``val/loss`` must measure real frames, not repeated terminal actions.
+
+        Otherwise the reported metric is diluted by whatever the policy happens
+        to do on the frozen tail of each episode.
+        """
+        squared_error = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        masked = self._compute_val_loss(squared_error, action_is_pad)
+        unmasked = self._compute_val_loss(squared_error, None)
+
+        assert masked == pytest.approx(1.0)
+        assert unmasked == pytest.approx(50.0), "without a mask the padding dominates"
+
+    def test_val_loss_denominator_counts_only_valid_steps(self) -> None:
+        """Valid elements set the denominator, so the metric keeps its scale."""
+        squared_error = torch.tensor([[[2.0, 2.0], [2.0, 2.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        assert self._compute_val_loss(squared_error, action_is_pad) == pytest.approx(2.0)
+
+    def test_val_loss_mask_is_clipped_to_the_prediction_length(self) -> None:
+        """The mask is sliced to ``min_len`` when ``n_action_steps`` clips the chunk.
+
+        ``predict_action_chunk`` may return fewer steps than the ground-truth
+        chunk. The mask is ``chunk``-long, so it must be trimmed to match or the
+        reduction would broadcast against the wrong length.
+        """
+        squared_error = torch.tensor([[[5.0, 5.0], [5.0, 5.0], [99.0, 99.0], [99.0, 99.0]]])
+        action_is_pad = torch.tensor([[False, False, True, True]])
+
+        # pred_len=3 leaves one padded step inside the compared window, so the
+        # mask still has to do work after being trimmed from 4 to 3.
+        assert self._compute_val_loss(squared_error, action_is_pad, pred_len=3) == pytest.approx(5.0)
+
+    def test_val_loss_without_mask_falls_back_to_plain_mean(self) -> None:
+        """Batches without the key keep the previous behaviour."""
+        assert self._compute_val_loss(torch.full((2, 3, 2), 4.0), None) == pytest.approx(4.0)
+
+
+# ============================================================================ #
 # LoRA (PEFT) Configuration Tests                                              #
 # ============================================================================ #
 
@@ -1593,4 +1907,3 @@ class TestPi05LoRAConfig:
         trainable = sum(p.numel() for p in policy.parameters() if p.requires_grad)
         total = sum(p.numel() for p in policy.parameters())
         assert 0 < trainable < total
-

@@ -74,6 +74,7 @@ const mockProjectWithRemoteTrainer = () => {
                     gpu_wait_giveup_s: 1800,
                     min_free_disk_bytes: 53687091200,
                 },
+                hotkeys: { bindings: {} },
             })
         ),
         http.get('/api/policies/{policy}/huggingface-access', ({ params }) => {

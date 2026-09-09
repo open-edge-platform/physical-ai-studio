@@ -188,3 +188,27 @@ async def test_patch_ssh_settings_updates_a_timeout(monkeypatch, tmp_path: Path)
 
     assert response.ssh.connect_timeout_s == 42.0
     assert get_settings().ssh_connect_timeout_s == 42.0
+
+
+def test_get_settings_returns_default_hotkey_bindings(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with TestClient(app) as client:
+        response = client.get("/api/settings")
+
+    assert response.status_code == 200
+    assert response.json()["hotkeys"]["bindings"] == {}
+
+
+def test_patch_hotkey_bindings_round_trips(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with TestClient(app) as client:
+        response = client.patch(
+            "/api/settings",
+            json={"hotkeys": {"bindings": {"recording.discard_episode": "Shift+ArrowLeft"}}},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["hotkeys"]["bindings"] == {"recording.discard_episode": "Shift+ArrowLeft"}
+    assert get_settings().hotkeys.bindings == {"recording.discard_episode": "Shift+ArrowLeft"}
