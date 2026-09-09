@@ -62,9 +62,6 @@ PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
 _WEIGHTS_ONLY_RESUME_POLICIES = frozenset({"pi0"})
 """Policies whose checkpoints must be reloaded with ``weights_only=True``."""
 
-_COMPILED_EXPORT_RELOAD_POLICIES = frozenset({"act", "smolvla"})
-"""Policies that cannot be exported while ``torch.compile``d, so are reloaded first."""
-
 
 class RunOptions(BaseModel):
     """Runtime-only controls which are not part of the training payload."""
@@ -235,11 +232,10 @@ def run_training_job(
     _ensure_checkpoint_exists(trainer, cache_dir)
     _publish(cache_dir, output_dir)
 
-    export_policy = _export_policy(spec, policy, output_dir)
-    _detach_trainer(export_policy, trainer)
-    del trainer, datamodule, policy
+    _detach_trainer(policy, trainer)
+    del trainer, datamodule
     _release_memory()
-    _export(export_policy, output_dir, report)
+    _export(policy, output_dir, report)
 
 
 def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Policy:
@@ -293,45 +289,23 @@ def _publish(cache_dir: Path, output_dir: Path) -> None:
     shutil.move(str(cache_dir), str(output_dir))
 
 
-def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> Policy:
-    """Return the policy to export, reloading it when compilation blocks export.
-
-    ``torch.compile`` wraps ``forward`` in a way some export backends cannot
-    trace, so for the affected policies the just-saved checkpoint is reloaded
-    uncompiled. Falls back to the trained policy if that reload fails — a
-    failed export is better than a failed job.
-
-    Returns:
-        The policy instance to hand to the export backends.
-    """
-    if not (spec.compile_model and spec.policy.lower() in _COMPILED_EXPORT_RELOAD_POLICIES):
-        return policy
-    try:
-        logger.info("Reloading non-compiled policy for export")
-        uncompiled = spec.model_copy(update={"compile_model": False})
-        return _load_policy_from_checkpoint(uncompiled, output_dir / CHECKPOINT_NAME)
-    except Exception:  # reload is best-effort; the trained policy is a valid fallback
-        logger.warning("Failed to reload non-compiled policy for export; using trained policy", exc_info=True)
-        return policy
-
-
-def _detach_trainer(export_policy: Policy, trainer: Any) -> None:
+def _detach_trainer(policy: Policy, trainer: Any) -> None:
     """Break the trainer<->policy<->datamodule reference cycle before export.
 
     Lightning wires ``policy._trainer = trainer``, ``trainer.datamodule =
     datamodule``, and ``trainer.strategy._lightning_module = policy`` during
-    ``fit``, and never undoes it. When ``export_policy`` is the very policy
-    that was just trained (the common case: no ``torch.compile`` reload), it
-    still holds that ``_trainer`` reference, which keeps the trainer — and
-    everything it holds: optimizer state, dataloaders, the strategy — alive
-    and reachable no matter how many local names ``run_training_job`` deletes.
-    ``gc.collect()`` only reclaims *unreachable* cycles, so without this the
-    memory release below is a no-op on the export object it matters most for.
+    ``fit``, and never undoes it. ``policy`` is the same object handed to
+    export, so it still holds that ``_trainer`` reference, which keeps the
+    trainer, and everything it holds (optimizer state, dataloaders, the
+    strategy), alive and reachable no matter how many local names
+    ``run_training_job`` deletes. ``gc.collect()`` only reclaims
+    *unreachable* cycles, so without this the memory release below is a
+    no-op on the object it matters most for.
 
     Best-effort: a failure here must not abort the job.
     """
     try:
-        export_policy._trainer = None
+        policy._trainer = None
         if getattr(trainer, "strategy", None) is not None:
             trainer.strategy._lightning_module = None
         trainer.datamodule = None
