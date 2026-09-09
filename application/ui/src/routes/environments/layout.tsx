@@ -89,7 +89,7 @@ export const EnvironmentsList = () => {
     return (
         <Flex direction='column' gap='size-200'>
             <AddResourceButton to={paths.project.environments.new({ project_id })}>
-                Configure a new environment
+                Configure new environment
             </AddResourceButton>
 
             <Flex direction='column' gap='size-200'>

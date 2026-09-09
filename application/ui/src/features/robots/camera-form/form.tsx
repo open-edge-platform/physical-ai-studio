@@ -110,7 +110,7 @@ const EditCameraFormFields = () => {
 export const CameraForm = ({ isEdit = false }) => {
     return (
         <Flex direction='column' gap='size-200'>
-            <Header heading={isEdit === false ? 'Add new camera' : 'Update camera'} />
+            <Header heading={isEdit === false ? 'Configure new camera' : 'Update camera'} />
 
             <Divider orientation='horizontal' size='S' />
 

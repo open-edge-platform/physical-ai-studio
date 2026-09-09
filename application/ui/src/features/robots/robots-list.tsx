@@ -263,7 +263,7 @@ export const RobotsList = () => {
 
     return (
         <Flex direction='column' gap='size-200'>
-            <AddResourceButton to={paths.project.robots.new({ project_id })}>Add new robot</AddResourceButton>
+            <AddResourceButton to={paths.project.robots.new({ project_id })}>Configure new robot</AddResourceButton>
 
             {projectRobots.map((robot) => {
                 const onlineRobot = onlineProjectRobots?.find((r) => r.id === robot.id);

@@ -62,7 +62,7 @@ export const CreateEnvironmentForm = () => {
 
     return (
         <Flex direction='column' gap='size-200'>
-            <EnvironmentFormHeading heading='Add new environment' />
+            <EnvironmentFormHeading heading='Configure new environment' />
             <Divider size='S' />
             <Form onSubmit={handleSubmit}>
                 <Flex gap='size-200' alignItems='end' direction='column'>
