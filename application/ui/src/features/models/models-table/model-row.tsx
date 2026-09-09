@@ -7,6 +7,7 @@ import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { Table } from '../../../components/table/table';
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
+import { SnapflowBadge } from '../shared/snapflow-badge';
 import { getTrainerLabel } from '../shared/trainer';
 import { ModelDownloadDialog } from './model-download-dialog';
 import { ModelRowContent } from './model-row-content';
@@ -64,6 +65,7 @@ export const ModelRow = ({
             <Flex alignItems='center' gap='size-100'>
                 <Text>{model.name}</Text>
                 {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
+                <SnapflowBadge isEnabled={model.snapflow_enabled} />
             </Flex>
             <Text>{model.policy.toUpperCase()}</Text>
             <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>

@@ -349,8 +349,12 @@ class RemoteTrainingBackend:
         )
         spec = build_spec(context).model_copy(update=device_update)
         hf_token = resolve_hf_token()
+
+        excluded = {"run_options"}
+        if spec.snapflow_start_epoch is None:
+            excluded.add("snapflow_start_epoch")
         body: dict[str, Any] = {
-            "spec": spec.model_dump(mode="json", exclude={"run_options"}),
+            "spec": spec.model_dump(mode="json", exclude=excluded),
             "dataset_transfer": "http",
             "hf_token": hf_token.get_secret_value() if hf_token is not None else None,
         }
