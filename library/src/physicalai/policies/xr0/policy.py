@@ -544,7 +544,6 @@ class XR0(ExportablePolicyMixin, Policy):
             msg = "Preprocessor is not initialized"
             raise ValueError(msg)
         processed = self._build_padded_export_sample()
-        processed["pixel_values"] = torch.from_numpy(self._preprocessor.image_grid(self.sample_input))
         return {
             name: tensor
             for name, tensor in processed.items()
@@ -935,6 +934,7 @@ class XR0(ExportablePolicyMixin, Policy):
                 rescale_factor=float(image_processor.rescale_factor),
                 patch_size=int(image_processor.patch_size),
                 merge_size=int(image_processor.merge_size),
+                temporal_patch_size=int(image_processor.temporal_patch_size),
                 # Bake the state normalization so the exported graph applies
                 # the exact transform used at training time (identity when
                 # ``normalize_state`` is disabled -> raw-state parity).

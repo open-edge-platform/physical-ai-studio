@@ -35,7 +35,6 @@ from openvino.preprocess import PrePostProcessor
 from physicalai.data.observation import IMAGES, STATE, TASK
 from physicalai.inference.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.policies import XR0
-from physicalai.policies.xr0.export_openvino import patchify_image_grid
 from physicalai.policies.xr0.pretrained_utils import extract_xr0_dataset_stats
 
 # ---------------------------------------------------------------------------
@@ -65,10 +64,6 @@ _OV_RANDOM_UNIFORM_OP_SEED = 7
 # fed identical noise; treat anything under this as a match.
 _MAX_ABS_DIFF_TOLERANCE = 0.05
 _MIN_COSINE_SIMILARITY = 0.99
-# Qwen3-VL vision geometry, used to patchify the NumPy pixel grid for the eager
-# path exactly as the exported graph patchifies it in-graph (matches
-# ``tests/unit/policies/xr0/test_patchify.py``).
-_TEMPORAL_PATCH_SIZE = 2
 
 
 # ---------------------------------------------------------------------------
@@ -340,10 +335,6 @@ def numerical_parity(native_policy: XR0, export_dir: Path) -> tuple[np.ndarray, 
     pixel_grid = np.ascontiguousarray(np_out["pixel_values"], dtype=np.float32)
     state = np.ascontiguousarray(np_out["state"], dtype=np.float32)
 
-    spec = next(s for s in manifest["model"]["preprocessors"] if s.get("type") == "xr0")
-    patch_size = int(spec["patch_size"])
-    merge_size = int(spec["merge_size"])
-
     # The rendered NumPy prompt tokenizes to the same ids as the full processor
     # (see the tokenizer-parity test), so reuse the eager preprocessor's ids/mask
     # (already right-padded to the baked graph length).
@@ -357,22 +348,15 @@ def numerical_parity(native_policy: XR0, export_dir: Path) -> tuple[np.ndarray, 
     ir_xml = _locate_ir_xml(export_dir)
     exported_action, exported_noise = _run_openvino_ir(ir_xml, graph_inputs)
 
-    # Feed the eager model the *same* inputs: patchify the identical pixel grid so
-    # the eager vision tower sees exactly what the in-graph patchify produces.
-    num_images, _, height, width = pixel_grid.shape
-    grid_thw = [[1, height // patch_size, width // patch_size]] * num_images
-    eager_pixels = patchify_image_grid(
-        torch.from_numpy(pixel_grid),
-        grid_thw,
-        temporal_patch_size=_TEMPORAL_PATCH_SIZE,
-        patch_size=patch_size,
-        merge_size=merge_size,
-    )
+    # Feed the eager model the *same* flat patchified pixel_values the graph
+    # consumes -- patchify now happens off-graph in the NumPy preprocessor, so the
+    # eager vision tower sees exactly the graph input; reuse the eager
+    # preprocessor's baked image geometry.
     eager_processed = {
         "input_ids": processed["input_ids"],
         "attention_mask": processed["attention_mask"],
-        "pixel_values": eager_pixels,
-        "image_grid_thw": torch.tensor(grid_thw, dtype=torch.int64),
+        "pixel_values": torch.from_numpy(pixel_grid),
+        "image_grid_thw": processed["image_grid_thw"],
         "state": torch.from_numpy(state),
     }
     eager_action = _run_forward_with_noise(native_policy, eager_processed, exported_noise)

@@ -35,7 +35,6 @@ from .export_openvino import (
     export_rot_pos_emb,
     export_scatter_visual_embeds,
     export_vision_attn_forward,
-    patchify_image_grid,
 )
 
 if TYPE_CHECKING:
@@ -263,17 +262,10 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
                 dtype=torch.long,
                 device=pixel_values.device,
             )
-            # The graph's ``pixel_values`` input is the pre-patchify normalized image
-            # grid ``(num_images, C, H, W)``; bake the Qwen3-VL temporal-duplication +
-            # patchify reshape/transpose into the graph (constant geometry from the
-            # baked grid) so the Runtime preprocessor does not have to reproduce it.
-            pixel_values = patchify_image_grid(
-                pixel_values,
-                shim._export_grid_list,  # noqa: SLF001
-                temporal_patch_size=visual.config.temporal_patch_size,
-                patch_size=visual.config.patch_size,
-                merge_size=visual.config.spatial_merge_size,
-            )
+            # The graph's ``pixel_values`` input is already the flat patchified
+            # ``pixel_values`` produced off-graph by the NumPy preprocessor
+            # (temporal duplication + patchify reshape/transpose), so it is fed
+            # straight to the vision tower with the baked constant grid.
             vision_output = visual(
                 pixel_values.type(visual.dtype),
                 grid_thw=grid_const,

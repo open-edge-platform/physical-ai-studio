@@ -71,17 +71,6 @@ requires_processor = pytest.mark.skipif(
 class TestVisionPrompt:
     """Prompt + vision pipeline through the real Qwen3-VL processor."""
 
-    def test_image_grid(self) -> None:
-        # image_grid builds the pre-patchify (num_images, C, H, W) grid the
-        # exported graph consumes: one entry per (sample, view), sample-major.
-        pre, _ = make_xr0_preprocessors(stats=_stats())
-        grid = pre.image_grid(_batch(2))
-        assert isinstance(grid, np.ndarray)
-        assert grid.dtype == np.float32
-        # 2 samples x 2 views of 64x64 (factor-aligned, within budget) RGB images
-        assert grid.shape == (4, 3, 64, 64)
-        assert np.isfinite(grid).all()
-
     def test_apply_chat_template(self) -> None:
         # The built message tokenizes into the model input keys via the processor.
         pre, _ = make_xr0_preprocessors(stats=_stats())

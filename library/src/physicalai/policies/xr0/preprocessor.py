@@ -107,39 +107,6 @@ def _to_pil(image: torch.Tensor) -> Image.Image:
     return Image.fromarray(np_img)
 
 
-def build_pixel_grid(
-    images: Sequence[Image.Image | np.ndarray],
-    image_mean: Sequence[float],
-    image_std: Sequence[float],
-    rescale_factor: float,
-) -> np.ndarray:
-    """Rescale + normalize already-resized images into a Qwen3-VL pixel grid.
-
-    Reproduces the Qwen3-VL image processor's rescale + normalize + channel-first
-    steps in pure NumPy (the images must already be resized to patch-aligned
-    dimensions) and stacks the views into the ``(num_images, C, H, W)`` normalized
-    grid the exported graph patchifies. This is the NumPy replacement for calling
-    the HuggingFace image processor and inverting its patchify.
-
-    Args:
-        images: Already-resized RGB images (PIL images or ``(H, W, C)`` arrays),
-            one per camera view, all the same size.
-        image_mean: Per-channel mean (the image processor's ``image_mean``).
-        image_std: Per-channel std (the image processor's ``image_std``).
-        rescale_factor: Pixel rescale factor (``1/255`` for Qwen3-VL).
-
-    Returns:
-        The normalized image grid of shape ``(num_images, C, H, W)`` as float32.
-    """
-    mean = np.asarray(image_mean, dtype=np.float32)
-    std = np.asarray(image_std, dtype=np.float32)
-    grid = [
-        np.transpose((np.asarray(image, dtype=np.float32) * np.float32(rescale_factor) - mean) / std, (2, 0, 1))
-        for image in images
-    ]
-    return np.stack(grid).astype(np.float32)
-
-
 def resize_image(
     image: Image.Image,
     factor: int = 32,
@@ -398,29 +365,6 @@ class XR0Preprocessor(torch.nn.Module):
             ]
             images.append(sample_images)
         return views, images
-
-    def image_grid(self, batch: dict[str, Any]) -> np.ndarray:
-        """Build the pre-patchify normalized image grid the exported graph consumes.
-
-        Reproduces the Qwen3-VL image path (resize + rescale + normalize) in NumPy,
-        omitting the patchify -- the exported OpenVINO graph bakes the temporal
-        duplication + patchify reshape/transpose. Used by the inference
-        preprocessor and the export input sample so the native pipeline builds the
-        grid directly instead of patchifying (via the processor) and un-patchifying.
-
-        Returns:
-            The ``(num_images, C, H, W)`` float32 grid, views concatenated
-            sample-major to match the processor's ``pixel_values`` ordering.
-        """
-        _, images = self._extract_view_images(batch)
-        image_processor = self.processor.image_processor
-        flat_images = [image for sample in images for image in sample]
-        return build_pixel_grid(
-            flat_images,
-            image_processor.image_mean,
-            image_processor.image_std,
-            image_processor.rescale_factor,
-        )
 
     def _prepare_state(self, batch: dict[str, Any], device: torch.device) -> torch.Tensor:
         """Pad the state into ``(B, 1, max_state_dim)`` (source ``state.view(1, 1, -1)``).

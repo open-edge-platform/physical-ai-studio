@@ -18,7 +18,6 @@ from transformers.models.qwen3_vl.configuration_qwen3_vl import (
     Qwen3VLVisionConfig,
 )
 
-from physicalai.policies.xr0.export_openvino import patchify_image_grid
 from physicalai.policies.xr0.model import XR0Model
 from physicalai.policies.xr0.qwen3_vlm import XR0Qwen3VL
 
@@ -29,8 +28,8 @@ IMAGE_GRID = (2, 4, 4)
 SPATIAL_MERGE = 2
 N_IMAGE_TOKENS = (IMAGE_GRID[0] * IMAGE_GRID[1] * IMAGE_GRID[2]) // SPATIAL_MERGE**2
 
-# In-graph export parity uses a still image (grid_t == 1) so ``patchify_image_grid``
-# can reproduce the exact flat ``pixel_values`` the vision tower consumes.
+# In-graph export parity uses a still image (grid_t == 1); patchify happens
+# off-graph, so the eager and export forward consume the same flat ``pixel_values``.
 PATCH_SIZE = 16
 TEMPORAL_PATCH_SIZE = 2
 EXPORT_GRID = (1, 4, 4)
@@ -128,27 +127,19 @@ def _batch() -> dict:
 def _export_batches() -> tuple[dict, dict]:
     """Build matching eager / in-graph-export batches for the same observation.
 
-    The eager batch carries the flat patchified ``pixel_values`` the tower
-    consumes; the export batch carries the raw ``(1, C, H, W)`` grid the export
-    forward patchifies itself. Both share the identical image, action, state and
-    seed, so their ``_run`` outputs must match (the export op swaps are
-    numerically identical).
+    Patchify now happens off-graph, so both batches carry the identical flat
+    patchified ``pixel_values`` the vision tower consumes. They also share the
+    same image, action, state and seed, so their ``_run`` outputs must match (the
+    export op swaps are numerically identical).
 
     Returns:
         Tuple of ``(eager_batch, export_batch)``.
     """
     grid = torch.tensor([list(EXPORT_GRID)])
-    height = EXPORT_GRID[1] * PATCH_SIZE
-    width = EXPORT_GRID[2] * PATCH_SIZE
+    num_patches = int(grid.prod(-1).item())
+    patch_dim = 3 * TEMPORAL_PATCH_SIZE * PATCH_SIZE * PATCH_SIZE
     torch.manual_seed(0)
-    raw_image = torch.randn(1, 3, height, width)
-    pixel_values = patchify_image_grid(
-        raw_image,
-        [list(EXPORT_GRID)],
-        temporal_patch_size=TEMPORAL_PATCH_SIZE,
-        patch_size=PATCH_SIZE,
-        merge_size=SPATIAL_MERGE,
-    )
+    pixel_values = torch.randn(num_patches, patch_dim)
     input_ids = torch.tensor([[5, 6, VISION_START_TOKEN_ID, *([IMAGE_TOKEN_ID] * N_EXPORT_TOKENS), 7, 8, 9]])
     attention_mask = torch.ones_like(input_ids)
     action = torch.randn(1, ACTION_LEN, ACTION_DIM)
@@ -160,14 +151,14 @@ def _export_batches() -> tuple[dict, dict]:
             "input_ids": input_ids.clone(),
             "attention_mask": attention_mask.clone(),
             "image_grid_thw": grid.clone(),
-            "pixel_values": pixels,
+            "pixel_values": pixels.clone(),
             "action": action.clone(),
             "action_mask": action_mask.clone(),
             "state": state.clone(),
             "seed": 1234,
         }
 
-    return _with(pixel_values), _with(raw_image)
+    return _with(pixel_values), _with(pixel_values)
 
 
 @pytest.fixture(scope="module")

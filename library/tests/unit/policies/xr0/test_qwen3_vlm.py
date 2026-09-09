@@ -20,7 +20,6 @@ from transformers.models.qwen3_vl.configuration_qwen3_vl import (
     Qwen3VLVisionConfig,
 )
 
-from physicalai.policies.xr0.export_openvino import patchify_image_grid
 from physicalai.policies.xr0.qwen3_vlm import XR0Qwen3VL
 
 # Special token ids for the tiny vocabulary.
@@ -35,8 +34,9 @@ PATCH_SIZE = 16
 TEMPORAL_PATCH_SIZE = 2
 N_IMAGE_TOKENS = (IMAGE_GRID[0] * IMAGE_GRID[1] * IMAGE_GRID[2]) // SPATIAL_MERGE**2
 
-# In-graph export parity uses a still image (grid_t == 1) so ``patchify_image_grid``
-# can reproduce the exact flat ``pixel_values`` the vision tower consumes.
+# In-graph export parity uses a still image (grid_t == 1); patchify happens
+# off-graph, so both the eager and the export forward consume the same flat
+# ``pixel_values``.
 EXPORT_GRID = (1, 4, 4)
 N_EXPORT_TOKENS = (EXPORT_GRID[0] * EXPORT_GRID[1] * EXPORT_GRID[2]) // SPATIAL_MERGE**2
 
@@ -146,34 +146,25 @@ class TestPositionIds:
         assert torch.equal(out.position_ids, position_ids)
 
 
-def _export_batch() -> tuple[dict, torch.Tensor]:
-    """Build a still-image batch, returning ``(eager_batch, raw_image_grid)``.
+def _export_batch() -> dict:
+    """Build a still-image batch carrying the flat patchified ``pixel_values``.
 
-    The eager batch carries the flat patchified ``pixel_values`` the tower
-    consumes; the raw ``(num_images, C, H, W)`` grid is what the in-graph export
-    forward patchifies internally, so both paths see the identical image.
+    Patchify now happens off-graph (in the NumPy preprocessor), so both the eager
+    and the in-graph export forward consume the identical flat ``pixel_values``.
     """
     grid = torch.tensor([list(EXPORT_GRID)])
-    height = EXPORT_GRID[1] * PATCH_SIZE
-    width = EXPORT_GRID[2] * PATCH_SIZE
+    num_patches = int(grid.prod(-1).item())
+    patch_dim = 3 * TEMPORAL_PATCH_SIZE * PATCH_SIZE * PATCH_SIZE
     torch.manual_seed(0)
-    raw_image = torch.randn(1, 3, height, width)
-    pixel_values = patchify_image_grid(
-        raw_image,
-        [list(EXPORT_GRID)],
-        temporal_patch_size=TEMPORAL_PATCH_SIZE,
-        patch_size=PATCH_SIZE,
-        merge_size=SPATIAL_MERGE,
-    )
+    pixel_values = torch.randn(num_patches, patch_dim)
     input_ids = torch.tensor([[5, 6, VISION_START_TOKEN_ID, *([IMAGE_TOKEN_ID] * N_EXPORT_TOKENS), 7, 8, 9]])
     attention_mask = torch.ones_like(input_ids)
-    batch = {
+    return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
         "pixel_values": pixel_values,
         "image_grid_thw": grid,
     }
-    return batch, raw_image
 
 
 class TestIngraphExportParity:
@@ -185,7 +176,7 @@ class TestIngraphExportParity:
 
     def test_export_logits_match_eager(self) -> None:
         shim = _build_shim()
-        batch, raw_image = _export_batch()
+        batch = _export_batch()
         with torch.no_grad():
             eager = shim(**batch, use_cache=True)
         shim.prepare_ingraph_export(
@@ -197,7 +188,7 @@ class TestIngraphExportParity:
             exported = shim(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
-                pixel_values=raw_image,
+                pixel_values=batch["pixel_values"],
                 use_cache=True,
             )
         assert exported.logits.shape == eager.logits.shape
