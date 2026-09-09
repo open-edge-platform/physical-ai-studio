@@ -27,12 +27,12 @@ const projectsListQueryKey = ['get', '/api/projects'] as const;
 
 const dataset = getMockedDataset({ id: DATASET_ID, project_id: PROJECT_ID, name: 'pick-dataset' });
 
-const renderDialog = (
+const renderRenameDatasetDialog = (
     onDone: (dataset: SchemaDatasetOutput | undefined) => void,
     queryClient: ReturnType<typeof createQueryClient>
 ) => render(<RenameDatasetDialog dataset={dataset} onDone={onDone} />, { queryClient });
 
-const renameViaUi = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+const renameDataset = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
     const textField = await screen.findByLabelText(/Dataset name/);
     await user.clear(textField);
     await user.type(textField, name);
@@ -55,9 +55,9 @@ describe('RenameDatasetDialog', () => {
 
         const user = userEvent.setup();
         const onDone = vi.fn();
-        renderDialog(onDone, createQueryClient());
+        renderRenameDatasetDialog(onDone, createQueryClient());
 
-        await renameViaUi(user, '  renamed  ');
+        await renameDataset(user, '  renamed  ');
 
         await waitFor(() => expect(onDone).toHaveBeenCalledWith(updatedDataset));
 
@@ -76,9 +76,9 @@ describe('RenameDatasetDialog', () => {
         queryClient.setQueryData(projectsListQueryKey, [{ id: PROJECT_ID, name: 'test-project' }]);
 
         const user = userEvent.setup();
-        renderDialog(vi.fn(), queryClient);
+        renderRenameDatasetDialog(vi.fn(), queryClient);
 
-        await renameViaUi(user, 'renamed');
+        await renameDataset(user, 'renamed');
 
         await waitFor(() => {
             expect(queryClient.getQueryState(datasetQueryKey)?.isInvalidated).toBe(true);
@@ -98,7 +98,7 @@ describe('RenameDatasetDialog', () => {
 
         const user = userEvent.setup();
         const onDone = vi.fn();
-        renderDialog(onDone, createQueryClient());
+        renderRenameDatasetDialog(onDone, createQueryClient());
 
         await user.click(await screen.findByRole('button', { name: 'Cancel' }));
 
@@ -108,7 +108,7 @@ describe('RenameDatasetDialog', () => {
 
     it('field prefilled and Save disabled unless the name changes to a non-empty value', async () => {
         const user = userEvent.setup();
-        renderDialog(vi.fn(), createQueryClient());
+        renderRenameDatasetDialog(vi.fn(), createQueryClient());
 
         const textField = await screen.findByLabelText(/Dataset name/);
         const saveButton = screen.getByRole('button', { name: 'Save' });
