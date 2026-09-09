@@ -102,6 +102,44 @@ describe('RemoteTrainersPage', () => {
         expect(await screen.findByRole('button', { name: /show details for renamed-trainer/i })).toBeInTheDocument();
     });
 
+    it('creates a remote trainer with an SSH tunnel configured', async () => {
+        const user = userEvent.setup();
+        let trainers: Record<string, unknown>[] = [];
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json(trainers as (typeof remoteTrainer)[])),
+            http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
+                const body = (await request.json()) as Record<string, unknown>;
+                trainers = [{ ...body, id: remoteTrainer.id, created_at: remoteTrainer.created_at }];
+                return HttpResponse.json(trainers[0], { status: 201 });
+            })
+        );
+
+        render(<RemoteTrainersPage />);
+
+        expect(await screen.findByText('No remote trainers are configured.')).toBeInTheDocument();
+        await user.click(await screen.findByRole('button', { name: /new remote trainer/i }));
+        const dialog = await screen.findByRole('dialog');
+        const nameInput = dialog.querySelectorAll('input')[0];
+        await user.type(nameInput, remoteTrainer.name);
+        const urlInput = dialog.querySelectorAll('input')[1];
+        await user.type(urlInput, 'http://127.0.0.1:8001');
+
+        const switches = screen.getAllByRole('switch');
+        await user.click(switches[switches.length - 1]);
+        await user.type(await screen.findByLabelText(/ssh host alias/i), 'training-box');
+        await user.type(screen.getByRole('textbox', { name: /local port/i }), '8001');
+        await user.tab();
+
+        expect(screen.getByRole('button', { name: 'Add trainer' })).toBeEnabled();
+        await user.click(screen.getByRole('button', { name: 'Add trainer' }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(trainers[0]).toMatchObject({
+            ssh_host_alias: 'training-box',
+            ssh_local_port: 8001,
+        });
+    });
+
     it('deletes a configured remote trainer', async () => {
         const user = userEvent.setup();
         let trainers: (typeof remoteTrainer)[] = [remoteTrainer];

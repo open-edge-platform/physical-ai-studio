@@ -76,10 +76,24 @@ async def test_open_forwards_to_an_ephemeral_local_port(settings) -> None:
 
     assert tunnel.local_port == 54321
     assert transport.connected
+    assert transport.requested_local_ports == [0]
 
     await tunnel.close()
     assert transport.closed
     assert listener.closed
+
+
+async def test_open_binds_a_supplied_preferred_local_port(settings) -> None:
+    listener = FakeListener(port=8001)
+    transport = FakeTransport(listener)
+
+    tunnel = SshTunnel(lambda: transport, "127.0.0.1", 8080, settings, local_port=8001)
+    await tunnel.open()
+
+    assert tunnel.local_port == 8001
+    assert transport.requested_local_ports == [8001]
+
+    await tunnel.close()
 
 
 async def test_local_port_raises_before_open(settings) -> None:
