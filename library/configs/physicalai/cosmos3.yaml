@@ -1,0 +1,70 @@
+# =============================================================================
+# NVIDIA Cosmos 3 Policy Training Configuration
+# Post-training with rectified flow matching (PEFT LoRA default)
+# =============================================================================
+#
+# Default configuration fine-tunes Cosmos3-Edge with LoRA rank 32 on attention
+# and a freshly initialized domain action head.
+#
+# Supported accelerators: CUDA (gpu), Intel XPU (xpu), CPU.
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/cosmos3.yaml
+#
+# Intel XPU example:
+#   physicalai fit --config configs/physicalai/cosmos3.yaml \
+#       --trainer.accelerator xpu
+#
+# Full fine-tuning example:
+#   physicalai fit --config configs/physicalai/cosmos3.yaml \
+#       --model.mode full \
+#       --model.head_lr_mult 10.0
+# =============================================================================
+
+model:
+  class_path: physicalai.policies.Cosmos3
+  init_args:
+    pretrained_model_name_or_path: "nvidia/Cosmos3-Edge"
+    mode: "peft"
+    paradigm: "policy"
+    rank: 32
+    alpha_scale: 1.0
+    dora: false
+    head_lr_mult: 2.0
+    action_weight: 10.0
+    chunk_size: 32
+    n_action_steps: 32
+    resolution_tier: 256
+    fps: 10
+    grad_checkpoint: true
+    domain: "pusht"
+    prompt: ""
+    dtype: "bfloat16"
+    optimizer_lr: 1.0e-4
+    optimizer_grad_clip_norm: 1.0
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/pusht"
+    train_batch_size: 1
+    # Restrict to 1 episode for fast iterations during development
+    episodes:
+      - 0
+    data_format: "physicalai"
+    video_backend: "pyav"
+    test_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+      init_args:
+        obs_type: "pixels_agent_pos"
+    max_episode_steps: 10
+    num_rollouts_test: 1
+
+trainer:
+  max_epochs: 10
+  accumulate_grad_batches: 8
+  gradient_clip_val: 1.0
+  accelerator: xpu
+  strategy: xpu_single
+  devices: 1
+  precision: bf16-mixed
