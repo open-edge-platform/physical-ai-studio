@@ -11,7 +11,7 @@ page refresh and always reset to "Not verified yet" even though the server
 was last verified successfully.
 
 Revision ID: a1c2d3e4f5a6
-Revises: b7a4c1e9f0d2
+Revises: 1510153d39a2
 Create Date: 2026-08-24 00:00:00.000000
 
 """
@@ -24,7 +24,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a1c2d3e4f5a6"
-down_revision: str | Sequence[str] | None = "b7a4c1e9f0d2"
+down_revision: str | Sequence[str] | None = "1510153d39a2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
