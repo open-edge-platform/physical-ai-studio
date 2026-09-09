@@ -905,6 +905,82 @@ describe('SchemaForm', () => {
         expect(rows[3]).toHaveTextContent('wrist_flex');
     });
 
+    it('renders contextual help from field-level info metadata', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string: {
+                    type: 'string',
+                    title: 'Connection String',
+                    'x-physicalai-ui': {
+                        info: {
+                            title: 'Connection setup',
+                            description: 'Use the full serial device path for manual setup.',
+                            link_url: 'https://example.com/serial-setup',
+                            variant: 'help',
+                        },
+                    },
+                },
+            },
+        };
+        const user = userEvent.setup();
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        await user.click(screen.getByRole('button', { name: /Help$/ }));
+
+        expect(await screen.findByRole('heading', { name: 'Connection setup' })).toBeVisible();
+        expect(screen.getByText('Use the full serial device path for manual setup.')).toBeVisible();
+        expect(screen.getByRole('link', { name: 'Learn more' })).toHaveAttribute(
+            'href',
+            'https://example.com/serial-setup'
+        );
+    });
+
+    it('prefers item-level contextual help over field-level info metadata', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string: {
+                    type: 'string',
+                    title: 'Connection String',
+                    'x-physicalai-ui': {
+                        info: {
+                            description: 'Field-level help text',
+                        },
+                    },
+                },
+            },
+            'x-physicalai-ui': [
+                {
+                    kind: 'field',
+                    name: 'connection_string',
+                    info: {
+                        title: 'Connection details',
+                        description: 'Item-level help text',
+                    },
+                },
+            ],
+        };
+        const user = userEvent.setup();
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        await user.click(screen.getByRole('button', { name: /Information$/ }));
+
+        expect(await screen.findByRole('heading', { name: 'Connection details' })).toBeVisible();
+        expect(screen.getByText('Item-level help text')).toBeVisible();
+        expect(screen.queryByText('Field-level help text')).not.toBeInTheDocument();
+    });
+
     it('keeps advanced configuration fields hidden when the toggle is hidden', () => {
         const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
             type: 'object',

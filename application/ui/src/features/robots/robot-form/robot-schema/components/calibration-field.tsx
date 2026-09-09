@@ -5,11 +5,13 @@ import { Button, FileTrigger, Flex, Text, View } from '@geti-ui/ui';
 import { CalibrationTable } from '../../../calibration-table';
 import { InlineAlert } from '../../../setup-wizard/shared/inline-alert';
 import { asRecord, resolveReference } from '../schema-utils';
-import { FieldSchema } from '../types';
+import { ContextualInfo, FieldSchema } from '../types';
+import { FieldContextualHelp } from './field-contextual-help';
 
 type CalibrationFieldProps = {
     label: string;
     description?: string;
+    info?: ContextualInfo;
     value: unknown;
     isRequired: boolean;
     onChange: (value: unknown) => void;
@@ -98,6 +100,7 @@ export const validateCalibrationPayload = (
 export const CalibrationField = ({
     label,
     description,
+    info,
     value,
     isRequired,
     onChange,
@@ -135,15 +138,22 @@ export const CalibrationField = ({
 
     return (
         <Flex direction='column' gap='size-100'>
-            <Text
-                UNSAFE_style={{
-                    fontSize: 'var(--spectrum-global-dimension-font-size-100)',
-                    color: 'var(--spectrum-global-color-gray-800)',
-                }}
-            >
-                {label}
-                {isRequired ? ' *' : ' (optional)'}
-            </Text>
+            <Flex gap='size-100'>
+                <Text
+                    UNSAFE_style={{
+                        fontSize: 'var(--spectrum-global-dimension-font-size-100)',
+                        color: 'var(--spectrum-global-color-gray-700)',
+                    }}
+                >
+                    {label}
+                    {isRequired ? ' *' : ' (optional)'}
+                </Text>
+                {info !== undefined && (
+                    <View>
+                        <FieldContextualHelp info={info} />
+                    </View>
+                )}
+            </Flex>
             {description !== undefined && description !== '' && (
                 <Text
                     UNSAFE_style={{

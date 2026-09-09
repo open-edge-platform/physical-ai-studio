@@ -26,8 +26,9 @@ from physicalai.data.constants import (
     TOKENIZED_PROMPT_MASK,
 )
 from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE
-from physicalai.policies.base import Model, in_episode_bound, reduce_losses
+from physicalai.policies.base import Model
 from physicalai.policies.mixins import RTCModelMixin, SnapFlowModelMixin
+from physicalai.policies.utils import in_episode_bound, reduce_losses
 
 if TYPE_CHECKING:
     from collections.abc import Callable

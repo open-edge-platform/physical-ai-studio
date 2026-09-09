@@ -149,4 +149,34 @@ describe('CalibrationField', () => {
 
         expect(onChange).toHaveBeenCalledWith({});
     });
+
+    it('renders contextual help and learn more link when info is provided', async () => {
+        const user = userEvent.setup();
+
+        render(
+            <CalibrationField
+                label='Calibration'
+                description='Upload robot calibration values'
+                isRequired={false}
+                value={null}
+                valueSchema={jointCalibrationSchema}
+                info={{
+                    title: 'Calibration JSON',
+                    description: 'Use calibration exported from the control board tools.',
+                    link_url: 'https://example.com/calibration-docs',
+                    variant: 'help',
+                }}
+                onChange={() => undefined}
+            />
+        );
+
+        await user.click(screen.getByRole('button', { name: /Help$/ }));
+
+        expect(await screen.findByRole('heading', { name: 'Calibration JSON' })).toBeVisible();
+        expect(screen.getByText('Use calibration exported from the control board tools.')).toBeVisible();
+        expect(screen.getByRole('link', { name: 'Learn more' })).toHaveAttribute(
+            'href',
+            'https://example.com/calibration-docs'
+        );
+    });
 });
