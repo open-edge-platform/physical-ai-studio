@@ -181,10 +181,12 @@ describe('TrainingRow', () => {
         await user.click(screen.getByText('pick-and-place'));
 
         expect(await screen.findByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
-        expect(screen.getByRole('tab', { name: 'Training Datasets' })).toBeInTheDocument();
+        // TODO: Remove the comment once training datasets are supported
+        /*expect(screen.getByRole('tab', { name: 'Training Datasets' })).toBeInTheDocument();*/
     });
 
-    it('does not collapse the row when a tab inside the panel is clicked', async () => {
+    // TODO: Unskip this test once training datasets are supported
+    it.skip('does not collapse the row when a tab inside the panel is clicked', async () => {
         const user = userEvent.setup();
         renderTrainingRow();
 

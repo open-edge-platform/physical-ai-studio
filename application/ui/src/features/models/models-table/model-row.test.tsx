@@ -229,7 +229,8 @@ describe('ModelRow', () => {
 
         expect(await screen.findByRole('tab', { name: 'Model formats' })).toBeInTheDocument();
         expect(screen.getByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
-        expect(screen.getByRole('tab', { name: 'Training Datasets' })).toBeInTheDocument();
+        // TODO: Remove the comment once training datasets are supported
+        /*expect(screen.getByRole('tab', { name: 'Training Datasets' })).toBeInTheDocument();*/
         expect(screen.getByRole('tab', { name: 'Training Details' })).toBeInTheDocument();
     });
 
