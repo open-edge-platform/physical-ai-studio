@@ -4,7 +4,6 @@ import { SchemaModel } from '../../../api/openapi-spec';
 import { MetricsContent } from '../metrics/metrics';
 import { ModelDetails } from '../model-details/model-details';
 import { ModelFormats } from '../model-formats/model-formats';
-import { ComingSoon } from '../shared/coming-soon';
 
 import classes from './model-row-content.module.css';
 
@@ -19,7 +18,7 @@ export const ModelRowContent = ({ model }: ModelRowContentProps) => {
                 <TabList marginBottom={'size-200'}>
                     <Item key='model_formats'>Model formats</Item>
                     <Item key='metrics'>Model Metrics</Item>
-                    <Item key='datasets'>Training Datasets</Item>
+                    {/*<Item key='datasets'>Training Datasets</Item>*/}
                     <Item key='training_details'>Training Details</Item>
                 </TabList>
                 <TabPanels>
@@ -29,9 +28,9 @@ export const ModelRowContent = ({ model }: ModelRowContentProps) => {
                     <Item key='metrics'>
                         <MetricsContent modelId={model.id!} />
                     </Item>
-                    <Item key='datasets'>
+                    {/*<Item key='datasets'>
                         <ComingSoon />
-                    </Item>
+                    </Item>*/}
                     <Item key='training_details'>
                         <ModelDetails model={model} />
                     </Item>
