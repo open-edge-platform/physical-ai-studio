@@ -21,6 +21,7 @@ export const RenameDatasetDialog = ({
             invalidates: [
                 ['get', '/api/dataset/{dataset_id}', { params: { path: { dataset_id: dataset.id! } } }],
                 ['get', '/api/projects/{project_id}', { params: { path: { project_id: dataset.project_id } } }],
+                ['get', '/api/projects'],
             ],
         },
     });

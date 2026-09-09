@@ -23,6 +23,7 @@ const projectQueryKey = [
     '/api/projects/{project_id}',
     { params: { path: { project_id: PROJECT_ID } } },
 ] as const;
+const projectsListQueryKey = ['get', '/api/projects'] as const;
 
 const dataset = getMockedDataset({ id: DATASET_ID, project_id: PROJECT_ID, name: 'pick-dataset' });
 
@@ -64,7 +65,7 @@ describe('RenameDatasetDialog', () => {
         expect(receivedDatasetId).toBe(DATASET_ID);
     });
 
-    it('invalidates dataset and project queries after rename', async () => {
+    it('invalidates dataset, project, and projects list queries after rename', async () => {
         server.use(
             http.put('/api/dataset/{dataset_id}', () => HttpResponse.json(getMockedDataset({ name: 'renamed' })))
         );
@@ -72,14 +73,18 @@ describe('RenameDatasetDialog', () => {
         const queryClient = createQueryClient();
         queryClient.setQueryData(datasetQueryKey, dataset);
         queryClient.setQueryData(projectQueryKey, { id: PROJECT_ID, name: 'test-project' });
+        queryClient.setQueryData(projectsListQueryKey, [{ id: PROJECT_ID, name: 'test-project' }]);
 
         const user = userEvent.setup();
         renderDialog(vi.fn(), queryClient);
 
         await renameViaUi(user, 'renamed');
 
-        await waitFor(() => expect(queryClient.getQueryState(datasetQueryKey)?.isInvalidated).toBe(true));
-        expect(queryClient.getQueryState(projectQueryKey)?.isInvalidated).toBe(true);
+        await waitFor(() => {
+            expect(queryClient.getQueryState(datasetQueryKey)?.isInvalidated).toBe(true);
+            expect(queryClient.getQueryState(projectQueryKey)?.isInvalidated).toBe(true);
+            expect(queryClient.getQueryState(projectsListQueryKey)?.isInvalidated).toBe(true);
+        });
     });
 
     it('calls onDone(undefined) on cancel without submitting', async () => {
@@ -101,15 +106,22 @@ describe('RenameDatasetDialog', () => {
         expect(putCalled).toBe(false);
     });
 
-    it('field prefilled and save disabled when name is whitespace only', async () => {
+    it('field prefilled and Save disabled unless the name changes to a non-empty value', async () => {
         const user = userEvent.setup();
         renderDialog(vi.fn(), createQueryClient());
 
         const textField = await screen.findByLabelText(/Dataset name/);
+        const saveButton = screen.getByRole('button', { name: 'Save' });
+
         expect(textField).toHaveValue(dataset.name);
+        expect(saveButton).toBeDisabled();
+
+        await user.type(textField, '-2');
+
+        expect(saveButton).toBeEnabled();
 
         await user.clear(textField);
 
-        expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+        expect(saveButton).toBeDisabled();
     });
 });
