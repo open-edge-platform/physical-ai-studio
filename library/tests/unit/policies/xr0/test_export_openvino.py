@@ -12,11 +12,21 @@ from physicalai.policies.xr0.export_openvino import (
     export_add_deepstack_embeds,
     export_build_additive_causal_mask,
     export_fast_pos_embed_interpolate,
+    export_image_token_gather,
+    export_mrope_position_ids,
     export_rmsnorm_forward,
     export_rot_pos_emb,
     export_scatter_visual_embeds,
     export_vision_attn_forward,
     install_export_rmsnorm,
+)
+
+from .test_qwen3_vlm import (
+    IMAGE_TOKEN_ID,
+    N_EXPORT_TOKENS,
+    XR0Qwen3VL,
+    _build_shim,
+    _export_batch,
 )
 
 
@@ -122,12 +132,15 @@ class TestExportPatchParity:
         image_embeds = torch.randn(num_visual, hidden)
 
         # Stock merge: broadcast a boolean mask and ``masked_scatter``.
-        image_mask = torch.zeros(1, seq_len, dtype=torch.bool)
-        image_mask[0, image_token_indices] = True
-        image_mask = image_mask.unsqueeze(-1).expand_as(inputs_embeds)
-        stock = inputs_embeds.masked_scatter(image_mask, image_embeds)
+        image_mask_bool = torch.zeros(1, seq_len, dtype=torch.bool)
+        image_mask_bool[0, image_token_indices] = True
+        stock = inputs_embeds.masked_scatter(image_mask_bool.unsqueeze(-1).expand_as(inputs_embeds), image_embeds)
 
-        exported = export_scatter_visual_embeds(inputs_embeds, image_token_indices, image_embeds)
+        # Export path: per-position image-token rank + ``{0, 1}`` mask.
+        image_mask = torch.zeros(seq_len, dtype=torch.long)
+        image_mask[image_token_indices] = 1
+        gather_index = (torch.cumsum(image_mask, dim=0) - 1).clamp(min=0, max=num_visual - 1)
+        exported = export_scatter_visual_embeds(inputs_embeds, gather_index, image_mask, image_embeds)
 
         assert exported.shape == stock.shape
         assert torch.equal(exported, stock)
@@ -152,7 +165,11 @@ class TestExportPatchParity:
             visual_embeds,
         )
 
-        exported = export_add_deepstack_embeds(hidden_states, image_token_indices, visual_embeds)
+        # Export path: per-position image-token rank + ``{0, 1}`` mask.
+        image_mask = torch.zeros(seq_len, dtype=torch.long)
+        image_mask[image_token_indices] = 1
+        gather_index = (torch.cumsum(image_mask, dim=0) - 1).clamp(min=0, max=num_visual - 1)
+        exported = export_add_deepstack_embeds(hidden_states, gather_index, image_mask, visual_embeds)
 
         assert exported.shape == stock.shape
         assert torch.allclose(exported, stock, atol=1e-6)
@@ -223,6 +240,98 @@ class TestExportPatchParity:
         assert torch.equal(exported, stock)
         # The input must be left untouched (guards the in-place aliasing bug).
         assert torch.equal(x, x_before)
+
+
+def _export_prompt(prefix_len: int, tail_len: int, pad_len: int = 0) -> dict:
+    """Build a still-image export prompt with the fixed image geometry.
+
+    The pre-image prefix and the post-image tail lengths vary freely; only the
+    image block (``N_EXPORT_TOKENS`` tokens) is fixed, matching the baked
+    geometry. ``pad_len`` right-pads the sequence (attention mask 0) to exercise
+    the padding path.
+    """
+    ids = [*([5] * prefix_len), *([IMAGE_TOKEN_ID] * N_EXPORT_TOKENS), *([7] * tail_len)]
+    attention = [1] * len(ids) + [0] * pad_len
+    ids = ids + [0] * pad_len
+    return {
+        "input_ids": torch.tensor([ids]),
+        "attention_mask": torch.tensor([attention]),
+    }
+
+
+class TestExportTokenRecompute:
+    """Parity of the traceable token-derived export ops against stock.
+
+    ``export_image_token_gather`` / ``export_mrope_position_ids`` re-derive the
+    image-token positions and the 3D MRoPE ``position_ids`` at inference from the
+    baked image geometry (see ``XR0Qwen3VL.prepare_ingraph_export``), replacing
+    the data-dependent ``get_rope_index`` that ``torch.export`` cannot capture.
+    These pin the recompute against stock ``compute_3d_position_ids`` for prompts
+    whose pre-image / post-image text lengths differ from the baked sample -- the
+    whole point of the un-baking -- on the tiny synthetic shim (no download).
+    """
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def prepared_shim() -> tuple[XR0Qwen3VL, torch.Tensor]:
+        """A tiny synthetic shim with only the fixed image geometry baked."""
+        shim = _build_shim()
+        grid = _export_batch()["image_grid_thw"]
+        shim.prepare_ingraph_export(grid)
+        return shim, grid
+
+    @pytest.mark.parametrize(
+        ("prefix_len", "tail_len", "pad_len"),
+        [(2, 3, 0), (5, 1, 0), (1, 6, 0), (3, 2, 4)],
+    )
+    def test_mrope_position_ids_match_stock_for_varied_prompts(
+        self,
+        prepared_shim: tuple[XR0Qwen3VL, torch.Tensor],
+        prefix_len: int,
+        tail_len: int,
+        pad_len: int,
+    ) -> None:
+        shim, grid = prepared_shim
+        prompt = _export_prompt(prefix_len, tail_len, pad_len)
+        # Stock reference: mm_token_type_ids (image -> 1) + stock get_rope_index.
+        mm_token_type_ids = (prompt["input_ids"] == IMAGE_TOKEN_ID).to(torch.int32)
+        stock = shim.model.compute_3d_position_ids(
+            input_ids=prompt["input_ids"],
+            inputs_embeds=None,
+            image_grid_thw=grid,
+            video_grid_thw=None,
+            attention_mask=prompt["attention_mask"],
+            past_key_values=None,
+            mm_token_type_ids=mm_token_type_ids,
+        )
+        runtime = export_mrope_position_ids(
+            prompt["attention_mask"],
+            *export_image_token_gather(
+                prompt["input_ids"],
+                IMAGE_TOKEN_ID,
+                shim._export_image_row.shape[0],  # noqa: SLF001
+            ),
+            shim._export_image_row,  # noqa: SLF001
+            shim._export_image_col,  # noqa: SLF001
+            shim._export_image_advance,  # noqa: SLF001
+        )
+        assert torch.equal(runtime, stock)
+
+    def test_image_token_gather_locates_tokens(
+        self,
+        prepared_shim: tuple[XR0Qwen3VL, torch.Tensor],
+    ) -> None:
+        shim, _ = prepared_shim
+        prompt = _export_prompt(prefix_len=4, tail_len=2, pad_len=3)
+        gather_index, image_mask = export_image_token_gather(
+            prompt["input_ids"],
+            IMAGE_TOKEN_ID,
+            shim._export_image_row.shape[0],  # noqa: SLF001
+        )
+        expected = (prompt["input_ids"][0] == IMAGE_TOKEN_ID).nonzero(as_tuple=True)[0]
+        assert torch.equal(image_mask.nonzero(as_tuple=True)[0], expected)
+        # Image tokens carry their 0..N-1 rank; use it to gather per-token geometry.
+        assert torch.equal(gather_index[expected], torch.arange(N_EXPORT_TOKENS))
 
 
 class TestBakeIngraphExport:

@@ -179,11 +179,7 @@ class TestIngraphExportParity:
         batch = _export_batch()
         with torch.no_grad():
             eager = shim(**batch, use_cache=True)
-        shim.prepare_ingraph_export(
-            batch["input_ids"],
-            batch["attention_mask"],
-            batch["image_grid_thw"],
-        )
+        shim.prepare_ingraph_export(batch["image_grid_thw"])
         with torch.no_grad():
             exported = shim(
                 input_ids=batch["input_ids"],
@@ -193,3 +189,27 @@ class TestIngraphExportParity:
             )
         assert exported.logits.shape == eager.logits.shape
         assert torch.allclose(exported.logits, eager.logits, atol=1e-3, rtol=1e-3)
+
+
+class TestIngraphGeometryBaking:
+    """``prepare_ingraph_export`` bakes only the fixed image *geometry*.
+
+    The image-token positions and the 3D MRoPE ``position_ids`` are recomputed
+    traceably at inference (see the ``export_*`` recompute parity tests in
+    ``test_export_openvino``); this pins that only geometry -- never anything
+    token-derived -- is frozen into the exported constants.
+    """
+
+    def _prepared_shim(self) -> tuple[XR0Qwen3VL, torch.Tensor]:
+        shim = _build_shim()
+        export_batch = _export_batch()
+        shim.prepare_ingraph_export(export_batch["image_grid_thw"])
+        return shim, export_batch["image_grid_thw"]
+
+    def test_only_geometry_is_baked(self) -> None:
+        shim, _ = self._prepared_shim()
+        baked = dict(shim.named_buffers())
+        for geometry in ("_export_image_grid_thw", "_export_image_row", "_export_image_col", "_export_image_advance"):
+            assert geometry in baked
+        for token_derived in ("_export_position_ids", "_export_image_token_indices"):
+            assert token_derived not in baked

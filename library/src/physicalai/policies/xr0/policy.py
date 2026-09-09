@@ -474,8 +474,7 @@ class XR0(ExportablePolicyMixin, Policy):
         """Bake the fixed image geometry into the VLM for a self-contained export.
 
         Args:
-            processed: A preprocessor output dict containing ``input_ids``,
-                ``attention_mask`` and ``image_grid_thw``.
+            processed: A preprocessor output dict containing ``image_grid_thw``.
 
         Raises:
             ValueError: If the model is not initialized.
@@ -484,8 +483,6 @@ class XR0(ExportablePolicyMixin, Policy):
             msg = "Model is not initialized"
             raise ValueError(msg)
         self.model.prepare_ingraph_export(
-            cast("torch.LongTensor", processed["input_ids"]),
-            processed["attention_mask"],
             cast("torch.LongTensor", processed["image_grid_thw"]),
         )
 

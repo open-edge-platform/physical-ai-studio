@@ -291,55 +291,140 @@ def export_vision_attn_forward(
     return attn.proj(attn_output)
 
 
+def export_image_token_gather(
+    input_ids: torch.Tensor,
+    image_token_id: int,
+    num_image_tokens: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Locate the image tokens traceably (no ``nonzero`` / boolean ``Where``).
+
+    Args:
+        input_ids: Runtime token ids ``(1, L)``.
+        image_token_id: The configured image-token id.
+        num_image_tokens: The baked image-token count (gather clamp bound).
+
+    Returns:
+        ``(gather_index, image_mask)`` where ``image_mask`` is a ``(L,)`` long
+        ``{0, 1}`` mask marking the image tokens and ``gather_index`` is a
+        ``(L,)`` long tensor mapping each sequence position to its image-token
+        rank (clamped to ``num_image_tokens``), for use with ``index_select``
+        into the per image-token geometry / visual embeds.
+    """
+    image_mask = (input_ids.reshape(-1) == image_token_id).to(torch.long)
+    image_rank = torch.cumsum(image_mask, dim=0) - 1
+    gather_index = image_rank.clamp(min=0, max=num_image_tokens - 1)
+    return gather_index, image_mask
+
+
 def export_scatter_visual_embeds(
     inputs_embeds: torch.Tensor,
-    image_token_indices: torch.Tensor,
+    image_gather_index: torch.Tensor,
+    image_token_mask: torch.Tensor,
     image_embeds: torch.Tensor,
 ) -> torch.Tensor:
-    """Merge visual embeds into token embeddings by integer index.
+    """Merge visual embeds into token embeddings by masked gather.
 
     Export-friendly replacement for the stock image/text merge, which uses
     ``masked_scatter`` (-> an unconvertible ``Where`` whose operand shapes
-    disagree). The integer-index ``index_copy`` (-> ``ScatterND``) is numerically
-    identical for a single-batch sequence.
+    disagree). Each sequence position gathers its image-token embedding (``Gather``)
+    and is blended in by the ``{0, 1}`` image mask; because the mask is exactly
+    ``0`` / ``1`` the blend replaces the image slots and leaves the text slots
+    untouched, numerically identical to the stock merge for a single-batch
+    sequence.
 
     Args:
         inputs_embeds: ``(1, seq_len, hidden)`` token embeddings.
-        image_token_indices: ``(num_visual,)`` positions of the image tokens.
+        image_gather_index: ``(seq_len,)`` per-position image-token rank (clamped)
+            for ``index_select`` into ``image_embeds``.
+        image_token_mask: ``(seq_len,)`` ``{0, 1}`` mask of the image tokens.
         image_embeds: ``(num_visual, hidden)`` visual embeddings.
 
     Returns:
         ``(1, seq_len, hidden)`` embeddings with the image slots replaced.
     """
-    merged = inputs_embeds[0].index_copy(0, image_token_indices, image_embeds)
+    row = inputs_embeds[0]
+    gathered = image_embeds.index_select(0, image_gather_index).to(row.dtype)
+    mask = image_token_mask.to(row.dtype).unsqueeze(-1)
+    merged = row * (1 - mask) + gathered * mask
     return merged.unsqueeze(0)
 
 
 def export_add_deepstack_embeds(
     hidden_states: torch.Tensor,
-    image_token_indices: torch.Tensor,
+    image_gather_index: torch.Tensor,
+    image_token_mask: torch.Tensor,
     visual_embeds: torch.Tensor,
 ) -> torch.Tensor:
-    """Add deepstack visual features at the image-token positions by index.
+    """Add deepstack visual features at the image-token positions by masked gather.
 
     Export-friendly replacement for the stock ``_deepstack_process``, which adds
     ``visual_embeds`` into ``hidden_states`` via boolean-mask assignment (-> an
-    unconvertible ``Where``). The ``index_select`` + ``index_copy`` variant
-    (-> ``Gather`` / ``ScatterND``) is numerically identical for a single-batch
-    sequence.
+    unconvertible ``Where``). Each position gathers its deepstack feature
+    (``Gather``) and adds it in, scaled by the ``{0, 1}`` image mask, so only the
+    image slots change -- numerically identical for a single-batch sequence.
 
     Args:
         hidden_states: ``(1, seq_len, hidden)`` decoder hidden states.
-        image_token_indices: ``(num_visual,)`` positions of the image tokens.
+        image_gather_index: ``(seq_len,)`` per-position image-token rank (clamped)
+            for ``index_select`` into ``visual_embeds``.
+        image_token_mask: ``(seq_len,)`` ``{0, 1}`` mask of the image tokens.
         visual_embeds: ``(num_visual, hidden)`` deepstack features to add.
 
     Returns:
         ``(1, seq_len, hidden)`` hidden states with the features added.
     """
-    visual_embeds = visual_embeds.to(hidden_states.device, hidden_states.dtype)
     row = hidden_states[0]
-    updated = row.index_copy(0, image_token_indices, row.index_select(0, image_token_indices) + visual_embeds)
+    gathered = visual_embeds.index_select(0, image_gather_index).to(row.dtype)
+    mask = image_token_mask.to(row.dtype).unsqueeze(-1)
+    updated = row + gathered * mask
     return updated.unsqueeze(0)
+
+
+def export_mrope_position_ids(
+    attention_mask: torch.Tensor,
+    image_gather_index: torch.Tensor,
+    image_token_mask: torch.Tensor,
+    image_row: torch.Tensor,
+    image_col: torch.Tensor,
+    image_advance: torch.Tensor,
+) -> torch.Tensor:
+    """Recompute the 3D MRoPE ``position_ids`` traceably for one prompt.
+
+    Reproduces stock ``get_rope_index`` for a single right-padded sequence from
+    the baked image *geometry* (``image_row`` / ``image_col`` / ``image_advance``)
+    and the runtime ``attention_mask`` plus the image-token gather, using
+    cumulative sums and gathers only (no ``nonzero`` / boolean ``Where``), so it
+    is captured by ``torch.export`` and lowers to OpenVINO-convertible ops.
+
+    Args:
+        attention_mask: Runtime attention mask ``(1, L)``.
+        image_gather_index: ``(L,)`` per-position image-token rank (clamped) for
+            ``index_select`` into the per image-token geometry.
+        image_token_mask: ``(L,)`` ``{0, 1}`` mask of the image tokens.
+        image_row: ``(num_image_tokens,)`` baked merged-grid row offset.
+        image_col: ``(num_image_tokens,)`` baked merged-grid column offset.
+        image_advance: ``(num_image_tokens,)`` baked per-block MRoPE advance
+            (non-zero only at the last token of each image block).
+
+    Returns:
+        The 3D MRoPE ``position_ids`` tensor ``(3, 1, L)`` for this prompt.
+    """
+    valid = attention_mask.reshape(-1).to(torch.long)
+    row = image_row.index_select(0, image_gather_index) * image_token_mask
+    col = image_col.index_select(0, image_gather_index) * image_token_mask
+    advance = image_advance.index_select(0, image_gather_index) * image_token_mask
+    text_mask = valid * (1 - image_token_mask)
+    # Per-token position increment: +1 per valid text token and the whole
+    # image block's advance applied at its last token. The exclusive cumsum is
+    # the block start position shared by every token of a block.
+    step = text_mask + advance
+    base = torch.cumsum(step, dim=0) - step
+    temporal = base
+    height = base + row
+    width = base + col
+    position_ids = torch.stack([temporal, height, width], dim=0).unsqueeze(1)
+    # Padded tokens carry position 0, matching stock ``get_rope_index``.
+    return position_ids * valid.reshape(1, 1, -1)
 
 
 def export_build_additive_causal_mask(attention_mask: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:

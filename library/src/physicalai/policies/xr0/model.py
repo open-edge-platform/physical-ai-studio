@@ -182,20 +182,13 @@ class XR0Model(Model):
         """
         return cast("torch.Tensor", self._run(batch, return_loss=False))
 
-    def prepare_ingraph_export(
-        self,
-        input_ids: torch.LongTensor,
-        attention_mask: torch.Tensor,
-        image_grid_thw: torch.LongTensor,
-    ) -> None:
+    def prepare_ingraph_export(self, image_grid_thw: torch.LongTensor) -> None:
         """Bake the fixed vision geometry into the VLM for a self-contained export.
 
         Args:
-            input_ids: Token ids of the representative padded prompt ``(1, L)``.
-            attention_mask: Attention mask of the same prompt ``(1, L)``.
             image_grid_thw: The fixed vision geometry ``(num_images, 3)``.
         """
-        self.vlm.prepare_ingraph_export(input_ids, attention_mask, image_grid_thw)
+        self.vlm.prepare_ingraph_export(image_grid_thw)
         install_export_rmsnorm(self)
 
     @property

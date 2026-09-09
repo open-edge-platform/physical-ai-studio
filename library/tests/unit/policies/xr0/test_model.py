@@ -512,11 +512,7 @@ class TestRunExport:
 
     @staticmethod
     def _bake_export(model: XR0Model, batch: dict) -> None:
-        model.prepare_ingraph_export(
-            batch["input_ids"],
-            batch["attention_mask"],
-            batch["image_grid_thw"],
-        )
+        model.prepare_ingraph_export(batch["image_grid_thw"])
 
     def test_ingraph_export_matches_eager(self, export_model: XR0Model, eager_export_pred: torch.Tensor) -> None:
         # Single f32 action output, numerically equal to the eager eval output.
