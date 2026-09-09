@@ -210,7 +210,8 @@ Schema. Standard Pydantic metadata provides most of the UI:
 - Required fields and validation come from the model.
 - Nested Pydantic models render recursively.
 
-Use `robot_field_ui(...)` for the Studio-specific required-field override:
+Use `robot_field_ui(...)` for Studio-specific field behavior, including required
+override, advanced field visibility, and contextual help:
 
 ```python
 from physicalai_studio_plugin import robot_field_ui
@@ -218,9 +219,27 @@ from pydantic import Field
 
 timeout: float = Field(
     default=10.0,
-    json_schema_extra=robot_field_ui({"required": True}),
+    json_schema_extra=robot_field_ui(
+        {
+            "required": True,
+            "info": {
+                "title": "Timeout",
+                "description": "Maximum wait time (seconds) before the operation fails.",
+                "link_url": "https://example.com/docs/timeouts",
+                "variant": "info",
+            },
+        }
+    ),
 )
 ```
+
+The `info` object renders a `ContextualHelp` control next to the field and
+supports:
+
+- `description` (required): body text shown in the help popover.
+- `title` (optional): heading shown above the description.
+- `link_url` (optional): when present, Studio shows a **Learn more** external link.
+- `variant` (optional): contextual-help style (`info` or `help`).
 
 Use `robot_payload_ui(...)` when fields need ordering, sections, guidance, or a
 first-party connection control. The supported item kinds are:
@@ -228,7 +247,13 @@ first-party connection control. The supported item kinds are:
 - `section`: groups items under an optional heading.
 - `field`: places a normal payload field.
 - `connection`: renders Studio's serial-device selector and owns its bindings.
+- `calibration`: renders Studio's calibration JSON upload control for an object field.
 - `info`: renders read-only guidance or warnings.
+
+Field-like UI items (`field`, `connection`, `ip_address`, `calibration`) can
+also include an `info` object to render contextual help next to the control.
+If both item-level `info` and field-level `robot_field_ui(...).info` are
+provided, item-level `info` takes precedence.
 
 ```python
 from physicalai_studio_plugin import robot_payload_ui

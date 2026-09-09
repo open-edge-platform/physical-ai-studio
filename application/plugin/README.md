@@ -157,6 +157,17 @@ field references, connection bindings, and ownership are valid. Studio also
 validates payload UI metadata during catalog registration and rejects invalid
 robot definitions with an actionable error.
 
+`robot_field_ui(...)` can add per-field contextual help with an `info` object:
+
+- `description` (required): body text for the contextual help popover.
+- `title` (optional): heading text.
+- `link_url` (optional): renders an external **Learn more** link.
+- `variant` (optional): `info` or `help`.
+
+Field-like `robot_payload_ui(...)` items (`field`, `connection`, `ip_address`,
+`calibration`) can also define `info`. If both item-level and field-level info
+are present, item-level info is used.
+
 ### `RobotCatalogDefinition`
 
 The primary data class that describes a robot type to Studio. It is generic over
