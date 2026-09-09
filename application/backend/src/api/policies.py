@@ -26,7 +26,6 @@ _HUGGINGFACE_REQUIREMENTS = {
     # download. When adding/changing a policy, inspect its `from_pretrained`,
     # `hf_hub_download`, and `Auto*from_pretrained` calls and list every default
     # repository that Studio training needs here.
-    "pi0": (("google/paligemma-3b-pt-224", True),),
     "pi05": (
         ("lerobot/pi05_base", True),
         ("google/paligemma-3b-pt-224", True),
