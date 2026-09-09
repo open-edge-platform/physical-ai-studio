@@ -867,6 +867,9 @@ class DeviceMemoryUtilization(Callback):
         Args:
             log_every_n_steps: Log cadence in training steps.
             reset_peak_stats_each_log: Reset peak counters after each log event.
+
+        Raises:
+            ValueError: If ``log_every_n_steps`` is less than 1.
         """
         if log_every_n_steps < 1:
             msg = "log_every_n_steps must be >= 1"
@@ -876,20 +879,25 @@ class DeviceMemoryUtilization(Callback):
         self.reset_peak_stats_each_log = reset_peak_stats_each_log
 
     @staticmethod
-    def _bytes_to_mb(value: int | float) -> float:
+    def _bytes_to_mb(value: float) -> float:
         return float(value) / (1024.0 * 1024.0)
 
     @staticmethod
-    def _fraction_to_percent(value: int | float, total: int | float) -> float:
+    def _fraction_to_percent(value: float, total: float) -> float:
         if float(total) <= 0.0:
             return 0.0
         return (float(value) / float(total)) * 100.0
 
     @staticmethod
     def _get_memory_metrics(device: torch.device) -> dict[str, float] | None:
-        """Collect memory metrics for CUDA or XPU devices, if the runtime is available."""
+        """Collect memory metrics for CUDA or XPU devices, if the runtime is available.
+
+        Returns:
+            A dict of memory metrics keyed by ``{device_type}/...``, or None when
+            ``device`` is neither CUDA nor XPU, or the corresponding backend is unavailable.
+        """
         device_type = device.type
-        if device_type not in ("cuda", "xpu"):
+        if device_type not in {"cuda", "xpu"}:
             return None
 
         backend = getattr(torch, device_type, None)
@@ -904,17 +912,17 @@ class DeviceMemoryUtilization(Callback):
         total_memory: int | float = 0
 
         if hasattr(backend, "memory_allocated"):
-            allocated = cast(float, backend.memory_allocated(device))
+            allocated = cast("float", backend.memory_allocated(device))
         if hasattr(backend, "memory_reserved"):
-            reserved = cast(float, backend.memory_reserved(device))
+            reserved = cast("float", backend.memory_reserved(device))
         if hasattr(backend, "max_memory_allocated"):
-            max_allocated = cast(float, backend.max_memory_allocated(device))
+            max_allocated = cast("float", backend.max_memory_allocated(device))
         if hasattr(backend, "max_memory_reserved"):
-            max_reserved = cast(float, backend.max_memory_reserved(device))
+            max_reserved = cast("float", backend.max_memory_reserved(device))
         if hasattr(backend, "get_device_properties"):
             props = backend.get_device_properties(device)
             if hasattr(props, "total_memory"):
-                total_memory = cast(float, props.total_memory)
+                total_memory = cast("float", props.total_memory)
 
         to_mb = DeviceMemoryUtilization._bytes_to_mb
         to_pct = DeviceMemoryUtilization._fraction_to_percent
@@ -933,8 +941,8 @@ class DeviceMemoryUtilization(Callback):
         self,
         trainer: L.Trainer,
         pl_module: L.LightningModule,
-        _outputs: Any,
-        _batch: Any,
+        _outputs: object,
+        _batch: object,
         batch_idx: int,
     ) -> None:
         """Log accelerator memory usage every ``log_every_n_steps``."""

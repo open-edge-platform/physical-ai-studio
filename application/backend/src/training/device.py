@@ -48,14 +48,17 @@ def resolve_accelerator(device_type: str | None = None) -> str:
     return "cpu"
 
 
-def resolve_strategy(device_type: str | None = None) -> str:
+def resolve_strategy(device_type: str | None = None, device_index: int | list[int] | None = None) -> str:
     """Return the Lightning strategy string for a training run.
 
-    XPU needs its own single-device strategy; everything else is covered by
-    ``"auto"``.
+    XPU needs its own single-device strategy for one device, and DDP over the
+    ``xccl`` backend once more than one device is requested; everything else
+    is covered by ``"auto"``.
 
     Args:
         device_type: Explicit accelerator, or None to auto-detect.
+        device_index: Zero-based device index, a list of indices for
+            multi-device training, or None for a single auto-picked device.
 
     Returns:
         The strategy name to pass to the trainer.
@@ -63,24 +66,34 @@ def resolve_strategy(device_type: str | None = None) -> str:
     Example:
         >>> resolve_strategy("cpu")
         'auto'
+        >>> resolve_strategy("xpu", [0, 1])
+        'xpu_ddp'
     """
-    return "xpu_single" if resolve_accelerator(device_type) == "xpu" else "auto"
+    if resolve_accelerator(device_type) != "xpu":
+        return "auto"
+    return "xpu_ddp" if isinstance(device_index, list) and len(device_index) > 1 else "xpu_single"
 
 
-def resolve_devices(device_index: int | None = None) -> list[int] | int:
+def resolve_devices(device_index: int | list[int] | None = None) -> list[int] | int:
     """Return the Lightning ``devices`` value for a training run.
 
     Args:
-        device_index: Zero-based index of the accelerator to train on, or None
-            to let Lightning pick one device.
+        device_index: Zero-based index of the accelerator to train on, a list
+            of indices for multi-device training, or None to let Lightning
+            pick one device.
 
     Returns:
-        ``[device_index]`` when an index is given, otherwise ``1``.
+        ``device_index`` as a single-element list when an int is given, the
+        list as-is when already a list, otherwise ``1``.
 
     Example:
         >>> resolve_devices(2)
         [2]
+        >>> resolve_devices([0, 1])
+        [0, 1]
         >>> resolve_devices()
         1
     """
+    if isinstance(device_index, list):
+        return device_index
     return [device_index] if device_index is not None else 1

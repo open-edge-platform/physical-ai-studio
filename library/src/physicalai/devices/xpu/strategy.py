@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 import torch
 from lightning.pytorch.strategies import StrategyRegistry
@@ -100,13 +100,13 @@ class XPUDDPStrategy(DDPStrategy):
             **kwargs,
         )
 
-    @property
-    def root_device(self) -> torch.device:
-        """Return the root device for the current process."""
-        return torch.device("xpu", self.local_rank)
-
+    @override
     def _setup_model(self, model: torch.nn.Module) -> torch.nn.parallel.DistributedDataParallel:
-        """Wrap the model in distributed data parallel without CUDA stream setup.
+        """Wrap the model in DDP using an XPU stream instead of the hardcoded CUDA one.
+
+        Lightning's ``DDPStrategy._setup_model`` always opens a ``torch.cuda.Stream``
+        before wrapping, which is a no-op (and would error) on XPU. Mirror the same
+        stream-scoped wrapping using ``torch.xpu`` instead.
 
         Args:
             model: The model to wrap.
@@ -115,14 +115,7 @@ class XPUDDPStrategy(DDPStrategy):
             The wrapped distributed data parallel module.
         """
         device_ids = self.determine_ddp_device_ids()
-        # For Intel XPU, we bypass the hardcoded `torch.cuda.Stream` requirement in standard PyTorch Lightning.
-        # If xpu stream control is needed, we could use torch.xpu.stream(torch.xpu.Stream()),
-        # but nullcontext is standard for multi-device wrapping setups on non-CUDA.
-        ctx = (
-            torch.xpu.stream(torch.xpu.Stream())
-            if (device_ids is not None and hasattr(torch, "xpu"))
-            else nullcontext()
-        )
+        ctx = torch.xpu.stream(torch.xpu.Stream()) if device_ids is not None else nullcontext()
         with ctx:
             return torch.nn.parallel.DistributedDataParallel(
                 module=model,

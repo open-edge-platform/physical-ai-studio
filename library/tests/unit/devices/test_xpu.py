@@ -3,9 +3,12 @@
 
 """Unit Tests - XPU Device"""
 
+from unittest.mock import patch
+
 import pytest
 import torch
 from lightning.pytorch.strategies import StrategyRegistry
+from lightning.pytorch.utilities.exceptions import MisconfigurationException
 
 from physicalai.devices.xpu import XPUAccelerator, SingleXPUStrategy, XPUDDPStrategy
 
@@ -26,6 +29,24 @@ class TestXPUAccelerator:
         with pytest.raises(ValueError, match="at least 1"):
             XPUAccelerator.parse_devices(0)
 
+    def test_get_parallel_devices_from_indexes(self):
+        """Test get_parallel_devices maps integer indexes to xpu torch.device objects."""
+        assert XPUAccelerator.get_parallel_devices([0, 1]) == [
+            torch.device("xpu", 0),
+            torch.device("xpu", 1),
+        ]
+
+    def test_get_parallel_devices_from_device_strings(self):
+        """Test get_parallel_devices maps device strings to xpu torch.device objects."""
+        assert XPUAccelerator.get_parallel_devices(["xpu:0", "xpu:1"]) == [
+            torch.device("xpu", 0),
+            torch.device("xpu", 1),
+        ]
+
+    def test_get_parallel_devices_from_torch_devices(self):
+        """Test get_parallel_devices passes through torch.device objects."""
+        assert XPUAccelerator.get_parallel_devices([torch.device("xpu", 0)]) == [torch.device("xpu", 0)]
+
 
 class TestSingleXPUStrategy:
     """Unit tests for SingleXPUStrategy class."""
@@ -43,7 +64,28 @@ class TestXPUDDPStrategy:
         assert XPUDDPStrategy.strategy_name == "xpu_ddp"
 
     def test_strategy_is_registered(self):
-        """Test that the multi-XPU strategy is registered in Lightning."""
-        strategy = StrategyRegistry.get(XPUDDPStrategy.strategy_name)
+        """Test that the multi-XPU strategy class is registered in Lightning.
 
-        assert isinstance(strategy, XPUDDPStrategy)
+        Uses the registry's internal mapping instead of ``StrategyRegistry.get``, which
+        would instantiate the strategy and fail on this runner if XPU is unavailable.
+        """
+        assert XPUDDPStrategy.strategy_name in StrategyRegistry
+        assert StrategyRegistry[XPUDDPStrategy.strategy_name]["strategy"] is XPUDDPStrategy
+
+    def test_raises_when_xpu_unavailable(self):
+        """Test that instantiating without XPU devices raises MisconfigurationException."""
+        with patch("torch.xpu.is_available", return_value=False), pytest.raises(MisconfigurationException):
+            XPUDDPStrategy()
+
+    @pytest.mark.skipif(not torch.xpu.is_available(), reason="requires XPU devices")
+    def test_root_device_uses_parallel_devices(self):
+        """Test that root_device follows parallel_devices/local_rank, not a bare rank->index mapping.
+
+        Regression test: an earlier implementation hardcoded
+        ``torch.device("xpu", self.local_rank)``, which silently trains on
+        the wrong device whenever devices are non-contiguous (e.g. [2, 3]).
+        """
+        strategy = XPUDDPStrategy()
+        strategy.parallel_devices = [torch.device("xpu", 2), torch.device("xpu", 3)]
+        with patch.object(type(strategy), "local_rank", new=1):
+            assert strategy.root_device == torch.device("xpu", 3)

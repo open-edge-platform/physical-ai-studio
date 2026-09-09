@@ -4,7 +4,7 @@
 """Tests for training callbacks."""
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import lightning as L
 import pytest
@@ -13,6 +13,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 
 from physicalai.train.callbacks import (
     SNAPFLOW_PROGRESS_BAR_KEY,
+    DeviceMemoryUtilization,
     IterationTimer,
     ProgressReportingCallback,
     SnapFlowPhaseCallback,
@@ -219,6 +220,82 @@ class TestIterationTimer:
         logged_time = pl_module.log.call_args[0][1]
         assert logged_time >= 0.04  # allow small timing tolerance
         assert logged_time < 1.0  # sanity upper bound
+
+
+class TestDeviceMemoryUtilization:
+    """Tests for the DeviceMemoryUtilization callback."""
+
+    def test_rejects_non_positive_log_every_n_steps(self):
+        """Test that log_every_n_steps must be >= 1."""
+        with pytest.raises(ValueError, match=">= 1"):
+            DeviceMemoryUtilization(log_every_n_steps=0)
+
+    def test_skips_logging_outside_training(self):
+        """Test that no metrics are logged when not in the training loop."""
+        callback = DeviceMemoryUtilization(log_every_n_steps=1)
+        trainer = MagicMock(spec=L.Trainer, training=False)
+        pl_module = MagicMock(spec=L.LightningModule)
+
+        callback.on_train_batch_end(trainer, pl_module, None, None, 0)
+
+        pl_module.log.assert_not_called()
+
+    def test_skips_logging_off_cadence(self):
+        """Test that metrics are only logged on the configured step cadence."""
+        callback = DeviceMemoryUtilization(log_every_n_steps=5)
+        trainer = MagicMock(spec=L.Trainer, training=True)
+        pl_module = MagicMock(spec=L.LightningModule)
+        pl_module.device = torch.device("cpu")
+
+        callback.on_train_batch_end(trainer, pl_module, None, None, batch_idx=1)
+
+        pl_module.log.assert_not_called()
+
+    def test_skips_logging_on_cpu(self):
+        """Test that CPU devices (neither CUDA nor XPU) are skipped."""
+        callback = DeviceMemoryUtilization(log_every_n_steps=1)
+        trainer = MagicMock(spec=L.Trainer, training=True)
+        pl_module = MagicMock(spec=L.LightningModule)
+        pl_module.device = torch.device("cpu")
+
+        callback.on_train_batch_end(trainer, pl_module, None, None, batch_idx=0)
+
+        pl_module.log.assert_not_called()
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA device")
+    def test_logs_cuda_memory_metrics_on_cadence(self):
+        """Test that CUDA memory metrics are logged on the configured cadence."""
+        callback = DeviceMemoryUtilization(log_every_n_steps=2, reset_peak_stats_each_log=False)
+        trainer = MagicMock(spec=L.Trainer, training=True)
+        pl_module = MagicMock(spec=L.LightningModule)
+        pl_module.device = torch.device("cuda", 0)
+
+        callback.on_train_batch_end(trainer, pl_module, None, None, batch_idx=1)
+
+        logged_keys = {call.args[0] for call in pl_module.log.call_args_list}
+        assert logged_keys == {
+            "cuda/memory_allocated_mb",
+            "cuda/memory_reserved_mb",
+            "cuda/max_memory_allocated_mb",
+            "cuda/max_memory_reserved_mb",
+            "cuda/memory_allocated_pct",
+            "cuda/memory_reserved_pct",
+            "cuda/max_memory_allocated_pct",
+            "cuda/max_memory_reserved_pct",
+        }
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA device")
+    def test_resets_peak_stats_after_logging(self):
+        """Test that peak stats are reset after logging when enabled."""
+        callback = DeviceMemoryUtilization(log_every_n_steps=1, reset_peak_stats_each_log=True)
+        trainer = MagicMock(spec=L.Trainer, training=True)
+        pl_module = MagicMock(spec=L.LightningModule)
+        pl_module.device = torch.device("cuda", 0)
+
+        with patch("torch.cuda.reset_peak_memory_stats") as reset_mock:
+            callback.on_train_batch_end(trainer, pl_module, None, None, batch_idx=0)
+
+        reset_mock.assert_called_once_with(pl_module.device)
 
 
 class TestSnapFlowPhaseCallback:

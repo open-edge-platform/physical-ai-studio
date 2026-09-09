@@ -77,16 +77,27 @@ class XPUAccelerator(Accelerator):
         return [devices]
 
     @staticmethod
-    def get_parallel_devices(devices: list[int]) -> list[torch.device]:
-        """Convert a list of device indices to a list of XPU torch devices.
+    def get_parallel_devices(devices: list[int | str | torch.device]) -> list[torch.device]:
+        """Convert device specifications to a list of XPU torch devices.
 
         Args:
-            devices (list): A list of device indices (integers) to be converted to XPU devices.
+            devices (list): A list of device indices, device strings (e.g. "xpu:0"), or
+                ``torch.device`` objects, as produced by :meth:`parse_devices`.
 
         Returns:
             list[torch.device]: A list of torch.device objects configured for XPU with the specified indices.
         """
-        return [torch.device("xpu", idx) for idx in devices]
+        parallel_devices: list[torch.device] = []
+        for device in devices:
+            if isinstance(device, torch.device):
+                parallel_devices.append(device if device.type == "xpu" else torch.device("xpu", device.index))
+            elif isinstance(device, str):
+                parsed = torch.device(device)
+                index = parsed.index if parsed.index is not None else 0
+                parallel_devices.append(torch.device("xpu", index))
+            else:
+                parallel_devices.append(torch.device("xpu", device))
+        return parallel_devices
 
     @staticmethod
     def auto_device_count() -> int:
