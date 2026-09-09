@@ -258,6 +258,14 @@ export const CamerasList = () => {
     );
 };
 
+const CamerasFallback = () => {
+    return (
+        <Grid width='100%' height='100%'>
+            <Loading mode='inline' />
+        </Grid>
+    );
+};
+
 export const Layout = () => {
     return (
         <Grid
@@ -268,7 +276,9 @@ export const Layout = () => {
             minHeight={0}
         >
             <View gridArea='camera' backgroundColor={'gray-100'} padding='size-400'>
-                <CamerasList />
+                <Suspense fallback={<CamerasFallback />}>
+                    <CamerasList />
+                </Suspense>
             </View>
             <View
                 gridArea='controls'
@@ -278,13 +288,7 @@ export const Layout = () => {
                 minWidth={0}
                 overflow='auto'
             >
-                <Suspense
-                    fallback={
-                        <Grid width='100%' height='100%'>
-                            <Loading mode='inline' />
-                        </Grid>
-                    }
-                >
+                <Suspense fallback={<CamerasFallback />}>
                     <Outlet />
                 </Suspense>
             </View>
