@@ -310,3 +310,24 @@ class TestMockedCosmos3Model:
         assert "model.a_max" in saved_keys
         assert "model.domain_id" in saved_keys
         assert "model.transformer.frozen_backbone.weight" not in saved_keys
+
+    def test_pretrained_action_head_detection(self, tmp_path: Path) -> None:
+        """Test _has_pretrained_action_head detection for local files and remote repos."""
+        from physicalai.policies.cosmos3.model import _has_pretrained_action_head
+
+        # 1. Non-existent path returns False
+        assert not _has_pretrained_action_head(str(tmp_path / "nonexistent"), "droid_lerobot")
+
+        # 2. Local folder with <domain>_head.pt
+        head_dir = tmp_path / "ckpt_head"
+        head_dir.mkdir()
+        (head_dir / "droid_lerobot_head.pt").touch()
+        assert _has_pretrained_action_head(str(head_dir), "droid_lerobot")
+        assert not _has_pretrained_action_head(str(head_dir), "pusht")
+
+        # 3. Local folder with checkpoint.json
+        json_dir = tmp_path / "ckpt_json"
+        json_dir.mkdir()
+        (json_dir / "checkpoint.json").touch()
+        assert _has_pretrained_action_head(str(json_dir), "any_domain")
+

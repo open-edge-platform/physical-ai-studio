@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import random
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -16,6 +17,7 @@ from diffusers.pipelines.cosmos.pipeline_cosmos3_omni import (
     _EMBODIMENT_TO_RAW_ACTION_DIM,  # ruff: ignore[import-private-name]
 )
 from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
+from huggingface_hub import file_exists
 from PIL import Image
 
 from physicalai.data.observation import ACTION, IMAGES, STATE
@@ -33,6 +35,26 @@ logger = logging.getLogger(__name__)
 # Register ALOHA embodiment if not already present in diffusers
 _EMBODIMENT_TO_DOMAIN_ID.setdefault("aloha", 10)
 _EMBODIMENT_TO_RAW_ACTION_DIM.setdefault("aloha", 14)
+
+
+def _has_pretrained_action_head(pretrained_path: str, domain: str) -> bool:
+    """Check whether a model path or repository carries an already trained action head.
+
+    Args:
+        pretrained_path: Path to local directory or Hugging Face model repository ID.
+        domain: Embodiment domain identifier.
+
+    Returns:
+        True if the checkpoint already contains action head weights or policy metadata.
+    """
+    path_obj = Path(pretrained_path)
+    if path_obj.is_dir():
+        return (path_obj / f"{domain}_head.pt").is_file() or (path_obj / "checkpoint.json").is_file()
+
+    try:
+        return file_exists(repo_id=pretrained_path, filename="checkpoint.json")
+    except Exception:  # ruff: ignore[blind-except]
+        return False
 
 
 def _extract_image_tensor(batch: dict[str, Any]) -> torch.Tensor:
@@ -203,7 +225,14 @@ class Cosmos3Model(Model):
             alpha_scale=config.alpha_scale,
             dora=config.dora,
         )
-        init_domain_action_head(self.transformer, self.domain_id_val)
+        if not _has_pretrained_action_head(config.pretrained_model_name_or_path, config.domain):
+            init_domain_action_head(self.transformer, self.domain_id_val)
+        else:
+            logger.info(
+                "Preserving pretrained action head weights from %s for domain '%s'",
+                config.pretrained_model_name_or_path,
+                config.domain,
+            )
 
         if config.grad_checkpoint:
             self.transformer.enable_gradient_checkpointing()
