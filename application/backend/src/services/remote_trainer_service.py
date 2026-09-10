@@ -159,7 +159,9 @@ class RemoteTrainerService:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
         self._require_ssh_feature_if_tunneled(update.ssh_host_alias)
         try:
-            saved = await self.repo.update(remote_trainer, update.model_dump(exclude_none=True, exclude_unset=True))
+            # exclude_unset (not exclude_none) so an explicit null clears an existing
+            # tunnel field instead of being dropped as "not provided".
+            saved = await self.repo.update(remote_trainer, update.model_dump(exclude_unset=True))
         except IntegrityError as error:
             await self.session.rollback()
             raise ResourceAlreadyExistsError(

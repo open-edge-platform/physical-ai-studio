@@ -55,7 +55,7 @@ const parseUrlPort = (value: string): number | undefined => {
 export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormProps) => {
     const [name, setName] = useState(remoteTrainer?.name ?? '');
     const [url, setUrl] = useState(remoteTrainer?.url ?? '');
-    const [sshTunnelEnabled, setSshTunnelEnabled] = useState(remoteTrainer?.ssh_host_alias !== undefined);
+    const [sshTunnelEnabled, setSshTunnelEnabled] = useState(Boolean(remoteTrainer?.ssh_host_alias));
     const [sshHostSource, setSshHostSource] = useState<SshHostSource>('pick');
     const [sshHostAlias, setSshHostAlias] = useState(remoteTrainer?.ssh_host_alias ?? '');
     const [newAlias, setNewAlias] = useState('');

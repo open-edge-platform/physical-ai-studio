@@ -21,11 +21,19 @@ export const useRemoteTrainerFormMutation = (remoteTrainer: SchemaRemoteTrainer 
     ): Promise<void> => {
         // A new host is created before the trainer that references its alias, so a
         // failed alias creation (e.g. it already exists) never leaves the trainer
-        // half-saved with an alias that was never actually added.
-        const resolvedValues =
-            newSshHost === undefined
-                ? values
-                : { ...values, ssh_host_alias: (await createSshHostAlias.mutateAsync({ body: newSshHost })).alias };
+        // half-saved with an alias that was never actually added. Swallow the reject
+        // here: createSshHostAlias.error is already surfaced to the caller, and an
+        // unawaited save() must not throw an unhandled rejection.
+        let resolvedValues = values;
+        if (newSshHost !== undefined) {
+            const result = await createSshHostAlias.mutateAsync({ body: newSshHost }).catch(() => undefined);
+
+            if (result === undefined) {
+                return;
+            }
+
+            resolvedValues = { ...values, ssh_host_alias: result.alias };
+        }
 
         if (remoteTrainer === undefined) {
             createRemoteTrainer.mutate({ body: resolvedValues }, { onSuccess });
