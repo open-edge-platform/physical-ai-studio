@@ -701,6 +701,32 @@ class TestHttpDatasetTransfer:
         assert (body["spec"]["policy"], body["spec"]["max_epochs"], body["spec"]["batch_size"]) == ("act", 5, 16)
 
     @pytest.mark.anyio
+    async def test_submit_body_includes_lora_fields_when_enabled(self, tmp_path):
+        """LoRA fields are always sent on the wire when a LoRA run was requested."""
+        settings = _settings()
+        context = _context(tmp_path)
+        context.model = context.model.model_copy(update={"policy": "pi05"})
+        context.payload = context.payload.model_copy(
+            update={"policy": "pi05", "lora_enabled": True, "lora_rank": 16, "lora_use_dora": True}
+        )
+
+        body = await _submitted_body(settings, context)
+
+        assert body["spec"]["lora_enabled"] is True
+        assert (body["spec"]["lora_rank"], body["spec"]["lora_use_dora"]) == (16, True)
+
+    @pytest.mark.anyio
+    async def test_submit_body_includes_lora_fields_when_disabled(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+
+        body = await _submitted_body(settings, context)
+
+        for key in ("lora_enabled", "lora_rank", "lora_alpha", "lora_dropout", "lora_use_dora"):
+            assert key in body["spec"]
+        assert body["spec"]["lora_enabled"] is False
+
+    @pytest.mark.anyio
     async def test_submit_omits_an_unset_distillation_boundary(self, tmp_path):
         """Trainers forbid unknown spec fields, so an ordinary run must stay
         submittable against a trainer image that predates SnapFlow support."""

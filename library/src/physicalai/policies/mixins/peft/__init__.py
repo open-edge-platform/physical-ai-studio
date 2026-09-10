@@ -9,8 +9,8 @@ Composition for a new policy that wants LoRA support:
 - ``model.py``: mix in :class:`PeftModelMixin` into the policy's ``Model`` and implement
   ``get_default_peft_targets()``.
 - ``policy.py``: mix in :class:`PeftPolicyMixin` into the policy's ``Policy`` and call
-  ``self._inject_lora()`` once the model is built, and
-  ``self._merged_lora_model_for_export()`` from ``export()``.
+  ``self._inject_lora()`` once the model is built. ``PeftPolicyMixin.export()`` then
+  merges the adapters for the duration of the export automatically.
 
 See ``physicalai.policies.pi05`` for a full reference implementation.
 """
@@ -24,6 +24,7 @@ from .functions import (
     is_lora_injected,
     log_trainable_parameters,
     merge_lora_,
+    merged_lora_scope,
 )
 from .model import PeftModelMixin
 from .policy import PeftPolicyMixin
@@ -37,4 +38,5 @@ __all__ = [
     "is_lora_injected",
     "log_trainable_parameters",
     "merge_lora_",
+    "merged_lora_scope",
 ]

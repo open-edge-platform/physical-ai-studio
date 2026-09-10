@@ -83,6 +83,10 @@ _WEIGHTS_ONLY_RESUME_POLICIES = frozenset({"pi0"})
 _COMPILED_EXPORT_RELOAD_POLICIES = frozenset({"act", "smolvla"})
 """Policies that cannot be exported while ``torch.compile``d, so are reloaded first."""
 
+PEFT_POLICIES = frozenset({"pi05", "pi0"})
+"""Policies whose ``Config`` mixes in ``physicalai.policies.mixins.peft.PeftConfigMixin`` and
+support LoRA/DoRA fine-tuning."""
+
 
 class RunOptions(BaseModel):
     """Runtime-only controls which are not part of the training payload."""
@@ -141,7 +145,47 @@ class TrainingJobSpec(BaseModel):
         ge=0,
         description="Zero-based index of the accelerator to train on. None lets Lightning pick one.",
     )
+    lora_enabled: bool = Field(
+        default=False,
+        description=(
+            "Fine-tune with LoRA/DoRA instead of full fine-tuning: freezes the base model and "
+            f"trains small low-rank adapters. Only available for {sorted(PEFT_POLICIES)}."
+        ),
+    )
+    lora_rank: int = Field(default=32, ge=1, le=256, description="LoRA rank. Ignored unless lora_enabled.")
+    lora_alpha: int | None = Field(
+        default=None,
+        ge=1,
+        description="LoRA scaling numerator (scaling = lora_alpha / lora_rank). None defaults to lora_rank.",
+    )
+    lora_dropout: float = Field(default=0.05, ge=0.0, lt=1.0, description="Dropout applied to LoRA adapter inputs.")
+    lora_use_dora: bool = Field(
+        default=False,
+        description="Use DoRA (Weight-Decomposed LoRA) instead of plain LoRA. Ignored unless lora_enabled.",
+    )
     run_options: RunOptions = Field(default_factory=RunOptions)
+
+    @model_validator(mode="after")
+    def validate_lora(self) -> TrainingJobSpec:
+        """Reject a LoRA request the run cannot honour, and DoRA requested without LoRA."""
+        if self.lora_use_dora and not self.lora_enabled:
+            msg = "lora_use_dora requires lora_enabled; DoRA is a variant of LoRA, not a standalone mode."
+            raise ValueError(msg)
+        if not self.lora_enabled:
+            return self
+        if self.policy_source != "physicalai":
+            msg = (
+                f"LoRA/DoRA fine-tuning requires policy_source='physicalai', got {self.policy_source!r}: "
+                "lerobot-wrapped policies do not accept lora_* constructor arguments."
+            )
+            raise ValueError(msg)
+        if self.policy.lower() not in PEFT_POLICIES:
+            msg = (
+                f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
+                f"supported policies are {sorted(PEFT_POLICIES)}."
+            )
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def validate_snapflow(self) -> TrainingJobSpec:
@@ -196,6 +240,14 @@ def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None
         pretrained = PRETRAINED_BASE_CHECKPOINTS.get(spec.policy.lower())
         if pretrained is not None:
             kwargs["pretrained_name_or_path"] = pretrained
+    if spec.lora_enabled:
+        kwargs.update(
+            lora_enabled=True,
+            lora_rank=spec.lora_rank,
+            lora_alpha=spec.lora_alpha,
+            lora_dropout=spec.lora_dropout,
+            lora_use_dora=spec.lora_use_dora,
+        )
     return get_policy(spec.policy, source=spec.policy_source, **kwargs)
 
 

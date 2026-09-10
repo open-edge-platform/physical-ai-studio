@@ -65,6 +65,13 @@ class PeftConfigMixin:
             direction update, which typically improves quality at low ranks at the cost of
             slightly more compute/memory. Only takes effect when ``lora_enabled`` is True.
             See arxiv.org/abs/2402.09353. Defaults to False.
+        lora_lr_scale: Multiplier applied to the optimizer's learning rate (and, where the
+            policy has one, its scheduler decay LR) when ``lora_enabled`` is True. Training
+            only a small fraction of parameters tolerates, and benefits from, a much higher
+            learning rate than full fine-tuning; 10x is a reasonable default. Applied by each
+            policy's own ``configure_optimizers`` only when ``lora_enabled`` is True, on top
+            of whatever ``optimizer_lr``/``learning_rate`` you set, so set that field to the
+            full-fine-tune value you would otherwise use, not the already-scaled one.
     """
 
     lora_enabled: bool = False
@@ -74,6 +81,7 @@ class PeftConfigMixin:
     lora_target_modules: str | tuple[str, ...] | None = None
     lora_adapter_dtype: Literal["float32", "auto"] = "float32"
     lora_use_dora: bool = False
+    lora_lr_scale: float = 10.0
 
     _PEFT_EXCLUSIVE_FLAGS: ClassVar[dict[str, object]] = {}
     """Maps flag name -> default value for fields that ``inject_lora`` overrides.
@@ -115,6 +123,10 @@ class PeftConfigMixin:
 
         if self.lora_adapter_dtype not in {"float32", "auto"}:
             msg = f"Invalid lora_adapter_dtype: {self.lora_adapter_dtype}"
+            raise ValueError(msg)
+
+        if self.lora_lr_scale <= 0:
+            msg = f"lora_lr_scale must be > 0, got {self.lora_lr_scale}"
             raise ValueError(msg)
 
         if self.lora_enabled and self._PEFT_EXCLUSIVE_FLAGS:

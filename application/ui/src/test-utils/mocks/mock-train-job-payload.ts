@@ -21,6 +21,10 @@ const basePayload = {
     val_split: 0.1,
     precision: 'bf16-mixed' as const,
     compile_model: false,
+    lora_enabled: false,
+    lora_rank: 8,
+    lora_dropout: 0.0,
+    lora_use_dora: false,
     snapflow_enabled: false,
     snapflow_distill_epochs: 3,
 };

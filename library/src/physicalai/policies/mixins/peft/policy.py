@@ -5,13 +5,12 @@
 
 from __future__ import annotations
 
-import copy
 import logging
 from typing import TYPE_CHECKING, Protocol, cast
 
 import torch
 
-from .functions import build_lora_config, inject_lora, is_lora_injected, merge_lora_
+from .functions import build_lora_config, inject_lora, is_lora_injected, merged_lora_scope
 
 if TYPE_CHECKING:
     from os import PathLike
@@ -133,16 +132,16 @@ class PeftPolicyMixin:
     ) -> None:
         """Export the policy, merging any LoRA adapters into base weights first.
 
-        If LoRA is enabled and currently injected, exporting is done on a disposable deep
-        copy of ``self.model`` with adapters merged in-place via ``merge_lora_``, so the
-        exported artifact has no ``peft`` dependency and matches the plain (adapter-free)
-        export contract consumed by Runtime's ``InferenceModel``. The live training model
-        (``self.model``) is left untouched. Merging bfloat16-precision LoRA adapters into
-        bfloat16 base weights is lossy; this only affects the exported copy.
+        If LoRA is enabled and currently injected, the adapters are folded into
+        ``self.model``'s base weights for the duration of the export and the tuner
+        wrappers are swapped out of the module tree, so the exported artifact has no
+        ``peft`` dependency and matches the plain (adapter-free) export contract
+        consumed by Runtime's ``InferenceModel``. Afterwards the wrappers are
+        reattached and the base weights restored exactly, leaving the live training
+        model bit-identical to what it was before the call.
 
-        Delegates to ``super().export(...)`` (e.g. ``ExportablePolicyMixin.export()``) to
-        perform the actual backend export, with ``self.model`` temporarily swapped to the
-        merged copy for the duration of that call.
+        Delegates to ``super().export(...)`` (e.g. ``ExportablePolicyMixin.export()``)
+        to perform the actual backend export.
 
         Args:
             output_path: The file path where the exported model will be saved.
@@ -152,33 +151,19 @@ class PeftPolicyMixin:
         """
         self_ = cast("_PeftPolicyHost", self)
         super_export = cast("_PeftPolicyHost", super()).export
-        merged_model = self._merged_lora_model_for_export()
-        if merged_model is None:
+        if not self._should_merge_lora_for_export():
             super_export(output_path, backend, input_sample, **export_kwargs)
             return
 
-        logger.info("Merging LoRA adapters into a copy of the model before export.")
-        original_model = self_.model
-        self_.model = cast("_PeftCapableModel | None", merged_model)
-        try:
+        logger.info("Merging LoRA adapters into the model for export; restored afterwards.")
+        with merged_lora_scope(cast("nn.Module", self_.model)):
             super_export(output_path, backend, input_sample, **export_kwargs)
-        finally:
-            self_.model = original_model
 
-    def _merged_lora_model_for_export(self) -> nn.Module | None:
-        """Return a disposable deep copy of ``self.model`` with LoRA adapters merged in.
-
-        Intended for use inside ``export()`` so exported artifacts fold LoRA adaptation
-        into the base layer weights and carry no ``peft`` dependency. Returns ``None`` if
-        LoRA is not enabled or not currently injected, in which case callers should export
-        ``self.model`` directly.
+    def _should_merge_lora_for_export(self) -> bool:
+        """Return whether ``self.model`` has LoRA adapters that export should merge.
 
         Returns:
-            A merged deep copy of ``self.model``, or ``None`` if there is nothing to merge.
+            True if LoRA is enabled and adapters are currently injected.
         """
         self_ = cast("_PeftPolicyHost", self)
-        if not (self_.config.use_lora and self_.model is not None and is_lora_injected(self_.model)):
-            return None
-        merged_model = copy.deepcopy(self_.model)
-        merge_lora_(merged_model)
-        return merged_model
+        return bool(self_.config.use_lora and self_.model is not None and is_lora_injected(self_.model))

@@ -27,6 +27,7 @@ from training import RunOptions, TrainingJobSpec
 from training.job import (
     CHECKPOINT_NAME,
     EXPORTS_DIRNAME,
+    PEFT_POLICIES,
     PRETRAINED_BASE_CHECKPOINTS,
     SNAPFLOW_CHECKPOINT_NAME,
     build_policy,
@@ -73,6 +74,26 @@ class TestTrainingJobSpec:
         spec = TrainingJobSpec(policy="pi0", max_epochs=5, num_workers=4, device_type="xpu", device_index=1)
 
         assert TrainingJobSpec.model_validate_json(spec.model_dump_json()) == spec
+
+    def test_lora_disabled_by_default(self) -> None:
+        spec = TrainingJobSpec(policy="act")
+
+        assert spec.lora_enabled is False
+        assert (spec.lora_rank, spec.lora_alpha, spec.lora_dropout, spec.lora_use_dora) == (32, None, 0.05, False)
+
+    @pytest.mark.parametrize("policy_name", sorted(PEFT_POLICIES))
+    def test_lora_is_accepted_for_peft_capable_policies(self, policy_name: str) -> None:
+        spec = TrainingJobSpec(policy=policy_name, lora_enabled=True, lora_rank=16, lora_use_dora=True)
+
+        assert (spec.lora_enabled, spec.lora_rank, spec.lora_use_dora) == (True, 16, True)
+
+    def test_lora_is_rejected_for_a_policy_without_peft_support(self) -> None:
+        with pytest.raises(ValidationError):
+            TrainingJobSpec(policy="act", lora_enabled=True)
+
+    def test_lora_is_rejected_for_a_lerobot_sourced_policy(self) -> None:
+        with pytest.raises(ValidationError):
+            TrainingJobSpec(policy="pi05", policy_source="lerobot", lora_enabled=True)
 
     def test_flow_matching_is_the_default(self) -> None:
         assert TrainingJobSpec(policy="pi05").snapflow_start_epoch is None
@@ -122,6 +143,28 @@ class TestBuildPolicy:
             build_policy(TrainingJobSpec(policy="smolvla", policy_source="lerobot"))
 
         assert "pretrained_name_or_path" not in get_policy.call_args.kwargs
+
+    def test_lora_disabled_run_gets_no_lora_kwargs(self) -> None:
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(TrainingJobSpec(policy="pi05"))
+
+        for key in ("lora_enabled", "lora_rank", "lora_alpha", "lora_dropout", "lora_use_dora"):
+            assert key not in get_policy.call_args.kwargs
+
+    def test_lora_enabled_run_passes_lora_kwargs(self) -> None:
+        """Learning-rate scaling for LoRA/DoRA is the library's job (PeftConfigMixin.lora_lr_scale),
+        not the backend's; the backend only forwards the hyperparameters it owns."""
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(
+                TrainingJobSpec(
+                    policy="pi05", lora_enabled=True, lora_rank=16, lora_alpha=32, lora_dropout=0.1, lora_use_dora=True
+                )
+            )
+
+        kwargs = get_policy.call_args.kwargs
+        assert (kwargs["lora_enabled"], kwargs["lora_rank"], kwargs["lora_alpha"]) == (True, 16, 32)
+        assert (kwargs["lora_dropout"], kwargs["lora_use_dora"]) == (0.1, True)
+        assert "optimizer_lr" not in kwargs
 
     def test_resume_loads_the_checkpoint_instead_of_a_new_policy(self, tmp_path: Path) -> None:
         checkpoint = tmp_path / CHECKPOINT_NAME

@@ -7,6 +7,7 @@ import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { Table } from '../../../components/table/table';
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
+import { PeftBadge } from '../shared/peft-badge';
 import { SnapflowBadge } from '../shared/snapflow-badge';
 import { getTrainerLabel } from '../shared/trainer';
 import { ModelDownloadDialog } from './model-download-dialog';
@@ -65,6 +66,7 @@ export const ModelRow = ({
             <Flex alignItems='center' gap='size-100'>
                 <Text>{model.name}</Text>
                 {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
+                <PeftBadge isEnabled={model.lora_enabled} isDora={model.lora_use_dora} />
                 <SnapflowBadge isEnabled={model.snapflow_enabled} />
             </Flex>
             <Text>{model.policy.toUpperCase()}</Text>

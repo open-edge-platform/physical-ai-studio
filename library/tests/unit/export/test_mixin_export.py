@@ -716,9 +716,7 @@ class TestSampleInputFromSchema:
         ]
 
         policy = ExportablePolicyMixin()
-        with patch.object(
-            ExportablePolicyMixin, "inputs_schema", new_callable=lambda: property(lambda _self: schema)
-        ):
+        with patch.object(ExportablePolicyMixin, "inputs_schema", new_callable=lambda: property(lambda _self: schema)):
             sample = policy.sample_input
 
         assert sample is not None
@@ -874,3 +872,102 @@ class TestPostExportHooks:
         wrapper.export(backend="openvino", output_path=output_path)
 
         assert output_path.exists()
+
+
+class CompiledTrainingModel(torch.nn.Module):
+    """Model that mirrors how policies compile and branch on training mode.
+
+    Policies rebind hot methods on the instance (``self.forward =
+    torch.compile(self.forward)``) and branch on ``self.training`` in ``forward``,
+    computing a loss during training and predicting during eval. The loss branch
+    needs keys the export input sample does not carry, so tracing in training mode
+    fails loudly.
+    """
+
+    def __init__(self, input_dim: int = 10, output_dim: int = 5):
+        super().__init__()
+        self.input_dim = input_dim
+        self.linear = torch.nn.Linear(input_dim, output_dim)
+        self.forward = torch.compile(self.forward, mode="default")  # type: ignore[method-assign]
+
+    def forward(self, batch):
+        if self.training:
+            return self.linear(batch["input_tensor"]) - batch["action"]
+        return self.linear(batch["input_tensor"])
+
+    @property
+    def sample_input(self) -> dict[str, torch.Tensor]:
+        """Generate sample input."""
+        return {"input_tensor": torch.randn(1, self.input_dim)}
+
+
+class TestExportReadyModel:
+    """Tests for the _export_ready_model context manager."""
+
+    def test_strips_instance_compile_wrapper_and_restores_it(self):
+        """Compiled methods rebound on the instance are removed for the duration."""
+        model = CompiledTrainingModel()
+        wrapper = ExportWrapper(model)
+        compiled = vars(model)["forward"]
+
+        with wrapper._export_ready_model():
+            assert "forward" not in vars(model)
+            assert model.forward.__func__ is CompiledTrainingModel.forward
+
+        assert vars(model)["forward"] is compiled
+
+    def test_strips_compile_wrappers_on_submodules(self):
+        """Nested modules are stripped too, not just the root."""
+        model = ModelWithSampleInput()
+        model.linear.forward = torch.compile(model.linear.forward, mode="default")
+        compiled = vars(model.linear)["forward"]
+        wrapper = ExportWrapper(model)
+
+        with wrapper._export_ready_model():
+            assert "forward" not in vars(model.linear)
+
+        assert vars(model.linear)["forward"] is compiled
+
+    @pytest.mark.parametrize("was_training", [True, False])
+    def test_forces_eval_and_restores_training_mode(self, was_training):
+        """The model is traced in eval mode, then put back the way it was."""
+        model = ModelWithSampleInput()
+        model.train(was_training)
+        wrapper = ExportWrapper(model)
+
+        with wrapper._export_ready_model():
+            assert not model.training
+
+        assert model.training is was_training
+
+    def test_restores_state_when_the_block_raises(self):
+        """A failing export must not leave the model uncompiled or in eval mode."""
+        model = CompiledTrainingModel()
+        model.train()
+        compiled = vars(model)["forward"]
+        wrapper = ExportWrapper(model)
+
+        with pytest.raises(RuntimeError, match="export blew up"):
+            with wrapper._export_ready_model():
+                msg = "export blew up"
+                raise RuntimeError(msg)
+
+        assert vars(model)["forward"] is compiled
+        assert model.training
+
+    def test_export_traces_the_eval_branch_of_a_training_mode_model(self, tmp_path):
+        """A model left in training mode is traced through its eval branch.
+
+        The training branch needs an ``action`` key the export sample does not
+        carry, so tracing it at all would fail.
+        """
+        model = CompiledTrainingModel()
+        model.train()
+        wrapper = ExportWrapper(model)
+
+        output_path = tmp_path / "model.onnx"
+        wrapper.to_onnx(output_path)
+
+        assert output_path.exists()
+        onnx.checker.check_model(onnx.load(str(output_path)))
+        assert model.training

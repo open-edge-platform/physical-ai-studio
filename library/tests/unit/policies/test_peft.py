@@ -12,7 +12,7 @@ a given policy is covered by that policy's own test module (e.g.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 import torch
@@ -24,6 +24,7 @@ from physicalai.policies.mixins.peft import (
     is_lora_injected,
     log_trainable_parameters,
     merge_lora_,
+    merged_lora_scope,
 )
 
 if TYPE_CHECKING:
@@ -121,6 +122,18 @@ class TestPeftConfigMixin:
         """Test lora_use_dora can be enabled."""
         config = PeftConfigMixin(lora_enabled=True, lora_use_dora=True)
         assert config.lora_use_dora is True
+
+    def test_lora_lr_scale_default(self) -> None:
+        """Test lora_lr_scale defaults to 10x."""
+        config = PeftConfigMixin()
+        assert config.lora_lr_scale == 10.0
+
+    def test_lora_lr_scale_zero_or_negative_rejected(self) -> None:
+        """Test lora_lr_scale must be > 0."""
+        with pytest.raises(ValueError, match="lora_lr_scale"):
+            PeftConfigMixin(lora_lr_scale=0)
+        with pytest.raises(ValueError, match="lora_lr_scale"):
+            PeftConfigMixin(lora_lr_scale=-1.0)
 
 
 class TestPeftHelpers:
@@ -289,6 +302,101 @@ class TestPeftHelpers:
         torch.testing.assert_close(out_before, out_after, atol=1e-4, rtol=1e-4)
 
 
+class TestMergedLoraScope:
+    """Tests for the reversible merged_lora_scope context manager."""
+
+    @pytest.mark.parametrize("use_dora", [False, True])
+    def test_merges_inside_the_scope_and_restores_exactly_on_exit(self, use_dora: bool) -> None:
+        """Test the scope hides the adapters, then restores weights bit-for-bit."""
+        torch.manual_seed(0)
+        model = _make_toy_module()
+        lora_config = build_lora_config(
+            rank=4,
+            alpha=8,
+            dropout=0.0,
+            target_modules=["q_proj", "v_proj"],
+            init_lora_weights=False,
+            use_dora=use_dora,
+        )
+        inject_lora(model, lora_config)
+        model.eval()
+
+        x = torch.randn(3, 8)
+        with torch.no_grad():
+            adapted = model(x)
+        weights_before = {name: param.detach().clone() for name, param in model.named_parameters()}
+
+        with merged_lora_scope(model) as merged:
+            assert merged is True
+            assert not is_lora_injected(model), "tuner layers must be out of the tree while merged"
+            with torch.no_grad():
+                torch.testing.assert_close(model(x), adapted, atol=1e-4, rtol=1e-4)
+
+        assert is_lora_injected(model)
+        for name, param in model.named_parameters():
+            assert torch.equal(param, weights_before[name]), f"{name} was not restored exactly"
+
+    def test_scope_is_a_noop_without_adapters(self) -> None:
+        """Test a model with no adapters passes through untouched."""
+        model = _make_toy_module()
+        weights_before = {name: param.detach().clone() for name, param in model.named_parameters()}
+
+        with merged_lora_scope(model) as merged:
+            assert merged is False
+
+        for name, param in model.named_parameters():
+            assert torch.equal(param, weights_before[name])
+
+    def test_restores_when_the_block_raises(self) -> None:
+        """Test the adapters come back even if the wrapped work fails."""
+        torch.manual_seed(0)
+        model = _make_toy_module()
+        lora_config = build_lora_config(
+            rank=4,
+            alpha=8,
+            dropout=0.0,
+            target_modules=["q_proj"],
+            init_lora_weights=False,
+        )
+        inject_lora(model, lora_config)
+        weights_before = {name: param.detach().clone() for name, param in model.named_parameters()}
+
+        with pytest.raises(RuntimeError, match="boom"):
+            with merged_lora_scope(model):
+                msg = "boom"
+                raise RuntimeError(msg)
+
+        assert is_lora_injected(model)
+        for name, param in model.named_parameters():
+            assert torch.equal(param, weights_before[name]), f"{name} was not restored exactly"
+
+    def test_snapshot_does_not_copy_the_whole_model(self) -> None:
+        """Test only the adapted layers are snapshotted, not every parameter.
+
+        The scope exists to avoid duplicating a multi-billion-parameter model on the
+        accelerator, so the snapshot must stay proportional to the targeted layers.
+        """
+        model = _make_toy_module()
+        lora_config = build_lora_config(rank=4, alpha=8, dropout=0.0, target_modules=["q_proj"])
+        inject_lora(model, lora_config)
+
+        allocations: list[tuple[int, ...]] = []
+        original_to = torch.Tensor.to
+
+        def tracking_to(self: torch.Tensor, *args: object, **kwargs: object) -> torch.Tensor:
+            if kwargs.get("copy") is True:
+                allocations.append(tuple(self.shape))
+            return original_to(self, *args, **kwargs)
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(torch.Tensor, "to", tracking_to)
+            with merged_lora_scope(model):
+                pass
+
+        # One q_proj weight per targeted layer (bias=False on the stub), nothing else.
+        assert allocations == [(16, 16)]
+
+
 class _ToyPeftModel(torch.nn.Module):
     """Toy model implementing the PeftModelMixin contract for host tests."""
 
@@ -307,10 +415,13 @@ class _ToyPeftModel(torch.nn.Module):
 
 
 class _ExportRecorder:
-    """Records the model instance handed to export() by a host policy."""
+    """Records what the terminal export() sees while the merge scope is active."""
 
-    def __init__(self) -> None:
+    def __init__(self, probe_input: torch.Tensor | None = None) -> None:
         self.exported_model: torch.nn.Module | None = None
+        self.lora_injected: bool | None = None
+        self.probe_input = probe_input
+        self.probe_output: torch.Tensor | None = None
 
 
 def _make_host_policy_class(recorder: _ExportRecorder) -> type:
@@ -320,7 +431,12 @@ def _make_host_policy_class(recorder: _ExportRecorder) -> type:
         """Stand-in for ExportablePolicyMixin: terminal export() reading self.model."""
 
         def export(self, output_path: object, backend_arg: object, input_sample: object = None, **kw: object) -> None:
-            recorder.exported_model = self.model  # type: ignore[attr-defined]
+            model = self.model  # type: ignore[attr-defined]
+            recorder.exported_model = model
+            recorder.lora_injected = is_lora_injected(model)
+            if recorder.probe_input is not None:
+                with torch.no_grad():
+                    recorder.probe_output = model(recorder.probe_input)
             del output_path, backend_arg, input_sample, kw
 
     class _HostPolicy(PeftPolicyMixin, _ExportableStub):
@@ -346,24 +462,78 @@ class TestPeftPolicyMixinExport:
         assert recorder.exported_model is original_model
         assert host.model is original_model
 
-    def test_export_with_injected_lora_swaps_in_merged_model_and_restores(self) -> None:
-        """Test export() swaps self.model to a merged copy for the call, then restores it."""
+    def test_export_merges_adapters_for_the_call_then_restores_them(self) -> None:
+        """Test export() sees an adapter-free model, and the live one is restored exactly."""
         from physicalai.policies.mixins.peft import build_lora_config, inject_lora
 
-        recorder = _ExportRecorder()
+        torch.manual_seed(0)
+        probe = torch.randn(3, 8)
+        recorder = _ExportRecorder(probe_input=probe)
         host_cls = _make_host_policy_class(recorder)
         host = host_cls(use_lora=True)
         original_model = host.model
 
-        lora_config = build_lora_config(rank=4, alpha=8, dropout=0.0, target_modules=["q_proj", "v_proj"])
+        lora_config = build_lora_config(
+            rank=4,
+            alpha=8,
+            dropout=0.0,
+            target_modules=["q_proj", "v_proj"],
+            init_lora_weights=False,
+        )
         inject_lora(host.model, lora_config)
+        host.model.eval()
+        with torch.no_grad():
+            adapted_output = host.model(probe)
+        weights_before = {name: param.detach().clone() for name, param in host.model.named_parameters()}
 
         host.export("out", "torch")
 
-        assert recorder.exported_model is not None
-        assert recorder.exported_model is not original_model, "export() should use a disposable merged copy"
-        assert not is_lora_injected(recorder.exported_model)
-        assert host.model is original_model, "the live training model must be restored after export()"
+        # During export: same object, adapters folded in and swapped out of the tree.
+        assert recorder.exported_model is original_model
+        assert recorder.lora_injected is False, "export() should not see peft tuner layers"
+        torch.testing.assert_close(recorder.probe_output, adapted_output, atol=1e-5, rtol=1e-5)
+
+        # After export: adapters reattached and base weights restored bit-exactly.
+        assert host.model is original_model
+        assert is_lora_injected(host.model)
+        for name, param in host.model.named_parameters():
+            assert torch.equal(param, weights_before[name]), f"{name} was not restored exactly"
+        with torch.no_grad():
+            torch.testing.assert_close(host.model(probe), adapted_output, atol=0.0, rtol=0.0)
+
+    def test_export_restores_adapters_when_the_backend_raises(self) -> None:
+        """Test a failing backend export still leaves the live model adapted and intact."""
+        from physicalai.policies.mixins.peft import PeftPolicyMixin, build_lora_config, inject_lora
+
+        class _FailingStub:
+            def export(self, *args: object, **kwargs: object) -> None:
+                del args, kwargs
+                msg = "backend blew up"
+                raise RuntimeError(msg)
+
+        class _HostPolicy(PeftPolicyMixin, _FailingStub):
+            def __init__(self) -> None:
+                self.config = type("Cfg", (), {"use_lora": True})()
+                self.model: torch.nn.Module | None = _ToyPeftModel()
+
+        host = _HostPolicy()
+        assert host.model is not None
+        lora_config = build_lora_config(
+            rank=4,
+            alpha=8,
+            dropout=0.0,
+            target_modules=["q_proj", "v_proj"],
+            init_lora_weights=False,
+        )
+        inject_lora(host.model, lora_config)
+        weights_before = {name: param.detach().clone() for name, param in host.model.named_parameters()}
+
+        with pytest.raises(RuntimeError, match="backend blew up"):
+            host.export("out", "torch")
+
+        assert is_lora_injected(host.model)
+        for name, param in host.model.named_parameters():
+            assert torch.equal(param, weights_before[name]), f"{name} was not restored exactly"
 
     def test_export_with_lora_enabled_but_not_injected_passes_through(self) -> None:
         """Test export() falls back to the live model if LoRA is enabled but never injected."""
@@ -375,6 +545,7 @@ class TestPeftPolicyMixinExport:
         host.export("out", "torch")
 
         assert recorder.exported_model is original_model
+        assert recorder.lora_injected is False
         assert host.model is original_model
 
 
@@ -411,3 +582,112 @@ class TestPeftPolicyMixinOnFitStart:
         host = self._make_host(use_lora=False, inject=False)
         host.on_fit_start()  # should not raise
 
+
+class _CompiledPeftModel(torch.nn.Module):
+    """Toy model that compiles its forward on the instance, as Pi05/Pi0/SmolVLA do.
+
+    ``forward`` branches on training mode like a real policy: a loss during training
+    (needing an ``action`` key export samples do not carry) and a prediction in eval.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.q_proj = torch.nn.Linear(8, 8, bias=False)
+        self.forward = torch.compile(self.forward, mode="default")  # type: ignore[method-assign]
+
+    def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        if self.training:
+            return self.q_proj(batch["x"]) - batch["action"]
+        return self.q_proj(batch["x"])
+
+    @classmethod
+    def get_default_peft_targets(cls) -> str:
+        del cls
+        return r"q_proj"
+
+
+class _IdentityDictPreprocessor(torch.nn.Module):
+    """Identity preprocessor for a dict-batch model."""
+
+    def forward(self, batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        return batch
+
+
+def _make_compiled_peft_host() -> "PeftPolicyMixin":
+    from physicalai.export import ExportBackend, ExportablePolicyMixin
+    from physicalai.policies.mixins.peft import PeftPolicyMixin
+
+    class _HostPolicy(PeftPolicyMixin, ExportablePolicyMixin):
+        def __init__(self) -> None:
+            self.config = type("Cfg", (), {"use_lora": True})()
+            self.model = _CompiledPeftModel()
+            self._preprocessor = _IdentityDictPreprocessor()
+            self.device = torch.device("cpu")
+
+        @property
+        def sample_input(self) -> dict[str, torch.Tensor]:
+            return {"x": torch.randn(1, 8)}
+
+        @staticmethod
+        def get_supported_export_backends() -> list[ExportBackend]:
+            return [ExportBackend.ONNX]
+
+    return _HostPolicy()
+
+
+class TestPeftExportIntegration:
+    """End-to-end tests of PeftPolicyMixin stacked on the real ExportablePolicyMixin."""
+
+    def test_export_traces_the_merged_weights_of_a_compiled_training_mode_model(self, tmp_path) -> None:
+        """Regression: a compiled, training-mode, LoRA-adapted policy exports correctly.
+
+        Export used to trace a ``copy.deepcopy`` of the model, but ``copy`` treats plain
+        functions as atomic, so the copy's compiled ``forward`` kept dispatching into the
+        original module -- unmerged, and still in training mode, which crashed on the
+        missing ``action`` key.
+        """
+        import onnx
+
+        torch.manual_seed(0)
+        host = _make_compiled_peft_host()
+        model = cast("_CompiledPeftModel", host.model)
+        lora_config = build_lora_config(
+            rank=4,
+            alpha=8,
+            dropout=0.0,
+            target_modules=["q_proj"],
+            init_lora_weights=False,
+        )
+        inject_lora(model, lora_config)
+        model.train()
+
+        adapter = model.q_proj
+        base_weight = adapter.get_base_layer().weight.detach().clone()
+        merged_weight = base_weight + adapter.get_delta_weight("default").detach()
+        compiled_forward = vars(model)["forward"]
+
+        output_path = tmp_path / "model.onnx"
+        host.export(output_path, backend="onnx")
+
+        # The traced graph carries the merged weights, not the unadapted base ones.
+        graph = onnx.load(str(output_path)).graph
+        candidates = [
+            torch.tensor(onnx.numpy_helper.to_array(tensor).copy())
+            for tensor in graph.initializer
+            if onnx.numpy_helper.to_array(tensor).shape == (8, 8)
+        ]
+        assert candidates, "expected the q_proj weight among the ONNX initializers"
+
+        def matches(expected: torch.Tensor) -> bool:
+            return any(
+                torch.allclose(c, expected, atol=1e-5) or torch.allclose(c, expected.T, atol=1e-5) for c in candidates
+            )
+
+        assert matches(merged_weight), "exported graph should hold the merged LoRA weights"
+        assert not matches(base_weight), "exported graph should not hold the unadapted base weights"
+
+        # The live policy is untouched: adapters back, weights exact, still compiled and training.
+        assert is_lora_injected(model)
+        assert torch.equal(adapter.get_base_layer().weight, base_weight)
+        assert model.training
+        assert vars(model)["forward"] is compiled_forward

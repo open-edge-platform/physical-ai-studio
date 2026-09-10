@@ -21,6 +21,7 @@ import { notify } from '../../../components/notification/notification.component'
 import { Table } from '../../../components/table/table';
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
+import { PeftBadge } from '../shared/peft-badge';
 import { SnapflowBadge } from '../shared/snapflow-badge';
 import { SingleBadge, SplitBadge } from '../shared/split-badge';
 import { getTrainerLabel } from '../shared/trainer';
@@ -29,6 +30,21 @@ import { JobRowContent } from './job-row-content';
 
 import classes from './job-table.module.css';
 
+/** Small pill naming the remote trainer a job runs on. Hidden entirely for local jobs. */
+const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
+    const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+
+    if (payload.training_target !== 'remote') {
+        return null;
+    }
+
+    const remoteTrainer = remoteTrainers.find((trainer) => trainer.id === payload.remote_trainer_id);
+    const label = remoteTrainer?.name ?? payload.remote_trainer_url ?? 'unknown';
+    const text = `Remote · ${label}`;
+
+    return <SingleBadge color='var(--spectrum-global-color-purple-600)' text={text} title={text} preserveCase />;
+};
+
 const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
     if (job.status === 'running') {
         return (
@@ -36,7 +52,9 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
                     <SplitBadge first={job.status} second={job.message} />
+                    <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
                     <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
+                    <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time ? (
                     <Text UNSAFE_className={classes.rowInfo}>
@@ -55,7 +73,9 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
                     <SingleBadge color={color} text={job.status} />
+                    <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
                     <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
+                    <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time && job.end_time && (
                     <Text UNSAFE_className={classes.rowInfo}>
