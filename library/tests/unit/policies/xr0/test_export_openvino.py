@@ -11,11 +11,10 @@ import torch
 from physicalai.policies.xr0.export_openvino import (
     export_add_deepstack_embeds,
     export_build_additive_causal_mask,
-    export_fast_pos_embed_interpolate,
     export_image_token_gather,
     export_mrope_position_ids,
+    export_precompute_vision_geometry,
     export_rmsnorm_forward,
-    export_rot_pos_emb,
     export_scatter_visual_embeds,
     export_vision_attn_forward,
     install_export_rmsnorm,
@@ -42,50 +41,35 @@ class TestExportPatchParity:
     to stock, so the outputs must match to floating-point tolerance.
     """
 
-    def test_rot_pos_emb_matches_stock(self) -> None:
-        """``export_rot_pos_emb`` matches stock ``rot_pos_emb`` (weight-free)."""
-        from transformers.models.qwen3_vl.modeling_qwen3_vl import (
-            Qwen3VLVisionModel,
-            Qwen3VLVisionRotaryEmbedding,
-        )
+    def test_precompute_vision_geometry_matches_stock(self) -> None:
+        """Injecting the precomputed geometry leaves the vision tower output unchanged.
 
-        torch.manual_seed(0)
-        merge_size = 2
-        # rotary emb is a deterministic ``inv_freq`` buffer -> no learned weights.
-        visual = types.SimpleNamespace(
-            spatial_merge_size=merge_size,
-            rotary_pos_emb=Qwen3VLVisionRotaryEmbedding(8),
-        )
-        # Two images (multi-frame on the second) to exercise the repeat path.
-        grid_thw = torch.tensor([[1, 4, 6], [2, 2, 8]])
+        ``export_precompute_vision_geometry`` computes the tower's rotary
+        ``position_ids``, interpolation ``indices``/``weights`` and ``cu_seqlens``
+        off the concrete grid; the export patch injects them back through the
+        forward ``kwargs`` so the ``get_vision_*`` helpers pop them instead of
+        rebuilding them from the untraceable ``grid_thw.tolist()`` loops. Feeding
+        the tower with and without the injected kwargs must therefore produce
+        identical outputs.
+        """
+        visual = _build_shim().model.visual
+        batch = _export_batch()
+        grid = batch["image_grid_thw"]
+        pixel_values = batch["pixel_values"].type(visual.dtype)
 
-        stock = Qwen3VLVisionModel.rot_pos_emb(visual, grid_thw)
-        exported = export_rot_pos_emb(visual, grid_thw.tolist())
+        precomputed = export_precompute_vision_geometry(visual, grid)
+        assert set(precomputed) == {"position_ids", "interp_indices", "interp_weights", "cu_seqlens"}
 
-        assert exported.shape == stock.shape
-        assert torch.equal(exported, stock)
+        with torch.no_grad():
+            stock = visual(pixel_values, grid_thw=grid, return_dict=True)
+            injected = visual(pixel_values, grid_thw=grid, return_dict=True, **precomputed)
 
-    def test_fast_pos_embed_interpolate_matches_stock(self) -> None:
-        """``export_fast_pos_embed_interpolate`` matches the stock interpolation."""
-        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLVisionModel
-
-        torch.manual_seed(0)
-        num_grid_per_side = 6
-        hidden = 16
-        merge_size = 2
-        pos_embed = torch.nn.Embedding(num_grid_per_side * num_grid_per_side, hidden)
-        visual = types.SimpleNamespace(
-            num_grid_per_side=num_grid_per_side,
-            pos_embed=pos_embed,
-            config=types.SimpleNamespace(spatial_merge_size=merge_size),
-        )
-        grid_thw = torch.tensor([[1, 4, 6], [1, 2, 8]])
-
-        stock = Qwen3VLVisionModel.fast_pos_embed_interpolate(visual, grid_thw)
-        exported = export_fast_pos_embed_interpolate(visual, grid_thw.tolist())
-
-        assert exported.shape == stock.shape
-        assert torch.allclose(exported, stock, atol=1e-6)
+        assert torch.allclose(injected.pooler_output, stock.pooler_output, atol=1e-6)
+        assert len(injected.deepstack_features) == len(stock.deepstack_features)
+        for injected_feature, stock_feature in zip(
+            injected.deepstack_features, stock.deepstack_features, strict=True
+        ):
+            assert torch.allclose(injected_feature, stock_feature, atol=1e-6)
 
     def test_vision_attn_forward_matches_stock(self) -> None:
         """``export_vision_attn_forward`` matches stock attention (SDPA path)."""

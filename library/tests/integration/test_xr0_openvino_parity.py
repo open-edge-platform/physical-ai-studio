@@ -59,9 +59,14 @@ _SEED = 42
 # compile's first inference reproducible, so the parity comparison is stable.
 _OV_RANDOM_UNIFORM_GLOBAL_SEED = 42
 _OV_RANDOM_UNIFORM_OP_SEED = 7
-# The exported IR runs its DiT head in bf16, so the OpenVINO action differs from
-# the eager (also bf16) action by a small kernel/accumulation epsilon even when
-# fed identical noise; treat anything under this as a match.
+# Floating dtype for BOTH the eager reference policy and the exported IR. Running
+# both backends in fp32 isolates the intrinsic OpenVINO-vs-PyTorch kernel gap
+# from the bf16 rounding: if the eager-vs-OV diff collapses well under tolerance
+# in fp32, the residual bf16 diff is confirmed as accumulation/kernel epsilon
+# rather than an algorithmic export mismatch.
+_POLICY_DTYPE = "float32"
+# In fp32 the OpenVINO action matches the eager action to a tight kernel epsilon;
+# treat anything under this as a match.
 _MAX_ABS_DIFF_TOLERANCE = 0.05
 _MIN_COSINE_SIMILARITY = 0.99
 
@@ -102,7 +107,7 @@ def _build_native_policy() -> XR0:
         pretrained_name_or_path=_CHECKPOINT,
         dataset_stats=_build_dataset_stats(),
         vlm_attn_implementation="sdpa",
-        dtype="bfloat16",
+        dtype=_POLICY_DTYPE,
         num_inference_steps=_NUM_INFERENCE_STEPS,
     )
     policy.eval()

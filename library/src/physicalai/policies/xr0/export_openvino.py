@@ -99,140 +99,49 @@ def install_export_rmsnorm(module: torch.nn.Module) -> int:
 # --------------------------------------------------------------------------- #
 
 
-def export_rot_pos_emb(visual: Any, grid_thw_list: list[list[int]]) -> torch.Tensor:  # noqa: PLR0914, ANN401
-    """Vision rotary position embeddings driven by a *Python* grid list.
+def export_precompute_vision_geometry(visual: Any, image_grid_thw: torch.Tensor) -> dict[str, torch.Tensor]:  # noqa: ANN401
+    """Precompute the vision tower's data-dependent geometry tensors off-graph.
 
-    Numerically identical to stock ``Qwen3VLVisionModel.rot_pos_emb``, but it
-    iterates over the Python constant ``grid_thw_list`` instead of
-    ``grid_thw.tolist()``. Under ``torch.export`` the baked ``grid_thw`` buffer is
-    a lifted tensor input, so ``.tolist()`` would yield unbacked symints and the
-    per-image ``arange`` / ``reshape`` shapes could not be resolved; the constant
-    ints keep every shape concrete. For each image it enumerates the (row, col)
-    patch coordinates in ``spatial_merge_size`` blocks, gathers their rotary
-    frequencies from the shared table and flattens them.
-
-    Args:
-        visual: The vision tower (reads ``spatial_merge_size`` and ``rotary_pos_emb``).
-        grid_thw_list: Per-image ``[t, h, w]`` geometry as plain Python ints.
-
-    Returns:
-        The flattened rotary position embeddings for all vision patches.
-    """
-    merge_size = visual.spatial_merge_size
-
-    max_hw = max(max(h, w) for _, h, w in grid_thw_list)
-    freq_table = visual.rotary_pos_emb(max_hw)
-    device = freq_table.device
-
-    total_tokens = sum(t * h * w for t, h, w in grid_thw_list)
-    pos_ids = torch.empty((total_tokens, 2), dtype=torch.long, device=device)
-
-    offset = 0
-    for num_frames, height, width in grid_thw_list:
-        # Patch coordinates are laid out in spatial_merge_size x spatial_merge_size
-        # blocks (matching how the merger later folds neighbouring patches
-        # together), so build row/col indices as block-offset + intra-block-offset.
-        merged_h, merged_w = height // merge_size, width // merge_size
-        block_rows = torch.arange(merged_h, device=device)
-        block_cols = torch.arange(merged_w, device=device)
-        intra_row = torch.arange(merge_size, device=device)
-        intra_col = torch.arange(merge_size, device=device)
-        row_idx = block_rows[:, None, None, None] * merge_size + intra_row[None, None, :, None]
-        col_idx = block_cols[None, :, None, None] * merge_size + intra_col[None, None, None, :]
-        row_idx = row_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-        col_idx = col_idx.expand(merged_h, merged_w, merge_size, merge_size).reshape(-1)
-        coords = torch.stack((row_idx, col_idx), dim=-1)
-        if num_frames > 1:
-            # Temporal frames share the same spatial grid, so repeat it.
-            coords = coords.repeat(num_frames, 1)
-        num_tokens = coords.shape[0]
-        pos_ids[offset : offset + num_tokens] = coords
-        offset += num_tokens
-
-    embeddings = freq_table[pos_ids]
-    return embeddings.flatten(1)
-
-
-def export_fast_pos_embed_interpolate(visual: Any, grid_thw_list: list[list[int]]) -> torch.Tensor:  # noqa: PLR0914, ANN401
-    """Bilinearly interpolate the learned position embeddings to the grid.
-
-    Numerically identical to stock ``Qwen3VLVisionModel.fast_pos_embed_interpolate``,
-    but driven by the Python constant ``grid_thw_list`` so the per-image
-    ``torch.linspace(0, num_grid_per_side - 1, h)`` calls take concrete sizes.
-    Under ``torch.export`` those ``linspace`` bounds come from ``grid_thw`` (a
-    lifted tensor input via ``.tolist()``), which triggers a data-dependent guard;
-    the constant ints avoid it. For each image it maps the target ``h x w`` grid
-    onto the learned ``num_grid_per_side`` grid, gathers the four surrounding
-    embeddings and blends them with the fractional ``(dh, dw)`` bilinear weights,
-    then reorders the patches into ``spatial_merge_size`` blocks.
+    Since transformers 5.10 ``Qwen3VLVisionModel.forward`` builds its
+    interpolation position-embedding indices/weights, rotary ``position_ids`` and
+    ``cu_seqlens`` through the standalone ``transformers.vision_utils.get_vision_*``
+    helpers, each of which iterates ``grid_thw.tolist()`` (untraceable under
+    ``torch.export``). Every helper first pops a precomputed tensor from its
+    ``kwargs`` when present, so the export path computes them once here from the
+    fixed baked geometry (concrete ints, eager) and injects them back through the
+    forward ``kwargs`` (see :meth:`XR0Qwen3VL._ensure_export_patch`). The injected
+    values are exactly what the tower would compute itself, so the traced graph is
+    numerically unchanged but free of the data-dependent ``.tolist()`` loops.
 
     Args:
-        visual: The vision tower (reads ``num_grid_per_side``, ``pos_embed`` and
-            ``config.spatial_merge_size``).
-        grid_thw_list: Per-image ``[t, h, w]`` geometry as plain Python ints.
+        visual: The vision tower (reads ``num_grid_per_side`` / ``spatial_merge_size``
+            and the ``interpolation_mode`` / ``interpolation_align_corners`` flags).
+        image_grid_thw: The fixed vision geometry ``(num_images, 3)``.
 
     Returns:
-        The interpolated position embeddings for all vision patches.
+        Mapping of the stock forward kwarg names (``position_ids``,
+        ``interp_indices``, ``interp_weights``, ``cu_seqlens``) to their
+        precomputed tensors.
     """
-    grid_ts = [row[0] for row in grid_thw_list]
-    grid_hs = [row[1] for row in grid_thw_list]
-    grid_ws = [row[2] for row in grid_thw_list]
-    device = visual.pos_embed.weight.device
+    from transformers.vision_utils import (  # noqa: PLC0415
+        get_vision_cu_seqlens,
+        get_vision_interpolation_indices_and_weights,
+        get_vision_position_ids,
+    )
 
-    # Four accumulators = the four bilinear corners (floor/ceil x floor/ceil) of
-    # the learned-grid neighbours for every target patch.
-    idx_list: list[list[float]] = [[] for _ in range(4)]
-    weight_list: list[list[float]] = [[] for _ in range(4)]
-
-    for _t, h, w in grid_thw_list:
-        # Sample positions on the learned grid for the target h/w axes.
-        h_idxs = torch.linspace(0, visual.num_grid_per_side - 1, h)
-        w_idxs = torch.linspace(0, visual.num_grid_per_side - 1, w)
-        h_idxs_floor = h_idxs.int()
-        w_idxs_floor = w_idxs.int()
-        h_idxs_ceil = (h_idxs.int() + 1).clip(max=visual.num_grid_per_side - 1)
-        w_idxs_ceil = (w_idxs.int() + 1).clip(max=visual.num_grid_per_side - 1)
-        # Fractional distances -> bilinear interpolation weights.
-        dh = h_idxs - h_idxs_floor
-        dw = w_idxs - w_idxs_floor
-        base_h = h_idxs_floor * visual.num_grid_per_side
-        base_h_ceil = h_idxs_ceil * visual.num_grid_per_side
-        indices = [
-            (base_h[None].T + w_idxs_floor[None]).flatten(),
-            (base_h[None].T + w_idxs_ceil[None]).flatten(),
-            (base_h_ceil[None].T + w_idxs_floor[None]).flatten(),
-            (base_h_ceil[None].T + w_idxs_ceil[None]).flatten(),
-        ]
-        weights = [
-            ((1 - dh)[None].T * (1 - dw)[None]).flatten(),
-            ((1 - dh)[None].T * dw[None]).flatten(),
-            (dh[None].T * (1 - dw)[None]).flatten(),
-            (dh[None].T * dw[None]).flatten(),
-        ]
-        for i in range(4):
-            idx_list[i].extend(indices[i].tolist())
-            weight_list[i].extend(weights[i].tolist())
-
-    idx_tensor = torch.tensor(idx_list, dtype=torch.long, device=device)
-    weight_tensor = torch.tensor(weight_list, dtype=visual.pos_embed.weight.dtype, device=device)
-    # Blend the four gathered corners with their bilinear weights.
-    pos_embeds = visual.pos_embed(idx_tensor).to(device) * weight_tensor[:, :, None]
-    patch_pos_embeds = pos_embeds[0] + pos_embeds[1] + pos_embeds[2] + pos_embeds[3]
-    patch_pos_embeds = patch_pos_embeds.split([h * w for h, w in zip(grid_hs, grid_ws, strict=False)])
-
-    # Reorder each image's patches into spatial_merge_size blocks so they line up
-    # with the tower's merged token ordering.
-    patch_pos_embeds_permute = []
-    merge_size = visual.config.spatial_merge_size
-    for patch_pos_embed, t, h, w in zip(patch_pos_embeds, grid_ts, grid_hs, grid_ws, strict=False):
-        pos_embed = patch_pos_embed.repeat(t, 1)
-        pos_embed = (
-            pos_embed.view(t, h // merge_size, merge_size, w // merge_size, merge_size, -1)
-            .permute(0, 1, 3, 2, 4, 5)
-            .flatten(0, 4)
-        )
-        patch_pos_embeds_permute.append(pos_embed)
-    return torch.cat(patch_pos_embeds_permute)
+    interp_indices, interp_weights = get_vision_interpolation_indices_and_weights(
+        image_grid_thw,
+        num_grid_per_side=visual.num_grid_per_side,
+        mode=visual.interpolation_mode,
+        align_corners=visual.interpolation_align_corners,
+        spatial_merge_size=visual.config.spatial_merge_size,
+    )
+    return {
+        "position_ids": get_vision_position_ids(image_grid_thw, visual.spatial_merge_size),
+        "interp_indices": interp_indices,
+        "interp_weights": interp_weights,
+        "cu_seqlens": get_vision_cu_seqlens(image_grid_thw),
+    }
 
 
 def export_vision_attn_forward(

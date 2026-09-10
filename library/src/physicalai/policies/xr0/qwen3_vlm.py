@@ -31,10 +31,9 @@ from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLModelOutputWit
 from .export_openvino import (
     export_add_deepstack_embeds,
     export_build_additive_causal_mask,
-    export_fast_pos_embed_interpolate,
     export_image_token_gather,
     export_mrope_position_ids,
-    export_rot_pos_emb,
+    export_precompute_vision_geometry,
     export_scatter_visual_embeds,
     export_vision_attn_forward,
 )
@@ -90,6 +89,20 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
             "_export_image_col": torch.tensor(cols, dtype=torch.long, device=device),
             "_export_image_advance": torch.tensor(advances, dtype=torch.long, device=device),
         }
+        # Precompute the vision tower's data-dependent geometry (interpolation
+        # position-embedding indices/weights, rotary ``position_ids`` and
+        # ``cu_seqlens``). Since transformers 5.10 the tower builds these through
+        # the ``get_vision_*`` helpers, which iterate ``grid_thw.tolist()``
+        # (untraceable under ``torch.export``) but first pop a precomputed tensor
+        # from ``kwargs`` when present. Compute them once here from the concrete
+        # geometry and inject them back through the forward ``kwargs`` (see
+        # :meth:`_ensure_export_patch`).
+        baked.update(
+            {
+                f"_export_vision_{name}": tensor.detach().clone()
+                for name, tensor in export_precompute_vision_geometry(self.model.visual, image_grid_thw).items()
+            },
+        )
         for name, tensor in baked.items():
             if hasattr(self, name):
                 delattr(self, name)
@@ -138,12 +151,6 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
 
             return _forward
 
-        def _patched_rot_pos_emb(grid_thw: torch.Tensor) -> torch.Tensor:  # noqa: ARG001
-            return export_rot_pos_emb(visual, shim._export_grid_list)  # noqa: SLF001
-
-        def _patched_fast_pos_embed_interpolate(grid_thw: torch.Tensor) -> torch.Tensor:  # noqa: ARG001
-            return export_fast_pos_embed_interpolate(visual, shim._export_grid_list)  # noqa: SLF001
-
         def _patched_model_forward(
             input_ids: torch.LongTensor | None = None,
             attention_mask: torch.Tensor | None = None,
@@ -177,9 +184,11 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
                 inputs_embeds = inner.get_input_embeddings()(input_ids)
             # Run the tower directly (not ``get_image_features``) so its
             # ``split_sizes.tolist()`` is skipped;
-            # The two patched geometry helpers above already consume the
-            # constant grid, and a freshly built *constant* grid tensor keeps the
-            # tower's inline ``cu_seqlens`` (tensor ops on ``grid_thw``) concrete.
+            # The precomputed vision geometry (rotary ``position_ids``, interpolation
+            # indices/weights and ``cu_seqlens``) is injected as ``kwargs`` so the
+            # tower's ``get_vision_*`` helpers pop it instead of rebuilding it from
+            # ``grid_thw.tolist()``; a freshly built *constant* grid tensor keeps
+            # any residual tower shape ops concrete.
             grid_const = torch.tensor(
                 shim._export_grid_list,  # noqa: SLF001
                 dtype=torch.long,
@@ -192,6 +201,10 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
             vision_output = visual(
                 pixel_values.type(visual.dtype),
                 grid_thw=grid_const,
+                position_ids=shim._export_vision_position_ids,  # noqa: SLF001
+                interp_indices=shim._export_vision_interp_indices,  # noqa: SLF001
+                interp_weights=shim._export_vision_interp_weights,  # noqa: SLF001
+                cu_seqlens=shim._export_vision_cu_seqlens,  # noqa: SLF001
                 return_dict=True,
             )
             image_embeds = vision_output.pooler_output.to(inputs_embeds.device, inputs_embeds.dtype)
@@ -256,8 +269,6 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
 
         inner.forward = _patched_model_forward
         text_model._deepstack_process = _patched_deepstack_process  # noqa: SLF001
-        visual.rot_pos_emb = _patched_rot_pos_emb
-        visual.fast_pos_embed_interpolate = _patched_fast_pos_embed_interpolate
         for block in visual.blocks:
             block.attn.forward = _make_vision_attn_forward(block.attn)
         self._export_patched = True
