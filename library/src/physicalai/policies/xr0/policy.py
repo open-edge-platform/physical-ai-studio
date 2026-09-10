@@ -529,7 +529,12 @@ class XR0(ExportablePolicyMixin, Policy):
         """Return the traced input sample for the self-contained OpenVINO graph.
 
         Overrides the base helper: the exported graph consumes the *padded*
-        preprocessor tensors and excludes ``image_grid_thw``
+        preprocessor tensors and excludes ``image_grid_thw``. The token inputs
+        are renamed to the sibling OpenVINO tokenizer's output ports
+        (``tokenized_prompt`` / ``tokenized_prompt_mask``) so the traced graph
+        exposes those names directly and no post-conversion input rename is
+        required. :meth:`XR0Model.forward` aliases them back to ``input_ids`` /
+        ``attention_mask`` for the model body.
 
         Returns:
             The padded traced-input dict, without ``image_grid_thw``.
@@ -537,12 +542,15 @@ class XR0(ExportablePolicyMixin, Policy):
         Raises:
             ValueError: If the preprocessor is not initialized.
         """
+        from physicalai.data.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK  # noqa: PLC0415
+
         if self._preprocessor is None or self.sample_input is None:
             msg = "Preprocessor is not initialized"
             raise ValueError(msg)
+        export_names = {"input_ids": TOKENIZED_PROMPT, "attention_mask": TOKENIZED_PROMPT_MASK}
         processed = self._build_padded_export_sample()
         return {
-            name: tensor
+            export_names.get(name, name): tensor
             for name, tensor in processed.items()
             if name != "image_grid_thw" and isinstance(tensor, torch.Tensor)
         }
@@ -959,18 +967,12 @@ class XR0(ExportablePolicyMixin, Policy):
                 outputs=["action", "state_passthrough"] if cfg.action_mode == "delta" else ["action"],
                 # The NumPy preprocessor emits the prompt as a ``task`` string; a
                 # sibling OpenVINO tokenizer (``tokenizer.xml``) turns it into
-                # ``tokenized_prompt`` / ``tokenized_prompt_mask``.
+                # ``tokenized_prompt`` / ``tokenized_prompt_mask``
                 preprocessors_specs=[
                     ov_preproc,
                     ComponentSpec(type="ov_tokenizer", artifact="tokenizer.xml"),
                 ],
                 postprocessors_specs=ov_postproc_specs,
-                # Rename the traced graph inputs to the tokenizer's output keys so
-                # the exported ``ov_tokenizer`` step feeds them directly.
-                input_name_map={
-                    "input_ids": "tokenized_prompt",
-                    "attention_mask": "tokenized_prompt_mask",
-                },
                 # Bake the vision geometry + install OpenVINO-friendly RMSNorm
                 # before tracing, then rewrite boolean ``GatherND`` ops to ``i32``
                 # in the written IR so it also loads on the Intel GPU plugin.

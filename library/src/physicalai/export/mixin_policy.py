@@ -567,7 +567,6 @@ class ExportablePolicyMixin:
                 )
             _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
-        _rename_openvino_inputs(ov_model, extra_model_args.input_name_map)
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
         if extra_model_args.export_tokenizer:
             ov_tokenizer = openvino_tokenizers.convert_tokenizer(
@@ -1011,26 +1010,3 @@ def _postprocess_openvino_model(ov_model: openvino.Model, output_names: list[str
     if output_names is not None and len(ov_model.outputs) >= len(output_names):
         for i, name in enumerate(output_names):
             ov_model.outputs[i].tensor.set_names({name})
-
-
-def _rename_openvino_inputs(ov_model: openvino.Model, name_map: dict[str, str] | None) -> None:
-    """Rename converted-model input tensors in place.
-
-    Renames each input tensor whose current name is a key of ``name_map`` to the
-    mapped value, so the exported graph ports line up with the keys produced by
-    the preprocessor pipeline (e.g. an ``ov_tokenizer`` emitting
-    ``tokenized_prompt`` / ``tokenized_prompt_mask``).
-
-    Args:
-        ov_model: The converted OpenVINO model to modify.
-        name_map: Optional ``{current_name: new_name}`` mapping. Missing keys are
-            ignored so partial maps are safe.
-    """
-    if not name_map:
-        return
-    for old_name, new_name in name_map.items():
-        try:
-            port = ov_model.input(old_name)
-        except RuntimeError:
-            continue
-        port.get_tensor().set_names({new_name})

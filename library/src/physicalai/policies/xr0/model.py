@@ -22,6 +22,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLTextRotaryEmbedding
 
+from physicalai.data.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.policies.base import Model
 
 from .dit import XR0FlowModel
@@ -190,6 +191,24 @@ class XR0Model(Model):
         """
         self.vlm.prepare_ingraph_export(image_grid_thw)
         install_export_rmsnorm(self)
+        self._install_export_input_alias()
+
+    def _install_export_input_alias(self) -> None:
+        """Wrap ``forward`` to accept the OpenVINO-tokenizer port names (export only)."""
+        orig_forward = self.forward
+
+        def _aliased_forward(
+            batch: dict[str, Any],
+        ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]] | torch.Tensor:
+            if TOKENIZED_PROMPT in batch:
+                batch = {
+                    **batch,
+                    "input_ids": batch[TOKENIZED_PROMPT],
+                    "attention_mask": batch[TOKENIZED_PROMPT_MASK],
+                }
+            return orig_forward(batch)
+
+        self.forward = _aliased_forward  # type: ignore[method-assign]
 
     @property
     def reward_delta_indices(self) -> None:

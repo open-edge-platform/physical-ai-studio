@@ -97,17 +97,12 @@ class OpenVINOExportParameters(ExportParameters):
             precision.
         via_onnx: When ``True``, export to a temporary ONNX file first and convert
             that to OpenVINO, instead of converting the torch model directly.
-        input_name_map: Optional mapping ``{traced_input_name: exported_name}`` used
-            to rename the converted graph's input tensors before saving. Useful to
-            align the graph ports with the keys emitted by preprocessor components
-            (e.g. an ``ov_tokenizer`` producing ``tokenized_prompt``).
     """
 
     export_tokenizer: bool = False
     outputs: list[str] = field(default_factory=lambda: ["action"])
     compress_to_fp16: bool = False
     via_onnx: bool = False
-    input_name_map: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

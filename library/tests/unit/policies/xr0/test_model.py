@@ -18,6 +18,7 @@ from transformers.models.qwen3_vl.configuration_qwen3_vl import (
     Qwen3VLVisionConfig,
 )
 
+from physicalai.data.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.policies.xr0.model import XR0Model
 from physicalai.policies.xr0.qwen3_vlm import XR0Qwen3VL
 
@@ -544,4 +545,67 @@ class TestRunExport:
         # The second output is the current-frame state echoed verbatim (as f32).
         assert torch.allclose(state, expected_state.float(), atol=1e-6)
         assert torch.allclose(pred, eager_export_pred.float(), atol=1e-3, rtol=1e-3)
+
+
+class TestExportInputAlias:
+    """``_install_export_input_alias`` maps the OV-tokenizer port names (export only).
+    """
+
+    @staticmethod
+    def _aliased(batch: dict) -> dict:
+        """Rename the token keys to the OpenVINO-tokenizer port names."""
+        aliased = {key: value for key, value in batch.items() if key not in ("input_ids", "attention_mask")}
+        aliased[TOKENIZED_PROMPT] = batch["input_ids"]
+        aliased[TOKENIZED_PROMPT_MASK] = batch["attention_mask"]
+        return aliased
+
+    def test_forward_accepts_tokenizer_port_names(
+        self, export_model: XR0Model, eager_export_pred: torch.Tensor
+    ) -> None:
+        # After baking, forward consumes the tokenizer-port keys and reproduces
+        # the eager action for the same observation.
+        _, export_batch = _export_batches()
+        export_model.prepare_ingraph_export(export_batch["image_grid_thw"])
+        pred = export_model(self._aliased(export_batch))
+        assert isinstance(pred, torch.Tensor)
+        assert torch.allclose(pred, eager_export_pred.float(), atol=1e-3, rtol=1e-3)
+
+    def test_alias_maps_keys_before_delegating(self) -> None:
+        # Isolate the wrapper: it should inject ``input_ids`` / ``attention_mask``
+        # from the tokenizer-port keys before calling the wrapped forward, while
+        # leaving the original keys in place.
+        model = _build_model().eval()
+        captured: dict = {}
+
+        def _fake_forward(batch: dict) -> torch.Tensor:
+            captured.update(batch)
+            return torch.zeros(1)
+
+        model.forward = _fake_forward  # type: ignore[method-assign]
+        model._install_export_input_alias()
+        ids = torch.tensor([[1, 2, 3]])
+        mask = torch.tensor([[1, 1, 1]])
+        model({TOKENIZED_PROMPT: ids, TOKENIZED_PROMPT_MASK: mask})
+        assert torch.equal(captured["input_ids"], ids)
+        assert torch.equal(captured["attention_mask"], mask)
+        # The tokenizer-port keys are preserved alongside the injected aliases.
+        assert TOKENIZED_PROMPT in captured
+        assert TOKENIZED_PROMPT_MASK in captured
+
+    def test_alias_leaves_internal_batch_untouched(self) -> None:
+        # A batch already using the internal keys passes through unchanged.
+        model = _build_model().eval()
+        captured: dict = {}
+
+        def _fake_forward(batch: dict) -> torch.Tensor:
+            captured.update(batch)
+            return torch.zeros(1)
+
+        model.forward = _fake_forward  # type: ignore[method-assign]
+        model._install_export_input_alias()
+        ids = torch.tensor([[1, 2, 3]])
+        mask = torch.tensor([[1, 1, 1]])
+        model({"input_ids": ids, "attention_mask": mask})
+        assert captured.keys() == {"input_ids", "attention_mask"}
+        assert torch.equal(captured["input_ids"], ids)
 
