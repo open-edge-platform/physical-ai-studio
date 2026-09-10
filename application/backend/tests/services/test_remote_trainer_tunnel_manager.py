@@ -27,11 +27,11 @@ def _trainer(*, ssh_host_alias: str | None = "training-box", local_port: int | N
 
 
 def _active_availability() -> SshFeatureAvailability:
-    return SshFeatureAvailability(enabled=True, network_exposed=False)
+    return SshFeatureAvailability(network_exposed=False)
 
 
 def _inactive_availability() -> SshFeatureAvailability:
-    return SshFeatureAvailability(enabled=False, network_exposed=False)
+    return SshFeatureAvailability(network_exposed=True)
 
 
 @pytest.fixture(autouse=True)

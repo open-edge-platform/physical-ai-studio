@@ -98,7 +98,7 @@ async def test_create_rejects_ssh_tunnel_config_when_feature_inactive() -> None:
         patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
         patch(
             f"{MODULE}.get_ssh_feature_availability",
-            return_value=SshFeatureAvailability(enabled=False, network_exposed=False),
+            return_value=SshFeatureAvailability(network_exposed=True),
         ),
         pytest.raises(SshFeatureDisabledError),
     ):
