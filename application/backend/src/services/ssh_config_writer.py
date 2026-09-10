@@ -41,6 +41,11 @@ def _render_stanza(config: SshHostAliasCreate) -> str:
         lines.append(f"    User {config.user}")
     if config.identity_file:
         lines.append(f"    IdentityFile {config.identity_file}")
+        # Without this, ssh still offers agent keys and other default identities
+        # before (or instead of) the one the user just named, so a server can
+        # reject the connection on an unrelated key, or authenticate with the
+        # wrong one, before the specified key is ever tried.
+        lines.append("    IdentitiesOnly yes")
     return "\n".join(lines) + "\n"
 
 

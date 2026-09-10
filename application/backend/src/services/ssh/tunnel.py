@@ -59,10 +59,6 @@ class SshTunnel:
         self._settings = settings
         self._transport: SshTransport | None = None
         self._listener: asyncssh.SSHListener | None = None
-        # A caller that needs a stable local port (e.g. a trainer URL pinned to
-        # a fixed loopback port) supplies one up front; the first connect then
-        # tries to bind exactly that port instead of an ephemeral one. Left
-        # None, the first connect gets whatever port the OS assigns.
         self._local_port = local_port
         self._watchdog_task: asyncio.Task[None] | None = None
         self._closed = False

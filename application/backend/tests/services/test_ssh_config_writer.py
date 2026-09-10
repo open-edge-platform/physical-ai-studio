@@ -80,6 +80,28 @@ def test_add_host_alias_never_leaks_identity_file_value_elsewhere(tmp_path: Path
     assert "IdentityFile ~/.ssh/id_new_box" in text
 
 
+def test_add_host_alias_sets_identities_only_when_identity_file_given(tmp_path: Path) -> None:
+    """Without ``IdentitiesOnly yes``, ssh still offers agent keys and other
+    default identities before (or instead of) the one the user just named.
+    """
+    config_path = tmp_path / "config"
+
+    add_host_alias(
+        config_path,
+        SshHostAliasCreate(alias="new-box", hostname="10.0.0.9", identity_file="~/.ssh/id_new_box"),
+    )
+
+    assert "IdentitiesOnly yes" in config_path.read_text()
+
+
+def test_add_host_alias_omits_identities_only_without_identity_file(tmp_path: Path) -> None:
+    config_path = tmp_path / "config"
+
+    add_host_alias(config_path, SshHostAliasCreate(alias="new-box", hostname="10.0.0.9"))
+
+    assert "IdentitiesOnly" not in config_path.read_text()
+
+
 async def test_add_verified_host_alias_keeps_stanza_on_successful_connect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

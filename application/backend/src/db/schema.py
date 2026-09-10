@@ -18,10 +18,6 @@ class RemoteTrainerDB(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
-    # Optional standing SSH port-forward tunnel to reach `url` through. Only
-    # an SSH config alias is stored, never key material (see
-    # `schemas.remote_server` for the same convention on SSH-provisioned
-    # servers).
     ssh_host_alias: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ssh_remote_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ssh_local_port: Mapped[int | None] = mapped_column(Integer, nullable=True)

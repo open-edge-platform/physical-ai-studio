@@ -94,8 +94,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await app.state.robot_manager.find_robots()
 
     # Open the standing SSH tunnel for every configured direct trainer that
-    # wants one. Best-effort and gated the same way every other SSH surface
-    # is: does nothing when the feature is off or network-exposed.
+    # wants one.
     try:
         async with get_async_db_session_ctx() as session:
             remote_trainers = await RemoteTrainerService(session).list_remote_trainers()
