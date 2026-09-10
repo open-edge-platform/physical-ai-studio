@@ -1,9 +1,11 @@
+import { ReactNode } from 'react';
+
 import { Button, Content, DialogTrigger, Flex, Heading, IllustratedMessage, Text, View } from '@geti-ui/ui';
 
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { TrainModelDialog } from './train-model-dialog/train-model-dialog';
 
-export const NoModelsPlaceholder = () => {
+export const NoModelsPlaceholder = ({ extraAction }: { extraAction?: ReactNode }) => {
     return (
         <Flex margin={'size-200'} direction={'column'} height='100%'>
             <IllustratedMessage>
@@ -12,10 +14,13 @@ export const NoModelsPlaceholder = () => {
                 <Text>If you&apos;ve recorded a dataset it&apos;s time to begin training your model. </Text>
                 <Heading>No trained models</Heading>
                 <View margin={'size-100'}>
-                    <DialogTrigger>
-                        <Button variant='accent'>Train model</Button>
-                        {(close) => <TrainModelDialog close={close} />}
-                    </DialogTrigger>
+                    <Flex gap={'size-100'} justifyContent={'center'}>
+                        <DialogTrigger>
+                            <Button variant='accent'>Train model</Button>
+                            {(close) => <TrainModelDialog close={close} />}
+                        </DialogTrigger>
+                        {extraAction}
+                    </Flex>
                 </View>
             </IllustratedMessage>
         </Flex>

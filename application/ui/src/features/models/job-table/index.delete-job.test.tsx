@@ -80,7 +80,7 @@ const mockRoutes = () => {
 };
 
 describe('Index - deleting a canceled training job', () => {
-    it('removes the job row from the list once deletion succeeds, without a page refresh', async () => {
+    it('removes the job row from the All jobs dialog once deletion succeeds, without a page refresh', async () => {
         const user = userEvent.setup();
         mockRoutes();
 
@@ -88,6 +88,8 @@ describe('Index - deleting a canceled training job', () => {
             route: `/projects/${projectId}/models`,
             path: '/projects/:project_id/models',
         });
+
+        await user.click(await screen.findByRole('button', { name: /all jobs/i }));
 
         expect(await screen.findByText('Cancelled model')).toBeInTheDocument();
 

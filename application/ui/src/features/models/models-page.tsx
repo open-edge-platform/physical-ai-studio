@@ -6,12 +6,15 @@ import { $api } from '../../api/client';
 import { SchemaModel } from '../../api/openapi-spec';
 import { LogsDialog } from '../logs/logs-dialog';
 import { useProjectId } from '../projects/use-project';
+import { AllJobsDialog } from './job-table/all-jobs-dialog';
 import { JobList } from './job-table/job-list';
 import { ModelsList } from './models-table/models-list';
 import { NoModelsPlaceholder } from './no-models-placeholder';
-import { TrainModelDialog } from './train-model-dialog/train-model-dialog';
+import { SchemaTrainJob, TrainModelDialog } from './train-model-dialog/train-model-dialog';
 import { useJobUpdates } from './use-job-updates';
 import { useProjectTrainingJobs } from './use-project-training-jobs';
+
+const isActiveJob = (job: SchemaTrainJob) => job.status === 'running' || job.status === 'pending';
 
 export const ModelsPage = () => {
     const { project_id } = useProjectId();
@@ -20,8 +23,13 @@ export const ModelsPage = () => {
     });
 
     const jobs = useProjectTrainingJobs(project_id);
+    const activeJobs = jobs.filter(isActiveJob);
+
     const [retrainModel, setRetrainModel] = useState<SchemaModel | null>(null);
     const [logsSourceId, setLogsSourceId] = useState<string | undefined>();
+    const [allJobsOpen, setAllJobsOpen] = useState(false);
+
+    const { addJob } = useJobUpdates(project_id);
 
     const handleViewLogs = (model: SchemaModel) => {
         if (!model.train_job_id) {
@@ -31,20 +39,30 @@ export const ModelsPage = () => {
         setLogsSourceId(model.train_job_id);
     };
 
-    const { addJob } = useJobUpdates(project_id);
-
     const hasModels = models.length > 0;
     const hasJobs = jobs.length > 0;
-    const showIllustratedMessage = !hasModels && !hasJobs;
+
+    const showIllustratedMessage = !hasModels && activeJobs.length === 0;
 
     return (
         <View height='100%' padding={'size-300'} UNSAFE_style={{ overflowY: 'auto' }}>
             <Flex direction={'column'} height={'100%'}>
                 {showIllustratedMessage ? (
-                    <NoModelsPlaceholder />
+                    <NoModelsPlaceholder
+                        extraAction={
+                            hasJobs ? (
+                                <Button variant='secondary' onPress={() => setAllJobsOpen(true)}>
+                                    All jobs ({jobs.length})
+                                </Button>
+                            ) : undefined
+                        }
+                    />
                 ) : (
                     <Flex direction={'column'} flex={1} gap={'size-300'} minHeight={0}>
-                        <Flex justifyContent={'end'}>
+                        <Flex justifyContent={'space-between'} alignItems={'center'}>
+                            <Button variant='secondary' onPress={() => setAllJobsOpen(true)} isDisabled={!hasJobs}>
+                                All jobs ({jobs.length})
+                            </Button>
                             <DialogTrigger>
                                 <Button variant='accent'>Train model</Button>
                                 {(close) => (
@@ -70,7 +88,7 @@ export const ModelsPage = () => {
                             }}
                         >
                             <JobList
-                                jobs={jobs}
+                                jobs={activeJobs}
                                 onViewLogs={(job) => {
                                     setLogsSourceId(job.id);
                                 }}
@@ -87,6 +105,19 @@ export const ModelsPage = () => {
                     </Flex>
                 )}
             </Flex>
+
+            <DialogContainer onDismiss={() => setAllJobsOpen(false)}>
+                {allJobsOpen && (
+                    <AllJobsDialog
+                        jobs={jobs}
+                        onViewLogs={(job) => {
+                            setAllJobsOpen(false);
+                            setLogsSourceId(job.id);
+                        }}
+                        close={() => setAllJobsOpen(false)}
+                    />
+                )}
+            </DialogContainer>
             <DialogContainer onDismiss={() => setRetrainModel(null)}>
                 {retrainModel && (
                     <TrainModelDialog

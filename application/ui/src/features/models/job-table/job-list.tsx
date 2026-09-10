@@ -24,7 +24,7 @@ interface JobListProps {
 
 export const JobList = ({ jobs, onViewLogs }: JobListProps) => {
     const sortedJobs = jobs
-        .filter((m) => m.status !== 'completed')
+        .filter((m) => m.status === 'running' || m.status === 'pending')
         .toSorted((a, b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
 
     const interruptMutation = $api.useMutation('post', '/api/jobs/{job_id}:interrupt', {
