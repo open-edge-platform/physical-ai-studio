@@ -1,8 +1,17 @@
+import { SchemaRobotType } from '../../robot-types';
+
 export type InfoItem = {
     kind: 'info';
     title?: string;
     text: string;
     variant?: 'info' | 'warning';
+};
+
+export type ContextualInfo = {
+    title?: string;
+    description: string;
+    link_url?: string;
+    variant?: 'info' | 'help';
 };
 
 export type RobotUiConnectionBinding = {
@@ -14,15 +23,35 @@ export type ConnectionItem = {
     kind: 'connection';
     label?: string;
     description?: string;
+    info?: ContextualInfo;
     device_discovery?: boolean;
     identify?: boolean;
     manual_entry?: boolean;
     bind: RobotUiConnectionBinding;
 };
 
+export type IpAddressItem = {
+    kind: 'ip_address';
+    name: string;
+    label?: string;
+    description?: string;
+    info?: ContextualInfo;
+    identify?: boolean;
+    identify_robot_type?: SchemaRobotType;
+};
+
+export type CalibrationItem = {
+    kind: 'calibration';
+    name: string;
+    label?: string;
+    description?: string;
+    info?: ContextualInfo;
+};
+
 export type FieldItem = {
     kind: 'field';
     name: string;
+    info?: ContextualInfo;
 };
 
 export type SectionItem = {
@@ -33,11 +62,12 @@ export type SectionItem = {
     items: RobotUiItem[];
 };
 
-export type RobotUiItem = InfoItem | ConnectionItem | FieldItem | SectionItem;
+export type RobotUiItem = InfoItem | ConnectionItem | IpAddressItem | CalibrationItem | FieldItem | SectionItem;
 
 export type FieldOptions = {
     required?: boolean;
     advanced_configuration?: boolean;
+    info?: ContextualInfo;
 };
 
 export type ModelUiOptions = RobotUiItem[];

@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 
-import { Button, Flex, Heading, Icon, Item, Picker, TextField } from '@geti-ui/ui';
-import { ChevronLeft } from '@geti-ui/ui/icons';
+import { Item, Picker, TextField } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
+import { FormHeading } from '../../../components/form-heading/form-heading';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { useRobotCatalogQuery } from '../robot-catalog.hooks';
@@ -92,17 +92,6 @@ const useRobotCatalogSchema = (robotType: SchemaRobotType) => {
 export const RobotFormHeading = ({ heading }: { heading: string }) => {
     const { project_id } = useProjectId();
     return (
-        <Flex alignItems='center' gap='size-200'>
-            <Button
-                href={paths.project.robots.index({ project_id })}
-                variant='secondary'
-                UNSAFE_style={{ border: 'none' }}
-            >
-                <Icon>
-                    <ChevronLeft color='white' fill='white' />
-                </Icon>
-            </Button>
-            <Heading>{heading}</Heading>
-        </Flex>
+        <FormHeading heading={heading} backTo={paths.project.robots.index({ project_id })} backLabel='Back to robots' />
     );
 };

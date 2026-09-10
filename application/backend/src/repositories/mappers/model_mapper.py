@@ -6,7 +6,9 @@ from schemas import Model
 class ModelMapper(IBaseMapper):
     @staticmethod
     def to_schema(db_schema: Model) -> ModelDB:
-        return ModelDB(**db_schema.model_dump(mode="json", exclude={"available_backends"}))
+        # available_backends and snapflow_enabled are computed fields derived
+        # from the filesystem / properties, not their own ModelDB columns.
+        return ModelDB(**db_schema.model_dump(mode="json", exclude={"available_backends", "snapflow_enabled"}))
 
     @staticmethod
     def from_schema(model: ModelDB) -> Model:

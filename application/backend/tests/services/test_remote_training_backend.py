@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from loguru import logger
+from pydantic import SecretStr
 
 from schemas.dataset import Snapshot
 from schemas.job import RemoteTrainJobPayload, TrainingDevice
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 REMOTE = "services.training_backends.remote"
+LOCAL = "services.training_backends.local"
 TRANSFER = "services.training_backends._transfer_progress"
 
 
@@ -217,6 +219,8 @@ def _context(
     should_stop: bool = False,
     remote_job_id: UUID | None = None,
     should_cancel_job: bool = False,
+    policy: str = "act",
+    **payload_overrides: object,
 ) -> TrainingContext:
     snap = tmp_path / "snap"
     snap.mkdir()
@@ -229,14 +233,19 @@ def _context(
         path=str(tmp_path / "model"),
         name="m",
         snapshot_id=uuid4(),
-        policy="act",
+        policy=policy,
         properties={},
         train_job_id=uuid4(),
         version=1,
         created_at=None,
     )
     payload = RemoteTrainJobPayload(
-        project_id=uuid4(), dataset_id=uuid4(), policy="act", model_name="m", remote_trainer_id=uuid4()
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy=policy,
+        model_name="m",
+        remote_trainer_id=uuid4(),
+        **payload_overrides,
     )
     return TrainingContext(
         job=MagicMock(),
@@ -322,6 +331,27 @@ class TestRemoteTrainingBackend:
         body = await _submitted_body(_settings(), _context(tmp_path))
 
         assert "run_options" not in body["spec"]
+
+    @pytest.mark.anyio
+    async def test_submit_sends_hf_token_as_top_level_field(self, tmp_path):
+        """The token travels outside `spec`, so the trainer never persists it with the job request."""
+        local_settings = MagicMock()
+        local_settings.huggingface.hf_token = SecretStr("hf-secret")
+        with patch(f"{LOCAL}.get_settings", return_value=local_settings):
+            body = await _submitted_body(_settings(), _context(tmp_path))
+
+        assert body["hf_token"] == "hf-secret"
+        assert "hf_token" not in body["spec"]
+
+    @pytest.mark.anyio
+    async def test_submit_sends_none_hf_token_when_unconfigured(self, tmp_path, monkeypatch):
+        local_settings = MagicMock()
+        local_settings.huggingface.hf_token = None
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        with patch(f"{LOCAL}.get_settings", return_value=local_settings):
+            body = await _submitted_body(_settings(), _context(tmp_path))
+
+        assert body["hf_token"] is None
 
     @pytest.mark.anyio
     async def test_completion_deletes_remote_job_artifacts(self, tmp_path):
@@ -663,11 +693,31 @@ class TestHttpDatasetTransfer:
 
         body = await _submitted_body(settings, context)
 
-        assert body["spec"] == build_spec(context).model_dump(mode="json", exclude={"run_options"}) | {
+        expected = build_spec(context).model_dump(mode="json", exclude={"run_options", "snapflow_start_epoch"}) | {
             "device_type": None,
             "device_index": None,
         }
+        assert body["spec"] == expected
         assert (body["spec"]["policy"], body["spec"]["max_epochs"], body["spec"]["batch_size"]) == ("act", 5, 16)
+
+    @pytest.mark.anyio
+    async def test_submit_omits_an_unset_distillation_boundary(self, tmp_path):
+        """Trainers forbid unknown spec fields, so an ordinary run must stay
+        submittable against a trainer image that predates SnapFlow support."""
+        body = await _submitted_body(_settings(), _context(tmp_path))
+
+        assert "snapflow_start_epoch" not in body["spec"]
+
+    @pytest.mark.anyio
+    async def test_submit_sends_a_distillation_boundary_when_one_is_asked_for(self, tmp_path):
+        """A distillation run must fail loudly against an old trainer rather
+        than silently train without distilling, so the field is sent."""
+        context = _context(tmp_path, policy="pi05", max_epochs=8, snapflow_enabled=True, snapflow_distill_epochs=3)
+
+        body = await _submitted_body(_settings(), context)
+
+        assert body["spec"]["snapflow_start_epoch"] == 8
+        assert body["spec"]["max_epochs"] == 11
 
     @pytest.mark.anyio
     async def test_submit_body_omits_the_studios_device_selection(self, tmp_path):

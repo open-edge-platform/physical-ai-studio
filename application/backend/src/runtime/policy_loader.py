@@ -15,6 +15,7 @@ from settings import get_settings
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from uuid import UUID
 
     from physicalai.inference import InferenceModel
     from physicalai.runtime import PolicySource
@@ -24,7 +25,22 @@ if TYPE_CHECKING:
 
 type ObservationSnapshot = tuple[Any, Mapping[str, Any]] | None
 type ObservationProvider = Callable[[], ObservationSnapshot]
-type PolicyReady = Callable[["PolicySource", int], None]
+type ModelIdentity = tuple["UUID", str, str]  # tuple (model_id, backend, inference_device)
+type PolicyReady = Callable[["PolicySource", int, "ModelIdentity"], None]
+
+
+def model_identity(command: LoadModelCommand) -> ModelIdentity:
+    """Identify the policy this command would build.
+
+    Exactly the inputs ``PolicyLoader._export_dir`` and the ``PolicySource``
+    fragment are derived from, so two commands sharing an identity would produce
+    the same policy and the second rebuild is redundant. Keep this next to
+    ``_export_dir``: if one grows an input the other has to.
+
+    Camera keys stay out. They are fixed for a session's lifetime, and a client
+    needing more restarts the session rather than reloading the model.
+    """
+    return (command.model_id, command.inference_device.backend.value, command.inference_device.device)
 
 
 def check_camera_keys(model: InferenceModel, camera_keys: Sequence[str]) -> None:
@@ -101,7 +117,7 @@ class PolicyLoader:
             if snapshot is not None:
                 robot_state, camera_frames = snapshot
                 source.warmup(source.to_model_input(robot_state, camera_frames))
-            self._handover(generation, source)
+            self._handover(generation, source, model_identity(command))
         except Exception as exc:
             if source is not None:
                 try:
@@ -112,12 +128,12 @@ class PolicyLoader:
                 return
             self._emit_error(exc)
 
-    def _handover(self, generation: int, source: PolicySource) -> None:
+    def _handover(self, generation: int, source: PolicySource, identity: ModelIdentity) -> None:
         with self._lock:
             if generation != self._generation:
                 source.disconnect()
                 return
-        self._on_ready(source, generation)
+        self._on_ready(source, generation, identity)
 
     def _is_stale(self, generation: int) -> bool:
         with self._lock:

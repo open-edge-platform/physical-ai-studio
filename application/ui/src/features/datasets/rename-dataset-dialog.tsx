@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 
 import { Button, ButtonGroup, Content, Dialog, Divider, Heading, TextField } from '@geti-ui/ui';
+import { isEmpty } from 'lodash-es';
 
 import { $api } from '../../api/client';
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
@@ -19,10 +20,13 @@ export const RenameDatasetDialog = ({
         meta: {
             invalidates: [
                 ['get', '/api/dataset/{dataset_id}', { params: { path: { dataset_id: dataset.id! } } }],
+                ['get', '/api/projects/{project_id}', { params: { path: { project_id: dataset.project_id } } }],
                 ['get', '/api/projects'],
             ],
         },
     });
+
+    const isSaveDisabled = isEmpty(name.trim()) || name === dataset.name;
 
     const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -69,7 +73,7 @@ export const RenameDatasetDialog = ({
                     <Button
                         variant='accent'
                         type='submit'
-                        isDisabled={name.trim() === ''}
+                        isDisabled={isSaveDisabled}
                         isPending={renameMutation.isPending}
                     >
                         Save

@@ -1,13 +1,21 @@
 import { Grid, StatusLight } from '@adobe/react-spectrum';
-import { ActionButton, Button, Flex, Heading, Icon, Item, Menu, MenuTrigger, toast, View } from '@geti-ui/ui';
-import { Add, MoreMenu } from '@geti-ui/ui/icons';
+import { ActionButton, Flex, Heading, Item, Menu, MenuTrigger, toast, View } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { NavLink } from 'react-router';
+import { NavLink, useNavigate, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
+import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
+import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
+import {
+    sessionActivity,
+    sessionForRobot,
+    sessionStatusVariant,
+    useRuntimeSessions,
+} from '../runtime-sessions/use-runtime-sessions';
 import RobotArm from './../../assets/robot-arm.webp';
 import { isUnavailableRobot, SchemaRobot } from './robot-types';
 
@@ -27,16 +35,56 @@ const exportCalibration = async (_project_id: string, robot: SchemaRobot) => {
     URL.revokeObjectURL(downloadUrl);
 };
 
-const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
+const useActiveRobotId = () => {
+    const { robot_id } = useParams<{ robot_id: string }>();
+
+    return robot_id;
+};
+
+const useDeleteRobot = (robot: SchemaRobot) => {
     const { project_id } = useProjectId();
+    const activeRobotId = useActiveRobotId();
+    const navigate = useNavigate();
     const deleteRobotMutation = $api.useMutation('delete', '/api/projects/{project_id}/robots/{robot_id}', {
         meta: {
             invalidates: [
                 ['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }],
                 ['get', '/api/projects/{project_id}/robots/online', { params: { path: { project_id } } }],
+                [
+                    'get',
+                    '/api/projects/{project_id}/robots/{robot_id}',
+                    { params: { path: { project_id, robot_id: robot.id } } },
+                ],
             ],
         },
     });
+
+    const deleteRobot = () => {
+        deleteRobotMutation.mutate(
+            { params: { path: { project_id, robot_id: robot.id } } },
+            {
+                onSuccess: () => {
+                    if (robot.id === activeRobotId) {
+                        navigate(paths.project.robots.index({ project_id }));
+                    }
+                },
+                onError: (error) => {
+                    if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
+                        toast.info(getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.');
+                        return;
+                    }
+                    toast.negative(getApiErrorMessage(error) ?? 'Failed to delete robot.');
+                },
+            }
+        );
+    };
+
+    return deleteRobot;
+};
+
+const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
+    const { project_id } = useProjectId();
+    const deleteRobot = useDeleteRobot(robot);
 
     const editPath = paths.project.robots.edit({ project_id, robot_id: robot.id });
     const isSO101 = robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader';
@@ -54,20 +102,7 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                 }
                 onAction={async (action) => {
                     if (action === 'delete') {
-                        await deleteRobotMutation.mutateAsync(
-                            { params: { path: { project_id, robot_id: robot.id } } },
-                            {
-                                onError: (error) => {
-                                    if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
-                                        toast.info(
-                                            getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.'
-                                        );
-                                        return;
-                                    }
-                                    toast.negative(getApiErrorMessage(error) ?? 'Failed to delete robot.');
-                                },
-                            }
-                        );
+                        deleteRobot();
                     }
                     if (action === 'export-calibration') {
                         try {
@@ -87,6 +122,18 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                 <Item key='delete'>Delete</Item>
             </Menu>
         </MenuTrigger>
+    );
+};
+
+export const SessionStatus = ({ session }: { session: SchemaRuntimeSessionInfo | undefined }) => {
+    if (session === undefined) {
+        return null;
+    }
+
+    return (
+        <StatusLight variant={sessionStatusVariant(session)}>
+            <View>Session · {sessionActivity(session)}</View>
+        </StatusLight>
     );
 };
 
@@ -121,10 +168,12 @@ const RobotListItem = ({
     robot,
     status,
     isActive,
+    session,
 }: {
     robot: SchemaRobot;
     status: 'online' | 'offline' | 'unknown';
     isActive: boolean;
+    session: SchemaRuntimeSessionInfo | undefined;
 }) => {
     const isUnavailable = isUnavailableRobot(robot);
     const connectionString = isUnavailable
@@ -157,6 +206,7 @@ const RobotListItem = ({
                     </View>
                     <View gridArea='status'>
                         <ConnectionStatus status={status} isUnavailable={isUnavailable} />
+                        <SessionStatus session={session} />
                     </View>
                 </Grid>
                 <Flex direction={'row'} justifyContent={'space-between'}>
@@ -207,18 +257,13 @@ export const RobotsList = () => {
         suspense: false,
     });
 
+    // Sessions are host-wide, so this is one query for the page rather than one
+    // per row. A session name is rt-<robot id>, which makes the match exact.
+    const { data: runtimeSessions } = useRuntimeSessions();
+
     return (
         <Flex direction='column' gap='size-100'>
-            <Button
-                variant='secondary'
-                href={paths.project.robots.new({ project_id })}
-                UNSAFE_className={classes.addNewRobotButton}
-            >
-                <Icon marginEnd='size-50'>
-                    <Add />
-                </Icon>
-                Add new robot
-            </Button>
+            <AddResourceButton to={paths.project.robots.new({ project_id })}>Add new robot</AddResourceButton>
 
             {projectRobots.map((robot) => {
                 const onlineRobot = onlineProjectRobots?.find((r) => r.id === robot.id);
@@ -238,6 +283,7 @@ export const RobotsList = () => {
                                     robot={robot}
                                     status={onlineProjectRobots === undefined ? 'unknown' : status}
                                     isActive={isActive}
+                                    session={sessionForRobot(runtimeSessions, robot.id)}
                                 />
                             );
                         }}

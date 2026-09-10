@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schemas.hardware import DeviceType
+from schemas.ssh_preflight import PreflightCheck
 
 # Devices a remote trainer image exists for.
 SSH_SERVER_DEVICE_TYPES = frozenset({DeviceType.CUDA, DeviceType.XPU})
@@ -84,6 +85,11 @@ class RemoteServer(RemoteServerCreate):
     last_check_at: datetime | None = None
     last_check_latency_ms: int | None = Field(default=None, ge=0)
     last_check_reason_code: str | None = None
+    # Per-check detail from the most recent Tier 2 ``/check`` run. Persisted
+    # alongside the summary above so the "Image pull & verification" card can
+    # show the last verification's detail after a page refresh, instead of
+    # resetting to "Not verified yet" until the user reruns the check.
+    last_check_checks: list[PreflightCheck] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -117,3 +123,18 @@ class SshHostAliasOption(BaseModel):
     hostname: str | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
     user: str | None = None
+
+
+class DeviceTypeDetection(BaseModel):
+    """Best-effort autodetection of an SSH host's accelerator.
+
+    Prefills the "Device type" field in the add-target form. ``device_type``
+    is ``None`` whenever detection could not identify an accelerator - an
+    unresolved alias, an unreachable host, or a host with no CUDA/XPU signal -
+    and ``reason_code`` says why, so the UI can fall back to asking the user
+    instead of silently guessing.
+    """
+
+    device_type: DeviceType | None = Field(default=None, description="Detected accelerator, or None if undetected.")
+    method: str | None = Field(default=None, description="Which probe answered, e.g. 'nvidia-smi', 'xpu-smi'.")
+    reason_code: str | None = Field(default=None, description="Why detection produced no device type.")

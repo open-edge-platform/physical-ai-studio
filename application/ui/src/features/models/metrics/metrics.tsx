@@ -29,6 +29,7 @@ export interface MetricSeries {
     color?: string;
     getX: (metricsEntry: MetricsEntry) => number;
     getY: (metricsEntry: MetricsEntry) => number | null | undefined;
+    formatY?: (y: number) => string;
 }
 
 interface MetricsViewProps {
@@ -54,7 +55,7 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
             columns='repeat(auto-fit, minmax(min(100%, var(--spectrum-global-dimension-size-6000)), 1fr))'
             gap='size-200'
         >
-            {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color, getX, getY }) => (
+            {seriesReadyToRender.map(({ title, xLabel, yLabel, data, color, getX, getY, formatY }) => (
                 <MetricGraph
                     key={title}
                     syncId={syncId}
@@ -65,6 +66,7 @@ export const MetricsView = ({ series, isLoading }: MetricsViewProps) => {
                     color={color}
                     getX={getX}
                     getY={getY}
+                    formatY={formatY}
                 />
             ))}
         </Grid>
@@ -98,6 +100,18 @@ const useJobMetrics = (jobId: string) => {
     });
 };
 
+const lossFormatter = new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 4,
+    maximumSignificantDigits: 4,
+    roundingPriority: 'morePrecision',
+});
+
+const learningRateFormatter = new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 6,
+    maximumSignificantDigits: 4,
+    roundingPriority: 'morePrecision',
+});
+
 export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
     const query = useJobMetrics(jobId);
     const metricsData = useMemo(() => {
@@ -113,6 +127,9 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
             getX: (entry) => entry.step,
             getY: (entry) => entry.train_loss,
             color: 'var(--moss-tint-1)',
+            formatY: (y) => {
+                return lossFormatter.format(y);
+            },
         },
         {
             title: 'Validation loss',
@@ -122,6 +139,9 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
             getX: (entry) => entry.step,
             getY: (entry) => entry.val_loss,
             color: 'var(--coral)',
+            formatY: (y) => {
+                return lossFormatter.format(y);
+            },
         },
         {
             title: 'Learning rate',
@@ -130,6 +150,9 @@ export const JobMetricsContent = ({ jobId }: { jobId: string }) => {
             data: metricsData,
             getX: (entry) => entry.step,
             getY: (entry) => entry['lr-AdamW'],
+            formatY: (y) => {
+                return learningRateFormatter.format(y);
+            },
         },
     ];
 
@@ -174,6 +197,9 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
             color: 'var(--moss-tint-1)',
             getX: (entry) => entry.step,
             getY: (entry) => entry.train_loss,
+            formatY: (y) => {
+                return lossFormatter.format(y);
+            },
         },
         {
             title: 'Validation loss',
@@ -183,6 +209,9 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
             color: 'var(--coral)',
             getX: (entry) => entry.step,
             getY: (entry) => entry.val_loss,
+            formatY: (y) => {
+                return lossFormatter.format(y);
+            },
         },
         {
             title: 'Learning rate',
@@ -191,6 +220,9 @@ export const MetricsContent = ({ modelId }: { modelId: string }) => {
             data: metricsData,
             getX: (entry) => entry.step,
             getY: (entry) => entry['lr-AdamW'],
+            formatY: (y) => {
+                return learningRateFormatter.format(y);
+            },
         },
     ];
 

@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from pydantic import SecretStr
 
-from schemas.job import _DEFAULT_MAX_EPOCHS
 from services.training_backends._log_format import render_progress_log
 from settings import get_settings
 
@@ -44,15 +43,9 @@ class LocalTrainingBackend:
             raise ValueError("Local training requires a dataset snapshot")
 
         spec = build_spec(context)
-        hf_token = get_settings().huggingface.hf_token
-        # Fallback to Environment Variable based hf token if settings hasn't been set
-        if (hf_token is None or not hf_token.get_secret_value()) and (
-            legacy_hf_token := os.environ.get("HF_TOKEN", "")
-        ):
-            hf_token = SecretStr(legacy_hf_token)
         spec.run_options = RunOptions(
             resume_from=_resume_checkpoint(context),
-            hf_token=hf_token,
+            hf_token=resolve_hf_token(),
         )
         await asyncio.to_thread(
             run_training_job,
@@ -83,6 +76,22 @@ class LocalTrainingBackend:
         return report
 
 
+def resolve_hf_token() -> SecretStr | None:
+    """Return the configured Hugging Face token, falling back to the legacy env var.
+
+    Shared by the local backend (set directly into `RunOptions`), the
+    remote/SSH backends (sent to the trainer at job submission time; see
+    `services.training_backends.remote.RemoteTrainingBackend.submit_job`), and
+    `api.policies.check_huggingface_access`, so every caller resolves the same
+    token the same way.
+    """
+    hf_token = get_settings().huggingface.hf_token
+    # Fallback to Environment Variable based hf token if settings hasn't been set
+    if (hf_token is None or not hf_token.get_secret_value()) and (legacy_hf_token := os.environ.get("HF_TOKEN", "")):
+        hf_token = SecretStr(legacy_hf_token)
+    return hf_token
+
+
 def build_spec(context: TrainingContext) -> TrainingJobSpec:
     """Translate a job's payload into the shared training spec.
 
@@ -102,20 +111,29 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
     return TrainingJobSpec(
         # A resumed run's architecture is dictated by the base model's checkpoint.
         policy=(context.base_model or context.model).policy,
-        max_epochs=payload.max_epochs if payload.max_epochs is not None else _DEFAULT_MAX_EPOCHS,
+        # SnapFlow distillation epochs are additive: the trainer's epoch budget
+        # is the teacher run plus the distillation phase, not carved out of it.
+        max_epochs=payload.total_epochs,
         batch_size=payload.batch_size,
         num_workers=payload.num_workers,
         val_split=payload.val_split,
         precision=str(payload.precision),
         compile_model=payload.compile_model,
         auto_scale_batch_size=payload.auto_scale_batch_size,
+        snapflow_start_epoch=payload.snapflow_start_epoch,
         device_type=str(device.type) if device else None,
         device_index=device.index if device else None,
     )
 
 
 def _resume_checkpoint(context: TrainingContext) -> Path | None:
-    """Return the base model's checkpoint to resume from, if the job has one."""
+    """Return the base model's checkpoint to resume from, if the job has one.
+
+    Deliberately always the plain checkpoint, never the SnapFlow one: SnapFlow
+    permanently freezes the VLM backbone and switches to 1-step sampling once
+    activated, baked into the checkpoint's hparams. Resuming from it would
+    silently carry that into a run that never asked for SnapFlow.
+    """
     from training.job import CHECKPOINT_NAME
 
     if context.base_model is None:

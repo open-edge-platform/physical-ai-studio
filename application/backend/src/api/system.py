@@ -16,8 +16,16 @@ from services.system_service import SystemService
 system_router = APIRouter(prefix="/api/system", tags=["System"])
 
 
-def _stop_process() -> None:
-    """Request graceful shutdown so the process supervisor can restart the server."""
+def request_graceful_restart() -> None:
+    """Send this process SIGTERM so the process supervisor restarts it.
+
+    The FastAPI lifespan (`core.lifecycle.lifespan`) stops workers on
+    receiving the signal, then re-executes the process
+    (`core.lifecycle._restart_process`) if
+    `HealthService.plugin_restart_required` was set beforehand. Callers must
+    set that flag first - this function only requests the shutdown half of
+    that sequence.
+    """
     os.kill(os.getpid(), signal.SIGTERM)
 
 
@@ -50,5 +58,5 @@ async def restart_server(background_tasks: BackgroundTasks, health_service: Heal
     FastAPI lifespan to stop workers before the process supervisor restarts it.
     """
     health_service.mark_plugin_restart_required()
-    background_tasks.add_task(_stop_process)
+    background_tasks.add_task(request_graceful_restart)
     return {"status": "restarting"}

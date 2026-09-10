@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
@@ -276,6 +276,56 @@ describe('SchemaForm', () => {
         expect(screen.getByRole('textbox', { name: /Robot ID/ })).toBeRequired();
     });
 
+    it('renders a required connection field with required styling', async () => {
+        const requiredConnectionSchema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                port: { type: 'string', title: 'Required connection' },
+            },
+            required: ['port'],
+            'x-physicalai-ui': [
+                {
+                    kind: 'connection',
+                    label: 'Required connection',
+                    bind: { connection: 'port' },
+                },
+            ],
+        };
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={requiredConnectionSchema} />
+            </RobotFormProvider>
+        );
+
+        await screen.findByRole('button', { name: /Required connection/ });
+        expect(screen.getByRole('img', { name: '(required)' })).toBeVisible();
+    });
+
+    it('renders an optional connection field without required styling', async () => {
+        const optionalConnectionSchema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                port: { type: 'string', title: 'Optional connection' },
+            },
+            'x-physicalai-ui': [
+                {
+                    kind: 'connection',
+                    label: 'Optional connection',
+                    bind: { connection: 'port' },
+                },
+            ],
+        };
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={optionalConnectionSchema} />
+            </RobotFormProvider>
+        );
+
+        await screen.findByRole('button', { name: /Optional connection/ });
+        expect(screen.queryByRole('img', { name: '(required)' })).not.toBeInTheDocument();
+    });
+
     it('renders an error when identify fails', async () => {
         const identifySchema: Parameters<typeof SchemaForm>[0]['schema'] = {
             type: 'object',
@@ -347,6 +397,135 @@ describe('SchemaForm', () => {
         expect(await screen.findByText(/Permission Denied/)).toBeVisible();
     });
 
+    it('identifies the IP address configured in an IP address field', async () => {
+        const requests: { robotType: string; payload: unknown }[] = [];
+        const ipAddressSchema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string: { type: 'string', title: 'Robot IP address' },
+            },
+            required: ['connection_string'],
+            'x-physicalai-ui': [
+                {
+                    kind: 'ip_address',
+                    name: 'connection_string',
+                    label: 'Robot IP address',
+                    identify: true,
+                },
+            ],
+        };
+        server.use(
+            http.post('/api/robots/catalog/{robot_type}/identify', async ({ params, request }) => {
+                requests.push({ robotType: params.robot_type, payload: await request.json() });
+                return new HttpResponse(null, { status: 200 });
+            })
+        );
+        const user = userEvent.setup();
+
+        render(
+            <RobotFormProvider robot={{ type: 'Trossen_WidowXAI_Follower', name: '', payload: {} }}>
+                <SchemaForm schema={ipAddressSchema} />
+            </RobotFormProvider>
+        );
+
+        const identify = screen.getByRole('button', { name: 'Identify' });
+        expect(identify).toBeDisabled();
+
+        await user.type(screen.getByRole('textbox', { name: /Robot IP address/ }), ' 192.168.1.100 ');
+        await user.click(identify);
+
+        await waitFor(() =>
+            expect(requests).toEqual([
+                {
+                    robotType: 'Trossen_WidowXAI_Follower',
+                    payload: { connection_string: '192.168.1.100' },
+                },
+            ])
+        );
+    });
+
+    it('renders an optional IP address field without required styling', () => {
+        const ipAddressSchema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string: { type: 'string', title: 'Robot IP address' },
+            },
+            'x-physicalai-ui': [
+                {
+                    kind: 'ip_address',
+                    name: 'connection_string',
+                },
+            ],
+        };
+
+        render(
+            <RobotFormProvider robot={{ type: 'Trossen_WidowXAI_Follower', name: '', payload: {} }}>
+                <SchemaForm schema={ipAddressSchema} />
+            </RobotFormProvider>
+        );
+
+        expect(screen.getByRole('textbox', { name: 'IP address' })).not.toBeRequired();
+    });
+
+    it('identifies each bimanual IP address through the configured single-arm robot type', async () => {
+        const requests: { robotType: string; payload: unknown }[] = [];
+        const bimanualIpAddressSchema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string_left: { type: 'string', title: 'Left arm IP address' },
+                connection_string_right: { type: 'string', title: 'Right arm IP address' },
+            },
+            required: ['connection_string_left', 'connection_string_right'],
+            'x-physicalai-ui': [
+                {
+                    kind: 'ip_address',
+                    name: 'connection_string_left',
+                    label: 'Left arm IP address',
+                    identify: true,
+                    identify_robot_type: 'Trossen_WidowXAI_Follower',
+                },
+                {
+                    kind: 'ip_address',
+                    name: 'connection_string_right',
+                    label: 'Right arm IP address',
+                    identify: true,
+                    identify_robot_type: 'Trossen_WidowXAI_Follower',
+                },
+            ],
+        };
+        server.use(
+            http.post('/api/robots/catalog/{robot_type}/identify', async ({ params, request }) => {
+                requests.push({ robotType: params.robot_type, payload: await request.json() });
+                return new HttpResponse(null, { status: 200 });
+            })
+        );
+        const user = userEvent.setup();
+
+        render(
+            <RobotFormProvider robot={{ type: 'Trossen_Bimanual_WidowXAI_Follower', name: '', payload: {} }}>
+                <SchemaForm schema={bimanualIpAddressSchema} />
+            </RobotFormProvider>
+        );
+
+        await user.type(screen.getByRole('textbox', { name: /Left arm IP address/ }), '192.168.1.100');
+        await user.type(screen.getByRole('textbox', { name: /Right arm IP address/ }), '192.168.1.101');
+        await user.click(screen.getAllByRole('button', { name: 'Identify' })[0]);
+        await user.click(screen.getAllByRole('button', { name: 'Identify' })[1]);
+
+        await waitFor(() =>
+            expect(requests).toEqual([
+                {
+                    robotType: 'Trossen_WidowXAI_Follower',
+                    payload: { connection_string: '192.168.1.100' },
+                },
+                {
+                    robotType: 'Trossen_WidowXAI_Follower',
+                    payload: { connection_string: '192.168.1.101' },
+                },
+            ])
+        );
+    });
+
     it('stores serial-capable device values in their respective payload fields', async () => {
         server.use(
             http.get('/api/robots/catalog/{robot_type}/discover', () =>
@@ -362,7 +541,7 @@ describe('SchemaForm', () => {
             </RobotFormProvider>
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Select robot' }));
+        await user.click(await screen.findByRole('button', { name: /Select robot/ }));
         await user.click(screen.getByRole('option', { name: '00000000050C' }));
         await user.keyboard('{Escape}');
 
@@ -386,7 +565,7 @@ describe('SchemaForm', () => {
             </RobotFormProvider>
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Select robot' }));
+        await user.click(await screen.findByRole('button', { name: /Select robot/ }));
         await user.click(screen.getByRole('option', { name: 'No serial number' }));
 
         expect(await screen.findByRole('status')).toHaveTextContent(
@@ -409,8 +588,8 @@ describe('SchemaForm', () => {
             </RobotFormProvider>
         );
 
-        await user.click(await screen.findByRole('button', { name: 'Select robot' }));
-        await user.type(screen.getByRole('searchbox', { name: 'Select robot' }), '/dev/ttyUSB0');
+        await user.click(await screen.findByRole('button', { name: /Select robot/ }));
+        await user.type(screen.getByRole('searchbox', { name: /Select robot/ }), '/dev/ttyUSB0');
         await user.keyboard('{Escape}');
 
         expect(screen.getByRole('status')).toHaveTextContent(JSON.stringify({ cameras: {}, port: '/dev/ttyUSB0' }));
@@ -444,12 +623,13 @@ describe('SchemaForm', () => {
             </RobotFormProvider>
         );
 
-        expect(screen.getByRole('button', { name: 'Select robot' })).toBeVisible();
+        expect(screen.getByRole('button', { name: /Select robot/ })).toBeVisible();
         expect(screen.queryByRole('heading', { name: 'Cameras' })).not.toBeInTheDocument();
         expect(screen.queryByRole('textbox', { name: 'Cameras' })).not.toBeInTheDocument();
     });
 
-    it('renders connection pickers from referenced nested object schemas', () => {
+    it('renders connection pickers from referenced nested object schemas with per-section advanced controls', async () => {
+        const user = userEvent.setup();
         render(
             <RobotFormProvider>
                 <SchemaForm schema={bimanualRebotSchema} />
@@ -459,12 +639,25 @@ describe('SchemaForm', () => {
 
         expect(screen.getByRole('heading', { name: 'Left Arm Config' })).toBeVisible();
         expect(screen.getByRole('heading', { name: 'Right Arm Config' })).toBeVisible();
-        expect(screen.queryByRole('switch', { name: 'Show advanced options' })).not.toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: 'Advanced options' })).toHaveLength(2);
         expect(screen.queryAllByRole('textbox', { name: 'Can Adapter' })).toHaveLength(0);
-        expect(screen.getAllByRole('button', { name: 'Select robot' })).toHaveLength(2);
+        expect(screen.getAllByRole('button', { name: /Select robot/ })).toHaveLength(2);
+
+        const leftArmSection = screen.getByRole('heading', { name: 'Left Arm Config' }).parentElement;
+        expect(leftArmSection).not.toBeNull();
+        if (leftArmSection === null) {
+            throw new Error('Expected left arm section container to be present.');
+        }
+        const leftArmAdvancedButtons = within(leftArmSection).getAllByRole('button', { name: 'Advanced options' });
+
+        await user.click(leftArmAdvancedButtons[leftArmAdvancedButtons.length - 1]);
+
+        expect(screen.getAllByRole('textbox', { name: 'Can Adapter' })).toHaveLength(1);
+        expect(leftArmAdvancedButtons[leftArmAdvancedButtons.length - 1]).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getAllByRole('button', { name: 'Advanced options' })).toHaveLength(2);
     });
 
-    it('hides a section when all of its fields are advanced configuration fields', () => {
+    it('keeps a section visible and gates advanced-only fields behind section control', async () => {
         const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
             type: 'object',
             properties: {
@@ -491,6 +684,7 @@ describe('SchemaForm', () => {
                 },
             ],
         };
+        const user = userEvent.setup();
 
         render(
             <RobotFormProvider>
@@ -498,7 +692,16 @@ describe('SchemaForm', () => {
             </RobotFormProvider>
         );
 
-        expect(screen.queryByRole('heading', { name: 'Calibration' })).not.toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Calibration' })).toBeVisible();
+        const advancedButton = screen.getByRole('button', { name: 'Advanced options' });
+        expect(advancedButton).toBeVisible();
+        expect(advancedButton).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByRole('spinbutton', { name: 'Offset' })).not.toBeInTheDocument();
+
+        await user.click(advancedButton);
+
+        expect(advancedButton).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByRole('spinbutton', { name: 'Offset' })).toBeVisible();
     });
 
     it('renders defaulted fields unless they are advanced configuration fields', () => {
@@ -520,7 +723,290 @@ describe('SchemaForm', () => {
         expect(screen.getByRole('switch', { name: 'Torque Enabled' })).toBeChecked();
     });
 
-    it('keeps advanced configuration fields hidden when the toggle is hidden', () => {
+    it('renders a calibration upload control from x-physicalai-ui calibration items', () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            $defs: {
+                SO101JointCalibration: {
+                    type: 'object',
+                    properties: {
+                        id: { type: 'integer' },
+                        drive_mode: { type: 'integer' },
+                        homing_offset: { type: 'integer' },
+                        range_min: { type: 'integer' },
+                        range_max: { type: 'integer' },
+                    },
+                    required: ['id', 'drive_mode', 'homing_offset', 'range_min', 'range_max'],
+                },
+            },
+            type: 'object',
+            properties: {
+                calibration: {
+                    type: 'object',
+                    title: 'Calibration',
+                    additionalProperties: { $ref: '#/$defs/SO101JointCalibration' },
+                },
+            },
+            'x-physicalai-ui': [{ kind: 'calibration', name: 'calibration' }],
+        };
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        expect(screen.getByRole('button', { name: 'Upload calibration JSON' })).toBeVisible();
+        expect(screen.queryByRole('textbox', { name: 'Calibration' })).not.toBeInTheDocument();
+    });
+
+    it('imports uploaded calibration JSON into the payload', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            $defs: {
+                SO101JointCalibration: {
+                    type: 'object',
+                    properties: {
+                        id: { type: 'integer' },
+                        drive_mode: { type: 'integer' },
+                        homing_offset: { type: 'integer' },
+                        range_min: { type: 'integer' },
+                        range_max: { type: 'integer' },
+                    },
+                    required: ['id', 'drive_mode', 'homing_offset', 'range_min', 'range_max'],
+                },
+            },
+            type: 'object',
+            properties: {
+                calibration: {
+                    type: 'object',
+                    title: 'Calibration',
+                    additionalProperties: { $ref: '#/$defs/SO101JointCalibration' },
+                },
+            },
+            'x-physicalai-ui': [{ kind: 'calibration', name: 'calibration' }],
+        };
+        const calibrationPayload = {
+            shoulder_pan: { id: 1, drive_mode: 0, homing_offset: 10, range_min: -100, range_max: 100 },
+        };
+        const user = userEvent.setup();
+        const { container } = render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+                <Payload />
+            </RobotFormProvider>
+        );
+        const fileInput = container.querySelector('input[type="file"]');
+
+        expect(fileInput).not.toBeNull();
+        if (fileInput === null) {
+            throw new Error('Expected calibration file input to be rendered.');
+        }
+        await user.upload(
+            fileInput as HTMLInputElement,
+            new File([JSON.stringify(calibrationPayload)], 'calibration.json', { type: 'application/json' })
+        );
+
+        expect(await screen.findByRole('status')).toHaveTextContent(
+            JSON.stringify({ calibration: calibrationPayload })
+        );
+        expect(screen.getByRole('table', { name: 'Calibration preview' })).toBeVisible();
+        expect(screen.getByRole('cell', { name: 'shoulder_pan' })).toBeVisible();
+    });
+
+    it('shows an error when uploaded calibration JSON is invalid', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                calibration: {
+                    type: 'object',
+                    title: 'Calibration',
+                    additionalProperties: true,
+                },
+            },
+            'x-physicalai-ui': [{ kind: 'calibration', name: 'calibration' }],
+        };
+        const user = userEvent.setup();
+        const { container } = render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+        const fileInput = container.querySelector('input[type="file"]');
+
+        expect(fileInput).not.toBeNull();
+        if (fileInput === null) {
+            throw new Error('Expected calibration file input to be rendered.');
+        }
+        await user.upload(
+            fileInput as HTMLInputElement,
+            new File(['{"bad_json":'], 'broken.json', { type: 'application/json' })
+        );
+
+        expect(await screen.findByText('Could not parse JSON. Upload a valid calibration .json file.')).toBeVisible();
+    });
+
+    it('hides advanced calibration items until advanced options are shown', () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                calibration: {
+                    type: 'object',
+                    title: 'Calibration',
+                    additionalProperties: true,
+                    'x-physicalai-ui': { advanced_configuration: true },
+                },
+            },
+            'x-physicalai-ui': [{ kind: 'calibration', name: 'calibration' }],
+        };
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        expect(screen.getByRole('button', { name: 'Advanced options' })).toBeVisible();
+        expect(screen.queryByRole('button', { name: 'Upload calibration JSON' })).not.toBeInTheDocument();
+    });
+
+    it('shows optional marker for non-required calibration items', () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                calibration: {
+                    type: 'object',
+                    title: 'Calibration',
+                    additionalProperties: true,
+                },
+            },
+            'x-physicalai-ui': [{ kind: 'calibration', name: 'calibration' }],
+        };
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        expect(screen.getByText('Calibration (optional)')).toBeVisible();
+    });
+
+    it('sorts calibration preview rows by ascending ID', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                calibration: {
+                    type: 'object',
+                    title: 'Calibration',
+                    additionalProperties: true,
+                },
+            },
+            'x-physicalai-ui': [{ kind: 'calibration', name: 'calibration' }],
+        };
+        const payload = {
+            wrist_flex: { id: 5, drive_mode: 0, homing_offset: 11, range_min: -80, range_max: 80 },
+            shoulder_pan: { id: 1, drive_mode: 0, homing_offset: 10, range_min: -100, range_max: 100 },
+            elbow_flex: { id: 3, drive_mode: 0, homing_offset: 12, range_min: -90, range_max: 90 },
+        };
+        const user = userEvent.setup();
+        const { container } = render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+        const fileInput = container.querySelector('input[type="file"]');
+
+        expect(fileInput).not.toBeNull();
+        if (fileInput === null) {
+            throw new Error('Expected calibration file input to be rendered.');
+        }
+        await user.upload(
+            fileInput as HTMLInputElement,
+            new File([JSON.stringify(payload)], 'calibration.json', { type: 'application/json' })
+        );
+
+        const rows = screen.getAllByRole('row');
+        expect(rows[1]).toHaveTextContent('shoulder_pan');
+        expect(rows[2]).toHaveTextContent('elbow_flex');
+        expect(rows[3]).toHaveTextContent('wrist_flex');
+    });
+
+    it('renders contextual help from field-level info metadata', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string: {
+                    type: 'string',
+                    title: 'Connection String',
+                    'x-physicalai-ui': {
+                        info: {
+                            title: 'Connection setup',
+                            description: 'Use the full serial device path for manual setup.',
+                            link_url: 'https://example.com/serial-setup',
+                            variant: 'help',
+                        },
+                    },
+                },
+            },
+        };
+        const user = userEvent.setup();
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        await user.click(screen.getByRole('button', { name: /Help$/ }));
+
+        expect(await screen.findByRole('heading', { name: 'Connection setup' })).toBeVisible();
+        expect(screen.getByText('Use the full serial device path for manual setup.')).toBeVisible();
+        expect(screen.getByRole('link', { name: 'Learn more' })).toHaveAttribute(
+            'href',
+            'https://example.com/serial-setup'
+        );
+    });
+
+    it('prefers item-level contextual help over field-level info metadata', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string: {
+                    type: 'string',
+                    title: 'Connection String',
+                    'x-physicalai-ui': {
+                        info: {
+                            description: 'Field-level help text',
+                        },
+                    },
+                },
+            },
+            'x-physicalai-ui': [
+                {
+                    kind: 'field',
+                    name: 'connection_string',
+                    info: {
+                        title: 'Connection details',
+                        description: 'Item-level help text',
+                    },
+                },
+            ],
+        };
+        const user = userEvent.setup();
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        await user.click(screen.getByRole('button', { name: /Information$/ }));
+
+        expect(await screen.findByRole('heading', { name: 'Connection details' })).toBeVisible();
+        expect(screen.getByText('Item-level help text')).toBeVisible();
+        expect(screen.queryByText('Field-level help text')).not.toBeInTheDocument();
+    });
+
+    it('hides advanced configuration fields until show advanced is pressed in the current scope', async () => {
         const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
             type: 'object',
             properties: {
@@ -533,6 +1019,7 @@ describe('SchemaForm', () => {
                 },
             },
         };
+        const user = userEvent.setup();
 
         render(
             <RobotFormProvider>
@@ -541,8 +1028,86 @@ describe('SchemaForm', () => {
         );
 
         expect(screen.getByRole('textbox', { name: 'Connection String' })).toBeVisible();
-        expect(screen.queryByRole('switch', { name: 'Show advanced options' })).not.toBeInTheDocument();
+        const advancedButton = screen.getByRole('button', { name: 'Advanced options' });
+        expect(advancedButton).toBeVisible();
+        expect(advancedButton).toHaveAttribute('aria-expanded', 'false');
         expect(screen.queryByRole('switch', { name: 'Use ROS' })).not.toBeInTheDocument();
+
+        await user.click(advancedButton);
+
+        expect(advancedButton).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByRole('switch', { name: 'Use ROS' })).toBeVisible();
+    });
+
+    it('keeps nested section advanced visibility independent from parent section state', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string: { type: 'string', title: 'Connection String' },
+                parent_advanced: {
+                    type: 'string',
+                    title: 'Parent Advanced',
+                    'x-physicalai-ui': { advanced_configuration: true },
+                },
+                child_advanced: {
+                    type: 'string',
+                    title: 'Child Advanced',
+                    'x-physicalai-ui': { advanced_configuration: true },
+                },
+            },
+            'x-physicalai-ui': [
+                {
+                    kind: 'section',
+                    id: 'parent',
+                    title: 'Parent',
+                    items: [
+                        { kind: 'field', name: 'connection_string' },
+                        { kind: 'field', name: 'parent_advanced' },
+                        {
+                            kind: 'section',
+                            id: 'child',
+                            title: 'Child',
+                            items: [{ kind: 'field', name: 'child_advanced' }],
+                        },
+                    ],
+                },
+            ],
+        };
+        const user = userEvent.setup();
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        expect(screen.getByRole('heading', { name: 'Parent' })).toBeVisible();
+        expect(screen.getByRole('heading', { name: 'Child' })).toBeVisible();
+        expect(screen.getAllByRole('button', { name: 'Advanced options' })).toHaveLength(2);
+        expect(screen.queryByRole('textbox', { name: 'Parent Advanced' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('textbox', { name: 'Child Advanced' })).not.toBeInTheDocument();
+
+        const parentSection = screen.getByRole('heading', { name: 'Parent' }).parentElement;
+        expect(parentSection).not.toBeNull();
+        if (parentSection === null) {
+            throw new Error('Expected parent section container to be present.');
+        }
+        const parentAdvancedButtons = within(parentSection).getAllByRole('button', { name: 'Advanced options' });
+
+        await user.click(parentAdvancedButtons[parentAdvancedButtons.length - 1]);
+
+        expect(screen.getByRole('textbox', { name: 'Parent Advanced' })).toBeVisible();
+        expect(screen.queryByRole('textbox', { name: 'Child Advanced' })).not.toBeInTheDocument();
+
+        const childSection = screen.getByRole('heading', { name: 'Child' }).parentElement;
+        expect(childSection).not.toBeNull();
+        if (childSection === null) {
+            throw new Error('Expected child section container to be present.');
+        }
+
+        await user.click(within(childSection).getByRole('button', { name: 'Advanced options' }));
+
+        expect(screen.getByRole('textbox', { name: 'Child Advanced' })).toBeVisible();
     });
 
     it('keeps advanced configuration field defaults in the payload', () => {

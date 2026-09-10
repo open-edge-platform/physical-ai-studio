@@ -247,7 +247,7 @@ def test_policy_source_fragment_matches_the_session_recipe() -> None:
     assert export["class_path"] == "physicalai.runtime.PolicySource"
     assert export["init_args"]["execution"] == session["init_args"]["execution"]
     assert export["init_args"]["action_queue"] == session["init_args"]["action_queue"]
-    assert export["init_args"]["execution"]["class_path"] == "physicalai.runtime.AsyncExecution"
+    assert export["init_args"]["execution"]["class_path"] == "physicalai.runtime.SyncExecution"
     assert export["init_args"]["execution"]["init_args"]["request_threshold"] == POLICY_REQUEST_THRESHOLD
     assert "duration_frames" not in export["init_args"]["action_queue"]["init_args"]["smoother"]["init_args"]
     assert "policy_name" not in export["init_args"]["model"]["init_args"]

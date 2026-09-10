@@ -29,6 +29,7 @@ Example:
 
 from __future__ import annotations
 
+import contextlib
 import gc
 import logging
 import os
@@ -36,7 +37,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 if TYPE_CHECKING:
     from physicalai.policies.base import Policy
@@ -45,7 +46,24 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CHECKPOINT_NAME = "model.ckpt"
-"""Filename of the final checkpoint written into ``output_dir``."""
+"""Filename of the ordinary (flow-matching) checkpoint."""
+
+SNAPFLOW_CHECKPOINT_PREFIX = "snapflow-"
+"""Prefix :class:`~physicalai.train.callbacks.SnapFlowPhaseCallback` applies to
+``ModelCheckpoint`` filenames once distillation starts, so phase-2 checkpoints
+land beside phase-1's instead of overwriting them."""
+
+SNAPFLOW_CHECKPOINT_NAME = f"{SNAPFLOW_CHECKPOINT_PREFIX}{CHECKPOINT_NAME}"
+"""Filename of the distilled checkpoint, written only once a SnapFlow run
+reaches its phase boundary. Preferred over :data:`CHECKPOINT_NAME` by export,
+resume, and download whenever it exists; see :func:`resolve_checkpoint`."""
+
+SNAPFLOW_POLICIES = frozenset({"pi05", "smolvla"})
+"""Policies that implement ``enable_snapflow()`` and can be distilled.
+
+SnapFlow is a flow-matching technique; only the flow-matching policies mix in
+:class:`~physicalai.policies.mixins.SnapFlowPolicyMixin`.
+"""
 
 EXPORTS_DIRNAME = "exports"
 """Subdirectory of ``output_dir`` holding one directory per export backend."""
@@ -95,13 +113,25 @@ class TrainingJobSpec(BaseModel):
         default="physicalai",
         description="Which implementation of the policy to train.",
     )
-    max_epochs: int = Field(default=5, ge=1, description="Training epoch budget.")
+    max_epochs: int = Field(
+        default=5,
+        ge=1,
+        description=(
+            "Total training epoch budget. When SnapFlow distillation is enabled this already "
+            "includes the distillation phase (see snapflow_start_epoch)."
+        ),
+    )
     batch_size: int = Field(default=8, ge=1, description="Training batch size.")
     num_workers: int | Literal["auto"] = Field(default="auto", description="Dataloader worker count.")
     val_split: float = Field(default=0.1, ge=0.0, lt=1.0, description="Fraction of episodes held out for validation.")
     precision: str = Field(default="bf16-mixed", description="Lightning precision, e.g. '32-true' or 'bf16-mixed'.")
     compile_model: bool = Field(default=False, description="Whether to torch.compile the policy forward pass.")
     auto_scale_batch_size: bool = Field(default=False, description="Whether to search for the largest fitting batch.")
+    snapflow_start_epoch: int | None = Field(
+        default=None,
+        ge=1,
+        description=("Epoch at which to switch from flow matching to SnapFlow self-distillation."),
+    )
     device_type: str | None = Field(
         default=None,
         description="Accelerator to train on ('xpu', 'cuda', 'cpu', ...). None auto-detects.",
@@ -112,6 +142,36 @@ class TrainingJobSpec(BaseModel):
         description="Zero-based index of the accelerator to train on. None lets Lightning pick one.",
     )
     run_options: RunOptions = Field(default_factory=RunOptions)
+
+    @model_validator(mode="after")
+    def validate_snapflow(self) -> TrainingJobSpec:
+        """Reject a SnapFlow boundary the run cannot honour.
+
+        Checked here rather than at the trainer so a bad combination fails at
+        submission.
+
+        Returns:
+            The validated spec.
+
+        Raises:
+            ValueError: If the policy cannot be distilled, or the boundary
+                leaves no epochs for the distillation phase.
+        """
+        if self.snapflow_start_epoch is None:
+            return self
+        if self.policy.lower() not in SNAPFLOW_POLICIES:
+            msg = (
+                f"SnapFlow distillation is not supported for policy {self.policy!r}; "
+                f"supported policies are {sorted(SNAPFLOW_POLICIES)}."
+            )
+            raise ValueError(msg)
+        if self.snapflow_start_epoch >= self.max_epochs:
+            msg = (
+                f"snapflow_start_epoch ({self.snapflow_start_epoch}) must be below max_epochs "
+                f"({self.max_epochs}) so at least one epoch is spent distilling."
+            )
+            raise ValueError(msg)
+        return self
 
 
 def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None) -> Policy:
@@ -139,6 +199,29 @@ def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None
     return get_policy(spec.policy, source=spec.policy_source, **kwargs)
 
 
+@contextlib.contextmanager
+def _hf_token_env(token: SecretStr | None):
+    """Scope ``HF_TOKEN`` to one training run, restoring whatever was there before.
+
+    ``os.environ`` is process-global and jobs can run concurrently in the same
+    process (see `trainer.queue_worker`), so a token set for one job must not
+    leak into another's environment or clobber a value an operator set on the
+    process itself. A no-op when ``token`` is ``None``.
+    """
+    if token is None:
+        yield
+        return
+    previous = os.environ.get("HF_TOKEN")
+    os.environ["HF_TOKEN"] = token.get_secret_value()
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("HF_TOKEN", None)
+        else:
+            os.environ["HF_TOKEN"] = previous
+
+
 def run_training_job(
     spec: TrainingJobSpec,
     *,
@@ -158,6 +241,12 @@ def run_training_job(
     not produce one (e.g. the monitored metric never logged), so it never
     overwrites a best checkpoint with the final-epoch weights (see
     :func:`_ensure_checkpoint_exists`).
+
+    When ``spec.snapflow_start_epoch`` is set the run has two phases: standard
+    flow matching, then SnapFlow self-distillation. Both phases keep their own
+    checkpoint and export reloads whichever one :func:`resolve_checkpoint`
+    picks, so the exported artifact (and therefore inference) always matches
+    the checkpoint a distilled model ships.
 
     Cancellation is cooperative. ``should_stop`` is polled throughout training
     via :class:`~physicalai.train.callbacks.ProgressReportingCallback`; when it
@@ -190,56 +279,77 @@ def run_training_job(
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
 
-    if spec.run_options.hf_token is not None:
-        os.environ["HF_TOKEN"] = spec.run_options.hf_token.get_secret_value()
-    accelerator = resolve_accelerator(spec.device_type)
-    output_dir, cache_dir = Path(output_dir), Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    with _hf_token_env(spec.run_options.hf_token):
+        accelerator = resolve_accelerator(spec.device_type)
+        output_dir, cache_dir = Path(output_dir), Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
-    datamodule = LeRobotDataModule(
-        repo_id=_DATASET_REPO_ID,
-        root=str(dataset_root),
-        train_batch_size=spec.batch_size,
-        num_workers=spec.num_workers,
-        val_split=spec.val_split,
+        datamodule = LeRobotDataModule(
+            repo_id=_DATASET_REPO_ID,
+            root=str(dataset_root),
+            train_batch_size=spec.batch_size,
+            num_workers=spec.num_workers,
+            val_split=spec.val_split,
+        )
+        policy = build_policy(spec, resume_from=spec.run_options.resume_from)
+
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=cache_dir,
+            filename=Path(CHECKPOINT_NAME).stem,
+            save_top_k=1,
+            monitor="val/loss",
+            mode="min",
+        )
+        callbacks: list[Any] = [checkpoint_callback, ProgressReportingCallback(report=report, should_stop=should_stop)]
+        snapflow_callback = _build_snapflow_callback(spec)
+        if snapflow_callback is not None:
+            callbacks.append(snapflow_callback)
+
+        trainer = Trainer(
+            logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
+            callbacks=callbacks,
+            accelerator=accelerator,
+            strategy=resolve_strategy(spec.device_type),
+            devices=resolve_devices(spec.device_index),
+            max_epochs=spec.max_epochs,
+            auto_scale_batch_size=spec.auto_scale_batch_size,
+            precision=spec.precision,
+            check_val_every_n_epoch=1,
+        )
+
+        report(0, "Training model", {})
+        trainer.fit(model=policy, datamodule=datamodule)
+        if should_stop():
+            logger.info("Training canceled; skipping checkpoint and export")
+            return
+
+        _finalize_checkpoints(trainer, cache_dir, snapflow_callback=snapflow_callback)
+        _publish(cache_dir, output_dir)
+
+        export_policy = _export_policy(spec, policy, output_dir)
+        _detach_trainer(export_policy, trainer)
+        del trainer, datamodule, policy
+        _release_memory()
+        _export(export_policy, output_dir, report)
+
+
+def _build_snapflow_callback(spec: TrainingJobSpec) -> Any:
+    """Build the SnapFlow phase-transition callback a spec asks for.
+
+    Returns:
+        A :class:`~physicalai.train.callbacks.SnapFlowPhaseCallback` when the
+        spec sets a boundary, or ``None`` for an ordinary flow-matching run.
+    """
+    if spec.snapflow_start_epoch is None:
+        return None
+
+    from physicalai.train.callbacks import SnapFlowPhaseCallback
+
+    logger.info("SnapFlow distillation starts at epoch %d of %d", spec.snapflow_start_epoch, spec.max_epochs)
+    return SnapFlowPhaseCallback(
+        start_epoch=spec.snapflow_start_epoch,
+        checkpoint_prefix=SNAPFLOW_CHECKPOINT_PREFIX,
     )
-    policy = build_policy(spec, resume_from=spec.run_options.resume_from)
-
-    trainer = Trainer(
-        logger=CSVLogger(cache_dir.parent, name=cache_dir.stem),
-        callbacks=[
-            ModelCheckpoint(
-                dirpath=cache_dir,
-                filename=Path(CHECKPOINT_NAME).stem,
-                save_top_k=1,
-                monitor="val/loss",
-                mode="min",
-            ),
-            ProgressReportingCallback(report=report, should_stop=should_stop),
-        ],
-        accelerator=accelerator,
-        strategy=resolve_strategy(spec.device_type),
-        devices=resolve_devices(spec.device_index),
-        max_epochs=spec.max_epochs,
-        auto_scale_batch_size=spec.auto_scale_batch_size,
-        precision=spec.precision,
-        check_val_every_n_epoch=1,
-    )
-
-    report(0, "Training model", {})
-    trainer.fit(model=policy, datamodule=datamodule)
-    if should_stop():
-        logger.info("Training canceled; skipping checkpoint and export")
-        return
-
-    _ensure_checkpoint_exists(trainer, cache_dir)
-    _publish(cache_dir, output_dir)
-
-    export_policy = _export_policy(spec, policy, output_dir)
-    _detach_trainer(export_policy, trainer)
-    del trainer, datamodule, policy
-    _release_memory()
-    _export(export_policy, output_dir, report)
 
 
 def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Policy:
@@ -285,6 +395,33 @@ def _ensure_checkpoint_exists(trainer: Any, cache_dir: Path) -> None:
         trainer.save_checkpoint(checkpoint)
 
 
+def _finalize_checkpoints(trainer: Any, cache_dir: Path, *, snapflow_callback: Any) -> None:
+    """Make sure every checkpoint this run should ship actually exists on disk.
+
+    :data:`CHECKPOINT_NAME` is always ensured (see
+    :func:`_ensure_checkpoint_exists`). When the run reached the SnapFlow
+    phase, :data:`SNAPFLOW_CHECKPOINT_NAME` is ensured too: normally
+    ``SnapFlowPhaseCallback`` already wrote it, but a run with nothing for the
+    monitored metric to log in phase 2 (e.g. no validation split) would
+    otherwise ship no distilled checkpoint at all despite having trained one.
+
+    Args:
+        trainer: The Lightning trainer that just finished fitting.
+        cache_dir: Directory holding this run's checkpoints.
+        snapflow_callback: The ``SnapFlowPhaseCallback`` for this run, or
+            ``None`` if the run was ordinary flow matching.
+    """
+    _ensure_checkpoint_exists(trainer, cache_dir)
+
+    if snapflow_callback is None or not snapflow_callback.state_dict().get("activated"):
+        return
+
+    snapflow_checkpoint = cache_dir / SNAPFLOW_CHECKPOINT_NAME
+    if not snapflow_checkpoint.is_file():
+        logger.warning("SnapFlow phase saved no checkpoint; saving final distilled weights instead")
+        trainer.save_checkpoint(snapflow_checkpoint)
+
+
 def _publish(cache_dir: Path, output_dir: Path) -> None:
     """Move the finished training cache into its final location."""
     output_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -293,25 +430,49 @@ def _publish(cache_dir: Path, output_dir: Path) -> None:
     shutil.move(str(cache_dir), str(output_dir))
 
 
-def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> Policy:
-    """Return the policy to export, reloading it when compilation blocks export.
+def resolve_checkpoint(model_dir: Path | str) -> Path:
+    """Return the checkpoint that represents a model, preferring the distilled one.
 
-    ``torch.compile`` wraps ``forward`` in a way some export backends cannot
-    trace, so for the affected policies the just-saved checkpoint is reloaded
-    uncompiled. Falls back to the trained policy if that reload fails — a
-    failed export is better than a failed job.
+    Args:
+        model_dir: A model's directory (``output_dir`` from a finished run).
+
+    Returns:
+        ``model_dir / SNAPFLOW_CHECKPOINT_NAME`` if it exists, else
+        ``model_dir / CHECKPOINT_NAME`` unconditionally (its own existence is
+        not checked; callers that need to know should check themselves).
+    """
+    model_dir = Path(model_dir)
+    snapflow_checkpoint = model_dir / SNAPFLOW_CHECKPOINT_NAME
+    if snapflow_checkpoint.is_file():
+        return snapflow_checkpoint
+    return model_dir / CHECKPOINT_NAME
+
+
+def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> Policy:
+    """Return the policy to export: reloaded from disk when that changes what gets exported.
+
+    Reloads are needed in two cases, and are always uncompiled since some
+    export backends cannot trace a ``torch.compile``d forward pass.
+
+    Falls back to the trained policy if the reload fails — a failed export is
+    better than a failed job.
 
     Returns:
         The policy instance to hand to the export backends.
     """
-    if not (spec.compile_model and spec.policy.lower() in _COMPILED_EXPORT_RELOAD_POLICIES):
+    resolved = resolve_checkpoint(output_dir)
+    used_snapflow_checkpoint = resolved.name == SNAPFLOW_CHECKPOINT_NAME
+    needs_compiled_reload = spec.compile_model and spec.policy.lower() in _COMPILED_EXPORT_RELOAD_POLICIES
+    if not used_snapflow_checkpoint and not needs_compiled_reload:
         return policy
+    reload_from = resolved
+
     try:
-        logger.info("Reloading non-compiled policy for export")
+        logger.info("Reloading policy from %s for export", reload_from.name)
         uncompiled = spec.model_copy(update={"compile_model": False})
-        return _load_policy_from_checkpoint(uncompiled, output_dir / CHECKPOINT_NAME)
+        return _load_policy_from_checkpoint(uncompiled, reload_from)
     except Exception:  # reload is best-effort; the trained policy is a valid fallback
-        logger.warning("Failed to reload non-compiled policy for export; using trained policy", exc_info=True)
+        logger.warning("Failed to reload policy for export; using trained policy", exc_info=True)
         return policy
 
 

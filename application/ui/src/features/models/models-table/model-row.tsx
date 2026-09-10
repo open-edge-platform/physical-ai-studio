@@ -5,7 +5,10 @@ import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaModel, SchemaTrainJob } from '../../../api/openapi-spec';
 import { Table } from '../../../components/table/table';
+import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
+import { SnapflowBadge } from '../shared/snapflow-badge';
+import { getTrainerLabel } from '../shared/trainer';
 import { ModelDownloadDialog } from './model-download-dialog';
 import { ModelRowContent } from './model-row-content';
 import { StartInferenceDialog } from './start-inference-dialog';
@@ -26,6 +29,10 @@ export const ModelRow = ({
     onViewLogs?: () => void;
 }) => {
     const [isDownloadDialogOpen, setDownloadDialogOpen] = useState(false);
+    const { data: dataset } = useDatasetQuery(model.dataset_id);
+    const { data: environment } = useEnvironmentQuery(model.project_id, dataset?.environment_id);
+
+    const trainer = getTrainerLabel(trainingJob?.payload);
 
     const onAction = (key: Key) => {
         const action = key.toString();
@@ -58,10 +65,14 @@ export const ModelRow = ({
             <Flex alignItems='center' gap='size-100'>
                 <Text>{model.name}</Text>
                 {version > 1 && <Text UNSAFE_className={classes.versionBadge}>v{version}</Text>}
+                <SnapflowBadge isEnabled={model.snapflow_enabled} />
             </Flex>
+            <Text>{model.policy.toUpperCase()}</Text>
+            <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
+            <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
+            <Text data-testid='trainer-cell'>{trainer || '-'}</Text>
             <Text>{new Date(model.created_at!).toLocaleString()}</Text>
             <Text UNSAFE_className={duration ? undefined : classes.rowInfo}>{duration ?? '—'}</Text>
-            <Text>{model.policy.toUpperCase()}</Text>
             <div onClick={(e) => e.stopPropagation()}>
                 <DialogTrigger>
                     <Button variant='secondary'>Run model</Button>

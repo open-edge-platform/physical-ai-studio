@@ -1,0 +1,98 @@
+.detail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-global-dimension-size-150);
+    padding: var(--spectrum-global-dimension-size-100) var(--spectrum-global-dimension-size-200);
+}
+
+.fields {
+    display: grid;
+    grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
+    gap: var(--spectrum-global-dimension-size-75) var(--spectrum-global-dimension-size-200);
+    margin: 0;
+}
+
+.fields dt {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.fields dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.diagnostics {
+    padding-top: var(--spectrum-global-dimension-size-100);
+    border-top: 1px solid var(--spectrum-global-color-gray-300);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.subtle {
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.abandoned {
+    color: var(--spectrum-global-color-orange-600);
+}
+
+.errorMessage {
+    color: var(--spectrum-global-color-red-600);
+}
+
+.empty {
+    padding: var(--spectrum-global-dimension-size-400);
+    text-align: center;
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.dialog {
+    position: relative;
+    width: 36rem;
+    max-width: calc(100vw - 2rem);
+}
+
+.closeButton {
+    position: absolute;
+    top: var(--spectrum-global-dimension-size-50);
+    right: var(--spectrum-global-dimension-size-50);
+}
+
+.pinButton {
+    position: absolute;
+    top: var(--spectrum-global-dimension-size-50);
+    right: var(--spectrum-global-dimension-size-500);
+}
+
+.pinButton :global(svg) {
+    transition: transform 0.15s ease;
+}
+
+.pinButtonActive {
+    color: var(--energy-blue);
+}
+
+.pinButtonActive :global(svg) {
+    transform: rotate(-45deg);
+}
+
+.status::before {
+    margin-left: 0;
+}
+
+.confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spectrum-global-dimension-size-100);
+    width: 100%;
+    padding: var(--spectrum-global-dimension-size-150) var(--spectrum-global-dimension-size-200);
+    background: var(--spectrum-global-color-gray-75);
+    border-top: 1px solid var(--spectrum-global-color-gray-300);
+}
+
+.confirmCopy {
+    color: var(--spectrum-global-color-gray-700);
+}

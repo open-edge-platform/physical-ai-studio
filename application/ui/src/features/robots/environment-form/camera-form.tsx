@@ -8,6 +8,7 @@ import { SchemaProjectCamera } from '../../../api/types';
 import { useProjectId } from '../../../features/projects/use-project';
 import { CameraConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
+import addResourceButtonClasses from '../../../components/add-resource-button/add-resource-button.module.css';
 import classes from './form.module.css';
 
 export const CameraListItem = ({ camera, onRemove }: { camera: CameraConfiguration; onRemove: () => void }) => {
@@ -171,7 +172,7 @@ export const CameraForm = () => {
             ) : (
                 <Button
                     variant='secondary'
-                    UNSAFE_className={classes.addNewButton}
+                    UNSAFE_className={addResourceButtonClasses.addResourceButton}
                     width='100%'
                     onPress={() => {
                         setIsAdding(true);

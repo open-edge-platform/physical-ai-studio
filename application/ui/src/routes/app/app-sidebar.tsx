@@ -1,6 +1,7 @@
 import { Flex, Item, TabList, Text, View } from '@geti-ui/ui';
 
 import { AppLogo } from '../../components/app-logo/app-logo';
+import { featureFlags } from '../../config/feature-flags';
 import { navItems } from './nav-items';
 
 import classes from './app.layout.module.css';
@@ -23,7 +24,7 @@ export const AppSidebar = () => {
                 <View flex={1} minHeight={0} paddingTop={'size-500'}>
                     <TabList width='100%' aria-label='Main navigation items' UNSAFE_className={classes.sidebarList}>
                         {navItems
-                            .filter((item) => item.enabled)
+                            .filter((item) => item.enabled && (item.key !== 'plugins' || featureFlags.plugins))
                             .map((item) => (
                                 <Item key={item.key} textValue={item.label} href={item.path}>
                                     <Flex alignItems={'center'} gap={'size-100'}>

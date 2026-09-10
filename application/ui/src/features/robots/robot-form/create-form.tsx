@@ -5,10 +5,19 @@ import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
+import type { SchemaSo101RobotPayload } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { FormFields, RobotFormHeading, RobotType } from './form';
 import { useRobotForm, useRobotFormBody } from './provider';
+
+const hasUploadedCalibration = (payload: unknown): boolean => {
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+        return false;
+    }
+    const calibration = (payload as SchemaSo101RobotPayload).calibration;
+    return typeof calibration === 'object' && calibration !== null && Object.keys(calibration).length > 0;
+};
 
 export const CreateRobotForm = () => {
     const navigate = useNavigate();
@@ -26,6 +35,7 @@ export const CreateRobotForm = () => {
 
     const body = useRobotFormBody(uuidv4());
     const isSO101 = activeType === 'SO101_Follower' || activeType === 'SO101_Leader';
+    const shouldRunSO101Setup = isSO101 && !hasUploadedCalibration(body?.payload);
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
@@ -34,7 +44,7 @@ export const CreateRobotForm = () => {
             return;
         }
 
-        if (isSO101) {
+        if (shouldRunSO101Setup) {
             navigate(paths.project.robots.so101Setup({ project_id }));
             return;
         }
@@ -67,7 +77,7 @@ export const CreateRobotForm = () => {
                             isDisabled={isCreateDisabled}
                             isPending={addRobotMutation.isPending}
                         >
-                            {isSO101 ? 'Begin Setup' : 'Add robot'}
+                            {shouldRunSO101Setup ? 'Begin Setup' : 'Add robot'}
                         </Button>
                     </View>
                 </Flex>

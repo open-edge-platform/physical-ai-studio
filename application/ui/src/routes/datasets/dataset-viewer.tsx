@@ -1,5 +1,3 @@
-import { useMemo, useState } from 'react';
-
 import {
     ActionButton,
     AlertDialog,
@@ -26,25 +24,14 @@ import { ReactComponent as EmptyIllustration } from './../../assets/illustration
 import { useDataset } from './dataset-provider';
 import { EpisodeList } from './episode-list';
 import { EpisodeViewer } from './episode-viewer';
+import { useActiveEpisode } from './use-active-episode';
 
 export const DatasetViewer = () => {
     const { dataset, episodes, selectedEpisodes, setSelectedEpisodes } = useDataset();
     const { project_id } = useProjectId();
 
     const { deleteEpisodes, isPending } = useDeleteEpisodeQuery(dataset.id!);
-    const [currentEpisode, setCurrentEpisode] = useState<number | null>(null);
-
-    if (episodes.length > 0 && currentEpisode === null) {
-        setCurrentEpisode(episodes[0].episode_index);
-    }
-
-    const currentEpisodeIndex = useMemo(() => {
-        if (currentEpisode !== null && episodes.some((episode) => episode.episode_index === currentEpisode)) {
-            return currentEpisode;
-        }
-
-        return episodes[0]?.episode_index ?? null;
-    }, [currentEpisode, episodes]);
+    const [activeEpisodeIndex, setActiveEpisodeIndex] = useActiveEpisode();
 
     const { data: environment } = $api.useSuspenseQuery(
         'get',
@@ -61,11 +48,12 @@ export const DatasetViewer = () => {
             params: {
                 path: {
                     dataset_id: String(dataset.id),
-                    episode_index: currentEpisodeIndex,
+                    episode_index: Number(activeEpisodeIndex),
                 },
             },
         },
         {
+            enabled: activeEpisodeIndex !== null,
             placeholderData: keepPreviousData,
         }
     );
@@ -139,11 +127,7 @@ export const DatasetViewer = () => {
                         </DialogTrigger>
                     </Flex>
                 )}
-                <EpisodeList
-                    episodes={episodes}
-                    onSelect={setCurrentEpisode}
-                    currentEpisode={currentEpisodeIndex ?? -1}
-                />
+                <EpisodeList episodes={episodes} onSelect={setActiveEpisodeIndex} currentEpisode={activeEpisodeIndex} />
             </Flex>
         </Flex>
     );

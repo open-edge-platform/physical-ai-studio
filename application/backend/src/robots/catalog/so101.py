@@ -41,8 +41,24 @@ class SO101RobotPayload(BaseModel):
     )
     calibration: dict[str, SO101JointCalibration] | None = Field(  # pyrefly: ignore[no-matching-overload]
         default=None,
-        description="Per-joint calibration values (id, drive_mode, homing_offset, range_min, range_max)",
-        json_schema_extra=robot_field_ui({"advanced_configuration": True}),
+        description=(
+            "Provide SO101 calibration values. Studio uses these values as-is: it does not overwrite "
+            "calibration on the control board and it skips the guided manual calibration flow."
+        ),
+        json_schema_extra=robot_field_ui(
+            {
+                "advanced_configuration": True,
+                "info": {
+                    "title": "Calibration values",
+                    "description": (
+                        "Upload a calibration JSON exported for this SO101. If provided, Studio uses these "
+                        "values as-is, "
+                        "does not overwrite control-board calibration, and skips guided manual calibration."
+                    ),
+                    "variant": "help",
+                },
+            }
+        ),
     )
 
     model_config = ConfigDict(
@@ -61,7 +77,7 @@ class SO101RobotPayload(BaseModel):
                             "serial_number": "serial_number",
                         },
                     },
-                    {"kind": "field", "name": "calibration"},
+                    {"kind": "calibration", "name": "calibration"},
                 ]
             ),
         },

@@ -1,11 +1,13 @@
+import { ReactNode } from 'react';
+
 import { ActionButton, ComboBox, Flex, Icon, Item, Text, View } from '@geti-ui/ui';
 import { Refresh } from '@geti-ui/ui/icons';
 
-import { getApiErrorMessage, isSerialPermissionDeniedError } from '../../../../../api/errors';
 import { useCatalogIdentifyMutation, useDiscoverRobotsQuery } from '../../../robot-catalog.hooks';
 import { SchemaRobotType } from '../../../robot-types';
-import { InlineAlert } from '../../../setup-wizard/shared/inline-alert';
 import { ConnectionItem } from '../types';
+import { FieldContextualHelp } from './field-contextual-help';
+import { IdentifyError } from './identify-error';
 
 type Device = { serial_number: string | null; connection_string: string | null };
 
@@ -14,7 +16,9 @@ type ComboBoxFieldProps = {
     value: string;
     devices: Device[];
     allowsCustomValue: boolean;
+    isRequired: boolean;
     description?: string;
+    contextualHelp?: ReactNode;
     onInputChange: (value: string) => void;
     onSelectionChange: (key: string | number | null) => void;
 };
@@ -35,13 +39,17 @@ const ComboBoxField = ({
     value,
     devices,
     allowsCustomValue,
+    isRequired,
     description,
+    contextualHelp,
     onInputChange,
     onSelectionChange,
 }: ComboBoxFieldProps) => (
     <ComboBox
         label={label}
         description={description}
+        contextualHelp={contextualHelp}
+        isRequired={isRequired}
         width='100%'
         allowsCustomValue={allowsCustomValue}
         inputValue={value}
@@ -61,29 +69,11 @@ type ConnectionFieldProps = {
     robotType: SchemaRobotType;
     payload: Record<string, unknown>;
     options: ConnectionItem;
+    isRequired: boolean;
     onChange: (field: string, value: unknown) => void;
 };
 
-const IdentifyError = ({ error }: { error: unknown }) => {
-    if (isSerialPermissionDeniedError(error)) {
-        return (
-            <InlineAlert variant='error'>
-                <strong>Permission Denied</strong>: The application does not have permission to access the robot&apos;s
-                USB port.
-            </InlineAlert>
-        );
-    }
-
-    return (
-        <InlineAlert variant='error'>
-            <strong>Identify Failed</strong>:{' '}
-            {getApiErrorMessage(error) ??
-                'The robot could not be identified. Make sure it is powered on and not already in use, then try again.'}
-        </InlineAlert>
-    );
-};
-
-export const ConnectionField = ({ robotType, payload, options, onChange }: ConnectionFieldProps) => {
+export const ConnectionField = ({ robotType, payload, options, isRequired, onChange }: ConnectionFieldProps) => {
     const discover = useDiscoverRobotsQuery(robotType);
     const identify = useCatalogIdentifyMutation();
     const connectionKey = options.bind.connection;
@@ -106,9 +96,13 @@ export const ConnectionField = ({ robotType, payload, options, onChange }: Conne
                 <ComboBoxField
                     label={options.label ?? 'Connection'}
                     description={options.description}
+                    contextualHelp={
+                        options.info === undefined ? undefined : <FieldContextualHelp info={options.info} />
+                    }
                     value={value}
                     devices={discover.data ?? []}
                     allowsCustomValue={options.manual_entry !== false}
+                    isRequired={isRequired}
                     onInputChange={setManualValue}
                     onSelectionChange={(key) => {
                         const device = (discover.data ?? []).find((item) => deviceKey(item) === key);

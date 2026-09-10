@@ -6,10 +6,13 @@ import { ModelRow } from './model-row';
 
 const MODEL_COLUMNS: TableColumn[] = [
     { width: 'max-content' },
-    { width: '2fr', header: 'Model name' },
+    { width: '1fr', header: 'Model name' },
+    { width: '1fr', header: 'Architecture' },
+    { width: '1fr', header: 'Dataset' },
+    { width: '1fr', header: 'Environment' },
+    { width: '1fr', header: 'Trainer' },
     { width: '1fr', header: 'Trained' },
     { width: '1fr', header: 'Duration' },
-    { width: '1fr', header: 'Architecture' },
     { width: '1fr' },
     { width: 'auto', align: 'end' },
 ];

@@ -34,6 +34,7 @@ from services.health_service import HealthService
 from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_catalog_service import RobotCatalogService
+from services.runtime_session_service import RuntimeSessionService
 from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
 from settings import Settings, get_settings
@@ -63,6 +64,12 @@ def get_system_service() -> SystemService:
 
 
 SystemServiceDep = Annotated[SystemService, Depends(get_system_service)]
+
+
+@lru_cache
+def get_runtime_session_service() -> RuntimeSessionService:
+    """Provide a RuntimeSessionService for listing and stopping runtime sessions."""
+    return RuntimeSessionService()
 
 
 def get_health_service(request: HTTPConnection) -> HealthService:
@@ -110,11 +117,11 @@ RemoteServerServiceDep = Annotated[RemoteServerService, Depends(get_remote_serve
 
 
 def require_ssh_feature_active() -> SshFeatureAvailability:
-    """Dependency that fails a route closed when the SSH feature is off or network-exposed.
+    """Dependency that fails a route closed when the SSH feature is network-exposed.
 
     Raises:
-        SshFeatureDisabledError: The feature is disabled by configuration, or
-            fails closed because the backend is bound to a non-loopback address.
+        SshFeatureDisabledError: The feature fails closed because the backend
+            is bound to a non-loopback address.
     """
     availability = get_ssh_feature_availability()
     if not availability.active:

@@ -17,11 +17,21 @@ class RobotUiInfoItem(TypedDict, total=False):
     variant: NotRequired[Literal["info", "warning"]]
 
 
+class RobotUiContextualHelpInfo(TypedDict, total=False):
+    """Contextual help content rendered next to a field control."""
+
+    title: NotRequired[str]
+    description: Required[str]
+    link_url: NotRequired[str]
+    variant: NotRequired[Literal["info", "help"]]
+
+
 class RobotFieldUiOptions(TypedDict, total=False):
     """Per-field UI overrides understood by the Studio robot form."""
 
     required: bool
     advanced_configuration: bool
+    info: RobotUiContextualHelpInfo
 
 
 class RobotUiConnectionBinding(TypedDict, total=False):
@@ -37,10 +47,33 @@ class RobotUiConnectionItem(TypedDict, total=False):
     kind: Required[Literal["connection"]]
     label: NotRequired[str]
     description: NotRequired[str]
+    info: NotRequired[RobotUiContextualHelpInfo]
     device_discovery: NotRequired[bool]
     identify: NotRequired[bool]
     manual_entry: NotRequired[bool]
     bind: Required[RobotUiConnectionBinding]
+
+
+class RobotUiIpAddressItem(TypedDict, total=False):
+    """Options for a first-party IP address control."""
+
+    kind: Required[Literal["ip_address"]]
+    name: Required[str]
+    label: NotRequired[str]
+    description: NotRequired[str]
+    info: NotRequired[RobotUiContextualHelpInfo]
+    identify: NotRequired[bool]
+    identify_robot_type: NotRequired[str]
+
+
+class RobotUiCalibrationItem(TypedDict, total=False):
+    """Options for a first-party calibration JSON upload control."""
+
+    kind: Required[Literal["calibration"]]
+    name: Required[str]
+    label: NotRequired[str]
+    description: NotRequired[str]
+    info: NotRequired[RobotUiContextualHelpInfo]
 
 
 class RobotUiFieldItem(TypedDict):
@@ -48,6 +81,7 @@ class RobotUiFieldItem(TypedDict):
 
     kind: Required[Literal["field"]]
     name: Required[str]
+    info: NotRequired[RobotUiContextualHelpInfo]
 
 
 class RobotUiSectionOptions(TypedDict, total=False):
@@ -60,7 +94,14 @@ class RobotUiSectionOptions(TypedDict, total=False):
     items: Required[list[RobotUiItem]]
 
 
-RobotUiItem = RobotUiInfoItem | RobotUiConnectionItem | RobotUiFieldItem | RobotUiSectionOptions
+RobotUiItem = (
+    RobotUiInfoItem
+    | RobotUiConnectionItem
+    | RobotUiIpAddressItem
+    | RobotUiCalibrationItem
+    | RobotUiFieldItem
+    | RobotUiSectionOptions
+)
 
 RobotPayloadUiOptions = list[RobotUiItem]
 
@@ -100,7 +141,37 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
         resolved = definitions.get(name)
         return resolved if isinstance(resolved, dict) else field_schema
 
-    def validate_items(  # noqa: C901, PLR0912
+    def is_object_field(field_schema: dict[str, Any]) -> bool:
+        resolved = resolve(field_schema)
+        if resolved.get("type") == "object":
+            return True
+        variants = resolved.get("anyOf")
+        if not isinstance(variants, list):
+            return False
+        return any(isinstance(variant, dict) and resolve(variant).get("type") == "object" for variant in variants)
+
+    def validate_info(info: object, path: str) -> None:
+        if not isinstance(info, dict):
+            error(path, "info must be an object")
+            return
+
+        description = info.get("description")
+        if not isinstance(description, str) or description == "":
+            error(path, "info.description must be a non-empty string")
+
+        title = info.get("title")
+        if title is not None and not isinstance(title, str):
+            error(path, "info.title must be a string")
+
+        link_url = info.get("link_url")
+        if link_url is not None and not isinstance(link_url, str):
+            error(path, "info.link_url must be a string")
+
+        variant = info.get("variant")
+        if variant is not None and variant not in {"info", "help"}:
+            error(path, "info.variant must be one of: info, help")
+
+    def validate_items(  # noqa: C901, PLR0912, PLR0915
         items: list[object],
         properties: dict[str, Any],
         path: str,
@@ -134,6 +205,9 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
                 if not isinstance(name, str) or name not in properties:
                     error(item_path, "field items must reference an existing payload field")
                     continue
+                info = item.get("info")
+                if info is not None:
+                    validate_info(info, f"{item_path}.info")
                 if name in owned_fields:
                     error(item_path, f"field '{name}' is owned more than once")
                 owned_fields.add(name)
@@ -144,6 +218,9 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
                 if not isinstance(bindings, dict) or not isinstance(bindings.get("connection"), str):
                     error(item_path, "connection items require bind.connection")
                     continue
+                info = item.get("info")
+                if info is not None:
+                    validate_info(info, f"{item_path}.info")
                 for binding_name in ("connection", "serial_number"):
                     field_name = bindings.get(binding_name)
                     if field_name is None:
@@ -155,6 +232,36 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
                     if field_name in owned_fields:
                         error(item_path, f"field '{field_name}' is owned more than once")
                     owned_fields.add(field_name)
+                continue
+
+            if kind == "ip_address":
+                name = item.get("name")
+                if not isinstance(name, str) or name not in properties:
+                    error(item_path, "ip_address items must reference an existing payload field")
+                    continue
+                info = item.get("info")
+                if info is not None:
+                    validate_info(info, f"{item_path}.info")
+                if resolve(properties[name]).get("type") != "string":
+                    error(item_path, "ip_address items must reference a string payload field")
+                if name in owned_fields:
+                    error(item_path, f"field '{name}' is owned more than once")
+                owned_fields.add(name)
+                continue
+
+            if kind == "calibration":
+                name = item.get("name")
+                if not isinstance(name, str) or name not in properties:
+                    error(item_path, "calibration items must reference an existing payload field")
+                    continue
+                info = item.get("info")
+                if info is not None:
+                    validate_info(info, f"{item_path}.info")
+                if not is_object_field(properties[name]):
+                    error(item_path, "calibration items must reference an object payload field")
+                if name in owned_fields:
+                    error(item_path, f"field '{name}' is owned more than once")
+                owned_fields.add(name)
                 continue
 
             error(item_path, "has an unsupported or missing kind")
@@ -174,6 +281,12 @@ def validate_robot_payload_ui(payload_model: type[BaseModel]) -> None:  # noqa: 
                 validate_items(ui, properties if isinstance(properties, dict) else {}, f"{path}.x-physicalai-ui")
         if isinstance(properties, dict):
             for field_name, field_schema in properties.items():
+                if isinstance(field_schema, dict):
+                    field_ui = field_schema.get("x-physicalai-ui")
+                    if isinstance(field_ui, dict):
+                        field_info = field_ui.get("info")
+                        if field_info is not None:
+                            validate_info(field_info, f"{path}.properties.{field_name}.x-physicalai-ui.info")
                 resolved = resolve(field_schema) if isinstance(field_schema, dict) else field_schema
                 if isinstance(resolved, dict) and isinstance(resolved.get("properties"), dict):
                     validate_model_schema(resolved, f"{path}.properties.{field_name}")
