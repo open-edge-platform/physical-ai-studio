@@ -1,0 +1,20 @@
+.advancedDisclosure {
+    padding: 0;
+    margin: 8px 0;
+    --spectrum-accordion-icon-gap: var(--spectrum-global-dimension-size-100);
+    --spectrum-accordion-item-padding: var(--spectrum-global-dimension-size-50);
+}
+
+.advancedDisclosureTitle {
+    padding: 2px 0;
+}
+
+.advancedDisclosureText {
+    font-size: 13px;
+}
+
+.advancedDisclosurePanel {
+    padding: 0;
+
+    margin-top: var(--spectrum-global-dimension-size-50);
+}

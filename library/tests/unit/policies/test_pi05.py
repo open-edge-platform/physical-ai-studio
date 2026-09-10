@@ -759,7 +759,6 @@ class TestSampleInput:
 
         class _ModelStub:
             def __init__(self) -> None:
-                self.enable_rtc = False
                 # sample_input only reads device from this module's parameters.
                 self.paligemma_with_expert = torch.nn.Linear(1, 1)
 
@@ -767,6 +766,7 @@ class TestSampleInput:
             def __init__(self, stats: dict) -> None:
                 self._dataset_stats = stats
                 self.model = _ModelStub()
+                self.rtc_enabled = False
 
         stub = _Stub(dataset_stats)
         stub.inputs_schema = Pi05.inputs_schema.fget(stub)  # type: ignore[attr-defined]

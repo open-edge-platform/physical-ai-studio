@@ -74,9 +74,7 @@ def policy_source_fragment(
 ) -> dict[str, Any]:
     """Return the PolicySource recipe both the session and the export instantiate.
 
-    ``PolicySource`` defaults to ``SyncExecution``, which would stall the 30 Hz
-    loop. Studio overrides that with ``AsyncExecution``; the export must too.
-    Omit ``policy_name`` so the manifest is read. Omit ``duration_frames`` so
+    `` Omit ``policy_name`` so the manifest is read. Omit ``duration_frames`` so
     ``LerpSmoother`` keeps its upstream default of 5.
     """
     init_args: dict[str, Any] = {
@@ -85,7 +83,7 @@ def policy_source_fragment(
             {"export_dir": export_dir, "backend": backend, "device": device},
         ).to_dict(),
         "execution": Config(
-            "physicalai.runtime.AsyncExecution",
+            "physicalai.runtime.SyncExecution",
             {"request_threshold": POLICY_REQUEST_THRESHOLD},
         ).to_dict(),
         "action_queue": Config(
@@ -106,7 +104,7 @@ def policy_source_from_fragment(fragment: dict[str, Any]) -> PolicySource:
     the same constructors Studio already uses.
     """
     from physicalai.inference import InferenceModel
-    from physicalai.runtime import AsyncExecution, ChunkedActionQueue, LerpSmoother, PolicySource
+    from physicalai.runtime import ChunkedActionQueue, LerpSmoother, PolicySource, SyncExecution
 
     args = fragment["init_args"]
     model_args = args["model"]["init_args"]
@@ -118,7 +116,7 @@ def policy_source_from_fragment(fragment: dict[str, Any]) -> PolicySource:
             backend=model_args["backend"],
             device=model_args["device"],
         ),
-        execution=AsyncExecution(request_threshold=exec_args["request_threshold"]),
+        execution=SyncExecution(request_threshold=exec_args["request_threshold"]),
         action_queue=ChunkedActionQueue(smoother=LerpSmoother()),
         task=args.get("task"),
     )

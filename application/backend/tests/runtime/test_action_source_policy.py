@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from physicalai.capture import Frame
 from physicalai.inference.constants import IMAGES, STATE
-from physicalai.runtime import AsyncExecution, ChunkedActionQueue, LerpSmoother, PolicySource, WorkerDiedError
+from physicalai.runtime import ChunkedActionQueue, LerpSmoother, PolicySource, SyncExecution, WorkerDiedError
 
 from runtime.action_source import StudioActionSource
 from runtime.contract import (
@@ -148,7 +148,7 @@ def test_re_arming_sends_an_action_from_the_current_observation() -> None:
 
     policy = PolicySource(
         model=model,
-        execution=AsyncExecution(request_threshold=0.5),
+        execution=SyncExecution(),
         action_queue=ChunkedActionQueue(smoother=LerpSmoother()),
         task=None,
     )
@@ -286,7 +286,7 @@ def test_the_model_input_carries_the_task_string() -> None:
 
     policy = PolicySource(
         model=model,
-        execution=AsyncExecution(request_threshold=0.5),
+        execution=SyncExecution(),
         action_queue=ChunkedActionQueue(smoother=LerpSmoother()),
         task=None,
     )
@@ -308,7 +308,7 @@ def test_the_model_input_is_rgb() -> None:
 
     policy = PolicySource(
         model=model,
-        execution=AsyncExecution(request_threshold=0.5),
+        execution=SyncExecution(),
         action_queue=ChunkedActionQueue(smoother=LerpSmoother()),
         task=None,
     )

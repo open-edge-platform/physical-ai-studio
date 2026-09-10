@@ -119,7 +119,7 @@ def _smolvla_loss(action_is_pad: torch.Tensor) -> float:
         _preprocess_batch=lambda b: b,
         _prepare_state=lambda b: None,
         _prepare_action=lambda b: None,
-        _model=SimpleNamespace(forward=lambda *_a, **_kw: losses.clone()),
+        _model=SimpleNamespace(forward=lambda *_a, **_kw: (losses.clone(), None)),
         _dataset_stats={ACTION: {"shape": (ACTION_DIM,)}},
     )
     loss, _ = SmolVLAModel.compute_loss(stub, batch)

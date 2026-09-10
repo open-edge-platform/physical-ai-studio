@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect } from 'react';
 
-import { Flex, Heading, Switch, Text, View } from '@geti-ui/ui';
+import { Disclosure, DisclosurePanel, DisclosureTitle, Flex, Heading, Text, View } from '@geti-ui/ui';
+import { partition } from 'lodash-es';
 
 import { SchemaRobotType } from '../../robot-types';
 import { useRobotForm } from '../provider';
@@ -21,6 +22,8 @@ import {
     updateObjectField,
 } from './schema-utils';
 import { ContextualInfo, FieldSchema, JsonSchema, ModelUiOptions, RobotUiItem } from './types';
+
+import classes from './schema-form.module.css';
 
 const EMPTY_ITEMS: RobotUiItem[] = [];
 
@@ -52,12 +55,23 @@ const fieldNamesOwnedByItems = (items: RobotUiItem[]): Set<string> =>
     );
 
 type OnChange = (name: string, value: unknown) => void;
-type IsFieldVisible = (name: string, field: FieldSchema, required: Set<string>) => boolean;
-type IsFieldEnabled = (name: string, field: FieldSchema, required: Set<string>) => boolean;
-type IsRenderable = (item: RobotUiItem, properties: Record<string, FieldSchema>, required: Set<string>) => boolean;
+type IsFieldVisible = (name: string, field: FieldSchema, required: Set<string>, showAdvanced: boolean) => boolean;
+type IsFieldEnabled = (name: string, field: FieldSchema, required: Set<string>, showAdvanced: boolean) => boolean;
+type IsRenderable = (
+    item: RobotUiItem,
+    properties: Record<string, FieldSchema>,
+    required: Set<string>,
+    showAdvanced: boolean
+) => boolean;
+
+type ItemEntry = {
+    item: RobotUiItem;
+    index: number;
+};
 
 type SchemaFormItemProps = SchemaFormItemsProps & {
     item: RobotUiItem;
+    showAdvanced: boolean;
 };
 
 type SchemaFormItemsProps = {
@@ -78,6 +92,17 @@ type SchemaFormFieldProps = Omit<SchemaFormItemsProps, 'items' | 'renderUnownedF
     name: string;
     field: FieldSchema;
     info?: ContextualInfo;
+    showAdvanced: boolean;
+};
+
+type SchemaFormItemListProps = SchemaFormItemsProps & {
+    entries: ItemEntry[];
+    showAdvanced: boolean;
+};
+
+type SchemaFormUnownedFieldListProps = Omit<SchemaFormItemsProps, 'items' | 'renderUnownedFields'> & {
+    fields: [string, FieldSchema][];
+    showAdvanced: boolean;
 };
 
 const getResolvedField = ({ properties, definitions }: SchemaFormItemsProps, name: string) => {
@@ -87,6 +112,42 @@ const getResolvedField = ({ properties, definitions }: SchemaFormItemsProps, nam
 
 const asFieldSchema = (value: FieldSchema | boolean | undefined): FieldSchema | undefined =>
     typeof value === 'object' && value !== null && !Array.isArray(value) ? value : undefined;
+
+const AdvancedOptions = ({ children }: { children: ReactNode }) => (
+    <Disclosure isQuiet UNSAFE_className={classes.advancedDisclosure}>
+        <DisclosureTitle UNSAFE_className={classes.advancedDisclosureTitle}>
+            <Text UNSAFE_className={classes.advancedDisclosureText}>Advanced options</Text>
+        </DisclosureTitle>
+        <DisclosurePanel
+            UNSAFE_className={classes.advancedDisclosurePanel}
+
+            UNSAFE_style={{ paddingBlock: 0 }}
+        >
+            {children}
+        </DisclosurePanel>
+    </Disclosure>
+);
+
+const SchemaFormItemList = ({ entries, showAdvanced, ...props }: SchemaFormItemListProps) => (
+    <>
+        {entries.map(({ item, index }) => (
+            <SchemaFormItem
+                {...props}
+                key={item.kind === 'section' ? item.id : `${item.kind}-${index}`}
+                item={item}
+                showAdvanced={showAdvanced}
+            />
+        ))}
+    </>
+);
+
+const SchemaFormUnownedFieldList = ({ fields, showAdvanced, ...props }: SchemaFormUnownedFieldListProps) => (
+    <>
+        {fields.map(([name, field]) => (
+            <SchemaFormField {...props} key={name} name={name} field={field} showAdvanced={showAdvanced} />
+        ))}
+    </>
+);
 
 const SchemaFormItem = ({ item, ...props }: SchemaFormItemProps) => {
     if (item.kind === 'info') {
@@ -127,7 +188,7 @@ const SchemaFormItem = ({ item, ...props }: SchemaFormItemProps) => {
         if (field === undefined) {
             return null;
         }
-        if (!props.isFieldEnabled(item.name, field, props.required)) {
+        if (!props.isFieldEnabled(item.name, field, props.required, props.showAdvanced)) {
             return null;
         }
 
@@ -147,10 +208,16 @@ const SchemaFormItem = ({ item, ...props }: SchemaFormItemProps) => {
     if (item.kind === 'field') {
         const field = props.properties[item.name];
         return field === undefined ? null : (
-            <SchemaFormField {...props} name={item.name} field={field} info={item.info} />
+            <SchemaFormField
+                {...props}
+                name={item.name}
+                field={field}
+                info={item.info}
+                showAdvanced={props.showAdvanced}
+            />
         );
     }
-    if (!props.isRenderable(item, props.properties, props.required)) {
+    if (!props.isRenderable(item, props.properties, props.required, true)) {
         return null;
     }
     return (
@@ -169,28 +236,54 @@ const SchemaFormItems = ({ items, renderUnownedFields, ...props }: SchemaFormIte
               return Object.entries(props.properties).filter(([name]) => !ownedFields.has(name));
           })()
         : [];
+    const indexedItems = items.map((item, index) => ({ item, index }));
+    const renderableItems = indexedItems.filter(({ item }) =>
+        props.isRenderable(item, props.properties, props.required, true)
+    );
+
+    const [basicItems, advancedItems] = partition(
+        renderableItems,
+        ({ item }) => item.kind === 'section' || props.isRenderable(item, props.properties, props.required, false)
+    );
+    const [basicUnownedFields, advancedUnownedFields] = renderUnownedFields
+        ? partition(
+              unownedFields.filter(([name, field]) => props.isFieldVisible(name, field, props.required, true)),
+              ([name, field]) => props.isFieldVisible(name, field, props.required, false)
+          )
+        : [[], []];
+
+    const hasAdvancedFields = advancedItems.length !== 0 || advancedUnownedFields.length !== 0;
 
     return (
-        <>
-            {items.map((item, index) => (
-                <SchemaFormItem
-                    {...props}
-                    key={item.kind === 'section' ? item.id : `${item.kind}-${index}`}
-                    item={item}
-                    items={items}
-                    renderUnownedFields={renderUnownedFields}
-                />
-            ))}
-            {renderUnownedFields &&
-                unownedFields.map(([name, field]) => (
-                    <SchemaFormField {...props} key={name} name={name} field={field} />
-                ))}
-        </>
+        <Flex direction='column' gap='size-100'>
+            <SchemaFormItemList
+                {...props}
+                entries={basicItems}
+                items={items}
+                renderUnownedFields={renderUnownedFields}
+                showAdvanced={false}
+            />
+            <SchemaFormUnownedFieldList {...props} fields={basicUnownedFields} showAdvanced={false} />
+            {hasAdvancedFields && (
+                <AdvancedOptions>
+                    <Flex direction='column' gap='size-100'>
+                        <SchemaFormItemList
+                            {...props}
+                            entries={advancedItems}
+                            items={items}
+                            renderUnownedFields={renderUnownedFields}
+                            showAdvanced
+                        />
+                        <SchemaFormUnownedFieldList {...props} fields={advancedUnownedFields} showAdvanced />
+                    </Flex>
+                </AdvancedOptions>
+            )}
+        </Flex>
     );
 };
 
 const SchemaFormField = ({ name, field, ...props }: SchemaFormFieldProps) => {
-    if (!props.isFieldVisible(name, field, props.required)) {
+    if (!props.isFieldVisible(name, field, props.required, props.showAdvanced)) {
         return null;
     }
 
@@ -237,7 +330,6 @@ const SchemaFormField = ({ name, field, ...props }: SchemaFormFieldProps) => {
 
 export const SchemaForm = ({ schema }: { schema: JsonSchema }) => {
     const { activeType, payload, setPayload, updatePayloadField } = useRobotForm();
-    const [showAdvanced, setShowAdvanced] = useState(false);
     const properties = schema.properties ?? EMPTY_PROPERTIES;
     const definitions = schema.$defs ?? EMPTY_DEFINITIONS;
     const required = new Set(schema.required ?? []);
@@ -253,16 +345,16 @@ export const SchemaForm = ({ schema }: { schema: JsonSchema }) => {
         }
     }, [definitions, payload, properties, setPayload]);
 
-    const isFieldVisible: IsFieldVisible = (name, field, fieldRequired) => {
+    const isFieldVisible: IsFieldVisible = (name, field, fieldRequired, showAdvanced) => {
         const resolvedField = resolveReference(field, definitions);
-        if (!isFieldEnabled(name, resolvedField, fieldRequired)) {
+        if (!isFieldEnabled(name, resolvedField, fieldRequired, showAdvanced)) {
             return false;
         }
 
         return resolvedField.type !== 'object' || resolvedField.properties !== undefined;
     };
 
-    const isFieldEnabled: IsFieldEnabled = (name, field, fieldRequired) => {
+    const isFieldEnabled: IsFieldEnabled = (name, field, fieldRequired, showAdvanced) => {
         const resolvedField = resolveReference(field, definitions);
         const fieldUi = resolvedField['x-physicalai-ui'];
         const isRequired = isRequiredField(name, resolvedField, fieldRequired);
@@ -270,41 +362,34 @@ export const SchemaForm = ({ schema }: { schema: JsonSchema }) => {
         return isRequired || isUiItems(fieldUi) || fieldUi?.advanced_configuration !== true || showAdvanced;
     };
 
-    const isRenderable: IsRenderable = (item, itemProperties, itemRequired) => {
+    const isRenderable: IsRenderable = (item, itemProperties, itemRequired, showAdvanced) => {
         if (item.kind === 'info' || item.kind === 'connection' || item.kind === 'ip_address') {
             return true;
         }
         if (item.kind === 'calibration') {
             const field = itemProperties[item.name];
-            return field !== undefined && isFieldEnabled(item.name, field, itemRequired);
+            return field !== undefined && isFieldEnabled(item.name, field, itemRequired, showAdvanced);
         }
         if (item.kind === 'field') {
             const field = itemProperties[item.name];
-            return field !== undefined && isFieldVisible(item.name, field, itemRequired);
+            return field !== undefined && isFieldVisible(item.name, field, itemRequired, showAdvanced);
         }
-        return item.items.some((child) => isRenderable(child, itemProperties, itemRequired));
+        return item.items.some((child) => isRenderable(child, itemProperties, itemRequired, showAdvanced));
     };
 
     return (
-        <Flex direction='column' gap='size-200'>
-            <Flex justifyContent='end'>
-                <Switch isSelected={showAdvanced} onChange={setShowAdvanced} isHidden>
-                    Show advanced options
-                </Switch>
-            </Flex>
-            <SchemaFormItems
-                items={items}
-                properties={properties}
-                required={required}
-                values={payload}
-                onChange={updatePayloadField}
-                robotType={activeType!}
-                definitions={definitions}
-                isFieldVisible={isFieldVisible}
-                isFieldEnabled={isFieldEnabled}
-                isRenderable={isRenderable}
-                renderUnownedFields
-            />
-        </Flex>
+        <SchemaFormItems
+            items={items}
+            properties={properties}
+            required={required}
+            values={payload}
+            onChange={updatePayloadField}
+            robotType={activeType!}
+            definitions={definitions}
+            isFieldVisible={isFieldVisible}
+            isFieldEnabled={isFieldEnabled}
+            isRenderable={isRenderable}
+            renderUnownedFields
+        />
     );
 };
