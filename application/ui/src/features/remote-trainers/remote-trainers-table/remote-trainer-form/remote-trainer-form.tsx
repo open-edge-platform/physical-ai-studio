@@ -1,9 +1,10 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, ReactNode, useState } from 'react';
 
 import {
     Button,
     ButtonGroup,
     Content,
+    ContextualHelp,
     Dialog,
     Divider,
     Flex,
@@ -32,6 +33,24 @@ type RemoteTrainerFormProps = {
 };
 
 type SshHostSource = 'pick' | 'manual';
+
+const InfoHelp = ({ title, children }: { title: string; children: ReactNode }) => (
+    <ContextualHelp variant='info'>
+        <Heading>{title}</Heading>
+        <Content>
+            <Text>{children}</Text>
+        </Content>
+    </ContextualHelp>
+);
+
+const parseUrlPort = (value: string): number | undefined => {
+    try {
+        const port = new URL(value).port;
+        return port ? Number(port) : undefined;
+    } catch {
+        return undefined;
+    }
+};
 
 export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormProps) => {
     const [name, setName] = useState(remoteTrainer?.name ?? '');
@@ -109,19 +128,37 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                             type='url'
                             value={url}
                             onChange={setUrl}
-                            description='Use the endpoint URL that accepts Physical AI Studio training jobs.'
+                            contextualHelp={
+                                <InfoHelp title='Trainer URL'>
+                                    Use the endpoint URL that accepts Physical AI Studio training jobs. When using an
+                                    SSH tunnel, point this at the tunnel&apos;s local port, e.g. http://127.0.0.1:8001.
+                                </InfoHelp>
+                            }
                             width='100%'
                         />
-                        <Switch isSelected={sshTunnelEnabled} onChange={setSshTunnelEnabled}>
+                        <Switch
+                            isSelected={sshTunnelEnabled}
+                            onChange={(isSelected) => {
+                                setSshTunnelEnabled(isSelected);
+                                // Local port has no other sensible default, and the URL's port is the
+                                // common case (see the hint text below) - prefill both from it so a new
+                                // trainer does not need the same number typed in twice. Only fills a port
+                                // that is not already set, so this never overwrites a saved trainer's
+                                // values or something the user already typed.
+                                const urlPort = isSelected ? parseUrlPort(url) : undefined;
+                                if (urlPort !== undefined) {
+                                    setSshRemotePort((current) => current ?? urlPort);
+                                    setSshLocalPort((current) => current ?? urlPort);
+                                }
+                            }}
+                        >
                             Reach this trainer through an SSH tunnel
                         </Switch>
                         {sshTunnelEnabled && (
                             <Flex direction='column' gap='size-100'>
                                 <Text UNSAFE_className={classes.hint}>
-                                    Studio never stores an SSH key, password, or passphrase - only the name of a{' '}
-                                    <code>Host</code> entry in your own <code>~/.ssh/config</code>. Studio keeps a
-                                    standing tunnel open; point the URL above at its local port, e.g.{' '}
-                                    <code>http://127.0.0.1:8001</code>.
+                                    Studio never stores SSH credentials - only a <code>Host</code> name from{' '}
+                                    <code>~/.ssh/config</code>.
                                 </Text>
                                 <RadioGroup
                                     label='SSH host'
@@ -140,7 +177,11 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                                         placeholder='Select...'
                                         selectedKey={sshHostAlias || null}
                                         onSelectionChange={(key) => setSshHostAlias(key ? String(key) : '')}
-                                        description='Pick a Host entry from your ~/.ssh/config.'
+                                        contextualHelp={
+                                            <InfoHelp title='SSH host alias'>
+                                                Pick a Host entry from your ~/.ssh/config.
+                                            </InfoHelp>
+                                        }
                                         width='100%'
                                     >
                                         {aliases.map((option) => (
@@ -158,7 +199,11 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                                             label='SSH host alias'
                                             value={newAlias}
                                             onChange={setNewAlias}
-                                            description='Name for the new SSH config Host entry.'
+                                            contextualHelp={
+                                                <InfoHelp title='SSH host alias'>
+                                                    Name for the new SSH config Host entry.
+                                                </InfoHelp>
+                                            }
                                             width='100%'
                                         />
                                         <Flex gap='size-200'>
@@ -167,7 +212,11 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                                                 label='Host'
                                                 value={newHostname}
                                                 onChange={setNewHostname}
-                                                description='Hostname or IP address to connect to.'
+                                                contextualHelp={
+                                                    <InfoHelp title='Host'>
+                                                        Hostname or IP address to connect to.
+                                                    </InfoHelp>
+                                                }
                                                 width='100%'
                                             />
                                             <NumberField
@@ -190,7 +239,11 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                                                 label='Key path'
                                                 value={newIdentityFile}
                                                 onChange={setNewIdentityFile}
-                                                description='Path to a private key file on this Studio host.'
+                                                contextualHelp={
+                                                    <InfoHelp title='Key path'>
+                                                        Path to a private key file on this Studio host.
+                                                    </InfoHelp>
+                                                }
                                                 width='100%'
                                             />
                                         </Flex>
@@ -203,7 +256,9 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                                         onChange={setSshRemotePort}
                                         minValue={1}
                                         maxValue={65535}
-                                        description="Defaults to the URL's port."
+                                        contextualHelp={
+                                            <InfoHelp title='Remote port'>Defaults to the URL&apos;s port.</InfoHelp>
+                                        }
                                         width='100%'
                                     />
                                     <NumberField
@@ -213,7 +268,11 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                                         onChange={setSshLocalPort}
                                         minValue={1}
                                         maxValue={65535}
-                                        description='Loopback port the tunnel binds to on this Studio host.'
+                                        contextualHelp={
+                                            <InfoHelp title='Local port'>
+                                                Loopback port the tunnel binds to on this Studio host.
+                                            </InfoHelp>
+                                        }
                                         width='100%'
                                     />
                                 </Flex>

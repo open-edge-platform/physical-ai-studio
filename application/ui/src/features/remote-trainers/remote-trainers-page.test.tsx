@@ -102,6 +102,21 @@ describe('RemoteTrainersPage', () => {
         expect(await screen.findByRole('button', { name: /show details for renamed-trainer/i })).toBeInTheDocument();
     });
 
+    it('prefills remote and local port from the trainer URL when the SSH tunnel is enabled', async () => {
+        const user = userEvent.setup();
+        server.use(http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])));
+
+        render(<RemoteTrainersPage />);
+
+        await user.click(await screen.findByRole('button', { name: /new remote trainer/i }));
+        const dialog = await screen.findByRole('dialog');
+        await user.type(dialog.querySelectorAll('input')[1], 'http://127.0.0.1:9002');
+        await user.click(screen.getAllByRole('switch').at(-1) as HTMLElement);
+
+        expect(screen.getByRole('textbox', { name: /remote port/i })).toHaveValue('9,002');
+        expect(screen.getByRole('textbox', { name: /local port/i })).toHaveValue('9,002');
+    });
+
     it('creates a remote trainer with an SSH tunnel configured via a new manual host', async () => {
         const user = userEvent.setup();
         let trainers: Record<string, unknown>[] = [];
@@ -134,7 +149,6 @@ describe('RemoteTrainersPage', () => {
         const inputs = dialog.querySelectorAll('input');
         await user.type(inputs[5], 'training-box');
         await user.type(inputs[6], 'gpu.example.test');
-        await user.type(inputs[11], '8001');
         await user.tab();
 
         expect(screen.getByRole('button', { name: 'Add trainer' })).toBeEnabled();
@@ -174,7 +188,6 @@ describe('RemoteTrainersPage', () => {
 
         await user.click(await screen.findByRole('button', { name: /select…?/i }));
         await user.click(await screen.findByRole('option', { name: /gpu-box/i }));
-        await user.type(screen.getByRole('textbox', { name: /local port/i }), '8001');
         await user.tab();
 
         await user.click(screen.getByRole('button', { name: 'Add trainer' }));
