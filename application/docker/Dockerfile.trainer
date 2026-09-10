@@ -2,6 +2,128 @@
 
 ARG PYTHON_VERSION=3.13
 
+# ===========================================================================
+# LGPL FFmpeg + PyAV builder
+#
+# Builds an LGPL-licensed FFmpeg (no --enable-gpl / --enable-nonfree) with
+# Intel oneVPL/QSV + VAAPI hardware acceleration and permissively licensed
+# software encoders (libvpx, libopenh264, libsvtav1), then compiles a PyAV
+# wheel against it. The stock Debian `ffmpeg` package is GPL-licensed and the
+# PyPI `av` wheel bundles its own FFmpeg, so both are replaced by these
+# artifacts. Kept in sync with application/docker/Dockerfile.
+# ===========================================================================
+FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS ffmpeg-builder
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Pinned source revisions for reproducible builds.
+ARG LIBVPL_REF=778a66d6c6537f08eabb91955dbbf1bce3812894
+ARG FFMPEG_REF=9dd0fe0225c2c3406ca49430a74c8660b1713889
+ARG OPENH264_REF=e3f5b10438e2bacc155cf54578222bd4236c9f06
+ARG SVTAV1_REF=349f4eb9c369f68d463029d1cd37551c90b7de51
+# Must match the `av` version resolved in application/backend/uv.lock.
+ARG PYAV_VERSION=15.1.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        build-essential \
+        cmake \
+        meson \
+        ninja-build \
+        pkg-config \
+        yasm \
+        nasm \
+        libdrm-dev \
+        libva-dev \
+        libnuma-dev \
+        libvpx-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python packaging tools for building the PyAV wheel.
+RUN python -m pip install --no-cache-dir \
+        "pip==25.*" \
+        "setuptools==75.*" \
+        "wheel==0.45.*" \
+        "Cython==3.0.*"
+
+ENV VPL_INSTALL_DIR=/opt/vpl
+ENV FFMPEG_INSTALL_DIR=/opt/ffmpeg-vpl
+WORKDIR /tmp
+
+# oneVPL dispatcher + headers (enables the *_qsv codecs in FFmpeg).
+RUN git init libvpl \
+    && git -C libvpl remote add origin https://github.com/intel/libvpl.git \
+    && git -C libvpl fetch --depth 1 origin "${LIBVPL_REF}" \
+    && git -C libvpl checkout FETCH_HEAD \
+    && cmake -B libvpl/build -S /tmp/libvpl \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${VPL_INSTALL_DIR}" \
+    && cmake --build libvpl/build -j"$(nproc)" \
+    && cmake --install libvpl/build
+
+# Make the custom libvpl and FFmpeg visible to later build steps.
+ENV PKG_CONFIG_PATH="/opt/vpl/lib/pkgconfig:/opt/vpl/lib64/pkgconfig:/opt/ffmpeg-vpl/lib/pkgconfig:/usr/local/lib/pkgconfig" \
+    LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib" \
+    PATH="/opt/ffmpeg-vpl/bin:${PATH}"
+
+# Software fallback encoder: OpenH264 (BSD, Cisco).
+RUN git init openh264 \
+    && git -C openh264 remote add origin https://github.com/cisco/openh264.git \
+    && git -C openh264 fetch --depth 1 origin "${OPENH264_REF}" \
+    && git -C openh264 checkout FETCH_HEAD \
+    && make -C openh264 -j"$(nproc)" \
+    && make -C openh264 install \
+    && ldconfig
+
+# Software fallback encoder: SVT-AV1 (BSD).
+RUN git init svtav1 \
+    && git -C svtav1 remote add origin https://gitlab.com/AOMediaCodec/SVT-AV1.git \
+    && git -C svtav1 fetch --depth 1 origin "${SVTAV1_REF}" \
+    && git -C svtav1 checkout FETCH_HEAD \
+    && cmake -B svtav1/build -S /tmp/svtav1 -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build svtav1/build -j"$(nproc)" \
+    && cmake --install svtav1/build \
+    && ldconfig
+
+# FFmpeg — LGPL build: no --enable-gpl and no --enable-nonfree. Every enabled
+# external library (libvpl/MIT, libvpx/BSD, libopenh264/BSD, libsvtav1/BSD,
+# vaapi/MIT) is LGPL-compatible.
+RUN git init ffmpeg \
+    && git -C ffmpeg remote add origin https://github.com/FFmpeg/FFmpeg.git \
+    && git -C ffmpeg fetch --depth 1 origin "${FFMPEG_REF}" \
+    && git -C ffmpeg checkout FETCH_HEAD
+
+WORKDIR /tmp/ffmpeg
+RUN ./configure \
+        --prefix="${FFMPEG_INSTALL_DIR}" \
+        --extra-cflags="-I${VPL_INSTALL_DIR}/include" \
+        --extra-ldflags="-L${VPL_INSTALL_DIR}/lib -L${VPL_INSTALL_DIR}/lib64" \
+        --extra-libs="-lpthread -lm" \
+        --enable-libvpl \
+        --enable-vaapi \
+        --enable-shared \
+        --enable-libsvtav1 \
+        --enable-libopenh264 \
+        --enable-libvpx \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
+# Fail the build early if QSV encoders did not get wired in.
+RUN ffmpeg -version \
+    && ffmpeg -hide_banner -encoders | grep qsv \
+    && ffmpeg -hide_banner -h encoder=h264_qsv > /dev/null
+
+# Compile the PyAV wheel from source against the custom FFmpeg.
+WORKDIR /build
+RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
+
+SHELL ["/bin/sh", "-c"]
+
 FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -37,7 +159,7 @@ FROM builder-base AS builder-cuda
 # and robot assets, and the trainer runs from the `trainer`/`training`
 # packages alone.
 RUN --mount=type=cache,id=uv-trainer-cuda,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra cuda
 
 # Remove test-only packages that executorch ships as unconditional runtime
 # dependencies (the cuda extra pulls in physicalai-train[executorch]).
@@ -48,9 +170,20 @@ RUN uv pip uninstall --python /opt/venv/bin/python \
     pytest-rerunfailures \
     expecttest hypothesis sortedcontainers kgb parameterized
 
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg. The venv is
+# copied wholesale into the runtime image, which has no uv/pip, so swap here.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /opt/venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl
+
 FROM builder-base AS builder-xpu
 RUN --mount=type=cache,id=uv-trainer-xpu,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra xpu
+
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /opt/venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl
 
 FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS runtime-base
 
@@ -62,15 +195,25 @@ RUN groupadd --gid "${TRAINER_GID}" trainer \
     && apt-get install -y --no-install-recommends \
         build-essential \
         g++ \
-        ffmpeg \
         libgl1 \
         libglib2.0-0 \
+        libva2 \
+        libva-drm2 \
+        libvpx9 \
+        libnuma1 \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip uninstall -y pip setuptools \
     && mkdir -p /var/lib/physicalai-trainer \
     && chown trainer:trainer /var/lib/physicalai-trainer
 
-ENV PATH="/opt/venv/bin:${PATH}" \
+# Custom LGPL FFmpeg + oneVPL shared libraries and the LGPL FFmpeg CLI binary.
+COPY --link --from=ffmpeg-builder /opt/vpl /opt/vpl
+COPY --link --from=ffmpeg-builder /opt/ffmpeg-vpl /opt/ffmpeg-vpl
+COPY --link --from=ffmpeg-builder /usr/local/lib/libSvtAv1* /usr/local/lib/
+COPY --link --from=ffmpeg-builder /usr/local/lib/libopenh264* /usr/local/lib/
+
+ENV LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib" \
+    PATH="/opt/ffmpeg-vpl/bin:/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1 \
@@ -204,6 +347,8 @@ ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_DEVICE_TYPE=cuda
 COPY --from=builder-cuda --chown=trainer:trainer /opt/venv /opt/venv
 
+RUN python -c "import av; print('PyAV', av.__version__, av.library_versions)"
+
 FROM runtime-xpu AS physicalai-trainer-xpu
 ARG GIT_SHA=unknown
 ARG BUILD_DATE=unknown
@@ -226,3 +371,5 @@ ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
     TRAINER_API_PROTOCOL_VERSION="${TRAINER_API_PROTOCOL_VERSION}" \
     TRAINER_DEVICE_TYPE=xpu
 COPY --from=builder-xpu --chown=trainer:trainer /opt/venv /opt/venv
+
+RUN python -c "import av; print('PyAV', av.__version__, av.library_versions)"
