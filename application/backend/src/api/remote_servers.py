@@ -35,10 +35,11 @@ from schemas.remote_server import (
     RemoteServer,
     RemoteServerCreate,
     RemoteServerUpdate,
+    SshHostAliasCreate,
     SshHostAliasOption,
 )
 from schemas.ssh_preflight import CheckKey, PreflightCheck, PreflightResult, RemoteServerStatus
-from services import ssh_config_reader
+from services import ssh_config_reader, ssh_config_writer
 from services.ssh import preflight
 from services.ssh.preflight import run_tier1_preflight, run_tier2_preflight
 
@@ -131,6 +132,20 @@ async def _gate_on_tier1(candidate: RemoteServer, settings: SettingsDep) -> None
 async def list_ssh_host_aliases(settings: SettingsDep) -> list[SshHostAliasOption]:
     """Return every selectable SSH host alias for the create/edit form."""
     return ssh_config_reader.list_host_aliases(settings.ssh_config_path)
+
+
+@router.post("/aliases", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_ssh_feature_active)])
+async def create_ssh_host_alias(config: SshHostAliasCreate, settings: SettingsDep) -> SshHostAliasOption:
+    """Append a new Host stanza to the user's ``~/.ssh/config`` and return it as a selectable alias.
+
+    For a user who wants to point Studio at a host without hand-editing their
+    SSH config first. Verifies the new host is actually reachable before
+    returning: a failed verification removes the stanza it just wrote rather
+    than leaving an unreachable entry in the user's real config. Also rejects
+    an alias that already exists rather than editing it - see
+    `services.ssh_config_writer` for why.
+    """
+    return await ssh_config_writer.add_verified_host_alias(settings.ssh_config_path, config, settings)
 
 
 @router.get("/aliases/{alias}/device-type", dependencies=[Depends(require_ssh_feature_active)])

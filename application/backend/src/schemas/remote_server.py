@@ -125,6 +125,33 @@ class SshHostAliasOption(BaseModel):
     user: str | None = None
 
 
+class SshHostAliasCreate(BaseModel):
+    """User-supplied fields to append a new ``Host`` stanza to ``~/.ssh/config``.
+
+    Lets a user configure a host from the UI without hand-editing their SSH
+    config, while keeping the same non-secret guarantee as the rest of the SSH
+    feature: ``identity_file`` is a path the user already has on disk, never a
+    key, password, or passphrase.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    alias: str = Field(
+        min_length=1,
+        max_length=255,
+        pattern=SSH_HOST_ALIAS_PATTERN,
+        description="Name for the new Host stanza. Must not already exist in the SSH config.",
+    )
+    hostname: str = Field(min_length=1, max_length=255, description="Hostname or IP address to connect to.")
+    port: int = Field(default=22, ge=1, le=65535)
+    user: str | None = Field(default=None, max_length=255)
+    identity_file: str | None = Field(
+        default=None,
+        max_length=4096,
+        description="Path to a private key file. Studio never reads or stores its contents.",
+    )
+
+
 class DeviceTypeDetection(BaseModel):
     """Best-effort autodetection of an SSH host's accelerator.
 
