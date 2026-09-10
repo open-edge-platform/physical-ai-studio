@@ -6,7 +6,7 @@
 from .datamodules import DataModule
 from .dataset import Dataset
 from .lerobot import LeRobotDataModule
-from .observation import Feature, FeatureType, NormalizationParameters, Observation
+from .observation import Feature, FeatureType, NormalizationParameters, NormalizationValue, Observation
 
 __all__ = [
     "DataModule",
@@ -15,5 +15,6 @@ __all__ = [
     "FeatureType",
     "LeRobotDataModule",
     "NormalizationParameters",
+    "NormalizationValue",
     "Observation",
 ]

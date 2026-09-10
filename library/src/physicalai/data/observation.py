@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 import torch
 
+type NormalizationValue = float | list[float] | list[list[float]] | list[list[list[float]]] | None
+
 
 @dataclass
 class Observation:
@@ -480,14 +482,27 @@ class Feature:
 
 @dataclass(frozen=True)
 class NormalizationParameters:
-    """Parameters for normalizing a tensor."""
+    """Statistics and optional selection mask for feature normalization.
 
-    mean: list[float] | float | None = None
-    std: list[float] | float | None = None
-    min: list[float] | float | None = None
-    max: list[float] | float | None = None
-    q01: list[float] | float | None = None
-    q99: list[float] | float | None = None
+    Each statistic may be a scalar or a sequence matching the feature's
+    normalized dimensions.
+    """
+
+    #: Arithmetic mean used by mean/std normalization.
+    mean: NormalizationValue = None
+    #: Standard deviation used by mean/std normalization.
+    std: NormalizationValue = None
+    #: Lower bound used by min/max normalization.
+    min: NormalizationValue = None
+    #: Upper bound used by min/max normalization.
+    max: NormalizationValue = None
+    #: First-percentile bound used by quantile normalization.
+    q01: NormalizationValue = None
+    #: Ninety-ninth-percentile bound used by quantile normalization.
+    q99: NormalizationValue = None
+    #: Optional per-dimension selector: ``True`` dimensions are normalized and
+    #: ``False`` dimensions pass through unchanged for all statistical modes.
+    mask: list[bool] | None = None
 
 
 # Module-level constants for convenient dict access

@@ -3,11 +3,13 @@
 
 """Utils for policies."""
 
+from .joint_transform import JointFrameTransform
 from .loss import in_episode_bound, reduce_losses
 from .normalization import FeatureNormalizeTransform
 
 __all__ = [
     "FeatureNormalizeTransform",
+    "JointFrameTransform",
     "in_episode_bound",
     "reduce_losses",
 ]

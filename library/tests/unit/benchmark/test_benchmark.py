@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-from physicalai.benchmark.gyms import Benchmark, BenchmarkResults, LiberoBenchmark, TaskResult
+from physicalai.benchmark.gyms import Benchmark, BenchmarkResults, LiberoBenchmark, PushTBenchmark, TaskResult
 from physicalai.benchmark.gyms.robocasa.robocasa import RoboCasaBenchmark
 
 

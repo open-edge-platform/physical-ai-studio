@@ -191,7 +191,7 @@ jobs:
       - name: Install dependencies
         working-directory: library
         run: |
-          uv sync --frozen --extra tests --extra pi05 --extra libero --extra smolvla --extra rldx1 --extra cu128
+          uv sync --frozen --extra tests --extra pi05 --extra libero --extra smolvla --extra molmoact2 --extra rldx1 --extra cu128
 
       - name: OSMesa render self-test
         continue-on-error: true
