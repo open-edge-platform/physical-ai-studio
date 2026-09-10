@@ -47,37 +47,57 @@ class XPUAccelerator(Accelerator):
         torch.xpu.set_device(device)
 
     @staticmethod
-    def parse_devices(devices: str | list | torch.device) -> list:
+    def parse_devices(devices: int | str | list | torch.device) -> list:
         """Parse device specification into a list of devices.
 
         This function normalizes different device specification formats into a consistent
         list format for use with PyTorch device management.
 
         Args:
-            devices (str | list | torch.device): Device specification that can be:
+            devices (int | str | list | torch.device): Device specification that can be:
+                - An integer representing the number of devices (e.g., 4 to use indices [0, 1, 2, 3])
                 - A string representing a single device (e.g., 'cuda:0', 'cpu')
-                - A list of device specifications
+                - A list of device specifications or indices
                 - A torch.device object
 
         Returns:
             list: A list containing the device specification(s). If input is already a list,
                 it is returned as-is. Otherwise, the input is wrapped in a list.
+
+        Raises:
+            ValueError: If an integer device count is less than 1.
         """
+        if isinstance(devices, int):
+            if devices < 1:
+                msg = "XPU device count must be at least 1"
+                raise ValueError(msg)
+            return list(range(devices))
         if isinstance(devices, list):
             return devices
         return [devices]
 
     @staticmethod
-    def get_parallel_devices(devices: list[int]) -> list[torch.device]:
-        """Convert a list of device indices to a list of XPU torch devices.
+    def get_parallel_devices(devices: list[int | str | torch.device]) -> list[torch.device]:
+        """Convert device specifications to a list of XPU torch devices.
 
         Args:
-            devices (list): A list of device indices (integers) to be converted to XPU devices.
+            devices (list): A list of device indices, device strings (e.g. "xpu:0"), or
+                ``torch.device`` objects, as produced by :meth:`parse_devices`.
 
         Returns:
             list[torch.device]: A list of torch.device objects configured for XPU with the specified indices.
         """
-        return [torch.device("xpu", idx) for idx in devices]
+        parallel_devices: list[torch.device] = []
+        for device in devices:
+            if isinstance(device, torch.device):
+                parallel_devices.append(device if device.type == "xpu" else torch.device("xpu", device.index))
+            elif isinstance(device, str):
+                parsed = torch.device(device)
+                index = parsed.index if parsed.index is not None else 0
+                parallel_devices.append(torch.device("xpu", index))
+            else:
+                parallel_devices.append(torch.device("xpu", device))
+        return parallel_devices
 
     @staticmethod
     def auto_device_count() -> int:
