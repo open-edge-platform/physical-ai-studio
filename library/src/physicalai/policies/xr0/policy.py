@@ -28,7 +28,8 @@ from .preprocessor import make_xr0_preprocessors
 from .pretrained_utils import extract_xr0_dataset_stats, load_xr0_pretrained_weights, resolve_pretrained_path
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
+    from os import PathLike
     from pathlib import Path
 
     from physicalai.data import Observation
@@ -40,7 +41,135 @@ logger = logging.getLogger(__name__)
 _DTYPES: dict[str, torch.dtype] = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
 
 
-class XR0(ExportablePolicyMixin, Policy):
+class XR0ExportablePolicyMixin(ExportablePolicyMixin):
+    """Export mixin that owns the XR0 self-contained OpenVINO baking.
+
+    Encapsulates every XR0-specific export step so the base
+    :class:`~physicalai.export.ExportablePolicyMixin` needs no policy-declared
+    export hooks: :meth:`to_openvino` bakes the fixed vision geometry and the
+    OpenVINO-friendly RMSNorm into the model in place before delegating to the
+    base tracing pipeline.
+    """
+
+    config: XR0Config
+    model: XR0Model | None  # type: ignore[assignment]
+    _preprocessor: XR0Preprocessor | None  # type: ignore[assignment]
+
+    def to_openvino(
+        self,
+        output_path: PathLike | str,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        pre_export_hooks: list[Callable[[], object]] | None = None,
+        post_export_hooks: list[Callable[[Path], object]] | None = None,
+        **export_kwargs: dict,
+    ) -> None:
+        """Bake the self-contained export graph, then run the base OpenVINO export.
+
+        Args:
+            output_path: Directory or file path where the OpenVINO model is saved.
+            input_sample: Optional sample input for tracing; falls back to
+                :meth:`_get_default_export_input_sample` when ``None``.
+            pre_export_hooks: Optional caller-supplied hooks run before conversion.
+            post_export_hooks: Optional caller-supplied hooks run after the artifact
+                is written.
+            **export_kwargs: Additional keyword arguments forwarded to the OpenVINO
+                conversion process.
+        """
+        self._bake_ingraph_export()
+        super().to_openvino(
+            output_path,
+            input_sample,
+            pre_export_hooks=pre_export_hooks,
+            post_export_hooks=post_export_hooks,
+            **export_kwargs,
+        )
+
+    def prepare_ingraph_export(self, processed: dict[str, torch.Tensor]) -> None:
+        """Bake the fixed image geometry into the VLM for a self-contained export.
+
+        Args:
+            processed: A preprocessor output dict containing ``image_grid_thw``.
+
+        Raises:
+            ValueError: If the model is not initialized.
+        """
+        if self.model is None:
+            msg = "Model is not initialized"
+            raise ValueError(msg)
+        self.model.prepare_ingraph_export(
+            cast("torch.LongTensor", processed["image_grid_thw"]),
+        )
+
+    def _build_padded_export_sample(self) -> dict[str, torch.Tensor]:
+        """Preprocess the policy's sample input and right-pad it to the graph length.
+
+        Returns:
+            The padded ``processed`` dict (``input_ids``, ``attention_mask``,
+            ``pixel_values``, ``image_grid_thw``, ``state``).
+
+        Raises:
+            ValueError: If the model/preprocessor are not initialized, or the
+                sample prompt is longer than ``tokenizer_max_length``.
+        """
+        if self.model is None or self._preprocessor is None or self.sample_input is None:
+            msg = "Model is not initialized"
+            raise ValueError(msg)
+
+        seq_len = self.config.tokenizer_max_length
+        processed = self._preprocessor(self.sample_input)
+        pad_id = self._preprocessor.processor.tokenizer.pad_token_id or 0
+        cur_len = processed["input_ids"].shape[1]
+        if cur_len > seq_len:
+            msg = f"Sample prompt ({cur_len} tokens) exceeds tokenizer_max_length={seq_len}."
+            raise ValueError(msg)
+        pad = seq_len - cur_len
+        if pad:
+            processed["input_ids"] = torch.nn.functional.pad(processed["input_ids"], (0, pad), value=pad_id)
+            processed["attention_mask"] = torch.nn.functional.pad(processed["attention_mask"], (0, pad), value=0)
+        return processed
+
+    def _bake_ingraph_export(self) -> None:
+        """Bake the vision geometry and OpenVINO-friendly RMSNorm into the model.
+
+        Invoked by :meth:`to_openvino` before tracing so the exported graph is
+        self-contained.
+        """
+        if self.model is not None:
+            self.model.export_state_passthrough = self.config.action_mode == "delta"
+        self.prepare_ingraph_export(self._build_padded_export_sample())
+
+    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor]:
+        """Return the traced input sample for the self-contained OpenVINO graph.
+
+        Overrides the base helper: the exported graph consumes the *padded*
+        preprocessor tensors and excludes ``image_grid_thw``. The token inputs
+        are renamed to the sibling OpenVINO tokenizer's output ports
+        (``tokenized_prompt`` / ``tokenized_prompt_mask``) so the traced graph
+        exposes those names directly and no post-conversion input rename is
+        required. :meth:`XR0Model.forward` aliases them back to ``input_ids`` /
+        ``attention_mask`` for the model body.
+
+        Returns:
+            The padded traced-input dict, without ``image_grid_thw``.
+
+        Raises:
+            ValueError: If the preprocessor is not initialized.
+        """
+        from physicalai.data.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK  # noqa: PLC0415
+
+        if self._preprocessor is None or self.sample_input is None:
+            msg = "Preprocessor is not initialized"
+            raise ValueError(msg)
+        export_names = {"input_ids": TOKENIZED_PROMPT, "attention_mask": TOKENIZED_PROMPT_MASK}
+        processed = self._build_padded_export_sample()
+        return {
+            export_names.get(name, name): tensor
+            for name, tensor in processed.items()
+            if name != "image_grid_thw" and isinstance(tensor, torch.Tensor)
+        }
+
+
+class XR0(XR0ExportablePolicyMixin, Policy):
     """XR0 Policy - Xiaomi's flow-matching VLA model.
 
     Lightning wrapper for training and inference with :class:`XR0Model`.
@@ -470,91 +599,6 @@ class XR0(ExportablePolicyMixin, Policy):
         actions = self.model.predict_action_chunk(processed)
         return self._postprocessor({ACTION: actions, STATE: observation[STATE]})[ACTION]
 
-    def prepare_ingraph_export(self, processed: dict[str, torch.Tensor]) -> None:
-        """Bake the fixed image geometry into the VLM for a self-contained export.
-
-        Args:
-            processed: A preprocessor output dict containing ``image_grid_thw``.
-
-        Raises:
-            ValueError: If the model is not initialized.
-        """
-        if self.model is None:
-            msg = "Model is not initialized"
-            raise ValueError(msg)
-        self.model.prepare_ingraph_export(
-            cast("torch.LongTensor", processed["image_grid_thw"]),
-        )
-
-    def _build_padded_export_sample(self) -> dict[str, torch.Tensor]:
-        """Preprocess the policy's sample input and right-pad it to the graph length.
-
-        Returns:
-            The padded ``processed`` dict (``input_ids``, ``attention_mask``,
-            ``pixel_values``, ``image_grid_thw``, ``state``).
-
-        Raises:
-            ValueError: If the model/preprocessor are not initialized, or the
-                sample prompt is longer than ``tokenizer_max_length``.
-        """
-        if self.model is None or self._preprocessor is None or self.sample_input is None:
-            msg = "Model is not initialized"
-            raise ValueError(msg)
-
-        seq_len = self.config.tokenizer_max_length
-        processed = self._preprocessor(self.sample_input)
-        pad_id = self._preprocessor.processor.tokenizer.pad_token_id or 0
-        cur_len = processed["input_ids"].shape[1]
-        if cur_len > seq_len:
-            msg = f"Sample prompt ({cur_len} tokens) exceeds tokenizer_max_length={seq_len}."
-            raise ValueError(msg)
-        pad = seq_len - cur_len
-        if pad:
-            processed["input_ids"] = torch.nn.functional.pad(processed["input_ids"], (0, pad), value=pad_id)
-            processed["attention_mask"] = torch.nn.functional.pad(processed["attention_mask"], (0, pad), value=0)
-        return processed
-
-    def _bake_ingraph_export(self) -> None:
-        """Pre-export hook: bake the vision geometry and OpenVINO-friendly RMSNorm.
-
-        Registered as a ``pre_export_hooks`` entry for the OpenVINO backend
-        so the base :meth:`ExportablePolicyMixin.to_openvino` runs it in place
-        before tracing.
-        """
-        if self.model is not None:
-            self.model.export_state_passthrough = self.config.action_mode == "delta"
-        self.prepare_ingraph_export(self._build_padded_export_sample())
-
-    def _get_default_export_input_sample(self) -> dict[str, torch.Tensor]:
-        """Return the traced input sample for the self-contained OpenVINO graph.
-
-        Overrides the base helper: the exported graph consumes the *padded*
-        preprocessor tensors and excludes ``image_grid_thw``. The token inputs
-        are renamed to the sibling OpenVINO tokenizer's output ports
-        (``tokenized_prompt`` / ``tokenized_prompt_mask``) so the traced graph
-        exposes those names directly and no post-conversion input rename is
-        required. :meth:`XR0Model.forward` aliases them back to ``input_ids`` /
-        ``attention_mask`` for the model body.
-
-        Returns:
-            The padded traced-input dict, without ``image_grid_thw``.
-
-        Raises:
-            ValueError: If the preprocessor is not initialized.
-        """
-        from physicalai.data.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK  # noqa: PLC0415
-
-        if self._preprocessor is None or self.sample_input is None:
-            msg = "Preprocessor is not initialized"
-            raise ValueError(msg)
-        export_names = {"input_ids": TOKENIZED_PROMPT, "attention_mask": TOKENIZED_PROMPT_MASK}
-        processed = self._build_padded_export_sample()
-        return {
-            export_names.get(name, name): tensor
-            for name, tensor in processed.items()
-            if name != "image_grid_thw" and isinstance(tensor, torch.Tensor)
-        }
-
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Lightning training step.
 
@@ -973,11 +1017,6 @@ class XR0(ExportablePolicyMixin, Policy):
                     ComponentSpec(type="ov_tokenizer", artifact="tokenizer.xml"),
                 ],
                 postprocessors_specs=ov_postproc_specs,
-                # Bake the vision geometry + install OpenVINO-friendly RMSNorm
-                # before tracing, then rewrite boolean ``GatherND`` ops to ``i32``
-                # in the written IR so it also loads on the Intel GPU plugin.
-                pre_export_hooks=[self._bake_ingraph_export],
-                post_export_hooks=[],
             )
 
         return extra_args

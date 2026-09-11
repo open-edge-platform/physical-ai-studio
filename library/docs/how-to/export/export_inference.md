@@ -63,11 +63,9 @@ place); post-hooks run after the artifact is written (each receives the exported
 model file path and can rewrite it in place, e.g. quantization or weight
 compression). Both run for every backend.
 
-Hooks come from two sources, run in order: any policy-declared hooks from the
-backend's export parameters first, then the caller-supplied hooks passed here.
-`export(...)` forwards the caller-supplied hooks to the backend method
+`export(...)` forwards these hooks to the backend method
 (`to_openvino`/`to_onnx`/...), so calling a backend method directly runs the
-same hooks (policy-declared plus any you pass to it).
+same hooks.
 
 ```python test="skip" reason="requires checkpoint"
 from pathlib import Path

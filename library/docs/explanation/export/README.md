@@ -127,9 +127,8 @@ policy.to_executorch("model.pte")
 `export(...)` accepts `pre_export_hooks` and `post_export_hooks`. Pre-hooks run
 before tracing/conversion (mutate the model in place); post-hooks run after the
 artifact is written (rewrite it in place), enabling backend-specific
-optimization passes without changing the export methods themselves. Hooks are
-collected from the policy's backend export parameters first, then the
-caller-supplied hooks, and run for every backend.
+optimization passes without changing the export methods themselves. They run for
+every backend.
 
 The built-in `compress_weights_openvino_int8_sym` hook uses
 [NNCF](https://github.com/openvinotoolkit/nncf) to compress an OpenVINO IR to

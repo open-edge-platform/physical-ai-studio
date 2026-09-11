@@ -319,13 +319,13 @@ class TestExportTokenRecompute:
 
 
 class TestBakeIngraphExport:
-    """``XR0._bake_ingraph_export`` pre-export hook wiring (no model download).
+    """``XR0._bake_ingraph_export`` export baking wiring (no model download).
 
-    The hook is registered as the OpenVINO ``pre_export_hooks`` entry. It toggles
-    the model's ``export_state_passthrough`` from ``action_mode`` and forwards the
-    padded export sample to ``prepare_ingraph_export`` (which bakes the vision
+    ``to_openvino`` invokes this method before tracing. It toggles the model's
+    ``export_state_passthrough`` from ``action_mode`` and forwards the padded
+    export sample to ``prepare_ingraph_export`` (which bakes the vision
     geometry + OpenVINO-friendly RMSNorm on the real 4B model). These tests mock
-    that heavy machinery and check only the hook's own wiring.
+    that heavy machinery and check only the method's own wiring.
     """
 
     @pytest.mark.parametrize(

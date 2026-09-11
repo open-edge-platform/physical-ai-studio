@@ -3,10 +3,8 @@
 
 """Export backends enumeration and parameters."""
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
 from typing import Literal
 
 #: Supported ExecuTorch delegate backends.
@@ -54,22 +52,11 @@ class ExportParameters:
             to record in the manifest.
         postprocessors_specs: Component specs describing the inference postprocessors
             to record in the manifest.
-        pre_export_hooks: Callables invoked in order right before the model is
-            traced/converted. Use them to mutate the model in place for export
-            (e.g. bake constants into the graph, swap ops for export-friendly
-            variants). Signature: ``() -> object`` (any return value is ignored).
-        post_export_hooks: Callables invoked in order after the model has been
-            written to disk. Each hook receives the path to the exported file
-            and may modify the file in place (e.g. to patch the graph for a
-            specific runtime). Signature: ``(export_path: Path) -> object``
-            (any return value is ignored).
     """
 
     exporter_kwargs: dict = field(default_factory=dict)
     preprocessors_specs: list = field(default_factory=list)
     postprocessors_specs: list = field(default_factory=list)
-    pre_export_hooks: list[Callable[[], object]] = field(default_factory=list)
-    post_export_hooks: list[Callable[[Path], object]] = field(default_factory=list)
 
 
 @dataclass
