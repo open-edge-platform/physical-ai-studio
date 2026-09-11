@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
@@ -7,6 +7,8 @@ import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
 import { getMockedTrainJob } from '../../test-utils/mocks/mock-train-job';
 import { render } from '../../test-utils/render';
+import { JobsButton } from '../jobs/footer/jobs-button';
+import { useJobUpdates } from '../jobs/use-job-updates';
 import { ModelsPage } from './models-page';
 
 const projectId = 'project-1';
@@ -144,5 +146,63 @@ describe('ModelsPage - Current Training', () => {
 
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(await screen.findByText('pending-model')).toBeInTheDocument();
+    });
+});
+
+let capturedOnMessage: ((event: { data: string }) => void) | undefined;
+
+vi.mock('react-use-websocket', () => ({
+    default: (_url: unknown, options: { onMessage?: (event: { data: string }) => void }) => {
+        capturedOnMessage = options.onMessage;
+        return { readyState: 1 };
+    },
+}));
+
+const FooterStandIn = () => {
+    useJobUpdates(projectId);
+    return <JobsButton projectId={projectId} />;
+};
+
+const deliverJobUpdate = (job: SchemaTrainJob) => {
+    act(() => {
+        capturedOnMessage?.({ data: JSON.stringify({ event: 'JOB_UPDATE', data: job }) });
+    });
+};
+
+describe('ModelsPage + JobsButton - shared query-cache integration', () => {
+    beforeEach(() => {
+        vi.stubGlobal('WebSocket', FakeWebSocket);
+        vi.stubGlobal('EventSource', ImmediatelyClosingEventSource);
+        capturedOnMessage = undefined;
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('reflects a single job-cache update in both ModelsPage and the footer-owned Jobs dialog', async () => {
+        const user = userEvent.setup();
+        mockApi([runningJob]);
+
+        render(
+            <>
+                <ModelsPage />
+                <FooterStandIn />
+            </>,
+            { route: `/projects/${projectId}/models`, path: '/projects/:project_id/models' }
+        );
+
+        expect(await screen.findAllByText('running-model')).toHaveLength(1);
+
+        await user.click(await screen.findByRole('button', { name: 'Jobs' }));
+        const dialog = await screen.findByRole('dialog');
+        expect(await screen.findAllByText('running-model')).toHaveLength(2);
+        expect(within(dialog).getByText('running')).toBeInTheDocument();
+
+        deliverJobUpdate({ ...runningJob, status: 'completed' });
+
+        await waitFor(() => expect(screen.getAllByText('running-model')).toHaveLength(1));
+        expect(within(dialog).getByText('running-model')).toBeInTheDocument();
+        expect(within(dialog).getByText('completed')).toBeInTheDocument();
     });
 });
