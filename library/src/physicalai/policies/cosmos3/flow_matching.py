@@ -66,6 +66,7 @@ def build_pack(
     fps: int,
     action_dim: int,
     device: torch.device | str,
+    view_point: str | None = None,
 ) -> dict[str, Any]:
     """Construct fixed-shape sequence pack dictionary for one training paradigm.
 
@@ -80,6 +81,7 @@ def build_pack(
         fps: Video and action frame rate.
         action_dim: Padded action dimension.
         device: Target execution device.
+        view_point: Optional camera viewpoint tag for prompt framing.
 
     Returns:
         Dictionary containing sequence segments, position IDs, sequence lengths, and masks.
@@ -97,6 +99,7 @@ def build_pack(
         width=width,
         fps=fps,
         action_mode="policy",
+        action_view_point=view_point,
     )
     # Access pipeline segment preparation methods
     text = pipe._prepare_text_segment(cond_ids, device=device)  # ruff: ignore[private-member-access]

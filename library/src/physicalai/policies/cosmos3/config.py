@@ -54,6 +54,9 @@ class Cosmos3Config(Config):
         grad_checkpoint: Enable gradient checkpointing for memory optimization. Defaults to True.
         domain: Embodiment domain identifier (e.g., "pusht", "droid_lerobot", "bridge_orig_lerobot",
             "aloha", "libero"). Defaults to "pusht".
+        view_point: Optional camera viewpoint tag (e.g., "concat_view", "ego_view", "wrist_view",
+            "third_person_view", "top_down_2d_view"). When None, inferred from domain and
+            composition. Defaults to None.
         prompt: Task instruction conditioning string. Defaults to "".
         guidance_scale: Classifier-free guidance scale for inference. Defaults to 3.0.
         flow_shift: Flow shift value for the UniPC multistep scheduler. Defaults to 8.0.
@@ -81,6 +84,7 @@ class Cosmos3Config(Config):
     fps: int = 10
     grad_checkpoint: bool = True
     domain: str = "pusht"
+    view_point: str | None = None
     prompt: str = ""
     guidance_scale: float = 3.0
     flow_shift: float = 8.0

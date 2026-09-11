@@ -12,9 +12,11 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
+
 from physicalai.config import Config
-from physicalai.data.observation import ACTION, IMAGES, Observation, STATE
+from physicalai.data.observation import ACTION, IMAGES, STATE, Observation
 from physicalai.policies import Cosmos3, Cosmos3Config, Cosmos3Model, get_physicalai_policy_class, get_policy
+from physicalai.policies.cosmos3 import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 
 # ============================================================================ #
 # Configuration Tests                                                          #
@@ -41,6 +43,7 @@ class TestCosmos3Config:
         assert config.fps == 10
         assert config.grad_checkpoint is True
         assert config.domain == "pusht"
+        assert config.view_point is None
         assert config.dtype == "bfloat16"
         assert config.optimizer_lr == 1e-4
 
@@ -59,6 +62,7 @@ class TestCosmos3Config:
             chunk_size=16,
             n_action_steps=16,
             domain="droid_lerobot",
+            view_point="concat_view",
         )
         assert config.mode == "full"
         assert config.paradigm == "joint"
@@ -66,6 +70,7 @@ class TestCosmos3Config:
         assert config.chunk_size == 16
         assert config.n_action_steps == 16
         assert config.domain == "droid_lerobot"
+        assert config.view_point == "concat_view"
 
     def test_n_action_steps_validation(self) -> None:
         """Test n_action_steps cannot exceed chunk_size."""
@@ -222,7 +227,7 @@ class TestMockedCosmos3Model:
             "action": {
                 "min": [10.0, 20.0],
                 "max": [50.0, 80.0],
-            }
+            },
         }
         model.set_dataset_stats(stats)
         assert model.raw_dim == 2
@@ -301,7 +306,7 @@ class TestMockedCosmos3Model:
                 "model.a_min": torch.tensor([-1.0, -1.0]),
                 "model.a_max": torch.tensor([1.0, 1.0]),
                 "model.domain_id": torch.tensor([4]),
-            }
+            },
         }
         policy.on_save_checkpoint(checkpoint)
 
@@ -331,3 +336,304 @@ class TestMockedCosmos3Model:
         (json_dir / "checkpoint.json").touch()
         assert _has_pretrained_action_head(str(json_dir), "any_domain")
 
+    def test_compute_loss_multi_camera_viewpoint(self) -> None:
+        """Test compute_loss with multi-camera DROID input composes views and passes concat_view."""
+        from unittest.mock import patch
+
+        config = Cosmos3Config(chunk_size=4, domain="droid_lerobot")
+        pipe = self._create_mock_pipeline()
+
+        pipe._prepare_action_video_conditioning.return_value = (
+            torch.zeros(1, 3, 5, 224, 224),
+            torch.tensor([1, 3, 224, 224]),
+            224,
+            224,
+        )
+        pipe._remove_action_video_padding_from_latent.return_value = torch.zeros(1, 16, 2, 14, 14)
+        pipe._encode_video.return_value = torch.zeros(1, 16, 2, 14, 14)
+
+        model = Cosmos3Model(config, pipeline=pipe)
+        model._get_or_build_pack = MagicMock(return_value={})
+
+        batch = {
+            "images.wrist_image_left": torch.zeros(1, 3, 224, 224),
+            "images.exterior_image_1_left": torch.zeros(1, 3, 224, 224),
+            "images.exterior_image_2_left": torch.zeros(1, 3, 224, 224),
+            ACTION: torch.zeros(1, 4, 10),
+            STATE: torch.zeros(1, 10),
+        }
+        with patch("physicalai.policies.cosmos3.model.flow_matching_step") as mock_step:
+            mock_step.return_value = (torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.05))
+            model.compute_loss(batch)
+
+        assert model._get_or_build_pack.called
+        call_kwargs = model._get_or_build_pack.call_args.kwargs
+        assert call_kwargs.get("view_point") == "concat_view"
+
+        # Verify the conditioning clip passed to diffusers had composed T-shape height (3 * 224 // 2 = 336)
+        prep_call_args = pipe._prepare_action_video_conditioning.call_args[0]
+        clip_arg = prep_call_args[0]  # [T, C, H, W]
+        assert clip_arg.shape[-2] == 336
+        assert clip_arg.shape[-1] == 224
+
+    def test_predict_action_chunk_multi_camera_viewpoint(self) -> None:
+        """Test predict_action_chunk composes DROID views and passes concat_view to condition."""
+        config = Cosmos3Config(chunk_size=4, domain="droid_lerobot")
+        pipe = self._create_mock_pipeline()
+
+        mock_actions = torch.zeros(1, 5, 64)
+        pipe.return_value = MagicMock(action=mock_actions)
+
+        model = Cosmos3Model(config, pipeline=pipe)
+        batch = {
+            IMAGES: {
+                "wrist_image_left": torch.zeros(3, 224, 224),
+                "exterior_image_1_left": torch.zeros(3, 224, 224),
+                "exterior_image_2_left": torch.zeros(3, 224, 224),
+            },
+        }
+        model.predict_action_chunk(batch)
+
+        assert pipe.called
+        call_kwargs = pipe.call_args.kwargs
+        action_cond = call_kwargs["action"]
+        assert action_cond.view_point == "concat_view"
+        # PIL image height should be 336 (3 * 224 / 2)
+        assert action_cond.image.size == (224, 336)  # PIL size is (W, H)
+
+    def test_predict_action_chunk_pusht_viewpoint(self) -> None:
+        """Test predict_action_chunk sets top_down_2d_view for pusht domain."""
+        config = Cosmos3Config(chunk_size=4, domain="pusht")
+        pipe = self._create_mock_pipeline()
+
+        mock_actions = torch.zeros(1, 5, 64)
+        pipe.return_value = MagicMock(action=mock_actions)
+
+        model = Cosmos3Model(config, pipeline=pipe)
+        batch = {IMAGES: torch.zeros(3, 224, 224)}
+        model.predict_action_chunk(batch)
+
+        assert pipe.called
+        call_kwargs = pipe.call_args.kwargs
+        action_cond = call_kwargs["action"]
+        assert action_cond.view_point == "top_down_2d_view"
+
+
+# ============================================================================ #
+# View Composition & Preprocessor Tests                                        #
+# ============================================================================ #
+
+
+class TestViewComposition:
+    """Tests for compose_t_views and compose_horizontal_views functions."""
+
+    def test_compose_t_views_3d(self) -> None:
+        """Test T-shape composition with 3D (C, H, W) tensors."""
+        top = torch.zeros(3, 100, 100)
+        left = torch.zeros(3, 80, 80)
+        right = torch.zeros(3, 90, 90)
+
+        out = compose_t_views(top, left, right)
+        assert out.shape == (3, 150, 100)
+
+    def test_compose_t_views_4d_batched(self) -> None:
+        """Test T-shape composition with 4D (B, C, H, W) tensors."""
+        top = torch.zeros(2, 3, 224, 224)
+        left = torch.zeros(2, 3, 224, 224)
+        right = torch.zeros(2, 3, 224, 224)
+
+        out = compose_t_views(top, left, right)
+        assert out.shape == (2, 3, 336, 224)
+
+    def test_compose_t_views_5d_temporal(self) -> None:
+        """Test T-shape composition with 5D (B, T, C, H, W) tensors."""
+        top = torch.zeros(2, 4, 3, 224, 224)
+        left = torch.zeros(2, 4, 3, 224, 224)
+        right = torch.zeros(2, 4, 3, 224, 224)
+
+        out = compose_t_views(top, left, right)
+        assert out.shape == (2, 4, 3, 336, 224)
+
+    def test_compose_t_views_odd_dimension(self) -> None:
+        """Test T-shape composition with odd width and height."""
+        top = torch.zeros(3, 101, 101)
+        left = torch.zeros(3, 60, 60)
+        right = torch.zeros(3, 60, 60)
+
+        out = compose_t_views(top, left, right)
+        assert out.shape == (3, 151, 101)
+
+    def test_compose_horizontal_views_3d(self) -> None:
+        """Test horizontal side-by-side composition with 3D (C, H, W) tensors."""
+        left = torch.zeros(3, 128, 128)
+        right = torch.zeros(3, 128, 128)
+
+        out = compose_horizontal_views(left, right)
+        assert out.shape == (3, 128, 256)
+
+    def test_compose_horizontal_views_different_resolution(self) -> None:
+        """Test horizontal side-by-side composition resizes right to match left."""
+        left = torch.zeros(2, 3, 128, 128)
+        right = torch.zeros(2, 3, 256, 256)
+
+        out = compose_horizontal_views(left, right)
+        assert out.shape == (2, 3, 128, 256)
+
+
+class TestCosmos3Preprocessor:
+    """Tests for Cosmos3Preprocessor."""
+
+    def test_droid_t_shape_composition(self) -> None:
+        """Test DROID 3-camera input triggers T-shape composition and concat_view."""
+        preprocessor = Cosmos3Preprocessor(domain="droid_lerobot")
+        batch = {
+            IMAGES: {
+                "wrist_image_left": torch.zeros(3, 224, 224),
+                "exterior_image_1_left": torch.zeros(3, 224, 224),
+                "exterior_image_2_left": torch.zeros(3, 224, 224),
+            },
+        }
+        result = preprocessor(batch)
+
+        assert result["view_point"] == "concat_view"
+        assert result["viewpoint"] == "concat_view"
+        assert result[IMAGES].shape == (3, 336, 224)
+
+    def test_agibot_t_shape_composition(self) -> None:
+        """Test Agibot 3-camera input triggers T-shape composition."""
+        preprocessor = Cosmos3Preprocessor(domain="agibotworld")
+        batch = {
+            IMAGES: {
+                "top": torch.zeros(3, 200, 200),
+                "left": torch.zeros(3, 100, 100),
+                "right": torch.zeros(3, 100, 100),
+            },
+        }
+        result = preprocessor(batch)
+
+        assert result["view_point"] == "concat_view"
+        assert result[IMAGES].shape == (3, 300, 200)
+
+    def test_robomind_franka_t_shape_composition(self) -> None:
+        """Test RoboMIND Franka 3-camera input triggers T-shape composition."""
+        preprocessor = Cosmos3Preprocessor(domain="robomind-franka")
+        batch = {
+            "images.top": torch.zeros(3, 200, 200),
+            "images.left": torch.zeros(3, 100, 100),
+            "images.right": torch.zeros(3, 100, 100),
+        }
+        result = preprocessor(batch)
+
+        assert result["view_point"] == "concat_view"
+        assert result[IMAGES].shape == (3, 300, 200)
+
+    def test_libero_horizontal_composition(self) -> None:
+        """Test Libero 2-camera input triggers horizontal side-by-side composition."""
+        preprocessor = Cosmos3Preprocessor(domain="libero")
+        batch = {
+            IMAGES: {
+                "agentview": torch.zeros(3, 128, 128),
+                "wrist": torch.zeros(3, 128, 128),
+            },
+        }
+        result = preprocessor(batch)
+
+        assert result["view_point"] == "concat_view"
+        assert result[IMAGES].shape == (3, 128, 256)
+
+    def test_libero_single_camera_passthrough(self) -> None:
+        """Test Libero single-camera input passes through with appropriate viewpoint."""
+        preprocessor = Cosmos3Preprocessor(domain="libero")
+        batch_agent = {IMAGES: {"agentview": torch.zeros(3, 128, 128)}}
+        res_agent = preprocessor(batch_agent)
+        assert res_agent["view_point"] == "third_person_view"
+
+        batch_wrist = {IMAGES: {"wrist_image": torch.zeros(3, 128, 128)}}
+        res_wrist = preprocessor(batch_wrist)
+        assert res_wrist["view_point"] == "wrist_view"
+
+    @pytest.mark.parametrize(
+        ("domain", "expected_viewpoint"),
+        [
+            ("pusht", "top_down_2d_view"),
+            ("bridge_orig_lerobot", "ego_view"),
+            ("umi", "wrist_view"),
+            ("fractal", "ego_view"),
+            ("robomind-ur", "third_person_view"),
+            ("aloha", None),
+        ],
+    )
+    def test_single_camera_domains(self, domain: str, expected_viewpoint: str | None) -> None:
+        """Test single-camera domains set expected default viewpoints."""
+        preprocessor = Cosmos3Preprocessor(domain=domain)
+        batch = {IMAGES: torch.zeros(3, 224, 224)}
+        result = preprocessor(batch)
+
+        assert result["view_point"] == expected_viewpoint
+        assert result[IMAGES].shape == (3, 224, 224)
+
+    def test_explicit_viewpoint_override(self) -> None:
+        """Test explicit view_point override takes precedence."""
+        preprocessor = Cosmos3Preprocessor(domain="pusht", view_point="custom_view")
+        batch = {IMAGES: torch.zeros(3, 224, 224)}
+        result = preprocessor(batch)
+
+        assert result["view_point"] == "custom_view"
+
+    def test_observation_input(self) -> None:
+        """Test preprocessor handles Observation dataclass and preserves fields."""
+        preprocessor = Cosmos3Preprocessor(domain="droid_lerobot")
+        obs = Observation(
+            images={
+                "wrist_image_left": torch.zeros(3, 224, 224),
+                "exterior_image_1_left": torch.zeros(3, 224, 224),
+                "exterior_image_2_left": torch.zeros(3, 224, 224),
+            },
+            action=torch.ones(32, 10),
+            state=torch.zeros(10),
+        )
+        result = preprocessor(obs)
+
+        assert result["view_point"] == "concat_view"
+        assert result[IMAGES].shape == (3, 336, 224)
+        assert ACTION in result
+        assert STATE in result
+
+    def test_lerobot_prefix_extraction(self) -> None:
+        """Test preprocessor extracts cameras from observation.images.* format."""
+        preprocessor = Cosmos3Preprocessor(domain="droid_lerobot")
+        batch = {
+            "observation.images.wrist_image_left": torch.zeros(3, 224, 224),
+            "observation.images.exterior_image_1_left": torch.zeros(3, 224, 224),
+            "observation.images.exterior_image_2_left": torch.zeros(3, 224, 224),
+            "observation.images.wrist_image_left_is_pad": torch.zeros(3, dtype=torch.bool),
+        }
+        result = preprocessor(batch)
+
+        assert result["view_point"] == "concat_view"
+        assert result[IMAGES].shape == (3, 336, 224)
+
+    def test_channels_last_conversion(self) -> None:
+        """Test (H, W, C) input is converted to channels-first (C, H, W)."""
+        preprocessor = Cosmos3Preprocessor(domain="pusht")
+        batch = {IMAGES: torch.zeros(224, 224, 3)}
+        result = preprocessor(batch)
+
+        assert result[IMAGES].shape == (3, 224, 224)
+
+    def test_idempotency(self) -> None:
+        """Test preprocessor is idempotent when batch is already preprocessed."""
+        preprocessor = Cosmos3Preprocessor(domain="droid_lerobot")
+        batch = {
+            IMAGES: torch.zeros(3, 336, 224),
+            "view_point": "concat_view",
+        }
+        result = preprocessor(batch)
+        assert result[IMAGES].shape == (3, 336, 224)
+        assert result["view_point"] == "concat_view"
+
+    def test_missing_image_raises_key_error(self) -> None:
+        """Test missing image in batch raises KeyError."""
+        preprocessor = Cosmos3Preprocessor(domain="pusht")
+        with pytest.raises(KeyError, match="No image tensor found"):
+            preprocessor({"action": torch.zeros(10)})

@@ -12,17 +12,18 @@ from typing import TYPE_CHECKING, Any, Literal
 import torch
 
 from physicalai.data.dataset import Dataset
+from physicalai.data.observation import Observation
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import Cosmos3Config
 from .model import Cosmos3Model
 from .pipeline import PolicyPipelineWithState, require_xpu_driver
+from .preprocessor import Cosmos3Preprocessor
 from .surgery import HEAD_KEYS, load_finetuned, split_trainable_params
 
 if TYPE_CHECKING:
     from physicalai.data import DataModule
-    from physicalai.data.observation import Observation
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ class Cosmos3(Policy):
         fps: int = 10,
         grad_checkpoint: bool = True,
         domain: str = "pusht",
+        view_point: str | None = None,
         prompt: str = "",
         guidance_scale: float = 3.0,
         flow_shift: float = 8.0,
@@ -115,6 +117,7 @@ class Cosmos3(Policy):
             fps=fps,
             grad_checkpoint=grad_checkpoint,
             domain=domain,
+            view_point=view_point,
             prompt=prompt,
             guidance_scale=guidance_scale,
             flow_shift=flow_shift,
@@ -132,6 +135,11 @@ class Cosmos3(Policy):
 
         self.save_hyperparameters(ignore=["config", "pipeline"])
         self.hparams["config"] = self.config.to_dict()
+
+        self.preprocessor = Cosmos3Preprocessor(
+            domain=self.config.domain,
+            view_point=self.config.view_point,
+        )
 
         self.model: Cosmos3Model | None = None
         self._dataset_stats = dataset_stats
@@ -152,6 +160,7 @@ class Cosmos3(Policy):
             dataset_stats=dataset_stats,
             device=self.device,
         )
+        self.model.preprocessor = self.preprocessor
 
     def setup(self, stage: str) -> None:
         """Set up model from datamodule before training or validation.
@@ -186,12 +195,12 @@ class Cosmos3(Policy):
 
     def forward(
         self,
-        batch: Observation,
+        batch: Observation | dict[str, Any],
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]] | torch.Tensor:
         """Forward pass for training or action chunk prediction.
 
         Args:
-            batch: Input Observation batch.
+            batch: Input Observation batch or dictionary.
 
         Returns:
             Tuple of (loss, loss_dict) during training, or action chunk predictions during eval.
@@ -203,18 +212,19 @@ class Cosmos3(Policy):
             msg = "Cosmos3 model is not initialized."
             raise RuntimeError(msg)
 
+        batch_dict = batch.to(self.device).to_dict() if isinstance(batch, Observation) else batch
         if self.training:
-            return self.model.compute_loss(batch.to(self.device).to_dict())
-        return self.predict_action_chunk(batch)
+            return self.model.compute_loss(batch_dict)
+        return self.predict_action_chunk(batch_dict)
 
     def compute_val_loss(
         self,
-        batch: Observation,
+        batch: Observation | dict[str, Any],
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
         """Compute validation loss without gradients.
 
         Args:
-            batch: Input Observation batch.
+            batch: Input Observation batch or dictionary.
 
         Returns:
             Tuple of (val_loss, val_loss_dict).
@@ -225,7 +235,8 @@ class Cosmos3(Policy):
         if self.model is None:
             msg = "Cosmos3 model is not initialized."
             raise RuntimeError(msg)
-        return self.model.compute_val_loss(batch.to(self.device).to_dict())
+        batch_dict = batch.to(self.device).to_dict() if isinstance(batch, Observation) else batch
+        return self.model.compute_val_loss(batch_dict)
 
     def training_step(self, batch: Observation, batch_idx: int) -> torch.Tensor:
         """Lightning training step.
@@ -246,11 +257,11 @@ class Cosmos3(Policy):
             self.log("train/loss_action", loss_dict["loss_action"], prog_bar=False)
         return loss
 
-    def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+    def predict_action_chunk(self, batch: Observation | dict[str, Any]) -> torch.Tensor:
         """Predict a chunk of actions from observation.
 
         Args:
-            batch: Input observation batch.
+            batch: Input observation batch or dictionary.
 
         Returns:
             Action chunk tensor of shape (B, chunk_size, raw_dim).
@@ -262,7 +273,7 @@ class Cosmos3(Policy):
             msg = "Cosmos3 model is not initialized."
             raise RuntimeError(msg)
 
-        batch_dict = batch.to(self.device).to_dict()
+        batch_dict = batch.to(self.device).to_dict() if isinstance(batch, Observation) else batch
         return self.model.predict_action_chunk(batch_dict)
 
     def configure_optimizers(self) -> dict[str, Any]:

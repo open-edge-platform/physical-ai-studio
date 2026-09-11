@@ -17,6 +17,7 @@ from .pipeline import (
     state_action_mrope_ids,
 )
 from .policy import Cosmos3
+from .preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 from .surgery import (
     GEN_TOWER_KEYS,
     HEAD_KEYS,
@@ -35,10 +36,13 @@ __all__ = [
     "Cosmos3",
     "Cosmos3Config",
     "Cosmos3Model",
+    "Cosmos3Preprocessor",
     "PolicyPipelineWithState",
     "build_action_tokens",
     "build_pack",
     "check_xpu_driver",
+    "compose_horizontal_views",
+    "compose_t_views",
     "configure_trainable",
     "flow_matching_step",
     "init_domain_action_head",

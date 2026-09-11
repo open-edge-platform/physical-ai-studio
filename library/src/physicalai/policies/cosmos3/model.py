@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 from diffusers import CosmosActionCondition
 from diffusers.pipelines.cosmos.pipeline_cosmos3_omni import (
+    _ACTION_VIEWPOINT_TEMPLATES,  # ruff: ignore[import-private-name]
     _EMBODIMENT_TO_DOMAIN_ID,  # ruff: ignore[import-private-name]
     _EMBODIMENT_TO_RAW_ACTION_DIM,  # ruff: ignore[import-private-name]
 )
@@ -25,6 +26,7 @@ from physicalai.policies.base import Model
 
 from .flow_matching import build_action_tokens, build_pack, flow_matching_step
 from .pipeline import PolicyPipelineWithState
+from .preprocessor import Cosmos3Preprocessor
 from .surgery import configure_trainable, init_domain_action_head
 
 if TYPE_CHECKING:
@@ -35,6 +37,12 @@ logger = logging.getLogger(__name__)
 # Register ALOHA embodiment if not already present in diffusers
 _EMBODIMENT_TO_DOMAIN_ID.setdefault("aloha", 10)
 _EMBODIMENT_TO_RAW_ACTION_DIM.setdefault("aloha", 14)
+
+# Register top_down_2d_view in diffusers action viewpoint templates if not present
+_ACTION_VIEWPOINT_TEMPLATES.setdefault(
+    "top_down_2d_view",
+    "This video is captured from a top-down view of a flat 2D scene.",
+)
 
 
 def _has_pretrained_action_head(pretrained_path: str, domain: str) -> bool:
@@ -258,8 +266,14 @@ class Cosmos3Model(Model):
         if config.grad_checkpoint:
             self.transformer.enable_gradient_checkpointing()
 
+        # Input preprocessor for view composition and viewpoint metadata
+        self.preprocessor = Cosmos3Preprocessor(
+            domain=config.domain,
+            view_point=getattr(config, "view_point", None),
+        )
+
         # Cache for fixed-shape sequence packs across steps
-        self._pack_cache: dict[tuple[str, str, int, int], dict[str, Any]] = {}
+        self._pack_cache: dict[tuple[str, str, int, int, str | None], dict[str, Any]] = {}
 
         # Action normalization bounds
         self.register_buffer("a_min", -torch.ones(self.raw_dim, dtype=torch.float32))
@@ -326,6 +340,7 @@ class Cosmos3Model(Model):
         fps: int,
         action_dim: int,
         device: torch.device | str,
+        view_point: str | None = None,
     ) -> dict[str, Any]:
         """Retrieve cached sequence pack or construct a new one.
 
@@ -339,11 +354,12 @@ class Cosmos3Model(Model):
             fps: Frame rate.
             action_dim: Padded action dimension.
             device: Target execution device.
+            view_point: Optional camera viewpoint tag for prompt framing.
 
         Returns:
             Precomputed sequence pack dictionary.
         """
-        key = (paradigm, prompt, height, width)
+        key = (paradigm, prompt, height, width, view_point)
         if key not in self._pack_cache:
             self._pack_cache[key] = build_pack(
                 self.pipe,
@@ -356,6 +372,7 @@ class Cosmos3Model(Model):
                 fps,
                 action_dim,
                 device,
+                view_point=view_point,
             )
         return self._pack_cache[key]
 
@@ -371,9 +388,11 @@ class Cosmos3Model(Model):
         Returns:
             Tuple of (total_loss, metrics_dict).
         """
-        images_tensor = _extract_image_tensor(batch)
-        actions_tensor = batch[ACTION]
-        state_tensor = batch.get(STATE)
+        preprocessed = self.preprocessor(batch)
+        images_tensor = preprocessed[IMAGES]
+        view_point = preprocessed.get("view_point")
+        actions_tensor = preprocessed[ACTION]
+        state_tensor = preprocessed.get(STATE)
 
         device = self.transformer.device
         dtype = self.transformer.dtype
@@ -447,6 +466,7 @@ class Cosmos3Model(Model):
                 self.config.fps,
                 self.action_dim,
                 device,
+                view_point=view_point,
             )
 
             loss_b, loss_v_b, loss_a_b = flow_matching_step(
@@ -515,8 +535,10 @@ class Cosmos3Model(Model):
         Returns:
             Predicted action tensor of shape (B, chunk_size, raw_dim).
         """
-        img_tensor = _extract_image_tensor(batch)
-        state_tensor = batch.get(STATE)
+        preprocessed = self.preprocessor(batch)
+        img_tensor = preprocessed[IMAGES]
+        view_point = preprocessed.get("view_point")
+        state_tensor = preprocessed.get(STATE)
 
         device = self.transformer.device
         batch_size = img_tensor.shape[0] if img_tensor.ndim in {4, 5} else 1
@@ -547,7 +569,7 @@ class Cosmos3Model(Model):
                 domain_name=self.config.domain,
                 resolution_tier=self.config.resolution_tier,
                 image=pil_img,
-                view_point=None,
+                view_point=view_point,
             )
 
             result = self.pipe(
