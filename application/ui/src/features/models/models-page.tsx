@@ -4,10 +4,10 @@ import { Button, DialogContainer, DialogTrigger, Divider, Flex, View } from '@ge
 
 import { $api } from '../../api/client';
 import { SchemaModel } from '../../api/openapi-spec';
+import { JobsDialog } from '../jobs/jobs-dialog';
 import { useJobCache } from '../jobs/use-job-cache';
 import { LogsDialog } from '../logs/logs-dialog';
 import { useProjectId } from '../projects/use-project';
-import { AllJobsDialog } from './job-table/all-jobs-dialog';
 import { JobList } from './job-table/job-list';
 import { ModelsList } from './models-table/models-list';
 import { NoModelsPlaceholder } from './no-models-placeholder';
@@ -108,8 +108,8 @@ export const ModelsPage = () => {
 
             <DialogContainer onDismiss={() => setAllJobsOpen(false)}>
                 {allJobsOpen && (
-                    <AllJobsDialog
-                        jobs={jobs}
+                    <JobsDialog
+                        projectId={project_id}
                         onViewLogs={(job) => {
                             setAllJobsOpen(false);
                             setLogsSourceId(job.id);

@@ -153,6 +153,7 @@ export const TrainingRow = ({
             after={
                 trainJob.status === 'running' && (
                     <ProgressBar
+                        aria-label={`Training progress for ${trainJob.payload.model_name}`}
                         size='S'
                         UNSAFE_className={classes.progressBar}
                         width={'100%'}
