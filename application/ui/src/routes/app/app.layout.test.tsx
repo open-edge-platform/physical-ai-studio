@@ -13,6 +13,10 @@ vi.mock('../../features/jobs/footer/job-status', () => ({
     JobStatus: () => null,
 }));
 
+vi.mock('../../features/jobs/use-job-updates', () => ({
+    useJobUpdates: () => {},
+}));
+
 describe('AppLayout', () => {
     it('renders the logo, linking to the projects page', () => {
         render(<AppLayout />, { route: '/projects', path: '/projects' });
