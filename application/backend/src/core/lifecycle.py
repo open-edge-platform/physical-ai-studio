@@ -8,9 +8,12 @@ from loguru import logger
 
 from core.logging import setup_logging, setup_uvicorn_logging
 from core.security import get_ssh_feature_availability
+from db import get_async_db_session_ctx
+from services import remote_trainer_tunnel_manager
 from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
 from services.health_service import HealthService
+from services.remote_trainer_service import RemoteTrainerService
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
@@ -90,10 +93,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.robot_manager = RobotConnectionManager()
     await app.state.robot_manager.find_robots()
 
+    # Open the standing SSH tunnel for every configured direct trainer that
+    # wants one.
+    try:
+        async with get_async_db_session_ctx() as session:
+            remote_trainers = await RemoteTrainerService(session).list_remote_trainers()
+        await remote_trainer_tunnel_manager.start_all(remote_trainers)
+    except Exception:
+        logger.exception("Failed to start configured remote-trainer SSH tunnels")
+
     yield
 
     # Shutdown
     logger.info(f"Shutting down {settings.app_name} application...")
+    await remote_trainer_tunnel_manager.stop_all()
 
     # We might want to shutdown the hardware manager too, though releasing workers should handle it.
     # But a global cleanup is safe.

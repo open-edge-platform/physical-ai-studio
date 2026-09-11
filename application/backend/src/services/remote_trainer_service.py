@@ -8,7 +8,8 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType
+from core.security import get_ssh_feature_availability
+from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType, SshFeatureDisabledError
 from repositories.remote_trainer_repo import RemoteTrainerRepository
 from schemas.hardware import DeviceInfo, DeviceType, StorageInfo
 from schemas.remote_trainer import (
@@ -18,6 +19,7 @@ from schemas.remote_trainer import (
     RemoteTrainerHealth,
     RemoteTrainerUpdate,
 )
+from services import remote_trainer_tunnel_manager
 
 _HEALTH_CHECK_TIMEOUT_S = 5.0
 
@@ -28,6 +30,11 @@ _HEALTH_CHECK_TIMEOUT_S = 5.0
 # /devices, /storage round trip. Coalesce those into one in-flight probe per
 # trainer, shared across requests via this module-level table.
 _inflight_checks: dict[UUID, asyncio.Task[RemoteTrainerHealth]] = {}
+
+
+# Fields whose column is nullable, so an explicit null in an update means "clear it"
+# rather than "not provided".
+_NULLABLE_UPDATE_FIELDS = frozenset({"ssh_host_alias", "ssh_remote_port", "ssh_local_port"})
 
 
 class RemoteTrainerService:
@@ -130,33 +137,59 @@ class RemoteTrainerService:
             return None
 
     async def create_remote_trainer(self, config: RemoteTrainerCreate) -> RemoteTrainer:
-        """Persist a direct trainer endpoint."""
+        """Persist a direct trainer endpoint.
+
+        Rejects an SSH tunnel config outright while the SSH remote-trainer
+        feature is unavailable, the same way SSH-provisioned server
+        create/update does - a trainer must never be saved carrying tunnel
+        config the backend is currently unwilling to act on.
+        """
+        self._require_ssh_feature_if_tunneled(config.ssh_host_alias)
         remote_trainer = RemoteTrainer(id=uuid4(), **config.model_dump())
         try:
-            return await self.repo.save(remote_trainer)
+            saved = await self.repo.save(remote_trainer)
         except IntegrityError as error:
             await self.session.rollback()
             raise ResourceAlreadyExistsError(
                 "Remote trainer",
                 "A trainer with this URL is already configured.",
             ) from error
+        await remote_trainer_tunnel_manager.sync_tunnel(saved)
+        return saved
 
     async def update_remote_trainer(self, remote_trainer_id: UUID, update: RemoteTrainerUpdate) -> RemoteTrainer:
         """Update a direct trainer endpoint."""
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
+        self._require_ssh_feature_if_tunneled(update.ssh_host_alias)
         try:
-            return await self.repo.update(remote_trainer, update.model_dump(exclude_none=True, exclude_unset=True))
+            # exclude_unset (not exclude_none) so an explicit null clears an existing
+            # tunnel field instead of being dropped as "not provided".
+            data = update.model_dump(exclude_unset=True)
+            data = {k: v for k, v in data.items() if v is not None or k in _NULLABLE_UPDATE_FIELDS}
+            saved = await self.repo.update(remote_trainer, data)
         except IntegrityError as error:
             await self.session.rollback()
             raise ResourceAlreadyExistsError(
                 "Remote trainer",
                 "A trainer with this URL is already configured.",
             ) from error
+        await remote_trainer_tunnel_manager.sync_tunnel(saved)
+        return saved
 
     async def delete_remote_trainer(self, remote_trainer_id: UUID) -> None:
         """Delete a configured endpoint without changing already-submitted jobs."""
         if await self.repo.get_by_id(remote_trainer_id) is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
         await self.repo.delete_by_id(remote_trainer_id)
+        await remote_trainer_tunnel_manager.stop_tunnel(remote_trainer_id)
+
+    @staticmethod
+    def _require_ssh_feature_if_tunneled(ssh_host_alias: str | None) -> None:
+        """Fail closed if a caller is saving tunnel config the feature can't currently honor."""
+        if ssh_host_alias is None:
+            return
+        availability = get_ssh_feature_availability()
+        if not availability.active:
+            raise SshFeatureDisabledError(availability.reason)

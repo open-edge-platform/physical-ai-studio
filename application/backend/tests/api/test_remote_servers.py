@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from api.dependencies import get_remote_server_service, require_ssh_feature_active
 from core.security import SshFeatureAvailability, get_ssh_feature_availability
-from exceptions import ResourceNotFoundError, ResourceType
+from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType, SshConnectionError
 from main import app
 from schemas.hardware import DeviceType
 from schemas.remote_server import RemoteServer, SshHostAliasOption
@@ -242,6 +242,49 @@ def test_detect_device_type_returns_detected_cuda(monkeypatch: pytest.MonkeyPatc
     assert response.status_code == 200
     assert response.json() == {"device_type": "cuda", "method": "nvidia-smi", "reason_code": None}
     detect.assert_awaited_once_with("gpu-box")
+
+
+def test_create_ssh_host_alias_appends_and_returns_option(monkeypatch: pytest.MonkeyPatch):
+    option = SshHostAliasOption(alias="new-box", hostname="10.0.0.9", port=22, user=None)
+    add_verified_host_alias = AsyncMock(return_value=option)
+    monkeypatch.setattr("api.remote_servers.ssh_config_writer.add_verified_host_alias", add_verified_host_alias)
+
+    response = TestClient(app).post(
+        "/api/remote-servers/aliases",
+        json={"alias": "new-box", "hostname": "10.0.0.9"},
+    )
+
+    assert response.status_code == 201
+    assert response.json() == {"alias": "new-box", "hostname": "10.0.0.9", "port": 22, "user": None}
+    add_verified_host_alias.assert_awaited_once()
+
+
+def test_create_ssh_host_alias_conflict_returns_409(monkeypatch: pytest.MonkeyPatch):
+    async def _raise(_config_path, _config, _settings):
+        raise ResourceAlreadyExistsError("SSH host alias", "A Host entry named 'taken' already exists.")
+
+    monkeypatch.setattr("api.remote_servers.ssh_config_writer.add_verified_host_alias", _raise)
+
+    response = TestClient(app).post(
+        "/api/remote-servers/aliases",
+        json={"alias": "taken", "hostname": "10.0.0.9"},
+    )
+
+    assert response.status_code == 409
+
+
+def test_create_ssh_host_alias_unreachable_returns_502(monkeypatch: pytest.MonkeyPatch):
+    async def _raise(_config_path, _config, _settings):
+        raise SshConnectionError("new-box", reason="unreachable")
+
+    monkeypatch.setattr("api.remote_servers.ssh_config_writer.add_verified_host_alias", _raise)
+
+    response = TestClient(app).post(
+        "/api/remote-servers/aliases",
+        json={"alias": "new-box", "hostname": "10.0.0.9"},
+    )
+
+    assert response.status_code == 502
 
 
 def test_detect_device_type_reports_reason_code_when_undetected(monkeypatch: pytest.MonkeyPatch):
