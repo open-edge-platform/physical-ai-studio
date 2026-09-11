@@ -281,4 +281,39 @@ describe('TrainModelDialog', () => {
         expect(await screen.findByText(/does not have access to this policy/i)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
     });
+
+    describe('image augmentation', () => {
+        const submitAndCapturePayload = async (toggle: boolean) => {
+            const user = userEvent.setup();
+            let body: Record<string, unknown> | undefined;
+
+            mockProjectWithRemoteTrainer();
+            server.use(
+                http.post('/api/jobs:train', async ({ request }) => {
+                    body = (await request.json()) as Record<string, unknown>;
+                    return HttpResponse.json({}, { status: 201 });
+                })
+            );
+
+            renderDialog();
+
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+            if (toggle) {
+                await user.click(await screen.findByRole('checkbox', { name: /augment images/i }));
+            }
+            await user.click(screen.getByRole('button', { name: 'Train' }));
+
+            await waitFor(() => expect(body).toBeDefined());
+            return body;
+        };
+
+        it('is off unless the user opts in', async () => {
+            expect(await submitAndCapturePayload(false)).toMatchObject({ augment_images: false });
+        });
+
+        it('is submitted when the checkbox is ticked', async () => {
+            expect(await submitAndCapturePayload(true)).toMatchObject({ augment_images: true });
+        });
+    });
 });

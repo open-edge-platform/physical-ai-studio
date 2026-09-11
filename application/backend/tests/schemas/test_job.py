@@ -170,3 +170,13 @@ class TestSnapFlowDistillation:
         )
 
         assert (remote.snapflow_start_epoch, ssh.snapflow_start_epoch) == (5, 5)
+
+
+class TestTrainingOptions:
+    """Options shared by every target, so they are asserted once on the local one."""
+
+    def test_image_augmentation_is_off_unless_asked_for(self) -> None:
+        assert LocalTrainJobPayload(**_base_kwargs()).augment_images is False
+
+    def test_image_augmentation_can_be_enabled(self) -> None:
+        assert LocalTrainJobPayload(**_base_kwargs(), augment_images=True).augment_images is True

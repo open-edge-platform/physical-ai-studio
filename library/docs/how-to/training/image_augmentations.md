@@ -27,9 +27,47 @@ PhysicalAI provides two custom transforms alongside standard torchvision transfo
 
 Image transforms are configured under `data.init_args.image_transforms` in the training YAML config using the standard `class_path` / `init_args` pattern. They apply to all image observations during training only (not during validation or inference).
 
-### ACT Example
+### Quick Start
 
-The following configuration randomly applies 3 out of 6 available transforms to each training image. Default values match [LeRobot's augmentation pipeline](https://github.com/huggingface/lerobot).
+`physicalai.transforms.DefaultImageAugmentations` bundles the recommended pipeline, 3 of the 6 transforms below with the ranges from [Default Values Reference](#default-values-reference), so you don't have to spell the pool out:
+
+```yaml
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/pusht"
+    train_batch_size: 64
+    data_format: "physicalai"
+    image_transforms:
+      class_path: physicalai.transforms.DefaultImageAugmentations
+```
+
+It takes optional `n_subset` and `random_order` arguments if you want to tune how much is applied per image:
+
+```yaml
+image_transforms:
+  class_path: physicalai.transforms.DefaultImageAugmentations
+  init_args:
+    n_subset: 2
+```
+
+The same class backs the **Augment images** checkbox under _Advanced settings_ in the Studio training dialog, so a GUI run and a `DefaultImageAugmentations` config train on identically augmented images.
+
+From Python:
+
+```python
+from physicalai.data.lerobot import LeRobotDataModule
+from physicalai.transforms import DefaultImageAugmentations
+
+datamodule = LeRobotDataModule(
+    repo_id="lerobot/pusht",
+    image_transforms=DefaultImageAugmentations(),
+)
+```
+
+### Customizing the Pipeline
+
+To choose your own pool, weights, or ranges, build a `RandomChoice` directly. The following is exactly what `DefaultImageAugmentations` expands to, so start here and edit.
 
 ```yaml
 data:
@@ -79,6 +117,8 @@ data:
                 - 0.05
 ```
 
+Any callable works here, not just these transforms. Wrap several in `torchvision.transforms.v2.Compose` to apply them all every time instead of sampling a subset.
+
 The same configuration works for all supported policies (ACT, SmolVLA, Pi0, Pi0.5, GR00T).
 
 ### Default Values Reference
@@ -100,6 +140,5 @@ You can also enable augmentations from the command line without modifying the co
 ```bash
 physicalai fit \
     --config configs/physicalai/act.yaml \
-    --data.image_transforms.class_path physicalai.transforms.RandomChoice \
-    --data.image_transforms.init_args.n_subset 3
+    --data.image_transforms physicalai.transforms.DefaultImageAugmentations
 ```

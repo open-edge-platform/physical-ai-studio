@@ -142,6 +142,10 @@ class TrainJobPayloadBase(BaseModel):
         description="Training precision ('32-true', 'bf16-mixed')",
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
+    augment_images: bool = Field(
+        default=False,
+        description="Apply the default image augmentation pipeline to training images",
+    )
     snapflow_enabled: bool = Field(
         default=False,
         description=(

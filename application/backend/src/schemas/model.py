@@ -192,6 +192,7 @@ class TrainingSummary(BaseModel):
     num_workers: int | str | None = None
     precision: str | None = None
     compile_model: bool | None = None
+    augment_images: bool | None = None
     val_split: float | None = None
     device_type: str | None = None
     snapflow_enabled: bool | None = None

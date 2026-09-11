@@ -126,6 +126,10 @@ class TrainingJobSpec(BaseModel):
     val_split: float = Field(default=0.1, ge=0.0, lt=1.0, description="Fraction of episodes held out for validation.")
     precision: str = Field(default="bf16-mixed", description="Lightning precision, e.g. '32-true' or 'bf16-mixed'.")
     compile_model: bool = Field(default=False, description="Whether to torch.compile the policy forward pass.")
+    augment_images: bool = Field(
+        default=False,
+        description="Whether to augment training images with the default pipeline.",
+    )
     auto_scale_batch_size: bool = Field(default=False, description="Whether to search for the largest fitting batch.")
     snapflow_start_epoch: int | None = Field(
         default=None,
@@ -276,6 +280,7 @@ def run_training_job(
     from physicalai.data import LeRobotDataModule
     from physicalai.train.callbacks import ProgressReportingCallback
     from physicalai.train.trainer import Trainer
+    from physicalai.transforms import DefaultImageAugmentations
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
 
@@ -290,6 +295,9 @@ def run_training_job(
             train_batch_size=spec.batch_size,
             num_workers=spec.num_workers,
             val_split=spec.val_split,
+            # Applied to the train split only; the datamodule leaves validation
+            # images untouched so eval loss stays comparable across runs.
+            image_transforms=DefaultImageAugmentations() if spec.augment_images else None,
         )
         policy = build_policy(spec, resume_from=spec.run_options.resume_from)
 

@@ -127,6 +127,12 @@ class TestBuildSpec:
 
         assert (spec.device_type, spec.device_index) == (None, None)
 
+    @pytest.mark.parametrize("augment_images", [True, False])
+    def test_image_augmentation_choice_is_forwarded(self, tmp_path, augment_images):
+        spec = build_spec(_context(tmp_path, _payload(augment_images=augment_images)))
+
+        assert spec.augment_images is augment_images
+
     def test_resumed_run_trains_the_base_model_policy(self, tmp_path):
         """A resumed run's architecture comes from the checkpoint, not the request."""
         base_model = _model(tmp_path / "base", policy="pi0")

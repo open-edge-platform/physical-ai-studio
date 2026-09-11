@@ -10,10 +10,13 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 import torch
-from torchvision.transforms.v2 import Transform
+from torchvision.transforms.v2 import ColorJitter, RandomAffine, Transform
 from torchvision.transforms.v2 import functional as F  # noqa: N812
 
 _EXPECTED_SHARPNESS_LEN = 2
+
+_DEFAULT_N_SUBSET = 3
+"""How many of the default transforms are applied per image."""
 
 
 class RandomChoice(Transform):
@@ -169,3 +172,58 @@ class RandomSharpness(Transform):
             The input with adjusted sharpness.
         """
         return self._call_kernel(F.adjust_sharpness, inpt, sharpness_factor=params["sharpness_factor"])
+
+
+class DefaultImageAugmentations(RandomChoice):
+    """The recommended image augmentation pipeline, ready to use.
+
+    Bundles the six transforms documented in
+    ``docs/how-to/training/image_augmentations.md`` (brightness, contrast,
+    saturation, hue, sharpness, and a small affine jitter) into a single
+    callable, so enabling augmentations does not require spelling the whole
+    pool out in YAML. See the guide for the exact ranges.
+
+    Only a random subset is applied per image, so any one image is perturbed
+    along a few axes rather than all six at once.
+
+    Use it from Python::
+
+        LeRobotDataModule(..., image_transforms=DefaultImageAugmentations())
+
+    or from a training config::
+
+        image_transforms:
+          class_path: physicalai.transforms.DefaultImageAugmentations
+
+    Pass *n_subset* to change how aggressive it is, or build a
+    :class:`RandomChoice` directly to choose your own pool.
+
+    Args:
+        n_subset: Number of transforms applied per image. Defaults to 3 of 6.
+        random_order: If ``True``, the selected transforms are applied in a
+            random order rather than the order listed above.
+
+    Example:
+        >>> augment = DefaultImageAugmentations()
+        >>> len(augment.transforms)
+        6
+    """
+
+    def __init__(
+        self,
+        n_subset: int = _DEFAULT_N_SUBSET,
+        random_order: bool = False,  # noqa: FBT001, FBT002
+    ) -> None:
+        """Initialise the default pool with the documented ranges."""
+        super().__init__(
+            transforms=[
+                ColorJitter(brightness=(0.8, 1.2)),
+                ColorJitter(contrast=(0.8, 1.2)),
+                ColorJitter(saturation=(0.5, 1.5)),
+                ColorJitter(hue=(-0.05, 0.05)),
+                RandomSharpness(sharpness=(0.5, 1.5)),
+                RandomAffine(degrees=(-5.0, 5.0), translate=(0.05, 0.05)),
+            ],
+            n_subset=n_subset,
+            random_order=random_order,
+        )

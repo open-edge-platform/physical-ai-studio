@@ -9,6 +9,7 @@ import { server } from '../../../msw-node-setup';
 import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
 import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
 import { getMockedRemoteTrainer } from '../../../test-utils/mocks/mock-remote-trainer';
+import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
 import { TrainingRow } from './job-table';
 
@@ -43,21 +44,7 @@ const localJob: SchemaTrainJob = {
     created_at: '2026-07-14T09:00:00Z',
     extra_info: { 'train/loss_step': 0.123456 },
     type: 'training',
-    payload: {
-        project_id: 'project-1',
-        dataset_id: 'dataset-1',
-        policy: 'act',
-        model_name: 'pick-and-place',
-        batch_size: 8,
-        num_workers: 'auto',
-        auto_scale_batch_size: false,
-        val_split: 0.1,
-        precision: 'bf16-mixed',
-        compile_model: false,
-        snapflow_enabled: false,
-        snapflow_distill_epochs: 3,
-        training_target: 'local',
-    },
+    payload: getMockedTrainJobPayload(),
 };
 
 const remoteTrainer = getMockedRemoteTrainer();

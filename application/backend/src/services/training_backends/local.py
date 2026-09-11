@@ -119,6 +119,7 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
         val_split=payload.val_split,
         precision=str(payload.precision),
         compile_model=payload.compile_model,
+        augment_images=payload.augment_images,
         auto_scale_batch_size=payload.auto_scale_batch_size,
         snapflow_start_epoch=payload.snapflow_start_epoch,
         device_type=str(device.type) if device else None,

@@ -8,6 +8,7 @@ replacements for standard transforms.
 """
 
 from physicalai.transforms.image_transforms import (
+    DefaultImageAugmentations,
     RandomChoice,
     RandomSharpness,
 )
@@ -19,6 +20,7 @@ from physicalai.transforms.onnx_transforms import (
 
 __all__ = [
     "CenterCrop",
+    "DefaultImageAugmentations",
     "RandomChoice",
     "RandomSharpness",
     "center_crop_image",

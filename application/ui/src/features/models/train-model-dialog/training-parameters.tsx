@@ -29,6 +29,8 @@ interface TrainingParametersProps {
     onPrecisionChange: (value: Key | null) => void;
     compileModel: boolean;
     onCompileModelChange: (value: boolean) => void;
+    augmentImages: boolean;
+    onAugmentImagesChange: (value: boolean) => void;
     isAutoScaleBatchDisabled: boolean;
     deviceType: string | undefined;
     /** False for policies without a flow-matching sampler; hides the SnapFlow controls entirely. */
@@ -52,6 +54,8 @@ export const TrainingParameters = ({
     onPrecisionChange,
     compileModel,
     onCompileModelChange,
+    augmentImages,
+    onAugmentImagesChange,
     isAutoScaleBatchDisabled,
     deviceType,
     isSnapflowSupported,
@@ -169,19 +173,38 @@ export const TrainingParameters = ({
                 <Item key='bf16-true'>BF16 True</Item>
                 <Item key='32-true'>32-bit</Item>
             </Picker>
-            <Flex direction='row' alignSelf={'end'} alignItems='center'>
-                <Checkbox isEmphasized isSelected={compileModel} onChange={onCompileModelChange}>
-                    Compile model
-                </Checkbox>
-                <ContextualHelp variant='info'>
-                    <Heading>Compile model</Heading>
-                    <Content>
-                        <Text>
-                            Enables torch.compile for all policies. Can significantly speed up training after an initial
-                            compilation warmup, but increases startup time.
-                        </Text>
-                    </Content>
-                </ContextualHelp>
+            <Flex direction='column' gap='size-150' alignSelf={'end'}>
+                <Flex direction='row' alignItems='center'>
+                    <Checkbox isEmphasized isSelected={compileModel} onChange={onCompileModelChange}>
+                        Compile model
+                    </Checkbox>
+                    <ContextualHelp variant='info'>
+                        <Heading>Compile model</Heading>
+                        <Content>
+                            <Text>
+                                Enables torch.compile for all policies. Can significantly speed up training after an
+                                initial compilation warmup, but increases startup time.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                </Flex>
+                <Flex direction='row' alignItems='center'>
+                    <Checkbox isEmphasized isSelected={augmentImages} onChange={onAugmentImagesChange}>
+                        Augment images
+                    </Checkbox>
+                    <ContextualHelp variant='info'>
+                        <Heading>Augment images</Heading>
+                        <Content>
+                            <Text>
+                                Randomly varies brightness, contrast, saturation, hue, sharpness and small rotations on
+                                training images, so the policy is less tied to the exact lighting and camera placement
+                                it was recorded under. This could help when your dataset is small or was recorded in one
+                                fixed setup but the robot will run somewhere more varied. It does not always improve
+                                results and makes each epoch slightly slower. Validation images are left untouched.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                </Flex>
             </Flex>
         </Flex>
         {isSnapflowSupported && (

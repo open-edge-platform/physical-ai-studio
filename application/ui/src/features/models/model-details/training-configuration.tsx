@@ -28,6 +28,9 @@ export const TrainingParameters = ({ summary }: { summary: SchemaModelDetailResp
                 {summary.compile_model !== null && summary.compile_model !== undefined && (
                     <DetailRow name='Compiled' value={summary.compile_model ? 'Yes' : 'No'} />
                 )}
+                {summary.augment_images !== null && summary.augment_images !== undefined && (
+                    <DetailRow name='Image augmentation' value={summary.augment_images ? 'On' : 'Off'} />
+                )}
                 {summary.val_split !== null && summary.val_split !== undefined && summary.val_split > 0 && (
                     <DetailRow name='Validation split' value={summary.val_split} />
                 )}

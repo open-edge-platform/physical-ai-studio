@@ -92,6 +92,7 @@ class ModelService:
             batch_size=payload.batch_size,
             precision=str(payload.precision),
             compile_model=payload.compile_model,
+            augment_images=payload.augment_images,
             val_split=payload.val_split,
             auto_scale_batch_size=payload.auto_scale_batch_size,
             num_workers=payload.num_workers,

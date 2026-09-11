@@ -82,6 +82,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [compileModel, setCompileModel] = useState<boolean>(false);
     const [snapflowEnabled, setSnapflowEnabled] = useState<boolean>(false);
     const [snapflowDistillEpochs, setSnapflowDistillEpochs] = useState<number>(DEFAULT_SNAPFLOW_DISTILL_EPOCHS);
+    const [augmentImages, setAugmentImages] = useState<boolean>(false);
     const [remoteTrainerId, setRemoteTrainerId] = useState<Key | null>('local');
     const isSnapflowSupported = supportsSnapflow(selectedPolicy);
     // snapflow_distill_epochs is additive on top of max_epochs (the teacher phase
@@ -163,6 +164,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             compile_model: compileModel,
             snapflow_enabled: isSnapflowRequested,
             snapflow_distill_epochs: snapflowDistillEpochs,
+            augment_images: augmentImages,
             val_split: 0.1,
             ...extraPayload,
         } as const;
@@ -257,6 +259,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onPrecisionChange={setPrecision}
                                 compileModel={compileModel}
                                 onCompileModelChange={setCompileModel}
+                                augmentImages={augmentImages}
+                                onAugmentImagesChange={setAugmentImages}
                                 isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
                                 deviceType={activeDevice?.type}
                                 isSnapflowSupported={isSnapflowSupported}
