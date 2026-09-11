@@ -220,18 +220,10 @@ export const CamerasList = () => {
     });
 
     return (
-        <Flex direction='column' gap='size-100'>
-            {/* TODO:  */}
-            <View isHidden>
-                <Flex justifyContent={'space-between'} alignItems={'end'}>
-                    <span>Step 2: setup cameras</span>
-                    <Button>Next</Button>
-                </Flex>
-                <Divider size='S' marginY='size-200' />
-            </View>
+        <Flex direction='column' gap='size-200' height={'100%'}>
             <AddResourceButton to={paths.project.cameras.new({ project_id })}>Configure new camera</AddResourceButton>
 
-            <Flex direction='column' gap='size-100'>
+            <Flex direction='column' gap='size-200'>
                 {projectCameras.map((camera) => {
                     const cameraFingerprint = fingerprintKey(camera.fingerprint);
                     const hardwareCamera = cameraFingerprint

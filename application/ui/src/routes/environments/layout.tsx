@@ -89,10 +89,10 @@ export const EnvironmentsList = () => {
     return (
         <Flex direction='column' gap='size-200'>
             <AddResourceButton to={paths.project.environments.new({ project_id })}>
-                Configure a new environment
+                Configure new environment
             </AddResourceButton>
 
-            <Flex direction='column' gap='size-100'>
+            <Flex direction='column' gap='size-200'>
                 {environmentsQuery.data.map((environment) => {
                     const to = paths.project.environments.show({ project_id, environment_id: environment.id });
 

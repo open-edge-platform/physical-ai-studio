@@ -34,7 +34,7 @@ export const DatasetTabs = ({
 }) => {
     const { project_id } = useProjectId();
     const navigate = useNavigate();
-    const [action, setAction] = useState<null | 'rename' | 'delete' | 'add' | 'import'>(null);
+    const [action, setAction] = useState<null | 'rename' | 'delete' | 'create' | 'import'>(null);
     const selectedDataset = datasets.find((dataset) => dataset.id === selectedDatasetId);
 
     const openDatasetDownload = (datasetId: string) => {
@@ -58,7 +58,7 @@ export const DatasetTabs = ({
         }
     };
 
-    const onAddDataset = (dataset: SchemaDatasetOutput | undefined) => {
+    const handleCreateDataset = (dataset: SchemaDatasetOutput | undefined) => {
         setAction(null);
 
         if (dataset?.id) {
@@ -111,9 +111,9 @@ export const DatasetTabs = ({
                     <MenuTrigger>
                         <ActionButton
                             isQuiet
-                            aria-label='Add dataset'
+                            aria-label='Create new dataset'
                             onPress={() => {
-                                setAction('add');
+                                setAction('create');
                             }}
                         >
                             <Icon>
@@ -122,15 +122,15 @@ export const DatasetTabs = ({
                         </ActionButton>
                         <Menu
                             onAction={(key) => {
-                                if (key === 'add') {
-                                    setAction('add');
+                                if (key === 'create') {
+                                    setAction('create');
                                 }
                                 if (key === 'import') {
                                     setAction('import');
                                 }
                             }}
                         >
-                            <Item key='add'>Add</Item>
+                            <Item key='create'>Create</Item>
                             <Item key='import'>Import</Item>
                         </Menu>
                     </MenuTrigger>
@@ -143,9 +143,9 @@ export const DatasetTabs = ({
                 }}
             >
                 {action === 'import' && <ImportDatasetDialog onClose={() => setAction(null)} />}
-                {action === 'add' && (
+                {action === 'create' && (
                     <Suspense>
-                        <NewDatasetForm project_id={project_id} onDone={onAddDataset} />
+                        <NewDatasetForm project_id={project_id} onDone={handleCreateDataset} />
                     </Suspense>
                 )}
                 {action === 'rename' && selectedDataset !== undefined && (
