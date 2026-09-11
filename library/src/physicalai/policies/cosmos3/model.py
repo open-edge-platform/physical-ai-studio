@@ -117,6 +117,25 @@ def _to_pil_image(img_tensor: torch.Tensor) -> Image.Image:
     return Image.fromarray(arr)
 
 
+def _materialize_meta_parameters(module: torch.nn.Module | None) -> None:
+    """Materialize any uninitialized (meta) parameters on CPU to avoid device-transfer errors.
+
+    Args:
+        module: PyTorch module whose meta parameters will be instantiated with zeros.
+    """
+    if module is None:
+        return
+    for name, param in list(module.named_parameters()):
+        if param.is_meta:
+            p_name, _, c_name = name.rpartition(".")
+            parent = module.get_submodule(p_name) if p_name else module
+            setattr(
+                parent,
+                c_name,
+                torch.nn.Parameter(torch.zeros(param.shape, dtype=param.dtype, device="cpu")),
+            )
+
+
 def _format_images_sequence(images_tensor: torch.Tensor, target_len: int) -> torch.Tensor:
     """Format images tensor to shape [B, target_len, C, H, W].
 
@@ -199,6 +218,8 @@ class Cosmos3Model(Model):
                 torch_dtype=self.torch_dtype,
                 enable_safety_checker=False,
             )
+            _materialize_meta_parameters(self.pipe.transformer)
+            _materialize_meta_parameters(self.pipe.vae)
 
         if device is not None:
             self.pipe.to(device)

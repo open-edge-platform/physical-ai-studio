@@ -111,6 +111,10 @@ def state_action_mrope_ids(
     """
     config = pipe.transformer.config
     effective_fps = action_fps if getattr(config, "enable_fps_modulation", False) else None
+    temporal_compression = (
+        getattr(pipe, "vae_scale_factor_temporal", None)
+        or getattr(pipe.vae.config, "scale_factor_temporal", 4)
+    )
     ids, _ = get_3d_mrope_ids_vae_tokens(
         grid_t=action_len,
         grid_h=1,
@@ -120,7 +124,7 @@ def state_action_mrope_ids(
         fps=effective_fps,
         base_fps=float(getattr(config, "base_fps", 24.0)),
         temporal_compression_factor=1,
-        base_temporal_compression_factor=pipe.vae_scale_factor_temporal,
+        base_temporal_compression_factor=temporal_compression,
         start_frame_offset=0,
     )
     return ids.to(device)
@@ -174,9 +178,8 @@ class PolicyPipelineWithState(Cosmos3OmniPipeline):
             sound_tokenizer=sound_tokenizer,
             safety_checker=safety_checker,
             enable_safety_checker=enable_safety_checker,
-            default_use_system_prompt=default_use_system_prompt,
-            use_native_flow_schedule=use_native_flow_schedule,
         )
+        del default_use_system_prompt, use_native_flow_schedule
         self.min_xpu_driver = min_xpu_driver
         dev = getattr(self, "_execution_device", None) or getattr(self, "device", None)
         if dev is not None and getattr(dev, "type", None) == "xpu":

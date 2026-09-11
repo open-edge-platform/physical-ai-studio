@@ -213,7 +213,6 @@ def flow_matching_step(  # ruff: ignore[too-many-locals]
         action_timesteps=torch.full((act["num_noisy_action_tokens"],), timestep, device=device),
         action_noisy_frame_indexes=act["action_noisy_frame_indexes"],
         action_domain_ids=[domain_id],
-        return_dict=False,
     )
 
     loss_vision = x0_vision.new_zeros(())

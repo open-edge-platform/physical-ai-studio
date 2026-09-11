@@ -128,6 +128,7 @@ class Cosmos3(Policy):
         )
 
         super().__init__(n_action_steps=self.config.n_action_steps)
+        self.strict_loading = False
 
         self.save_hyperparameters(ignore=["config", "pipeline"])
         self.hparams["config"] = self.config.to_dict()
