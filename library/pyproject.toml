@@ -106,7 +106,7 @@ smolvla = [
 
 # RLWRLD RLDX-1
 rldx1 = [
-    "transformers>=5.3.0,<5.6.0",
+    "transformers>=5.15.1",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
     "scipy>=1.11.0,<2.0.0",
@@ -177,6 +177,7 @@ override-dependencies = [
     "pytest>=9.0.3",
     # LeRobot 0.6.0 keeps diffusers in optional extras; keep an explicit floor for CVE-2026-44827 fix
     "diffusers>=0.38.0",
+    "transformers>=5.15.1",
 ]
 
 
