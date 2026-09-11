@@ -484,5 +484,4 @@ obs = FormatConverter.to_observation(lerobot_dict)
 
 - [DataModule Documentation](./datamodules.md) - Data loading and batching
 - [LeRobot Integration](./lerobot.md) - LeRobot dataset and format conversion
-- [Policy Base Class](../policy/base.md) - Policy interface and training
-- [ACT Policy](../policy/lerobot.md) - LeRobot ACT policy integration
+- [Policy Design](../policy/README.md) - Policy interface and lifecycle
