@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pydantic import SecretStr
+
 from trainer.schemas import TrainerJobStatus
 from trainer.store import JobStore
 
@@ -130,3 +132,54 @@ def test_reset_orphans_fails_running_jobs(db_path: Path, sample_request: SubmitJ
 def test_get_unknown_job_returns_none(db_path: Path) -> None:
     store = JobStore(db_path)
     assert store.get("does-not-exist") is None
+
+
+def test_stashed_secret_is_never_persisted_to_disk(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    """The HF token lives only in the store's in-memory cache, never in the SQLite row."""
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    with db_path.open("rb") as db_file:
+        raw = db_file.read()
+
+    assert b"hf-secret" not in raw
+    assert store.take_secret(job_id).get_secret_value() == "hf-secret"
+
+
+def test_take_secret_removes_it(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    """A secret is used at most once: a second take returns nothing."""
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    assert store.take_secret(job_id) is not None
+    assert store.take_secret(job_id) is None
+
+
+def test_stash_secret_ignores_none(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, None)
+
+    assert store.take_secret(job_id) is None
+
+
+def test_discard_secret_drops_it_without_returning(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    store.discard_secret(job_id)
+
+    assert store.take_secret(job_id) is None
+
+
+def test_delete_discards_any_cached_secret(db_path: Path, sample_request: SubmitJobRequest) -> None:
+    store = JobStore(db_path)
+    job_id = store.create(sample_request)
+    store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    store.delete(job_id)
+
+    assert store.take_secret(job_id) is None

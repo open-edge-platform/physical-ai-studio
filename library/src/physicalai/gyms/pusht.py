@@ -12,6 +12,8 @@ from physicalai.data.observation import Observation
 
 from .gymnasium_gym import GymnasiumGym
 
+DEFAULT_TASK_DESCRIPTION = "Push the T-shaped block onto the T-shaped target."
+
 
 class PushTGym(GymnasiumGym):
     """Convenience wrapper for the PushT Gym environment.
@@ -38,6 +40,7 @@ class PushTGym(GymnasiumGym):
         gym_id: str = "gym_pusht/PushT-v0",
         obs_type: str = "pixels_agent_pos",
         device: str | torch.device = "cpu",
+        task_description: str = DEFAULT_TASK_DESCRIPTION,
         **gym_kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Initialize the PushT Gym environment.
@@ -46,6 +49,9 @@ class PushTGym(GymnasiumGym):
             gym_id: Environment ID for ``gym.make``.
             obs_type: Requested observation type.
             device: Torch device.
+            task_description: Language instruction attached to every
+                observation (PushT has a single fixed task, unlike
+                Libero/RoboCasa which vary per episode).
             **gym_kwargs: Additional gym keyword arguments.
         """
         super().__init__(
@@ -54,6 +60,28 @@ class PushTGym(GymnasiumGym):
             device=device,
             **gym_kwargs,
         )
+        self.task_description = task_description
+
+    def to_observation(
+        self,
+        raw_obs: dict[str, Any],
+    ) -> Observation:
+        """Wrap a raw PushT observation into an ``Observation``, with task text.
+
+        Overrides the base (static-dispatch) ``to_observation`` so the
+        instance's ``task_description`` can be attached -- mirrors
+        ``LiberoGym``/``RoboCasaGym``.
+
+        Args:
+            raw_obs: Raw observation dict from the Gymnasium wrapper.
+
+        Returns:
+            ``Observation`` with ``images``, ``state``, and ``task`` set.
+        """
+        obs = self.convert_raw_to_observation(raw_obs=raw_obs)
+        if self.task_description:
+            obs.task = [self.task_description]  # pyrefly: ignore[bad-assignment]
+        return obs.to_torch(device=self.device)
 
     @staticmethod
     def convert_raw_to_observation(

@@ -322,6 +322,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
             train_expert_only=self.config.train_expert_only,
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
+            compile_mode=self.config.compile_mode,
             use_random_input_noise=self.config.use_random_input_noise,
         )
         if weights_file is not None:

@@ -620,6 +620,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
         train_expert_only: bool = True,
         gradient_checkpointing: bool = False,
         compile_model: bool = False,
+        compile_mode: str = "max-autotune",
         use_random_input_noise: bool = False,
     ) -> None:
         """Initialize Pi05Model.
@@ -652,6 +653,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
             train_expert_only: Whether to train only the action expert.
             gradient_checkpointing: Whether to enable gradient checkpointing for memory optimization.
             compile_model: Whether to use torch.compile.
+            compile_mode: Torch compile mode (e.g. "default", "max-autotune").
             use_random_input_noise: Whether to use random noise as the initial input for the denoising
                 process during inference. If False, zeros are used instead.
 
@@ -713,9 +715,6 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
         if compile_model:
             torch.set_float32_matmul_precision("high")
-            # TODO(Eugene): max-autotune currently failed.  # noqa: TD003, FIX002
-            # Set to default for now, need further investigation.
-            compile_mode = "default"
             self.sample_actions = torch.compile(self.sample_actions, mode=compile_mode)  # type: ignore[method-assign]
             self.forward = torch.compile(self.forward, mode=compile_mode)  # type: ignore[method-assign]
 

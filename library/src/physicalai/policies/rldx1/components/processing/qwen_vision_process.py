@@ -4,96 +4,39 @@
 
 """Vision preprocessing utilities for Qwen3-VL image inputs."""
 
-import math
 from typing import Any
 
 from PIL import Image
 
-MAX_RATIO = 200
 SPATIAL_MERGE_SIZE = 2
 IMAGE_MIN_TOKEN_NUM = 4
 IMAGE_MAX_TOKEN_NUM = 16384
 
 
-def round_by_factor(number: int, factor: int) -> int:
-    """Return the closest integer to ``number`` that is divisible by ``factor``."""
-    return round(number / factor) * factor
-
-
-def ceil_by_factor(number: int, factor: int) -> int:
-    """Return the smallest integer >= ``number`` that is divisible by ``factor``."""
-    return math.ceil(number / factor) * factor
-
-
-def floor_by_factor(number: int, factor: int) -> int:
-    """Return the largest integer <= ``number`` that is divisible by ``factor``."""
-    return math.floor(number / factor) * factor
-
-
-def smart_resize(
-    height: int,
-    width: int,
-    factor: int,
-    min_pixels: int | None = None,
-    max_pixels: int | None = None,
-) -> tuple[int, int]:
-    """Rescale image dimensions so the following conditions are met.
-
-    1. Both dimensions (height and width) are divisible by ``factor``.
-    2. The total number of pixels is within the range ``[min_pixels, max_pixels]``.
-    3. The aspect ratio of the image is maintained as closely as possible.
-
-    Args:
-        height: Original image height in pixels.
-        width: Original image width in pixels.
-        factor: Patch factor; both output dimensions must be divisible by this.
-        min_pixels: Minimum total pixel count. Defaults to ``IMAGE_MIN_TOKEN_NUM * factor**2``.
-        max_pixels: Maximum total pixel count. Defaults to ``IMAGE_MAX_TOKEN_NUM * factor**2``.
-
-    Returns:
-        A ``(resized_height, resized_width)`` tuple.
-
-    Raises:
-        ValueError: If ``max_pixels < min_pixels`` or the absolute aspect ratio
-            exceeds ``MAX_RATIO``.
-    """
-    max_pixels = max_pixels if max_pixels is not None else (IMAGE_MAX_TOKEN_NUM * factor**2)
-    min_pixels = min_pixels if min_pixels is not None else (IMAGE_MIN_TOKEN_NUM * factor**2)
-    if max_pixels < min_pixels:
-        msg = "The max_pixels of image must be greater than or equal to min_pixels."
-        raise ValueError(msg)
-    if max(height, width) / min(height, width) > MAX_RATIO:
-        ratio = max(height, width) / min(height, width)
-        msg = f"absolute aspect ratio must be smaller than {MAX_RATIO}, got {ratio}"
-        raise ValueError(msg)
-    h_bar = max(factor, round_by_factor(height, factor))
-    w_bar = max(factor, round_by_factor(width, factor))
-    if h_bar * w_bar > max_pixels:
-        beta = math.sqrt((height * width) / max_pixels)
-        h_bar = floor_by_factor(int(height / beta), factor)
-        w_bar = floor_by_factor(int(width / beta), factor)
-    elif h_bar * w_bar < min_pixels:
-        beta = math.sqrt(min_pixels / (height * width))
-        h_bar = ceil_by_factor(int(height * beta), factor)
-        w_bar = ceil_by_factor(int(width * beta), factor)
-    return h_bar, w_bar
-
-
 def fetch_image(ele: dict[str, str | Image.Image], image_patch_size: int = 14) -> Image.Image:
-    """Fetch and resize a PIL image from a conversation element dict.
+    """Fetch a pre-resized PIL image from a conversation element dict.
+
+    Images are expected to already be patch-aligned and within the vision
+    tiler's pixel budget: ``AspectAreaResizeAndCrop`` upstream
+    guarantees this via its ``m_alignment``, which must equal ``patch_factor``
+    below. This function validates that invariant instead of silently
+    re-resizing to it (the resize was a no-op given the current config).
 
     Args:
         ele: Dict with an ``"image"`` or ``"image_url"`` key holding a
-            :class:`PIL.Image.Image`. Optionally carries ``"resized_height"``,
-            ``"resized_width"``, ``"min_pixels"``, and ``"max_pixels"`` hints.
-        image_patch_size: Patch size used to compute the resize factor.
+            :class:`PIL.Image.Image`. Optionally carries ``"min_pixels"`` and
+            ``"max_pixels"`` hints.
+        image_patch_size: Patch size used to compute the alignment factor.
 
     Returns:
-        Resized :class:`PIL.Image.Image`.
+        The unmodified :class:`PIL.Image.Image`.
 
     Raises:
         TypeError: If the value under "image"/"image_url" is not a PIL Image
             (file paths and URLs are not supported).
+        ValueError: If the image isn't patch-aligned or its area falls outside
+            the pixel budget -- both indicate ``image_resize_m``/
+            ``image_max_area`` drifted out of sync with ``patch_factor``.
     """
     image = ele["image"] if "image" in ele else ele["image_url"]
     if not isinstance(image, Image.Image):
@@ -104,25 +47,31 @@ def fetch_image(ele: dict[str, str | Image.Image], image_patch_size: int = 14) -
         raise TypeError(msg)
     patch_factor = int(image_patch_size * SPATIAL_MERGE_SIZE)
 
-    # resize
-    if "resized_height" in ele and "resized_width" in ele:
-        resized_height, resized_width = smart_resize(
-            int(ele["resized_height"]),  # type: ignore[arg-type]
-            int(ele["resized_width"]),  # type: ignore[arg-type]
-            factor=patch_factor,
+    width, height = image.size
+    if height % patch_factor != 0 or width % patch_factor != 0:
+        msg = (
+            f"Image size {(height, width)} is not aligned to patch_factor={patch_factor} "
+            "(image_patch_size * SPATIAL_MERGE_SIZE). Stage 3 AspectAreaResizeAndCrop's "
+            "image_resize_m must be a multiple of patch_factor."
         )
-    else:
-        width, height = image.size
-        min_pixels = ele.get("min_pixels", IMAGE_MIN_TOKEN_NUM * patch_factor**2)
-        max_pixels = ele.get("max_pixels", IMAGE_MAX_TOKEN_NUM * patch_factor**2)
-        resized_height, resized_width = smart_resize(
-            height,
-            width,
-            factor=patch_factor,
-            min_pixels=int(min_pixels),  # type: ignore[arg-type]
-            max_pixels=int(max_pixels),  # type: ignore[arg-type]
+        raise ValueError(msg)
+
+    min_pixels_raw = ele.get("min_pixels", IMAGE_MIN_TOKEN_NUM * patch_factor**2)
+    max_pixels_raw = ele.get("max_pixels", IMAGE_MAX_TOKEN_NUM * patch_factor**2)
+    if isinstance(min_pixels_raw, Image.Image) or isinstance(max_pixels_raw, Image.Image):
+        msg = "min_pixels/max_pixels must be numeric metadata values."
+        raise TypeError(msg)
+    min_pixels = int(min_pixels_raw)
+    max_pixels = int(max_pixels_raw)
+    area = height * width
+    if not min_pixels <= area <= max_pixels:
+        msg = (
+            f"Image area {area} is outside the vision tiler's pixel budget "
+            f"[{min_pixels}, {max_pixels}]. Adjust image_max_area/image_min_area."
         )
-    return image.resize((resized_width, resized_height))
+        raise ValueError(msg)
+
+    return image
 
 
 def extract_vision_info(

@@ -9,7 +9,9 @@ export const formatBytes = (bytes: number): string => {
 /**
  * Available training policies with hardware requirements.
  *
- * `minVRAM` is the estimated minimum VRAM (in bytes) required to train with batch_size=1.
+ * `minVRAM` is the peak VRAM measured over one training step at batch_size=1.
+ * Optimizer state drives the peak, so it tracks the trainable parameter count
+ * and barely moves with batch size: Pi0.5 needs ~38 GB at both batch 1 and 8.
  */
 export const MODELS: ReadonlyArray<{
     id: string;
@@ -27,12 +29,12 @@ export const MODELS: ReadonlyArray<{
         id: 'smolvla',
         name: 'SmolVLA',
         description: 'Small Vision-Language-Action model based on SmolVLM2-500M',
-        minVRAM: 8 * GB,
+        minVRAM: 3 * GB,
     },
     {
         id: 'pi05',
         name: 'Pi0.5',
         description: 'Enhanced Pi0 with discrete state encoding and longer context',
-        minVRAM: 16 * GB,
+        minVRAM: 40 * GB,
     },
 ];

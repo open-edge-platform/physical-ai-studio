@@ -45,7 +45,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from huggingface_hub import hf_hub_download
@@ -55,8 +55,17 @@ from transformers.optimization import Adafactor
 from physicalai.data import Dataset, Observation
 from physicalai.policies.base import Policy
 from physicalai.policies.rldx1.config import Rldx1Config
+from physicalai.policies.rldx1.export import Rldx1ExportMixin
 from physicalai.policies.rldx1.model import Rldx1Model
-from physicalai.policies.rldx1.pretrained_utils import extract_dataset_stats, retrieve_safetensors_shards
+from physicalai.policies.rldx1.utils.pretrain import (
+    extract_camera_names,
+    retrieve_safetensors_shards,
+)
+from physicalai.policies.rldx1.utils.stats import (
+    extract_dataset_stats,
+    infer_num_views_from_stats,
+    merge_explicit_features,
+)
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -69,12 +78,14 @@ from .preprocessor import make_rldx1_transforms
 from .vtc_buffer import VtcWindowBuffer
 
 if TYPE_CHECKING:
-    from .preprocessor import Rldx1Postprocessor, Rldx1Preprocessor
+    from physicalai.data.observation import Feature
+
+    from .preprocessor import Rldx1Postprocessor
 
 logger = logging.getLogger(__name__)
 
 
-class Rldx1(Policy):
+class Rldx1(Rldx1ExportMixin, Policy):
     """RLDX-1 Policy - first-party Lightning wrapper.
 
     All hyperparameters are explicit in the signature for discoverability.
@@ -130,8 +141,22 @@ class Rldx1(Policy):
             inference (upstream default ``True``). Set ``False`` (Pi05-style, no
             clip) for wide-range action spaces where ``QUANTILES`` bounds would
             truncate task-critical extremes (e.g. PushT).
+        compress_to_fp16: Whether OpenVINO export should compress model weights
+            to FP16 to reduce memory usage (default ``True``).
         env_action_dim: Environment action dimension. If provided, enables eager init.
         dataset_stats: Dataset normalization statistics for eager init.
+        input_features: Explicit observation feature overrides (e.g. camera shapes), merged
+            into ``dataset_stats`` and taking precedence over it. Required for export when
+            ``dataset_stats`` carries no visual entries -- true for every RLWRLD release
+            checkpoint (their ``statistics.json`` is pretrain-stage state/action stats only;
+            no file in the repo records pixel resolution). Camera *names* are auto-discovered
+            from the checkpoint's ``processor_config.json`` in :meth:`_from_hf` (see
+            ``self._camera_names``) purely to guide this override -- only the shape must be
+            supplied. For ``RLWRLD/RLDX-1-FT-LIBERO``:
+            ``{"front_view": Feature(ftype=FeatureType.VISUAL, shape=(3, 256, 256)),
+            "left_wrist_view": Feature(ftype=FeatureType.VISUAL, shape=(3, 256, 256))}``.
+        output_features: Explicit action feature overrides, merged into ``dataset_stats``
+            the same way as ``input_features``.
     """
 
     def __init__(  # noqa: PLR0913
@@ -174,18 +199,24 @@ class Rldx1(Policy):
         image_min_area: int | None = None,
         # Normalization
         clip_outliers: bool = True,
+        # Export
+        compress_to_fp16: bool = True,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
         embodiment_tag: str = "general_embodiment",
+        input_features: dict[str, Feature] | None = None,
+        output_features: dict[str, Feature] | None = None,
+        tokenizer_max_length: int = 1024,
     ) -> None:
         """Initialize the RLDX-1 policy and save hyperparameters."""
         super().__init__(n_action_steps=n_action_steps)
+        self._camera_names: list[str] = []
 
         shard_files = None
         if pretrained_name_or_path is not None:
             # dataset_stats already provided (e.g. restored from a checkpoint's
             # hparams during load_from_checkpoint) takes precedence -- _from_hf's
             # own extract_dataset_stats() is only a narrow, defaulted fallback.
-            self.config, hf_dataset_stats, shard_files = self._from_hf(
+            self.config, hf_dataset_stats, shard_files, self._camera_names = self._from_hf(
                 pretrained_name_or_path,
                 revision=revision,
                 max_state_dim=max_state_dim,
@@ -219,9 +250,13 @@ class Rldx1(Policy):
                 image_min_area=image_min_area,
                 # Normalization
                 clip_outliers=clip_outliers,
+                # Export
+                compress_to_fp16=compress_to_fp16,
                 # Action prediciton
                 action_horizon=n_action_steps,
                 embodiment_tag=embodiment_tag,
+                # tokenizer config
+                tokenizer_max_length=tokenizer_max_length,
             )
             if dataset_stats is None:
                 dataset_stats = hf_dataset_stats
@@ -260,8 +295,10 @@ class Rldx1(Policy):
                 image_min_area=image_min_area,
                 # Normalization
                 clip_outliers=clip_outliers,
+                compress_to_fp16=compress_to_fp16,
                 action_horizon=n_action_steps,
                 embodiment_tag=embodiment_tag,
+                tokenizer_max_length=tokenizer_max_length,
             )
 
         # Save `pretrained_name_or_path` so load_from_checkpoint() reconstructs
@@ -270,7 +307,7 @@ class Rldx1(Policy):
         self.save_hyperparameters(ignore=["config"])
 
         self.model: Rldx1Model | None = None  # type: ignore[assignment]
-        self._preprocessor: Rldx1Preprocessor | None = None
+        self._preprocessor: torch.nn.Module = cast("torch.nn.Module", None)
         self._postprocessor: Rldx1Postprocessor | None = None
 
         # Per-view VTC frame buffer for rollout. Populated every env-step via
@@ -280,9 +317,28 @@ class Rldx1(Policy):
             video_length=self.config.video_length,
             video_stride=self.config.video_stride,
         )
+        # Explicit Feature overrides win over anything auto-fetched/user-supplied above --
+        # required for RLWRLD checkpoints, which never record camera shapes anywhere.
+        dataset_stats = merge_explicit_features(dataset_stats, input_features, output_features)
+        self._sync_num_views_from_dataset_stats(dataset_stats)
 
+        self._dataset_stats = dataset_stats
         if dataset_stats is not None:
             self._initialize_model(dataset_stats, shard_files)
+
+    def _sync_num_views_from_dataset_stats(
+        self,
+        dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None,
+    ) -> None:
+        """Update ``config.num_views`` from available visual dataset stats.
+
+        Keeps ``num_views`` derived from the same merged stats source used for
+        preprocessing/export so init, training setup, and fine-tune refresh all
+        agree on view count.
+        """
+        inferred_num_views = infer_num_views_from_stats(dataset_stats)
+        if inferred_num_views is not None:
+            self.config.num_views = inferred_num_views
 
     def _from_hf(  # noqa: PLR6301, PLR0913, PLR0917
         self,
@@ -319,10 +375,14 @@ class Rldx1(Policy):
         image_min_area: int | None,
         # Normalization
         clip_outliers: bool,  # noqa: FBT001
+        # Export
+        compress_to_fp16: bool,  # noqa: FBT001
         embodiment_tag: str,
-        # Action prediciton
+        # Action prediction
         action_horizon: int,
-    ) -> tuple[Rldx1Config, dict[str, dict[str, list[float] | str | tuple]], list[Path]]:
+        # Tokenizer
+        tokenizer_max_length: int,
+    ) -> tuple[Rldx1Config, dict[str, dict[str, list[float] | str | tuple]], list[Path], list[str]]:
         config_file = Path(hf_hub_download(pretrained_name_or_path, "config.json", revision=revision))  # nosec B615
         shard_files = retrieve_safetensors_shards(pretrained_name_or_path, revision=revision)
         try:
@@ -333,6 +393,12 @@ class Rldx1(Policy):
             except RemoteEntryNotFoundError as e2:
                 msg = "statistics.json not found in the root of the repo. Falling back to processor/statistics.json"
                 raise RuntimeError(msg) from e2
+        try:
+            processor_config_file = Path(
+                hf_hub_download(pretrained_name_or_path, "processor_config.json", revision=revision),  # nosec B615
+            )
+        except RemoteEntryNotFoundError:
+            processor_config_file = None
 
         # --- parse config.json ---
         with Path(config_file).open(encoding="utf-8") as f:
@@ -363,9 +429,11 @@ class Rldx1(Policy):
         hf_config["video_length"] = video_length
         hf_config["video_stride"] = video_stride
         hf_config["clip_outliers"] = clip_outliers
+        hf_config["compress_to_fp16"] = compress_to_fp16
         hf_config["image_min_area"] = image_min_area
         hf_config["action_horizon"] = action_horizon
         hf_config["embodiment_tag"] = embodiment_tag
+        hf_config["tokenizer_max_length"] = tokenizer_max_length
 
         # strict=False: ignore upstream config.json keys with no Rldx1Config field
         # (e.g. architectures, model_type, rtc_inference_*) instead of denylisting
@@ -379,7 +447,8 @@ class Rldx1(Policy):
             max_state_dim=max_state_dim,
             max_action_dim=max_action_dim,
         )
-        return config, dataset_stats, shard_files
+        camera_names = extract_camera_names(processor_config_file, embodiment_tag=embodiment_tag)
+        return config, dataset_stats, shard_files, camera_names
 
     def _initialize_model(
         self,
@@ -441,6 +510,7 @@ class Rldx1(Policy):
             image_min_area=config.image_min_area or 0,  # type: ignore[arg-type]
             image_resize_m=config.image_resize_m,
             embodiment_id=int(config.embodiment_id),  # type: ignore[arg-type]
+            max_token_len=config.tokenizer_max_length,
         )
 
     def setup(self, stage: str) -> None:
@@ -466,6 +536,7 @@ class Rldx1(Policy):
             raise TypeError(msg)
 
         stats_dict = train_dataset.stats
+        self._sync_num_views_from_dataset_stats(stats_dict)
 
         if self.model is not None:
             # Fine-tuning path: model exists from pretrained, but the
@@ -504,8 +575,10 @@ class Rldx1(Policy):
             image_min_area=config.image_min_area or 0,  # type: ignore[arg-type]
             image_resize_m=config.image_resize_m,
             embodiment_id=int(config.embodiment_id),  # type: ignore[arg-type]
+            max_token_len=config.tokenizer_max_length,
         )
         self._dataset_stats = dataset_stats
+        self._sync_num_views_from_dataset_stats(dataset_stats)
         self.hparams["dataset_stats"] = dataset_stats
 
     def forward(self, batch: Observation) -> torch.Tensor | tuple[torch.Tensor, dict[str, torch.Tensor | float]]:

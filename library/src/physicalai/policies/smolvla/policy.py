@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 from huggingface_hub import hf_hub_download
@@ -56,6 +56,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
 
     Args:
         pretrained_name_or_path: HuggingFace repo ID or local path for pretrained weights and config.
+        dtype : Precision used for model weights. Can be either "bfloat16" or "float32". Default: "bfloat16".
         n_obs_steps: Number of observation steps to use. Default: 1.
         chunk_size: Size of action chunks for prediction. Default: 50.
         n_action_steps: Number of action steps to execute. Default: 50.
@@ -112,6 +113,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         self,
         # Pretrained model id
         pretrained_name_or_path: str | Path | None = None,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         # Input / output structure.
         n_obs_steps: int = 1,
         chunk_size: int = 50,
@@ -177,6 +179,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         if pretrained_name_or_path is not None:
             self.config, dataset_stats, weights_file = self._from_hf(
                 pretrained_name_or_path,
+                dtype=dtype,
                 tokenizer_max_length=tokenizer_max_length,
                 pad_language_to=pad_language_to,
                 use_random_input_noise=use_random_input_noise,
@@ -204,6 +207,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         else:
             # Create config from explicit args (policy-level config)
             self.config = SmolVLAConfig(
+                dtype=dtype,
                 n_obs_steps=n_obs_steps,
                 chunk_size=chunk_size,
                 n_action_steps=n_action_steps,
@@ -218,7 +222,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                 add_image_special_tokens=add_image_special_tokens,
                 attention_mode=attention_mode,
                 prefix_length=prefix_length,
-                pad_language_to=pad_language_to,
                 num_expert_layers=num_expert_layers,
                 num_vlm_layers=num_vlm_layers,
                 self_attn_every_n_layers=self_attn_every_n_layers,
@@ -289,6 +292,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         """
         self.model = SmolVLAModel(
             dataset_stats,
+            dtype=self.config.dtype,
             chunk_size=self.config.chunk_size,
             max_state_dim=self.config.max_state_dim,
             max_action_dim=self.config.max_action_dim,
@@ -337,6 +341,9 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                     msg = f"  - {k}"
                     logger.warning(msg)
 
+            # Apply dtype/precision
+            self.model._model.to_bfloat16_for_selected_params(self.config.dtype)  # noqa: SLF001
+
             # Apply requires_grad
             self.model._model.set_requires_grad()  # noqa: SLF001
             self.model._model.vlm_with_expert.set_requires_grad()  # noqa: SLF001
@@ -352,6 +359,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
     def _from_hf(  # noqa: PLR0913
         pretrained_name_or_path: str | Path,
         *,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         tokenizer_max_length: int = 48,
         pad_language_to: str = "max_length",
         use_random_input_noise: bool = False,
@@ -417,6 +425,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             hf_config = json.load(f)
 
         # Apply only safe overrides
+        hf_config["dtype"] = dtype
         hf_config["tokenizer_max_length"] = tokenizer_max_length
         hf_config["pad_language_to"] = pad_language_to
         hf_config["use_random_input_noise"] = use_random_input_noise

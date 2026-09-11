@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 import logging
 import math
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -62,6 +62,16 @@ def _lazy_import_transformers() -> tuple:
 logger = logging.getLogger(__name__)
 
 
+def _resolve_precision_dtype(precision: Literal["bfloat16", "float32"]) -> torch.dtype:
+    if precision == "bfloat16":
+        return torch.bfloat16
+    if precision == "float32":
+        return torch.float32
+
+    msg = f"Invalid precision: {precision}"
+    raise ValueError(msg)
+
+
 class SmolVLAModel(RTCModelMixin, Model):
     """SmolVLA flow matching vision-language-action model."""
 
@@ -69,6 +79,7 @@ class SmolVLAModel(RTCModelMixin, Model):
         self,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]],
         *,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         chunk_size: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
@@ -103,6 +114,7 @@ class SmolVLAModel(RTCModelMixin, Model):
             dataset_stats: Dictionary containing dataset statistics with keys mapping to
                 dictionaries that hold statistics values (lists of floats), string metadata,
                 or tuple information used for normalization and preprocessing.
+            dtype: Precision used for model weights. Can be either "bfloat16" or "float32".
             chunk_size: Size of action chunks for prediction.
             max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
             max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
@@ -143,6 +155,7 @@ class SmolVLAModel(RTCModelMixin, Model):
         self._vlm_model_name = vlm_model_name
         self._tokenizer_max_length = tokenizer_max_length
         self._model = VLAFlowMatching(
+            dtype=dtype,
             chunk_size=chunk_size,
             max_state_dim=max_state_dim,
             max_action_dim=max_action_dim,
@@ -705,6 +718,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
     def __init__(  # noqa: PLR0913
         self,
         *,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         chunk_size: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
@@ -733,6 +747,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         """Initialize the SmolVLA model.
 
         Args:
+            dtype: Precision used for model weights.
             chunk_size: Size of action chunks for prediction.
             max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
             max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
@@ -779,6 +794,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
 
         self.vlm_with_expert = _SmolVLMWithExpertModel(
             model_id=vlm_model_name,
+            dtype=dtype,
             freeze_vision_encoder=freeze_vision_encoder,
             train_expert_only=train_expert_only,
             load_vlm_weights=load_vlm_weights,
@@ -834,6 +850,34 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         """
         for params in self.state_proj.parameters():
             params.requires_grad = self._train_state_proj
+
+    def to_bfloat16_for_selected_params(
+        self,
+        precision: Literal["bfloat16", "float32"] = "bfloat16",
+    ) -> None:
+        """Convert model weights to the requested precision.
+
+        Keeps numerically sensitive vision and normalization layers in float32 when
+        running the rest of the model in bfloat16.
+        """
+        if precision == "float32":
+            self.to(dtype=torch.float32)
+            return
+
+        target_dtype = _resolve_precision_dtype(precision)
+        self.to(dtype=target_dtype)
+
+        params_to_keep_float32 = [
+            "vision_model",
+            "connector",
+            "input_layernorm",
+            "post_attention_layernorm",
+            "text_model.norm",
+        ]
+
+        for name, param in self.named_parameters():
+            if any(selector in name for selector in params_to_keep_float32):
+                param.data = param.data.to(dtype=torch.float32)
 
     def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
         if not self._use_random_input_noise:
@@ -1431,6 +1475,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         self,
         model_id: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
         *,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         load_vlm_weights: bool = True,
         train_expert_only: bool = True,
         freeze_vision_encoder: bool = False,
@@ -1456,7 +1501,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             self.vlm = auto_model_for_image_text_to_text_cls.from_pretrained(
                 model_id,
                 device_map=device,
-                dtype="bfloat16",
+                dtype=dtype,
                 low_cpu_mem_usage=True,
             )
             config = self.vlm.config

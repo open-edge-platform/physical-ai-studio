@@ -63,6 +63,7 @@ class OpenVINOExportParameters(ExportParameters):
     """Parameters specific to OpenVINO export."""
 
     export_tokenizer: bool = False
+    inputs: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=lambda: ["action"])
     compress_to_fp16: bool = False
     via_onnx: bool = False

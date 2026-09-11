@@ -242,7 +242,7 @@ class SshProvisioningService:
                 if library_check.warning:
                     logger.warning(library_check.warning)
                 _phase(PhaseKey.IMAGE_VERIFY)
-                await docker_ops.verify_image_signature(transport, image, settings)
+                await docker_ops.verify_image_signature(image, settings)
                 await docker_ops.check_disk_for_job(transport, snapshot_size_bytes, server.name)
                 _phase(PhaseKey.IMAGE_PULL)
                 await docker_ops.pull_image(transport, image, settings)
@@ -470,7 +470,7 @@ class SshProvisioningService:
     # `ReattachFailureReason`) - a lookup table would obscure which branch
     # establishes ownership and which never connects at all, and that
     # distinction is what a caller relies on to decide what is safe to clean up.
-    async def verify_reattach(  # noqa: PLR0911
+    async def verify_reattach(  # noqa: PLR0911, PLR0912
         self, job_provisioning: JobProvisioning, server: RemoteServer
     ) -> ReattachVerification:
         """Confirm a persisted job's container is still trustworthy, without keeping a tunnel open.
@@ -550,6 +550,13 @@ class SshProvisioningService:
             )
         except SshConnectionError as error:
             return ReattachVerification(ok=False, reason=ReattachFailureReason.PORT_UNREACHABLE, detail=str(error))
+        except SshHostAliasNotFoundError as error:
+            # Same failure the ownership/digest check above already guards
+            # against, but this tunnel is a second, independent connection -
+            # must fail closed the same way, not escape unhandled.
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.ALIAS_MISSING, detail=str(error))
+        except (SshHostKeyUnknownError, SshHostKeyMismatchError) as error:
+            return ReattachVerification(ok=False, reason=ReattachFailureReason.HOST_KEY_FAILURE, detail=str(error))
         finally:
             await tunnel.close()
 
