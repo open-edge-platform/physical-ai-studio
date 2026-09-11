@@ -92,6 +92,7 @@ jobs:
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
+            gitlab.com:443
             keyserver.ubuntu.com:443
             pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
