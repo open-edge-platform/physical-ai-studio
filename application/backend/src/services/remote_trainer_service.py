@@ -32,6 +32,11 @@ _HEALTH_CHECK_TIMEOUT_S = 5.0
 _inflight_checks: dict[UUID, asyncio.Task[RemoteTrainerHealth]] = {}
 
 
+# Fields whose column is nullable, so an explicit null in an update means "clear it"
+# rather than "not provided".
+_NULLABLE_UPDATE_FIELDS = frozenset({"ssh_host_alias", "ssh_remote_port", "ssh_local_port"})
+
+
 class RemoteTrainerService:
     """Manage global direct remote trainer endpoint configurations."""
 
@@ -161,7 +166,9 @@ class RemoteTrainerService:
         try:
             # exclude_unset (not exclude_none) so an explicit null clears an existing
             # tunnel field instead of being dropped as "not provided".
-            saved = await self.repo.update(remote_trainer, update.model_dump(exclude_unset=True))
+            data = update.model_dump(exclude_unset=True)
+            data = {k: v for k, v in data.items() if v is not None or k in _NULLABLE_UPDATE_FIELDS}
+            saved = await self.repo.update(remote_trainer, data)
         except IntegrityError as error:
             await self.session.rollback()
             raise ResourceAlreadyExistsError(

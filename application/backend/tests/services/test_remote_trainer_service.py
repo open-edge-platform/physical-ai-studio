@@ -78,6 +78,25 @@ async def test_update_ignores_explicit_null_fields() -> None:
 
 
 @pytest.mark.anyio
+async def test_update_clears_explicit_null_tunnel_fields() -> None:
+    session = _session()
+    remote_trainer = _remote_trainer()
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=remote_trainer)
+    repository.update = AsyncMock(return_value=remote_trainer)
+
+    with patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository):
+        await RemoteTrainerService(session).update_remote_trainer(
+            remote_trainer.id,
+            RemoteTrainerUpdate(ssh_host_alias=None, ssh_remote_port=None, ssh_local_port=None),
+        )
+
+    repository.update.assert_awaited_once_with(
+        remote_trainer, {"ssh_host_alias": None, "ssh_remote_port": None, "ssh_local_port": None}
+    )
+
+
+@pytest.mark.anyio
 async def test_delete_missing_remote_trainer_raises_not_found() -> None:
     session = _session()
     repository = MagicMock()
