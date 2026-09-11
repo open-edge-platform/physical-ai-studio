@@ -3,7 +3,6 @@ import { useState } from 'react';
 import {
     Badge,
     Button,
-    ButtonGroup,
     Content,
     Dialog,
     Divider,
@@ -89,7 +88,7 @@ export const JobsDialog = ({ projectId, onViewLogs, close, selectedTab, onSelect
     );
 
     return (
-        <Dialog width={'90vw'} height={'70vh'} onDismiss={close}>
+        <Dialog width={'90vw'} height={'70vh'} onDismiss={close} isDismissable>
             <Heading>{heading}</Heading>
             <Divider />
             <Content UNSAFE_className={classes.dialogContent}>
@@ -165,11 +164,6 @@ export const JobsDialog = ({ projectId, onViewLogs, close, selectedTab, onSelect
                     </Flex>
                 )}
             </Content>
-            <ButtonGroup>
-                <Button variant='secondary' onPress={close}>
-                    Close
-                </Button>
-            </ButtonGroup>
         </Dialog>
     );
 };

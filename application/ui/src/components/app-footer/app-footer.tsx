@@ -2,6 +2,7 @@ import { ActionButton, DialogTrigger, Divider, Flex, Icon, View } from '@geti-ui
 import { Manifest } from '@geti-ui/ui/icons';
 
 import { JobStatus } from '../../features/jobs/footer/job-status';
+import { JobsButton } from '../../features/jobs/footer/jobs-button';
 import { useJobUpdates } from '../../features/jobs/use-job-updates';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { useOptionalProjectId } from '../../features/projects/use-project';
@@ -42,6 +43,8 @@ export const AppFooter = ({ gridArea = 'footer' }: { gridArea?: string }) => {
                             {(close) => <LogsDialog close={close} />}
                         </DialogTrigger>
                     </View>
+                    <Divider orientation='vertical' size='S' />
+                    <JobsButton projectId={project_id} />
                     <Divider orientation='vertical' size='S' />
                     <JobStatus />
                     <RuntimeSessionStatus />

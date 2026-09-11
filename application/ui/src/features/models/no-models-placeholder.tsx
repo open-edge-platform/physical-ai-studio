@@ -1,11 +1,9 @@
-import { ReactNode } from 'react';
-
 import { Button, Content, DialogTrigger, Flex, Heading, IllustratedMessage, Text, View } from '@geti-ui/ui';
 
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
-import { TrainModelDialog } from './train-model-dialog/train-model-dialog';
+import { SchemaTrainJob, TrainModelDialog } from './train-model-dialog/train-model-dialog';
 
-export const NoModelsPlaceholder = ({ extraAction }: { extraAction?: ReactNode }) => {
+export const NoModelsPlaceholder = ({ onJobCreated }: { onJobCreated?: (job: SchemaTrainJob) => void }) => {
     return (
         <Flex margin={'size-200'} direction={'column'} height='100%'>
             <IllustratedMessage>
@@ -17,9 +15,15 @@ export const NoModelsPlaceholder = ({ extraAction }: { extraAction?: ReactNode }
                     <Flex gap={'size-100'} justifyContent={'center'}>
                         <DialogTrigger>
                             <Button variant='accent'>Train model</Button>
-                            {(close) => <TrainModelDialog close={close} />}
+                            {(close) => (
+                                <TrainModelDialog
+                                    close={(job) => {
+                                        if (job) onJobCreated?.(job);
+                                        close();
+                                    }}
+                                />
+                            )}
                         </DialogTrigger>
-                        {extraAction}
                     </Flex>
                 </View>
             </IllustratedMessage>

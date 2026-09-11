@@ -4,7 +4,6 @@ import { Button, DialogContainer, DialogTrigger, Divider, Flex, View } from '@ge
 
 import { $api } from '../../api/client';
 import { SchemaModel } from '../../api/openapi-spec';
-import { JobsDialog } from '../jobs/jobs-dialog';
 import { useJobCache } from '../jobs/use-job-cache';
 import { LogsDialog } from '../logs/logs-dialog';
 import { useProjectId } from '../projects/use-project';
@@ -27,7 +26,6 @@ export const ModelsPage = () => {
 
     const [retrainModel, setRetrainModel] = useState<SchemaModel | null>(null);
     const [logsSourceId, setLogsSourceId] = useState<string | undefined>();
-    const [allJobsOpen, setAllJobsOpen] = useState(false);
 
     const { addJob } = useJobCache();
 
@@ -40,7 +38,6 @@ export const ModelsPage = () => {
     };
 
     const hasModels = models.length > 0;
-    const hasJobs = jobs.length > 0;
 
     const showIllustratedMessage = !hasModels && activeJobs.length === 0;
 
@@ -48,21 +45,10 @@ export const ModelsPage = () => {
         <View height='100%' padding={'size-300'} UNSAFE_style={{ overflowY: 'auto' }}>
             <Flex direction={'column'} height={'100%'}>
                 {showIllustratedMessage ? (
-                    <NoModelsPlaceholder
-                        extraAction={
-                            hasJobs ? (
-                                <Button variant='secondary' onPress={() => setAllJobsOpen(true)}>
-                                    All jobs ({jobs.length})
-                                </Button>
-                            ) : undefined
-                        }
-                    />
+                    <NoModelsPlaceholder onJobCreated={addJob} />
                 ) : (
                     <Flex direction={'column'} flex={1} gap={'size-300'} minHeight={0}>
-                        <Flex justifyContent={'space-between'} alignItems={'center'}>
-                            <Button variant='secondary' onPress={() => setAllJobsOpen(true)} isDisabled={!hasJobs}>
-                                All jobs ({jobs.length})
-                            </Button>
+                        <Flex justifyContent={'end'} alignItems={'center'}>
                             <DialogTrigger>
                                 <Button variant='accent'>Train model</Button>
                                 {(close) => (
@@ -106,18 +92,6 @@ export const ModelsPage = () => {
                 )}
             </Flex>
 
-            <DialogContainer onDismiss={() => setAllJobsOpen(false)}>
-                {allJobsOpen && (
-                    <JobsDialog
-                        projectId={project_id}
-                        onViewLogs={(job) => {
-                            setAllJobsOpen(false);
-                            setLogsSourceId(job.id);
-                        }}
-                        close={() => setAllJobsOpen(false)}
-                    />
-                )}
-            </DialogContainer>
             <DialogContainer onDismiss={() => setRetrainModel(null)}>
                 {retrainModel && (
                     <TrainModelDialog

@@ -1,7 +1,6 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
-import { vi } from 'vitest';
 
 import { SchemaTrainJob } from '../../api/openapi-spec';
 import { http } from '../../api/utils';
@@ -11,6 +10,7 @@ import { render } from '../../test-utils/render';
 import { ModelsPage } from './models-page';
 
 const projectId = 'project-1';
+const datasetId = 'dataset-1';
 
 // The page opens a live WebSocket (job updates) and job rows open an
 // EventSource (metrics). jsdom provides neither, so stub both with no-op
@@ -64,13 +64,34 @@ const failedJob = getMockedTrainJob({
     payload: { model_name: 'failed-model' } as never,
 });
 
-const mockApi = (jobs: SchemaTrainJob[]) => {
+const mockApi = (initialJobs: SchemaTrainJob[]) => {
+    let jobs = initialJobs;
+
     server.use(
         http.get('/api/projects/{project_id}/models', () => HttpResponse.json([])),
         http.get('/api/jobs', () => HttpResponse.json(jobs)),
         http.get('/api/dataset/{dataset_id}', () => HttpResponse.error()),
         http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.error()),
-        http.get('/api/remote-trainers', () => HttpResponse.json([]))
+        http.get('/api/remote-trainers', () => HttpResponse.json([])),
+        http.get('/api/projects/{project_id}', () =>
+            HttpResponse.json({
+                id: projectId,
+                name: 'Test project',
+                datasets: [
+                    {
+                        id: datasetId,
+                        name: 'Test dataset',
+                        default_task: 'test',
+                        project_id: projectId,
+                        environment_id: 'environment-1',
+                    },
+                ],
+            })
+        ),
+        http.post('/api/jobs:train', () => {
+            jobs = [...jobs, pendingJob];
+            return HttpResponse.json(pendingJob, { status: 201 });
+        })
     );
 };
 
@@ -80,7 +101,7 @@ const renderPage = () =>
         path: '/projects/:project_id/models',
     });
 
-describe('ModelsPage - Current Training vs All jobs', () => {
+describe('ModelsPage - Current Training', () => {
     beforeEach(() => {
         vi.stubGlobal('WebSocket', FakeWebSocket);
         vi.stubGlobal('EventSource', ImmediatelyClosingEventSource);
@@ -101,43 +122,27 @@ describe('ModelsPage - Current Training vs All jobs', () => {
         expect(screen.queryByText('failed-model')).not.toBeInTheDocument();
     });
 
-    it('lists every job regardless of status in the All jobs dialog', async () => {
-        const user = userEvent.setup();
-        mockApi([runningJob, pendingJob, canceledJob, failedJob]);
-
-        renderPage();
-
-        await user.click(await screen.findByRole('button', { name: /all jobs/i }));
-
-        const dialog = await screen.findByRole('dialog');
-        expect(within(dialog).getByText('running-model')).toBeInTheDocument();
-        expect(within(dialog).getByText('pending-model')).toBeInTheDocument();
-        expect(within(dialog).getByText('canceled-model')).toBeInTheDocument();
-        expect(within(dialog).getByText('failed-model')).toBeInTheDocument();
-    });
-
-    it('disables the All jobs button when there are no jobs', async () => {
-        mockApi([]);
-
-        renderPage();
-
-        // No models and no active jobs -> illustrated placeholder, no All jobs button.
-        expect(await screen.findByText('No trained models')).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /all jobs/i })).not.toBeInTheDocument();
-    });
-
-    it('surfaces All jobs from the placeholder when only terminal jobs exist and no models', async () => {
-        const user = userEvent.setup();
+    it('shows the "No trained models" placeholder, with no All Jobs button, when there are no models and no active jobs', async () => {
         mockApi([canceledJob, failedJob]);
 
         renderPage();
 
         expect(await screen.findByText('No trained models')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /all jobs/i })).not.toBeInTheDocument();
+    });
 
-        await user.click(screen.getByRole('button', { name: /all jobs/i }));
+    it('shows the submitted job as pending immediately when training from the empty placeholder', async () => {
+        const user = userEvent.setup();
+        mockApi([]);
 
-        const dialog = await screen.findByRole('dialog');
-        expect(within(dialog).getByText('canceled-model')).toBeInTheDocument();
-        expect(within(dialog).getByText('failed-model')).toBeInTheDocument();
+        renderPage();
+
+        await user.click(await screen.findByRole('button', { name: 'Train model' }));
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(await screen.findByText('pending-model')).toBeInTheDocument();
     });
 });
