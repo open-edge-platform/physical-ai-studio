@@ -51,6 +51,127 @@ COPY --link application/backend/scripts/hatch_build.py \
 COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/dist
 
 # ===========================================================================
+# Stage 3b: LGPL FFmpeg + PyAV builder
+#
+# Builds an LGPL-licensed FFmpeg (no --enable-gpl / --enable-nonfree) with
+# Intel oneVPL/QSV + VAAPI hardware acceleration and permissively licensed
+# software encoders (libvpx, libopenh264, libsvtav1), then compiles a PyAV
+# wheel against it. The stock Debian `ffmpeg` package is GPL-licensed and the
+# PyPI `av` wheel bundles its own FFmpeg, so both are replaced by these
+# artifacts in the runtime stages. Built in parallel with the other stages.
+# ===========================================================================
+FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS ffmpeg-builder
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Pinned source revisions for reproducible builds.
+ARG LIBVPL_REF=778a66d6c6537f08eabb91955dbbf1bce3812894
+ARG FFMPEG_REF=9dd0fe0225c2c3406ca49430a74c8660b1713889
+ARG OPENH264_REF=e3f5b10438e2bacc155cf54578222bd4236c9f06
+ARG SVTAV1_REF=349f4eb9c369f68d463029d1cd37551c90b7de51
+# Must match the `av` version resolved in application/backend/uv.lock.
+ARG PYAV_VERSION=15.1.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        build-essential \
+        cmake \
+        meson \
+        ninja-build \
+        pkg-config \
+        yasm \
+        nasm \
+        libdrm-dev \
+        libva-dev \
+        libnuma-dev \
+        libvpx-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python packaging tools for building the PyAV wheel.
+RUN python -m pip install --no-cache-dir \
+        "pip==25.*" \
+        "setuptools==75.*" \
+        "wheel==0.45.*" \
+        "Cython==3.0.*"
+
+ENV VPL_INSTALL_DIR=/opt/vpl
+ENV FFMPEG_INSTALL_DIR=/opt/ffmpeg-vpl
+WORKDIR /tmp
+
+# oneVPL dispatcher + headers (enables the *_qsv codecs in FFmpeg).
+RUN git init libvpl \
+    && git -C libvpl remote add origin https://github.com/intel/libvpl.git \
+    && git -C libvpl fetch --depth 1 origin "${LIBVPL_REF}" \
+    && git -C libvpl checkout FETCH_HEAD \
+    && cmake -B libvpl/build -S /tmp/libvpl \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${VPL_INSTALL_DIR}" \
+    && cmake --build libvpl/build -j"$(nproc)" \
+    && cmake --install libvpl/build
+
+# Make the custom libvpl and FFmpeg visible to later build steps.
+ENV PKG_CONFIG_PATH="/opt/vpl/lib/pkgconfig:/opt/vpl/lib64/pkgconfig:/opt/ffmpeg-vpl/lib/pkgconfig:/usr/local/lib/pkgconfig" \
+    LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib" \
+    PATH="/opt/ffmpeg-vpl/bin:${PATH}"
+
+# Software fallback encoder: OpenH264 (BSD, Cisco).
+RUN git init openh264 \
+    && git -C openh264 remote add origin https://github.com/cisco/openh264.git \
+    && git -C openh264 fetch --depth 1 origin "${OPENH264_REF}" \
+    && git -C openh264 checkout FETCH_HEAD \
+    && make -C openh264 -j"$(nproc)" \
+    && make -C openh264 install \
+    && ldconfig
+
+# Software fallback encoder: SVT-AV1 (BSD).
+RUN git init svtav1 \
+    && git -C svtav1 remote add origin https://gitlab.com/AOMediaCodec/SVT-AV1.git \
+    && git -C svtav1 fetch --depth 1 origin "${SVTAV1_REF}" \
+    && git -C svtav1 checkout FETCH_HEAD \
+    && cmake -B svtav1/build -S /tmp/svtav1 -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build svtav1/build -j"$(nproc)" \
+    && cmake --install svtav1/build \
+    && ldconfig
+
+# FFmpeg — LGPL build: no --enable-gpl and no --enable-nonfree. Every enabled
+# external library (libvpl/MIT, libvpx/BSD, libopenh264/BSD, libsvtav1/BSD,
+# vaapi/MIT) is LGPL-compatible.
+RUN git init ffmpeg \
+    && git -C ffmpeg remote add origin https://github.com/FFmpeg/FFmpeg.git \
+    && git -C ffmpeg fetch --depth 1 origin "${FFMPEG_REF}" \
+    && git -C ffmpeg checkout FETCH_HEAD
+
+WORKDIR /tmp/ffmpeg
+RUN ./configure \
+        --prefix="${FFMPEG_INSTALL_DIR}" \
+        --extra-cflags="-I${VPL_INSTALL_DIR}/include" \
+        --extra-ldflags="-L${VPL_INSTALL_DIR}/lib -L${VPL_INSTALL_DIR}/lib64" \
+        --extra-libs="-lpthread -lm" \
+        --enable-libvpl \
+        --enable-vaapi \
+        --enable-shared \
+        --disable-static \
+        --enable-libsvtav1 \
+        --enable-libopenh264 \
+        --enable-libvpx \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
+# Fail the build early if QSV encoders did not get wired in.
+RUN ffmpeg -version \
+    && ffmpeg -hide_banner -encoders | grep qsv \
+    && ffmpeg -hide_banner -h encoder=h264_qsv > /dev/null
+
+# Compile the PyAV wheel from source against the custom FFmpeg.
+WORKDIR /build
+RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
+
+# ===========================================================================
 # Stage 4: Python builder base
 #
 # Contains build-time-only packages (g++, build-essential, etc.)
@@ -109,8 +230,10 @@ WORKDIR /app/application/backend
 # project AND the physicalai-train path dependency).  This avoids
 # invoking hatchling, which would require library source files.
 # The local packages are installed at runtime via app-source + uv run.
+# --no-install-package av: the PyPI `av` wheel bundles its own FFmpeg; it is
+# replaced by the LGPL wheel from ffmpeg-builder in the runtime stages.
 RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-local
+    uv sync --frozen --no-dev --no-editable --no-install-local --no-install-package av
 
 # FIXME: Remove this block after upgrading lerobot to >=0.5.2.
 # lerobot==0.5.1 declares wandb <0.25.0 as an unconditional runtime dependency, which
@@ -127,7 +250,7 @@ FROM builder-base AS builder-cpu
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
     --mount=type=bind,from=plugin,target=/app/application/plugin \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra cpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -145,7 +268,7 @@ FROM builder-base AS builder-xpu
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
     --mount=type=bind,from=plugin,target=/app/application/plugin \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra xpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -174,7 +297,7 @@ FROM builder-base AS builder-cuda
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
     --mount=type=bind,from=plugin,target=/app/application/plugin \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra cuda
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -220,14 +343,20 @@ RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home appuser
 
 # Common runtime system dependencies (OpenCV, USB access, video decoding)
-# Includes runtime toolchain/linker deps required by torch.compile (Inductor/Triton)
+# Includes runtime toolchain/linker deps required by torch.compile (Inductor/Triton).
+# The GPL `ffmpeg` package is intentionally omitted; the LGPL FFmpeg binary and
+# shared libraries from ffmpeg-builder are added below. libva*/libvpx/libnuma
+# are the runtime counterparts of the -dev packages used to build them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        ffmpeg \
         git \
         libgl1 \
         libglib2.0-0 \
         libusb-1.0-0 \
+        libva2 \
+        libva-drm2 \
+        libvpx9 \
+        libnuma1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -259,6 +388,15 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     AUTO_MIGRATE_STORAGE_DIR="true" \
     PYTHONPATH="/app/application/backend/src:/app/application/backend"
 
+# Custom LGPL FFmpeg + oneVPL shared libraries and the LGPL FFmpeg CLI binary.
+COPY --link --from=ffmpeg-builder /opt/vpl /opt/vpl
+COPY --link --from=ffmpeg-builder /opt/ffmpeg-vpl /opt/ffmpeg-vpl
+COPY --link --from=ffmpeg-builder /usr/local/lib/libSvtAv1* /usr/local/lib/
+COPY --link --from=ffmpeg-builder /usr/local/lib/libopenh264* /usr/local/lib/
+
+ENV LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib" \
+    PATH="/opt/ffmpeg-vpl/bin:/app/application/backend/.venv/bin:$PATH"
+
 EXPOSE 8000
 
 # ===========================================================================
@@ -281,6 +419,13 @@ COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
 COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
+
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
 
 WORKDIR /app/application/backend
 USER appuser
@@ -336,6 +481,13 @@ COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
 COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
+
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
 
 WORKDIR /app/application/backend
 USER appuser
@@ -410,6 +562,13 @@ COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
 COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
+
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
 
 WORKDIR /app/application/backend
 USER appuser
