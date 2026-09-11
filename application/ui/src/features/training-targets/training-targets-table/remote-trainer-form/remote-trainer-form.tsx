@@ -29,6 +29,12 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
         ? (getApiErrorMessage(error) ?? 'The remote trainer could not be saved. Try again.')
         : undefined;
 
+    // A Hugging Face token is sent to this URL on every job submission. Plain
+    // http:// leaves it readable in transit to anything but a loopback
+    // trainer, so nudge toward https:// rather than blocking the (still
+    // supported) loopback/private-network http:// deployment outright.
+    const isInsecureUrl = /^http:\/\/(?!localhost|127\.0\.0\.1|\[::1\])/i.test(url.trim());
+
     return (
         <Form onSubmit={handleSubmit} validationBehavior='native' width='size-6000'>
             <Dialog>
@@ -54,6 +60,12 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                             description='Use the endpoint URL that accepts Physical AI Studio training jobs.'
                             width='100%'
                         />
+                        {isInsecureUrl && (
+                            <Text UNSAFE_className={classes.errorMessage}>
+                                Warning: http:// sends your Hugging Face token to this trainer unencrypted. Use https://
+                                unless the trainer is only reachable on localhost/a trusted private network.
+                            </Text>
+                        )}
                         {errorMessage !== undefined && (
                             <Text UNSAFE_className={classes.errorMessage}>{errorMessage}</Text>
                         )}
