@@ -3,6 +3,7 @@
 
 import { screen } from '@testing-library/react';
 import { HttpResponse } from 'msw';
+import { vi } from 'vitest';
 
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
