@@ -154,6 +154,7 @@ RUN ./configure \
         --enable-libvpl \
         --enable-vaapi \
         --enable-shared \
+        --disable-static \
         --enable-libsvtav1 \
         --enable-libopenh264 \
         --enable-libvpx \
