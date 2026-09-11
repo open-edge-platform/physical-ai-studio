@@ -1,0 +1,25 @@
+# Backend Accuracy Comparison - Dependencies
+
+# Core dependencies (always required)
+physicalai-train[export]>=0.1.0
+
+# For closed-loop benchmark (LiberoGym + MuJoCo simulator)
+hf-libero>=0.1.0
+robosuite>=1.4.0
+mujoco>=2.3.0
+
+# For LeRobot policies (optional - if using LeRobot models)
+# physicalai-train[lerobot]
+# lerobot>=2.0.0
+
+# For numerical comparison with datasets
+# (usually already included with physicalai-train)
+huggingface-hub>=0.20.0
+datasets>=2.16.0
+
+# Utilities
+numpy>=1.24.0
+torch>=2.0.0
+
+# Note: Install with uv for best experience:
+#   uv pip install -r requirements.txt
