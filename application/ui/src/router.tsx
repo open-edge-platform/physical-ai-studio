@@ -46,7 +46,6 @@ const datasets = project.path('/datasets');
 const dataset = datasets.path(':dataset_id');
 const datasetEpisode = dataset.path('episodes').path(':episode_index');
 const models = project.path('/models');
-const remoteServers = project.path('/remote-servers');
 const cameras = project.path('cameras');
 const environments = project.path('environments');
 const environment = environments.path(':environment_id');
@@ -100,9 +99,6 @@ export const paths = {
         models: {
             index: models,
             inference: models.path('/:model_id/inference/:backend'),
-        },
-        remoteServers: {
-            index: remoteServers,
         },
     },
 };

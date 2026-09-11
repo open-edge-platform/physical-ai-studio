@@ -1,4 +1,4 @@
-import { Flex, Grid, Heading, StatusLight, Text, View } from '@geti-ui/ui';
+import { Badge, Grid, Heading, StatusLight, Text, View } from '@geti-ui/ui';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../../api/openapi-spec';
 import {
@@ -21,26 +21,44 @@ type HealthCheckRowProps = {
     detail: string;
     state: CheckState;
     status: string;
+    rowClassName?: string;
+    contentClassName?: string;
 };
 
-export const HealthCheckRow = ({ label, detail, state, status }: HealthCheckRowProps) => (
+export const HealthCheckRow = ({
+    label,
+    detail,
+    state,
+    status,
+    rowClassName,
+    contentClassName,
+}: HealthCheckRowProps) => (
     <Grid
         columns={'subgrid'}
         gridColumn={'1/-1'}
         alignItems={'center'}
-        minHeight={'2.75rem'}
-        UNSAFE_className={classes.checkRow}
+        minHeight={'size-400'}
+        UNSAFE_className={`${classes.checkRow} ${rowClassName ?? ''}`}
     >
         <span className={`${classes.checkIcon} ${classes[state]}`} aria-hidden='true'>
             {state === 'positive' ? '✓' : state === 'negative' ? '×' : state === 'yellow' ? '!' : '–'}
         </span>
-        <span className={classes.checkContent}>
+        <span className={`${classes.checkContent} ${contentClassName ?? ''}`}>
             <Text UNSAFE_className={classes.checkLabel}>{label}</Text>
             <Text UNSAFE_className={classes.checkDetail}>{detail}</Text>
         </span>
-        <StatusLight variant={state} justifySelf={'start'}>
-            {status}
-        </StatusLight>
+        {/*
+         * A passing check is already unambiguous from the green tick, so the
+         * per-row status label is only rendered when it carries new information.
+         * This keeps the eye on the rows that actually need attention.
+         */}
+        {state === 'positive' ? (
+            <span className={classes.visuallyHidden}>{status}</span>
+        ) : (
+            <StatusLight variant={state} justifySelf={'start'}>
+                {status}
+            </StatusLight>
+        )}
     </Grid>
 );
 
@@ -62,11 +80,14 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
 
     return (
         <View backgroundColor={'gray-75'} padding={'size-300'} borderColor={'gray-300'} borderWidth={'thin'}>
-            <Flex gap={'size-300'} wrap>
+            <div className={`${classes.detailGrid} ${classes.twoColumns}`}>
                 <View UNSAFE_className={classes.detailSection}>
-                    <Heading level={3} UNSAFE_className={classes.sectionHeading}>
-                        Health &amp; capability
-                    </Heading>
+                    <div className={classes.sectionHeader}>
+                        <Heading level={3} UNSAFE_className={classes.sectionHeading}>
+                            Health &amp; capability
+                        </Heading>
+                        <StatusLight variant={state}>{healthLabel(health, isChecking)}</StatusLight>
+                    </div>
                     <div className={classes.checkList}>
                         <HealthCheckRow
                             label='Trainer health endpoint'
@@ -90,29 +111,33 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
                 </View>
 
                 <View UNSAFE_className={classes.detailSection}>
-                    <Heading level={3} UNSAFE_className={classes.sectionHeading}>
-                        Connection
-                    </Heading>
+                    <div className={classes.sectionHeader}>
+                        <Heading level={3} UNSAFE_className={classes.sectionHeading}>
+                            Connection
+                        </Heading>
+                    </div>
                     <dl className={classes.definitionList}>
                         <dt>Connection type</dt>
-                        <dd>Direct trainer URL</dd>
+                        <dd>
+                            <Badge variant='neutral' UNSAFE_className={classes.connectionTypeBadge}>
+                                Direct trainer URL
+                            </Badge>
+                        </dd>
                         <dt>Trainer URL</dt>
-                        <dd>{remoteTrainer.url}</dd>
+                        <dd className={classes.definitionListMono}>{remoteTrainer.url}</dd>
                         <dt>Device type</dt>
-                        <dd>{types.join(', ') || 'Not reported'}</dd>
+                        <dd className={classes.definitionListMono}>{types.join(', ') || 'Not reported'}</dd>
                         <dt>Available storage</dt>
                         <dd>{formatStorage(health?.storage) ?? 'Not reported'}</dd>
-                        <dt>Health status</dt>
-                        <dd>{healthLabel(health, isChecking)}</dd>
                         <dt>Added</dt>
-                        <dd>
+                        <dd className={classes.definitionListTabular}>
                             {remoteTrainer.created_at ? new Date(remoteTrainer.created_at).toLocaleString() : 'Unknown'}
                         </dd>
                         <dt>Last checked</dt>
-                        <dd>{lastChecked}</dd>
+                        <dd className={classes.definitionListTabular}>{lastChecked}</dd>
                     </dl>
                 </View>
-            </Flex>
+            </div>
         </View>
     );
 };
