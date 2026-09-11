@@ -18,6 +18,13 @@ from .pipeline import (
 )
 from .policy import Cosmos3
 from .preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
+from .representation import (
+    DOMAIN_REPRESENTATION,
+    domain_representation,
+    represent_actions,
+    represent_state,
+    uses_minmax_normalization,
+)
 from .surgery import (
     GEN_TOWER_KEYS,
     HEAD_KEYS,
@@ -37,6 +44,7 @@ __all__ = [
     "Cosmos3Config",
     "Cosmos3Model",
     "Cosmos3Preprocessor",
+    "DOMAIN_REPRESENTATION",
     "PolicyPipelineWithState",
     "build_action_tokens",
     "build_pack",
@@ -44,10 +52,14 @@ __all__ = [
     "compose_horizontal_views",
     "compose_t_views",
     "configure_trainable",
+    "domain_representation",
     "flow_matching_step",
     "init_domain_action_head",
     "load_finetuned",
+    "represent_actions",
+    "represent_state",
     "require_xpu_driver",
     "split_trainable_params",
     "state_action_mrope_ids",
+    "uses_minmax_normalization",
 ]

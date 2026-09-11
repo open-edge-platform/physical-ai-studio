@@ -27,6 +27,7 @@ from physicalai.policies.base import Model
 from .flow_matching import build_action_tokens, build_pack, flow_matching_step
 from .pipeline import PolicyPipelineWithState
 from .preprocessor import Cosmos3Preprocessor
+from .representation import domain_representation, represent_state, uses_minmax_normalization
 from .surgery import configure_trainable, init_domain_action_head
 
 if TYPE_CHECKING:
@@ -216,6 +217,11 @@ class Cosmos3Model(Model):
         self.domain_id_val = _EMBODIMENT_TO_DOMAIN_ID[config.domain]
         self.raw_dim = _EMBODIMENT_TO_RAW_ACTION_DIM.get(config.domain, 2)
 
+        # Action-space representation: pose domains (droid_ee/bridge_ee) are already in the
+        # checkpoint's native space; identity domains rely on per-dataset min-max normalization.
+        self.representation = domain_representation(config.domain)
+        self.use_minmax = uses_minmax_normalization(config.domain)
+
         # Build or wrap the pipeline
         if pipeline is not None:
             self.pipe = pipeline
@@ -292,6 +298,12 @@ class Cosmos3Model(Model):
         Args:
             dataset_stats: Normalization statistics dictionary.
         """
+        if not self.use_minmax:
+            # Pose-representation domains (droid_ee/bridge_ee) are already in the checkpoint's
+            # native space; min-max bounds would double-normalize, so keep identity bounds.
+            logger.info("Domain '%s' uses %s representation; skipping min-max dataset stats.", self.config.domain, self.representation)
+            return
+
         act_stat = dataset_stats.get(ACTION, dataset_stats.get("action", {}))
         if "min" in act_stat and "max" in act_stat:
             a_min = torch.as_tensor(act_stat["min"], dtype=torch.float32)
@@ -431,18 +443,26 @@ class Cosmos3Model(Model):
             act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
             if act_b.ndim == 1:
                 act_b = act_b.unsqueeze(0)
-            a_min_slice = self.a_min[: self.raw_dim]
-            a_max_slice = self.a_max[: self.raw_dim]
-            act_norm = 2.0 * (act_b[:, : self.raw_dim] - a_min_slice) / (a_max_slice - a_min_slice + 1e-8) - 1.0
+            if self.use_minmax:
+                a_min_slice = self.a_min[: self.raw_dim]
+                a_max_slice = self.a_max[: self.raw_dim]
+                act_norm = 2.0 * (act_b[:, : self.raw_dim] - a_min_slice) / (a_max_slice - a_min_slice + 1e-8) - 1.0
+            else:
+                # Pose domain: actions are already the native relative-pose chunk (no min-max).
+                act_norm = act_b[:, : self.raw_dim]
 
             if state_tensor is not None:
                 st_b = state_tensor[b].to(device=device, dtype=torch.float32)
                 if st_b.ndim > 1:
                     st_b = st_b[0]  # Take initial frame state
-                dim_st = min(len(st_b), self.raw_dim)
-                st_min = self.a_min[:dim_st]
-                st_max = self.a_max[:dim_st]
-                st_norm = 2.0 * (st_b[:dim_st] - st_min) / (st_max - st_min + 1e-8) - 1.0
+                if self.use_minmax:
+                    dim_st = min(len(st_b), self.raw_dim)
+                    st_min = self.a_min[:dim_st]
+                    st_max = self.a_max[:dim_st]
+                    st_norm = 2.0 * (st_b[:dim_st] - st_min) / (st_max - st_min + 1e-8) - 1.0
+                else:
+                    # Pose domain: build the native ee state token; no min-max scaling.
+                    st_norm = represent_state(self.config.domain, st_b).to(device=device, dtype=torch.float32)
             else:
                 st_norm = torch.zeros(self.raw_dim, device=device, dtype=torch.float32)
 
@@ -555,11 +575,15 @@ class Cosmos3Model(Model):
                 cur_state = cur_state.to(device=device, dtype=torch.float32)
                 if cur_state.ndim > 1:
                     cur_state = cur_state[-1]
-                dim_st = min(len(cur_state), self.raw_dim)
-                st_min = self.a_min[:dim_st].to(device)
-                st_max = self.a_max[:dim_st].to(device)
-                norm_state = 2.0 * (cur_state[:dim_st] - st_min) / (st_max - st_min + 1e-8) - 1.0
-                self.pipe.current_state = norm_state
+                if self.use_minmax:
+                    dim_st = min(len(cur_state), self.raw_dim)
+                    st_min = self.a_min[:dim_st].to(device)
+                    st_max = self.a_max[:dim_st].to(device)
+                    cond_state = 2.0 * (cur_state[:dim_st] - st_min) / (st_max - st_min + 1e-8) - 1.0
+                else:
+                    # Pose domain: build the native ee state token; no min-max scaling.
+                    cond_state = represent_state(self.config.domain, cur_state).to(device=device, dtype=torch.float32)
+                self.pipe.current_state = cond_state
             else:
                 self.pipe.current_state = None
 
@@ -588,12 +612,16 @@ class Cosmos3Model(Model):
             else:
                 action_chunk = result.action[0][: self.config.chunk_size, : self.raw_dim]
 
-            # Denormalize to dataset space
-            a_min_slice = self.a_min[: self.raw_dim].to(action_chunk)
-            a_max_slice = self.a_max[: self.raw_dim].to(action_chunk)
-            denorm_action = (action_chunk + 1.0) / 2.0 * (a_max_slice - a_min_slice) + a_min_slice
+            if self.use_minmax:
+                # Denormalize to dataset space.
+                a_min_slice = self.a_min[: self.raw_dim].to(action_chunk)
+                a_max_slice = self.a_max[: self.raw_dim].to(action_chunk)
+                out_action = (action_chunk + 1.0) / 2.0 * (a_max_slice - a_min_slice) + a_min_slice
+            else:
+                # Pose domain: predictions are already in the native relative-pose space.
+                out_action = action_chunk
 
-            preds.append(denorm_action)
+            preds.append(out_action)
 
         return torch.stack(preds, dim=0)
 
