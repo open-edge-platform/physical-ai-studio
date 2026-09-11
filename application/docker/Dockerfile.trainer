@@ -262,6 +262,7 @@ RUN apt-get update \
         clinfo \
         intel-gsc \
         intel-media-va-driver-non-free \
+        libmfx-gen1 \
         intel-metrics-discovery \
         intel-ocloc \
         intel-opencl-icd \
