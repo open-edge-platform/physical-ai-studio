@@ -76,7 +76,7 @@ diffusion = ["diffusers>=0.38.0"]
 # Requires PaliGemma backbone + Gemma action expert
 # Supports LoRA fine-tuning for efficient adaptation
 pi0 = [
-    "transformers>=5.5.0,<5.6.0",
+    "transformers>=5.5.0,<5.15.1",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
     "sentencepiece<=0.2.1",
@@ -87,7 +87,7 @@ pi05 = ["physicalai-train[pi0]"]
 # Requires ~24GB+ GPU memory for training, supports LoRA fine-tuning
 # Note: transformers>=4.54.0 required for _prepare_image_like_inputs fix
 groot = [
-    "transformers>=5.5.0,<5.6.0",
+    "transformers>=5.5.0,<5.15.1",
     "diffusers>=0.38.0",
     "dm-tree>=0.1.8,<1.0.0",
     "timm>=1.0.0,<1.1.0",
@@ -99,14 +99,14 @@ groot = [
 
 # SmolVLA foundation model
 smolvla = [
-    "transformers>=5.5.0,<5.6.0",
+    "transformers>=5.5.0,<5.15.1",
     "num2words>=0.5.14,<0.6.0",
     "safetensors>=0.4.3,<1.0.0",
 ]
 
 # RLWRLD RLDX-1
 rldx1 = [
-    "transformers>=5.3.0,<5.6.0",
+    "transformers>=5.3.0,<5.15.1",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
     "scipy>=1.11.0,<2.0.0",
@@ -115,6 +115,14 @@ rldx1 = [
 ]
 # Neural Network Compression Framework (optional, for post-export quantization hooks)
 nncf = ["nncf>=3.0.0"]
+
+# Xiaomi-Robotics-0 (XR0) foundation model
+# Requires a Qwen3-VL backbone (transformers>=5.5.0 ships the qwen3_vl models)
+xr0 = [
+    "transformers>=5.15.0,<=5.15.1",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
 
 # ExecuTorch runtime for edge/mobile deployment
 executorch = ["executorch>=1.1.0"]
@@ -131,6 +139,7 @@ all = [
     "physicalai-train[groot]",
     "physicalai-train[smolvla]",
     "physicalai-train[rldx1]",
+    "physicalai-train[xr0]",
 ]
 
 # Contribute Torch and ExecuTorch as inference backends to the registry
@@ -208,7 +217,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "8e4021703ef43387a835c6647b993cecc069ca85" }
+physicalai = { git = "https://github.com/daniil-lyakhov/physicalai.git", branch = "dl/xr0" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -253,6 +262,9 @@ project-excludes = [
     # main `.venv`; guarded at runtime with a clear ImportError if missing.
     "src/physicalai/policies/rldx1/model.py",
     "src/physicalai/policies/rldx1/components/backbone/modeling_qwen3_vl.py",
+    # xr0's Qwen3-VL backbone wrapper is dynamically typed (transformers modules
+    # resolve to `Module | Tensor`); same rationale as pi_gemma / qwen3_vl above.
+    "src/physicalai/policies/xr0/qwen3_vlm.py",
 ]
 
 

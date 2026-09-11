@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 import onnx
+import openvino
 import pytest
 import torch
 
@@ -827,7 +828,7 @@ class TestPostExportHooks:
 
         with patch("builtins.__import__", side_effect=mock_import):
             with pytest.raises(ImportError, match="physicalai-train\\[nncf\\]"):
-                compress_weights_openvino_int8_sym(str(tmp_path / "model.xml"))
+                compress_weights_openvino_int8_sym(tmp_path / "model.xml")
 
     def test_hook_calls_compress_weights_int8_sym(self, tmp_path):
         """Test that hook calls nncf.compress_weights with INT8_SYM mode."""
@@ -851,12 +852,12 @@ class TestPostExportHooks:
 
         mock_ov.save_model.side_effect = fake_save_model
 
-        model_path = str(tmp_path / "model.xml")
+        model_path = tmp_path / "model.xml"
 
         with patch.dict("sys.modules", {"nncf": mock_nncf, "openvino": mock_ov}):
             compress_weights_openvino_int8_sym(model_path)
 
-        mock_ov.Core.return_value.read_model.assert_called_once_with(model_path)
+        mock_ov.Core.return_value.read_model.assert_called_once_with(str(model_path))
         mock_nncf.compress_weights.assert_called_once_with(mock_model, mode="int8_sym")
 
         # The model is saved to a staged temp path (not the final path), then swapped
@@ -878,7 +879,7 @@ class TestPostExportHooks:
         output_path = tmp_path / "model.xml"
         wrapper.export(backend="openvino", output_path=output_path, post_export_hooks=[mock_hook])
 
-        mock_hook.assert_called_once_with(str(output_path))
+        mock_hook.assert_called_once_with(output_path)
 
     def test_export_invokes_multiple_hooks_in_order(self, tmp_path):
         """Test that multiple hooks are called in sequence."""
@@ -892,7 +893,7 @@ class TestPostExportHooks:
         output_path = tmp_path / "model.xml"
         wrapper.export(backend="openvino", output_path=output_path, post_export_hooks=[hook1, hook2])
 
-        expected_path = str(output_path)
+        expected_path = output_path
         assert call_order == [("hook1", expected_path), ("hook2", expected_path)]
 
     @pytest.mark.parametrize("backend", ["onnx", "openvino"])
@@ -906,7 +907,7 @@ class TestPostExportHooks:
         output_path = tmp_path / f"model{ext}"
         wrapper.export(backend=backend, output_path=output_path, post_export_hooks=[mock_hook])
 
-        mock_hook.assert_called_once_with(str(output_path))
+        mock_hook.assert_called_once_with(output_path)
 
     def test_export_no_hooks_does_not_fail(self, tmp_path):
         """Test that export works normally without hooks (regression)."""
@@ -917,3 +918,51 @@ class TestPostExportHooks:
         wrapper.export(backend="openvino", output_path=output_path)
 
         assert output_path.exists()
+
+    def test_export_invokes_global_pre_export_hooks(self, tmp_path):
+        """export() runs caller-supplied pre_export_hooks before backend dispatch."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        wrapper = ExportWrapper(model)
+
+        calls = []
+        pre_hook = MagicMock(side_effect=lambda: calls.append("pre"))
+        post_hook = MagicMock(side_effect=lambda _path: calls.append("post"))
+
+        output_path = tmp_path / "model.xml"
+        wrapper.export(
+            backend="openvino",
+            output_path=output_path,
+            pre_export_hooks=[pre_hook],
+            post_export_hooks=[post_hook],
+        )
+
+        pre_hook.assert_called_once_with()
+        # Pre-hook runs before the post-hook (i.e. before the artifact is written).
+        assert calls == ["pre", "post"]
+
+    @pytest.mark.parametrize("backend_method", ["to_onnx", "to_openvino", "to_torch", "to_executorch"])
+    def test_backend_methods_apply_hooks_directly(self, tmp_path, backend_method):
+        """Every backend method runs both pre and post hooks when called directly."""
+        model = ModelWithSampleInput(input_dim=10, output_dim=5)
+        pre_hook = MagicMock()
+        post_hook = MagicMock()
+        kwargs = {"pre_export_hooks": [pre_hook], "post_export_hooks": [post_hook]}
+
+        if backend_method == "to_onnx":
+            ExportWrapper(model).to_onnx(tmp_path / "model.onnx", **kwargs)
+        elif backend_method == "to_openvino":
+            ExportWrapper(model).to_openvino(tmp_path / "model.xml", **kwargs)
+        elif backend_method == "to_torch":
+            TorchExportWrapper(model, chunk_size=5, n_action_steps=5).to_torch(tmp_path, **kwargs)
+        else:  # to_executorch
+            mocks = TestToExecutorch()._mock_executorch_modules()
+            with (
+                patch.dict("sys.modules", mocks["modules"]),
+                patch("torch.export.export", return_value=MagicMock()),
+            ):
+                ExportWrapper(model).to_executorch(tmp_path / "model.pte", **kwargs)
+
+        pre_hook.assert_called_once_with()
+        assert post_hook.call_count == 1
+        (called_path,) = post_hook.call_args.args
+        assert isinstance(called_path, Path)
