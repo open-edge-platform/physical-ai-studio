@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -158,6 +159,41 @@ def build_pack(
     }
 
 
+def _unpack_transformer_output(
+    output: object,
+) -> tuple[object, object]:
+    """Extract vision and action predictions from transformer forward output.
+
+    Handles both tuple returns (3-tuple with sound or 2-tuple without sound)
+    and Cosmos3OmniTransformerOutput / ModelOutput / dict instances.
+
+    Args:
+        output: Raw output from transformer forward pass.
+
+    Returns:
+        Tuple of (preds_vision, preds_action).
+
+    Raises:
+        TypeError: If output format is unrecognized.
+    """
+    if hasattr(output, "sample") and hasattr(output, "action"):
+        return output.sample, output.action
+    if isinstance(output, Mapping):
+        return output.get("sample", output.get("preds_vision")), output.get("action", output.get("preds_action"))
+    if isinstance(output, (tuple, list)):
+        min_tuple_len = 3
+        pair_len = 2
+        single_len = 1
+        if len(output) >= min_tuple_len:
+            return output[0], output[2]
+        if len(output) == pair_len:
+            return output[0], output[1]
+        if len(output) == single_len:
+            return output[0], None
+    msg = f"Unexpected transformer output format: {type(output)}"
+    raise TypeError(msg)
+
+
 def flow_matching_step(  # ruff: ignore[too-many-locals]
     tf: nn.Module,
     pack: dict[str, Any],
@@ -197,7 +233,7 @@ def flow_matching_step(  # ruff: ignore[too-many-locals]
     xt_action[:, raw_dim:] = 0
     timestep = float(sigma.item() * 1000.0)
 
-    preds_vision, _, preds_action = tf(
+    tf_out = tf(
         input_ids=text["input_ids"],
         text_indexes=text["text_indexes"],
         position_ids=pack["position_ids"],
@@ -217,15 +253,18 @@ def flow_matching_step(  # ruff: ignore[too-many-locals]
         action_noisy_frame_indexes=act["action_noisy_frame_indexes"],
         action_domain_ids=[domain_id],
     )
+    preds_vision, preds_action = _unpack_transformer_output(tf_out)
 
     loss_vision = x0_vision.new_zeros(())
     loss_action = x0_vision.new_zeros(())
-    if pack["train_video"]:
+    if pack["train_video"] and preds_vision is not None:
         target_vision = (noise_v - x0_vision) * (1.0 - vision_keep)
-        loss_vision = functional.mse_loss(preds_vision[0].float(), target_vision)
-    if pack["train_action"]:
+        pred_v = preds_vision[0] if isinstance(preds_vision, (list, tuple)) else preds_vision
+        loss_vision = functional.mse_loss(pred_v.float(), target_vision)
+    if pack["train_action"] and preds_action is not None:
         target_action = ((noise_a - x0_action) * (1.0 - action_keep))[:, :raw_dim]
-        loss_action = functional.mse_loss(preds_action[0][:, :raw_dim].float(), target_action)
+        pred_a = preds_action[0] if isinstance(preds_action, (list, tuple)) else preds_action
+        loss_action = functional.mse_loss(pred_a[:, :raw_dim].float(), target_action)
 
     loss = loss_vision + action_weight * loss_action
     return loss, loss_vision, loss_action

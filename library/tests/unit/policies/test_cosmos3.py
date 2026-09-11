@@ -8,15 +8,18 @@ Fast, self-contained tests with no external network calls or heavy model downloa
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
 import torch
+from diffusers.utils.outputs import BaseOutput
 
 from physicalai.config import Config
 from physicalai.data.observation import ACTION, IMAGES, STATE, Observation
 from physicalai.policies import Cosmos3, Cosmos3Config, Cosmos3Model, get_physicalai_policy_class, get_policy
 from physicalai.policies.cosmos3 import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
+from physicalai.policies.cosmos3.flow_matching import _unpack_transformer_output, flow_matching_step
 
 # ============================================================================ #
 # Configuration Tests                                                          #
@@ -637,3 +640,126 @@ class TestCosmos3Preprocessor:
         preprocessor = Cosmos3Preprocessor(domain="pusht")
         with pytest.raises(KeyError, match="No image tensor found"):
             preprocessor({"action": torch.zeros(10)})
+
+
+# ============================================================================ #
+# Flow Matching Output Unpacking Tests                                         #
+# ============================================================================ #
+
+
+@dataclass
+class _MockCosmosTransformerOutput(BaseOutput):
+    """Mock Cosmos3OmniTransformerOutput inheriting from BaseOutput."""
+
+    sample: list[torch.Tensor]
+    sound: list[torch.Tensor] | None = None
+    action: list[torch.Tensor] | None = None
+
+
+class TestFlowMatchingOutputUnpacking:
+    """Tests verifying robust unpacking of transformer forward outputs in flow matching."""
+
+    def test_unpack_base_output_dataclass(self) -> None:
+        """Test unpacking Cosmos3OmniTransformerOutput / BaseOutput where sound is None.
+
+        When sound is omitted (as in policy mode), iterating over BaseOutput produces
+        only 2 keys (sample and action), which previously caused:
+        ValueError: not enough values to unpack (expected 3, got 2).
+        """
+        pred_v = [torch.zeros(1, 16, 1, 14, 14)]
+        pred_a = [torch.zeros(5, 64)]
+        out = _MockCosmosTransformerOutput(sample=pred_v, sound=None, action=pred_a)
+
+        # Confirm that plain tuple unpacking raises ValueError
+        with pytest.raises(ValueError, match="not enough values to unpack"):
+            _, _, _ = out
+
+        # Confirm _unpack_transformer_output successfully extracts vision and action
+        vision_out, action_out = _unpack_transformer_output(out)
+        assert vision_out == pred_v
+        assert action_out == pred_a
+
+    def test_unpack_tuple_formats(self) -> None:
+        """Test unpacking 3-tuple (with sound) and 2-tuple (without sound)."""
+        pred_v = [torch.zeros(1, 16, 1, 14, 14)]
+        pred_a = [torch.zeros(5, 64)]
+
+        # 3-tuple: (preds_vision, preds_sound, preds_action)
+        out_3 = (pred_v, None, pred_a)
+        v3, a3 = _unpack_transformer_output(out_3)
+        assert v3 == pred_v
+        assert a3 == pred_a
+
+        # 2-tuple: (preds_vision, preds_action)
+        out_2 = (pred_v, pred_a)
+        v2, a2 = _unpack_transformer_output(out_2)
+        assert v2 == pred_v
+        assert a2 == pred_a
+
+    def test_unpack_dict_format(self) -> None:
+        """Test unpacking dictionary format."""
+        pred_v = [torch.zeros(1, 16, 1, 14, 14)]
+        pred_a = [torch.zeros(5, 64)]
+
+        out_dict = {"sample": pred_v, "action": pred_a}
+        v, a = _unpack_transformer_output(out_dict)
+        assert v == pred_v
+        assert a == pred_a
+
+    def test_unpack_invalid_type_raises(self) -> None:
+        """Test unpacking unsupported type raises TypeError."""
+        with pytest.raises(TypeError, match="Unexpected transformer output format"):
+            _unpack_transformer_output(42)
+
+    def test_flow_matching_step_with_mock_cosmos_output(self) -> None:
+        """Test flow_matching_step handles BaseOutput with sound=None without unpack error."""
+        pack = {
+            "text": {
+                "input_ids": torch.zeros((1, 10), dtype=torch.long),
+                "text_indexes": torch.arange(10),
+                "und_len": 10,
+            },
+            "vis": {
+                "vision_token_shapes": [(1, 14, 14)],
+                "vision_sequence_indexes": torch.arange(10, 20),
+                "vision_mse_loss_indexes": torch.arange(10, 20),
+                "num_noisy_vision_tokens": 10,
+                "vision_noisy_frame_indexes": [torch.zeros(1, dtype=torch.long)],
+            },
+            "act": {
+                "action_token_shapes": [(1, 4, 1)],
+                "action_sequence_indexes": torch.arange(20, 24),
+                "action_mse_loss_indexes": torch.arange(20, 24),
+                "num_noisy_action_tokens": 4,
+                "action_noisy_frame_indexes": [torch.zeros(1, dtype=torch.long)],
+            },
+            "position_ids": torch.zeros((3, 24), dtype=torch.long),
+            "seq_len": 24,
+            "vision_keep": torch.zeros((1, 1, 1)),
+            "action_keep": torch.zeros((5, 1)),
+            "train_video": True,
+            "train_action": True,
+        }
+        x0_vision = torch.zeros(1, 16, 1, 14, 14)
+        x0_action = torch.zeros(5, 64)
+        domain_id = torch.tensor([0], dtype=torch.long)
+
+        pred_v = [torch.zeros(1, 16, 1, 14, 14)]
+        pred_a = [torch.zeros(5, 64)]
+        mock_tf = MagicMock(return_value=_MockCosmosTransformerOutput(sample=pred_v, sound=None, action=pred_a))
+
+        loss, loss_v, loss_a = flow_matching_step(
+            mock_tf,
+            pack,
+            x0_vision,
+            x0_action,
+            domain_id,
+            dtype=torch.float32,
+            raw_dim=2,
+            action_weight=10.0,
+            device="cpu",
+        )
+        assert isinstance(loss, torch.Tensor)
+        assert isinstance(loss_v, torch.Tensor)
+        assert isinstance(loss_a, torch.Tensor)
+
