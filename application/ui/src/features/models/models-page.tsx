@@ -4,6 +4,7 @@ import { Button, DialogContainer, DialogTrigger, Divider, Flex, View } from '@ge
 
 import { $api } from '../../api/client';
 import { SchemaModel } from '../../api/openapi-spec';
+import { useJobCache } from '../jobs/use-job-cache';
 import { LogsDialog } from '../logs/logs-dialog';
 import { useProjectId } from '../projects/use-project';
 import { AllJobsDialog } from './job-table/all-jobs-dialog';
@@ -11,7 +12,6 @@ import { JobList } from './job-table/job-list';
 import { ModelsList } from './models-table/models-list';
 import { NoModelsPlaceholder } from './no-models-placeholder';
 import { SchemaTrainJob, TrainModelDialog } from './train-model-dialog/train-model-dialog';
-import { useJobUpdates } from './use-job-updates';
 import { useProjectTrainingJobs } from './use-project-training-jobs';
 
 const isActiveJob = (job: SchemaTrainJob) => job.status === 'running' || job.status === 'pending';
@@ -29,7 +29,7 @@ export const ModelsPage = () => {
     const [logsSourceId, setLogsSourceId] = useState<string | undefined>();
     const [allJobsOpen, setAllJobsOpen] = useState(false);
 
-    const { addJob } = useJobUpdates(project_id);
+    const { addJob } = useJobCache();
 
     const handleViewLogs = (model: SchemaModel) => {
         if (!model.train_job_id) {

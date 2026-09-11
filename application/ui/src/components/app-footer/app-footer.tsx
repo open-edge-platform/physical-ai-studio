@@ -2,11 +2,17 @@ import { ActionButton, DialogTrigger, Divider, Flex, Icon, View } from '@geti-ui
 import { Manifest } from '@geti-ui/ui/icons';
 
 import { JobStatus } from '../../features/jobs/footer/job-status';
+import { useJobUpdates } from '../../features/jobs/use-job-updates';
 import { LogsDialog } from '../../features/logs/logs-dialog';
+import { useOptionalProjectId } from '../../features/projects/use-project';
 import { RuntimeSessionStatus } from '../../features/runtime-sessions/runtime-sessions';
 import { RestartRequiredBanner } from '../../features/system/restart-required-banner';
 
 export const AppFooter = ({ gridArea = 'footer' }: { gridArea?: string }) => {
+    const { project_id } = useOptionalProjectId();
+
+    useJobUpdates(project_id);
+
     return (
         <View
             gridArea={gridArea}
