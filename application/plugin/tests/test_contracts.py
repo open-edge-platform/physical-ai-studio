@@ -201,6 +201,28 @@ def test_robot_field_ui_supports_advanced_configuration_option() -> None:
     }
 
 
+def test_robot_field_ui_supports_contextual_info() -> None:
+    assert robot_field_ui(
+        {
+            "info": {
+                "title": "Calibration file",
+                "description": "Provide a calibration JSON exported from the robot.",
+                "link_url": "https://example.com/calibration",
+                "variant": "help",
+            }
+        }
+    ) == {
+        "x-physicalai-ui": {
+            "info": {
+                "title": "Calibration file",
+                "description": "Provide a calibration JSON exported from the robot.",
+                "link_url": "https://example.com/calibration",
+                "variant": "help",
+            }
+        }
+    }
+
+
 def test_robot_payload_ui_supports_recursive_items() -> None:
     assert robot_payload_ui(
         [
@@ -279,6 +301,42 @@ def test_robot_payload_ui_supports_calibration_items() -> None:
     }
 
 
+def test_robot_payload_ui_supports_info_attribute_on_items() -> None:
+    assert robot_payload_ui(
+        [
+            {
+                "kind": "field",
+                "name": "connection_string",
+                "info": {
+                    "description": "Set the robot endpoint address.",
+                    "link_url": "https://example.com/network-setup",
+                },
+            },
+        ],
+    ) == {
+        "x-physicalai-ui": [
+            {
+                "kind": "field",
+                "name": "connection_string",
+                "info": {
+                    "description": "Set the robot endpoint address.",
+                    "link_url": "https://example.com/network-setup",
+                },
+            },
+        ],
+    }
+
+
+def test_validate_robot_payload_ui_accepts_field_level_info() -> None:
+    class Payload(BaseModel):
+        connection_string: str = Field(
+            default="",
+            json_schema_extra=robot_field_ui({"info": {"description": "Connection string for the robot."}}),
+        )
+
+    validate_robot_payload_ui(Payload)
+
+
 def test_validate_robot_payload_ui_accepts_nested_item_lists() -> None:
     class ConnectionPayload(BaseModel):
         connection_string: str
@@ -320,6 +378,21 @@ def test_validate_robot_payload_ui_ignores_field_options() -> None:
         ([{"kind": "ip_address", "name": "port"}], "must reference a string payload field"),
         ([{"kind": "calibration", "name": "missing"}], "must reference an existing payload field"),
         ([{"kind": "calibration", "name": "connection_string"}], "must reference an object payload field"),
+        ([{"kind": "field", "name": "connection_string", "info": "bad"}], "info must be an object"),
+        (
+            [{"kind": "field", "name": "connection_string", "info": {"title": "Info"}}],
+            "info.description must be a non-empty string",
+        ),
+        (
+            [
+                {
+                    "kind": "field",
+                    "name": "connection_string",
+                    "info": {"description": "text", "variant": "warning"},
+                }
+            ],
+            "info.variant must be one of: info, help",
+        ),
         (
             [
                 {"kind": "field", "name": "connection_string"},
@@ -352,4 +425,12 @@ def test_validate_robot_payload_ui_rejects_invalid_metadata(items: object, messa
         model_config = ConfigDict(json_schema_extra={"x-physicalai-ui": items})
 
     with pytest.raises(ValueError, match=message):
+        validate_robot_payload_ui(InvalidPayload)
+
+
+def test_validate_robot_payload_ui_rejects_invalid_field_info() -> None:
+    class InvalidPayload(BaseModel):
+        connection_string: str = Field(default="", json_schema_extra=robot_field_ui({"info": {"title": "Broken"}}))
+
+    with pytest.raises(ValueError, match="info.description must be a non-empty string"):
         validate_robot_payload_ui(InvalidPayload)

@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from settings import (
+    HotkeySettings,
     HuggingFaceSettings,
     Settings,
     SshProvisioningSettings,
@@ -25,6 +26,7 @@ class UserSettingsResponse(BaseModel):
     trainer: TrainerClientSettings
     huggingface: HuggingFaceSettings
     ssh: SshProvisioningSettings
+    hotkeys: HotkeySettings
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "UserSettingsResponse":
@@ -32,6 +34,7 @@ class UserSettingsResponse(BaseModel):
             trainer=settings.trainer,
             huggingface=settings.huggingface,
             ssh=settings.ssh,
+            hotkeys=settings.hotkeys,
         )
 
 
@@ -41,6 +44,7 @@ class SettingsUpdate(BaseModel):
     trainer: TrainerClientSettings | None = None
     huggingface: HuggingFaceSettings | None = None
     ssh: SshProvisioningSettings | None = None
+    hotkeys: HotkeySettings | None = None
 
 
 @router.get("")

@@ -265,6 +265,40 @@ input_sample = {
 policy.to_onnx("model.onnx", input_sample=input_sample)
 ```
 
+### Export with Real-Time Chunking (RTC)
+
+Flow-matching policies (`SmolVLA`, `Pi05`) support Real-Time Chunking, which guides
+denoising with the unconsumed tail of the previous action chunk. RTC is off by default
+and must be enabled _before_ export, because it changes the traced input schema:
+
+```python test="skip" reason="requires physicalai install and trained model"
+from physicalai.policies.smolvla import SmolVLA
+
+policy = SmolVLA.load_from_checkpoint("checkpoints/last.ckpt")
+
+# Must be set before tracing — it adds the RTC control inputs to the export schema
+policy.rtc_enabled = True
+
+policy.to_openvino("model_rtc")
+```
+
+The exported model then takes four additional inputs alongside the usual state,
+image, and task features:
+
+| Input                  | Shape                      | dtype     | Meaning                                           |
+| ---------------------- | -------------------------- | --------- | ------------------------------------------------- |
+| `prev_chunk_left_over` | `(chunk_size, action_dim)` | `float32` | Unconsumed tail of the previously predicted chunk |
+| `inference_delay`      | `()`                       | `int64`   | Steps consumed while inference was running        |
+| `max_guidance_weight`  | `()`                       | `float32` | Upper bound on the RTC guidance strength          |
+| `execution_horizon`    | `()`                       | `int64`   | Number of actions expected to execute per chunk   |
+
+Notes:
+
+- Setting `rtc_enabled = True` on a policy that does not support RTC raises `ValueError`.
+  Check `policy.supports_rtc` first.
+- The flag is forwarded to the underlying model, so it can be set before the model is
+  built (for example before Lightning `setup`) and is applied once the model exists.
+
 ## Related Documentation
 
 - [Configuration (Runtime)](https://github.com/openvinotoolkit/physicalai/blob/main/docs/explanation/configuration.md) — shared `physicalai.config` serialization

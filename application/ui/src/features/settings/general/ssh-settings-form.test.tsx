@@ -38,6 +38,7 @@ describe('SshSettingsForm', () => {
                     },
                     huggingface: { hf_token: null },
                     ssh: { ...baseSsh, connect_timeout_s: 42 },
+                    hotkeys: { bindings: {} },
                 });
             })
         );

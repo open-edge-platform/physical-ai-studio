@@ -32,11 +32,12 @@ import { getDisplayHealth, healthLabel, healthVariant } from '../../training-tar
 import { useRemoteServersStatus } from '../../training-targets/training-targets-table/use-remote-servers-status';
 import { useRemoteTrainersHealth } from '../../training-targets/training-targets-table/use-remote-trainers-health';
 import { useRemoteTrainerHealth } from '../../training-targets/use-remote-trainer-health';
+import { supportsSnapflow } from '../shared/snapflow';
 import { MODELS } from './policies';
 import { PolicyAccessAlert } from './policy-access-alert';
 import { PolicySelection } from './policy-selection';
 import { TrainingDeviceInfo } from './training-device-info';
-import { TrainingParameters } from './training-parameters';
+import { MIN_EPOCHS_FOR_SNAPFLOW, TrainingParameters } from './training-parameters';
 import { pickBestDevice, useBestTrainingDevice } from './use-training-devices';
 
 import classes from './train-model-dialog.module.css';
@@ -65,6 +66,9 @@ type TrainingTargetOption = {
 };
 
 const LOCAL_TARGET_ID = 'local';
+
+/** Mirrors `_DEFAULT_SNAPFLOW_DISTILL_EPOCHS` in the backend payload schema. */
+const DEFAULT_SNAPFLOW_DISTILL_EPOCHS = 3;
 
 /** Strip the `trainer:`/`ssh:` prefix off a training-target option id. */
 const targetRawId = (id: string): string => id.split(':', 2)[1] ?? id;
@@ -148,10 +152,17 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
     const [precision, setPrecision] = useState<Key | null>(bestDevice?.type === 'cuda' ? 'bf16-mixed' : '32-true');
     const [compileModel, setCompileModel] = useState<boolean>(false);
+    const [snapflowEnabled, setSnapflowEnabled] = useState<boolean>(false);
+    const [snapflowDistillEpochs, setSnapflowDistillEpochs] = useState<number>(DEFAULT_SNAPFLOW_DISTILL_EPOCHS);
     const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
     const selectedTarget = trainingTargetOptions.find((option) => option.id === targetId) ?? null;
     const isRemoteTarget = selectedTarget?.kind === 'trainer';
     const isSshTarget = selectedTarget?.kind === 'ssh';
+    const isSnapflowSupported = supportsSnapflow(selectedPolicy);
+    // snapflow_distill_epochs is additive on top of max_epochs (the teacher phase
+    // always runs the full max_epochs before distillation extends the run), so it
+    // needs no clamp against max_epochs.
+    const isSnapflowRequested = isSnapflowSupported && snapflowEnabled && maxEpochs >= MIN_EPOCHS_FOR_SNAPFLOW;
     const {
         health: remoteTrainerHealth,
         isChecking: isCheckingRemoteTrainer,
@@ -318,6 +329,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 auto_scale_batch_size: autoScaleBatchSize,
                 precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
                 compile_model: compileModel,
+                snapflow_enabled: isSnapflowRequested,
+                snapflow_distill_epochs: snapflowDistillEpochs,
                 val_split: 0.1,
                 ...extraPayload,
             };
@@ -448,6 +461,11 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onCompileModelChange={setCompileModel}
                                 isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
                                 deviceType={activeDevice?.type}
+                                isSnapflowSupported={isSnapflowSupported}
+                                snapflowEnabled={snapflowEnabled}
+                                onSnapflowEnabledChange={setSnapflowEnabled}
+                                snapflowDistillEpochs={snapflowDistillEpochs}
+                                onSnapflowDistillEpochsChange={setSnapflowDistillEpochs}
                             />
                         </DisclosurePanel>
                     </Disclosure>

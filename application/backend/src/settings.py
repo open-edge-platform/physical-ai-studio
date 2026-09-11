@@ -87,7 +87,7 @@ class SshProvisioningSettings(BaseModel):
     Studio trusts a host or an image, which is not something this
     (unauthenticated) settings API should be able to move.
 
-    There is no master on/off switch: the feature is always active (subject
+    The feature is always active (subject
     only to the fail-closed network-exposure check in
     `core.security.ssh_network_exposure`). The risk this implies - no
     authentication model, so anyone who can reach this backend can run
@@ -128,7 +128,20 @@ _SSH_FIELD_MAP: dict[str, str] = {
     "min_free_disk_bytes": "ssh_min_free_disk_bytes",
 }
 
-_USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface")
+
+class HotkeySettings(BaseModel):
+    """User-configurable keyboard shortcut bindings.
+
+    Opaque action_id -> serialized key combo map (e.g. {"recording.discard_episode":
+    "Shift+ArrowLeft"}). The frontend hotkey registry owns action ids and default
+    combos; only overrides are stored here, so a stale id from a renamed/removed
+    frontend action is simply ignored rather than validated.
+    """
+
+    bindings: dict[str, str] = Field(default_factory=dict)
+
+
+_USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface", "hotkeys")
 
 
 def _storage_key(field_name: str) -> str:
@@ -142,11 +155,12 @@ def _storage_key(field_name: str) -> str:
     return field_info.alias or field_name
 
 
-def _user_config_scalar_keys() -> tuple[str, ...]:
-    """Return the top-level (non-grouped) keys the settings API may write.
+def _ssh_storage_keys() -> tuple[str, ...]:
+    """Return the storage-file keys for the flat `Settings.ssh_*` fields.
 
-    Unlike `_USER_CONFIG_GROUPS`, these settings live directly on `Settings`
-    rather than in a nested model, so they are stored under their alias.
+    Unlike `_USER_CONFIG_GROUPS`, `SshProvisioningSettings` fields live
+    directly on `Settings` (see `_SSH_FIELD_MAP`) rather than in a nested
+    model, so they are stored under their alias instead of a group name.
     """
     return tuple(_storage_key(field_name) for field_name in _SSH_FIELD_MAP.values())
 
@@ -169,7 +183,7 @@ def ssh_patch_to_flat(values: dict[str, Any] | None) -> dict[str, Any]:
         are dropped rather than written through.
     """
     if values is None:
-        return dict.fromkeys(_user_config_scalar_keys())
+        return dict.fromkeys(_ssh_storage_keys())
     return {_storage_key(_SSH_FIELD_MAP[key]): value for key, value in values.items() if key in _SSH_FIELD_MAP}
 
 
@@ -178,7 +192,7 @@ class UserConfigSettingsSource(JsonConfigSettingsSource):
 
     def __call__(self) -> dict[str, Any]:
         data: dict[str, Any] = super().__call__()
-        allowed = (*_USER_CONFIG_GROUPS, *_user_config_scalar_keys())
+        allowed = (*_USER_CONFIG_GROUPS, *_ssh_storage_keys())
         return {key: value for key, value in data.items() if key in allowed}
 
 
@@ -201,7 +215,7 @@ class _EnvExclusionSource(PydanticBaseSettingsSource):
 
     def __call__(self) -> dict[str, Any]:
         data: dict[str, Any] = self._wrapped()
-        excluded = _user_config_scalar_keys()
+        excluded = _ssh_storage_keys()
         return {key: value for key, value in data.items() if key not in excluded}
 
 
@@ -287,9 +301,11 @@ class Settings(BaseSettings):
     trainer: TrainerClientSettings = TrainerClientSettings()
     # User-configurable Hugging Face credentials.
     huggingface: HuggingFaceSettings = HuggingFaceSettings()
+    # User-configurable keyboard shortcut bindings.
+    hotkeys: HotkeySettings = HotkeySettings()
 
     # SSH-provisioned remote training
-    # No master on/off switch: the feature is always active, subject only to
+    # The feature is always active, subject only to
     # the fail-closed network-exposure check in `core.security.ssh_network_exposure`,
     # which additionally fails this closed at startup if the backend is bound
     # to a non-loopback address. The absence of an authentication model is
@@ -461,7 +477,7 @@ def write_user_settings(data: dict[str, Any]) -> None:
     """Atomically persist allowed user-configurable settings."""
     path = get_settings_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    allowed = (*_USER_CONFIG_GROUPS, *_user_config_scalar_keys())
+    allowed = (*_USER_CONFIG_GROUPS, *_ssh_storage_keys())
     filtered = {key: value for key, value in data.items() if key in allowed and value is not None}
     fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix="settings.", suffix=".json.tmp")
     try:
@@ -510,7 +526,7 @@ def merge_user_settings(patch: dict[str, Any]) -> None:
             current.pop(group, None)
         elif isinstance(value, dict):
             current.setdefault(group, {}).update(value)
-    for key in _user_config_scalar_keys():
+    for key in _ssh_storage_keys():
         if key not in patch:
             continue
         value = patch[key]

@@ -26,7 +26,8 @@ if TYPE_CHECKING:
 
 global_log_config = LogConfig()
 
-# Chatty at INFO (e.g. one line per SSH channel/HTTP request); quiet to WARNING.
+# Each logs one line per SSH channel/HTTP request at INFO. Raising the
+# threshold to WARNING drops those routine lines and keeps actual problems.
 _NOISY_LOGGERS = ("asyncssh", "httpx", "httpcore")
 
 

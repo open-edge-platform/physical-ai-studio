@@ -80,6 +80,11 @@ _STAT_Q01 = "q01"
 _STAT_Q99 = "q99"
 
 
+# --------------------------------------------------------------------------- #
+# State/Action Preprocessing Helpers                                          #
+# --------------------------------------------------------------------------- #
+
+
 def _coerce_vector(raw: Any, key: str) -> list[float] | None:  # noqa: ANN401
     """Return ``raw[key]`` flattened to a ``list[float]`` or ``None``.
 
@@ -368,6 +373,11 @@ def pad_state_action(
 
 # Qwen vision tiler patch size used by the vendored collator (image_patch_size).
 _VLM_IMAGE_PATCH_SIZE = 16
+
+
+# --------------------------------------------------------------------------- #
+# VLM Text/Image Tokenization Helpers                                         #
+# --------------------------------------------------------------------------- #
 
 
 def formalize_language(text: str) -> str:

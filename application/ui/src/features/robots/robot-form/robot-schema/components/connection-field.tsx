@@ -1,9 +1,12 @@
+import { ReactNode } from 'react';
+
 import { ActionButton, ComboBox, Flex, Icon, Item, Text, View } from '@geti-ui/ui';
 import { Refresh } from '@geti-ui/ui/icons';
 
 import { useCatalogIdentifyMutation, useDiscoverRobotsQuery } from '../../../robot-catalog.hooks';
 import { SchemaRobotType } from '../../../robot-types';
 import { ConnectionItem } from '../types';
+import { FieldContextualHelp } from './field-contextual-help';
 import { IdentifyError } from './identify-error';
 
 type Device = { serial_number: string | null; connection_string: string | null };
@@ -15,6 +18,7 @@ type ComboBoxFieldProps = {
     allowsCustomValue: boolean;
     isRequired: boolean;
     description?: string;
+    contextualHelp?: ReactNode;
     onInputChange: (value: string) => void;
     onSelectionChange: (key: string | number | null) => void;
 };
@@ -37,12 +41,14 @@ const ComboBoxField = ({
     allowsCustomValue,
     isRequired,
     description,
+    contextualHelp,
     onInputChange,
     onSelectionChange,
 }: ComboBoxFieldProps) => (
     <ComboBox
         label={label}
         description={description}
+        contextualHelp={contextualHelp}
         isRequired={isRequired}
         width='100%'
         allowsCustomValue={allowsCustomValue}
@@ -90,6 +96,9 @@ export const ConnectionField = ({ robotType, payload, options, isRequired, onCha
                 <ComboBoxField
                     label={options.label ?? 'Connection'}
                     description={options.description}
+                    contextualHelp={
+                        options.info === undefined ? undefined : <FieldContextualHelp info={options.info} />
+                    }
                     value={value}
                     devices={discover.data ?? []}
                     allowsCustomValue={options.manual_entry !== false}

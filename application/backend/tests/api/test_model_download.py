@@ -234,7 +234,7 @@ def test_openvino_export_download_with_recipe_includes_yaml_and_exports(tmp_path
         assert "model.xml" not in names
         yaml_text = archive.read("runtime.yaml").decode()
         assert "physicalai.runtime.PolicySource" in yaml_text
-        assert "physicalai.runtime.AsyncExecution" in yaml_text
+        assert "physicalai.runtime.SyncExecution" in yaml_text
         assert "./exports/openvino" in yaml_text
         assert "pick" in yaml_text
         readme = archive.read("README.md").decode()

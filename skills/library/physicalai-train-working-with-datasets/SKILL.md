@@ -70,6 +70,7 @@ data:
 - Missing/renamed feature → the config's dataset features disagree with the policy; align `Feature` names in `data/observation.py` conventions.
 - Slow/stalled first batch → the LeRobot `repo_id` is downloading; expected on first run (see the `requires_download` test marker for tests that need this).
 - Wrong batch dimensions → check `train_batch_size` and the datamodule's collate/observation handling before changing the policy.
+- OOM or heavy swapping during training (common on smaller policies like ACT/SmolVLA on low-RAM machines) → try `pin_memory=False` and/or `persistent_workers=False` on the `DataModule`; see `library/docs/explanation/data/datamodules.md`.
 
 ## Required checks
 

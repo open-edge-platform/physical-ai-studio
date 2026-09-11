@@ -542,9 +542,7 @@ def test_native_forward_contract(rldx1_preprocessor, with_action: bool) -> None:
         "attention_mask",
         "pixel_values",
         "image_grid_thw",
-        "image_wise_encoding",
         "num_views",
-        "num_frames",
         STATE,
         "embodiment_id",
     }
@@ -552,8 +550,9 @@ def test_native_forward_contract(rldx1_preprocessor, with_action: bool) -> None:
 
     assert out[STATE].shape == (batch_size, 1, MAX_STATE_DIM)
     assert out[STATE].dtype == torch.float32
-    for key in ("image_wise_encoding", "num_views", "num_frames", "embodiment_id"):
-        assert out[key].shape == (batch_size,), key
+    assert out["embodiment_id"].shape == (batch_size,)
+    assert isinstance(out["num_views"], torch.Tensor)
+    assert int(out["num_views"].item()) == 2
     assert out["input_ids"].shape[0] == batch_size
     assert out["attention_mask"].shape == out["input_ids"].shape
 
@@ -737,9 +736,8 @@ def test_multiframe_forward_matches_vendored() -> None:
 
     Runs the native :meth:`Rldx1Preprocessor.forward` (eval) on a 4-frame /
     2-view observation and the vendored upstream ``_get_vlm_inputs`` + collator
-    on pixel-identical frames, then asserts identical ``pixel_values``,
-    ``image_grid_thw`` and ``num_frames`` -- the frame-major / view-inner
-    ordering and the reported frame count.
+    on pixel-identical frames, then asserts identical ``pixel_values`` and
+    ``image_grid_thw`` with the same frame-major / view-inner ordering.
     """
     from physicalai.policies.rldx1.preprocessing import formalize_language as native_formalize
     from physicalai.policies.rldx1.preprocessor import Rldx1Preprocessor
@@ -780,7 +778,6 @@ def test_multiframe_forward_matches_vendored() -> None:
     pre.eval()
     out = pre.forward(native_batch)
 
-    assert int(out["num_frames"][0]) == _VIDEO_LENGTH
-    assert int(out["num_views"][0]) == _NUM_VIEWS
+    assert int(out["num_views"].item()) == _NUM_VIEWS
     torch.testing.assert_close(out["image_grid_thw"], gold["image_grid_thw"], atol=0, rtol=0)
     torch.testing.assert_close(out["pixel_values"], gold["pixel_values"], atol=0.0, rtol=0.0)
