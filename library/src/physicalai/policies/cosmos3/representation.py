@@ -24,6 +24,8 @@ is swappable in either direction.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation as R
@@ -77,6 +79,52 @@ def uses_minmax_normalization(domain: str) -> bool:
     native space and must not be re-scaled; identity domains rely on per-dataset min-max.
     """
     return domain_representation(domain) == "identity"
+
+
+# Split-column state layout: some datasets store the robot state as separate LeRobot
+# sub-columns (the original DROID layout: ``observation.state.cartesian_position`` +
+# ``observation.state.gripper_position``) rather than a single combined ``observation.state``
+# column. These are the ``(pose, gripper)`` sub-column names, in canonical order, used to
+# reassemble one ``[..., pose + gripper]`` state row.
+DOMAIN_SPLIT_STATE_COLUMNS: dict[str, tuple[str, str]] = {
+    "droid_lerobot": ("cartesian_position", "gripper_position"),
+    "robomind-franka": ("cartesian_position", "gripper_position"),
+    "robomind_franka": ("cartesian_position", "gripper_position"),
+    "bridge_orig_lerobot": ("cartesian_position", "gripper_position"),
+}
+
+
+def assemble_state_sequence(domain: str, state: object) -> torch.Tensor:
+    """Return the raw state as one tensor in canonical ``[pose..., gripper]`` column order.
+
+    Datasets provide the robot state either as a single combined column (already canonical,
+    returned unchanged) or as split sub-columns keyed by their LeRobot sub-column name
+    (e.g. ``{"cartesian_position": [..., 6], "gripper_position": [...]}``, the original DROID
+    layout). The split layout is concatenated back into one ``[..., pose + 1]`` tensor so that
+    :func:`represent_state` / :func:`represent_actions` always receive a uniform raw state
+    row/sequence regardless of how the dataset stored it.
+    """
+    if not isinstance(state, Mapping):
+        return state  # already a single combined-column tensor
+    cols = DOMAIN_SPLIT_STATE_COLUMNS.get(domain)
+    if cols is None:
+        msg = (
+            f"Domain '{domain}' provides split state columns {sorted(state)} but no split-column "
+            "layout is registered in DOMAIN_SPLIT_STATE_COLUMNS."
+        )
+        raise KeyError(msg)
+    pose_key, grip_key = cols
+    if pose_key not in state or grip_key not in state:
+        msg = (
+            f"Split state for domain '{domain}' expects sub-columns '{pose_key}' and '{grip_key}', "
+            f"got {sorted(state)}."
+        )
+        raise KeyError(msg)
+    pose = state[pose_key]
+    grip = state[grip_key]
+    if grip.ndim < pose.ndim:
+        grip = grip.unsqueeze(-1)
+    return torch.cat([pose.to(grip.dtype), grip], dim=-1)
 
 
 # ---------------------------------------------------------------------------

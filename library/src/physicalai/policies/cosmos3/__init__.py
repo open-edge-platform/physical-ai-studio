@@ -20,6 +20,7 @@ from .policy import Cosmos3
 from .preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 from .representation import (
     DOMAIN_REPRESENTATION,
+    assemble_state_sequence,
     domain_representation,
     represent_actions,
     represent_state,
@@ -46,6 +47,7 @@ __all__ = [
     "Cosmos3Preprocessor",
     "DOMAIN_REPRESENTATION",
     "PolicyPipelineWithState",
+    "assemble_state_sequence",
     "build_action_tokens",
     "build_pack",
     "check_xpu_driver",

@@ -27,7 +27,13 @@ from physicalai.policies.base import Model
 from .flow_matching import build_action_tokens, build_pack, flow_matching_step
 from .pipeline import PolicyPipelineWithState
 from .preprocessor import Cosmos3Preprocessor
-from .representation import domain_representation, represent_state, uses_minmax_normalization
+from .representation import (
+    assemble_state_sequence,
+    domain_representation,
+    represent_actions,
+    represent_state,
+    uses_minmax_normalization,
+)
 from .surgery import configure_trainable, init_domain_action_head
 
 if TYPE_CHECKING:
@@ -403,8 +409,14 @@ class Cosmos3Model(Model):
         preprocessed = self.preprocessor(batch)
         images_tensor = preprocessed[IMAGES]
         view_point = preprocessed.get("view_point")
-        actions_tensor = preprocessed[ACTION]
+        actions_tensor = preprocessed.get(ACTION)
         state_tensor = preprocessed.get(STATE)
+
+        # Reassemble split state sub-columns (e.g. the original DROID layout) into a single
+        # canonical ``[B, T, pose + gripper]`` tensor; combined-column states pass through.
+        state_seq_batch = (
+            assemble_state_sequence(self.config.domain, state_tensor) if state_tensor is not None else None
+        )
 
         device = self.transformer.device
         dtype = self.transformer.dtype
@@ -440,31 +452,38 @@ class Cosmos3Model(Model):
                     image_size,
                 )
 
-            act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
-            if act_b.ndim == 1:
-                act_b = act_b.unsqueeze(0)
             if self.use_minmax:
+                # Identity domains (pusht/aloha): raw action chunk + current-state token,
+                # min-max scaled into the model's [-1, 1] range.
+                act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
+                if act_b.ndim == 1:
+                    act_b = act_b.unsqueeze(0)
                 a_min_slice = self.a_min[: self.raw_dim]
                 a_max_slice = self.a_max[: self.raw_dim]
                 act_norm = 2.0 * (act_b[:, : self.raw_dim] - a_min_slice) / (a_max_slice - a_min_slice + 1e-8) - 1.0
-            else:
-                # Pose domain: actions are already the native relative-pose chunk (no min-max).
-                act_norm = act_b[:, : self.raw_dim]
-
-            if state_tensor is not None:
-                st_b = state_tensor[b].to(device=device, dtype=torch.float32)
-                if st_b.ndim > 1:
-                    st_b = st_b[0]  # Take initial frame state
-                if self.use_minmax:
+                if state_seq_batch is not None:
+                    st_b = state_seq_batch[b].to(device=device, dtype=torch.float32)
+                    if st_b.ndim > 1:
+                        st_b = st_b[0]  # Take initial frame state
                     dim_st = min(len(st_b), self.raw_dim)
                     st_min = self.a_min[:dim_st]
                     st_max = self.a_max[:dim_st]
                     st_norm = 2.0 * (st_b[:dim_st] - st_min) / (st_max - st_min + 1e-8) - 1.0
                 else:
-                    # Pose domain: build the native ee state token; no min-max scaling.
-                    st_norm = represent_state(self.config.domain, st_b).to(device=device, dtype=torch.float32)
+                    st_norm = torch.zeros(self.raw_dim, device=device, dtype=torch.float32)
             else:
-                st_norm = torch.zeros(self.raw_dim, device=device, dtype=torch.float32)
+                # Pose domains (droid_ee/bridge_ee): derive the native relative-pose action
+                # chunk and current-state token from the raw state sequence, mirroring
+                # cosmos3-diffusers represent_actions/represent_state. The dataset's raw action
+                # column is not the native representation and is intentionally not used here.
+                if state_seq_batch is None:
+                    msg = f"Pose domain '{self.config.domain}' requires observation state to build action targets."
+                    raise ValueError(msg)
+                state_seq_b = state_seq_batch[b].to(device=device, dtype=torch.float32)
+                if state_seq_b.ndim == 1:
+                    state_seq_b = state_seq_b.unsqueeze(0)
+                act_norm = represent_actions(self.config.domain, state_seq_b).to(device=device, dtype=torch.float32)
+                st_norm = represent_state(self.config.domain, state_seq_b[0]).to(device=device, dtype=torch.float32)
 
             x0_action = build_action_tokens(
                 selected_paradigm,
@@ -559,6 +578,11 @@ class Cosmos3Model(Model):
         img_tensor = preprocessed[IMAGES]
         view_point = preprocessed.get("view_point")
         state_tensor = preprocessed.get(STATE)
+        # Reassemble split state sub-columns (e.g. the original DROID layout) into a single
+        # canonical tensor; combined-column states pass through unchanged.
+        state_field = (
+            assemble_state_sequence(self.config.domain, state_tensor) if state_tensor is not None else None
+        )
 
         device = self.transformer.device
         batch_size = img_tensor.shape[0] if img_tensor.ndim in {4, 5} else 1
@@ -570,8 +594,8 @@ class Cosmos3Model(Model):
                 cur_img = cur_img[-1]
             pil_img = _to_pil_image(cur_img)
 
-            if state_tensor is not None:
-                cur_state = state_tensor[b] if state_tensor.ndim > 1 else state_tensor
+            if state_field is not None:
+                cur_state = state_field[b] if state_field.ndim > 1 else state_field
                 cur_state = cur_state.to(device=device, dtype=torch.float32)
                 if cur_state.ndim > 1:
                     cur_state = cur_state[-1]
