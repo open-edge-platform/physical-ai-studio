@@ -120,7 +120,7 @@ jobs:
 
       - name: Build Docker image
         id: docker_build
-        uses: ./.github/actions/docker-build
+        uses: $/.github/actions/docker-build
         with:
           device: ${{ matrix.device }}
           tags: ${{ steps.meta.outputs.tags }}
