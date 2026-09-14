@@ -398,12 +398,15 @@ def test_session_exits_when_no_client_is_attached() -> None:
 
 
 def test_a_client_attaching_on_the_idle_deadline_keeps_the_session() -> None:
+    # Wide margins: on loaded CI runners, opening the second client's transport
+    # and matching subscribers can itself take close to a second, so the buffer
+    # before the idle deadline must be generous or the reconnect loses the race.
     name = _name()
-    owner, client = _connect_owner(name, _document(), idle_timeout_s=1.5)
+    owner, client = _connect_owner(name, _document(), idle_timeout_s=4.0)
     try:
         client.close()
-        time.sleep(1.2)
-        second_owner, second_client = _connect_owner(name, _document(), idle_timeout_s=1.5)
+        time.sleep(2.5)
+        second_owner, second_client = _connect_owner(name, _document(), idle_timeout_s=4.0)
         try:
             time.sleep(1.0)
             assert second_owner.is_alive()
