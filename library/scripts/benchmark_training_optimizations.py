@@ -60,14 +60,14 @@ logger = logging.getLogger(__name__)
 DATASET_PATH = Path.home() / ".cache" / "physicalai" / "datasets" / "pick_and_place"
 REPO_ID = "local"  # arbitrary — not used for local loading
 
-AVAILABLE_POLICIES = ("act", "smolvla", "pi0", "pi05", "groot")
+AVAILABLE_POLICIES = ("act", "smolvla", "pi0", "pi05", "groot", "xr0")
 
 
 def create_policy(name: str, *, compile_model: bool) -> Policy:
     """Create a policy instance by name with compile settings.
 
     Args:
-        name: Policy name (act, smolvla, pi0, pi05, groot).
+        name: Policy name (act, smolvla, pi0, pi05, groot, xr0).
         compile_model: Whether to enable torch.compile.
 
     Returns:
@@ -100,6 +100,11 @@ def create_policy(name: str, *, compile_model: bool) -> Policy:
         from physicalai.policies import Groot  # noqa: PLC0415
 
         return Groot(compile_model=compile_model)
+
+    if name == "xr0":
+        from physicalai.policies import XR0  # noqa: PLC0415
+
+        return XR0(compile_model=compile_model)
 
     msg = f"Unknown policy: {name}. Available: {AVAILABLE_POLICIES}"
     raise ValueError(msg)
