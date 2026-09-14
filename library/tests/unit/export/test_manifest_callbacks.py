@@ -10,8 +10,11 @@ import torch
 
 from physicalai.export.backends import ONNXExportParameters, OpenVINOExportParameters
 from physicalai.export.mixin_policy import ExportBackend, ExportablePolicyMixin
-from physicalai.inference.manifest import ComponentSpec, Manifest
+from physicalai.inference.manifest import ComponentSpec, Manifest, ModelSpec
 from physicalai.policies.rldx1.export import Rldx1ExportMixin
+
+
+_CALLBACKS_SCHEMA_SKIP_REASON = "Runtime ModelSpec.callbacks is unavailable; waiting for the separate Runtime dependency update"
 
 
 class _Policy(ExportablePolicyMixin):
@@ -24,6 +27,7 @@ class _Policy(ExportablePolicyMixin):
         return [ExportBackend.ONNX]
 
 
+@pytest.mark.skipif("callbacks" not in ModelSpec.model_fields, reason=_CALLBACKS_SCHEMA_SKIP_REASON)
 def test_create_manifest_preserves_callback_order(tmp_path) -> None:
     """Callback components are stored under model.callbacks in declaration order."""
     callbacks = [
@@ -43,6 +47,7 @@ def test_create_manifest_preserves_callback_order(tmp_path) -> None:
     assert manifest.model_dump()["model"]["callbacks"] == [callback.model_dump() for callback in callbacks]
 
 
+@pytest.mark.skipif("callbacks" not in ModelSpec.model_fields, reason=_CALLBACKS_SCHEMA_SKIP_REASON)
 def test_export_parameters_default_to_no_callbacks(tmp_path) -> None:
     """Existing exporters retain an empty callback list by default."""
     policy = _Policy()
