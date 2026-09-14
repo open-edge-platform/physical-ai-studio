@@ -196,6 +196,13 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
                 mode="quantiles",
             ),
         ]
+        callback_specs = [
+            ComponentSpec(
+                type="rldx1_vtc",
+                video_length=int(self.config.video_length),
+                video_stride=int(self.config.video_stride),
+            ),
+        ]
         if self._preprocessor is None:
             msg = "Cannot build token composer params before transforms are initialized."
             raise RuntimeError(msg)
@@ -253,6 +260,7 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
                 *rope_specs,
             ],
             postprocessors_specs=postproc_specs,
+            callbacks_specs=callback_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             inputs=[PIXEL_VALUES, INPUT_IDS, POSITION_IDS, ATTENTION_MASK, STATE],
@@ -281,6 +289,7 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
                 *rope_specs,
             ],
             postprocessors_specs=postproc_specs,
+            callbacks_specs=callback_specs,
         )
         extra_args["torch"] = TorchExportParameters(
             preprocessors_specs=[ComponentSpec(type="to_float_tensor")],

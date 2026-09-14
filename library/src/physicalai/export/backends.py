@@ -49,6 +49,7 @@ class ExportParameters:
     exporter_kwargs: dict = field(default_factory=dict)
     preprocessors_specs: list = field(default_factory=list)
     postprocessors_specs: list = field(default_factory=list)
+    callbacks_specs: list = field(default_factory=list)
 
 
 @dataclass
