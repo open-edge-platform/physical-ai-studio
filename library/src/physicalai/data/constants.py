@@ -15,17 +15,11 @@ from physicalai.inference.constants import (
     TASK,
     TOKENIZED_PROMPT,
     TOKENIZED_PROMPT_MASK,
+    PREV_CHUNK_LEFT_OVER,
+    RTC_INFERENCE_DELAY,
+    RTC_MAX_GUIDANCE_WEIGHT,
+    RTC_EXECUTION_HORIZON,
 )
-
-# Core observation fields
-
-# Inference-only fields
-PREV_CHUNK_LEFT_OVER = "prev_chunk_left_over"
-
-# Real-Time Chunking (RTC) control inputs
-RTC_INFERENCE_DELAY = "inference_delay"
-RTC_MAX_GUIDANCE_WEIGHT = "max_guidance_weight"
-RTC_EXECUTION_HORIZON = "execution_horizon"
 
 # Optional RL & metadata fields
 NEXT_REWARD = "next_reward"
