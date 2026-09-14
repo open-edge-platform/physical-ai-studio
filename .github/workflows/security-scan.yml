@@ -102,10 +102,10 @@ jobs:
         uses: open-edge-platform/geti-ci/actions/bandit@134a7e6b1658ea9eb97b7f52f724ed88a2878ea7 # bandit/v0.1.2
         with:
           scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
-          severity-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
-          confidence-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
+          severity-level: "LOW"
+          confidence-level: "LOW"
           config_file: ".github/bandit_config.yml"
-          fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
+          fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
 
   trivy-scan:
     runs-on: ubuntu-latest

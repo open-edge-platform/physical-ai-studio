@@ -39,9 +39,9 @@ def _restart_process() -> None:
         executable = argv[0]
         try:
             if os.path.sep in executable:
-                os.execv(executable, argv)  # noqa: S606
+                os.execv(executable, argv)  # noqa: S606  # nosec B606 - re-execs this process with its own argv, not external input
             else:
-                os.execvp(executable, argv)  # noqa: S606
+                os.execvp(executable, argv)  # noqa: S606  # nosec B606 - re-execs this process with its own argv, not external input
         except OSError:
             logger.exception("Restart exec failed for argv={}", argv)
 

@@ -7,7 +7,7 @@ import argparse
 import os
 import platform
 import re
-import subprocess
+import subprocess  # nosec B404 - only used below for a fixed, non-shell mklink fallback
 import sys
 from pathlib import Path
 
@@ -83,7 +83,7 @@ def _create_windows_link(link: Path, abs_target: Path) -> None:
     except OSError:
         pass
 
-    subprocess.run(
+    subprocess.run(  # nosec B607 B603 - fixed cmd/mklink args, no shell, no user input
         ["cmd", "/c", "mklink", "/J", str(link), str(abs_target)],
         check=True,
         capture_output=True,
