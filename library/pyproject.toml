@@ -113,6 +113,19 @@ rldx1 = [
     "peft>=0.13.0,<1.0.0",
     "diffusers>=0.38.0",
 ]
+
+# NVIDIA Cosmos 3 foundation policy
+# TODO: Option A - Relax transformers upper bound (<5.6.0) across all policies (pi0, groot, smolvla, rldx1)
+# after checking with the team, so cosmos3 can co-resolve in the shared environment without conflicts.
+# Currently using Option B: declare cosmos3 conflicting with other VLA policies requiring transformers<5.6.0.
+cosmos3 = [
+    "torch>=2.13.0",
+    "diffusers>=0.40.0",
+    "transformers>=5.15.1",
+    "peft>=0.13.0,<1.0.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
 # Neural Network Compression Framework (optional, for post-export quantization hooks)
 nncf = ["nncf>=3.0.0"]
 
@@ -177,6 +190,10 @@ override-dependencies = [
     "pytest>=9.0.3",
     # LeRobot 0.6.0 keeps diffusers in optional extras; keep an explicit floor for CVE-2026-44827 fix
     "diffusers>=0.38.0",
+    # Option B: Override physicalai's upstream transformers<5.6.0 constraint so cosmos3 (>=5.15.1)
+    # can resolve in its own extra without conflicting with the base physicalai package.
+    # TODO: Try Option A after checking with team to relax <5.6.0 across all policy extras and all
+    "transformers>=5.5.0",
 ]
 
 
@@ -184,6 +201,14 @@ conflicts = [
     [{ extra = "cpu" }, { extra = "cu128" }, { extra = "xpu" }],
     [{ extra = "executorch" }, { extra = "xpu" }],
     [{ extra = "executorch-openvino" }, { extra = "xpu" }],
+    # Option B: cosmos3 requires transformers>=5.15.1, conflicting with policies pinned to <5.6.0
+    # TODO: Try Option A after checking with team to relax <5.6.0 on pi0/groot/smolvla/rldx1
+    [{ extra = "cosmos3" }, { extra = "all" }],
+    [{ extra = "cosmos3" }, { extra = "pi0" }],
+    [{ extra = "cosmos3" }, { extra = "pi05" }],
+    [{ extra = "cosmos3" }, { extra = "groot" }],
+    [{ extra = "cosmos3" }, { extra = "smolvla" }],
+    [{ extra = "cosmos3" }, { extra = "rldx1" }],
 ]
 
 # PyTorch index configuration

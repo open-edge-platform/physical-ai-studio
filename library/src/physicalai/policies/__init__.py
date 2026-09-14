@@ -8,6 +8,7 @@ from __future__ import annotations
 from . import lerobot
 from .act import ACT, ACTConfig, ACTModel
 from .base import Policy
+from .cosmos3 import Cosmos3, Cosmos3Config, Cosmos3Model
 from .groot import Groot, GrootConfig, GrootModel
 from .lerobot import get_lerobot_policy
 from .pi0 import Pi0, Pi0Config, Pi0Model
@@ -20,6 +21,10 @@ __all__ = [
     "ACT",
     "ACTConfig",
     "ACTModel",
+    # Cosmos3
+    "Cosmos3",
+    "Cosmos3Config",
+    "Cosmos3Model",
     # Groot
     "Groot",
     "GrootConfig",
@@ -136,6 +141,8 @@ def get_physicalai_policy_class(policy_name: str) -> type[Policy]:
 
     if policy_name == "act":
         return ACT
+    if policy_name == "cosmos3":
+        return Cosmos3
     if policy_name == "groot":
         return Groot
     if policy_name == "pi0":
@@ -146,5 +153,8 @@ def get_physicalai_policy_class(policy_name: str) -> type[Policy]:
         return Rldx1
     if policy_name == "smolvla":
         return SmolVLA
-    msg = f"Unknown physicalai policy: {policy_name}. Supported policies: act, dummy, groot, pi0, pi05, rldx1, smolvla"
+    msg = (
+        f"Unknown physicalai policy: {policy_name}. "
+        "Supported policies: act, cosmos3, dummy, groot, pi0, pi05, rldx1, smolvla"
+    )
     raise ValueError(msg)
