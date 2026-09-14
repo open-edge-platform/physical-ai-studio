@@ -92,6 +92,7 @@ jobs:
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
+            gitlab.com:443
             keyserver.ubuntu.com:443
             pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
@@ -124,28 +125,26 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build trainer image
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: application/docker/Dockerfile.trainer
-          build-contexts: |
-            libs=library
-            plugin=application/plugin
-          target: physicalai-trainer-${{ matrix.device }}
-          platforms: linux/amd64
-          load: true
-          push: false
-          tags: physicalai-trainer-${{ matrix.device }}:test
-          # PR builds are cache-read-only; the per-device build cache is written
-          # from `main` by the publish job below.
-          cache-from: type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache
-          build-args: |
-            GIT_SHA=${{ github.sha }}
-            BUILD_DATE=${{ steps.build-metadata.outputs.created }}
-            APPLICATION_VERSION=${{ steps.build-metadata.outputs.version }}
-            TRAINER_API_PROTOCOL_VERSION=${{ env.TRAINER_API_PROTOCOL_VERSION }}
-            PHYSICALAI_TRAIN_VERSION=${{ steps.build-metadata.outputs.library-version }}
+        env:
+          IMAGE: physicalai-trainer-${{ matrix.device }}:test
+        run: |
+          docker buildx build \
+            --builder default \
+            --build-context libs=library \
+            --build-context plugin=application/plugin \
+            --build-arg GIT_SHA="${GITHUB_SHA}" \
+            --build-arg BUILD_DATE="${{ steps.build-metadata.outputs.created }}" \
+            --build-arg APPLICATION_VERSION="${{ steps.build-metadata.outputs.version }}" \
+            --build-arg TRAINER_API_PROTOCOL_VERSION="${{ env.TRAINER_API_PROTOCOL_VERSION }}" \
+            --build-arg PHYSICALAI_TRAIN_VERSION="${{ steps.build-metadata.outputs.library-version }}" \
+            --cache-from type=registry,ref=${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:buildcache \
+            --file application/docker/Dockerfile.trainer \
+            --load \
+            --platform linux/amd64 \
+            --progress=plain \
+            --tag "${IMAGE}" \
+            --target physicalai-trainer-${{ matrix.device }} \
+            .
 
       - name: Smoke-test trainer image
         env:
