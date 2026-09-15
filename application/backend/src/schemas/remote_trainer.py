@@ -123,7 +123,7 @@ class RemoteTrainer(RemoteTrainerCreate):
     """Persisted direct remote trainer endpoint."""
 
     id: UUID
-    url: AnyHttpUrl
+    url: AnyHttpUrl  # pyrefly: ignore[bad-override-mutable-attribute]
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

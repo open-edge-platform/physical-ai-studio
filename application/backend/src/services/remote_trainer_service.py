@@ -36,9 +36,7 @@ _inflight_checks: dict[UUID, asyncio.Task[RemoteTrainerHealth]] = {}
 # Fields whose column is nullable, so an explicit null in an update means "clear it"
 # rather than "not provided".
 _NULLABLE_UPDATE_FIELDS = frozenset({"ssh_host_alias", "ssh_connection", "ssh_remote_port", "ssh_local_port"})
-_CONNECTION_FIELDS = frozenset(
-    {"connection_mode", "url", "ssh_host_alias", "ssh_connection", "ssh_remote_port", "ssh_local_port"}
-)
+_CONNECTION_FIELDS = {"connection_mode", "url", "ssh_host_alias", "ssh_connection", "ssh_remote_port", "ssh_local_port"}
 
 
 class RemoteTrainerService:

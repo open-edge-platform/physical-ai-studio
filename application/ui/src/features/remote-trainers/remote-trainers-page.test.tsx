@@ -145,9 +145,7 @@ describe('RemoteTrainersPage', () => {
         expect(screen.getByRole('textbox', { name: /local port/i })).toHaveValue('8001');
         expect(screen.getByRole('textbox', { name: /trainer url/i })).toHaveValue('http://127.0.0.1:8001');
         expect(screen.getByRole('textbox', { name: /trainer url/i })).toBeDisabled();
-        expect(
-            screen.getByText('Derived from the local tunnel endpoint and cannot be edited.')
-        ).toBeInTheDocument();
+        expect(screen.getByText('Derived from the local tunnel endpoint and cannot be edited.')).toBeInTheDocument();
     });
 
     it('creates a remote trainer with an SSH tunnel configured via a new manual host', async () => {
