@@ -15,6 +15,7 @@ from schemas.hardware import DeviceInfo, DeviceType, StorageInfo
 from schemas.remote_trainer import (
     HealthStatus,
     RemoteTrainer,
+    RemoteTrainerConnectionMode,
     RemoteTrainerCreate,
     RemoteTrainerHealth,
     RemoteTrainerUpdate,
@@ -34,7 +35,10 @@ _inflight_checks: dict[UUID, asyncio.Task[RemoteTrainerHealth]] = {}
 
 # Fields whose column is nullable, so an explicit null in an update means "clear it"
 # rather than "not provided".
-_NULLABLE_UPDATE_FIELDS = frozenset({"ssh_host_alias", "ssh_remote_port", "ssh_local_port"})
+_NULLABLE_UPDATE_FIELDS = frozenset({"ssh_host_alias", "ssh_connection", "ssh_remote_port", "ssh_local_port"})
+_CONNECTION_FIELDS = frozenset(
+    {"connection_mode", "url", "ssh_host_alias", "ssh_connection", "ssh_remote_port", "ssh_local_port"}
+)
 
 
 class RemoteTrainerService:
@@ -144,7 +148,7 @@ class RemoteTrainerService:
         create/update does - a trainer must never be saved carrying tunnel
         config the backend is currently unwilling to act on.
         """
-        self._require_ssh_feature_if_tunneled(config.ssh_host_alias)
+        self._require_ssh_feature_if_tunneled(config.connection_mode)
         remote_trainer = RemoteTrainer(id=uuid4(), **config.model_dump())
         try:
             saved = await self.repo.save(remote_trainer)
@@ -162,12 +166,26 @@ class RemoteTrainerService:
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
-        self._require_ssh_feature_if_tunneled(update.ssh_host_alias)
         try:
             # exclude_unset (not exclude_none) so an explicit null clears an existing
             # tunnel field instead of being dropped as "not provided".
             data = update.model_dump(exclude_unset=True)
             data = {k: v for k, v in data.items() if v is not None or k in _NULLABLE_UPDATE_FIELDS}
+            validated = RemoteTrainerCreate.model_validate(
+                {
+                    **remote_trainer.model_dump(),
+                    **data,
+                }
+            )
+            should_normalize_connection = (
+                "connection_mode" in data
+                or "url" in data
+                or any(data.get(field) is not None for field in _CONNECTION_FIELDS - {"connection_mode", "url"})
+            )
+            if should_normalize_connection:
+                self._require_ssh_feature_if_tunneled(validated.connection_mode)
+                normalized = validated.model_dump(include=_CONNECTION_FIELDS)
+                data.update(normalized)
             saved = await self.repo.update(remote_trainer, data)
         except IntegrityError as error:
             await self.session.rollback()
@@ -186,9 +204,9 @@ class RemoteTrainerService:
         await remote_trainer_tunnel_manager.stop_tunnel(remote_trainer_id)
 
     @staticmethod
-    def _require_ssh_feature_if_tunneled(ssh_host_alias: str | None) -> None:
+    def _require_ssh_feature_if_tunneled(connection_mode: RemoteTrainerConnectionMode) -> None:
         """Fail closed if a caller is saving tunnel config the feature can't currently honor."""
-        if ssh_host_alias is None:
+        if connection_mode is RemoteTrainerConnectionMode.DIRECT:
             return
         availability = get_ssh_feature_availability()
         if not availability.active:

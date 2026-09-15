@@ -15,6 +15,7 @@ const datasetId = '9f4e20fb-7dd8-4d2c-b207-a6d554311a12';
 const remoteTrainer = {
     id: remoteTrainerId,
     name: 'managed-trainer',
+    connection_mode: 'direct' as const,
     url: 'https://trainer.example.test/api',
     created_at: '2026-07-14T12:00:00Z',
 };

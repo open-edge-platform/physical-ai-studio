@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from core.security.ssh_network_exposure import SshFeatureAvailability
 from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, SshFeatureDisabledError
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerCreate, RemoteTrainerUpdate
+from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode, RemoteTrainerCreate, RemoteTrainerUpdate
 from services import RemoteTrainerService
 
 MODULE = "services.remote_trainer_service"
@@ -123,7 +123,11 @@ async def test_create_rejects_ssh_tunnel_config_when_feature_inactive() -> None:
     ):
         await RemoteTrainerService(session).create_remote_trainer(
             RemoteTrainerCreate(
-                name="trainer", url="http://127.0.0.1:8001", ssh_host_alias="training-box", ssh_local_port=8001
+                name="trainer",
+                connection_mode=RemoteTrainerConnectionMode.SSH,
+                ssh_host_alias="training-box",
+                ssh_remote_port=8001,
+                ssh_local_port=8001,
             )
         )
 

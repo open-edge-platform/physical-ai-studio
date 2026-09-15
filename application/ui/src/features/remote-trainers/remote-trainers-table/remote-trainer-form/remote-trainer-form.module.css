@@ -5,3 +5,53 @@
 .hint {
     color: var(--spectrum-global-color-gray-700);
 }
+
+.modeGuidance {
+    display: block;
+    min-height: 2.5em;
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.methodContent {
+    box-sizing: border-box;
+    height: 390px;
+}
+
+.directConnectionHint {
+    display: block;
+    max-width: 48ch;
+    padding-top: var(--spectrum-global-dimension-size-200);
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.fieldRow {
+    display: flex;
+    gap: var(--spectrum-global-dimension-size-200);
+}
+
+@media (max-width: 640px) {
+    .methodContent {
+        height: 600px;
+    }
+
+    .fieldRow {
+        flex-direction: column;
+    }
+}
+
+.awsIcon {
+    width: var(--spectrum-global-dimension-size-500);
+    height: auto;
+}
+
+.awsStackLinkContent {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-50);
+}
+
+.awsStackLinkContent svg {
+    width: var(--spectrum-global-dimension-size-175);
+    height: var(--spectrum-global-dimension-size-175);
+    flex-shrink: 0;
+}
