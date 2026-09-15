@@ -72,7 +72,11 @@ def _remap_lerobot_act_state_dict(
             image_prefix = "normalize_inputs.buffer_observation_images_"
             if key.startswith(image_prefix):
                 suffix = key.split(".")[-1]
-                image_key = f"buffer_{IMAGES}" if single_camera else key[len("normalize_inputs.") : -len(f".{suffix}")]
+                if single_camera:
+                    image_key = f"buffer_{IMAGES}"
+                else:
+                    cam_suffix = key[len(image_prefix) : -len(f".{suffix}")]
+                    image_key = f"buffer_{cam_suffix}"
                 new_key = f"_input_normalizer.{image_key}.{suffix}"
         remapped[new_key] = value
     return remapped

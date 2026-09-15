@@ -213,10 +213,33 @@ class TestACTolicy:
         opt = policy.configure_optimizers()["optimizer"]
         assert len(opt.param_groups) == 2
 
+        # Verify parameter identity split
+        backbone_param_ids = {id(p) for n, p in policy.named_parameters() if ".backbone." in n and p.requires_grad}
+        other_param_ids = {id(p) for n, p in policy.named_parameters() if ".backbone." not in n and p.requires_grad}
+
+        group0_ids = {id(p) for p in opt.param_groups[0]["params"]}
+        group1_ids = {id(p) for p in opt.param_groups[1]["params"]}
+
+        assert group0_ids == other_param_ids
+        assert group1_ids == backbone_param_ids
+        assert len(group1_ids) > 0
+        assert len(group0_ids) > 0
+
         # Group 0: non-backbone parameters
         assert opt.param_groups[0]["lr"] == 1e-5
         # Group 1: backbone parameters
         assert opt.param_groups[1]["lr"] == 1e-5
+
+        # Verify distinct custom learning rates propagate to each group
+        custom_policy = ACT(
+            dataset_stats=policy.hparams["dataset_stats"],
+            optimizer_lr=2e-5,
+            optimizer_lr_backbone=5e-6,
+        )
+        custom_opt = custom_policy.configure_optimizers()["optimizer"]
+        assert len(custom_opt.param_groups) == 2
+        assert custom_opt.param_groups[0]["lr"] == 2e-5
+        assert custom_opt.param_groups[1]["lr"] == 5e-6
 
     def test_single_camera_input_normalization(self):
         """Single-camera observations with flattened 'images.<name>' keys are normalized."""
@@ -305,6 +328,80 @@ class TestACTolicy:
         expected_overhead = (1.0 - 0.2) / 0.1
         assert torch.isclose(normed["images.wrist"][0, 0, 0, 0], torch.tensor(expected_wrist), atol=1e-4)
         assert torch.isclose(normed["images.overhead"][0, 0, 0, 0], torch.tensor(expected_overhead), atol=1e-4)
+
+    def test_remap_lerobot_act_state_dict_multi_and_single_camera(self):
+        """Test checkpoint state-dict remapping for both single- and multi-camera checkpoints."""
+        from physicalai.policies.act.policy import _remap_lerobot_act_state_dict
+
+        # Single camera remapping
+        sd_single = {
+            "model.backbone.conv1.weight": torch.randn(64, 3, 7, 7),
+            "normalize_inputs.buffer_observation_images_top.mean": torch.randn(3, 1, 1),
+            "normalize_inputs.buffer_observation_images_top.std": torch.randn(3, 1, 1),
+            "normalize_inputs.buffer_observation_state.mean": torch.randn(3),
+            "unnormalize_outputs.buffer_action.mean": torch.randn(6),
+        }
+        remapped_single = _remap_lerobot_act_state_dict(sd_single, ["observation.images.top"])
+        assert "_model.backbone.conv1.weight" in remapped_single
+        assert "_input_normalizer.buffer_images.mean" in remapped_single
+        assert "_input_normalizer.buffer_images.std" in remapped_single
+
+        # Multi-camera remapping
+        sd_multi = {
+            "model.backbone.conv1.weight": torch.randn(64, 3, 7, 7),
+            "normalize_inputs.buffer_observation_images_top.mean": torch.randn(3, 1, 1),
+            "normalize_inputs.buffer_observation_images_top.std": torch.randn(3, 1, 1),
+            "normalize_inputs.buffer_observation_images_wrist.mean": torch.randn(3, 1, 1),
+            "normalize_inputs.buffer_observation_images_wrist.std": torch.randn(3, 1, 1),
+            "normalize_inputs.buffer_observation_state.mean": torch.randn(3),
+            "unnormalize_outputs.buffer_action.mean": torch.randn(6),
+        }
+        remapped_multi = _remap_lerobot_act_state_dict(sd_multi, ["observation.images.top", "observation.images.wrist"])
+        assert "_input_normalizer.buffer_top.mean" in remapped_multi
+        assert "_input_normalizer.buffer_top.std" in remapped_multi
+        assert "_input_normalizer.buffer_wrist.mean" in remapped_multi
+        assert "_input_normalizer.buffer_wrist.std" in remapped_multi
+        assert "_input_normalizer.buffer_observation_images_top.mean" not in remapped_multi
+
+    def test_multi_camera_dotted_names_not_collapsed(self):
+        """Camera names with dotted sub-names (e.g. left.wrist, right.wrist) are preserved."""
+        from physicalai.data import FeatureType
+
+        dataset_stats = {
+            "observation.images.left.wrist": {
+                "name": "observation.images.left.wrist",
+                "type": FeatureType.VISUAL,
+                "shape": (3, 64, 64),
+                "mean": [0.5, 0.5, 0.5],
+                "std": [0.25, 0.25, 0.25],
+            },
+            "observation.images.right.wrist": {
+                "name": "observation.images.right.wrist",
+                "type": FeatureType.VISUAL,
+                "shape": (3, 64, 64),
+                "mean": [0.2, 0.2, 0.2],
+                "std": [0.1, 0.1, 0.1],
+            },
+            "observation.state": {
+                "name": "observation.state",
+                "type": FeatureType.STATE,
+                "shape": (3,),
+                "mean": [0.0] * 3,
+                "std": [1.0] * 3,
+            },
+            "action": {
+                "name": "action",
+                "type": FeatureType.ACTION,
+                "shape": (3,),
+                "mean": [0.0] * 3,
+                "std": [1.0] * 3,
+            },
+        }
+        policy = ACT(dataset_stats=dataset_stats)
+        assert "left.wrist" in policy.model.config.input_features
+        assert "right.wrist" in policy.model.config.input_features
+        visual_keys = {k for k, v in policy.model.config.input_features.items() if v.ftype == FeatureType.VISUAL}
+        assert visual_keys == {"left.wrist", "right.wrist"}
 
 
 class TestACTPreprocessor:
