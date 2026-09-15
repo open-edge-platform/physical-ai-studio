@@ -77,13 +77,14 @@ def create_adapter(link: Path, target: str) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
-# cmd.exe re-parses its /c argument itself, so these are unsafe even with shell=False.
-_CMD_METACHARACTERS = set('&|<>^"%!\n\r')
+# Allowlist (not a denylist) so no cmd.exe metacharacter can be missed: letters, digits,
+# and the characters actually needed for Windows paths.
+_CMD_SAFE_PATH = re.compile(r"^[A-Za-z0-9_.:\\/ -]+$")
 
 
 def _reject_unsafe_for_cmd(path: Path) -> None:
     text = str(path)
-    if any(ch in _CMD_METACHARACTERS for ch in text):
+    if not _CMD_SAFE_PATH.match(text):
         raise RuntimeError(f"path contains characters unsafe for cmd.exe: {path}")
 
 
