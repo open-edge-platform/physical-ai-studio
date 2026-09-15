@@ -1,5 +1,6 @@
 import { type FunctionComponent, type SVGProps } from 'react';
 
+import type { SchemaExportBackend } from '../../api/openapi-spec';
 import { ReactComponent as ExecuTorchLogo } from './../../assets/logos/executorch-logo-small.svg';
 import { ReactComponent as ONNXLogo } from './../../assets/logos/onnx-logo-small.svg';
 import { ReactComponent as OpenVINOLogo } from './../../assets/logos/OpenVINO-small.svg';
@@ -38,3 +39,6 @@ export const INFERENCE_BACKENDS: Record<string, InferenceBackendConfig> = {
         logo: ExecuTorchLogo,
     },
 };
+
+/** Whether a backend name reported by the API is one this UI knows how to show. */
+export const isExportBackend = (backend: string): backend is SchemaExportBackend => backend in INFERENCE_BACKENDS;

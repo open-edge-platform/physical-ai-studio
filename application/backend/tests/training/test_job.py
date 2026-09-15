@@ -117,6 +117,36 @@ class TestBuildPolicy:
 
         assert get_policy.call_args.kwargs["pretrained_name_or_path"] == PRETRAINED_BASE_CHECKPOINTS[policy_name]
 
+    def test_camera_layout_is_passed_to_a_policy_that_reads_a_fixed_order(self) -> None:
+        """SmolVLA takes the dataset's cameras in the slots the mapping names."""
+        spec = TrainingJobSpec(
+            policy="smolvla",
+            image_key_reorder_map={"observation.images.top": 0, "observation.images.wrist": 1},
+            num_cameras=3,
+        )
+
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(spec)
+
+        assert get_policy.call_args.kwargs["image_key_reorder_map"] == spec.image_key_reorder_map
+        assert get_policy.call_args.kwargs["num_cameras"] == 3
+
+    def test_camera_layout_is_dropped_for_a_policy_without_camera_slots(self) -> None:
+        """ACT's constructor has no such parameters; passing them would be a TypeError."""
+        spec = TrainingJobSpec(policy="act", image_key_reorder_map={"observation.images.top": 0}, num_cameras=2)
+
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(spec)
+
+        assert "image_key_reorder_map" not in get_policy.call_args.kwargs
+        assert "num_cameras" not in get_policy.call_args.kwargs
+
+    def test_no_camera_layout_is_passed_when_none_is_asked_for(self) -> None:
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(TrainingJobSpec(policy="smolvla"))
+
+        assert "image_key_reorder_map" not in get_policy.call_args.kwargs
+
     def test_lerobot_policies_are_left_to_lerobots_own_defaults(self) -> None:
         with patch("physicalai.policies.get_policy") as get_policy:
             build_policy(TrainingJobSpec(policy="smolvla", policy_source="lerobot"))
@@ -394,6 +424,28 @@ class TestRunTrainingJob:
             (str(exports / "openvino"), ExportBackend.OPENVINO),
         ]
         assert (99, "Exporting to torch format", {}) in [call.args for call in report.call_args_list]
+
+    def test_only_the_requested_export_backends_are_produced(self, tmp_path: Path) -> None:
+        policy = _ExportablePolicy([ExportBackend.TORCH, ExportBackend.OPENVINO])
+
+        _run(TrainingJobSpec(policy="act", export_backends=["openvino"]), tmp_path, policy=policy)
+
+        assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
+
+    def test_a_requested_backend_the_policy_cannot_produce_is_skipped(self, tmp_path: Path) -> None:
+        """Which formats a policy can trace is the policy's to say, not the caller's."""
+        policy = _ExportablePolicy([ExportBackend.TORCH])
+
+        _run(TrainingJobSpec(policy="smolvla", export_backends=["torch", "onnx"]), tmp_path, policy=policy)
+
+        assert [backend for _, backend in policy.exported] == [ExportBackend.TORCH]
+
+    def test_requesting_no_supported_backend_exports_nothing(self, tmp_path: Path) -> None:
+        policy = _ExportablePolicy([ExportBackend.TORCH])
+
+        _run(TrainingJobSpec(policy="act", export_backends=["onnx"]), tmp_path, policy=policy)
+
+        assert policy.exported == []
 
     def test_a_failing_export_backend_does_not_fail_the_job(self, tmp_path: Path) -> None:
         """Weights are already saved by then; one bad backend must not lose them."""

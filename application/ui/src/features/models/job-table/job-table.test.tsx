@@ -49,6 +49,7 @@ const localJob: SchemaTrainJob = {
         policy: 'act',
         model_name: 'pick-and-place',
         batch_size: 8,
+        num_cameras: 0,
         num_workers: 'auto',
         auto_scale_batch_size: false,
         val_split: 0.1,

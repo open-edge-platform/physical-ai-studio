@@ -97,6 +97,24 @@ class TestSshTarget:
             )
 
 
+class TestCameraMapping:
+    """The mapping is keyed the way the policy reads its images, not the dataset."""
+
+    def test_a_dataset_feature_key_is_reduced_to_what_the_policy_matches(self) -> None:
+        """A policy sees `images.<name>` and prefixes `images.` onto the mapping it gets."""
+        payload = LocalTrainJobPayload(
+            **_base_kwargs(),
+            image_key_reorder_map={"observation.images.gripper": 1, "observation.images.overhead": 0},
+        )
+
+        assert payload.image_key_reorder_map == {"images.gripper": 1, "images.overhead": 0}
+
+    def test_a_bare_camera_name_is_left_alone(self) -> None:
+        payload = LocalTrainJobPayload(**_base_kwargs(), image_key_reorder_map={"gripper": 1, "overhead": 0})
+
+        assert payload.image_key_reorder_map == {"gripper": 1, "overhead": 0}
+
+
 class TestSnapFlowDistillation:
     """The payload expresses the distillation budget; the runner needs a boundary.
 
