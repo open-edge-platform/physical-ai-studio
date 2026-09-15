@@ -1,7 +1,7 @@
 """Serve backend and frontend CLI commands."""
 
 import os
-import subprocess
+import subprocess  # nosec B404 - imported only to catch CalledProcessError, never invoked here
 import sys
 from pathlib import Path
 
