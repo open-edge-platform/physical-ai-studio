@@ -89,7 +89,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: Weight decay for optimizer. Default: 1e-10.
         optimizer_grad_clip_norm: Gradient clipping norm value. Default: 10.
         scheduler_warmup_steps: Number of warmup steps for scheduler. Default: 1_000.
-        scheduler_decay_steps: Number of steps between learning rate decays. Default: 30_000.
         scheduler_decay_lr: Learning rate decay factor. Default: 2.5e-6.
         dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
@@ -164,7 +163,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: float = 1e-10,
         optimizer_grad_clip_norm: float = 10,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -201,7 +199,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                 optimizer_weight_decay=optimizer_weight_decay,
                 optimizer_grad_clip_norm=optimizer_grad_clip_norm,
                 scheduler_warmup_steps=scheduler_warmup_steps,
-                scheduler_decay_steps=scheduler_decay_steps,
                 scheduler_decay_lr=scheduler_decay_lr,
             )
         else:
@@ -245,7 +242,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                 optimizer_weight_decay=optimizer_weight_decay,
                 optimizer_grad_clip_norm=optimizer_grad_clip_norm,
                 scheduler_warmup_steps=scheduler_warmup_steps,
-                scheduler_decay_steps=scheduler_decay_steps,
                 scheduler_decay_lr=scheduler_decay_lr,
             )
 
@@ -381,7 +377,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: float = 1e-10,
         optimizer_grad_clip_norm: float = 10,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
     ) -> tuple[SmolVLAConfig, dict[str, dict[str, list[float] | str | tuple]] | None, Path | None]:
         """Template loader for SmolVLA pretrained config/weights from local path or HF Hub.
@@ -447,7 +442,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         hf_config["optimizer_weight_decay"] = optimizer_weight_decay
         hf_config["optimizer_grad_clip_norm"] = optimizer_grad_clip_norm
         hf_config["scheduler_warmup_steps"] = scheduler_warmup_steps
-        hf_config["scheduler_decay_steps"] = scheduler_decay_steps
         hf_config["scheduler_decay_lr"] = scheduler_decay_lr
 
         dataset_stats = extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
@@ -664,6 +658,11 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
+        The cosine decay horizon is the total training step budget
+        (``self.trainer.estimated_stepping_batches``, derived from ``max_steps``
+        or ``max_epochs``), so the LR reaches ``scheduler_decay_lr`` exactly at
+        the end of training.
+
         Returns:
             Optimizer configuration dict.
         """
@@ -678,13 +677,14 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             betas=self.config.optimizer_betas,
         )
 
-        num_decay_steps = self.config.scheduler_decay_steps
+        num_training_steps = int(self.trainer.estimated_stepping_batches)
+
         scheduler = cosine_decay_with_warmup_scheduler(
             optimizer,
             peak_lr=self.config.optimizer_lr,
             decay_lr=self.config.scheduler_decay_lr,
             num_warmup_steps=self.config.scheduler_warmup_steps,
-            num_decay_steps=num_decay_steps,
+            num_decay_steps=num_training_steps,
         )
 
         return {

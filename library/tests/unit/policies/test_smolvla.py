@@ -51,7 +51,6 @@ class TestSmolVLAConfig:
         assert config.optimizer_weight_decay == 1e-10
         assert config.optimizer_grad_clip_norm == 10
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps == 30_000
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_expert_config_values(self) -> None:

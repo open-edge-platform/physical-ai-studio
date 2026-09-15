@@ -65,7 +65,6 @@ class TestPi05Config:
         assert config.optimizer_weight_decay == 0.01
         assert config.optimizer_grad_clip_norm == 1.0
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps == 30_000
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_flow_matching_config_values(self) -> None:
@@ -1113,7 +1112,6 @@ class TestPi05FineTuning:
             optimizer_weight_decay=0.1,
             optimizer_grad_clip_norm=0.5,
             scheduler_warmup_steps=500,
-            scheduler_decay_steps=10_000,
             scheduler_decay_lr=1e-5,
         )
         assert policy.config.optimizer_lr == 1e-3
@@ -1122,7 +1120,6 @@ class TestPi05FineTuning:
         assert policy.config.optimizer_weight_decay == 0.1
         assert policy.config.optimizer_grad_clip_norm == 0.5
         assert policy.config.scheduler_warmup_steps == 500
-        assert policy.config.scheduler_decay_steps == 10_000
         assert policy.config.scheduler_decay_lr == 1e-5
 
 
