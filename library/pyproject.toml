@@ -104,6 +104,12 @@ smolvla = [
     "safetensors>=0.4.3,<1.0.0",
 ]
 
+# SO101-Nexus simulation and rollout video recording
+so101-nexus = [
+    "imageio[ffmpeg]>=2.37.0,<3.0.0",
+    "so101-nexus>=0.6.0,<0.7.0",
+]
+
 # RLWRLD RLDX-1
 rldx1 = [
     "transformers>=5.3.0,<5.6.0",
@@ -176,7 +182,7 @@ dev = [
 # ============================================================================ #
 [tool.uv]
 exclude-newer = "7 days"
-exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false }
+exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false, so101-nexus = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),

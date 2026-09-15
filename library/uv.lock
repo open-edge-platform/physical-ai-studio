@@ -238,12 +238,13 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-09-08T09:31:29.102154631Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
 markupsafe = false
-pyrealsense2 = { timestamp = "2026-09-14T09:31:29.102182345Z", span = "P1D" }
+pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
+so101-nexus = false
 
 [manifest]
 overrides = [
@@ -2060,6 +2061,12 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/48/62/aa770a9307508d2a2a2c62d536a49347bffe9e55322db27838d3c93d0b07/imageio-2.37.4.tar.gz", hash = "sha256:e45cbc5e83502047fb138f7f585f7f105a136a57eea5f4b3cfc6ce1b52720bd3", size = 390173, upload-time = "2026-07-20T05:26:11.369Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3e/2d/ca050652104bab2cf55e569db2a178b1b61cb041fef28307f2db383f6d9f/imageio-2.37.4-py3-none-any.whl", hash = "sha256:1ab2e22c8debf700f24c3ac43e8f95f3b3a8110c83b93411e97b4b0b2cd1c7e6", size = 318000, upload-time = "2026-07-20T05:26:09.874Z" },
+]
+
+[package.optional-dependencies]
+ffmpeg = [
+    { name = "imageio-ffmpeg" },
+    { name = "psutil" },
 ]
 
 [[package]]
@@ -4033,6 +4040,10 @@ smolvla = [
     { name = "safetensors" },
     { name = "transformers" },
 ]
+so101-nexus = [
+    { name = "imageio", extra = ["ffmpeg"] },
+    { name = "so101-nexus" },
+]
 tests = [
     { name = "diffusers" },
     { name = "httpx" },
@@ -4068,6 +4079,7 @@ requires-dist = [
     { name = "gymnasium", specifier = ">=0.29.1" },
     { name = "hf-libero", marker = "extra == 'libero'", specifier = ">=0.1.3,<0.2.0" },
     { name = "httpx", marker = "extra == 'tests'" },
+    { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'so101-nexus'", specifier = ">=2.37.0,<3.0.0" },
     { name = "jsonargparse", extras = ["signatures"], specifier = ">=4.27.0" },
     { name = "lerobot", extras = ["dataset"], specifier = "==0.6.0" },
     { name = "lightning" },
@@ -4109,6 +4121,7 @@ requires-dist = [
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
     { name = "scipy", marker = "extra == 'rldx1'", specifier = ">=1.11.0,<2.0.0" },
     { name = "sentencepiece", marker = "extra == 'pi0'", specifier = "<=0.2.1" },
+    { name = "so101-nexus", marker = "extra == 'so101-nexus'", specifier = ">=0.6.0,<0.7.0" },
     { name = "tensorboard", marker = "extra == 'loggers'", specifier = ">=2.20" },
     { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
     { name = "torch", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
@@ -4123,7 +4136,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "nncf", "executorch", "executorch-openvino", "policies", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "so101-nexus", "rldx1", "nncf", "executorch", "executorch-openvino", "policies", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -5459,6 +5472,24 @@ wheels = [
 ]
 
 [[package]]
+name = "so101-nexus"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "gymnasium" },
+    { name = "huggingface-hub" },
+    { name = "mujoco" },
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "trimesh" },
+    { name = "tyro" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/4c/450244499e49ab5185de2543ea6119bcbcc06fb2a91448607af1d18b2421/so101_nexus-0.6.0.tar.gz", hash = "sha256:acbde68e9c198231f1b7a34838b68c6d3f40d55f17a439caeedbfb45c8f199c9", size = 16432452, upload-time = "2026-09-12T22:22:05.283Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/9d/6f8a2387fa276ee62d2c5ae4c1786c915c60f3177fbe65ed4d6971f60277/so101_nexus-0.6.0-py3-none-any.whl", hash = "sha256:6586ecbe566f021c679fa63c0db90726f228a9d768023954dd4c42e66afe1341", size = 13053511, upload-time = "2026-09-12T22:22:03.182Z" },
+]
+
+[[package]]
 name = "sortedcontainers"
 version = "2.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -6327,6 +6358,18 @@ wheels = [
 ]
 
 [[package]]
+name = "trimesh"
+version = "4.12.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/79/37/5cb90f04990260d2caceb6093560c6cefafca1ec522c1e43be01ca658244/trimesh-4.12.2.tar.gz", hash = "sha256:c8ca31571ac00b112e4e160e66a2d4c3491df321f056bd33806be0485d1af9d9", size = 842220, upload-time = "2026-05-01T00:57:43.333Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/05/98/716a473cfb24750858ddd5d14e6527539dd206583a46408d08eeb2844a75/trimesh-4.12.2-py3-none-any.whl", hash = "sha256:b5b5afa63c5272345f2858f7676bc8c217dc8a89f4fadf6193fe10a81b5ff2aa", size = 741043, upload-time = "2026-05-01T00:57:40.763Z" },
+]
+
+[[package]]
 name = "triton"
 version = "3.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -6361,6 +6404,18 @@ wheels = [
     { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.0-cp314-cp314-win_amd64.whl", hash = "sha256:c6cc245805e85be3bd0db8672e8f340dac4c5c53cac66d8d6458739c327c91af", upload-time = "2026-05-12T14:54:01Z" },
     { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:72a24f72c6701fe6ae26e65923c8f8e6f9406decf7dfcc8f90762d33ee0bb90c", upload-time = "2026-05-12T14:54:33Z" },
     { url = "https://download-r2.pytorch.org/whl/triton_xpu-3.7.0-cp314-cp314t-win_amd64.whl", hash = "sha256:0c05cbc35e72ee4c96a457185448f0ee5b0bfc29988f42e7166a1e4c58703ed4", upload-time = "2026-05-12T14:54:59Z" },
+]
+
+[[package]]
+name = "typeguard"
+version = "4.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b4/de/4420db493fa8fc0856d5e5c1b159c63a323d2de2317babe36b01568928e8/typeguard-4.6.0.tar.gz", hash = "sha256:e7414f09111317de3e335de92cd397c5c0ca00b1cc1676de12e1d444a79b3f21", size = 82330, upload-time = "2026-07-26T08:40:23.207Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8f/eb/461d5f167b6f5c7d97696f397c82f82e3480e003fce3f0a1cd1dd26e2eb2/typeguard-4.6.0-py3-none-any.whl", hash = "sha256:79878165bb86f2cf5d41d159a0ff1792a796cf496882d2fe1b1c6c7049b9cdd7", size = 36884, upload-time = "2026-07-26T08:40:21.868Z" },
 ]
 
 [[package]]
@@ -6423,6 +6478,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/55/e3/70399cb7dd41c10ac53367ae42139cf4b1ca5f36bb3dc6c9d33acdb43655/typing_inspection-0.4.2.tar.gz", hash = "sha256:ba561c48a67c5958007083d386c3295464928b01faa735ab8547c5692e87f464", size = 75949, upload-time = "2025-10-01T02:14:41.687Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl", hash = "sha256:4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3d0cbad5b521545e7", size = 14611, upload-time = "2025-10-01T02:14:40.154Z" },
+]
+
+[[package]]
+name = "tyro"
+version = "1.0.16"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docstring-parser" },
+    { name = "typeguard" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/83/4008dff806dc894fc0422017316982d3f14709046bcb0dfa720cb64501aa/tyro-1.0.16.tar.gz", hash = "sha256:edf23c9c3eecba5a2b5af152df8f34a723b689a001ff5b7311f93eff1893a636", size = 603382, upload-time = "2026-08-23T01:19:26.643Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/d9/ea12ca0392c9eaeff7421efcc665f350dbc2ef30a113ee13c7afea21cf37/tyro-1.0.16-py3-none-any.whl", hash = "sha256:2f9087196113699647190459a12b6b4f2784dd0703c50ab1f7bf0f85a3a794ea", size = 216925, upload-time = "2026-08-23T01:19:25.168Z" },
 ]
 
 [[package]]
