@@ -217,6 +217,8 @@ class MyPolicy(Export, Policy):
                 ExportBackend.ONNX, ExportBackend.EXECUTORCH]
 ```
 
+See the [Policy Export API](../policy/export.md) for the complete policy-author contract.
+
 ## Usage Examples
 
 ### Basic Export
