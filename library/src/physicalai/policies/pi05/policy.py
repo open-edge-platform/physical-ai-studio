@@ -31,7 +31,7 @@ from physicalai.export.backends import (
 from physicalai.policies.base import Policy
 from physicalai.policies.mixins import RTCPolicyMixin, SnapFlowPolicyMixin
 from physicalai.policies.mixins.peft import PeftPolicyMixin
-from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
+from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler, resolve_decay_steps
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import Pi05Config
@@ -269,6 +269,9 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         self._postprocessor: Pi05Postprocessor | None = None
 
         self._dataset_stats = dataset_stats
+
+        # Resolved in setup() when the config value is None.
+        self._num_decay_steps: int | None = self.config.scheduler_decay_steps
 
         if self.config.use_lora and pretrained_name_or_path is None and weight_file is None:
             logger.warning(
@@ -567,17 +570,22 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
           preprocessors with the training dataset's stats so normalization
           matches the new data distribution.
 
+        Args:
+            stage: Lightning stage. For ``"fit"`` the scheduler decay horizon is
+                resolved from the trainer's ``max_steps``/``max_epochs`` budget.
+
         Raises:
             TypeError: If the train dataset is not a physicalai Dataset.
         """
-        del stage
-
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
 
         if not isinstance(train_dataset, Dataset):
             msg = f"Expected physicalai Dataset, got {type(train_dataset)}"
             raise TypeError(msg)
+
+        if stage == "fit" and self.config.scheduler_decay_steps is None:
+            self._num_decay_steps = resolve_decay_steps(None, self.trainer.estimated_stepping_batches)
 
         stats_dict = train_dataset.stats
 
@@ -719,9 +727,9 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
-        When ``scheduler_decay_steps`` is ``None``, the cosine decay horizon
-        is automatically set to the total training steps
-        (``self.trainer.estimated_stepping_batches``), so the LR reaches
+        Uses the decay horizon resolved in :meth:`setup`, which falls back to the
+        total training steps (``self.trainer.estimated_stepping_batches``) when
+        ``scheduler_decay_steps`` is ``None``, so the LR reaches
         ``scheduler_decay_lr`` exactly at the end of training.
 
         Returns:
@@ -739,11 +747,10 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
 
         num_training_steps = self.trainer.estimated_stepping_batches
 
-        num_decay_steps = self.config.scheduler_decay_steps
+        num_decay_steps = self._num_decay_steps
         if num_decay_steps is None:
-            num_decay_steps = num_training_steps
-            msg = f"scheduler_decay_steps=None, using total training steps: {num_decay_steps}"
-            logger.info(msg)
+            num_decay_steps = resolve_decay_steps(None, num_training_steps)
+            self._num_decay_steps = num_decay_steps
 
         scheduler = cosine_decay_with_warmup_scheduler(
             optimizer,

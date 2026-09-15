@@ -57,7 +57,9 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
         optimizer_weight_decay: Weight decay coefficient for regularization. Defaults to 1e-10.
         optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping. Defaults to 10.
         scheduler_warmup_steps: Number of warmup steps for learning rate scheduler. Defaults to 1000.
-        scheduler_decay_steps: Number of decay steps for learning rate scheduler. Defaults to 30000.
+        scheduler_decay_steps: Number of decay steps for learning rate scheduler. When ``None``, the horizon
+            is resolved in ``setup()`` from the Lightning trainer's ``max_steps``/``max_epochs`` budget.
+            Defaults to 30000.
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
         vlm_model_name: Name or path of the VLM backbone model to use.
             Defaults to "HuggingFaceTB/SmolVLM2-500M-Video-Instruct".
@@ -114,7 +116,7 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
     optimizer_grad_clip_norm: float = 10
 
     scheduler_warmup_steps: int = 1_000
-    scheduler_decay_steps: int = 30_000
+    scheduler_decay_steps: int | None = 30_000
     scheduler_decay_lr: float = 2.5e-6
 
     vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
