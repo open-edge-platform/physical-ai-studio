@@ -18,6 +18,9 @@ class RemoteTrainerDB(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
+    ssh_host_alias: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ssh_remote_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ssh_local_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -29,7 +32,7 @@ class RemoteTrainerDB(Base):
 class RemoteServerDB(Base):
     """An SSH-provisioned training server, identified by an SSH config alias.
 
-    Holds no credential. ``ssh_host_alias`` names a ``Host`` stanza in the user's
+    Holds no credential. ``ssh_host_alias`` names a ``Host`` entry in the user's
     own SSH config; the SSH client library resolves it and authenticates, so
     Studio never receives a key, password, or passphrase. Hostname, port, and
     user are derived from the SSH config at read time rather than persisted, so a

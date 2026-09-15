@@ -27,7 +27,7 @@ _CREDENTIAL_DIRECTIVE_PREFIXES = ("identityfile", "identityagent", "certificatef
 
 
 class _HostBlock:
-    """One ``Host`` stanza: its patterns plus the directives this reader cares about."""
+    """One ``Host`` entry: its patterns plus the directives this reader cares about."""
 
     __slots__ = ("hostname", "patterns", "port", "user")
 
@@ -135,7 +135,7 @@ def _iter_blocks(path: Path, _visited: set[Path] | None = None) -> list[_HostBlo
                 for include_path in _resolve_include_paths(pattern, path.parent):
                     blocks.extend(_iter_blocks(include_path, visited))
         elif current is not None:
-            # A directive outside any Host stanza is only informative to real
+            # A directive outside any Host entry is only informative to real
             # ssh, never to this reader, so it is skipped when `current` is None.
             _apply_directive(current, keyword, args)
 
@@ -150,8 +150,8 @@ def list_host_aliases(config_path: Path) -> list[SshHostAliasOption]:
     ``HostName`` is unset, the alias itself is the effective hostname - real
     ssh behavior, not an invented default.
 
-    If an alias is defined by more than one stanza (common with ``Include``),
-    the stanzas are merged field-by-field with the same last-stanza-wins rule
+    If an alias is defined by more than one entry (common with ``Include``),
+    the entries are merged field-by-field with the same last-entry-wins rule
     as ``resolve_alias``, so each alias appears exactly once and both
     functions agree on its resolved fields.
     """
@@ -188,13 +188,13 @@ def resolve_alias(config_path: Path, alias: str) -> ResolvedSshHost:
     """Resolve one alias to its effective hostname/port/user, for display only.
 
     Matches only a literal ``Host`` pattern equal to ``alias``: a wildcard
-    stanza that would match it via glob is not a usable target, since aliases
+    entry that would match it via glob is not a usable target, since aliases
     are created by literal name, and resolution here does no glob matching.
 
-    If the alias is defined by more than one stanza (common with ``Include``),
-    every matching stanza is scanned in file order and a later one overrides an
-    earlier one field-by-field - only a field the later stanza actually sets is
-    overridden, not the whole result. This is last-stanza-wins, the opposite of
+    If the alias is defined by more than one entry (common with ``Include``),
+    every matching entry is scanned in file order and a later one overrides an
+    earlier one field-by-field - only a field the later entry actually sets is
+    overridden, not the whole result. This is last-entry-wins, the opposite of
     real ssh's first-obtained-value-wins rule: it is deliberate here so an
     ``Include``d override file takes effect, since display-only resolution has
     no reason to replicate ssh's actual precedence.

@@ -185,7 +185,8 @@ robot supports discovery, identification, or online-status checks.
 The `type` value must not be casually renamed. It is stored in project data and
 must remain unique across all installed plugins.
 
-The full SDK reference is in [`application/plugin/README.md`](../plugin/README.md).
+The full SDK reference is in
+[`openvinotoolkit/physicalai/packages/physicalai-studio-plugin/README.md`](https://github.com/openvinotoolkit/physicalai/tree/main/packages/physicalai-studio-plugin/README.md).
 
 ## Using A Robot Plugin With The Physical AI Runtime
 

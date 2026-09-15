@@ -27,7 +27,6 @@ COPY --link pyproject.toml uv.lock /app/
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
 COPY --link --from=libs / /app/library
-COPY --link --from=plugin / /app/application/plugin
 
 WORKDIR /app/application/backend
 

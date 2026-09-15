@@ -1005,7 +1005,7 @@ Keep the existing HTTP `http` transfer, streamed through the SSH tunnel:
     previous commit's still-running build/scan/sign/publish job outright.
     This fails closed (nothing unsigned or unscanned is ever promoted), but
     under high merge velocity to `library/**`/`application/backend/**`/
-    `application/plugin/**`/`Dockerfile.trainer` it can silently skip
+    `Dockerfile.trainer` it can silently skip
     promoting `protocol-<N>` for an intermediate commit, and wastes
     CI minutes re-running the same build repeatedly. Since there is no
     `latest` fallback, a skipped promotion now fails SSH training jobs outright

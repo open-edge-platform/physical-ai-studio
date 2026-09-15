@@ -427,7 +427,7 @@ class SshHostAliasNotFoundError(BaseException):
     """Raised when a server's SSH host alias is absent from the user's SSH config.
 
     Distinct from a connection failure: nothing was dialed, because there was no
-    host to dial. A wildcard-only match lands here too - a pattern stanza is not
+    host to dial. A wildcard-only match lands here too - a pattern entry is not
     a usable target.
     """
 

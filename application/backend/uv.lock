@@ -60,6 +60,7 @@ exclude-newer-span = "P7D"
 [options.exclude-newer-package]
 markupsafe = false
 pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
+physicalai-studio-plugin = false
 
 [manifest]
 overrides = [
@@ -2950,7 +2951,7 @@ requires-dist = [
     { name = "opencv-python" },
     { name = "packaging", specifier = ">=24.0" },
     { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d" },
-    { name = "physicalai-studio-plugin", editable = "../plugin" },
+    { name = "physicalai-studio-plugin", specifier = ">=0.2.0" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
     { name = "physicalai-train", extras = ["pi0", "smolvla", "rldx1"], editable = "../../library" },
@@ -2999,36 +3000,15 @@ lint = [
 
 [[package]]
 name = "physicalai-studio-plugin"
-version = "0.1.0"
-source = { editable = "../plugin" }
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "physicalai" },
     { name = "pydantic" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d" },
-    { name = "pydantic", specifier = ">=2.12" },
-]
-
-[package.metadata.requires-dev]
-all = [
-    { name = "mypy", specifier = "~=1.17" },
-    { name = "pyrefly", specifier = ">=0.18.0" },
-    { name = "ruff", specifier = "~=0.11.2" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20250915" },
-]
-dev = [
-    { name = "pyrefly", specifier = ">=0.18.0" },
-    { name = "ruff", specifier = "~=0.11.2" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20250915" },
-]
-lint = [
-    { name = "mypy", specifier = "~=1.17" },
-    { name = "pyrefly", specifier = ">=0.18.0" },
-    { name = "ruff", specifier = "~=0.11.2" },
-    { name = "types-pyyaml", specifier = ">=6.0.12.20250915" },
+sdist = { url = "https://files.pythonhosted.org/packages/a4/8b/9869ca79af1b80de891336493a5db37be2e15e67dafc21d8b2b0e4a22793/physicalai_studio_plugin-0.2.0.tar.gz", hash = "sha256:c676438965f03e5165973f220f5bc7a259c485d5460a1a5aeb8639407a407102", size = 13442, upload-time = "2026-09-14T16:27:35.004Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/81/e858470f4f8d683b96af9d764c56bfe5c39574ff1503d3690d1ab05659a0/physicalai_studio_plugin-0.2.0-py3-none-any.whl", hash = "sha256:dedbe94d6797d582dca4a103aa8be3a02db26fdfe311abaff13786073e54aae7", size = 9532, upload-time = "2026-09-14T16:27:33.906Z" },
 ]
 
 [[package]]

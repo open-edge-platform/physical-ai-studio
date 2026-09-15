@@ -21,7 +21,7 @@ class JobProvisioning(BaseModel):
 
     Written before the job accepts work so startup reattach and the orphan sweep
     can always find the container. Holds no credential: ``ssh_host_alias`` is the
-    name of a Host stanza in the user's SSH config.
+    name of a Host entry in the user's SSH config.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
