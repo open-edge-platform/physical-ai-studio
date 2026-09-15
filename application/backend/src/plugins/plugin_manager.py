@@ -178,7 +178,13 @@ class PluginManager:
         command_preview = " ".join(command)
         try:
             # Command is assembled from the curated manifest and the active interpreter, not user input.
-            result = subprocess.run(command, capture_output=True, text=True, timeout=600, check=False)  # noqa: S603  # nosec B603 - args are uv/sys.executable plus a plugin id pre-validated against the manifest
+            result = subprocess.run(  # noqa: S603  # nosec B603 - curated argv, no shell
+                command,
+                capture_output=True,
+                text=True,
+                timeout=600,
+                check=False,
+            )
         except (subprocess.SubprocessError, OSError) as error:
             raise PluginOperationError(f"Failed to run `{command_preview}`: {error}") from error
         if result.returncode != 0:

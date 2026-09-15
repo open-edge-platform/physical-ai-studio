@@ -53,4 +53,4 @@ def _run_git(args: list[str], cwd: Path | None = None) -> None:
     git = shutil.which("git")
     if git is None:
         raise FileNotFoundError("git executable was not found")
-    subprocess.run([git, *args], cwd=cwd, check=True)  # noqa: S603  # nosec B603 - git path resolved via shutil.which, args are hardcoded/pinned revisions
+    subprocess.run([git, *args], cwd=cwd, check=True)  # noqa: S603  # nosec B603 - list form, shell=False
