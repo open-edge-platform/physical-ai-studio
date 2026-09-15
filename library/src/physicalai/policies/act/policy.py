@@ -164,9 +164,10 @@ class ACT(ExportablePolicyMixin, Policy):
         temporal_ensemble_coeff: float | None = None,
         dropout: float = 0.1,
         kl_weight: float = 10.0,
-        optimizer_lr: float = 1e-4,
+        optimizer_lr: float = 1e-5,
+        optimizer_lr_backbone: float = 1e-5,
         optimizer_weight_decay: float = 1e-4,
-        optimizer_grad_clip_norm: float = 10000.0,
+        optimizer_grad_clip_norm: float = 10.0,
         compile_model: bool = False,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, Any] | None = None,
@@ -189,6 +190,7 @@ class ACT(ExportablePolicyMixin, Policy):
             self.config, dataset_stats, weights_file = self._from_hf(
                 pretrained_name_or_path,
                 optimizer_lr=optimizer_lr,
+                optimizer_lr_backbone=optimizer_lr_backbone,
                 optimizer_weight_decay=optimizer_weight_decay,
                 optimizer_grad_clip_norm=optimizer_grad_clip_norm,
                 compile_model=compile_model,
@@ -219,6 +221,7 @@ class ACT(ExportablePolicyMixin, Policy):
                 dropout=dropout,
                 kl_weight=kl_weight,
                 optimizer_lr=optimizer_lr,
+                optimizer_lr_backbone=optimizer_lr_backbone,
                 optimizer_weight_decay=optimizer_weight_decay,
                 optimizer_grad_clip_norm=optimizer_grad_clip_norm,
                 compile_model=compile_model,
@@ -246,6 +249,7 @@ class ACT(ExportablePolicyMixin, Policy):
         pretrained_name_or_path: str | Path,
         *,
         optimizer_lr: float,
+        optimizer_lr_backbone: float,
         optimizer_weight_decay: float,
         optimizer_grad_clip_norm: float,
         compile_model: bool,
@@ -256,6 +260,7 @@ class ACT(ExportablePolicyMixin, Policy):
             pretrained_name_or_path: HuggingFace repo ID or local directory containing
                 ``config.json`` and ``model.safetensors``.
             optimizer_lr: Learning rate override for the resolved config.
+            optimizer_lr_backbone: Backbone learning rate override for the resolved config.
             optimizer_weight_decay: Weight decay override for the resolved config.
             optimizer_grad_clip_norm: Gradient clip norm override for the resolved config.
             compile_model: Whether to apply ``torch.compile`` to the resolved model.
@@ -315,6 +320,7 @@ class ACT(ExportablePolicyMixin, Policy):
             dropout=hf_config["dropout"],
             kl_weight=hf_config["kl_weight"],
             optimizer_lr=optimizer_lr,
+            optimizer_lr_backbone=optimizer_lr_backbone,
             optimizer_weight_decay=optimizer_weight_decay,
             optimizer_grad_clip_norm=optimizer_grad_clip_norm,
             compile_model=compile_model,
@@ -532,13 +538,26 @@ class ACT(ExportablePolicyMixin, Policy):
         Returns:
             Optimizer configuration dict.
         """
-        # Get trainable parameters
-        params = [p for p in self.parameters() if p.requires_grad]
+        backbone_params = []
+        other_params = []
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if ".backbone." in name:
+                backbone_params.append(param)
+            else:
+                other_params.append(param)
 
-        # Create optimizer (use config values)
+        param_groups: list[dict[str, Any]] = [
+            {"params": other_params, "lr": self.config.optimizer_lr},
+        ]
+        if backbone_params:
+            param_groups.append(
+                {"params": backbone_params, "lr": self.config.optimizer_lr_backbone},
+            )
+
         optimizer = torch.optim.AdamW(
-            params,
-            lr=self.config.optimizer_lr,
+            param_groups,
             weight_decay=self.config.optimizer_weight_decay,
         )
 

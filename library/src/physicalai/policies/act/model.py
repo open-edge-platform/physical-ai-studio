@@ -134,7 +134,8 @@ class ACT(Model):
         elif len(visual_observation_features) > 1:
             for vf in visual_observation_features:
                 if vf.name is not None:
-                    input_features_filtered[vf.name] = vf
+                    cam_name = vf.name.split(".")[-1]
+                    input_features_filtered[cam_name] = vf
         else:
             msg = "ACT model requires at least one visual observation feature."
             raise ValueError(msg)

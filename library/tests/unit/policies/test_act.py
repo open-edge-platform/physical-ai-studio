@@ -204,6 +204,108 @@ class TestACTolicy:
             import os
             os.unlink(export_path)
 
+    def test_configure_optimizers_param_groups(self, policy):
+        """Test optimizer parameter groups separation and reference defaults."""
+        assert policy.config.optimizer_lr == 1e-5
+        assert policy.config.optimizer_lr_backbone == 1e-5
+        assert policy.config.optimizer_grad_clip_norm == 10.0
+
+        opt = policy.configure_optimizers()["optimizer"]
+        assert len(opt.param_groups) == 2
+
+        # Group 0: non-backbone parameters
+        assert opt.param_groups[0]["lr"] == 1e-5
+        # Group 1: backbone parameters
+        assert opt.param_groups[1]["lr"] == 1e-5
+
+    def test_single_camera_input_normalization(self):
+        """Single-camera observations with flattened 'images.<name>' keys are normalized."""
+        from physicalai.data import FeatureType
+
+        dataset_stats = {
+            "observation.images.wrist": {
+                "name": "observation.images.wrist",
+                "type": FeatureType.VISUAL,
+                "shape": (3, 64, 64),
+                "mean": [0.485, 0.456, 0.406],
+                "std": [0.229, 0.224, 0.225],
+            },
+            "observation.state": {
+                "name": "observation.state",
+                "type": FeatureType.STATE,
+                "shape": (3,),
+                "mean": [0.0] * 3,
+                "std": [1.0] * 3,
+            },
+            "action": {
+                "name": "action",
+                "type": FeatureType.ACTION,
+                "shape": (3,),
+                "mean": [0.0] * 3,
+                "std": [1.0] * 3,
+            },
+        }
+        policy = ACT(dataset_stats=dataset_stats)
+        batch = {
+            "images.wrist": torch.ones(1, 3, 64, 64),
+            "state": torch.zeros(1, 3),
+            "action": torch.zeros(1, 100, 3),
+            "extra.action_is_pad": torch.zeros(1, 100, dtype=torch.bool),
+        }
+        orig_wrist = batch["images.wrist"].clone()
+        normed = policy.model._input_normalizer(dict(batch))
+        assert not torch.equal(normed["images.wrist"], orig_wrist)
+        expected_ch0 = (1.0 - 0.485) / 0.229
+        assert torch.isclose(normed["images.wrist"][0, 0, 0, 0], torch.tensor(expected_ch0), atol=1e-4)
+
+    def test_multi_camera_input_normalization(self):
+        """Multi-camera observations with flattened 'images.<name>' keys are normalized."""
+        from physicalai.data import FeatureType
+
+        dataset_stats = {
+            "observation.images.wrist": {
+                "name": "observation.images.wrist",
+                "type": FeatureType.VISUAL,
+                "shape": (3, 64, 64),
+                "mean": [0.5, 0.5, 0.5],
+                "std": [0.25, 0.25, 0.25],
+            },
+            "observation.images.overhead": {
+                "name": "observation.images.overhead",
+                "type": FeatureType.VISUAL,
+                "shape": (3, 64, 64),
+                "mean": [0.2, 0.2, 0.2],
+                "std": [0.1, 0.1, 0.1],
+            },
+            "observation.state": {
+                "name": "observation.state",
+                "type": FeatureType.STATE,
+                "shape": (3,),
+                "mean": [0.0] * 3,
+                "std": [1.0] * 3,
+            },
+            "action": {
+                "name": "action",
+                "type": FeatureType.ACTION,
+                "shape": (3,),
+                "mean": [0.0] * 3,
+                "std": [1.0] * 3,
+            },
+        }
+        policy = ACT(dataset_stats=dataset_stats)
+        batch = {
+            "images.wrist": torch.ones(1, 3, 64, 64),
+            "images.overhead": torch.ones(1, 3, 64, 64),
+            "state": torch.zeros(1, 3),
+            "action": torch.zeros(1, 100, 3),
+            "extra.action_is_pad": torch.zeros(1, 100, dtype=torch.bool),
+        }
+        normed = policy.model._input_normalizer(dict(batch))
+        expected_wrist = (1.0 - 0.5) / 0.25
+        expected_overhead = (1.0 - 0.2) / 0.1
+        assert torch.isclose(normed["images.wrist"][0, 0, 0, 0], torch.tensor(expected_wrist), atol=1e-4)
+        assert torch.isclose(normed["images.overhead"][0, 0, 0, 0], torch.tensor(expected_overhead), atol=1e-4)
+
 
 class TestACTPreprocessor:
     """Tests for ACTPreprocessor."""
