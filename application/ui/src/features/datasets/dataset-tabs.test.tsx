@@ -83,9 +83,9 @@ describe('DatasetTabs', () => {
         const user = userEvent.setup();
         renderDatasetTabs();
 
-        const addDatasetButton = await screen.findByRole('button', { name: 'Add dataset' });
-        await user.click(addDatasetButton);
+        const createDatasetButton = await screen.findByRole('button', { name: 'Create new dataset' });
+        await user.click(createDatasetButton);
 
-        expect(addDatasetButton).toHaveAttribute('aria-expanded', 'true');
+        expect(createDatasetButton).toHaveAttribute('aria-expanded', 'true');
     });
 });

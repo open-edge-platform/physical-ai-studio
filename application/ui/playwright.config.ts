@@ -2,6 +2,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const CI = !!process.env.CI;
 
+process.env.PUBLIC_API_BASE_URL ??= 'http://localhost:3000';
+
 /**
  * See https://playwright.dev/docs/test-configuration.
  */

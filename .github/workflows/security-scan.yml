@@ -74,9 +74,9 @@ jobs:
         uses: open-edge-platform/geti-ci/actions/zizmor@cffbec1b3b7c155efa789cd2ea67a2a765a4369f # zizmor/v0.1.4
         with:
           scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
-          severity-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
-          confidence-level: ${{ github.event_name == 'pull_request' && 'MEDIUM' || 'LOW' }}
-          fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }} # reports only
+          severity-level: "LOW"
+          confidence-level: "LOW"
+          fail-on-findings: ${{ github.event_name == 'pull_request' && 'true' || 'false' }}
 
   bandit-scan:
     runs-on: ubuntu-latest

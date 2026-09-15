@@ -84,6 +84,7 @@ Install the [uv package manager](https://docs.astral.sh/uv/getting-started/insta
 
 ```bash
 cd backend
+cp .env.example .env
 # or `--extra cpu` or `--extra cuda`
 uv run --extra xpu physicalai-studio serve
 ```
@@ -91,7 +92,7 @@ uv run --extra xpu physicalai-studio serve
 The backend runs at http://localhost:7860
 
 If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
-and others), configure `HF_TOKEN` in `backend/.env`. See
+and others), set `HF_TOKEN` in `backend/.env`. See
 [Hugging Face Integration](../backend/docs/huggingface_integration.md).
 
 ### Frontend

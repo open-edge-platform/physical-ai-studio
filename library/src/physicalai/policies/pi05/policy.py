@@ -157,6 +157,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         lora_target_modules: str | tuple[str, ...] | None = None,
         lora_adapter_dtype: Literal["float32", "auto"] = "float32",
         lora_use_dora: bool = False,
+        lora_lr_scale: float = 10.0,
         # Normalization
         normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         # Optimizer
@@ -195,6 +196,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
                 lora_target_modules=lora_target_modules,
                 lora_adapter_dtype=lora_adapter_dtype,
                 lora_use_dora=lora_use_dora,
+                lora_lr_scale=lora_lr_scale,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
                 optimizer_eps=optimizer_eps,
@@ -244,6 +246,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
                 lora_target_modules=lora_target_modules,
                 lora_adapter_dtype=lora_adapter_dtype,
                 lora_use_dora=lora_use_dora,
+                lora_lr_scale=lora_lr_scale,
                 normalization_mode=normalization_mode,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
@@ -388,6 +391,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         lora_target_modules: str | tuple[str, ...] | None = None,
         lora_adapter_dtype: Literal["float32", "auto"] = "float32",
         lora_use_dora: bool = False,
+        lora_lr_scale: float = 10.0,
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
         optimizer_eps: float = 1e-8,
@@ -432,6 +436,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
             lora_target_modules: Override LoRA target modules (regex or suffix tuple).
             lora_adapter_dtype: Override precision for newly created LoRA parameters.
             lora_use_dora: Override whether to use DoRA instead of plain LoRA.
+            lora_lr_scale: Override the LoRA/DoRA learning-rate multiplier.
             optimizer_lr: Override learning rate.
             optimizer_betas: Override Adam beta coefficients.
             optimizer_eps: Override optimizer epsilon.
@@ -526,6 +531,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
             hf_config["lora_target_modules"] = lora_target_modules
         hf_config["lora_adapter_dtype"] = lora_adapter_dtype
         hf_config["lora_use_dora"] = lora_use_dora
+        hf_config["lora_lr_scale"] = lora_lr_scale
         hf_config["optimizer_lr"] = optimizer_lr
         hf_config["optimizer_betas"] = optimizer_betas
         hf_config["optimizer_eps"] = optimizer_eps
@@ -716,14 +722,33 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         or ``max_epochs``), so the LR reaches ``scheduler_decay_lr`` exactly at
         the end of training.
 
+        When LoRA/DoRA is enabled, ``optimizer_lr`` and ``scheduler_decay_lr`` are scaled
+        by ``self.config.lora_lr_scale`` (see ``PeftConfigMixin``), since adapter training
+        tolerates a much higher learning rate than full fine-tuning.
+
         Returns:
             Dict with optimizer and lr_scheduler config.
         """
         params = [p for p in self.parameters() if p.requires_grad]
 
+        peak_lr = self.config.optimizer_lr
+        decay_lr = self.config.scheduler_decay_lr
+        if self.config.lora_enabled:
+            lr_multiplier = self.config.lora_lr_scale
+            peak_lr *= lr_multiplier
+            decay_lr *= lr_multiplier
+            logger.info(
+                "LoRA/DoRA enabled: scaling optimizer_lr %.3g -> %.3g and scheduler_decay_lr %.3g -> %.3g (x%.3g)",
+                self.config.optimizer_lr,
+                peak_lr,
+                self.config.scheduler_decay_lr,
+                decay_lr,
+                lr_multiplier,
+            )
+
         optimizer = torch.optim.AdamW(
             params,
-            lr=self.config.optimizer_lr,
+            lr=peak_lr,
             weight_decay=self.config.optimizer_weight_decay,
             betas=self.config.optimizer_betas,
             eps=self.config.optimizer_eps,
@@ -733,8 +758,8 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
 
         scheduler = cosine_decay_with_warmup_scheduler(
             optimizer,
-            peak_lr=self.config.optimizer_lr,
-            decay_lr=self.config.scheduler_decay_lr,
+            peak_lr=peak_lr,
+            decay_lr=decay_lr,
             num_warmup_steps=self.config.scheduler_warmup_steps,
             num_decay_steps=num_training_steps,
         )
