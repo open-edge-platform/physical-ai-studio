@@ -668,7 +668,6 @@ class Rldx1(Rldx1ExportMixin, Policy):
             decay_lr=self.config.scheduler_decay_lr,
             num_warmup_steps=warmup_steps,
             num_decay_steps=total_steps,
-            num_training_steps=total_steps,
         )
 
         return {
