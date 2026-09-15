@@ -4,7 +4,7 @@ import { RobotFormProvider } from '../../features/robots/robot-form/provider';
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 
 /**
- * Shared layout for the "Add new robot" flow.
+ * Shared layout for the "Configure new robot" flow.
  *
  * Wraps child routes with RobotModelsProvider and RobotFormProvider so that
  * form state (name, type, serial_number) is preserved when navigating between

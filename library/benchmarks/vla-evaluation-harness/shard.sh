@@ -12,6 +12,10 @@ Options:
   -n, --shards <count>      Number of shards (default: 4)
   -e, --eval-id <id>        Shared evaluation ID (default: generated UUID)
   -o, --output-dir <path>   Override the config output directory
+  -g, --gpus <spec>         GPU devices for containers, e.g. '0,1' (round-robin across shards)
+  -l, --log-dir <path>      Tee each shard's output to <path>/shard-<id>.log
+                            (default: results/logs)
+  -y, --yes                 Skip confirmation prompts (e.g. docker pull)
   -h, --help                Show this help
 EOF
 }
@@ -30,6 +34,9 @@ CONFIG=""
 NUM_SHARDS=4
 EVAL_ID="${EVAL_ID:-}"
 OUTPUT_DIR=""
+GPUS=""
+LOG_DIR=""
+ASSUME_YES=0
 pids=()
 
 cleanup() {
@@ -70,6 +77,20 @@ while (($# > 0)); do
       OUTPUT_DIR="$2"
       shift 2
       ;;
+    -g|--gpus)
+      require_value "$@"
+      GPUS="$2"
+      shift 2
+      ;;
+    -l|--log-dir)
+      require_value "$@"
+      LOG_DIR="$2"
+      shift 2
+      ;;
+    -y|--yes)
+      ASSUME_YES=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -105,14 +126,27 @@ if [[ -n "$OUTPUT_DIR" ]]; then
   RUN_ARGS+=(--output-dir "$OUTPUT_DIR")
   MERGE_ARGS+=(--output-dir "$OUTPUT_DIR")
 fi
+if ((ASSUME_YES)); then
+  RUN_ARGS+=(--yes)
+fi
+if [[ -n "$GPUS" ]]; then
+  RUN_ARGS+=(--gpus "$GPUS")
+fi
+if [[ -z "$LOG_DIR" ]]; then
+  LOG_DIR="results/logs/$EVAL_ID"
+fi
+mkdir -p "$LOG_DIR"
 
 echo "Launching $NUM_SHARDS shards with eval ID $EVAL_ID"
+echo "Logs: $LOG_DIR"
 
 for SHARD_ID in $(seq 0 $((NUM_SHARDS - 1))); do
+  # Process substitution (not a pipe) so $! stays the shard's own PID.
   uv run --no-sync vla-eval run \
     "${RUN_ARGS[@]}" \
     --shard-id "$SHARD_ID" \
-    --num-shards "$NUM_SHARDS" &
+    --num-shards "$NUM_SHARDS" \
+    > >(tee "$LOG_DIR/shard-$SHARD_ID.log") 2>&1 &
   pids+=("$!")
 done
 
@@ -128,4 +162,4 @@ if ((failed > 0)); then
   exit 1
 fi
 
-uv run --no-sync vla-eval merge "${MERGE_ARGS[@]}"
+uv run --no-sync vla-eval merge "${MERGE_ARGS[@]}" > >(tee "$LOG_DIR/merge.log") 2>&1

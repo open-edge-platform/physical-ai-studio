@@ -39,12 +39,16 @@ MODULE = "workers.training_worker"
 
 
 def _make_payload(
-    *, compile_model: bool = True, precision: TrainingPrecision = TrainingPrecision.BF16_MIXED
+    *,
+    compile_model: bool = True,
+    precision: TrainingPrecision = TrainingPrecision.BF16_MIXED,
+    lora_enabled: bool = False,
+    lora_use_dora: bool = False,
 ) -> TrainJobPayload:
     return LocalTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
-        policy="act",
+        policy="pi05" if lora_enabled else "act",
         model_name="test-model",
         max_epochs=5,
         batch_size=8,
@@ -52,6 +56,8 @@ def _make_payload(
         auto_scale_batch_size=False,
         compile_model=compile_model,
         precision=precision,
+        lora_enabled=lora_enabled,
+        lora_use_dora=lora_use_dora,
     )
 
 
@@ -469,6 +475,45 @@ class TestTraining:
             assert args[1].remote_job_id == remote_job_id
             assert args[1].snapshot_id == snapshot_id
 
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("lora_enabled", "lora_use_dora"),
+        [(False, False), (True, False), (True, True)],
+    )
+    async def test_run_training_job_carries_lora_flags_into_model_properties(
+        self, worker, tmp_path, lora_enabled, lora_use_dora
+    ):
+        """The model's `properties` are the only place LoRA/DoRA provenance survives."""
+        payload = _make_payload(lora_enabled=lora_enabled, lora_use_dora=lora_use_dora)
+        job = _make_job(payload)
+        dataset = MagicMock()
+        snapshot = _make_snapshot(tmp_path)
+
+        captured = {}
+
+        async def _capture(_job, model, _snapshot, _payload, base_model):
+            captured["model"] = model
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.DatasetService") as MockDatasetService,
+            patch(f"{MODULE}.SnapshotService") as MockSnapshotService,
+            patch.object(worker, "_train_model", side_effect=_capture),
+        ):
+            MockDatasetService.return_value.get_dataset_by_id = AsyncMock(return_value=dataset)
+            MockSnapshotService.generate_snapshot_folder_name = MagicMock(return_value="snap")
+            MockSnapshotService.return_value.create_snapshot_for_dataset = AsyncMock(return_value=snapshot)
+
+            await worker._run_training_job(job, payload)
+
+        assert captured["model"].properties == {
+            "lora_enabled": lora_enabled,
+            "lora_use_dora": lora_use_dora,
+            "snapflow_enabled": False,
+        }
+        assert captured["model"].lora_enabled is lora_enabled
+        assert captured["model"].lora_use_dora is lora_use_dora
+
 
 class TestTargetKey:
     """`_target_key` must give every remote kind its own key namespace."""
@@ -597,3 +642,54 @@ class TestTrainingScheduling:
             await asyncio.gather(*worker._active_training_tasks.values())
 
         assert run_job.await_count == 2
+
+
+class TestSnapFlowProvenance:
+    """The models list badges a distilled checkpoint from `Model.properties`.
+
+    A model row is only persisted for a run that finished without being
+    canceled, and the distillation boundary is validated to fall inside the
+    epoch budget, so a completed SnapFlow job always produced a distilled
+    checkpoint and the request is a sound source for the flag.
+    """
+
+    @staticmethod
+    async def _built_model(worker, tmp_path, payload: TrainJobPayload) -> Model:
+        job = _make_job(payload)
+        train = AsyncMock()
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.DatasetService") as MockDatasetService,
+            patch(f"{MODULE}.SnapshotService") as MockSnapshotService,
+            patch.object(type(worker), "_train_model", train),
+        ):
+            MockDatasetService.return_value.get_dataset_by_id = AsyncMock()
+            snapshot_service = MockSnapshotService.return_value
+            snapshot_service.create_snapshot_for_dataset = AsyncMock(return_value=_make_snapshot(tmp_path))
+            await worker._run_training_job(job, payload)
+
+        assert train.await_args is not None
+        return train.await_args.args[1]
+
+    @pytest.mark.anyio
+    async def test_a_flow_matching_run_is_not_marked_distilled(self, worker, tmp_path):
+        model = await self._built_model(worker, tmp_path, _make_payload())
+
+        assert model.snapflow_enabled is False
+
+    @pytest.mark.anyio
+    async def test_a_distillation_run_is_marked_on_the_model(self, worker, tmp_path):
+        payload = LocalTrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="pi05",
+            model_name="test-model",
+            max_epochs=8,
+            snapflow_enabled=True,
+            snapflow_distill_epochs=3,
+        )
+
+        model = await self._built_model(worker, tmp_path, payload)
+
+        assert model.snapflow_enabled is True

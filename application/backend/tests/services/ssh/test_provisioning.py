@@ -31,7 +31,7 @@ from exceptions import (
 from schemas.hardware import DeviceType
 from schemas.job_provisioning import JobProvisioning, JobProvisioningUpdate
 from schemas.remote_server import RemoteServer
-from services.ssh import docker_ops
+from services.ssh import docker_ops, sigstore_verify
 from services.ssh import provisioning as provisioning_module
 from services.ssh.docker_ops import JOB_LABEL, LIBRARY_VERSION_LABEL, MANAGED_LABEL, LibraryVersionCheck, ResolvedImage
 from services.ssh.preflight import PROTOCOL_LABEL
@@ -80,14 +80,12 @@ def _healthy_script(container_id: str = "abc123", published_port: int = 54321) -
         f"docker buildx imagetools inspect {_TAG_REF} --format {{{{json .Image.Config.Labels}}}}": _ok(
             json.dumps({PROTOCOL_LABEL: "1", LIBRARY_VERSION_LABEL: "1.0.0"})
         ),
-        "cosign version": _ok("v2.4.1"),
-        "cosign verify": _ok("Verified OK"),
         "df -B1 -P /var/lib/docker": _ok(
             "Filesystem 1B-blocks Used Available Capacity Mounted on\n"
             "/dev/sda1 900000000000 100000000000 85899345920 12% /var/lib/docker\n"
         ),
         "docker pull": _ok("Status: Downloaded"),
-        "nvidia-smi --query-compute-apps": _ok("\n"),  # GPU free
+        "nvidia-smi --query-gpu=memory.used": _ok("1000, 40000\n"),  # GPU free
         "docker volume create": _ok(""),
         "docker run": _ok(f"{container_id}\n"),
         "docker port": _ok(f"127.0.0.1:{published_port}\n"),
@@ -194,6 +192,22 @@ def _patch_transport_and_tunnel(monkeypatch):
     yield recorder, script_holder
 
 
+@pytest.fixture(autouse=True)
+def _default_signature_verification(monkeypatch):
+    """Default every test to a passing signature verification.
+
+    `verify_image_signature` never appears in a `FakeSshTransport` script (it
+    runs on this backend via `services.ssh.sigstore_verify`, not over SSH),
+    so this fixture is its equivalent default. A test that needs a different
+    outcome overrides `sigstore_verify.verify_signature` itself.
+    """
+
+    async def fake_verify_signature(image_ref, *, identity_regexp, oidc_issuer):
+        return None
+
+    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify_signature)
+
+
 def _set_script(fixture, script: dict[str, CommandResult]) -> None:
     _, holder = fixture
     holder["script"] = script
@@ -246,10 +260,15 @@ async def test_provision_fails_with_no_fallback_tag(_patch_transport_and_tunnel,
     assert not any(cmd[:2] == ("docker", "run") for cmd in _commands(_patch_transport_and_tunnel))
 
 
-async def test_provision_fails_closed_on_signature_verification(_patch_transport_and_tunnel, repository) -> None:
-    script = _healthy_script()
-    script["cosign verify"] = _fail("no matching signatures")
-    _set_script(_patch_transport_and_tunnel, script)
+async def test_provision_fails_closed_on_signature_verification(
+    _patch_transport_and_tunnel, repository, monkeypatch
+) -> None:
+    _set_script(_patch_transport_and_tunnel, _healthy_script())
+
+    async def fake_verify_signature(image_ref, *, identity_regexp, oidc_issuer):
+        raise sigstore_verify.SignatureVerificationError("no matching signatures")
+
+    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify_signature)
     service = SshProvisioningService(repository)
 
     with pytest.raises(TrainerImageVerificationError):

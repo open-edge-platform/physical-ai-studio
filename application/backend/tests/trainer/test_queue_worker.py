@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from trainer.schemas import TrainerJobStatus
 
@@ -40,6 +41,52 @@ def test_request_cancel_marks_queued_job_canceled(manager, sample_request: Submi
     manager.request_cancel(job_id)
 
     assert manager.store.get(job_id).status == TrainerJobStatus.CANCELED
+
+
+def test_request_cancel_discards_secret_for_undispatched_job(manager, sample_request: SubmitJobRequest) -> None:
+    """A job canceled before dispatch never reaches `_run_job`, so its token must not linger."""
+    job_id = manager.store.create(sample_request)
+    manager.store.stash_secret(job_id, SecretStr("hf-secret"))
+
+    manager.request_cancel(job_id)
+
+    assert manager.store.take_secret(job_id) is None
+
+
+def test_run_job_attaches_stashed_hf_token_to_spec(manager, sample_request: SubmitJobRequest, tmp_path: Path) -> None:
+    """The HF token stashed at submission time is wired back into `run_options` before training."""
+    job_id = manager.store.create(sample_request)
+    manager.store.stash_secret(job_id, SecretStr("hf-secret"))
+    seen_tokens = []
+
+    def fake_run(_job_id, request, **_kw):
+        seen_tokens.append(request.spec.run_options.hf_token)
+        return tmp_path / "model.zip"
+
+    manager._runner.run = MagicMock(side_effect=fake_run)
+
+    asyncio.run(manager._run_job(job_id))
+
+    assert seen_tokens == [SecretStr("hf-secret")]
+    # Consumed exactly once; nothing left cached for this job.
+    assert manager.store.take_secret(job_id) is None
+
+
+def test_run_job_without_stashed_token_leaves_run_options_empty(
+    manager, sample_request: SubmitJobRequest, tmp_path: Path
+) -> None:
+    job_id = manager.store.create(sample_request)
+    seen_tokens = []
+
+    def fake_run(_job_id, request, **_kw):
+        seen_tokens.append(request.spec.run_options.hf_token)
+        return tmp_path / "model.zip"
+
+    manager._runner.run = MagicMock(side_effect=fake_run)
+
+    asyncio.run(manager._run_job(job_id))
+
+    assert seen_tokens == [None]
 
 
 def test_run_job_completes_and_records_artifact(manager, sample_request: SubmitJobRequest, tmp_path: Path) -> None:

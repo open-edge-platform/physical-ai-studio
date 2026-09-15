@@ -238,12 +238,12 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-09-08T09:31:29.102154631Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
 markupsafe = false
-pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
+pyrealsense2 = { timestamp = "2026-09-14T09:31:29.102182345Z", span = "P1D" }
 
 [manifest]
 overrides = [
@@ -3887,8 +3887,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.1.2.dev70+g8e4021703"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=8e4021703ef43387a835c6647b993cecc069ca85#8e4021703ef43387a835c6647b993cecc069ca85" }
+version = "0.1.2.dev74+g89a6faff3"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d#89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -4005,6 +4005,21 @@ pi05 = [
     { name = "sentencepiece" },
     { name = "transformers" },
 ]
+policies = [
+    { name = "decord", marker = "platform_machine == 'AMD64' or platform_machine == 'x86_64' or (extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-cu128') or (extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-cu128' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-executorch' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-executorch-openvino' and extra == 'extra-16-physicalai-train-xpu')" },
+    { name = "diffusers" },
+    { name = "dm-tree", version = "0.1.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14' or (extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-cu128') or (extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-cu128' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-executorch' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-executorch-openvino' and extra == 'extra-16-physicalai-train-xpu')" },
+    { name = "dm-tree", version = "0.1.10", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' or (extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-cu128') or (extra == 'extra-16-physicalai-train-cpu' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-cu128' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-executorch' and extra == 'extra-16-physicalai-train-xpu') or (extra == 'extra-16-physicalai-train-executorch-openvino' and extra == 'extra-16-physicalai-train-xpu')" },
+    { name = "ninja" },
+    { name = "num2words" },
+    { name = "peft" },
+    { name = "pillow" },
+    { name = "safetensors" },
+    { name = "scipy" },
+    { name = "sentencepiece" },
+    { name = "timm" },
+    { name = "transformers" },
+]
 rldx1 = [
     { name = "diffusers" },
     { name = "peft" },
@@ -4067,15 +4082,17 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.3" },
     { name = "peft", specifier = ">=0.20.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=8e4021703ef43387a835c6647b993cecc069ca85" },
-    { name = "physicalai-train", extras = ["groot"], marker = "extra == 'all'" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d" },
+    { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
+    { name = "physicalai-train", extras = ["groot"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["nncf"], marker = "extra == 'executorch-openvino'" },
-    { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'pi05'" },
-    { name = "physicalai-train", extras = ["pi05"], marker = "extra == 'all'" },
-    { name = "physicalai-train", extras = ["rldx1"], marker = "extra == 'all'" },
-    { name = "physicalai-train", extras = ["smolvla"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'policies'" },
+    { name = "physicalai-train", extras = ["pi05"], marker = "extra == 'policies'" },
+    { name = "physicalai-train", extras = ["policies"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["rldx1"], marker = "extra == 'policies'" },
+    { name = "physicalai-train", extras = ["smolvla"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["tests"], marker = "extra == 'all'" },
     { name = "pillow" },
     { name = "pillow", marker = "extra == 'groot'", specifier = ">=10.0.0,<13.0.0" },
@@ -4106,7 +4123,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "nncf", "executorch", "executorch-openvino", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "nncf", "executorch", "executorch-openvino", "policies", "all"]
 
 [package.metadata.requires-dev]
 dev = [

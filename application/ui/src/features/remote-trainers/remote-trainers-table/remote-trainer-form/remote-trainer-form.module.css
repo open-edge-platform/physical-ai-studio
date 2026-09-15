@@ -1,3 +1,7 @@
 .errorMessage {
     color: var(--spectrum-global-color-static-red-600);
 }
+
+.hint {
+    color: var(--spectrum-global-color-gray-700);
+}

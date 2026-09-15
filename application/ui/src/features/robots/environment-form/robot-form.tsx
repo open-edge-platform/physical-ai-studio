@@ -9,6 +9,7 @@ import { useIsRobotRole } from '../robot-catalog.hooks';
 import { isUnavailableRobot } from '../robot-types';
 import { RobotConfiguration, useEnvironmentForm, useSetEnvironmentForm } from './provider';
 
+import addResourceButtonClasses from '../../../components/add-resource-button/add-resource-button.module.css';
 import classes from './form.module.css';
 
 const RobotListItem = ({ robot, onRemove }: { robot: RobotConfiguration; onRemove: () => void }) => {
@@ -228,7 +229,7 @@ export const RobotForm = () => {
             ) : environmentForm.robots.length === 0 ? (
                 <Button
                     variant='secondary'
-                    UNSAFE_className={classes.addNewButton}
+                    UNSAFE_className={addResourceButtonClasses.addResourceButton}
                     width='100%'
                     onPress={() => {
                         setIsAdding(true);

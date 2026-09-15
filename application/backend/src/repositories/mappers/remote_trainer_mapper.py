@@ -13,6 +13,9 @@ class RemoteTrainerMapper(IBaseMapper):
             id=str(db_schema.id),
             name=db_schema.name,
             url=str(db_schema.url),
+            ssh_host_alias=db_schema.ssh_host_alias,
+            ssh_remote_port=db_schema.ssh_remote_port,
+            ssh_local_port=db_schema.ssh_local_port,
         )
 
     @staticmethod
@@ -23,6 +26,9 @@ class RemoteTrainerMapper(IBaseMapper):
                 "id": model.id,
                 "name": model.name,
                 "url": model.url,
+                "ssh_host_alias": model.ssh_host_alias,
+                "ssh_remote_port": model.ssh_remote_port,
+                "ssh_local_port": model.ssh_local_port,
                 "created_at": model.created_at,
                 "updated_at": model.updated_at,
             }

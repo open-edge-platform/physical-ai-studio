@@ -3,8 +3,11 @@
 
 """Utils for policies."""
 
+from .loss import in_episode_bound, reduce_losses
 from .normalization import FeatureNormalizeTransform
 
 __all__ = [
     "FeatureNormalizeTransform",
+    "in_episode_bound",
+    "reduce_losses",
 ]

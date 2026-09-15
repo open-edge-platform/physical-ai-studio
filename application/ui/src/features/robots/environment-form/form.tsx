@@ -1,14 +1,11 @@
-import { Divider, Flex, Heading, Text, TextField, View } from '@geti-ui/ui';
-import { ChevronLeft } from '@geti-ui/ui/icons';
-import { Link } from 'react-router';
+import { Divider, Text, TextField, View } from '@geti-ui/ui';
 
+import { FormHeading } from '../../../components/form-heading/form-heading';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
 import { CameraForm } from './camera-form';
 import { useEnvironmentForm, useSetEnvironmentForm } from './provider';
 import { RobotForm } from './robot-form';
-
-import classes from './form.module.css';
 
 interface EnvironmentFormHeadingProps {
     heading: string;
@@ -18,16 +15,11 @@ export const EnvironmentFormHeading = ({ heading }: EnvironmentFormHeadingProps)
     const { project_id } = useProjectId();
 
     return (
-        <Flex alignItems='center' gap='size-200'>
-            <Link
-                className={classes.link}
-                aria-label='Back to environments'
-                to={paths.project.environments.index({ project_id })}
-            >
-                <ChevronLeft color='white' fill='white' />
-            </Link>
-            <Heading>{heading}</Heading>
-        </Flex>
+        <FormHeading
+            heading={heading}
+            backTo={paths.project.environments.index({ project_id })}
+            backLabel='Back to environments'
+        />
     );
 };
 

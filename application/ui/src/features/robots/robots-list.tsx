@@ -1,12 +1,13 @@
 import { Grid, StatusLight } from '@adobe/react-spectrum';
-import { ActionButton, Button, Flex, Heading, Icon, Item, Menu, MenuTrigger, toast, View } from '@geti-ui/ui';
-import { Add, MoreMenu } from '@geti-ui/ui/icons';
+import { ActionButton, Flex, Heading, Item, Menu, MenuTrigger, toast, View } from '@geti-ui/ui';
+import { MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
-import { NavLink } from 'react-router';
+import { NavLink, useNavigate, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
 import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
+import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
 import { paths } from '../../router';
 import { useProjectId } from '../projects/use-project';
 import {
@@ -34,16 +35,56 @@ const exportCalibration = async (_project_id: string, robot: SchemaRobot) => {
     URL.revokeObjectURL(downloadUrl);
 };
 
-const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
+const useActiveRobotId = () => {
+    const { robot_id } = useParams<{ robot_id: string }>();
+
+    return robot_id;
+};
+
+const useDeleteRobot = (robot: SchemaRobot) => {
     const { project_id } = useProjectId();
+    const activeRobotId = useActiveRobotId();
+    const navigate = useNavigate();
     const deleteRobotMutation = $api.useMutation('delete', '/api/projects/{project_id}/robots/{robot_id}', {
         meta: {
             invalidates: [
                 ['get', '/api/projects/{project_id}/robots', { params: { path: { project_id } } }],
                 ['get', '/api/projects/{project_id}/robots/online', { params: { path: { project_id } } }],
+                [
+                    'get',
+                    '/api/projects/{project_id}/robots/{robot_id}',
+                    { params: { path: { project_id, robot_id: robot.id } } },
+                ],
             ],
         },
     });
+
+    const deleteRobot = () => {
+        deleteRobotMutation.mutate(
+            { params: { path: { project_id, robot_id: robot.id } } },
+            {
+                onSuccess: () => {
+                    if (robot.id === activeRobotId) {
+                        navigate(paths.project.robots.index({ project_id }));
+                    }
+                },
+                onError: (error) => {
+                    if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
+                        toast.info(getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.');
+                        return;
+                    }
+                    toast.negative(getApiErrorMessage(error) ?? 'Failed to delete robot.');
+                },
+            }
+        );
+    };
+
+    return deleteRobot;
+};
+
+const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
+    const { project_id } = useProjectId();
+    const deleteRobot = useDeleteRobot(robot);
 
     const editPath = paths.project.robots.edit({ project_id, robot_id: robot.id });
     const isSO101 = robot.type === 'SO101_Follower' || robot.type === 'SO101_Leader';
@@ -61,20 +102,7 @@ const MenuActions = ({ robot }: { robot: SchemaRobot }) => {
                 }
                 onAction={async (action) => {
                     if (action === 'delete') {
-                        await deleteRobotMutation.mutateAsync(
-                            { params: { path: { project_id, robot_id: robot.id } } },
-                            {
-                                onError: (error) => {
-                                    if (isResourceInUseError(error) || isRuntimeSessionBusyError(error)) {
-                                        toast.info(
-                                            getApiErrorMessage(error) ?? 'This robot is in use and cannot be deleted.'
-                                        );
-                                        return;
-                                    }
-                                    toast.negative(getApiErrorMessage(error) ?? 'Failed to delete robot.');
-                                },
-                            }
-                        );
+                        deleteRobot();
                     }
                     if (action === 'export-calibration') {
                         try {
@@ -164,7 +192,7 @@ const RobotListItem = ({
                 [classes.robotListItemActive]: isActive,
             })}
         >
-            <Flex justifyContent={'space-between'} direction='column' gap='size-100'>
+            <Flex justifyContent={'space-between'} direction='column' gap='size-200'>
                 <Grid areas={['icon name status', 'icon type status']} columns={['auto', '1fr']} columnGap={'size-100'}>
                     <View gridArea={'icon'} padding='size-100'>
                         <img src={RobotArm} style={{ maxWidth: '32px' }} alt='Robot arm icon' />
@@ -234,17 +262,8 @@ export const RobotsList = () => {
     const { data: runtimeSessions } = useRuntimeSessions();
 
     return (
-        <Flex direction='column' gap='size-100'>
-            <Button
-                variant='secondary'
-                href={paths.project.robots.new({ project_id })}
-                UNSAFE_className={classes.addNewRobotButton}
-            >
-                <Icon marginEnd='size-50'>
-                    <Add />
-                </Icon>
-                Add new robot
-            </Button>
+        <Flex direction='column' gap='size-200'>
+            <AddResourceButton to={paths.project.robots.new({ project_id })}>Configure new robot</AddResourceButton>
 
             {projectRobots.map((robot) => {
                 const onlineRobot = onlineProjectRobots?.find((r) => r.id === robot.id);

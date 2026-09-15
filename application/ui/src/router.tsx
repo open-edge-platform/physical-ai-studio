@@ -1,10 +1,12 @@
 import { Suspense } from 'react';
 
 import { Content, Grid, Heading, IllustratedMessage, Loading, minmax, View } from '@geti-ui/ui';
+import { isObject } from 'lodash-es';
 import { createBrowserRouter, Outlet, redirect } from 'react-router';
 import { path } from 'static-path';
 
-import { fetchClient } from './api/client';
+import { queryClient } from '../src/query-client/query-client';
+import { $api, fetchClient } from './api/client';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
 import { AppLayout } from './routes/app/app.layout';
@@ -42,6 +44,7 @@ const robots = project.path('robots');
 const robot = robots.path(':robot_id');
 const datasets = project.path('/datasets');
 const dataset = datasets.path(':dataset_id');
+const datasetEpisode = dataset.path('episodes').path(':episode_index');
 const models = project.path('/models');
 const remoteServers = project.path('/remote-servers');
 const cameras = project.path('cameras');
@@ -53,6 +56,7 @@ export const paths = {
     settings: {
         index: settings,
         compute: settings.path('/compute'),
+        hotkeys: settings.path('/hotkeys'),
         storage: settings.path('/storage'),
         about: settings.path('/about'),
     },
@@ -68,6 +72,7 @@ export const paths = {
         datasets: {
             index: datasets,
             show: dataset,
+            showEpisode: datasetEpisode,
             record: dataset.path('record'),
         },
         robots: {
@@ -146,6 +151,10 @@ export const router = createBrowserRouter([
                                 path: paths.settings.compute.pattern,
                                 element: <Settings />,
                             },
+                            {
+                                path: paths.settings.hotkeys.pattern,
+                                element: <Settings />,
+                            },
                         ],
                     },
                     {
@@ -210,6 +219,10 @@ export const router = createBrowserRouter([
                             },
                             {
                                 path: paths.project.datasets.show.pattern,
+                                element: <Datasets />,
+                            },
+                            {
+                                path: paths.project.datasets.showEpisode.pattern,
                                 element: <Datasets />,
                             },
                         ],
@@ -279,6 +292,25 @@ export const router = createBrowserRouter([
                                     },
                                     {
                                         path: paths.project.robots.show.pattern,
+                                        loader: async ({ params }) => {
+                                            const { robot_id, project_id } = params;
+
+                                            if (project_id === undefined || robot_id === undefined) {
+                                                return redirect(paths.projects.index({}));
+                                            }
+
+                                            try {
+                                                await queryRobot(project_id, robot_id);
+                                            } catch (error: unknown) {
+                                                if (
+                                                    isObject(error) &&
+                                                    'http_status' in error &&
+                                                    error.http_status === 404
+                                                ) {
+                                                    return redirect(paths.project.robots.index({ project_id }));
+                                                }
+                                            }
+                                        },
                                         element: <Robot />,
                                     },
                                 ],
@@ -364,3 +396,16 @@ export const router = createBrowserRouter([
         ],
     },
 ]);
+
+function queryRobot(projectId: string, robotId: string) {
+    return queryClient.ensureQueryData(
+        $api.queryOptions('get', '/api/projects/{project_id}/robots/{robot_id}', {
+            params: {
+                path: {
+                    project_id: projectId,
+                    robot_id: robotId,
+                },
+            },
+        })
+    );
+}

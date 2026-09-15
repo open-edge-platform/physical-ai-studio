@@ -30,7 +30,7 @@ class TrossenSingleArmPayload(BaseModel):
             "example": {
                 "connection_string": "192.168.1.100",
             },
-            **robot_payload_ui(
+            **robot_payload_ui(  # type: ignore[dict-item]
                 [
                     {
                         "kind": "ip_address",
@@ -56,7 +56,7 @@ class TrossenBimanualPayload(BaseModel):
                 "connection_string_left": "192.168.1.100",
                 "connection_string_right": "192.168.1.101",
             },
-            **robot_payload_ui(
+            **robot_payload_ui(  # type: ignore[dict-item]
                 [
                     {
                         "kind": "ip_address",

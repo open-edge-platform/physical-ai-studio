@@ -69,6 +69,7 @@ x-common: &common
     # Persisted application storage volume
     volumes:
       - physical-ai-studio-storage:/app/storage
+      - ${HOME}/.cache/huggingface/lerobot/calibration:/home/appuser/.cache/huggingface/lerobot/calibration:ro
 
     # --- Option 1: Privileged mode (active by default)
     # Grants full access to all host devices. Easiest setup, but the
@@ -99,7 +100,6 @@ x-common-build: &common-build
     dockerfile: application/docker/Dockerfile
     additional_contexts:
       libs: ../../library
-      plugin: ../../application/plugin
     args:
       - APP_UID=${APP_UID:-1000}
       - APP_GID=${APP_GID:-1000}

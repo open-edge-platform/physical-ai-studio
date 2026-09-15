@@ -50,6 +50,8 @@ class SshTunnel:
         remote_host: str,
         remote_port: int,
         settings: Settings,
+        *,
+        local_port: int | None = None,
     ) -> None:
         self._open_transport = open_transport
         self._remote_host = remote_host
@@ -57,7 +59,7 @@ class SshTunnel:
         self._settings = settings
         self._transport: SshTransport | None = None
         self._listener: asyncssh.SSHListener | None = None
-        self._local_port: int | None = None
+        self._local_port = local_port
         self._watchdog_task: asyncio.Task[None] | None = None
         self._closed = False
 

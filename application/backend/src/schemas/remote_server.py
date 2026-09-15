@@ -4,7 +4,7 @@
 """Schemas for SSH-provisioned remote training servers.
 
 Studio stores no SSH credentials. A remote server is identified by the name of a
-``Host`` stanza in the user's own ``~/.ssh/config``; ``asyncssh`` resolves that
+``Host`` entry in the user's own ``~/.ssh/config``; ``asyncssh`` resolves that
 alias and authenticates. No field here holds a key, password, or passphrase, and
 none ever will - ``tests/schemas/test_remote_server.py`` asserts that.
 """
@@ -16,6 +16,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schemas.hardware import DeviceType
+from schemas.ssh_preflight import PreflightCheck
 
 # Devices a remote trainer image exists for.
 SSH_SERVER_DEVICE_TYPES = frozenset({DeviceType.CUDA, DeviceType.XPU})
@@ -39,7 +40,7 @@ class RemoteServerCreate(BaseModel):
         min_length=1,
         max_length=255,
         pattern=SSH_HOST_ALIAS_PATTERN,
-        description="Name of a Host stanza in the user's SSH config. Non-secret.",
+        description="Name of a Host entry in the user's SSH config. Non-secret.",
     )
     device_type: DeviceType = Field(description="Accelerator on the server. Only cuda and xpu are supported.")
 
@@ -84,6 +85,11 @@ class RemoteServer(RemoteServerCreate):
     last_check_at: datetime | None = None
     last_check_latency_ms: int | None = Field(default=None, ge=0)
     last_check_reason_code: str | None = None
+    # Per-check detail from the most recent Tier 2 ``/check`` run. Persisted
+    # alongside the summary above so the "Image pull & verification" card can
+    # show the last verification's detail after a page refresh, instead of
+    # resetting to "Not verified yet" until the user reruns the check.
+    last_check_checks: list[PreflightCheck] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -117,3 +123,45 @@ class SshHostAliasOption(BaseModel):
     hostname: str | None = None
     port: int | None = Field(default=None, ge=1, le=65535)
     user: str | None = None
+
+
+class SshHostAliasCreate(BaseModel):
+    """User-supplied fields to append a new ``Host`` entry to ``~/.ssh/config``.
+
+    Lets a user configure a host from the UI without hand-editing their SSH
+    config, while keeping the same non-secret guarantee as the rest of the SSH
+    feature: ``identity_file`` is a path the user already has on disk, never a
+    key, password, or passphrase.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    alias: str = Field(
+        min_length=1,
+        max_length=255,
+        pattern=SSH_HOST_ALIAS_PATTERN,
+        description="Name for the new Host entry. Must not already exist in the SSH config.",
+    )
+    hostname: str = Field(min_length=1, max_length=255, description="Hostname or IP address to connect to.")
+    port: int = Field(default=22, ge=1, le=65535)
+    user: str | None = Field(default=None, max_length=255)
+    identity_file: str | None = Field(
+        default=None,
+        max_length=4096,
+        description="Path to a private key file. Studio never reads or stores its contents.",
+    )
+
+
+class DeviceTypeDetection(BaseModel):
+    """Best-effort autodetection of an SSH host's accelerator.
+
+    Prefills the "Device type" field in the add-target form. ``device_type``
+    is ``None`` whenever detection could not identify an accelerator - an
+    unresolved alias, an unreachable host, or a host with no CUDA/XPU signal -
+    and ``reason_code`` says why, so the UI can fall back to asking the user
+    instead of silently guessing.
+    """
+
+    device_type: DeviceType | None = Field(default=None, description="Detected accelerator, or None if undetected.")
+    method: str | None = Field(default=None, description="Which probe answered, e.g. 'nvidia-smi', 'xpu-smi'.")
+    reason_code: str | None = Field(default=None, description="Why detection produced no device type.")

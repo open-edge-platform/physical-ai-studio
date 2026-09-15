@@ -28,7 +28,11 @@ import torch.nn.functional as F  # noqa: N812
 from physicalai.data import Feature, FeatureType, NormalizationParameters
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, TASK, Observation
-from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
+from physicalai.policies.utils.normalization import (
+    FeatureNormalizeTransform,
+    NormalizationType,
+    normalize_rtc_prev_action_chunk,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +142,8 @@ class SmolVLAPreprocessor(torch.nn.Module):
 
         batch = self._preprocess_images(batch)
 
-        return self._state_action_normalizer(batch)
+        batch = self._state_action_normalizer(batch)
+        return normalize_rtc_prev_action_chunk(batch, self._state_action_normalizer)
 
     def _camera_slot_layout(self, batch_img_keys: list[str]) -> list[str | None]:
         """Resolve the camera slot layout for a batch.

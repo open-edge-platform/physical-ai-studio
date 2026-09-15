@@ -75,7 +75,11 @@ cd physical-ai-studio/library
 # Create virtual environment and install
 uv venv
 source .venv/bin/activate
-uv sync --all-extras
+
+# Choose one matching your hardware:
+uv sync --extra cpu --extra all     # CPU
+# uv sync --extra cu128 --extra all # NVIDIA GPU (CUDA)
+# uv sync --extra xpu --extra all   # Intel GPU (XPU)
 ```
 
 </details>

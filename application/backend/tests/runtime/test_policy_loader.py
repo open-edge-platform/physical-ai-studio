@@ -213,8 +213,8 @@ def test_a_single_camera_model_ignores_the_camera_name() -> None:
     check_camera_keys(model, ["wrist"])
 
 
-def test_loader_instantiates_async_execution(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from physicalai.runtime import AsyncExecution
+def test_loader_instantiates_sync_execution(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from physicalai.runtime import SyncExecution
 
     from runtime.config_builder import POLICY_REQUEST_THRESHOLD
 
@@ -226,7 +226,7 @@ def test_loader_instantiates_async_execution(tmp_path, monkeypatch: pytest.Monke
     source.update(follower.get_observation(), {}, 0)
     _wait_until(lambda: source._policy is not None)
     assert source._policy is not None
-    assert isinstance(source._policy._execution, AsyncExecution)
+    assert isinstance(source._policy._execution, SyncExecution)
     assert source._policy._execution._threshold_frac == POLICY_REQUEST_THRESHOLD
     source.shutdown_policy()
 

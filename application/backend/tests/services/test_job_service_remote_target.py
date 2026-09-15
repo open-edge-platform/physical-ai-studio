@@ -21,7 +21,7 @@ from services.job_service import JobService
 MODULE = "services.job_service"
 SSH_MODULE = "services.training_targets.ssh"
 
-_ACTIVE = SshFeatureAvailability(enabled=True, network_exposed=False)
+_ACTIVE = SshFeatureAvailability(network_exposed=False)
 
 
 def _session_context() -> AsyncMock:
@@ -166,6 +166,75 @@ async def test_submit_ssh_job_rejects_an_unhealthy_server() -> None:
 
 
 @pytest.mark.anyio
+async def test_submit_ssh_job_auto_verifies_a_never_checked_server() -> None:
+    """A server that has never been checked is verified once, automatically, not rejected outright."""
+    session = _session_context()
+    repository = MagicMock()
+    repository.is_job_duplicate = AsyncMock(return_value=False)
+    repository.save = AsyncMock(side_effect=lambda job: job)
+    unchecked_server = _remote_server(last_check_status="unknown")
+    verified_server = _remote_server(last_check_status="healthy")
+    verified_server = verified_server.model_copy(update={"id": unchecked_server.id})
+    payload = SshTrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="model",
+        remote_server_id=unchecked_server.id,
+    )
+
+    remote_server_service = MagicMock()
+    remote_server_service.get_remote_server = AsyncMock(return_value=unchecked_server)
+    remote_server_service.ensure_verified = AsyncMock(return_value=verified_server)
+
+    with (
+        patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_ACTIVE),
+        patch(
+            f"{SSH_MODULE}.resolve_alias",
+            return_value=ResolvedSshHost(alias=unchecked_server.ssh_host_alias, hostname="gpu-box.lan", found=True),
+        ),
+    ):
+        job = await JobService(session, remote_server_service=remote_server_service).submit_train_job(payload)
+
+    remote_server_service.ensure_verified.assert_awaited_once_with(unchecked_server.id)
+    assert job.payload.remote_server_id == unchecked_server.id
+    repository.save.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_submit_ssh_job_rejects_a_never_checked_server_that_fails_auto_verification() -> None:
+    """Auto-verification still fails closed: a server that fails its first check is rejected."""
+    session = _session_context()
+    repository = MagicMock()
+    repository.is_job_duplicate = AsyncMock(return_value=False)
+    repository.save = AsyncMock(side_effect=lambda job: job)
+    unchecked_server = _remote_server(last_check_status="unknown")
+    degraded_server = _remote_server(last_check_status="degraded").model_copy(update={"id": unchecked_server.id})
+    payload = SshTrainJobPayload(
+        project_id=uuid4(),
+        dataset_id=uuid4(),
+        policy="act",
+        model_name="model",
+        remote_server_id=unchecked_server.id,
+    )
+
+    remote_server_service = MagicMock()
+    remote_server_service.get_remote_server = AsyncMock(return_value=unchecked_server)
+    remote_server_service.ensure_verified = AsyncMock(return_value=degraded_server)
+
+    with (
+        patch(f"{MODULE}.JobRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_ACTIVE),
+        pytest.raises(RemoteServerNotReadyError),
+    ):
+        await JobService(session, remote_server_service=remote_server_service).submit_train_job(payload)
+
+    remote_server_service.ensure_verified.assert_awaited_once_with(unchecked_server.id)
+    repository.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
 async def test_submit_ssh_job_rejects_a_renamed_or_removed_alias() -> None:
     """A healthy server whose Host entry has since disappeared still fails closed."""
     session = _session_context()
@@ -253,8 +322,8 @@ async def test_submit_ssh_job_rejects_continuing_from_an_existing_model() -> Non
 
 
 @pytest.mark.anyio
-async def test_submit_ssh_job_rejects_when_feature_disabled() -> None:
-    """The default (feature-off) availability blocks submission before any server lookup."""
+async def test_submit_ssh_job_rejects_when_feature_fails_closed_on_network_exposure_before_lookup() -> None:
+    """A network-exposed availability blocks submission before any server lookup."""
     session = _session_context()
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
@@ -274,7 +343,7 @@ async def test_submit_ssh_job_rejects_when_feature_disabled() -> None:
         patch(f"{MODULE}.JobRepository", return_value=repository),
         patch(
             f"{MODULE}.get_ssh_feature_availability",
-            return_value=SshFeatureAvailability(enabled=False, network_exposed=False),
+            return_value=SshFeatureAvailability(network_exposed=True, reason="bound to a non-loopback address"),
         ),
         pytest.raises(SshFeatureDisabledError),
     ):
@@ -286,7 +355,7 @@ async def test_submit_ssh_job_rejects_when_feature_disabled() -> None:
 
 @pytest.mark.anyio
 async def test_submit_ssh_job_rejects_when_feature_fails_closed_on_network_exposure() -> None:
-    """Enabled but network-exposed is still inactive, and fails closed the same way."""
+    """Network-exposed availability fails closed the same way regardless of caller."""
     session = _session_context()
     repository = MagicMock()
     repository.is_job_duplicate = AsyncMock(return_value=False)
@@ -300,7 +369,7 @@ async def test_submit_ssh_job_rejects_when_feature_fails_closed_on_network_expos
         remote_server_id=uuid4(),
     )
 
-    exposed = SshFeatureAvailability(enabled=True, network_exposed=True, reason="bound to a non-loopback address")
+    exposed = SshFeatureAvailability(network_exposed=True, reason="bound to a non-loopback address")
 
     with (
         patch(f"{MODULE}.JobRepository", return_value=repository),

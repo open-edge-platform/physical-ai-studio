@@ -72,12 +72,27 @@ class Rldx1Config(Config):
     use_percentiles: bool = True
     conversation_image_first: bool = False
 
+    # Fixed tokenized-prompt length used only at export (static ONNX/OpenVINO
+    # graph + baked OV tokenizer). Must cover the FULL multimodal sequence, not
+    # just the instruction text: the runtime rldx1 preprocessor expands vision
+    # blocks into the prompt, so length >= num_views * num_frames *
+    # tokens_per_image + vision start/end + text + template. Undersizing
+    # truncates image-pad tokens and breaks the pixel_values alignment.
+    tokenizer_max_length: int = 1024
+
+    # Export configuration
+    # OpenVINO weight compression to FP16 reduces model memory footprint and
+    # helps avoid OOM on lower-memory devices.
+    compress_to_fp16: bool = True
+
     # Video input configuration
     # ``use_video`` is an architectural invariant: every supported
     # checkpoint embeds VTC video tokens.
     use_video: bool = True
     video_length: int = 4
     video_stride: int = 2  # Action-step stride between video frames in context window
+
+    num_views: int | None = None
 
     # Action head architecture (MSAT)
     max_state_dim: int = 64  # Default from state_shape
@@ -102,7 +117,7 @@ class Rldx1Config(Config):
             "positional_embeddings": "rope_sa_only",
             "rope_theta": 10000.0,
             "temb_type": "input_token",
-            "gradient_checkpointing": False,
+            "gradient_checkpointing": True,
             "action_model_max_seq_len": 512,
             "pre_norm": "layer_norm",
             "qk_norm": "rms_norm",
@@ -228,8 +243,6 @@ class Rldx1Config(Config):
 
     # Precision & compute
     use_bf16: bool = True
-    # Top-level flag; ``diffusion_model_cfg["gradient_checkpointing"]`` above
-    # remains the one MSAT actually constructs from.
-    gradient_checkpointing: bool = False
+    gradient_checkpointing: bool = True
 
     attn_implementation: Literal["sdpa", "flash_attention_2"] = "sdpa"

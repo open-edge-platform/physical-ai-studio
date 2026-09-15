@@ -1,26 +1,38 @@
 import { Flex, Item, Picker, Switch, Text, TextField } from '@geti-ui/ui';
 
-import { fieldLabel } from './schema-utils';
-import { FieldSchema } from './types';
+import { FieldContextualHelp } from './components/field-contextual-help';
+import { fieldContextualInfo, fieldLabel } from './schema-utils';
+import { ContextualInfo, FieldSchema } from './types';
 
 type FieldProps = {
     name: string;
     schema: FieldSchema;
     value: unknown;
     isRequired: boolean;
+    info?: ContextualInfo;
     onChange: (value: unknown) => void;
 };
 
-const commonProps = ({ name, schema, isRequired }: Pick<FieldProps, 'name' | 'schema' | 'isRequired'>) => ({
-    label: fieldLabel(name, schema),
-    description: schema.description,
+const commonProps = ({
+    name,
+    schema,
     isRequired,
-    width: '100%' as const,
-});
+    info,
+}: Pick<FieldProps, 'name' | 'schema' | 'isRequired' | 'info'>) => {
+    const contextualInfo = info ?? fieldContextualInfo(schema);
 
-const EnumPickerField = ({ name, schema, value, isRequired, onChange }: FieldProps) => (
+    return {
+        label: fieldLabel(name, schema),
+        description: schema.description,
+        contextualHelp: contextualInfo === undefined ? undefined : <FieldContextualHelp info={contextualInfo} />,
+        isRequired,
+        width: '100%' as const,
+    };
+};
+
+const EnumPickerField = ({ name, schema, value, isRequired, onChange, info }: FieldProps) => (
     <Picker
-        {...commonProps({ name, schema, isRequired })}
+        {...commonProps({ name, schema, isRequired, info })}
         selectedKey={String(value ?? '')}
         onSelectionChange={onChange}
     >
@@ -30,16 +42,23 @@ const EnumPickerField = ({ name, schema, value, isRequired, onChange }: FieldPro
     </Picker>
 );
 
-const BooleanField = ({ name, schema, value, isRequired, onChange }: FieldProps) => (
-    <Flex direction='column' gap='size-50'>
-        <Switch isRequired={isRequired} isSelected={Boolean(value)} onChange={onChange}>
-            {fieldLabel(name, schema)}
-        </Switch>
-        {schema.description !== undefined && schema.description !== '' && <Text>{schema.description}</Text>}
-    </Flex>
-);
+const BooleanField = ({ name, schema, value, isRequired, onChange, info }: FieldProps) => {
+    const contextualInfo = info ?? fieldContextualInfo(schema);
 
-const TextFieldValue = ({ name, schema, value, isRequired, onChange }: FieldProps) => {
+    return (
+        <Flex direction='column' gap='size-50'>
+            <Flex alignItems='center' gap='size-75'>
+                <Switch isRequired={isRequired} isSelected={Boolean(value)} onChange={onChange}>
+                    {fieldLabel(name, schema)}
+                </Switch>
+                {contextualInfo === undefined ? null : <FieldContextualHelp info={contextualInfo} />}
+            </Flex>
+            {schema.description !== undefined && schema.description !== '' && <Text>{schema.description}</Text>}
+        </Flex>
+    );
+};
+
+const TextFieldValue = ({ name, schema, value, isRequired, onChange, info }: FieldProps) => {
     const isNumeric = schema.type === 'integer' || schema.type === 'number';
 
     const parseValue = (next: string): unknown => {
@@ -53,7 +72,7 @@ const TextFieldValue = ({ name, schema, value, isRequired, onChange }: FieldProp
 
     return (
         <TextField
-            {...commonProps({ name, schema, isRequired })}
+            {...commonProps({ name, schema, isRequired, info })}
             type={isNumeric ? 'number' : 'text'}
             value={value === undefined || value === null ? '' : String(value)}
             onChange={(next) => onChange(parseValue(next))}

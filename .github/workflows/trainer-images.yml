@@ -53,7 +53,6 @@ jobs:
             test:
               - application/backend/**
               - application/docker/Dockerfile.trainer
-              - application/plugin/**
               - library/src/**
               - library/pyproject.toml
               - library/uv.lock
@@ -131,7 +130,6 @@ jobs:
           file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
-            plugin=application/plugin
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           load: true
@@ -261,7 +259,6 @@ jobs:
           file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
-            plugin=application/plugin
           target: physicalai-trainer-${{ matrix.device }}
           platforms: linux/amd64
           push: true

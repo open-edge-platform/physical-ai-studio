@@ -22,11 +22,13 @@ import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-s
 import { useProject } from '../../projects/use-project';
 import { useRemoteTrainerHealth } from '../../remote-trainers/use-remote-trainer-health';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
+import { supportsLora } from '../shared/peft';
+import { supportsSnapflow } from '../shared/snapflow';
 import { MODELS } from './policies';
 import { PolicyAccessAlert } from './policy-access-alert';
 import { PolicySelection } from './policy-selection';
 import { TrainingDeviceInfo } from './training-device-info';
-import { TrainingParameters } from './training-parameters';
+import { MIN_EPOCHS_FOR_SNAPFLOW, TrainingParameters } from './training-parameters';
 import { pickBestDevice, useBestTrainingDevice } from './use-training-devices';
 
 import classes from './train-model-dialog.module.css';
@@ -45,6 +47,9 @@ type TrainingTargetOption = {
     id: string;
     label: string;
 };
+
+/** Mirrors `_DEFAULT_SNAPFLOW_DISTILL_EPOCHS` in the backend payload schema. */
+const DEFAULT_SNAPFLOW_DISTILL_EPOCHS = 3;
 
 export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
@@ -76,7 +81,21 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(bestDevice?.type === 'cuda');
     const [precision, setPrecision] = useState<Key | null>(bestDevice?.type === 'cuda' ? 'bf16-mixed' : '32-true');
     const [compileModel, setCompileModel] = useState<boolean>(false);
+    const [loraEnabled, setLoraEnabled] = useState<boolean>(false);
+    const [loraRank, setLoraRank] = useState<number>(32);
+    const [loraAlpha, setLoraAlpha] = useState<number | null>(null);
+    const [loraDropout, setLoraDropout] = useState<number>(0.05);
+    const [loraUseDora, setLoraUseDora] = useState<boolean>(false);
+    const [snapflowEnabled, setSnapflowEnabled] = useState<boolean>(false);
+    const [snapflowDistillEpochs, setSnapflowDistillEpochs] = useState<number>(DEFAULT_SNAPFLOW_DISTILL_EPOCHS);
     const [remoteTrainerId, setRemoteTrainerId] = useState<Key | null>('local');
+    const isLoraSupported = supportsLora(selectedPolicy);
+    const isLoraRequested = isLoraSupported && loraEnabled;
+    const isSnapflowSupported = supportsSnapflow(selectedPolicy);
+    // snapflow_distill_epochs is additive on top of max_epochs (the teacher phase
+    // always runs the full max_epochs before distillation extends the run), so it
+    // needs no clamp against max_epochs.
+    const isSnapflowRequested = isSnapflowSupported && snapflowEnabled && maxEpochs >= MIN_EPOCHS_FOR_SNAPFLOW;
     const isRemoteTarget = remoteTrainerId !== null && remoteTrainerId !== 'local';
     const {
         health: remoteTrainerHealth,
@@ -150,6 +169,13 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             auto_scale_batch_size: autoScaleBatchSize,
             precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
             compile_model: compileModel,
+            lora_enabled: isLoraRequested,
+            lora_rank: loraRank,
+            lora_alpha: loraAlpha,
+            lora_dropout: loraDropout,
+            lora_use_dora: isLoraRequested && loraUseDora,
+            snapflow_enabled: isSnapflowRequested,
+            snapflow_distill_epochs: snapflowDistillEpochs,
             val_split: 0.1,
             ...extraPayload,
         } as const;
@@ -246,6 +272,22 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onCompileModelChange={setCompileModel}
                                 isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
                                 deviceType={activeDevice?.type}
+                                isLoraSupported={isLoraSupported}
+                                loraEnabled={loraEnabled}
+                                onLoraEnabledChange={setLoraEnabled}
+                                loraRank={loraRank}
+                                onLoraRankChange={setLoraRank}
+                                loraAlpha={loraAlpha}
+                                onLoraAlphaChange={setLoraAlpha}
+                                loraDropout={loraDropout}
+                                onLoraDropoutChange={setLoraDropout}
+                                loraUseDora={loraUseDora}
+                                onLoraUseDoraChange={setLoraUseDora}
+                                isSnapflowSupported={isSnapflowSupported}
+                                snapflowEnabled={snapflowEnabled}
+                                onSnapflowEnabledChange={setSnapflowEnabled}
+                                snapflowDistillEpochs={snapflowDistillEpochs}
+                                onSnapflowDistillEpochsChange={setSnapflowDistillEpochs}
                             />
                         </DisclosurePanel>
                     </Disclosure>

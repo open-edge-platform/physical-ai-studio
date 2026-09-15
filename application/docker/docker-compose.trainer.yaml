@@ -62,7 +62,6 @@ x-common-build: &common-build
     dockerfile: application/docker/Dockerfile.trainer
     additional_contexts:
       libs: ../../library
-      plugin: ../../application/plugin
     args:
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}

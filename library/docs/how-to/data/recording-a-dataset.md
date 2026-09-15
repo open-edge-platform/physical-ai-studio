@@ -232,16 +232,16 @@ key: [max(ep_start, min(ep_end - 1, abs_idx + delta)) for delta in delta_idx]
 ```
 
 This is flagged with an `action_is_pad` marker, but **not every policy masks it
-out of the training loss**:
+out of the loss**:
 
-| Policy  | Masks padded actions out of the loss? |
-| ------- | ------------------------------------- |
-| ACT     | Yes                                   |
-| SmolVLA | Yes (upstream)                        |
-| Pi0     | No                                    |
-| Pi0.5   | No                                    |
+| Policy  | Masks padded actions out of the training loss? | Masks padded actions out of the validation loss? |
+| ------- | ---------------------------------------------- | ------------------------------------------------ |
+| ACT     | Yes                                            | Yes                                              |
+| SmolVLA | Yes                                            | Yes                                              |
+| Pi0     | No                                             | No                                               |
+| Pi0.5   | Yes                                            | Yes                                              |
 
-For Pi0/Pi0.5, the repeated final action is trained on as if it were real
+For Pi0, the repeated final action is still trained on as if it were real
 supervision. With a 50-step action chunk and short episodes, this can end up
 being a meaningful fraction of all action targets.
 

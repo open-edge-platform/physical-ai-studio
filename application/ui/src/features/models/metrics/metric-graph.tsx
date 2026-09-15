@@ -18,14 +18,23 @@ import type { MetricsEntry } from './types';
 type CustomTooltipContentProps = Partial<TooltipContentProps> & {
     xAxisLabel?: string;
     yAxisLabel?: string;
+    formatY?: (y: number) => string;
 };
 
-const CustomTooltipContent = ({ active, payload, label, xAxisLabel, yAxisLabel }: CustomTooltipContentProps) => {
+const CustomTooltipContent = ({
+    active,
+    payload,
+    label,
+    xAxisLabel,
+    yAxisLabel,
+    formatY,
+}: CustomTooltipContentProps) => {
     if (!active || !payload?.length) {
         return null;
     }
 
     const value = payload[0].value;
+    const formattedValue = formatY && value ? formatY(Number(value)) : value;
 
     return (
         <View
@@ -44,7 +53,7 @@ const CustomTooltipContent = ({ active, payload, label, xAxisLabel, yAxisLabel }
                 {xAxisLabel}: {label}
             </div>
             <Text UNSAFE_style={{ color: 'var(--metric-graph-color)' }}>
-                {yAxisLabel}: {value ?? 'Not available'}
+                {yAxisLabel}: {formattedValue ?? 'Not available'}
             </Text>
         </View>
     );
@@ -59,10 +68,31 @@ type MetricGraphProps = {
     color?: string;
     getX: (metricsEntry: MetricsEntry) => number;
     getY: (metricsEntry: MetricsEntry) => number | null | undefined;
+    formatY?: (y: number) => string;
 };
 
 const X_AXIS_TICK_COUNT = 8;
 const Y_AXIS_TICK_COUNT = 4;
+const Y_AXIS_SCIENTIFIC_THRESHOLD = 0.001;
+
+const scientificFormatter = new Intl.NumberFormat('en-US', {
+    notation: 'scientific',
+    maximumSignificantDigits: 2,
+    maximumFractionDigits: 2,
+    roundingPriority: 'lessPrecision',
+});
+
+const fixedPointFormatter = new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 4,
+});
+
+const formatYAxisTick = (value: number): string => {
+    if (value !== 0 && Math.abs(value) < Y_AXIS_SCIENTIFIC_THRESHOLD) {
+        return scientificFormatter.format(value);
+    }
+
+    return fixedPointFormatter.format(value);
+};
 
 export const MetricGraph = ({
     syncId,
@@ -72,6 +102,7 @@ export const MetricGraph = ({
     yAxisLabel,
     getY,
     getX,
+    formatY,
     color = 'var(--energy-blue)',
 }: MetricGraphProps) => {
     const gradientId = useId();
@@ -115,7 +146,7 @@ export const MetricGraph = ({
                                     label={{ value: yAxisLabel, angle: -90, position: 'center', dx: -38, fill: '#666' }}
                                     tickCount={Y_AXIS_TICK_COUNT}
                                     tickMargin={12}
-                                    tickFormatter={(value) => Number(value).toFixed(4)}
+                                    tickFormatter={(value) => formatYAxisTick(Number(value))}
                                 />
                                 <Area
                                     type='linear'
@@ -129,7 +160,13 @@ export const MetricGraph = ({
                                 />
                                 <Tooltip
                                     filterNull={false}
-                                    content={<CustomTooltipContent xAxisLabel={xAxisLabel} yAxisLabel={yAxisLabel} />}
+                                    content={
+                                        <CustomTooltipContent
+                                            xAxisLabel={xAxisLabel}
+                                            yAxisLabel={yAxisLabel}
+                                            formatY={formatY}
+                                        />
+                                    }
                                     cursor={{
                                         stroke: 'var(--metric-graph-color)',
                                     }}

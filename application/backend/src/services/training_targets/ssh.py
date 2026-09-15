@@ -21,13 +21,16 @@ class SshTrainingTargetHandler:
     async def prepare(self, payload: TrainJobPayload) -> TrainJobPayload:
         """Verify the selected server's last preflight result and current SSH-config alias.
 
-        Studio never dials SSH from job submission, so this only consults the
-        persisted last-check summary from the explicit save/verify actions
-        (`last_check_status != "healthy"` also catches a server that has never
-        been checked at all). A renamed/removed Host entry is caught by
-        re-parsing the config file directly (no SSH dial), so it fails closed
-        even if the server's last preflight happened before the alias
-        disappeared.
+        Studio never dials SSH from job submission to *re-check* a server -
+        only the explicit save/verify actions do that. The one exception is a
+        server that has never been checked at all (``last_check_status ==
+        "unknown"``): rather than reject the job and send the user back to
+        the training-targets page for a one-time check, this runs Tier 2
+        preflight inline via `RemoteServerService.ensure_verified`, so the
+        job proceeds and the actual pull happens as part of normal
+        provisioning. A server whose last explicit check *failed*
+        (``"degraded"``/``"unreachable"``) still requires the user to
+        re-verify deliberately; this never retries that automatically.
 
         `get_training_target_handler` only ever routes an `SshTrainJobPayload`
         here (selected by `payload.training_target`), so this narrows via
@@ -38,6 +41,8 @@ class SshTrainingTargetHandler:
         if payload.base_model_id is not None:
             raise RemoteResumeUnsupportedError
         remote_server = await self.remote_server_service.get_remote_server(payload.remote_server_id)
+        if remote_server.last_check_status == "unknown":
+            remote_server = await self.remote_server_service.ensure_verified(payload.remote_server_id)
         if remote_server.last_check_status != "healthy":
             raise RemoteServerNotReadyError(remote_server.name, remote_server.last_check_status)
         resolved = resolve_alias(get_settings().ssh_config_path, remote_server.ssh_host_alias)

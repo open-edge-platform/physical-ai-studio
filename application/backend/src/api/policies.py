@@ -7,7 +7,7 @@ from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
 from pydantic import BaseModel
 
-from settings import get_settings
+from services.training_backends.local import resolve_hf_token
 
 router = APIRouter(prefix="/api/policies", tags=["Policies"])
 
@@ -69,7 +69,7 @@ async def check_huggingface_access(policy: str) -> HuggingFaceAccessResponse:
     requirements = _HUGGINGFACE_REQUIREMENTS.get(policy, ())
     if not requirements:
         return HuggingFaceAccessResponse(requirements=[])
-    token = get_settings().huggingface.hf_token
+    token = resolve_hf_token()
     token_value = token.get_secret_value() if token is not None else ""
     if not token_value:
         return HuggingFaceAccessResponse(

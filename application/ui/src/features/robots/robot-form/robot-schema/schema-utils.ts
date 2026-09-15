@@ -1,4 +1,4 @@
-import { FieldSchema } from './types';
+import { ContextualInfo, FieldSchema } from './types';
 
 export const EMPTY_PROPERTIES: Record<string, FieldSchema> = {};
 export const EMPTY_DEFINITIONS: Record<string, FieldSchema> = {};
@@ -22,6 +22,11 @@ export const resolveReference = (schema: FieldSchema, definitions: Record<string
 export const isRequiredField = (name: string, schema: FieldSchema, required: Set<string>) => {
     const uiOptions = schema['x-physicalai-ui'];
     return required.has(name) || (!Array.isArray(uiOptions) && uiOptions?.required === true);
+};
+
+export const fieldContextualInfo = (schema: FieldSchema): ContextualInfo | undefined => {
+    const uiOptions = schema['x-physicalai-ui'];
+    return Array.isArray(uiOptions) ? undefined : uiOptions?.info;
 };
 
 const schemaDefault = (schema: FieldSchema, definitions: Record<string, FieldSchema>): unknown => {

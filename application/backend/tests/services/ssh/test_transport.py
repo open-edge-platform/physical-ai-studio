@@ -396,7 +396,7 @@ async def test_connect_rejects_an_unknown_alias_without_dialing(settings: Settin
 
 
 async def test_connect_rejects_a_wildcard_only_alias(tmp_path: Path, monkeypatch) -> None:
-    # A pattern stanza is not a usable target, so it must not be dialed.
+    # A pattern entry is not a usable target, so it must not be dialed.
     config_path = tmp_path / "config"
     config_path.write_text("Host *\n  User tester\n")
     settings = Settings(SSH_CONFIG_PATH=config_path, SSH_KNOWN_HOSTS_PATH=tmp_path / "known_hosts")

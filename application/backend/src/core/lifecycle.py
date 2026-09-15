@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 from collections.abc import AsyncGenerator
@@ -8,9 +9,12 @@ from loguru import logger
 
 from core.logging import setup_logging, setup_uvicorn_logging
 from core.security import get_ssh_feature_availability
+from db import get_async_db_session_ctx
+from services import remote_trainer_tunnel_manager
 from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
 from services.health_service import HealthService
+from services.remote_trainer_service import RemoteTrainerService
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
@@ -46,6 +50,16 @@ def _restart_process() -> None:
             logger.exception("Restart exec failed for argv={}", argv)
 
 
+async def _start_remote_trainer_tunnels() -> None:
+    """Best-effort background startup of configured SSH tunnels."""
+    try:
+        async with get_async_db_session_ctx() as session:
+            remote_trainers = await RemoteTrainerService(session).list_remote_trainers()
+        await remote_trainer_tunnel_manager.start_all(remote_trainers)
+    except Exception:
+        logger.exception("Failed to start configured remote-trainer SSH tunnels")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """FastAPI lifespan context manager"""
@@ -62,15 +76,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # aliased project rows for the same physical device share one pin.
     app.state.camera_claim_registry = CameraClaimRegistry()
 
-    # Fail the SSH remote-trainer feature closed if it is enabled on a
-    # non-loopback bind address: the feature has no authentication model, so a
+    # Fail the SSH remote-trainer feature closed if it is bound to a
+    # non-loopback address: the feature has no authentication model, so a
     # network-exposed instance would let anyone who can reach the API execute
     # code as root on every registered server. This never touches local or
     # direct-URL training - only routes/dependencies gated behind
     # `require_ssh_feature_active` (see `api.dependencies`) are affected.
     ssh_feature_availability = get_ssh_feature_availability()
     app.state.ssh_feature_availability = ssh_feature_availability
-    if ssh_feature_availability.enabled and ssh_feature_availability.network_exposed:
+    if ssh_feature_availability.network_exposed:
         logger.critical(
             "SSH remote-trainer feature disabled at startup: {}. Bind the backend to a loopback "
             "address (127.0.0.1 or ::1) to use it.",
@@ -90,10 +104,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.robot_manager = RobotConnectionManager()
     await app.state.robot_manager.find_robots()
 
+    # Open the standing SSH tunnel for every configured direct trainer that
+    # wants one. Backgrounded: SSH connect attempts can take seconds per
+    # trainer and must not delay the server accepting requests.
+    app.state.remote_trainer_tunnel_startup_task = asyncio.create_task(_start_remote_trainer_tunnels())
+
     yield
 
     # Shutdown
     logger.info(f"Shutting down {settings.app_name} application...")
+    app.state.remote_trainer_tunnel_startup_task.cancel()
+    await remote_trainer_tunnel_manager.stop_all()
 
     # We might want to shutdown the hardware manager too, though releasing workers should handle it.
     # But a global cleanup is safe.

@@ -10,7 +10,7 @@ import classes from './episode-list.module.css';
 interface EpisodeListProps {
     episodes: EpisodeSummary[];
     onSelect: (index: number) => void;
-    currentEpisode: number;
+    currentEpisode: number | null;
 }
 
 export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListProps) => {
