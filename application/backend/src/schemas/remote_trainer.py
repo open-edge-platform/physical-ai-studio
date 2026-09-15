@@ -14,7 +14,7 @@ class RemoteTrainerCreate(BaseModel):
     """Configuration for a direct remote trainer endpoint.
 
     ``ssh_host_alias`` is optional and, like `RemoteServerCreate`, names a
-    ``Host`` stanza in the user's own ``~/.ssh/config`` rather than storing any
+    ``Host`` entry in the user's own ``~/.ssh/config`` rather than storing any
     key, password, or passphrase - Studio never persists SSH credentials for a
     direct trainer any more than it does for an SSH-provisioned one. When set,
     Studio keeps a standing SSH local-forward tunnel open for this trainer
@@ -32,7 +32,7 @@ class RemoteTrainerCreate(BaseModel):
         min_length=1,
         max_length=255,
         pattern=SSH_HOST_ALIAS_PATTERN,
-        description="Name of a Host stanza in the user's SSH config, for an optional port-forward tunnel. Non-secret.",
+        description="Name of a Host entry in the user's SSH config, for an optional port-forward tunnel. Non-secret.",
     )
     ssh_remote_port: int | None = Field(
         default=None,

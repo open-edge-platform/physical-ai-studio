@@ -1,10 +1,10 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Append-only writer for a new ``Host`` stanza in ``~/.ssh/config``.
+"""Append-only writer for a new ``Host`` entry in ``~/.ssh/config``.
 
 Pairs with :mod:`services.ssh_config_reader`: the reader stays read-only, this
-module is the one place that ever appends a stanza to the user's own SSH
+module is the one place that ever appends an entry to the user's own SSH
 config, so a user can add a host from the UI without hand-editing the file.
 
 Same non-secret guarantee as the rest of the SSH feature: the only
@@ -12,13 +12,13 @@ credential-adjacent field accepted is ``identity_file``, a *path* the user
 already has on disk. Studio never reads its contents, and nothing here writes
 a key, password, or passphrase.
 
-Never edits an existing stanza: adding an alias that already exists in the
+Never edits an existing entry: adding an alias that already exists in the
 config is rejected with :class:`exceptions.ResourceAlreadyExistsError` rather
-than merged or overwritten, so this module never has to parse and rewrite a
-stanza it did not create.
+than merged or overwritten, so this module never has to parse and rewrite an
+entry it did not create.
 
 ``add_verified_host_alias`` is the entry point everything above this module
-should call: it never leaves a stanza in the file that Studio has not itself
+should call: it never leaves an entry in the file that Studio has not itself
 confirmed it can dial. A typo'd hostname, port, user, or key path is rejected
 before it ever reaches the user's real ``~/.ssh/config``, the same way a
 training-server save is gated on Tier 1 preflight before it reaches the
@@ -35,7 +35,7 @@ from services.ssh_config_reader import list_host_aliases
 from settings import Settings, get_settings
 
 
-def _render_stanza(config: SshHostAliasCreate) -> str:
+def _render_entry(config: SshHostAliasCreate) -> str:
     lines = [f"Host {config.alias}", f"    HostName {config.hostname}", f"    Port {config.port}"]
     if config.user:
         lines.append(f"    User {config.user}")
@@ -50,7 +50,7 @@ def _render_stanza(config: SshHostAliasCreate) -> str:
 
 
 def add_host_alias(config_path: Path, config: SshHostAliasCreate) -> SshHostAliasOption:
-    """Append a new ``Host`` stanza for ``config.alias`` and return it as an option.
+    """Append a new ``Host`` entry for ``config.alias`` and return it as an option.
 
     Writes unconditionally, with no connectivity check - see
     `add_verified_host_alias` for the gated entry point every caller outside
@@ -70,7 +70,7 @@ def add_host_alias(config_path: Path, config: SshHostAliasCreate) -> SshHostAlia
     existing_text = config_path.read_text() if config_path.is_file() else ""
     separator = "\n" if existing_text and not existing_text.endswith("\n") else ""
     with config_path.open("a") as handle:
-        handle.write(f"{separator}\n{_render_stanza(config)}" if existing_text else _render_stanza(config))
+        handle.write(f"{separator}\n{_render_entry(config)}" if existing_text else _render_entry(config))
 
     return SshHostAliasOption(alias=config.alias, hostname=config.hostname, port=config.port, user=config.user)
 
@@ -78,11 +78,11 @@ def add_host_alias(config_path: Path, config: SshHostAliasCreate) -> SshHostAlia
 async def add_verified_host_alias(
     config_path: Path, config: SshHostAliasCreate, settings: Settings | None = None
 ) -> SshHostAliasOption:
-    """Append a new ``Host`` stanza and confirm Studio can actually dial it.
+    """Append a new ``Host`` entry and confirm Studio can actually dial it.
 
-    Appends the stanza, then opens one bounded SSH connection to the new
+    Appends the entry, then opens one bounded SSH connection to the new
     alias. If that connection fails for any reason - unreachable host, wrong
-    port, rejected user, bad key path - the just-appended stanza is removed
+    port, rejected user, bad key path - the just-appended entry is removed
     before the original ``Ssh*Error`` (already an actionable
     `exceptions.BaseException`) is re-raised, so a typo never lands in the
     user's real ``~/.ssh/config``.

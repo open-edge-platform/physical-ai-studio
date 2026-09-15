@@ -293,7 +293,7 @@ class SshTransport:
         """Build connect options from the user's SSH config.
 
         The alias is passed as ``host`` together with the user's config, so
-        ``asyncssh`` performs the ``Host`` stanza resolution itself. Studio does
+        ``asyncssh`` performs the ``Host`` entry resolution itself. Studio does
         not reimplement hostname/port/user/identity resolution.
         """
         settings = self._settings
@@ -385,7 +385,7 @@ class SshTransport:
 
         Raises:
             SshHostAliasNotFoundError: The alias is absent from the SSH config,
-                or matches only a wildcard stanza.
+                or matches only a wildcard entry.
             SshHostKeyUnknownError: The host is absent from ``known_hosts``.
             SshHostKeyMismatchError: The host key differs from the accepted one.
             SshAgentRequiredError: The identity is passphrase-protected and no

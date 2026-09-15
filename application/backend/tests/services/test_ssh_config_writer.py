@@ -28,7 +28,7 @@ def _settings(config_path: Path) -> Settings:
     return Settings(SSH_CONFIG_PATH=config_path, SSH_PREFLIGHT_THROTTLE_S=0.0)
 
 
-def test_add_host_alias_writes_stanza_to_missing_config(tmp_path: Path) -> None:
+def test_add_host_alias_writes_entry_to_missing_config(tmp_path: Path) -> None:
     config_path = tmp_path / "config"
 
     option = add_host_alias(
@@ -102,7 +102,7 @@ def test_add_host_alias_omits_identities_only_without_identity_file(tmp_path: Pa
     assert "IdentitiesOnly" not in config_path.read_text()
 
 
-async def test_add_verified_host_alias_keeps_stanza_on_successful_connect(
+async def test_add_verified_host_alias_keeps_entry_on_successful_connect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config"
@@ -116,7 +116,7 @@ async def test_add_verified_host_alias_keeps_stanza_on_successful_connect(
     assert resolve_alias(config_path, "new-box").found is True
 
 
-async def test_add_verified_host_alias_rolls_back_stanza_on_failed_connect(
+async def test_add_verified_host_alias_rolls_back_entry_on_failed_connect(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config"
@@ -130,7 +130,7 @@ async def test_add_verified_host_alias_rolls_back_stanza_on_failed_connect(
     assert not config_path.exists()
 
 
-async def test_add_verified_host_alias_rollback_preserves_other_stanzas(
+async def test_add_verified_host_alias_rollback_preserves_other_entries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config_path = tmp_path / "config"

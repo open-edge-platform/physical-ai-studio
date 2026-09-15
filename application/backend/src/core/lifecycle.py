@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 from collections.abc import AsyncGenerator
@@ -49,6 +50,16 @@ def _restart_process() -> None:
             logger.exception("Restart exec failed for argv={}", argv)
 
 
+async def _start_remote_trainer_tunnels() -> None:
+    """Best-effort background startup of configured SSH tunnels."""
+    try:
+        async with get_async_db_session_ctx() as session:
+            remote_trainers = await RemoteTrainerService(session).list_remote_trainers()
+        await remote_trainer_tunnel_manager.start_all(remote_trainers)
+    except Exception:
+        logger.exception("Failed to start configured remote-trainer SSH tunnels")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """FastAPI lifespan context manager"""
@@ -94,18 +105,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await app.state.robot_manager.find_robots()
 
     # Open the standing SSH tunnel for every configured direct trainer that
-    # wants one.
-    try:
-        async with get_async_db_session_ctx() as session:
-            remote_trainers = await RemoteTrainerService(session).list_remote_trainers()
-        await remote_trainer_tunnel_manager.start_all(remote_trainers)
-    except Exception:
-        logger.exception("Failed to start configured remote-trainer SSH tunnels")
+    # wants one. Backgrounded: SSH connect attempts can take seconds per
+    # trainer and must not delay the server accepting requests.
+    app.state.remote_trainer_tunnel_startup_task = asyncio.create_task(_start_remote_trainer_tunnels())
 
     yield
 
     # Shutdown
     logger.info(f"Shutting down {settings.app_name} application...")
+    app.state.remote_trainer_tunnel_startup_task.cancel()
     await remote_trainer_tunnel_manager.stop_all()
 
     # We might want to shutdown the hardware manager too, though releasing workers should handle it.

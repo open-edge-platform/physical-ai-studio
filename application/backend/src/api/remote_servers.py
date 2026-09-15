@@ -136,11 +136,11 @@ async def list_ssh_host_aliases(settings: SettingsDep) -> list[SshHostAliasOptio
 
 @router.post("/aliases", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_ssh_feature_active)])
 async def create_ssh_host_alias(config: SshHostAliasCreate, settings: SettingsDep) -> SshHostAliasOption:
-    """Append a new Host stanza to the user's ``~/.ssh/config`` and return it as a selectable alias.
+    """Append a new Host entry to the user's ``~/.ssh/config`` and return it as a selectable alias.
 
     For a user who wants to point Studio at a host without hand-editing their
     SSH config first. Verifies the new host is actually reachable before
-    returning: a failed verification removes the stanza it just wrote rather
+    returning: a failed verification removes the entry it just wrote rather
     than leaving an unreachable entry in the user's real config. Also rejects
     an alias that already exists rather than editing it - see
     `services.ssh_config_writer` for why.

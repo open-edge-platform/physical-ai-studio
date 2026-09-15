@@ -32,7 +32,7 @@ class RemoteTrainerDB(Base):
 class RemoteServerDB(Base):
     """An SSH-provisioned training server, identified by an SSH config alias.
 
-    Holds no credential. ``ssh_host_alias`` names a ``Host`` stanza in the user's
+    Holds no credential. ``ssh_host_alias`` names a ``Host`` entry in the user's
     own SSH config; the SSH client library resolves it and authenticates, so
     Studio never receives a key, password, or passphrase. Hostname, port, and
     user are derived from the SSH config at read time rather than persisted, so a

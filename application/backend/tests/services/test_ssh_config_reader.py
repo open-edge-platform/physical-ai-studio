@@ -4,7 +4,7 @@
 """Tests for the read-only SSH config reader.
 
 The critical test here is ``test_resolve_never_leaks_credential_directives``:
-it builds a fixture stanza where ``IdentityFile``, ``IdentityAgent``,
+it builds a fixture entry where ``IdentityFile``, ``IdentityAgent``,
 ``CertificateFile``, and a fabricated ``Password`` directive are all present
 with recognizable dummy values, then asserts none of those values appear
 anywhere in the serialized response - not just that the schema has no field
@@ -59,7 +59,7 @@ def test_list_host_aliases_empty_config_file_returns_empty(tmp_path: Path) -> No
     assert list_host_aliases(config_path) == []
 
 
-def test_resolve_alias_finds_literal_host_stanza(tmp_path: Path) -> None:
+def test_resolve_alias_finds_literal_host_entry(tmp_path: Path) -> None:
     config_path = _write_config(
         tmp_path,
         """
@@ -109,7 +109,7 @@ def test_resolve_alias_missing_alias_returns_not_found(tmp_path: Path) -> None:
     assert result.found is False
 
 
-def test_resolve_alias_wildcard_only_stanza_returns_not_found(tmp_path: Path) -> None:
+def test_resolve_alias_wildcard_only_entry_returns_not_found(tmp_path: Path) -> None:
     config_path = _write_config(
         tmp_path,
         """
@@ -123,7 +123,7 @@ def test_resolve_alias_wildcard_only_stanza_returns_not_found(tmp_path: Path) ->
     assert result.found is False
 
 
-def test_list_host_aliases_excludes_wildcard_only_stanza(tmp_path: Path) -> None:
+def test_list_host_aliases_excludes_wildcard_only_entry(tmp_path: Path) -> None:
     config_path = _write_config(
         tmp_path,
         """
@@ -189,13 +189,13 @@ def test_resolve_alias_follows_include_one_level_deep(tmp_path: Path) -> None:
     assert result.user == "trainer"
 
 
-def test_resolve_alias_later_stanza_overrides_earlier_one(tmp_path: Path) -> None:
-    """A later ``Host`` stanza with the same alias overrides earlier fields.
+def test_resolve_alias_later_entry_overrides_earlier_one(tmp_path: Path) -> None:
+    """A later ``Host`` entry with the same alias overrides earlier fields.
 
-    This is last-stanza-wins, deliberately the opposite of real ssh's
+    This is last-entry-wins, deliberately the opposite of real ssh's
     first-obtained-value-wins rule, so an ``Include``d override file takes
-    effect. Fields the later stanza does not set (here, ``User``) keep the
-    earlier stanza's value rather than being cleared.
+    effect. Fields the later entry does not set (here, ``User``) keep the
+    earlier entry's value rather than being cleared.
     """
     config_path = _write_config(
         tmp_path,
@@ -218,12 +218,12 @@ def test_resolve_alias_later_stanza_overrides_earlier_one(tmp_path: Path) -> Non
     assert result.user == "trainer"
 
 
-def test_list_host_aliases_merges_duplicate_alias_last_stanza_wins(tmp_path: Path) -> None:
+def test_list_host_aliases_merges_duplicate_alias_last_entry_wins(tmp_path: Path) -> None:
     """A duplicate ``Host`` alias must be listed once, merged like ``resolve_alias``.
 
-    Mirrors ``test_resolve_alias_later_stanza_overrides_earlier_one``: the two
+    Mirrors ``test_resolve_alias_later_entry_overrides_earlier_one``: the two
     functions must agree on the resolved fields for the same alias, and the
-    alias must not appear twice just because two stanzas define it.
+    alias must not appear twice just because two entries define it.
     """
     config_path = _write_config(
         tmp_path,
