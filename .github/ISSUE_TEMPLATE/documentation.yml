@@ -5,14 +5,22 @@ labels:
   - Documentation
 body:
   - type: textarea
-    id: request
+    id: summary
     attributes:
       label: What should be documented?
-      value: |
-        ## What needs changing?
+      description: Briefly describe the documentation problem.
+      placeholder: Describe what is missing, incorrect, or unclear.
+    validations:
+      required: true
 
+  - type: textarea
+    id: details
+    attributes:
+      label: Documentation details
+      description: Add the location, suggested outcome, or relevant links.
+      value: |
         ## Location
 
         ## Suggested outcome
     validations:
-      required: true
+      required: false

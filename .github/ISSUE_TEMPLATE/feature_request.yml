@@ -8,14 +8,22 @@ body:
         Describe the problem and desired outcome. Detailed implementation planning can be added during triage.
 
   - type: textarea
-    id: proposal
+    id: problem
     attributes:
-      label: What problem should we solve?
-      value: |
-        ## Problem
+      label: Problem
+      description: What problem should we solve, and who is affected?
+      placeholder: Describe the user or developer problem.
+    validations:
+      required: true
 
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the behavior or capability you would like to have.
+      value: |
         ## Desired outcome
 
         ## Additional context
     validations:
-      required: true
+      required: false

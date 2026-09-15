@@ -5,24 +5,31 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please complete the sections that are relevant. You can leave irrelevant sections blank.
+        Please complete the sections that are relevant. You can leave optional sections blank.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe what happened and what you expected.
+      placeholder: Describe the unexpected behavior and expected result.
+    validations:
+      required: true
 
   - type: textarea
     id: details
     attributes:
-      label: What happened?
-      description: Describe the observed behavior, expected result, and a minimal reproduction.
+      label: Reproduction details
+      description: Include steps, configuration, or other details that help reproduce the issue.
       value: |
-        ## What happened?
-
-        ## What did you expect?
-
         ## Steps to reproduce
         1.
         2.
         3.
+
+        ## Additional context
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: environment
@@ -42,8 +49,16 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Logs or additional context
+      label: Logs or traceback
       description: Remove secrets and personal information before posting logs.
       render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Links, screenshots, or other context
+      description: Add any relevant links or attachments here.
     validations:
       required: false

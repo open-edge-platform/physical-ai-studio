@@ -3,22 +3,24 @@ description: Track a larger initiative spanning multiple issues, components, or 
 type: Epic
 body:
   - type: textarea
-    id: initiative
+    id: goal
     attributes:
-      label: What outcome are we trying to achieve?
-      value: |
-        ## Goal
-
-        ## Scope and non-scope
-
-        ## Success criteria
+      label: Goal
+      description: What outcome are we trying to achieve?
+      placeholder: Describe the outcome and why it matters.
     validations:
       required: true
 
   - type: textarea
-    id: dependencies
+    id: planning
     attributes:
-      label: Dependencies and risks
-      description: Link related issues and note important risks or open questions.
+      label: Planning details
+      description: Add scope, success criteria, dependencies, risks, or links to child issues.
+      value: |
+        ## Scope and non-scope
+
+        ## Success criteria
+
+        ## Dependencies and risks
     validations:
       required: false
