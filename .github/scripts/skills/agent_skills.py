@@ -77,23 +77,26 @@ def create_adapter(link: Path, target: str) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
-# Allowlist (not a denylist) so no cmd.exe metacharacter can be missed: letters, digits,
-# and the characters actually needed for Windows paths.
-_CMD_SAFE_PATH = re.compile(r"^[A-Za-z0-9_.:\\/ -]+$")
-
-
-def _reject_unsafe_for_cmd(path: Path) -> None:
-    text = str(path)
-    if not _CMD_SAFE_PATH.match(text):
-        raise RuntimeError(f"path contains characters unsafe for cmd.exe: {path}")
-
-
 def _resolve_cmd_exe() -> Path:
     """Resolve cmd.exe via the Win32 API, not env vars, so the path is never tainted."""
     buf = ctypes.create_unicode_buffer(260)
     if not ctypes.windll.kernel32.GetSystemDirectoryW(buf, len(buf)):  # type: ignore[attr-defined]
         raise RuntimeError("failed to resolve the Windows system directory")
     return Path(buf.value) / "cmd.exe"
+
+
+# cmd.exe re-parses its /c argument itself even with shell=False, so these are unsafe
+# regardless of quoting. A denylist (not an ASCII allowlist) is used deliberately here
+# so legitimate non-ASCII/`+`/`@`/`$` paths still work; this list is the full set of
+# cmd.exe metacharacters (including "(", ")", which earlier revisions of this check
+# omitted), not just the common ones.
+_CMD_METACHARACTERS = set('&|<>^"%!(),;\n\r\t')
+
+
+def _reject_unsafe_for_cmd(path: Path) -> None:
+    text = str(path)
+    if any(ch in _CMD_METACHARACTERS for ch in text):
+        raise RuntimeError(f"path contains characters unsafe for cmd.exe: {path}")
 
 
 def _create_windows_link(link: Path, abs_target: Path) -> None:
@@ -106,10 +109,14 @@ def _create_windows_link(link: Path, abs_target: Path) -> None:
     cmd_exe = _resolve_cmd_exe()
     if not cmd_exe.is_file():
         raise RuntimeError(f"cmd.exe not found at expected path: {cmd_exe}")
+    # link/abs_target are built from skill directory names, which can be introduced
+    # by an unreviewed PR and hit by `sync` locally (e.g. via pre-commit) before any
+    # human review completes, so they are not trustworthy inputs; validate explicitly
+    # rather than relying on review having already screened them.
     _reject_unsafe_for_cmd(link)
     _reject_unsafe_for_cmd(abs_target)
 
-    subprocess.run(  # nosec B603 - absolute cmd.exe path from Win32 API, paths validated, no shell
+    subprocess.run(  # nosec B603 - absolute cmd.exe path, no shell, paths validated above
         [str(cmd_exe), "/c", "mklink", "/J", str(link), str(abs_target)],
         check=True,
         capture_output=True,
