@@ -69,7 +69,6 @@ model:
 
     # Scheduler: decay LR scaled ~10x versus full fine-tuning (2.5e-6 -> 2.5e-5).
     scheduler_warmup_steps: 1000
-    scheduler_decay_steps: null # auto determine
     scheduler_decay_lr: 2.5e-5
 
     # SnapFlow self-distillation (arxiv.org/abs/2604.05656)

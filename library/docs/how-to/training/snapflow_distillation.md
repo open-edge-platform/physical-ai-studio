@@ -67,7 +67,6 @@ model:
     pretrained_name_or_path: lerobot/pi05_base
     # Phase 1 is plain flow matching — the callback turns SnapFlow on later.
     train_expert_only: false
-    scheduler_decay_steps: null # cosine horizon = real step budget
     scheduler_warmup_steps: 100
 
 trainer:
@@ -353,9 +352,8 @@ total_steps     = max_epochs * steps_per_epoch
 warmup          = 0.05 * total_steps
 ```
 
-Set `scheduler_decay_steps: null` so the cosine horizon follows
-`Trainer.estimated_stepping_batches` and the LR lands on `scheduler_decay_lr`
-exactly at the end of the run.
+The cosine horizon always follows `Trainer.estimated_stepping_batches`, so the
+LR lands on `scheduler_decay_lr` exactly at the end of the run.
 
 Hold out a validation split (`data.init_args.val_split`) on small datasets.
 Without it there is no way to distinguish convergence from memorisation.

@@ -66,16 +66,15 @@ model:
     optimizer_weight_decay: 0.01
     optimizer_grad_clip_norm: 1.0
 
-    # Scheduler. decay_steps=null derives the cosine horizon from the real step
-    # budget (trainer.estimated_stepping_batches) instead of a hard-coded 30k,
-    # so the LR lands on scheduler_decay_lr exactly at the end of the run.
-    # Warmup must then be given explicitly; ~5% of the total step budget is a
+    # Scheduler. The cosine horizon always follows the real step budget
+    # (trainer.estimated_stepping_batches), so the LR lands on
+    # scheduler_decay_lr exactly at the end of the run.
+    # Warmup is given explicitly; ~5% of the total step budget is a
     # reasonable target. Compute it as:
     #   steps_per_epoch = floor(train_frames / (batch_size * devices))
     #                       / accumulate_grad_batches
     #   warmup          = 0.05 * max_epochs * steps_per_epoch
     scheduler_warmup_steps: 100
-    scheduler_decay_steps: null
     scheduler_decay_lr: 2.5e-6
 
 data:

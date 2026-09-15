@@ -30,7 +30,7 @@ from physicalai.export.backends import (
 )
 from physicalai.policies.base import Policy
 from physicalai.policies.mixins import RTCPolicyMixin, SnapFlowPolicyMixin
-from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler, resolve_decay_steps
+from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import SmolVLAConfig
@@ -89,8 +89,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: Weight decay for optimizer. Default: 1e-10.
         optimizer_grad_clip_norm: Gradient clipping norm value. Default: 10.
         scheduler_warmup_steps: Number of warmup steps for scheduler. Default: 1_000.
-        scheduler_decay_steps: Cosine decay horizon in steps. ``None`` resolves the horizon in
-            ``setup()`` from the trainer's ``max_steps``/``max_epochs`` budget. Default: 30_000.
         scheduler_decay_lr: Learning rate decay factor. Default: 2.5e-6.
         dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
@@ -165,7 +163,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: float = 1e-10,
         optimizer_grad_clip_norm: float = 10,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -202,7 +199,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                 optimizer_weight_decay=optimizer_weight_decay,
                 optimizer_grad_clip_norm=optimizer_grad_clip_norm,
                 scheduler_warmup_steps=scheduler_warmup_steps,
-                scheduler_decay_steps=scheduler_decay_steps,
                 scheduler_decay_lr=scheduler_decay_lr,
             )
         else:
@@ -246,7 +242,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
                 optimizer_weight_decay=optimizer_weight_decay,
                 optimizer_grad_clip_norm=optimizer_grad_clip_norm,
                 scheduler_warmup_steps=scheduler_warmup_steps,
-                scheduler_decay_steps=scheduler_decay_steps,
                 scheduler_decay_lr=scheduler_decay_lr,
             )
 
@@ -263,9 +258,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         # Preprocessor/postprocessor set in setup() or _initialize_model()
         self._preprocessor: SmolVLAPreprocessor | None = None
         self._postprocessor: SmolVLAPostprocessor | None = None
-
-        # Resolved in setup() when the config value is None.
-        self._num_decay_steps: int | None = self.config.scheduler_decay_steps
 
         # Eager initialization if dataset_stats is provided
         if dataset_stats is not None:
@@ -385,7 +377,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: float = 1e-10,
         optimizer_grad_clip_norm: float = 10,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = 30_000,
         scheduler_decay_lr: float = 2.5e-6,
     ) -> tuple[SmolVLAConfig, dict[str, dict[str, list[float] | str | tuple]] | None, Path | None]:
         """Template loader for SmolVLA pretrained config/weights from local path or HF Hub.
@@ -451,7 +442,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         hf_config["optimizer_weight_decay"] = optimizer_weight_decay
         hf_config["optimizer_grad_clip_norm"] = optimizer_grad_clip_norm
         hf_config["scheduler_warmup_steps"] = scheduler_warmup_steps
-        hf_config["scheduler_decay_steps"] = scheduler_decay_steps
         hf_config["scheduler_decay_lr"] = scheduler_decay_lr
 
         dataset_stats = extract_dataset_stats(hf_config, preprocessor_file, preprocessor_dir)
@@ -512,12 +502,13 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         Called by Lightning before fit/validate/test/predict.
 
         Args:
-            stage: Lightning stage. For ``"fit"`` the scheduler decay horizon is
-                resolved from the trainer's ``max_steps``/``max_epochs`` budget.
+            stage: Lightning stage (unused, required by Lightning API).
 
         Raises:
             TypeError: If train dataset is not a physicalai Dataset.
         """
+        del stage  # Unused argument
+
         from physicalai.data.dataset import Dataset  # noqa: PLC0415
 
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
@@ -526,9 +517,6 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         if not isinstance(train_dataset, Dataset):
             msg = f"Expected physicalai Dataset, got {type(train_dataset)}"
             raise TypeError(msg)
-
-        if stage == "fit" and self.config.scheduler_decay_steps is None:
-            self._num_decay_steps = resolve_decay_steps(None, self.trainer.estimated_stepping_batches)
 
         stats_dict = train_dataset.stats
 
@@ -670,8 +658,10 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
-        Uses the decay horizon resolved in :meth:`setup`, which falls back to the
-        trainer's total step budget when ``scheduler_decay_steps`` is ``None``.
+        The cosine decay horizon is the total training step budget
+        (``self.trainer.estimated_stepping_batches``, derived from ``max_steps``
+        or ``max_epochs``), so the LR reaches ``scheduler_decay_lr`` exactly at
+        the end of training.
 
         Returns:
             Optimizer configuration dict.
@@ -687,17 +677,15 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             betas=self.config.optimizer_betas,
         )
 
-        num_decay_steps = self._num_decay_steps
-        if num_decay_steps is None:
-            num_decay_steps = resolve_decay_steps(None, self.trainer.estimated_stepping_batches)
-            self._num_decay_steps = num_decay_steps
+        num_training_steps = int(self.trainer.estimated_stepping_batches)
 
         scheduler = cosine_decay_with_warmup_scheduler(
             optimizer,
             peak_lr=self.config.optimizer_lr,
             decay_lr=self.config.scheduler_decay_lr,
             num_warmup_steps=self.config.scheduler_warmup_steps,
-            num_decay_steps=num_decay_steps,
+            num_decay_steps=num_training_steps,
+            num_training_steps=num_training_steps,
         )
 
         return {

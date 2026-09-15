@@ -17,35 +17,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def resolve_decay_steps(configured_steps: int | None, estimated_stepping_batches: float) -> int:
-    """Resolve the cosine decay horizon from the trainer's total step budget.
-
-    Args:
-        configured_steps: Explicit ``scheduler_decay_steps`` from the policy config,
-            or ``None`` to derive the horizon from the trainer budget.
-        estimated_stepping_batches: ``Trainer.estimated_stepping_batches``, which accounts
-            for ``max_steps``, ``max_epochs``, gradient accumulation and the device count.
-
-    Returns:
-        Number of decay steps.
-
-    Raises:
-        ValueError: If ``configured_steps`` is ``None`` and the trainer has no finite budget.
-    """
-    if configured_steps is not None:
-        return configured_steps
-
-    if not math.isfinite(estimated_stepping_batches):
-        msg = (
-            "scheduler_decay_steps=None requires a finite training budget: set max_steps or max_epochs on the trainer."
-        )
-        raise ValueError(msg)
-
-    num_decay_steps = int(estimated_stepping_batches)
-    logger.info("scheduler_decay_steps=None, using total training steps: %d", num_decay_steps)
-    return num_decay_steps
-
-
 def cosine_decay_with_warmup_scheduler(
     optimizer: Optimizer,
     *,
