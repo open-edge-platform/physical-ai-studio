@@ -4,7 +4,6 @@ import {
     Button,
     ButtonGroup,
     Content,
-    ContextualHelp,
     Dialog,
     Divider,
     Flex,
@@ -37,6 +36,17 @@ const AWS_STACK_URL =
     'https://eu-west-1.console.aws.amazon.com/cloudformation/home?region=eu-west-1' +
     `#/stacks/create/review?templateURL=${AWS_STACK_TEMPLATE_URL}` +
     '&stackName=physical-ai-studio-remote-trainer';
+const SSH_MODE_GUIDANCE =
+    'Use when the trainer is reachable through an SSH tunnel. Studio opens and maintains the tunnel.';
+const DIRECT_MODE_GUIDANCE = 'Use when Studio can reach the trainer HTTP endpoint directly.';
+const DIRECT_CONNECTION_HINT =
+    'Enter the complete trainer URL, including its scheme and port, for example http://trainer.example.com:8001.';
+const MANUAL_SSH_HINT =
+    'Enter the SSH host, port, user, and optional private key path available on this Studio host. ' +
+    'Studio never stores private key contents or passphrases.';
+const ALIAS_SSH_HINT =
+    'Choose a Host entry from ~/.ssh/config. Studio uses the host, user, identity, and proxy settings ' +
+    'defined by that alias.';
 
 type RemoteTrainerFormProps = {
     remoteTrainer?: SchemaRemoteTrainer;
@@ -136,9 +146,7 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                             </TabList>
                         </Tabs>
                         <Text UNSAFE_className={classes.modeGuidance}>
-                            {isSsh
-                                ? 'Use when the trainer is reachable through an SSH tunnel. Studio opens and maintains the tunnel.'
-                                : 'Use when Studio can reach the trainer HTTP endpoint directly.'}
+                            {isSsh ? SSH_MODE_GUIDANCE : DIRECT_MODE_GUIDANCE}
                         </Text>
                         <TextField
                             isRequired={!isSsh}
@@ -163,10 +171,7 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                         />
                         <div className={classes.methodContent}>
                             {!isSsh && (
-                                <Text UNSAFE_className={classes.directConnectionHint}>
-                                    Enter the complete trainer URL, including its scheme and port, for example
-                                    http://trainer.example.com:8001.
-                                </Text>
+                                <Text UNSAFE_className={classes.directConnectionHint}>{DIRECT_CONNECTION_HINT}</Text>
                             )}
                             {isSsh && (
                                 <Flex direction='column' gap='size-100'>
@@ -212,9 +217,7 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
                                         </TabList>
                                     </Tabs>
                                     <Text UNSAFE_className={classes.hint}>
-                                        {sshHostSource === 'manual'
-                                            ? 'Enter the SSH host, port, user, and optional private key path available on this Studio host. Studio never stores private key contents or passphrases.'
-                                            : 'Choose a Host entry from ~/.ssh/config. Studio uses the host, user, identity, and proxy settings defined by that alias.'}
+                                        {sshHostSource === 'manual' ? MANUAL_SSH_HINT : ALIAS_SSH_HINT}
                                     </Text>
                                     {sshHostSource === 'manual' ? (
                                         <>

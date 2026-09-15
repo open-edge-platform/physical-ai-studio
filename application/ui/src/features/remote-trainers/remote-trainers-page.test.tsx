@@ -16,6 +16,8 @@ const remoteTrainer = {
     name: 'managed-trainer',
     connection_mode: 'direct' as const,
     url: 'https://trainer.example.test/api',
+    ssh_remote_port: null,
+    ssh_local_port: null,
     created_at: '2026-07-14T12:00:00Z',
 };
 
@@ -58,7 +60,10 @@ describe('RemoteTrainersPage', () => {
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json(trainers)),
             http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
-                const body = (await request.json()) as Pick<typeof remoteTrainer, 'name' | 'connection_mode' | 'url'>;
+                const body = (await request.json()) as Pick<
+                    typeof remoteTrainer,
+                    'name' | 'connection_mode' | 'url' | 'ssh_remote_port' | 'ssh_local_port'
+                >;
                 trainers = [{ ...body, id: remoteTrainer.id, created_at: remoteTrainer.created_at }];
                 return HttpResponse.json(trainers[0], { status: 201 });
             })
