@@ -32,4 +32,4 @@ if [[ -n "${VERSION_OVERRIDE:-}" ]]; then
 fi
 
 uv run --with build==1.5.0 --with twine==6.2.0 python -m build --wheel
-uv run --with twine==6.2.0 python -m twine check dist/*
+uv run --with twine==6.2.0 --with packaging==26.3 python -m twine check dist/*
