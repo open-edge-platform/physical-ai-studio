@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from huggingface_hub import HfApi
 from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
-from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
+from physicalai.policies import ACT, Pi0, Pi05, Rldx1, SmolVLA
 from pydantic import BaseModel
 
 from services.training_backends.local import resolve_hf_token
@@ -17,6 +17,7 @@ _POLICY_CLASSES = {
     "act": ACT,
     "pi0": Pi0,
     "pi05": Pi05,
+    "rldx1": Rldx1,
     "smolvla": SmolVLA,
 }
 
@@ -31,6 +32,7 @@ _HUGGINGFACE_REQUIREMENTS = {
         ("google/paligemma-3b-pt-224", True),
     ),
     "smolvla": (("lerobot/smolvla_base", False),),
+    "rldx1": (("RLWRLD/RLDX-1-PT", False),),
 }
 
 

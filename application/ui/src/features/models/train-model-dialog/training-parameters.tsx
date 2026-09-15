@@ -29,6 +29,7 @@ interface TrainingParametersProps {
     onPrecisionChange: (value: Key | null) => void;
     compileModel: boolean;
     onCompileModelChange: (value: boolean) => void;
+    isCompileModelSupported: boolean;
     isAutoScaleBatchDisabled: boolean;
     deviceType: string | undefined;
     /** False for policies without a flow-matching sampler; hides the SnapFlow controls entirely. */
@@ -52,6 +53,7 @@ export const TrainingParameters = ({
     onPrecisionChange,
     compileModel,
     onCompileModelChange,
+    isCompileModelSupported,
     isAutoScaleBatchDisabled,
     deviceType,
     isSnapflowSupported,
@@ -170,15 +172,20 @@ export const TrainingParameters = ({
                 <Item key='32-true'>32-bit</Item>
             </Picker>
             <Flex direction='row' alignSelf={'end'} alignItems='center'>
-                <Checkbox isEmphasized isSelected={compileModel} onChange={onCompileModelChange}>
+                <Checkbox
+                    isEmphasized
+                    isSelected={compileModel}
+                    onChange={onCompileModelChange}
+                    isDisabled={!isCompileModelSupported}
+                >
                     Compile model
                 </Checkbox>
                 <ContextualHelp variant='info'>
                     <Heading>Compile model</Heading>
                     <Content>
                         <Text>
-                            Enables torch.compile for all policies. Can significantly speed up training after an initial
-                            compilation warmup, but increases startup time.
+                            Enables torch.compile for supported policies. Can significantly speed up training after an
+                            initial compilation warmup, but increases startup time.
                         </Text>
                     </Content>
                 </ContextualHelp>

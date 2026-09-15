@@ -1,5 +1,13 @@
 const GB = 1024 ** 3;
 
+export interface TrainingPolicy {
+    id: string;
+    name: string;
+    description: string;
+    minVRAM: number;
+    supportsCompile: boolean;
+}
+
 /** Format bytes as a human-readable GB string. */
 export const formatBytes = (bytes: number): string => {
     const gb = bytes / GB;
@@ -13,28 +21,33 @@ export const formatBytes = (bytes: number): string => {
  * Optimizer state drives the peak, so it tracks the trainable parameter count
  * and barely moves with batch size: Pi0.5 needs ~38 GB at both batch 1 and 8.
  */
-export const MODELS: ReadonlyArray<{
-    id: string;
-    name: string;
-    description: string;
-    minVRAM: number;
-}> = [
+export const MODELS: ReadonlyArray<TrainingPolicy> = [
     {
         id: 'act',
         name: 'ACT',
         description: 'Action Chunking with Transformers, lightweight and fast to train',
         minVRAM: 2 * GB,
+        supportsCompile: true,
     },
     {
         id: 'smolvla',
         name: 'SmolVLA',
         description: 'Small Vision-Language-Action model based on SmolVLM2-500M',
         minVRAM: 3 * GB,
+        supportsCompile: true,
     },
     {
         id: 'pi05',
         name: 'Pi0.5',
         description: 'Enhanced Pi0 with discrete state encoding and longer context',
         minVRAM: 40 * GB,
+        supportsCompile: true,
+    },
+    {
+        id: 'rldx1',
+        name: 'RLDX-1',
+        description: 'General-purpose robot foundation model for dexterous manipulation',
+        minVRAM: 40 * GB,
+        supportsCompile: false,
     },
 ];

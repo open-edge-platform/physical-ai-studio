@@ -255,6 +255,37 @@ describe('TrainModelDialog', () => {
         expect(submitted).toMatchObject({ snapflow_enabled: false });
     });
 
+    it('forces compile_model=false for RLDX-1', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+
+        await user.click(screen.getByRole('checkbox', { name: 'Compile model' }));
+        expect(screen.getByRole('checkbox', { name: 'Compile model' })).toBeChecked();
+
+        await user.click(screen.getByLabelText('Select RLDX-1 policy'));
+
+        const compileCheckbox = screen.getByRole('checkbox', { name: 'Compile model' });
+        expect(compileCheckbox).toBeDisabled();
+        expect(compileCheckbox).not.toBeChecked();
+
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).toMatchObject({ policy: 'rldx1', compile_model: false });
+    });
+
     it('blocks Pi0.5 training when the token lacks gated-model access', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();

@@ -100,6 +100,11 @@ class TestTrainingJobSpec:
         with pytest.raises(ValidationError):
             TrainingJobSpec(policy="pi05", max_epochs=5, snapflow_start_epoch=0)
 
+    def test_compile_model_is_rejected_for_rldx1(self) -> None:
+        """RLDX-1 does not support torch.compile in either fresh or resumed runs."""
+        with pytest.raises(ValidationError, match="compile_model is not supported for policy"):
+            TrainingJobSpec(policy="rldx1", compile_model=True)
+
 
 class TestBuildPolicy:
     def test_fresh_policy_is_built_from_the_spec(self) -> None:

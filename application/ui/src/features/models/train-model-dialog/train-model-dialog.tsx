@@ -83,6 +83,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [snapflowEnabled, setSnapflowEnabled] = useState<boolean>(false);
     const [snapflowDistillEpochs, setSnapflowDistillEpochs] = useState<number>(DEFAULT_SNAPFLOW_DISTILL_EPOCHS);
     const [remoteTrainerId, setRemoteTrainerId] = useState<Key | null>('local');
+    const selectedModel = useMemo(() => MODELS.find((policy) => policy.id === selectedPolicy), [selectedPolicy]);
+    const isCompileModelSupported = selectedModel?.supportsCompile ?? true;
     const isSnapflowSupported = supportsSnapflow(selectedPolicy);
     // snapflow_distill_epochs is additive on top of max_epochs (the teacher phase
     // always runs the full max_epochs before distillation extends the run), so it
@@ -126,6 +128,12 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         }
     }, [activeDevice]);
 
+    useEffect(() => {
+        if (!isCompileModelSupported) {
+            setCompileModel(false);
+        }
+    }, [isCompileModelSupported]);
+
     const trainMutation = $api.useMutation('post', '/api/jobs:train', {
         meta: {
             invalidates: [['get', '/api/jobs']],
@@ -160,7 +168,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             num_workers: numWorkers === 'auto' ? 'auto' : Number(numWorkers),
             auto_scale_batch_size: autoScaleBatchSize,
             precision: (precision?.toString() ?? 'bf16-mixed') as SchemaJob['payload']['precision'],
-            compile_model: compileModel,
+            compile_model: isCompileModelSupported ? compileModel : false,
             snapflow_enabled: isSnapflowRequested,
             snapflow_distill_epochs: snapflowDistillEpochs,
             val_split: 0.1,
@@ -257,6 +265,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onPrecisionChange={setPrecision}
                                 compileModel={compileModel}
                                 onCompileModelChange={setCompileModel}
+                                isCompileModelSupported={isCompileModelSupported}
                                 isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
                                 deviceType={activeDevice?.type}
                                 isSnapflowSupported={isSnapflowSupported}

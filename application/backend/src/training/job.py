@@ -73,15 +73,19 @@ _DATASET_REPO_ID = "snapshot"
 
 PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
     "pi05": "lerobot/pi05_base",
+    "rldx1": "RLWRLD/RLDX-1-PT",
     "smolvla": "lerobot/smolvla_base",
 }
-"""Hub checkpoints used to initialize policies that only fine-tune from pretrained weights."""
+"""Hub checkpoints used to initialize policies from pretrained base weights."""
 
 _WEIGHTS_ONLY_RESUME_POLICIES = frozenset({"pi0"})
 """Policies whose checkpoints must be reloaded with ``weights_only=True``."""
 
 _COMPILED_EXPORT_RELOAD_POLICIES = frozenset({"act", "smolvla"})
 """Policies that cannot be exported while ``torch.compile``d, so are reloaded first."""
+
+_COMPILE_UNSUPPORTED_POLICIES = frozenset({"rldx1"})
+"""Policies that must reject ``compile_model=True`` at spec validation time."""
 
 
 class RunOptions(BaseModel):
@@ -169,6 +173,17 @@ class TrainingJobSpec(BaseModel):
             msg = (
                 f"snapflow_start_epoch ({self.snapflow_start_epoch}) must be below max_epochs "
                 f"({self.max_epochs}) so at least one epoch is spent distilling."
+            )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def validate_compile_support(self) -> TrainingJobSpec:
+        """Reject ``compile_model`` for policies that do not support torch.compile."""
+        if self.compile_model and self.policy.lower() in _COMPILE_UNSUPPORTED_POLICIES:
+            msg = (
+                f"compile_model is not supported for policy {self.policy!r}; "
+                f"disable compile_model or choose a different policy."
             )
             raise ValueError(msg)
         return self
