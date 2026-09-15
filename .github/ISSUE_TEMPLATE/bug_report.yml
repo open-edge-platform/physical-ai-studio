@@ -1,63 +1,26 @@
-name: Bug Report
-description: Report a bug or unexpected behavior
-title: "[Bug]: "
-labels: ["bug", "triage"]
+name: Bug report
+description: Report an unexpected behavior in Physical AI Studio.
+type: Bug
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug. Please fill out the sections below.
+        Please complete the sections that are relevant. You can leave irrelevant sections blank.
 
   - type: textarea
-    id: description
+    id: details
     attributes:
-      label: Description
-      description: What happened? What did you expect?
-      placeholder: |
-        Brief description of the bug.
-    validations:
-      required: true
+      label: What happened?
+      description: Describe the observed behavior, expected result, and a minimal reproduction.
+      value: |
+        ## What happened?
 
-  - type: textarea
-    id: reproduce
-    attributes:
-      label: Steps to Reproduce
-      description: How can we reproduce this issue?
-      placeholder: |
-        1. Run command '...'
-        2. Click on '...'
-        3. See error
-    validations:
-      required: true
+        ## What did you expect?
 
-  - type: textarea
-    id: expected
-    attributes:
-      label: Expected Behavior
-      description: What should have happened?
-    validations:
-      required: true
-
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual Behavior
-      description: What actually happened?
-    validations:
-      required: true
-
-  - type: dropdown
-    id: component
-    attributes:
-      label: Component
-      description: Which part of the project is affected?
-      options:
-        - Library (VLA framework)
-        - Backend (FastAPI server)
-        - UI (React frontend)
-        - CI/CD
-        - Documentation
-        - Other
+        ## Steps to reproduce
+        1.
+        2.
+        3.
     validations:
       required: true
 
@@ -65,28 +28,22 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: System and version information
-      placeholder: |
-        - OS: Ubuntu 24.04
-        - Python: 3.12
-        - Package version: 0.1.0
-      render: markdown
+      description: Include only the details relevant to this issue.
+      value: |
+        - Studio version or commit:
+        - OS:
+        - Python:
+        - Hardware accelerator:
+        - Robot/camera:
+        - Policy or dataset:
     validations:
       required: false
 
   - type: textarea
     id: logs
     attributes:
-      label: Logs / Error Output
-      description: Paste relevant logs or error messages
+      label: Logs or additional context
+      description: Remove secrets and personal information before posting logs.
       render: shell
-    validations:
-      required: false
-
-  - type: textarea
-    id: additional
-    attributes:
-      label: Additional Context
-      description: Screenshots, related issues, or other context
     validations:
       required: false
