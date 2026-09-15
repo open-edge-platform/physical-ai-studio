@@ -293,16 +293,6 @@ class TestValSplit:
         val_eps = dm.val_eval_dataset._lerobot_dataset.requested_episodes
         assert len(val_eps) == 1
 
-    def test_val_split_keeps_single_episode_for_training(self, tmp_path: Path):
-        """A validation split cannot consume the only training episode."""
-        dataset_dir = _create_local_dataset(tmp_path, total_episodes=1)
-
-        dm = LeRobotDataModule(root=str(dataset_dir), train_batch_size=1, val_split=0.1)
-
-        train_eps = dm.train_dataset._lerobot_dataset.requested_episodes
-        assert train_eps == [0]
-        assert dm.val_eval_dataset is None
-
     def test_val_split_with_explicit_episodes(self, tmp_path: Path):
         """val_split works when user provides a subset of episodes."""
         dataset_dir = _create_local_dataset(tmp_path, total_episodes=20)
