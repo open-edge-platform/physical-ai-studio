@@ -25,12 +25,13 @@ instance would ever mean.
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from core.security import get_ssh_feature_availability
-from services.ssh.transport import open_transport
+from services.ssh.transport import SshTransport, open_transport
 from services.ssh.tunnel import SshTunnel
 from settings import get_settings
 
@@ -46,16 +47,12 @@ _lock = asyncio.Lock()
 async def sync_tunnel(remote_trainer: RemoteTrainer) -> None:
     """Open, replace, or close this trainer's tunnel to match its current config.
 
-    Called after every create/update so a saved trainer's tunnel always
-    reflects what was just persisted, and on startup for every configured
-    trainer. Never raises: a tunnel that fails to open leaves the trainer
-    unreachable through it, which health checks and job dispatch already
-    surface as a connection failure - this must not fail the save/startup
-    that triggered it.
+    Connection failures propagate to create and update requests so they cannot
+    report success without opening the configured local port.
     """
     async with _lock:
         await _close_locked(remote_trainer.id)
-        if remote_trainer.ssh_host_alias is None:
+        if remote_trainer.ssh_host_alias is None and remote_trainer.ssh_connection is None:
             return
         if not get_ssh_feature_availability().active:
             logger.warning(
@@ -80,8 +77,22 @@ async def start_all(remote_trainers: list[RemoteTrainer]) -> None:
     opening. Feature-gating is left entirely to `sync_tunnel`.
     """
     for remote_trainer in remote_trainers:
-        if remote_trainer.ssh_host_alias is not None:
-            await sync_tunnel(remote_trainer)
+        if remote_trainer.ssh_host_alias is not None or remote_trainer.ssh_connection is not None:
+            try:
+                await sync_tunnel(remote_trainer)
+            except Exception as error:
+                if remote_trainer.ssh_host_alias is not None:
+                    connection_name = remote_trainer.ssh_host_alias
+                elif remote_trainer.ssh_connection is not None:
+                    connection_name = remote_trainer.ssh_connection.hostname
+                else:
+                    continue
+                logger.warning(
+                    "Failed to restore SSH tunnel for trainer '{}' via '{}': {}",
+                    remote_trainer.name,
+                    connection_name,
+                    error,
+                )
 
 
 async def stop_all() -> None:
@@ -94,28 +105,41 @@ async def stop_all() -> None:
 async def _open_locked(remote_trainer: RemoteTrainer) -> None:
     settings = get_settings()
     alias = remote_trainer.ssh_host_alias
+    connection = remote_trainer.ssh_connection
     remote_port = remote_trainer.ssh_remote_port
     local_port = remote_trainer.ssh_local_port
-    if alias is None or remote_port is None:
+    if (alias is None and connection is None) or remote_port is None:
+        return
+    if alias is not None:
+        connection_name = alias
+        open_ssh_transport = partial(open_transport, alias, settings)
+    elif connection is not None:
+        connection_name = connection.hostname
+        open_ssh_transport = partial(
+            SshTransport,
+            connection.hostname,
+            settings,
+            hostname=connection.hostname,
+            port=connection.port,
+            username=connection.user,
+            identity_file=connection.identity_file,
+        )
+    else:
         return
     tunnel = SshTunnel(
-        lambda: open_transport(alias, settings),
+        open_ssh_transport,
         "127.0.0.1",
         remote_port,
         settings,
         local_port=local_port,
     )
-    try:
-        await tunnel.open()
-    except Exception as error:
-        logger.warning("Failed to open SSH tunnel for trainer '{}' via '{}': {}", remote_trainer.name, alias, error)
-        return
+    await tunnel.open()
     _tunnels[remote_trainer.id] = tunnel
     logger.info(
         "SSH tunnel open for trainer '{}': 127.0.0.1:{} -> {} (127.0.0.1:{})",
         remote_trainer.name,
         tunnel.local_port,
-        alias,
+        connection_name,
         remote_port,
     )
 

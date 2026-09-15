@@ -445,16 +445,13 @@ class SshHostAliasNotFoundError(BaseException):
 class SshHostKeyUnknownError(BaseException):
     """Raised when the host is absent from ``known_hosts``.
 
-    Fails closed. Studio neither pins nor writes host keys, so the recovery is
-    for the user to accept the fingerprint themselves.
+    Studio normally accepts a first-seen key automatically. This error is the
+    fail-closed fallback when AsyncSSH cannot run that validation callback.
     """
 
     def __init__(self, alias: str) -> None:
         super().__init__(
-            message=(
-                f"The host key for '{alias}' has not been accepted yet. "
-                f"Run `ssh {alias}` once and accept its fingerprint, then try again."
-            ),
+            message=(f"The host key for '{alias}' could not be accepted automatically. Try connecting again."),
             error_code="ssh_host_key_unknown",
             http_status=http.HTTPStatus.BAD_REQUEST,
         )

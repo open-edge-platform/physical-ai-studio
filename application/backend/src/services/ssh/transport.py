@@ -23,21 +23,21 @@ constrained here rather than at the call sites:
 * **Everything is bounded.** Connect, command, per-alias concurrency, and
   per-alias connect rate all have caps from :class:`settings.Settings`.
 
-Host-key unknown vs. changed
-----------------------------
+Host-key trust on first use
+---------------------------
 ``asyncssh`` Raises the same :class:`asyncssh.HostKeyNotVerifiable` for a host
   absent from ``known_hosts`` and for a host whose key changed - both arrive as
 ``ValueError('Host key is not trusted')`` inside
 ``SSHClientConnection.validate_server_host_key``. To tell them apart, this module
-installs a callable ``known_hosts`` matcher that wraps
-:func:`asyncssh.match_known_hosts` and records how many entries matched the host
-before verification ran. No matching entry means the host was never accepted
-(unknown); entries that matched while verification still failed means the
-presented key differs from the accepted one (mismatch). An ambiguous case fails
-closed as a mismatch, the more suspicious interpretation.
+installs a callable ``known_hosts`` matcher that records whether the host has an
+existing trust entry. If none exists, a client validation callback atomically
+persists and accepts the first key presented. If an entry exists, verification
+still fails closed as a mismatch. An ambiguous case also fails closed.
 """
 
 import asyncio
+import fcntl
+import os
 import shlex
 import socket
 from collections.abc import Sequence
@@ -145,6 +145,16 @@ class _HostKeyMatch:
     def has_entry(self) -> bool:
         """True when ``known_hosts`` already held something for this host."""
         return bool(self.trusted_keys or self.ca_keys or self.revoked_keys)
+
+
+class _TrustOnFirstUseClient(asyncssh.SSHClient):
+    """Accept and persist only host keys which have no prior trust entry."""
+
+    def __init__(self, transport: "SshTransport") -> None:
+        self._transport = transport
+
+    def validate_host_public_key(self, host: str, addr: str, port: int, key: asyncssh.SSHKey) -> bool:
+        return self._transport._accept_new_host_key(host, addr, port, key)
 
 
 @dataclass(slots=True)
@@ -263,9 +273,22 @@ class SshTransport:
         alias: The SSH config alias this transport dials.
     """
 
-    def __init__(self, alias: str, settings: Settings | None = None) -> None:
+    def __init__(
+        self,
+        alias: str,
+        settings: Settings | None = None,
+        *,
+        hostname: str | None = None,
+        port: int = 22,
+        username: str | None = None,
+        identity_file: str | None = None,
+    ) -> None:
         self.alias = alias
         self._settings = settings or get_settings()
+        self._hostname = hostname
+        self._port = port
+        self._username = username
+        self._identity_file = identity_file
         self._connection: asyncssh.SSHClientConnection | None = None
         self._gate: _AliasGate | None = None
         self._host_key_match = _HostKeyMatch()
@@ -298,14 +321,56 @@ class SshTransport:
         """
         settings = self._settings
         self._host_key_match = _HostKeyMatch()
+        if self._hostname is not None:
+            return asyncssh.SSHClientConnectionOptions(
+                host=self._hostname,
+                port=self._port,
+                username=self._username,
+                client_keys=[str(Path(self._identity_file).expanduser())] if self._identity_file else None,
+                client_factory=lambda: _TrustOnFirstUseClient(self),
+                config=[],
+                known_hosts=self._match_known_hosts,
+                connect_timeout=settings.ssh_connect_timeout_s,
+                keepalive_interval=settings.ssh_keepalive_interval_s,
+                keepalive_count_max=settings.ssh_keepalive_count_max,
+            )
         return asyncssh.SSHClientConnectionOptions(
             host=self.alias,
+            client_factory=lambda: _TrustOnFirstUseClient(self),
             config=_existing_config_paths(settings.ssh_config_path),
             known_hosts=self._match_known_hosts,
             connect_timeout=settings.ssh_connect_timeout_s,
             keepalive_interval=settings.ssh_keepalive_interval_s,
             keepalive_count_max=settings.ssh_keepalive_count_max,
         )
+
+    def _accept_new_host_key(self, host: str, addr: str, port: int, key: asyncssh.SSHKey) -> bool:
+        """Persist a first-seen host key, while rejecting changed keys."""
+        match = self._host_key_match
+        if not match.consulted or match.has_entry:
+            return False
+
+        known_hosts_path = self._settings.ssh_known_hosts_path
+        if not known_hosts_path.parent.exists():
+            known_hosts_path.parent.mkdir(parents=True, mode=0o700)
+        host_pattern = host if port == 22 else f"[{host}]:{port}"
+        entry = host_pattern.encode() + b" " + key.export_public_key().strip() + b"\n"
+        descriptor = os.open(known_hosts_path, os.O_CREAT | os.O_RDWR, 0o600)
+        with os.fdopen(descriptor, "r+b") as known_hosts_file:
+            fcntl.flock(known_hosts_file, fcntl.LOCK_EX)
+            current = asyncssh.match_known_hosts(known_hosts_file.read(), host, addr, port)
+            trusted_keys, ca_keys, revoked_keys = current[:3]
+            if revoked_keys or ca_keys:
+                return False
+            if trusted_keys:
+                return key in trusted_keys
+
+            known_hosts_file.seek(0, os.SEEK_END)
+            known_hosts_file.write(entry)
+            known_hosts_file.flush()
+            os.fsync(known_hosts_file.fileno())
+        logger.info("Accepted first-seen SSH host key for alias '{}'", self.alias)
+        return True
 
     def _match_known_hosts(
         self,
@@ -399,9 +464,10 @@ class SshTransport:
         # Pre-validated against the same config asyncssh will read, so an absent
         # alias is an actionable 400 instead of a connection attempt against a
         # hostname that is really an unresolved alias.
-        resolved = resolve_alias(self._settings.ssh_config_path, self.alias)
-        if not resolved.found:
-            raise SshHostAliasNotFoundError(self.alias)
+        if self._hostname is None:
+            resolved = resolve_alias(self._settings.ssh_config_path, self.alias)
+            if not resolved.found:
+                raise SshHostAliasNotFoundError(self.alias)
 
         # asyncssh loads the configured identities while building options, so a
         # missing or corrupt IdentityFile fails here rather than on the wire. It
@@ -416,7 +482,7 @@ class SshTransport:
 
         gate = await self._acquire_gate()
         try:
-            self._connection = await asyncssh.connect(options=options)
+            self._connection = await asyncssh.connect(host=self._hostname or self.alias, options=options)
         except BaseException as error:
             gate.semaphore.release()
             raise await self._map_connect_error(error, options) from None

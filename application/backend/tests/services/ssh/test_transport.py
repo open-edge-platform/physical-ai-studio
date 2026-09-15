@@ -435,7 +435,8 @@ async def test_context_manager_connects_and_closes(settings: Settings, monkeypat
 async def test_connect_reads_the_users_config_and_alias(settings: Settings, monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_connect(*, options, **_kwargs):
+    async def fake_connect(*, host, options, **_kwargs):
+        captured["host"] = host
         captured["options"] = options
         return MagicMock()
 
@@ -445,7 +446,37 @@ async def test_connect_reads_the_users_config_and_alias(settings: Settings, monk
     await transport.connect()
 
     # asyncssh resolved the alias itself, from the user's own config file.
+    assert captured["host"] == ALIAS
     assert captured["options"].host == _HOSTNAME
+    await transport.close()
+
+
+async def test_connect_uses_manual_connection_without_resolving_an_alias(settings: Settings, monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_connect(*, host, options, **_kwargs):
+        captured["host"] = host
+        captured["options"] = options
+        return MagicMock()
+
+    resolve = MagicMock()
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+    monkeypatch.setattr("services.ssh.transport.resolve_alias", resolve)
+    transport = SshTransport(
+        "remote-trainer-id",
+        settings,
+        hostname="gpu.example.test",
+        port=2222,
+        username="trainer",
+    )
+
+    await transport.connect()
+
+    resolve.assert_not_called()
+    assert captured["host"] == "gpu.example.test"
+    assert captured["options"].host == "gpu.example.test"
+    assert captured["options"].port == 2222
+    assert captured["options"].username == "trainer"
     await transport.close()
 
 
@@ -478,11 +509,49 @@ def _verifying_connect(monkeypatch, match_result) -> None:
     monkeypatch.setattr(asyncssh, "connect", fake_connect)
 
 
-async def test_no_known_hosts_entry_is_reported_as_an_unknown_host(settings: Settings, monkeypatch) -> None:
-    _verifying_connect(monkeypatch, _match())
+async def test_no_known_hosts_entry_is_accepted_and_persisted(settings: Settings, monkeypatch) -> None:
+    key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
 
-    with pytest.raises(SshHostKeyUnknownError):
-        await SshTransport(ALIAS, settings).connect()
+    async def fake_connect(*, options, **_kwargs):
+        options.known_hosts(_HOSTNAME, "10.0.0.1", 22)
+        assert options.protocol_factory().validate_host_public_key(_HOSTNAME, "10.0.0.1", 22, key)
+        return MagicMock()
+
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+
+    transport = SshTransport(ALIAS, settings)
+    await transport.connect()
+
+    assert settings.ssh_known_hosts_path.read_bytes() == (
+        _HOSTNAME.encode() + b" " + key.export_public_key().strip() + b"\n"
+    )
+    await transport.close()
+
+
+async def test_concurrent_first_use_accepts_only_one_competing_key(settings: Settings) -> None:
+    transports = [SshTransport(ALIAS, settings), SshTransport(ALIAS, settings)]
+    keys = [asyncssh.generate_private_key("ssh-ed25519").convert_to_public() for _ in transports]
+    for transport in transports:
+        transport._match_known_hosts(_HOSTNAME, "10.0.0.1", 22)
+
+    accepted = await asyncio.gather(
+        *(
+            asyncio.to_thread(transport._accept_new_host_key, _HOSTNAME, "10.0.0.1", 22, key)
+            for transport, key in zip(transports, keys, strict=True)
+        )
+    )
+
+    assert sum(accepted) == 1
+    assert len(settings.ssh_known_hosts_path.read_text().splitlines()) == 1
+
+
+async def test_nonstandard_port_uses_openssh_host_pattern(settings: Settings) -> None:
+    transport = SshTransport(ALIAS, settings)
+    key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
+    transport._match_known_hosts(_HOSTNAME, "10.0.0.1", 2222)
+
+    assert transport._accept_new_host_key(_HOSTNAME, "10.0.0.1", 2222, key)
+    assert settings.ssh_known_hosts_path.read_text().startswith(f"[{_HOSTNAME}]:2222 ")
 
 
 async def test_an_existing_known_hosts_entry_is_reported_as_a_mismatch(settings: Settings, monkeypatch) -> None:
@@ -493,6 +562,25 @@ async def test_an_existing_known_hosts_entry_is_reported_as_a_mismatch(settings:
 
     with pytest.raises(SshHostKeyMismatchError):
         await SshTransport(ALIAS, settings).connect()
+
+
+async def test_an_existing_known_hosts_entry_is_not_replaced(settings: Settings, monkeypatch) -> None:
+    original = f"{_HOSTNAME} ssh-ed25519 existing-key\n"
+    settings.ssh_known_hosts_path.write_text(original)
+    key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
+
+    async def fake_connect(*, options, **_kwargs):
+        options.known_hosts(_HOSTNAME, "10.0.0.1", 22)
+        assert not options.protocol_factory().validate_host_public_key(_HOSTNAME, "10.0.0.1", 22, key)
+        raise asyncssh.HostKeyNotVerifiable("not trusted")
+
+    monkeypatch.setattr(asyncssh, "match_known_hosts", lambda *_args: _match(trusted=1))
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+
+    with pytest.raises(SshHostKeyMismatchError):
+        await SshTransport(ALIAS, settings).connect()
+
+    assert settings.ssh_known_hosts_path.read_text() == original
 
 
 async def test_a_revoked_key_is_reported_as_a_mismatch(settings: Settings, monkeypatch) -> None:
