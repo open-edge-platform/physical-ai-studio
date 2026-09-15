@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import os
 import platform
 import re
@@ -76,9 +77,6 @@ def create_adapter(link: Path, target: str) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
-# Hardcoded (not read from the COMSPEC env var) so the executable path can't be tainted.
-_CMD_EXE = r"C:\Windows\System32\cmd.exe"
-
 # cmd.exe re-parses its /c argument itself, so these are unsafe even with shell=False.
 _CMD_METACHARACTERS = set('&|<>^"%!\n\r')
 
@@ -89,6 +87,14 @@ def _reject_unsafe_for_cmd(path: Path) -> None:
         raise RuntimeError(f"path contains characters unsafe for cmd.exe: {path}")
 
 
+def _resolve_cmd_exe() -> Path:
+    """Resolve cmd.exe via the Win32 API, not env vars, so the path is never tainted."""
+    buf = ctypes.create_unicode_buffer(260)
+    if not ctypes.windll.kernel32.GetSystemDirectoryW(buf, len(buf)):  # type: ignore[attr-defined]
+        raise RuntimeError("failed to resolve the Windows system directory")
+    return Path(buf.value) / "cmd.exe"
+
+
 def _create_windows_link(link: Path, abs_target: Path) -> None:
     try:
         link.symlink_to(abs_target, target_is_directory=True)
@@ -96,13 +102,14 @@ def _create_windows_link(link: Path, abs_target: Path) -> None:
     except OSError:
         pass
 
-    if not Path(_CMD_EXE).is_file():
-        raise RuntimeError(f"cmd.exe not found at expected path: {_CMD_EXE}")
+    cmd_exe = _resolve_cmd_exe()
+    if not cmd_exe.is_file():
+        raise RuntimeError(f"cmd.exe not found at expected path: {cmd_exe}")
     _reject_unsafe_for_cmd(link)
     _reject_unsafe_for_cmd(abs_target)
 
-    subprocess.run(  # nosec B603 - absolute, hardcoded cmd.exe path, paths validated, no shell
-        [_CMD_EXE, "/c", "mklink", "/J", str(link), str(abs_target)],
+    subprocess.run(  # nosec B603 - absolute cmd.exe path from Win32 API, paths validated, no shell
+        [str(cmd_exe), "/c", "mklink", "/J", str(link), str(abs_target)],
         check=True,
         capture_output=True,
         text=True,
