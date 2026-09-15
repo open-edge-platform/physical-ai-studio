@@ -449,6 +449,17 @@ class TestRunTrainingJob:
 
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
+    @pytest.mark.parametrize("policy_name", ["act", "smolvla", "pi0", "pi05"])
+    def test_compiled_policy_exports_without_reloading(self, policy_name: str, tmp_path: Path) -> None:
+        """Compiled policies are traced directly by the library; no checkpoint reload is needed."""
+        policy = _ExportablePolicy([ExportBackend.OPENVINO])
+
+        with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
+            _run(TrainingJobSpec(policy=policy_name, compile_model=True), tmp_path, policy=policy)
+
+        reload.assert_not_called()
+        assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
+
     def test_trainer_and_datamodule_are_released_before_export(self, tmp_path: Path) -> None:
         """The trainer must not still be resident (optimizer state, dataloaders) during export.
 
