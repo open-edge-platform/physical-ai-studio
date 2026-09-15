@@ -83,8 +83,12 @@ def _create_windows_link(link: Path, abs_target: Path) -> None:
     except OSError:
         pass
 
-    subprocess.run(  # nosec B607 B603 - fixed cmd/mklink args, no shell, no user input
-        ["cmd", "/c", "mklink", "/J", str(link), str(abs_target)],
+    comspec = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    if not Path(comspec).is_absolute():
+        raise RuntimeError(f"COMSPEC is not an absolute path: {comspec}")
+
+    subprocess.run(  # nosec B603 - absolute comspec path, fixed mklink args, no shell, no user input
+        [comspec, "/c", "mklink", "/J", str(link), str(abs_target)],
         check=True,
         capture_output=True,
         text=True,
