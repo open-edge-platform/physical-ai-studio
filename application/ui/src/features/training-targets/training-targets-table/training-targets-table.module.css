@@ -7,10 +7,6 @@
     margin-left: 0;
 }
 
-.trainerUrl {
-    color: var(--spectrum-global-color-gray-700);
-}
-
 .cudaBadge {
     color: var(--spectrum-global-color-static-green-500);
     background: color-mix(in srgb, var(--spectrum-global-color-static-green-500) 16%, transparent);
@@ -19,4 +15,21 @@
 .xpuBadge {
     color: var(--energy-blue);
     background: color-mix(in srgb, var(--energy-blue) 16%, transparent);
+}
+
+.kindBadge {
+    color: var(--spectrum-global-color-gray-800);
+    background: var(--spectrum-global-color-gray-300);
+    flex-shrink: 0;
+}
+
+.kindBadgeTrigger {
+    justify-self: start;
+    width: fit-content;
+    min-width: unset;
+    height: auto;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: default;
 }

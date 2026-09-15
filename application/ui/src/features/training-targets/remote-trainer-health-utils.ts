@@ -2,15 +2,19 @@ import { SchemaRemoteTrainerHealth } from '../../api/openapi-spec';
 
 export type CheckState = 'positive' | 'yellow' | 'negative' | 'neutral';
 
+/**
+ * A re-check in flight keeps showing the last-known status rather than
+ * flipping to "Checking…"/neutral — only the very first check (no health
+ * reported yet) reads as checking.
+ */
 export const healthLabel = (health?: SchemaRemoteTrainerHealth, isChecking = false) => {
-    if (isChecking) return 'Checking…';
-    if (health === undefined) return 'Not checked';
+    if (health === undefined) return isChecking ? 'Checking…' : 'Not checked';
     if (health.reason_code === 'check_failed') return 'Check failed';
     return health.status === 'healthy' ? 'Healthy' : health.status === 'degraded' ? 'Degraded' : 'Unreachable';
 };
 
-export const healthVariant = (health?: SchemaRemoteTrainerHealth, isChecking = false) => {
-    if (isChecking || health === undefined) return 'neutral' as const;
+export const healthVariant = (health?: SchemaRemoteTrainerHealth, _isChecking = false) => {
+    if (health === undefined) return 'neutral' as const;
     return health.status === 'healthy'
         ? ('positive' as const)
         : health.status === 'degraded'

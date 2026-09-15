@@ -3,7 +3,7 @@ import { useQueries } from '@tanstack/react-query';
 import { $api } from '../../../api/client';
 import { SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
 
-const REMOTE_UNAVAILABLE_POLL_MS = 5000;
+const REMOTE_UNAVAILABLE_POLL_MS = 15000;
 
 type RemoteTrainerHealthEntry = {
     health?: SchemaRemoteTrainerHealth;

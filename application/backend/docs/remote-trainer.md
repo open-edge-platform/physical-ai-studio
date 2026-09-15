@@ -63,6 +63,9 @@ directory.
 > [!WARNING]
 > The trainer has no built-in authentication. Anyone who can reach its port can submit or cancel jobs and download model artifacts. Keep it on a private network that only the Physical AI Studio backend IP address can reach—never expose it to the internet.
 
+> [!WARNING]
+> Studio still accepts a plain `http://` URL when you register a direct remote trainer (the docker-compose loopback binding above is fine over `http://`, since the traffic never leaves the host). If you point Studio at a trainer on a different host, use `https://`: the Hugging Face token is sent in the `POST /jobs` body on every submission (see the [!IMPORTANT] note above), and `http://` to a remote host puts it on the wire unencrypted. The Studio UI warns when you enter a non-loopback `http://` URL, but does not block it.
+
 > The backend honors `HTTP_PROXY` and `HTTPS_PROXY`. A configured proxy receives all trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
 
 | Variable                     | Required | Description                                  |

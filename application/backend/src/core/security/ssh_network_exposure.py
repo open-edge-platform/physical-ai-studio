@@ -9,11 +9,14 @@ and a compromised backend process can reach every identity in the user's SSH
 agent, not just the registered servers. It is safe only on a single-user
 localhost workstation.
 
-The feature is always active. The risk above is instead surfaced as an
+The feature is always active - there is no settings-page or environment
+master switch to turn it off. The risk above is instead surfaced as an
 explicit warning in the UI at the point a user registers an SSH target (see
-`docs/ssh-remote-trainer.md`). This module fails closed if the backend is
-bound to anything but a loopback address, since that combination (no auth
-model + reachable from the network) is never safe regardless of user intent.
+`docs/ssh-remote-trainer.md`). This module is the one enforcement the user
+cannot opt out of: even though the feature is always "on", it still fails
+closed if the backend is bound to anything but a loopback address, since
+that combination (no auth model + reachable from the network) is never safe
+regardless of user intent.
 """
 
 from __future__ import annotations
@@ -74,7 +77,8 @@ def is_loopback_host(host: str) -> bool:
 class SshFeatureAvailability:
     """Whether the SSH remote-trainer feature is safe to serve right now, and why not if it isn't.
 
-    The feature is always active except when the single check below fails.
+    The feature has no on/off switch - it is always active except when the
+    single check below fails.
 
     Attributes:
         network_exposed: The backend is bound to a non-loopback address.
