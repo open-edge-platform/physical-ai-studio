@@ -15,7 +15,6 @@ module can be imported in environments without the `[train]` extra installed.
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -77,7 +76,7 @@ class LocalTrainingBackend:
 
 
 def resolve_hf_token() -> SecretStr | None:
-    """Return the configured Hugging Face token, falling back to the legacy env var.
+    """Return the configured Hugging Face token, falling back to the legacy `HF_TOKEN` setting.
 
     Shared by the local backend (set directly into `RunOptions`), the
     remote/SSH backends (sent to the trainer at job submission time; see
@@ -86,9 +85,8 @@ def resolve_hf_token() -> SecretStr | None:
     token the same way.
     """
     hf_token = get_settings().huggingface.hf_token
-    # Fallback to Environment Variable based hf token if settings hasn't been set
-    if (hf_token is None or not hf_token.get_secret_value()) and (legacy_hf_token := os.environ.get("HF_TOKEN", "")):
-        hf_token = SecretStr(legacy_hf_token)
+    if hf_token is None or not hf_token.get_secret_value():
+        hf_token = get_settings().hf_token
     return hf_token
 
 
