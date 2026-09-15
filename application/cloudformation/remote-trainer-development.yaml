@@ -204,6 +204,22 @@ Resources:
           exit 1
 
 Outputs:
+  SshUserName:
+    Description: Enter this value in the remote trainer SSH User field.
+    Value: ec2-user
+
+  SshPort:
+    Description: Enter this value in the remote trainer SSH Port field.
+    Value: "22"
+
+  SshHost:
+    Description: Enter this value in the remote trainer SSH Host field.
+    Value: !GetAtt TrainerInstance.PublicDnsName
+
+  RemoteTrainerPort:
+    Description: Enter this value in the remote trainer Remote port field.
+    Value: "8001"
+
   TunnelCommand:
     Description: Run this command on the host running the Studio backend and leave it running.
     Value: !Sub >-
