@@ -75,6 +75,9 @@ class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
         optimizer_weight_decay: Weight decay coefficient. Defaults to 0.01.
         optimizer_grad_clip_norm: Maximum gradient norm for clipping. Defaults to 1.0.
         scheduler_warmup_steps: Number of warmup steps. Defaults to 1000.
+        scheduler_decay_steps: Explicit cosine decay horizon in steps. When ``None``,
+            the horizon follows the trainer's total step budget
+            (``max_steps``/``max_epochs``). Defaults to None.
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to False.
@@ -138,6 +141,7 @@ class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
     optimizer_grad_clip_norm: float = 1.0
 
     scheduler_warmup_steps: int = 1_000
+    scheduler_decay_steps: int | None = None
     scheduler_decay_lr: float = 2.5e-6
 
     use_random_input_noise: bool = True
