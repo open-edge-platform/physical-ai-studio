@@ -127,6 +127,7 @@ jobs:
             get.trivy.dev:443
             github.com:443
             mirror.gcr.io:443
+            objects.githubusercontent.com:443
             pypi.org:443
             raw.githubusercontent.com:443
             release-assets.githubusercontent.com:443
@@ -137,7 +138,7 @@ jobs:
           persist-credentials: false
 
       - name: Run Trivy scan
-        uses: open-edge-platform/geti-ci/actions/trivy@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/trivy@48bba96a6c9b297a91902f97b26f63117617888f
         with:
           scan_type: "fs"
           scan-scope: all
@@ -173,7 +174,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Semgrep scan
-        uses: open-edge-platform/geti-ci/actions/semgrep@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/semgrep@48bba96a6c9b297a91902f97b26f63117617888f
         with:
           scan-scope: ${{ github.event_name == 'pull_request' && 'changed' || 'all' }}
           severity: ${{ github.event_name == 'pull_request' && 'HIGH' || 'LOW' }}
@@ -221,7 +222,7 @@ jobs:
             storage.geti.intel.com:443
 
       - name: Run container image scan (${{ matrix.ai-device }})
-        uses: open-edge-platform/geti-ci/actions/trivy@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/trivy@48bba96a6c9b297a91902f97b26f63117617888f
         with:
           artifact-name: "trivy-scan-container-${{ matrix.ai-device }}"
           scan_type: "image"
@@ -261,7 +262,7 @@ jobs:
             release-assets.githubusercontent.com:443
 
       - name: Run trainer image scan (${{ matrix.device }})
-        uses: open-edge-platform/geti-ci/actions/trivy@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/trivy@48bba96a6c9b297a91902f97b26f63117617888f
         with:
           artifact-name: "trivy-scan-trainer-${{ matrix.device }}"
           scan_type: "image"
@@ -303,7 +304,7 @@ jobs:
             releases.astral.sh:443
 
       - name: Runner cleanup
-        uses: open-edge-platform/geti-ci/actions/cleanup-runner@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/cleanup-runner@6f29a1ff715a9770e024317f30db57bdc0e16418 # cleanup-runner/v0.1.0
         with:
           type: "initial"
 
