@@ -166,7 +166,8 @@ all = [
 package = true
 default-groups = ["all"]
 exclude-newer = "7 days"
-exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false}
+# FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
+exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false, lightning = false}
 # The pytorch-xpu index is non-explicit (explicit = false) because
 # transitive deps like triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale
@@ -183,6 +184,8 @@ override-dependencies = [
     "pytest>=9.0.3",
     # lerobot==0.5.1 caps diffusers at <0.36.0, 0.38.0 contains CVE-2026-44827 fix
     "diffusers>=0.38.0",
+    # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
+    "setuptools>=83.0.0",
 ]
 conflicts = [
     [
