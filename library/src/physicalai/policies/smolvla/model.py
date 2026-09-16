@@ -873,6 +873,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             "input_layernorm",
             "post_attention_layernorm",
             "text_model.norm",
+            "lm_expert.norm",
         ]
 
         for name, param in self.named_parameters():
@@ -894,7 +895,12 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
 
     @staticmethod
     def _sample_time(bsize: int, device: torch.device) -> torch.Tensor:
-        beta_dist = torch.distributions.Beta(concentration1=1.5, concentration0=1.0)
+        # Concentrations are forced to float32: the Dirichlet sampler backing Beta has no bf16/fp16 kernel,
+        # and low-precision training sets the global default dtype.
+        beta_dist = torch.distributions.Beta(
+            concentration1=torch.tensor(1.5, dtype=torch.float32),
+            concentration0=torch.tensor(1.0, dtype=torch.float32),
+        )
         time_beta = beta_dist.sample((bsize,)).to(device=device, dtype=torch.float32)
         return time_beta * 0.999 + 0.001
 
@@ -913,8 +919,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             img_masks: List of boolean masks for each image indicating valid regions.
             lang_tokens: Token IDs for language input to be embedded.
             lang_masks: Boolean mask for language tokens indicating valid tokens.
-            state: Optional state tensor to be projected and included in the prefix.
-                If None, state embedding is still computed.
+            state: State tensor to be projected and included in the prefix.
 
         Returns:
             A tuple containing:
@@ -925,6 +930,9 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
                 - att_masks: Boolean tensor of shape (batch_size, seq_len) for attention
                     masking, where True indicates positions that should be masked
                     (state tokens are masked from image/language attention).
+
+        Raises:
+            ValueError: If ``state`` is None.
 
         Note:
             If the total sequence length is less than `self.prefix_length`, the outputs
@@ -1005,7 +1013,10 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         num_lang_embs = lang_emb.shape[1]
         att_masks += [0] * num_lang_embs
 
-        state_emb = self.state_proj(state)
+        if state is None:
+            msg = "state must be provided to embed_prefix."
+            raise ValueError(msg)
+        state_emb = self.state_proj(state.to(dtype=self.state_proj.weight.dtype))
         emb_dim = 2
         state_emb = state_emb[:, None, :] if state_emb.ndim == emb_dim else state_emb
         embs.append(state_emb)
@@ -1068,7 +1079,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         att_masks = []
 
         # Fuse timestep + action information using an MLP
-        action_emb = self.action_in_proj(noisy_actions)
+        action_emb = self.action_in_proj(noisy_actions.to(dtype=self.action_in_proj.weight.dtype))
         device = action_emb.device
         bsize = action_emb.shape[0]
         dtype = action_emb.dtype
@@ -1141,8 +1152,9 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             fill_kv_cache=False,
         )
         suffix_out = suffix_out[:, -self._chunk_size :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
-        return self.action_out_proj(suffix_out)
+        if suffix_out.dtype != self.action_out_proj.weight.dtype:
+            suffix_out = suffix_out.to(dtype=self.action_out_proj.weight.dtype)
+        return self.action_out_proj(suffix_out).to(dtype=torch.float32)
 
     def _forward_fm(
         self,
@@ -1420,8 +1432,9 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         )
         suffix_out = outputs_embeds[1]
         suffix_out = suffix_out[:, -self._chunk_size :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
-        return self.action_out_proj(suffix_out)
+        if suffix_out.dtype != self.action_out_proj.weight.dtype:
+            suffix_out = suffix_out.to(dtype=self.action_out_proj.weight.dtype)
+        return self.action_out_proj(suffix_out).to(dtype=torch.float32)
 
 
 def _apply_rope(x: torch.Tensor, positions: torch.Tensor, max_wavelength: int = 10_000) -> torch.Tensor:
@@ -2002,12 +2015,19 @@ class _SmolVLMWithExpertModel(nn.Module):
                     att_out = att_output[:, start:end]
                     out_emb = layer.self_attn.o_proj(att_out)
 
-                    out_emb += hidden_states
+                    residual = hidden_states
+                    if residual.dtype != out_emb.dtype:
+                        residual = residual.to(dtype=out_emb.dtype)
+                    out_emb += residual
                     after_first_residual = out_emb.clone()
 
                     out_emb = layer.post_attention_layernorm(out_emb)
+                    if out_emb.dtype != layer.mlp.gate_proj.weight.dtype:
+                        out_emb = out_emb.to(dtype=layer.mlp.gate_proj.weight.dtype)
                     out_emb = layer.mlp(out_emb)
 
+                    if after_first_residual.dtype != out_emb.dtype:
+                        after_first_residual = after_first_residual.to(dtype=out_emb.dtype)
                     out_emb += after_first_residual
 
                     outputs_embeds.append(out_emb)
