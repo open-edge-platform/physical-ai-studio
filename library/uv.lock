@@ -238,12 +238,12 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-09-09T09:51:12.955324927Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
 markupsafe = false
-pyrealsense2 = { timestamp = "2026-09-15T09:51:12.955335839Z", span = "P1D" }
+pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
 lightning = false
 
 [manifest]
@@ -3889,8 +3889,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.1.2.dev74+g89a6faff3"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d#89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d" }
+version = "0.1.2.dev91+ga3f522f"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=a3f522f9554034d2d35e97bd2b0f72feae8b3067#a3f522f9554034d2d35e97bd2b0f72feae8b3067" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -4084,7 +4084,7 @@ requires-dist = [
     { name = "openvino-tokenizers", specifier = ">=2026.3" },
     { name = "peft", specifier = ">=0.20.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=a3f522f9554034d2d35e97bd2b0f72feae8b3067" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["groot"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
@@ -4119,10 +4119,10 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
-    { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.5.0,<5.6.0" },
-    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.5.0,<5.6.0" },
-    { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.3.0,<5.6.0" },
-    { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.5.0,<5.6.0" },
+    { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.15.1,<5.16.0" },
+    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.15.1,<5.16.0" },
+    { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.15.1,<5.16.0" },
+    { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.15.1,<5.16.0" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
 provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "nncf", "executorch", "executorch-openvino", "policies", "all"]
@@ -6310,7 +6310,7 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "5.5.4"
+version = "5.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "huggingface-hub" },
@@ -6323,9 +6323,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a5/1e/1e244ab2ab50a863e6b52cc55761910567fa532b69a6740f6e99c5fdbd98/transformers-5.5.4.tar.gz", hash = "sha256:2e67cadba81fc7608cc07c4dd54f524820bc3d95b1cabd0ef3db7733c4f8b82e", size = 8227649, upload-time = "2026-04-13T16:55:55.181Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/92/c50c61da7046bbb59a4d011291aeadcfb4d7980ab36fdb31e93823a3fb93/transformers-5.15.1.tar.gz", hash = "sha256:27c996bd9075ddc82d40f8590dfdc81ea45f611bfca477e0db5d7fd257a482f7", size = 9378434, upload-time = "2026-08-19T11:28:20.33Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/fb/162a66789c65e5afa3b051309240c26bf37fbc8fea285b4546ae747995a2/transformers-5.5.4-py3-none-any.whl", hash = "sha256:0bd6281b82966fe5a7a16f553ea517a9db1dee6284d7cb224dfd88fc0dd1c167", size = 10236696, upload-time = "2026-04-13T16:55:51.497Z" },
+    { url = "https://files.pythonhosted.org/packages/41/c4/a12e1d9b387fb0c40a57116db82b457e8c771cb419163cda29204d74a595/transformers-5.15.1-py3-none-any.whl", hash = "sha256:b7cdf238ff583e3a58dbc7fa34da1aaf091ce063141f65a30538160bd5afe93f", size = 11749582, upload-time = "2026-08-19T11:28:16.726Z" },
 ]
 
 [[package]]

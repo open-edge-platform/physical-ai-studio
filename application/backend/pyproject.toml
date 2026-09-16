@@ -124,7 +124,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "89a6faff37e2be91ae2f4c34746ec6dbeadb9f1d" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "a3f522f9554034d2d35e97bd2b0f72feae8b3067" }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
 # be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
