@@ -253,6 +253,10 @@ def fix_state_dict_keys(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.
         # under the policy's `self.model`, but we load into Pi05Model directly.
         new_key = new_key.removeprefix("model.")
 
+        # transformers>=5.15 folded SiglipVisionTransformer into SiglipVisionModel,
+        # dropping the `.vision_model` level that older checkpoints were saved with.
+        new_key = new_key.replace(".vision_tower.vision_model.", ".vision_tower.")
+
         # Skip adaRMS mismatch keys for expert
         if re.match(
             r"paligemma_with_expert\.gemma_expert\.model\.layers\.\d+\."
