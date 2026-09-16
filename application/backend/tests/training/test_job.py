@@ -47,6 +47,7 @@ class TestTrainingJobSpec:
         assert (spec.policy_source, spec.max_epochs, spec.batch_size) == ("physicalai", 5, 8)
         assert (spec.num_workers, spec.val_split, spec.precision) == ("auto", 0.1, "bf16-mixed")
         assert (spec.compile_model, spec.auto_scale_batch_size) == (False, False)
+        assert spec.augment_images is False
         assert (spec.device_type, spec.device_index) == (None, None)
 
     def test_unknown_field_is_rejected(self) -> None:
@@ -370,6 +371,35 @@ class TestRunTrainingJob:
         assert kwargs["root"] == str(tmp_path / "snapshot")
         assert (kwargs["train_batch_size"], kwargs["num_workers"], kwargs["val_split"]) == (16, 2, 0.25)
 
+    @pytest.mark.parametrize("augment_images", [True, False])
+    def test_image_augmentation_is_opt_in(self, tmp_path: Path, augment_images: bool) -> None:
+        """The GUI checkbox is the only thing standing between off and the default pipeline."""
+        from physicalai.transforms import DefaultImageAugmentations
+
+        spec = TrainingJobSpec(policy="act", augment_images=augment_images)
+        cache_dir = tmp_path / "cache" / "job"
+
+        with (
+            patch("physicalai.data.LeRobotDataModule") as datamodule,
+            patch(f"{JOB}.build_policy"),
+            patch("physicalai.train.trainer.Trainer") as trainer_class,
+        ):
+            trainer_class.return_value.fit.side_effect = lambda *a, **k: (cache_dir / CHECKPOINT_NAME).write_text("x")
+            run_training_job(
+                spec,
+                dataset_root=tmp_path / "snapshot",
+                output_dir=tmp_path / "model",
+                cache_dir=cache_dir,
+                report=MagicMock(),
+                should_stop=lambda: False,
+            )
+
+        transforms = datamodule.call_args.kwargs["image_transforms"]
+        if augment_images:
+            assert isinstance(transforms, DefaultImageAugmentations)
+        else:
+            assert transforms is None
+
     def test_completed_run_publishes_the_cache_as_the_model_directory(self, tmp_path: Path) -> None:
         """The final checkpoint comes solely from the ModelCheckpoint callback, not an explicit save."""
         trainer_class = _run(TrainingJobSpec(policy="act"), tmp_path)
@@ -447,6 +477,17 @@ class TestRunTrainingJob:
 
         _run(TrainingJobSpec(policy="act"), tmp_path, policy=policy)
 
+        assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
+
+    @pytest.mark.parametrize("policy_name", ["act", "smolvla", "pi0", "pi05"])
+    def test_compiled_policy_exports_without_reloading(self, policy_name: str, tmp_path: Path) -> None:
+        """Compiled policies are traced directly by the library; no checkpoint reload is needed."""
+        policy = _ExportablePolicy([ExportBackend.OPENVINO])
+
+        with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
+            _run(TrainingJobSpec(policy=policy_name, compile_model=True), tmp_path, policy=policy)
+
+        reload.assert_not_called()
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
     def test_trainer_and_datamodule_are_released_before_export(self, tmp_path: Path) -> None:

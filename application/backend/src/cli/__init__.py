@@ -1,6 +1,6 @@
 """Command line interface for interacting with the Physical AI Studio application."""
 
-import subprocess
+import subprocess  # nosec B404 - imported only to catch CalledProcessError, never invoked here
 import sys
 from pathlib import Path
 

@@ -27,6 +27,7 @@ const basePayload = {
     lora_use_dora: false,
     snapflow_enabled: false,
     snapflow_distill_epochs: 3,
+    augment_images: false,
 };
 
 type BaseKeys = keyof typeof basePayload;

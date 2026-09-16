@@ -220,9 +220,12 @@ form. Studio-specific metadata adds presentation behavior without changing the
 payload data model:
 
 - `robot_field_ui` marks advanced configuration or applies a Studio-only
-  required override.
+  required override, and can define contextual help (`info`) shown next to a field.
 - `robot_payload_ui` orders fields and adds `section`, `field`, `connection`,
-  and `info` items.
+  `calibration`, and `info` items.
+- Field-like `robot_payload_ui` items (`field`, `connection`, `ip_address`,
+  `calibration`) can include contextual help (`info`) with `title`, required
+  `description`, optional `link_url`, and optional `variant` (`info` or `help`).
 - A `connection` item owns its bound connection and serial-number fields, so
   the raw fields are not rendered twice.
 - Bindings are relative to the model that declares them. Nested payload models

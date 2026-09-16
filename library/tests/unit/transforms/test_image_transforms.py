@@ -9,7 +9,7 @@ import pytest
 import torch
 from torchvision.transforms.v2 import ColorJitter, RandomAffine
 
-from physicalai.transforms import RandomChoice, RandomSharpness
+from physicalai.transforms import DefaultImageAugmentations, RandomChoice, RandomSharpness
 
 
 class TestRandomChoice:
@@ -107,3 +107,53 @@ class TestRandomSharpness:
         """Inverted range should raise ValueError."""
         with pytest.raises(ValueError, match="sharpness values"):
             RandomSharpness(sharpness=[1.5, 0.5])
+
+
+class TestDefaultImageAugmentations:
+    """Smoke tests for the ready-made augmentation pipeline."""
+
+    def test_usable_without_arguments(self) -> None:
+        """The pipeline is the one-liner alternative to spelling out the pool."""
+        transform = DefaultImageAugmentations()
+        assert isinstance(transform, RandomChoice)
+        assert len(transform.transforms) == 6
+        assert transform.n_subset == 3
+
+    def test_output_shape_preserved(self) -> None:
+        """Output image should have the same shape as input."""
+        transform = DefaultImageAugmentations()
+        image = torch.rand(3, 64, 64)
+        output = transform(image)
+        assert output.shape == image.shape
+
+    def test_output_shape_batch(self) -> None:
+        """Batched images should preserve shape."""
+        transform = DefaultImageAugmentations()
+        image = torch.rand(2, 3, 64, 64)
+        output = transform(image)
+        assert output.shape == image.shape
+
+    def test_image_is_actually_perturbed(self) -> None:
+        """The pipeline should change the image, not pass it through."""
+        torch.manual_seed(0)
+        transform = DefaultImageAugmentations()
+        image = torch.rand(3, 64, 64)
+        assert not torch.equal(transform(image), image)
+
+    def test_n_subset_override(self) -> None:
+        """n_subset controls how many transforms are applied per image."""
+        transform = DefaultImageAugmentations(n_subset=1)
+        assert transform.n_subset == 1
+        image = torch.rand(3, 64, 64)
+        assert transform(image).shape == image.shape
+
+    def test_n_subset_out_of_range_raises(self) -> None:
+        """Validation is inherited from RandomChoice."""
+        with pytest.raises(ValueError, match="n_subset"):
+            DefaultImageAugmentations(n_subset=7)
+
+    def test_random_order(self) -> None:
+        """random_order=True should not change output shape."""
+        transform = DefaultImageAugmentations(random_order=True)
+        image = torch.rand(3, 64, 64)
+        assert transform(image).shape == image.shape
