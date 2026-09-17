@@ -12,11 +12,14 @@ Metadata:
         Parameters:
           - TrainingPolicy
           - SshPublicKey
+          - StudioIpAddress
     ParameterLabels:
       TrainingPolicy:
         default: Policy to train
       SshPublicKey:
         default: SSH public key
+      StudioIpAddress:
+        default: Studio public IP address (The default value allows anyone with this SSH key to connect)
 
 Parameters:
   TrainingPolicy:
@@ -41,9 +44,17 @@ Parameters:
     AllowedPattern: "^ssh-(rsa|ed25519|ecdsa-[A-Za-z0-9-]+) [A-Za-z0-9+/=]+(?: .*)?$"
     ConstraintDescription: Paste the full public key line.
 
+  StudioIpAddress:
+    Type: String
+    Default: 0.0.0.0
+    Description: Enter the public IPv4 address of the computer or network running Studio.
+    AllowedPattern: "^(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(?:\\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}$"
+    ConstraintDescription: Enter a valid IPv4 address, for example 203.0.113.10.
+
 Conditions:
   IsPi0Policy: !Equals [!Ref TrainingPolicy, Pi0 (g5.2xlarge)]
   IsPi05Policy: !Equals [!Ref TrainingPolicy, Pi0.5 (g6e.2xlarge)]
+  AllowSshFromAnywhere: !Equals [!Ref StudioIpAddress, 0.0.0.0]
 
 Resources:
   TrainerVpc:
@@ -112,7 +123,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0
+          CidrIp: !If [AllowSshFromAnywhere, 0.0.0.0/0, !Sub "${StudioIpAddress}/32"]
           Description: SSH access to the remote trainer
       VpcId: !Ref TrainerVpc
       Tags:
