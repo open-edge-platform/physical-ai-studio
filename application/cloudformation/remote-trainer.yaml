@@ -230,11 +230,3 @@ Outputs:
   RemoteTrainerPort:
     Description: Enter this value in the remote trainer Remote port field.
     Value: "8001"
-
-  TunnelCommand:
-    Description: Run this command on the host running the Studio backend and leave it running.
-    Value: !Sub >-
-      ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30
-      -o ServerAliveCountMax=3
-      -L 127.0.0.1:8001:127.0.0.1:8001
-      ec2-user@${TrainerInstance.PublicDnsName}
