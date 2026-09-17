@@ -196,7 +196,7 @@ describe('RemoteTrainersPage', () => {
             ssh_connection: {
                 hostname: 'gpu.example.test',
                 port: 2222,
-                user: 'trainer',
+                user: null,
                 identity_file: '~/.ssh/trainer',
             },
             ssh_remote_port: 8001,
@@ -220,13 +220,17 @@ describe('RemoteTrainersPage', () => {
             ssh_local_port: 8001,
         };
         let aliasCreateCount = 0;
+        let update: Record<string, unknown> | undefined;
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([manualTrainer])),
             http.post('/api/remote-servers/aliases', () => {
                 aliasCreateCount += 1;
                 return HttpResponse.json({}, { status: 201 });
             }),
-            http.patch(REMOTE_TRAINER_PATH, () => HttpResponse.json(manualTrainer))
+            http.patch(REMOTE_TRAINER_PATH, async ({ request }) => {
+                update = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json(manualTrainer);
+            })
         );
 
         render(<RemoteTrainersPage />);
@@ -240,12 +244,13 @@ describe('RemoteTrainersPage', () => {
         );
         expect(await screen.findByRole('textbox', { name: /^Host/ })).toHaveValue('gpu.example.test');
         expect(screen.getByRole('textbox', { name: /^Port/ })).toHaveValue('2,222');
-        expect(screen.getByRole('textbox', { name: /^User/ })).toHaveValue('trainer');
+        expect(screen.getByRole('textbox', { name: /^User/ })).toHaveValue('');
         expect(screen.getByRole('textbox', { name: /key path/i })).toHaveValue('~/.ssh/trainer');
 
         await user.click(screen.getByRole('button', { name: 'Save changes' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(aliasCreateCount).toBe(0);
+        expect(update).toMatchObject({ ssh_connection: { user: null } });
     });
 
     it('creates a remote trainer with an SSH tunnel picked from the SSH config', async () => {

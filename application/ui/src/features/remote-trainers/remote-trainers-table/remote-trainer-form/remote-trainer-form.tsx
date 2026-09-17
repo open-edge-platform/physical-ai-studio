@@ -65,7 +65,9 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
     const [sshHostAlias, setSshHostAlias] = useState(remoteTrainer?.ssh_host_alias ?? '');
     const [sshHostname, setSshHostname] = useState(remoteTrainer?.ssh_connection?.hostname ?? '');
     const [sshPort, setSshPort] = useState<number | undefined>(remoteTrainer?.ssh_connection?.port ?? 22);
-    const [sshUser, setSshUser] = useState(remoteTrainer?.ssh_connection?.user ?? 'ec2-user');
+    const [sshUser, setSshUser] = useState(
+        remoteTrainer === undefined ? 'ec2-user' : (remoteTrainer.ssh_connection?.user ?? '')
+    );
     const [sshIdentityFile, setSshIdentityFile] = useState(remoteTrainer?.ssh_connection?.identity_file ?? '');
     const [sshRemotePort, setSshRemotePort] = useState<number | undefined>(remoteTrainer?.ssh_remote_port ?? 8001);
     const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(remoteTrainer?.ssh_local_port ?? 8001);
