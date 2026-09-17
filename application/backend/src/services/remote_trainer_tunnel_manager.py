@@ -44,7 +44,7 @@ _tunnels: dict[UUID, SshTunnel] = {}
 _lock = asyncio.Lock()
 
 
-async def sync_tunnel(remote_trainer: RemoteTrainer) -> None:
+async def sync_tunnel(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
     """Open, replace, or close this trainer's tunnel to match its current config.
 
     Connection failures propagate to create and update requests so they cannot
@@ -60,7 +60,7 @@ async def sync_tunnel(remote_trainer: RemoteTrainer) -> None:
                 remote_trainer.name,
             )
             return
-        await _open_locked(remote_trainer)
+        await _open_locked(remote_trainer, accepted_host_key_fingerprint)
 
 
 async def stop_tunnel(remote_trainer_id: UUID) -> None:
@@ -102,7 +102,7 @@ async def stop_all() -> None:
             await _close_locked(remote_trainer_id)
 
 
-async def _open_locked(remote_trainer: RemoteTrainer) -> None:
+async def _open_locked(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
     settings = get_settings()
     alias = remote_trainer.ssh_host_alias
     connection = remote_trainer.ssh_connection
@@ -112,7 +112,12 @@ async def _open_locked(remote_trainer: RemoteTrainer) -> None:
         return
     if alias is not None:
         connection_name = alias
-        open_ssh_transport = partial(open_transport, alias, settings)
+        open_ssh_transport = partial(
+            open_transport,
+            alias,
+            settings,
+            accepted_host_key_fingerprint=accepted_host_key_fingerprint,
+        )
     elif connection is not None:
         connection_name = connection.hostname
         open_ssh_transport = partial(
@@ -123,6 +128,7 @@ async def _open_locked(remote_trainer: RemoteTrainer) -> None:
             port=connection.port,
             username=connection.user,
             identity_file=connection.identity_file,
+            accepted_host_key_fingerprint=accepted_host_key_fingerprint,
         )
     else:
         return

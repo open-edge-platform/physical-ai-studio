@@ -57,6 +57,7 @@ from exceptions import (
     SshAuthenticationError,
     SshConnectionError,
     SshHostAliasNotFoundError,
+    SshHostKeyConfirmationRequiredError,
     SshHostKeyMismatchError,
     SshHostKeyUnknownError,
 )
@@ -147,14 +148,14 @@ class _HostKeyMatch:
         return bool(self.trusted_keys or self.ca_keys or self.revoked_keys)
 
 
-class _TrustOnFirstUseClient(asyncssh.SSHClient):
+class _FingerprintValidationClient(asyncssh.SSHClient):
     """Accept and persist only host keys which have no prior trust entry."""
 
     def __init__(self, transport: "SshTransport") -> None:
         self._transport = transport
 
     def validate_host_public_key(self, host: str, addr: str, port: int, key: asyncssh.SSHKey) -> bool:
-        return self._transport._accept_new_host_key(host, addr, port, key)
+        return self._transport._validate_new_host_key(host, addr, port, key)
 
 
 @dataclass(slots=True)
@@ -282,6 +283,7 @@ class SshTransport:
         port: int = 22,
         username: str | None = None,
         identity_file: str | None = None,
+        accepted_host_key_fingerprint: str | None = None,
     ) -> None:
         self.alias = alias
         self._settings = settings or get_settings()
@@ -289,9 +291,11 @@ class SshTransport:
         self._port = port
         self._username = username
         self._identity_file = identity_file
+        self._accepted_host_key_fingerprint = accepted_host_key_fingerprint
         self._connection: asyncssh.SSHClientConnection | None = None
         self._gate: _AliasGate | None = None
         self._host_key_match = _HostKeyMatch()
+        self._presented_host_key_fingerprint: str | None = None
 
     async def __aenter__(self) -> Self:
         """Open the connection."""
@@ -321,13 +325,14 @@ class SshTransport:
         """
         settings = self._settings
         self._host_key_match = _HostKeyMatch()
+        self._presented_host_key_fingerprint = None
         if self._hostname is not None:
             return asyncssh.SSHClientConnectionOptions(
                 host=self._hostname,
                 port=self._port,
                 username=self._username,
                 client_keys=[str(Path(self._identity_file).expanduser())] if self._identity_file else None,
-                client_factory=lambda: _TrustOnFirstUseClient(self),
+                client_factory=lambda: _FingerprintValidationClient(self),
                 config=[],
                 known_hosts=self._match_known_hosts,
                 connect_timeout=settings.ssh_connect_timeout_s,
@@ -336,7 +341,7 @@ class SshTransport:
             )
         return asyncssh.SSHClientConnectionOptions(
             host=self.alias,
-            client_factory=lambda: _TrustOnFirstUseClient(self),
+            client_factory=lambda: _FingerprintValidationClient(self),
             config=_existing_config_paths(settings.ssh_config_path),
             known_hosts=self._match_known_hosts,
             connect_timeout=settings.ssh_connect_timeout_s,
@@ -344,10 +349,15 @@ class SshTransport:
             keepalive_count_max=settings.ssh_keepalive_count_max,
         )
 
-    def _accept_new_host_key(self, host: str, addr: str, port: int, key: asyncssh.SSHKey) -> bool:
+    def _validate_new_host_key(self, host: str, addr: str, port: int, key: asyncssh.SSHKey) -> bool:
         """Persist a first-seen host key, while rejecting changed keys."""
         match = self._host_key_match
         if not match.consulted or match.has_entry:
+            return False
+
+        fingerprint = key.get_fingerprint()
+        self._presented_host_key_fingerprint = fingerprint
+        if fingerprint != self._accepted_host_key_fingerprint:
             return False
 
         known_hosts_path = self._settings.ssh_known_hosts_path
@@ -396,7 +406,9 @@ class SshTransport:
         )
         return result
 
-    def _host_key_error(self) -> SshHostKeyUnknownError | SshHostKeyMismatchError:
+    def _host_key_error(
+        self,
+    ) -> SshHostKeyConfirmationRequiredError | SshHostKeyUnknownError | SshHostKeyMismatchError:
         """Classify a host-key verification failure.
 
         Fails closed: when the matcher never ran, or ran and found an entry, the
@@ -407,6 +419,8 @@ class SshTransport:
         """
         match = self._host_key_match
         if match.consulted and not match.has_entry:
+            if self._presented_host_key_fingerprint is not None:
+                return SshHostKeyConfirmationRequiredError(self.alias, self._presented_host_key_fingerprint)
             return SshHostKeyUnknownError(self.alias)
         return SshHostKeyMismatchError(self.alias)
 
@@ -724,7 +738,12 @@ class SshTransport:
         return await self._connection.forward_local_port("127.0.0.1", local_port, remote_host, remote_port)
 
 
-def open_transport(alias: str, settings: Settings | None = None) -> SshTransport:
+def open_transport(
+    alias: str,
+    settings: Settings | None = None,
+    *,
+    accepted_host_key_fingerprint: str | None = None,
+) -> SshTransport:
     """Return a transport for one alias.
 
     The seam preflight and provisioning go through, so a test can substitute a
@@ -737,7 +756,7 @@ def open_transport(alias: str, settings: Settings | None = None) -> SshTransport
     Returns:
         An unconnected transport, usable as an async context manager.
     """
-    return SshTransport(alias, settings)
+    return SshTransport(alias, settings, accepted_host_key_fingerprint=accepted_host_key_fingerprint)
 
 
 def reset_alias_gates() -> None:

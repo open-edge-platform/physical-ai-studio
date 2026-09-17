@@ -155,11 +155,23 @@ describe('RemoteTrainersPage', () => {
 
     it('creates a remote trainer with an SSH tunnel configured via a new manual host', async () => {
         const user = userEvent.setup();
+        const fingerprint = 'SHA256:first-seen-host-key';
         let trainers: Record<string, unknown>[] = [];
         let aliasCreateCount = 0;
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json(trainers as (typeof remoteTrainer)[])),
             http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
+                if (request.headers.get('accepted-host-key-fingerprint') !== fingerprint) {
+                    return HttpResponse.json<Record<string, unknown>>(
+                        {
+                            error_code: 'ssh_host_key_confirmation_required',
+                            message: 'Confirm the SSH host key fingerprint before connecting.',
+                            http_status: 428,
+                            fingerprint,
+                        },
+                        { status: 428 }
+                    );
+                }
                 const body = (await request.json()) as Record<string, unknown>;
                 trainers = [{ ...body, id: remoteTrainer.id, created_at: remoteTrainer.created_at }];
                 return HttpResponse.json(trainers[0], { status: 201 });
@@ -186,6 +198,8 @@ describe('RemoteTrainersPage', () => {
 
         expect(screen.getByRole('button', { name: 'Add trainer' })).toBeEnabled();
         await user.click(screen.getByRole('button', { name: 'Add trainer' }));
+        expect(await screen.findByRole('dialog', { name: 'Verify SSH server' })).toHaveTextContent(fingerprint);
+        await user.click(screen.getByRole('button', { name: 'Trust host' }));
 
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(aliasCreateCount).toBe(0);
@@ -196,7 +210,7 @@ describe('RemoteTrainersPage', () => {
             ssh_connection: {
                 hostname: 'gpu.example.test',
                 port: 2222,
-                user: null,
+                user: 'trainer',
                 identity_file: '~/.ssh/trainer',
             },
             ssh_remote_port: 8001,
@@ -206,6 +220,7 @@ describe('RemoteTrainersPage', () => {
 
     it('restores a manually configured SSH host when editing a remote trainer', async () => {
         const user = userEvent.setup();
+        const fingerprint = 'SHA256:updated-host-key';
         const manualTrainer = {
             ...remoteTrainer,
             connection_mode: 'ssh' as const,
@@ -213,7 +228,7 @@ describe('RemoteTrainersPage', () => {
             ssh_connection: {
                 hostname: 'gpu.example.test',
                 port: 2222,
-                user: 'trainer',
+                user: null,
                 identity_file: '~/.ssh/trainer',
             },
             ssh_remote_port: 8001,
@@ -228,6 +243,17 @@ describe('RemoteTrainersPage', () => {
                 return HttpResponse.json({}, { status: 201 });
             }),
             http.patch(REMOTE_TRAINER_PATH, async ({ request }) => {
+                if (request.headers.get('accepted-host-key-fingerprint') !== fingerprint) {
+                    return HttpResponse.json<Record<string, unknown>>(
+                        {
+                            error_code: 'ssh_host_key_confirmation_required',
+                            message: 'Confirm the SSH host key fingerprint before connecting.',
+                            http_status: 428,
+                            fingerprint,
+                        },
+                        { status: 428 }
+                    );
+                }
                 update = (await request.json()) as Record<string, unknown>;
                 return HttpResponse.json(manualTrainer);
             })
@@ -248,6 +274,8 @@ describe('RemoteTrainersPage', () => {
         expect(screen.getByRole('textbox', { name: /key path/i })).toHaveValue('~/.ssh/trainer');
 
         await user.click(screen.getByRole('button', { name: 'Save changes' }));
+        expect(await screen.findByRole('dialog', { name: 'Verify SSH server' })).toHaveTextContent(fingerprint);
+        await user.click(screen.getByRole('button', { name: 'Trust host' }));
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
         expect(aliasCreateCount).toBe(0);
         expect(update).toMatchObject({ ssh_connection: { user: null } });

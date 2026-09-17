@@ -9,7 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import get_ssh_feature_availability
-from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType, SshFeatureDisabledError
+from exceptions import (
+    ResourceAlreadyExistsError,
+    ResourceNotFoundError,
+    ResourceType,
+    SshFeatureDisabledError,
+    SshHostKeyConfirmationRequiredError,
+)
 from repositories.remote_trainer_repo import RemoteTrainerRepository
 from schemas.hardware import DeviceInfo, DeviceType, StorageInfo
 from schemas.remote_trainer import (
@@ -138,7 +144,9 @@ class RemoteTrainerService:
         except (httpx.HTTPError, ValidationError, ValueError):
             return None
 
-    async def create_remote_trainer(self, config: RemoteTrainerCreate) -> RemoteTrainer:
+    async def create_remote_trainer(
+        self, config: RemoteTrainerCreate, accepted_host_key_fingerprint: str | None = None
+    ) -> RemoteTrainer:
         """Persist a direct trainer endpoint.
 
         Rejects an SSH tunnel config outright while the SSH remote-trainer
@@ -156,10 +164,19 @@ class RemoteTrainerService:
                 "Remote trainer",
                 "A trainer with this URL is already configured.",
             ) from error
-        await remote_trainer_tunnel_manager.sync_tunnel(saved)
+        try:
+            await remote_trainer_tunnel_manager.sync_tunnel(saved, accepted_host_key_fingerprint)
+        except SshHostKeyConfirmationRequiredError:
+            await self.repo.delete_by_id(saved.id)
+            raise
         return saved
 
-    async def update_remote_trainer(self, remote_trainer_id: UUID, update: RemoteTrainerUpdate) -> RemoteTrainer:
+    async def update_remote_trainer(
+        self,
+        remote_trainer_id: UUID,
+        update: RemoteTrainerUpdate,
+        accepted_host_key_fingerprint: str | None = None,
+    ) -> RemoteTrainer:
         """Update a direct trainer endpoint."""
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
@@ -191,7 +208,11 @@ class RemoteTrainerService:
                 "Remote trainer",
                 "A trainer with this URL is already configured.",
             ) from error
-        await remote_trainer_tunnel_manager.sync_tunnel(saved)
+        try:
+            await remote_trainer_tunnel_manager.sync_tunnel(saved, accepted_host_key_fingerprint)
+        except SshHostKeyConfirmationRequiredError:
+            await self.repo.update(saved, remote_trainer.model_dump(include={"name", *_CONNECTION_FIELDS}))
+            raise
         return saved
 
     async def delete_remote_trainer(self, remote_trainer_id: UUID) -> None:

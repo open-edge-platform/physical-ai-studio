@@ -20,11 +20,12 @@ import {
 } from '@geti-ui/ui';
 import { ExternalLinkIcon } from '@geti-ui/ui/icons';
 
-import { getApiErrorMessage } from '../../../../api/errors';
+import { getApiErrorMessage, getSshHostKeyFingerprint } from '../../../../api/errors';
 import { SchemaRemoteTrainer } from '../../../../api/openapi-spec';
 import { ReactComponent as AwsIcon } from '../../../../assets/icons/aws-icon.svg';
+import { SshHostKeyConfirmation } from '../ssh-host-key-confirmation-dialog';
 import { InfoHelp } from './ssh-tunnel-section';
-import { useRemoteTrainerFormMutation } from './use-remote-trainer-form-mutation';
+import { RemoteTrainerFormValues, useRemoteTrainerFormMutation } from './use-remote-trainer-form-mutation';
 import { useSshHostAliases } from './use-ssh-host-aliases';
 
 import classes from './remote-trainer-form.module.css';
@@ -51,11 +52,12 @@ const ALIAS_SSH_HINT =
 type RemoteTrainerFormProps = {
     remoteTrainer?: SchemaRemoteTrainer;
     close: () => void;
+    requestHostKeyConfirmation: (confirmation: SshHostKeyConfirmation) => void;
 };
 
 type SshHostSource = 'manual' | 'pick';
 
-export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormProps) => {
+export const RemoteTrainerForm = ({ remoteTrainer, close, requestHostKeyConfirmation }: RemoteTrainerFormProps) => {
     const [name, setName] = useState(remoteTrainer?.name ?? '');
     const [url, setUrl] = useState(remoteTrainer?.url ?? '');
     const [connectionMode, setConnectionMode] = useState(remoteTrainer?.connection_mode ?? 'direct');
@@ -73,49 +75,66 @@ export const RemoteTrainerForm = ({ remoteTrainer, close }: RemoteTrainerFormPro
     const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(remoteTrainer?.ssh_local_port ?? 8001);
     const isEditing = remoteTrainer !== undefined;
     const { aliases } = useSshHostAliases();
-    const { save, isPending, error } = useRemoteTrainerFormMutation(remoteTrainer);
+    const { save, reset, isPending, error } = useRemoteTrainerFormMutation(remoteTrainer);
 
     const isSsh = connectionMode === 'ssh';
     const isManual = isSsh && sshHostSource === 'manual';
     const tunnelUrl = sshLocalPort ? `http://127.0.0.1:${sshLocalPort}` : '';
 
-    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
+    const values: RemoteTrainerFormValues = isSsh
+        ? {
+              name: name.trim(),
+              connection_mode: 'ssh',
+              url: null,
+              ssh_host_alias: isManual ? null : sshHostAlias.trim(),
+              ssh_connection: isManual
+                  ? {
+                        hostname: sshHostname.trim(),
+                        port: sshPort ?? 22,
+                        user: sshUser.trim() || null,
+                        identity_file: sshIdentityFile.trim() || null,
+                    }
+                  : null,
+              ssh_remote_port: sshRemotePort ?? null,
+              ssh_local_port: sshLocalPort ?? null,
+          }
+        : {
+              name: name.trim(),
+              connection_mode: 'direct',
+              url,
+              ssh_host_alias: null,
+              ssh_connection: null,
+              ssh_remote_port: null,
+              ssh_local_port: null,
+          };
 
-        save(
-            isSsh
-                ? {
-                      name: name.trim(),
-                      connection_mode: 'ssh',
-                      url: null,
-                      ssh_host_alias: isManual ? null : sshHostAlias.trim(),
-                      ssh_connection: isManual
-                          ? {
-                                hostname: sshHostname.trim(),
-                                port: sshPort ?? 22,
-                                user: sshUser.trim() || null,
-                                identity_file: sshIdentityFile.trim() || null,
-                            }
-                          : null,
-                      ssh_remote_port: sshRemotePort ?? null,
-                      ssh_local_port: sshLocalPort ?? null,
-                  }
-                : {
-                      name: name.trim(),
-                      connection_mode: 'direct',
-                      url,
-                      ssh_host_alias: null,
-                      ssh_connection: null,
-                      ssh_remote_port: null,
-                      ssh_local_port: null,
-                  },
-            { onSuccess: close }
-        );
+    const sshHostIdentity = isManual ? `${sshHostname.trim()}:${sshPort ?? 22}` : sshHostAlias.trim();
+    const errorMessage =
+        error && getSshHostKeyFingerprint(error) === undefined
+            ? (getApiErrorMessage(error) ?? 'The remote trainer could not be saved. Try again.')
+            : undefined;
+
+    const requestConfirmation = (fingerprint: string) => {
+        requestHostKeyConfirmation({
+            fingerprint,
+            host: sshHostIdentity,
+            onConfirm: () => submit(fingerprint),
+            onCancel: reset,
+        });
     };
 
-    const errorMessage = error
-        ? (getApiErrorMessage(error) ?? 'The remote trainer could not be saved. Try again.')
-        : undefined;
+    const submit = (acceptedHostKeyFingerprint?: string) => {
+        save(values, {
+            onSuccess: close,
+            acceptedHostKeyFingerprint,
+            onHostKeyConfirmationRequired: requestConfirmation,
+        });
+    };
+
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        submit();
+    };
 
     const hasValidSshHost = isManual ? sshHostname.trim() !== '' : sshHostAlias.trim() !== '';
     const canSubmit =

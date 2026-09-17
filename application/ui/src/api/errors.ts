@@ -66,6 +66,16 @@ export const getApiErrorMessage = (error: unknown): string | undefined => {
     return undefined;
 };
 
+export const getSshHostKeyFingerprint = (error: unknown): string | undefined => {
+    if (typeof error !== 'object' || error === null) {
+        return undefined;
+    }
+    const payload = error as Record<string, unknown>;
+    return payload.error_code === 'ssh_host_key_confirmation_required' && typeof payload.fingerprint === 'string'
+        ? payload.fingerprint
+        : undefined;
+};
+
 /**
  * Short title for robot connection errors surfaced over WebSocket or API responses.
  */

@@ -102,6 +102,7 @@ async def test_sync_tunnel_uses_persisted_manual_connection() -> None:
         port=2222,
         username="trainer",
         identity_file="~/.ssh/trainer",
+        accepted_host_key_fingerprint=None,
     )
 
 
