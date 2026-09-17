@@ -2,26 +2,11 @@
     color: var(--spectrum-global-color-static-red-600);
 }
 
-.hint {
-    color: var(--spectrum-global-color-gray-700);
-}
-
-.modeGuidance {
-    display: block;
-    min-height: 2.5em;
-    color: var(--spectrum-global-color-gray-700);
-}
-
-.methodContent {
-    box-sizing: border-box;
-    height: 390px;
-}
-
-.directConnectionHint {
-    display: block;
-    max-width: 48ch;
-    padding-top: var(--spectrum-global-dimension-size-200);
-    color: var(--spectrum-global-color-gray-700);
+.modeFields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-global-dimension-size-100);
+    height: 300px;
 }
 
 .fieldRow {
@@ -29,9 +14,13 @@
     gap: var(--spectrum-global-dimension-size-200);
 }
 
-@media (max-width: 640px) {
-    .methodContent {
-        height: 600px;
+.fieldRow > * {
+    min-width: 0;
+}
+
+@media (max-width: 360px) {
+    .modeFields {
+        height: auto;
     }
 
     .fieldRow {
@@ -48,6 +37,10 @@
     display: inline-flex;
     align-items: center;
     gap: var(--spectrum-global-dimension-size-50);
+}
+
+.awsPrompt {
+    flex-wrap: wrap;
 }
 
 .awsStackLinkContent svg {

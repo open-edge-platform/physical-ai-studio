@@ -548,9 +548,7 @@ async def test_confirmed_host_key_is_accepted_and_persisted(settings: Settings, 
 
 async def test_concurrent_first_use_accepts_only_one_competing_key(settings: Settings) -> None:
     keys = [asyncssh.generate_private_key("ssh-ed25519").convert_to_public() for _ in range(2)]
-    transports = [
-        SshTransport(ALIAS, settings, accepted_host_key_fingerprint=key.get_fingerprint()) for key in keys
-    ]
+    transports = [SshTransport(ALIAS, settings, accepted_host_key_fingerprint=key.get_fingerprint()) for key in keys]
     for transport in transports:
         transport._match_known_hosts(_HOSTNAME, "10.0.0.1", 22)
 

@@ -45,9 +45,7 @@ async def update_remote_trainer(
     accepted_host_key_fingerprint: Annotated[str | None, Header()] = None,
 ) -> RemoteTrainer:
     """Update a configured direct trainer endpoint."""
-    return await remote_trainer_service.update_remote_trainer(
-        remote_trainer_id, update, accepted_host_key_fingerprint
-    )
+    return await remote_trainer_service.update_remote_trainer(remote_trainer_id, update, accepted_host_key_fingerprint)
 
 
 @router.delete("/{remote_trainer_id}", status_code=status.HTTP_204_NO_CONTENT)
