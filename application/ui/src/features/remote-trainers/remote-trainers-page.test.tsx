@@ -86,12 +86,7 @@ describe('RemoteTrainersPage', () => {
                 '&stackName=physical-ai-studio-remote-trainer'
         );
         expect(screen.getByText('Address exposed by the remote trainer.')).toBeInTheDocument();
-        expect(screen.getByText('Use when Studio can reach the trainer HTTP endpoint directly.')).toBeInTheDocument();
-        expect(
-            screen.getByText(
-                'Enter the complete trainer URL, including its scheme and port, for example http://trainer.example.com:8001.'
-            )
-        ).toBeInTheDocument();
+        expect(screen.getByText('Enter the URL of a trainer that Studio can reach directly.')).toBeInTheDocument();
         await user.type(screen.getByRole('textbox', { name: /^Name/ }), remoteTrainer.name);
         await user.type(screen.getByRole('textbox', { name: /^Trainer URL/ }), remoteTrainer.url);
         await user.click(screen.getByRole('button', { name: 'Add trainer' }));
@@ -126,7 +121,7 @@ describe('RemoteTrainersPage', () => {
         expect(await screen.findByRole('button', { name: /show details for renamed-trainer/i })).toBeInTheDocument();
     });
 
-    it('computes the trainer URL from the local port in SSH tunnel mode', async () => {
+    it('shows the SSH tunnel connection fields', async () => {
         const user = userEvent.setup();
         server.use(http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])));
 
@@ -135,17 +130,8 @@ describe('RemoteTrainersPage', () => {
         await user.click(await screen.findByRole('button', { name: /new remote trainer/i }));
         await user.click(screen.getByRole('tab', { name: /ssh tunnel/i }));
 
-        expect(
-            screen.getByText(
-                'Use when the trainer is reachable through an SSH tunnel. Studio opens and maintains the tunnel.'
-            )
-        ).toBeInTheDocument();
+        expect(screen.getByText('Connect through SSH when the trainer is not directly reachable.')).toBeInTheDocument();
         expect(screen.getByRole('tab', { name: /connection details/i })).toHaveAttribute('aria-selected', 'true');
-        expect(
-            screen.getByText(
-                'Enter the SSH host, port, user, and optional private key path available on this Studio host. Studio never stores private key contents or passphrases.'
-            )
-        ).toBeInTheDocument();
         expect(screen.getByRole('textbox', { name: /^User/ })).toHaveValue('ec2-user');
         expect(screen.getByRole('textbox', { name: /local port/i })).toHaveValue('8001');
         expect(screen.queryByRole('textbox', { name: /trainer url/i })).not.toBeInTheDocument();
