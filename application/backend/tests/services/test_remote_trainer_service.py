@@ -9,6 +9,7 @@ from core.security.ssh_network_exposure import SshFeatureAvailability
 from exceptions import (
     ResourceAlreadyExistsError,
     ResourceNotFoundError,
+    SshAuthenticationError,
     SshFeatureDisabledError,
     SshHostKeyConfirmationRequiredError,
 )
@@ -195,6 +196,27 @@ async def test_create_syncs_the_tunnel_manager_on_success() -> None:
         )
 
     tunnel_manager.sync_tunnel.assert_awaited_once_with(remote_trainer, None)
+
+
+@pytest.mark.anyio
+async def test_create_deletes_trainer_when_tunnel_sync_fails() -> None:
+    session = _session()
+    remote_trainer = _remote_trainer()
+    repository = MagicMock()
+    repository.save = AsyncMock(return_value=remote_trainer)
+    repository.delete_by_id = AsyncMock()
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager") as tunnel_manager,
+        pytest.raises(SshAuthenticationError),
+    ):
+        tunnel_manager.sync_tunnel = AsyncMock(side_effect=SshAuthenticationError("trainer.test"))
+        await RemoteTrainerService(session).create_remote_trainer(
+            RemoteTrainerCreate(name="trainer", url="https://trainer.test")
+        )
+
+    repository.delete_by_id.assert_awaited_once_with(remote_trainer.id)
 
 
 @pytest.mark.anyio

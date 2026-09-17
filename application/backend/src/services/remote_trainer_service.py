@@ -9,13 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import get_ssh_feature_availability
-from exceptions import (
-    ResourceAlreadyExistsError,
-    ResourceNotFoundError,
-    ResourceType,
-    SshFeatureDisabledError,
-    SshHostKeyConfirmationRequiredError,
-)
+from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, ResourceType, SshFeatureDisabledError
 from repositories.remote_trainer_repo import RemoteTrainerRepository
 from schemas.hardware import DeviceInfo, DeviceType, StorageInfo
 from schemas.remote_trainer import (
@@ -166,7 +160,7 @@ class RemoteTrainerService:
             ) from error
         try:
             await remote_trainer_tunnel_manager.sync_tunnel(saved, accepted_host_key_fingerprint)
-        except SshHostKeyConfirmationRequiredError:
+        except Exception:
             await self.repo.delete_by_id(saved.id)
             raise
         return saved
@@ -210,7 +204,7 @@ class RemoteTrainerService:
             ) from error
         try:
             await remote_trainer_tunnel_manager.sync_tunnel(saved, accepted_host_key_fingerprint)
-        except SshHostKeyConfirmationRequiredError:
+        except Exception:
             await self.repo.update(saved, remote_trainer.model_dump(include={"name", *_CONNECTION_FIELDS}))
             raise
         return saved
