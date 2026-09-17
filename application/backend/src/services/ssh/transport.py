@@ -351,8 +351,7 @@ class SshTransport:
             return False
 
         known_hosts_path = self._settings.ssh_known_hosts_path
-        if not known_hosts_path.parent.exists():
-            known_hosts_path.parent.mkdir(parents=True, mode=0o700)
+        known_hosts_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
         host_pattern = host if port == 22 else f"[{host}]:{port}"
         entry = host_pattern.encode() + b" " + key.export_public_key().strip() + b"\n"
         descriptor = os.open(known_hosts_path, os.O_CREAT | os.O_RDWR, 0o600)
