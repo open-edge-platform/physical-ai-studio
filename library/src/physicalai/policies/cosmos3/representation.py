@@ -197,6 +197,39 @@ def droid_ee_relative_actions(cartesian_seq: np.ndarray, gripper_seq: np.ndarray
     return torch.from_numpy(np.concatenate([rel, grip], axis=-1)).float()  # [N, 10]
 
 
+def _poses_from_ee_tokens(tokens: np.ndarray) -> np.ndarray:
+    """Absolute ee pose tokens ``[N, >=9]`` (``[pos(3), rot6d(6), ...]``) -> poses ``[N, 4, 4]``."""
+    tokens = np.asarray(tokens, dtype=np.float32).reshape(-1, tokens.shape[-1])
+    poses = np.tile(np.eye(4, dtype=np.float32), (len(tokens), 1, 1))
+    poses[:, :3, :3] = rot6d_to_matrix(tokens[:, 3:9])
+    poses[:, :3, 3] = tokens[:, :3]
+    return poses
+
+
+def droid_ee_absolute_to_relative(
+    current_state_token: np.ndarray | torch.Tensor,
+    action_tokens: np.ndarray | torch.Tensor,
+) -> torch.Tensor:
+    """Absolute DROID ee pose tokens -> framewise-relative action chunk ``[N, 10]``.
+
+    The Cosmos 3 head emits absolute ee pose tokens ``[pos(3), rot6d(6), gripper(1)]`` in the
+    same space as :func:`droid_ee_state_token`. This anchors them on the current-state token
+    ``T_0`` and applies ``delta_T = inv(T_i) @ T_{i+1}`` over
+    ``[current_state, pred_1, ..., pred_N]`` (the same conversion as :func:`_rel_rot6d_backward`
+    used to build training targets), yielding the ``[trans(3), rot6d(6)]`` relative pose that
+    matches :func:`droid_ee_relative_actions`. The raw gripper logit is thresholded to a hard
+    ``0/1`` command, already in the flipped ``1 - g`` DROID convention of the tokens.
+    """
+    state = np.asarray(_as_numpy(current_state_token), dtype=np.float32).reshape(-1)
+    acts = np.asarray(_as_numpy(action_tokens), dtype=np.float32)
+    if acts.ndim == 1:
+        acts = acts[None]
+    poses = _poses_from_ee_tokens(np.concatenate([state[None, :9], acts[:, :9]], axis=0))
+    rel = _rel_rot6d_backward(poses)  # [N, 9]
+    grip = (acts[:, 9] > 0.0).astype(np.float32)[:, None]  # sigmoid>0.5 threshold; flipped 1-g convention
+    return torch.from_numpy(np.concatenate([rel, grip], axis=-1)).float()  # [N, 10]
+
+
 # ---------------------------------------------------------------------------
 # Bridge (WidowX) end-effector representation
 # ---------------------------------------------------------------------------
@@ -229,11 +262,37 @@ def bridge_ee_relative_actions(state_seq: np.ndarray, gripper_seq: np.ndarray) -
     return torch.from_numpy(np.concatenate([rel, grip], axis=-1)).float()  # [N, 10]
 
 
+def bridge_ee_absolute_to_relative(
+    current_state_token: np.ndarray | torch.Tensor,
+    action_tokens: np.ndarray | torch.Tensor,
+) -> torch.Tensor:
+    """Absolute Bridge ee pose tokens -> framewise-relative action chunk ``[N, 10]``.
+
+    Mirror of :func:`droid_ee_absolute_to_relative` for the Bridge/WidowX convention: anchor the
+    absolute pose tokens ``[pos(3), rot6d(6), gripper(1)]`` on the current-state token ``T_0`` and
+    apply ``delta_T = inv(T_i) @ T_{i+1}`` to match :func:`bridge_ee_relative_actions`. Bridge uses
+    the raw (unflipped) source-frame gripper, so the ``0/1`` command comes from frame ``i`` (the
+    "from" frame) and no ``1 - g`` flip is applied.
+    """
+    state = np.asarray(_as_numpy(current_state_token), dtype=np.float32).reshape(-1)
+    acts = np.asarray(_as_numpy(action_tokens), dtype=np.float32)
+    if acts.ndim == 1:
+        acts = acts[None]
+    tokens = np.concatenate([state[None, :10], acts[:, :10]], axis=0)  # [N+1, 10]
+    poses = _poses_from_ee_tokens(tokens[:, :9])
+    rel = _rel_rot6d_backward(poses)  # [N, 9]
+    grip = (tokens[: rel.shape[0], 9] > 0.0).astype(np.float32)[:, None]  # source-frame, unflipped 0/1
+    return torch.from_numpy(np.concatenate([rel, grip], axis=-1)).float()  # [N, 10]
+
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 def _as_numpy(x: np.ndarray | torch.Tensor) -> np.ndarray:
-    return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else np.asarray(x)
+    if isinstance(x, torch.Tensor):
+        # numpy has no bfloat16; upcast to float32 before converting.
+        return x.detach().to(torch.float32).cpu().numpy() if x.dtype == torch.bfloat16 else x.detach().cpu().numpy()
+    return np.asarray(x)
 
 
 def represent_state(

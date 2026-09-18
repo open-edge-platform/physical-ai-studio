@@ -29,7 +29,9 @@ from .pipeline import PolicyPipelineWithState
 from .preprocessor import Cosmos3Preprocessor
 from .representation import (
     assemble_state_sequence,
+    bridge_ee_absolute_to_relative,
     domain_representation,
+    droid_ee_absolute_to_relative,
     represent_actions,
     represent_state,
     uses_minmax_normalization,
@@ -616,6 +618,7 @@ class Cosmos3Model(Model):
 
         preds = []
         for b in range(batch_size):
+            state_token = None
             cur_img = img_tensor[b] if img_tensor.ndim in {4, 5} else img_tensor
             if cur_img.ndim == 4:  # [T, C, H, W] -> take latest frame # ruff: ignore[magic-value-comparison]
                 cur_img = cur_img[-1]
@@ -634,9 +637,11 @@ class Cosmos3Model(Model):
                 else:
                     # Pose domain: build the native ee state token; no min-max scaling.
                     cond_state = represent_state(self.config.domain, cur_state).to(device=device, dtype=torch.float32)
+                    state_token = cond_state
                 self.pipe.current_state = cond_state
             else:
                 self.pipe.current_state = None
+                state_token = None
 
             condition = CosmosActionCondition(
                 mode="policy",
@@ -673,6 +678,15 @@ class Cosmos3Model(Model):
                 a_min_slice = self.a_min[: self.raw_dim].to(action_chunk)
                 a_max_slice = self.a_max[: self.raw_dim].to(action_chunk)
                 out_action = (action_chunk + 1.0) / 2.0 * (a_max_slice - a_min_slice) + a_min_slice
+            elif self.representation in {"droid_ee", "bridge_ee"} and state_token is not None:
+                # The head emits absolute ee pose tokens; convert to the framewise-relative
+                # action space (matching *_ee_relative_actions) anchored on the state token.
+                convert = (
+                    droid_ee_absolute_to_relative
+                    if self.representation == "droid_ee"
+                    else bridge_ee_absolute_to_relative
+                )
+                out_action = convert(state_token, action_chunk).to(action_chunk)
             else:
                 # Pose domain: predictions are already in the native relative-pose space.
                 out_action = action_chunk
