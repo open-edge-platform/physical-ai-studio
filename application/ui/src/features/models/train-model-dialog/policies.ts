@@ -37,4 +37,10 @@ export const MODELS: ReadonlyArray<{
         description: 'Enhanced Pi0 with discrete state encoding and longer context',
         minVRAM: 40 * GB,
     },
+    {
+        id: 'rldx1',
+        name: 'RLDX-1',
+        description: 'General-purpose robot foundation model for dexterous manipulation',
+        minVRAM: 40 * GB,
+    },
 ];

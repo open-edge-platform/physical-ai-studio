@@ -73,6 +73,7 @@ _DATASET_REPO_ID = "snapshot"
 
 PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
     "pi05": "lerobot/pi05_base",
+    "rldx1": "RLWRLD/RLDX-1-PT",
     "smolvla": "lerobot/smolvla_base",
 }
 """Hub checkpoints used to initialize policies that only fine-tune from pretrained weights."""

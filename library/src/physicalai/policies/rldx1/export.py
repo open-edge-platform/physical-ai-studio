@@ -32,7 +32,7 @@ from physicalai.policies.rldx1.utils.export import (
     build_padded_sample,
     build_rldx1_token_composer_params,
     cast_sample_fp32,
-    export_image_resolution_from_stats,
+    export_image_resolution_after_preprocessor_from_stats,
     fp32_weights_for_export,
     trim_export_sample,
 )
@@ -175,7 +175,12 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
             raise ValueError(msg)
 
         try:
-            image_resolution = export_image_resolution_from_stats(self._dataset_stats)
+            image_resolution = export_image_resolution_after_preprocessor_from_stats(
+                self._dataset_stats,
+                image_max_area=int(self.config.image_max_area),
+                image_resize_m=int(self.config.image_resize_m),
+                image_min_area=self.config.image_min_area,
+            )
         except RuntimeError as exc:
             msg = (
                 "dataset_stats carries no visual features. Pass input_features={'<view>': "
@@ -194,6 +199,13 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
                 type="denormalize",
                 stats={ACTION: self._dataset_stats[ACTION]},
                 mode="quantiles",
+            ),
+        ]
+        callback_specs = [
+            ComponentSpec(
+                type="rldx1_vtc",
+                video_length=int(self.config.video_length),
+                video_stride=int(self.config.video_stride),
             ),
         ]
         if self._preprocessor is None:
@@ -253,6 +265,7 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
                 *rope_specs,
             ],
             postprocessors_specs=postproc_specs,
+            callbacks_specs=callback_specs,
         )
         extra_args["openvino"] = OpenVINOExportParameters(
             inputs=[PIXEL_VALUES, INPUT_IDS, POSITION_IDS, ATTENTION_MASK, STATE],
@@ -281,6 +294,7 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
                 *rope_specs,
             ],
             postprocessors_specs=postproc_specs,
+            callbacks_specs=callback_specs,
         )
         extra_args["torch"] = TorchExportParameters(
             preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
@@ -316,7 +330,12 @@ class Rldx1ExportMixin(ExportablePolicyMixin):
             msg = "No preprocessor available to build compress reference ids."
             raise RuntimeError(msg)
         preprocessor = cast("Rldx1Preprocessor", self._preprocessor)
-        image_resolution = export_image_resolution_from_stats(self._dataset_stats)
+        image_resolution = export_image_resolution_after_preprocessor_from_stats(
+            self._dataset_stats,
+            image_max_area=int(self.config.image_max_area),
+            image_resize_m=int(self.config.image_resize_m),
+            image_min_area=self.config.image_min_area,
+        )
         token_composer_params = build_rldx1_token_composer_params(
             tokenizer=preprocessor.tokenizer,
             image_resolution=image_resolution,

@@ -215,6 +215,7 @@ class ExportablePolicyMixin:
         postprocessors: list[ComponentSpec] | None = None,
         input_names: list[str] | None = None,
         output_names: list[str] | None = None,
+        callbacks: list[ComponentSpec] | None = None,
         **extras: Any,  # noqa: ANN401
     ) -> None:
         """Create ``manifest.json`` for an exported model.
@@ -225,6 +226,7 @@ class ExportablePolicyMixin:
             runner: Runner component spec to include in the manifest.
             preprocessors: Preprocessor component specs to include in the manifest.
             postprocessors: Postprocessor component specs to include in the manifest.
+            callbacks: Callback component specs to include in the manifest.
             input_names: Optional ordered list of model input names.
             output_names: Optional ordered list of model output names.
             **extras: Additional keyword arguments to forward to the manifest.
@@ -248,6 +250,7 @@ class ExportablePolicyMixin:
                 artifacts={str(backend): artifact_filename},
                 preprocessors=preprocessors or [],
                 postprocessors=postprocessors or [],
+                callbacks=callbacks or [],
                 input_features=extras.pop("input_features", []),
                 output_features=extras.pop("output_features", []),
             ),
@@ -366,6 +369,7 @@ class ExportablePolicyMixin:
             runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
+            callbacks=extra_model_args.callbacks_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
@@ -438,6 +442,7 @@ class ExportablePolicyMixin:
             runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
+            callbacks=extra_model_args.callbacks_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
@@ -539,6 +544,7 @@ class ExportablePolicyMixin:
             runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
+            callbacks=extra_model_args.callbacks_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
@@ -638,6 +644,7 @@ class ExportablePolicyMixin:
             export_dir,
             ExportBackend.EXECUTORCH,
             runner=ComponentSpec.from_class(SinglePass),
+            callbacks=extra_model_args.callbacks_specs,
             input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
             output_names=extra_model_args.output_names,
             input_features=self._to_component_specs(self.inputs_schema or []),
