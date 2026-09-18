@@ -30,15 +30,10 @@ from .pipeline import PolicyPipelineWithState
 from .preprocessor import Cosmos3Preprocessor
 from .representation import (
     assemble_state_sequence,
-    bridge_ee_absolute_to_relative,
-    domain_action_gripper_index,
-    domain_gripper_flipped,
-    domain_normalization,
-    domain_representation,
-    droid_ee_absolute_to_relative,
+    embodiment_gripper_flipped,
+    embodiment_normalization,
     flip_gripper_last_channel,
-    represent_actions,
-    represent_state,
+    resolve_action_space,
 )
 from .surgery import configure_trainable, init_domain_action_head
 
@@ -64,19 +59,19 @@ _ACTION_VIEWPOINT_TEMPLATES.setdefault(
 )
 
 
-def _has_pretrained_action_head(pretrained_path: str, domain: str) -> bool:
+def _has_pretrained_action_head(pretrained_path: str, embodiment: str) -> bool:
     """Check whether a model path or repository carries an already trained action head.
 
     Args:
         pretrained_path: Path to local directory or Hugging Face model repository ID.
-        domain: Embodiment domain identifier.
+        embodiment: Embodiment identifier.
 
     Returns:
         True if the checkpoint already contains action head weights or policy metadata.
     """
     path_obj = Path(pretrained_path)
     if path_obj.is_dir():
-        return (path_obj / f"{domain}_head.pt").is_file() or (path_obj / "checkpoint.json").is_file()
+        return (path_obj / f"{embodiment}_head.pt").is_file() or (path_obj / "checkpoint.json").is_file()
 
     try:
         return file_exists(repo_id=pretrained_path, filename="checkpoint.json")
@@ -215,7 +210,7 @@ class Cosmos3Model(Model):
             device: Target device for execution.
 
         Raises:
-            ValueError: If the configured domain is unrecognized.
+            ValueError: If the configured embodiment or action_space is unrecognized.
         """
         super().__init__()
         self.config = config
@@ -227,27 +222,34 @@ class Cosmos3Model(Model):
         }
         self.torch_dtype = dtype_map.get(config.dtype, torch.bfloat16)
 
-        # Domain metadata
-        if config.domain not in _EMBODIMENT_TO_DOMAIN_ID:
-            msg = f"Unknown domain '{config.domain}'. Registered: {list(_EMBODIMENT_TO_DOMAIN_ID.keys())}"
+        # Embodiment metadata
+        if config.embodiment not in _EMBODIMENT_TO_DOMAIN_ID:
+            msg = f"Unknown embodiment '{config.embodiment}'. Registered: {list(_EMBODIMENT_TO_DOMAIN_ID.keys())}"
             raise ValueError(msg)
 
-        self.domain_id_val = _EMBODIMENT_TO_DOMAIN_ID[config.domain]
-        if config.domain not in _EMBODIMENT_TO_RAW_ACTION_DIM:
-            # No silent fallback: an unregistered domain would slice actions to the wrong width.
+        self.domain_id_val = _EMBODIMENT_TO_DOMAIN_ID[config.embodiment]
+        if config.embodiment not in _EMBODIMENT_TO_RAW_ACTION_DIM:
+            # No silent fallback: an unregistered embodiment would slice actions to the wrong width.
             msg = (
-                f"Domain '{config.domain}' has no registered raw action width. "
+                f"Embodiment '{config.embodiment}' has no registered raw action width. "
                 f"Registered: {sorted(_EMBODIMENT_TO_RAW_ACTION_DIM)}. Add its canonical action "
                 "width to _EMBODIMENT_TO_RAW_ACTION_DIM before using it."
             )
             raise ValueError(msg)
-        self.raw_dim = _EMBODIMENT_TO_RAW_ACTION_DIM[config.domain]
+        self.raw_dim = _EMBODIMENT_TO_RAW_ACTION_DIM[config.embodiment]
 
-        # Action-space representation: pose domains (droid_ee/bridge_ee) build a native
-        # relative-pose target; identity domains use the raw action column. The normalization
-        # method (none/minmax/quantile/...) mirrors the cosmos-framework dataset defaults.
-        self.representation = domain_representation(config.domain)
-        self.norm_method = domain_normalization(config.domain)
+        # Action space: resolved from the embodiment, overridable via config.action_space.
+        # Only ``identity`` (pusht/aloha) and ``joint_pos`` (droid_lerobot) are supported; both
+        # pass the raw action column through, joint_pos additionally flips the gripper. The
+        # normalization method (none/minmax/...) mirrors the cosmos-framework dataset defaults.
+        self.action_space = resolve_action_space(config.embodiment, getattr(config, "action_space", None))
+        if self.action_space not in {"identity", "joint_pos"}:
+            msg = (
+                f"Unsupported action_space '{self.action_space}' for embodiment '{config.embodiment}'. "
+                "Supported: 'identity', 'joint_pos'."
+            )
+            raise ValueError(msg)
+        self.norm_method = embodiment_normalization(config.embodiment)
 
         # Build or wrap the pipeline
         if pipeline is not None:
@@ -287,13 +289,13 @@ class Cosmos3Model(Model):
             alpha_scale=config.alpha_scale,
             dora=config.dora,
         )
-        if not _has_pretrained_action_head(config.pretrained_model_name_or_path, config.domain):
+        if not _has_pretrained_action_head(config.pretrained_model_name_or_path, config.embodiment):
             init_domain_action_head(self.transformer, self.domain_id_val)
         else:
             logger.info(
-                "Preserving pretrained action head weights from %s for domain '%s'",
+                "Preserving pretrained action head weights from %s for embodiment '%s'",
                 config.pretrained_model_name_or_path,
-                config.domain,
+                config.embodiment,
             )
 
         if config.grad_checkpoint:
@@ -301,7 +303,7 @@ class Cosmos3Model(Model):
 
         # Input preprocessor for view composition and viewpoint metadata
         self.preprocessor = Cosmos3Preprocessor(
-            domain=config.domain,
+            embodiment=config.embodiment,
             view_point=getattr(config, "view_point", None),
         )
 
@@ -339,7 +341,7 @@ class Cosmos3Model(Model):
     def _load_normalizer_stats_file(self, path: str) -> None:
         """Load an explicit cosmos-format stats file and set the normalization affine.
 
-        The domain's registered method is used; a ``none`` domain (e.g. DROID) is
+        The embodiment's registered method is used; a ``none`` embodiment (e.g. DROID) is
         promoted to ``quantile`` since supplying a stats file signals normalized actions.
 
         Raises:
@@ -351,27 +353,26 @@ class Cosmos3Model(Model):
         if offset.numel() != self.raw_dim:
             msg = (
                 f"Normalizer stats width {offset.numel()} from {path!r} does not match the "
-                f"raw action dim {self.raw_dim} for domain '{self.config.domain}'."
+                f"raw action dim {self.raw_dim} for embodiment '{self.config.embodiment}'."
             )
             raise ValueError(msg)
         self.norm_method = method
         self._set_affine(offset, scale)
-        logger.info("Loaded %s normalizer stats for domain '%s' from %s", method, self.config.domain, path)
+        logger.info("Loaded %s normalizer stats for embodiment '%s' from %s", method, self.config.embodiment, path)
 
     def set_dataset_stats(self, dataset_stats: dict[str, Any]) -> None:
         """Update the normalization affine from dataset statistics.
 
-        Only identity domains consume dataset statistics: their raw action column is the
-        model action space. Pose domains (droid_ee/bridge_ee) build a transformed target,
-        so their raw-column dataset stats are in the wrong space and are ignored — supply
-        ``normalizer_stats_path`` to normalize them.
+        Only ``identity`` embodiments consume dataset statistics: their raw action column is
+        the model action space. ``joint_pos`` (DROID) keeps actions un-normalized, so its
+        raw-column dataset stats are ignored — supply ``normalizer_stats_path`` to normalize.
         """
-        if self.representation != "identity":
+        if self.action_space != "identity":
             logger.info(
-                "Domain '%s' uses the %s representation; dataset stats are in the raw space and "
-                "are ignored (pass normalizer_stats_path to normalize). Actions stay un-normalized.",
-                self.config.domain,
-                self.representation,
+                "Embodiment '%s' uses the %s action space; dataset stats are ignored "
+                "(pass normalizer_stats_path to normalize). Actions stay un-normalized.",
+                self.config.embodiment,
+                self.action_space,
             )
             return
 
@@ -475,30 +476,7 @@ class Cosmos3Model(Model):
             )
         return self._pack_cache[key]
 
-    def _pose_action_gripper(
-        self,
-        actions_tensor: torch.Tensor | None,
-        b: int,
-        device: torch.device,
-    ) -> torch.Tensor | None:
-        """Return sample ``b``'s commanded gripper channel from the raw action row, or ``None``.
-
-        cosmos-framework builds the pose action chunk's gripper from the raw ACTION column; this
-        extracts it at the domain's :func:`domain_action_gripper_index`. Returns ``None`` when the
-        domain has no configured index or the action tensor lacks that column, so
-        :func:`represent_actions` falls back to the observed state gripper.
-        """
-        gidx = domain_action_gripper_index(self.config.domain)
-        if actions_tensor is None or gidx is None:
-            return None
-        act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
-        if act_b.ndim == 1:
-            act_b = act_b.unsqueeze(0)
-        if act_b.shape[-1] <= gidx:
-            return None
-        return act_b[:, gidx]
-
-    def compute_loss(  # noqa: PLR0912, PLR0915
+    def compute_loss(
         self,
         batch: dict[str, Any],
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
@@ -509,9 +487,6 @@ class Cosmos3Model(Model):
 
         Returns:
             Tuple of (total_loss, metrics_dict).
-
-        Raises:
-            ValueError: If a pose domain is used without an observation state.
         """
         preprocessed = self.preprocessor(batch)
         images_tensor = preprocessed[IMAGES]
@@ -522,7 +497,7 @@ class Cosmos3Model(Model):
         # Reassemble split state sub-columns (e.g. the original DROID layout) into a single
         # canonical ``[B, T, pose + gripper]`` tensor; combined-column states pass through.
         state_seq_batch = (
-            assemble_state_sequence(self.config.domain, state_tensor) if state_tensor is not None else None
+            assemble_state_sequence(self.config.embodiment, state_tensor) if state_tensor is not None else None
         )
 
         device = self.transformer.device
@@ -559,46 +534,27 @@ class Cosmos3Model(Model):
                     image_size,
                 )
 
-            if self.representation in {"identity", "joint_pos"}:
-                # Identity (pusht/aloha) and joint_pos (DROID) domains: the raw action column
-                # is already the model action space. joint_pos additionally inverts the DROID
-                # gripper (cosmos-framework ``_is_gripper_action_flipped``) on both the action
-                # chunk and the prepended state token.
-                act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
-                if act_b.ndim == 1:
-                    act_b = act_b.unsqueeze(0)
-                act_raw = act_b[:, : self.raw_dim]
-                if state_seq_batch is not None:
-                    st_b = state_seq_batch[b].to(device=device, dtype=torch.float32)
-                    if st_b.ndim > 1:
-                        st_b = st_b[0]  # Take initial frame state
-                    st_raw = st_b[: self.raw_dim]
-                else:
-                    st_raw = None
-                if self.representation == "joint_pos" and domain_gripper_flipped(self.config.domain):
-                    act_raw = flip_gripper_last_channel(act_raw)
-                    if st_raw is not None:
-                        st_raw = flip_gripper_last_channel(st_raw)
+            # Identity (pusht/aloha) and joint_pos (DROID) action spaces: the raw action column
+            # is already the model action space. joint_pos additionally inverts the DROID gripper
+            # (cosmos-framework ``_is_gripper_action_flipped``) on both the action chunk and the
+            # prepended state token.
+            act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
+            if act_b.ndim == 1:
+                act_b = act_b.unsqueeze(0)
+            act_raw = act_b[:, : self.raw_dim]
+            if state_seq_batch is not None:
+                st_b = state_seq_batch[b].to(device=device, dtype=torch.float32)
+                if st_b.ndim > 1:
+                    st_b = st_b[0]  # Take initial frame state
+                st_raw = st_b[: self.raw_dim]
             else:
-                # Pose domains (droid_ee/bridge_ee): derive the native relative-pose action chunk
-                # and current-state token from the raw state sequence, mirroring cosmos-framework's
-                # dataset transform. Poses come from the state; the chunk gripper is taken from the
-                # raw ACTION column (cosmos reads ``action[..., gripper_idx]``), falling back to the
-                # state gripper when the action tensor is unavailable.
-                if state_seq_batch is None:
-                    msg = f"Pose domain '{self.config.domain}' requires observation state to build action targets."
-                    raise ValueError(msg)
-                state_seq_b = state_seq_batch[b].to(device=device, dtype=torch.float32)
-                if state_seq_b.ndim == 1:
-                    state_seq_b = state_seq_b.unsqueeze(0)
-                action_grip = self._pose_action_gripper(actions_tensor, b, device)
-                act_raw = represent_actions(self.config.domain, state_seq_b, action_gripper_seq=action_grip).to(
-                    device=device,
-                    dtype=torch.float32,
-                )
-                st_raw = represent_state(self.config.domain, state_seq_b[0]).to(device=device, dtype=torch.float32)
+                st_raw = None
+            if self.action_space == "joint_pos" and embodiment_gripper_flipped(self.config.embodiment):
+                act_raw = flip_gripper_last_channel(act_raw)
+                if st_raw is not None:
+                    st_raw = flip_gripper_last_channel(st_raw)
 
-            # Apply the domain's normalization affine uniformly to the state token and action chunk.
+            # Apply the embodiment's normalization affine uniformly to the state token and chunk.
             act_norm = self._normalize_action(act_raw)
             st_norm = (
                 self._normalize_action(st_raw)
@@ -694,15 +650,15 @@ class Cosmos3Model(Model):
             for i, (mn, mx, mu, sd) in enumerate(zip(mins, maxs, means, stds, strict=False))
         )
         logger.debug(
-            "Cosmos3 raw action output (domain=%s, representation=%s, norm_method=%s):\n%s",
-            self.config.domain,
-            self.representation,
+            "Cosmos3 raw action output (embodiment=%s, action_space=%s, norm_method=%s):\n%s",
+            self.config.embodiment,
+            self.action_space,
             self.norm_method,
             rows,
         )
 
     @torch.no_grad()
-    def predict_action_chunk(  # noqa: PLR0912
+    def predict_action_chunk(
         self,
         batch: dict[str, Any],
     ) -> torch.Tensor:
@@ -720,14 +676,15 @@ class Cosmos3Model(Model):
         state_tensor = preprocessed.get(STATE)
         # Reassemble split state sub-columns (e.g. the original DROID layout) into a single
         # canonical tensor; combined-column states pass through unchanged.
-        state_field = assemble_state_sequence(self.config.domain, state_tensor) if state_tensor is not None else None
+        state_field = (
+            assemble_state_sequence(self.config.embodiment, state_tensor) if state_tensor is not None else None
+        )
 
         device = self.transformer.device
         batch_size = img_tensor.shape[0] if img_tensor.ndim in {4, 5} else 1
 
         preds = []
         for b in range(batch_size):
-            state_token = None
             cur_img = img_tensor[b] if img_tensor.ndim in {4, 5} else img_tensor
             if cur_img.ndim == 4:  # [T, C, H, W] -> take latest frame # ruff: ignore[magic-value-comparison]
                 cur_img = cur_img[-1]
@@ -738,29 +695,23 @@ class Cosmos3Model(Model):
                 cur_state = cur_state.to(device=device, dtype=torch.float32)
                 if cur_state.ndim > 1:
                     cur_state = cur_state[-1]
-                if self.representation == "identity":
+                if self.action_space == "identity":
                     native_state = cur_state[: self.raw_dim]
-                elif self.representation == "joint_pos":
-                    # Raw joint+gripper state token; invert the DROID gripper to the model's
-                    # convention and anchor the decoded chunk on it (use_state parity).
-                    native_state = cur_state[: self.raw_dim]
-                    if domain_gripper_flipped(self.config.domain):
-                        native_state = flip_gripper_last_channel(native_state)
-                    state_token = native_state
                 else:
-                    # Pose domain: build the native ee state token, anchor the decoded chunk on it.
-                    native_state = represent_state(self.config.domain, cur_state).to(device=device, dtype=torch.float32)
-                    state_token = native_state
+                    # joint_pos (DROID): raw joint+gripper state token; invert the DROID gripper
+                    # to the model's convention and anchor the decoded chunk on it (use_state parity).
+                    native_state = cur_state[: self.raw_dim]
+                    if embodiment_gripper_flipped(self.config.embodiment):
+                        native_state = flip_gripper_last_channel(native_state)
                 cond_state = self._normalize_action(native_state)
                 self.pipe.current_state = cond_state
             else:
                 self.pipe.current_state = None
-                state_token = None
 
             condition = CosmosActionCondition(
                 mode="policy",
                 chunk_size=self.config.chunk_size,
-                domain_name=self.config.domain,
+                domain_name=self.config.embodiment,
                 resolution_tier=self.config.resolution_tier,
                 image=pil_img,
                 view_point=view_point,
@@ -790,19 +741,8 @@ class Cosmos3Model(Model):
             # Invert the normalization affine back into the model action space.
             native_chunk = self._denormalize_action(action_chunk)
 
-            if self.representation in {"droid_ee", "bridge_ee"} and state_token is not None:
-                # The head emits absolute ee pose tokens; convert to the framewise-relative
-                # action space (matching *_ee_relative_actions) anchored on the state token.
-                convert = (
-                    droid_ee_absolute_to_relative
-                    if self.representation == "droid_ee"
-                    else bridge_ee_absolute_to_relative
-                )
-                out_action = convert(state_token, native_chunk).to(action_chunk)
-            else:
-                # Identity domains: the denormalized chunk is already in the raw dataset space.
-                # Pose domains without a state token: predictions are the native relative-pose space.
-                out_action = native_chunk
+            # Identity/joint_pos: the denormalized chunk is already in the raw dataset space.
+            out_action = native_chunk
 
             preds.append(out_action)
 

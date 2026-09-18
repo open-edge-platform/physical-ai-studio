@@ -39,6 +39,7 @@ class Cosmos3(Policy):
     PyTorch inference using `Cosmos3` and `InferenceModel`.
 
     Args:
+        embodiment: Required embodiment identifier ("pusht", "droid_lerobot", or "aloha").
         pretrained_model_name_or_path: Hugging Face model repo ID or local checkpoint path.
         mode: Training mode ("peft" or "full"). Default: "peft".
         paradigm: Denoising objective ("policy", "fd", "id", or "joint"). Default: "policy".
@@ -53,7 +54,8 @@ class Cosmos3(Policy):
         resolution_tier: Video conditioning short-side px (256, 480, 720). Default: 256.
         fps: Video and action frame rate. Default: 10.
         grad_checkpoint: Enable gradient checkpointing. Default: True.
-        domain: Embodiment domain identifier. Default: "pusht".
+        action_space: Optional override of the embodiment's action space ("identity" or
+            "joint_pos"). When None, resolved from the embodiment. Default: None.
         prompt: Task instruction string. Default: "".
         guidance_scale: Classifier-free guidance scale. Default: 3.0.
         flow_shift: Flow shift for UniPC scheduler. Default: 8.0.
@@ -72,6 +74,7 @@ class Cosmos3(Policy):
         self,
         pretrained_model_name_or_path: str = "nvidia/Cosmos3-Edge",
         *,
+        embodiment: str,
         mode: Literal["peft", "full"] = "peft",
         paradigm: Literal["policy", "fd", "id", "joint"] = "policy",
         rank: int = 32,
@@ -84,7 +87,7 @@ class Cosmos3(Policy):
         resolution_tier: int = 256,
         fps: int = 10,
         grad_checkpoint: bool = True,
-        domain: str = "pusht",
+        action_space: str | None = None,
         view_point: str | None = None,
         normalizer_stats_path: str | None = None,
         prompt: str = "",
@@ -105,6 +108,7 @@ class Cosmos3(Policy):
 
         self.config = Cosmos3Config(
             pretrained_model_name_or_path=pretrained_model_name_or_path,
+            embodiment=embodiment,
             mode=mode,
             paradigm=paradigm,
             rank=rank,
@@ -117,7 +121,7 @@ class Cosmos3(Policy):
             resolution_tier=resolution_tier,
             fps=fps,
             grad_checkpoint=grad_checkpoint,
-            domain=domain,
+            action_space=action_space,
             view_point=view_point,
             normalizer_stats_path=normalizer_stats_path,
             prompt=prompt,
@@ -139,7 +143,7 @@ class Cosmos3(Policy):
         self.hparams["config"] = self.config.to_dict()
 
         self.preprocessor = Cosmos3Preprocessor(
-            domain=self.config.domain,
+            embodiment=self.config.embodiment,
             view_point=self.config.view_point,
         )
 
@@ -385,23 +389,23 @@ class Cosmos3(Policy):
                 "norm_scale": self.model.norm_scale.cpu(),
                 "prompt": self.config.prompt,
                 "paradigm": self.config.paradigm,
-                "domain": self.config.domain,
+                "embodiment": self.config.embodiment,
             },
-            out_path / f"{self.config.domain}_head.pt",
+            out_path / f"{self.config.embodiment}_head.pt",
         )
         logger.info("Saved Cosmos3 %s adapter and head to %s", self.config.mode, out_path)
 
     def load_pretrained_adapter(
         self,
         adapter_dir: str | Path,
-        domain: str | None = None,
+        embodiment: str | None = None,
         head_path: str | Path | None = None,
     ) -> dict[str, Any]:
         """Restore fine-tuned weights onto the pipeline.
 
         Args:
             adapter_dir: Path to directory holding saved adapter weights.
-            domain: Domain name override.
+            embodiment: Embodiment name override.
             head_path: Explicit path to head checkpoint file.
 
         Returns:
@@ -416,11 +420,11 @@ class Cosmos3(Policy):
                 msg = "Failed to initialize Cosmos3 model."
                 raise RuntimeError(msg)
 
-        dom = domain or self.config.domain
+        emb = embodiment or self.config.embodiment
         ckpt = load_finetuned(
             self.model.pipe,
             adapter=str(adapter_dir),
-            domain=dom,
+            embodiment=emb,
             head=str(head_path) if head_path else None,
         )
         if "norm_offset" in ckpt and "norm_scale" in ckpt:

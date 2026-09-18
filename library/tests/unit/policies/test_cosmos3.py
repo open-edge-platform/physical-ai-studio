@@ -31,7 +31,7 @@ class TestCosmos3Config:
 
     def test_default_config(self) -> None:
         """Test default configuration values."""
-        config = Cosmos3Config()
+        config = Cosmos3Config(embodiment="pusht")
         assert config.pretrained_model_name_or_path == "nvidia/Cosmos3-Edge"
         assert config.mode == "peft"
         assert config.paradigm == "policy"
@@ -45,26 +45,27 @@ class TestCosmos3Config:
         assert config.resolution_tier == 256
         assert config.fps == 10
         assert config.grad_checkpoint is True
-        assert config.domain == "pusht"
+        assert config.embodiment == "pusht"
+        assert config.action_space is None
         assert config.view_point is None
         assert config.dtype == "bfloat16"
         assert config.optimizer_lr == 1e-4
 
     def test_full_mode_defaults(self) -> None:
         """Test mode='full' default head_lr_mult is 10.0."""
-        config = Cosmos3Config(mode="full")
+        config = Cosmos3Config(embodiment="pusht", mode="full")
         assert config.mode == "full"
         assert config.head_lr_mult == 10.0
 
     def test_custom_config(self) -> None:
         """Test custom configuration values."""
         config = Cosmos3Config(
+            embodiment="droid_lerobot",
             mode="full",
             paradigm="joint",
             head_lr_mult=5.0,
             chunk_size=16,
             n_action_steps=16,
-            domain="droid_lerobot",
             view_point="concat_view",
         )
         assert config.mode == "full"
@@ -72,37 +73,37 @@ class TestCosmos3Config:
         assert config.head_lr_mult == 5.0
         assert config.chunk_size == 16
         assert config.n_action_steps == 16
-        assert config.domain == "droid_lerobot"
+        assert config.embodiment == "droid_lerobot"
         assert config.view_point == "concat_view"
 
     def test_n_action_steps_validation(self) -> None:
         """Test n_action_steps cannot exceed chunk_size."""
         with pytest.raises(ValueError, match="cannot exceed chunk_size"):
-            Cosmos3Config(chunk_size=16, n_action_steps=32)
+            Cosmos3Config(embodiment="pusht", chunk_size=16, n_action_steps=32)
 
     def test_invalid_mode(self) -> None:
         """Test invalid mode raises ValueError."""
         with pytest.raises(ValueError, match="Invalid mode"):
-            Cosmos3Config(mode="invalid")  # type: ignore[arg-type]
+            Cosmos3Config(embodiment="pusht", mode="invalid")  # type: ignore[arg-type]
 
     def test_invalid_paradigm(self) -> None:
         """Test invalid paradigm raises ValueError."""
         with pytest.raises(ValueError, match="Invalid paradigm"):
-            Cosmos3Config(paradigm="invalid")  # type: ignore[arg-type]
+            Cosmos3Config(embodiment="pusht", paradigm="invalid")  # type: ignore[arg-type]
 
     def test_invalid_resolution_tier(self) -> None:
         """Test invalid resolution_tier raises ValueError."""
         with pytest.raises(ValueError, match="Invalid resolution_tier"):
-            Cosmos3Config(resolution_tier=128)  # type: ignore[arg-type]
+            Cosmos3Config(embodiment="pusht", resolution_tier=128)  # type: ignore[arg-type]
 
     def test_invalid_dtype(self) -> None:
         """Test invalid dtype raises ValueError."""
         with pytest.raises(ValueError, match="Invalid dtype"):
-            Cosmos3Config(dtype="int8")  # type: ignore[arg-type]
+            Cosmos3Config(embodiment="pusht", dtype="int8")  # type: ignore[arg-type]
 
     def test_serialization(self) -> None:
         """Test to_dict and from_dict round-trip."""
-        config = Cosmos3Config(rank=64, chunk_size=16, n_action_steps=16)
+        config = Cosmos3Config(embodiment="pusht", rank=64, chunk_size=16, n_action_steps=16)
         assert isinstance(config, Config)
         cfg_dict = config.to_dict()
         assert cfg_dict["rank"] == 64
@@ -114,7 +115,7 @@ class TestCosmos3Config:
 
     def test_frozen_dataclass(self) -> None:
         """Test config dataclass is immutable."""
-        config = Cosmos3Config()
+        config = Cosmos3Config(embodiment="pusht")
         with pytest.raises(AttributeError):
             config.chunk_size = 10  # type: ignore[misc]
 
@@ -129,12 +130,12 @@ class TestCosmos3Policy:
 
     def test_lazy_initialization(self) -> None:
         """Test policy initialization does not eagerly instantiate model."""
-        policy = Cosmos3()
+        policy = Cosmos3(embodiment="pusht")
         assert policy.model is None
 
     def test_hyperparameters_saved(self) -> None:
         """Test hyperparameters and config dictionary are saved."""
-        policy = Cosmos3(chunk_size=16, n_action_steps=16, mode="peft")
+        policy = Cosmos3(embodiment="pusht", chunk_size=16, n_action_steps=16, mode="peft")
         assert policy.hparams.chunk_size == 16
         assert policy.hparams.mode == "peft"
         assert "config" in policy.hparams
@@ -142,14 +143,14 @@ class TestCosmos3Policy:
 
     def test_from_config(self) -> None:
         """Test instantiation via from_config classmethod."""
-        config = Cosmos3Config(chunk_size=16, n_action_steps=16)
+        config = Cosmos3Config(embodiment="pusht", chunk_size=16, n_action_steps=16)
         policy = Cosmos3.from_config(config)
         assert policy.model is None
         assert policy.config.chunk_size == 16
 
     def test_methods_raise_without_model(self) -> None:
         """Test forward and predict_action_chunk raise before setup()."""
-        policy = Cosmos3()
+        policy = Cosmos3(embodiment="pusht")
         obs = Observation(images=torch.randn(1, 3, 224, 224))
         with pytest.raises(RuntimeError, match="not initialized"):
             policy.forward(obs)
@@ -163,7 +164,7 @@ class TestCosmos3Policy:
         cls = get_physicalai_policy_class("cosmos3")
         assert cls is Cosmos3
 
-        policy = get_policy("cosmos3")
+        policy = get_policy("cosmos3", embodiment="pusht")
         assert isinstance(policy, Cosmos3)
         assert policy.model is None
 
@@ -212,7 +213,7 @@ class TestMockedCosmos3Model:
 
     def test_delta_indices(self) -> None:
         """Test model exposes expected action and observation delta indices."""
-        config = Cosmos3Config(chunk_size=32)
+        config = Cosmos3Config(embodiment="pusht", chunk_size=32)
         pipe = self._create_mock_pipeline()
         model = Cosmos3Model(config, pipeline=pipe)
 
@@ -220,9 +221,31 @@ class TestMockedCosmos3Model:
         assert model.action_delta_indices == list(range(32))
         assert model.observation_delta_indices == list(range(33))
 
+    def test_action_space_resolution(self) -> None:
+        """Embodiment maps to a default action space; an explicit override wins."""
+        pipe = self._create_mock_pipeline()
+
+        default_model = Cosmos3Model(Cosmos3Config(embodiment="pusht", chunk_size=4), pipeline=pipe)
+        assert default_model.action_space == "identity"
+
+        droid_model = Cosmos3Model(Cosmos3Config(embodiment="droid_lerobot", chunk_size=4), pipeline=pipe)
+        assert droid_model.action_space == "joint_pos"
+
+        override_model = Cosmos3Model(
+            Cosmos3Config(embodiment="pusht", action_space="joint_pos", chunk_size=4),
+            pipeline=pipe,
+        )
+        assert override_model.action_space == "joint_pos"
+
+    def test_unsupported_action_space_raises(self) -> None:
+        """An unsupported action_space override is rejected at model build time."""
+        pipe = self._create_mock_pipeline()
+        with pytest.raises(ValueError, match="Unsupported action_space"):
+            Cosmos3Model(Cosmos3Config(embodiment="pusht", action_space="droid_ee", chunk_size=4), pipeline=pipe)
+
     def test_set_dataset_stats(self) -> None:
         """Test updating normalization bounds via dataset stats."""
-        config = Cosmos3Config(chunk_size=16, domain="pusht")
+        config = Cosmos3Config(embodiment="pusht", chunk_size=16)
         pipe = self._create_mock_pipeline()
         model = Cosmos3Model(config, pipeline=pipe)
 
@@ -240,7 +263,7 @@ class TestMockedCosmos3Model:
 
     def test_predict_action_chunk_mocked(self) -> None:
         """Test predict_action_chunk flow with mock pipeline output."""
-        config = Cosmos3Config(chunk_size=4, domain="pusht")
+        config = Cosmos3Config(embodiment="pusht", chunk_size=4)
         pipe = self._create_mock_pipeline()
 
         # Mock result: action tensor of shape [1, chunk_size + 1, 64]
@@ -267,7 +290,7 @@ class TestMockedCosmos3Model:
         """Test compute_loss flow with mock pipeline and pack caching."""
         from unittest.mock import patch
 
-        config = Cosmos3Config(chunk_size=4, domain="pusht")
+        config = Cosmos3Config(embodiment="pusht", chunk_size=4)
         pipe = self._create_mock_pipeline()
 
         pipe._prepare_action_video_conditioning.return_value = (
@@ -299,9 +322,9 @@ class TestMockedCosmos3Model:
 
     def test_on_save_checkpoint_filtering(self) -> None:
         """Test policy on_save_checkpoint removes frozen parameters."""
-        config = Cosmos3Config(chunk_size=4)
+        config = Cosmos3Config(embodiment="pusht", chunk_size=4)
         pipe = self._create_mock_pipeline()
-        policy = Cosmos3(chunk_size=4, pipeline=pipe)
+        policy = Cosmos3(chunk_size=4, embodiment="pusht", pipeline=pipe)
 
         # Mock state_dict with frozen and trainable keys
         checkpoint = {
@@ -345,7 +368,7 @@ class TestMockedCosmos3Model:
         """Test compute_loss with multi-camera DROID input composes views and passes concat_view."""
         from unittest.mock import patch
 
-        config = Cosmos3Config(chunk_size=4, domain="droid_lerobot")
+        config = Cosmos3Config(embodiment="droid_lerobot", chunk_size=4)
         pipe = self._create_mock_pipeline()
 
         pipe._prepare_action_video_conditioning.return_value = (
@@ -383,7 +406,7 @@ class TestMockedCosmos3Model:
 
     def test_predict_action_chunk_multi_camera_viewpoint(self) -> None:
         """Test predict_action_chunk composes DROID views and passes concat_view to condition."""
-        config = Cosmos3Config(chunk_size=4, domain="droid_lerobot")
+        config = Cosmos3Config(embodiment="droid_lerobot", chunk_size=4)
         pipe = self._create_mock_pipeline()
 
         mock_actions = torch.zeros(1, 5, 64)
@@ -408,7 +431,7 @@ class TestMockedCosmos3Model:
 
     def test_predict_action_chunk_pusht_viewpoint(self) -> None:
         """Test predict_action_chunk sets top_down_2d_view for pusht domain."""
-        config = Cosmos3Config(chunk_size=4, domain="pusht")
+        config = Cosmos3Config(embodiment="pusht", chunk_size=4)
         pipe = self._create_mock_pipeline()
 
         mock_actions = torch.zeros(1, 5, 64)
@@ -490,7 +513,7 @@ class TestCosmos3Preprocessor:
 
     def test_droid_t_shape_composition(self) -> None:
         """Test DROID 3-camera input triggers T-shape composition and concat_view."""
-        preprocessor = Cosmos3Preprocessor(domain="droid_lerobot")
+        preprocessor = Cosmos3Preprocessor(embodiment="droid_lerobot")
         batch = {
             IMAGES: {
                 "wrist_image_left": torch.zeros(3, 224, 224),
@@ -504,73 +527,16 @@ class TestCosmos3Preprocessor:
         assert result["viewpoint"] == "concat_view"
         assert result[IMAGES].shape == (3, 336, 224)
 
-    def test_agibot_t_shape_composition(self) -> None:
-        """Test Agibot 3-camera input triggers T-shape composition."""
-        preprocessor = Cosmos3Preprocessor(domain="agibotworld")
-        batch = {
-            IMAGES: {
-                "top": torch.zeros(3, 200, 200),
-                "left": torch.zeros(3, 100, 100),
-                "right": torch.zeros(3, 100, 100),
-            },
-        }
-        result = preprocessor(batch)
-
-        assert result["view_point"] == "concat_view"
-        assert result[IMAGES].shape == (3, 300, 200)
-
-    def test_robomind_franka_t_shape_composition(self) -> None:
-        """Test RoboMIND Franka 3-camera input triggers T-shape composition."""
-        preprocessor = Cosmos3Preprocessor(domain="robomind-franka")
-        batch = {
-            "images.top": torch.zeros(3, 200, 200),
-            "images.left": torch.zeros(3, 100, 100),
-            "images.right": torch.zeros(3, 100, 100),
-        }
-        result = preprocessor(batch)
-
-        assert result["view_point"] == "concat_view"
-        assert result[IMAGES].shape == (3, 300, 200)
-
-    def test_libero_horizontal_composition(self) -> None:
-        """Test Libero 2-camera input triggers horizontal side-by-side composition."""
-        preprocessor = Cosmos3Preprocessor(domain="libero")
-        batch = {
-            IMAGES: {
-                "agentview": torch.zeros(3, 128, 128),
-                "wrist": torch.zeros(3, 128, 128),
-            },
-        }
-        result = preprocessor(batch)
-
-        assert result["view_point"] == "concat_view"
-        assert result[IMAGES].shape == (3, 128, 256)
-
-    def test_libero_single_camera_passthrough(self) -> None:
-        """Test Libero single-camera input passes through with appropriate viewpoint."""
-        preprocessor = Cosmos3Preprocessor(domain="libero")
-        batch_agent = {IMAGES: {"agentview": torch.zeros(3, 128, 128)}}
-        res_agent = preprocessor(batch_agent)
-        assert res_agent["view_point"] == "third_person_view"
-
-        batch_wrist = {IMAGES: {"wrist_image": torch.zeros(3, 128, 128)}}
-        res_wrist = preprocessor(batch_wrist)
-        assert res_wrist["view_point"] == "wrist_view"
-
     @pytest.mark.parametrize(
-        ("domain", "expected_viewpoint"),
+        ("embodiment", "expected_viewpoint"),
         [
             ("pusht", "top_down_2d_view"),
-            ("bridge_orig_lerobot", "ego_view"),
-            ("umi", "wrist_view"),
-            ("fractal", "ego_view"),
-            ("robomind-ur", "third_person_view"),
             ("aloha", None),
         ],
     )
-    def test_single_camera_domains(self, domain: str, expected_viewpoint: str | None) -> None:
-        """Test single-camera domains set expected default viewpoints."""
-        preprocessor = Cosmos3Preprocessor(domain=domain)
+    def test_single_camera_embodiments(self, embodiment: str, expected_viewpoint: str | None) -> None:
+        """Test single-camera embodiments set expected default viewpoints."""
+        preprocessor = Cosmos3Preprocessor(embodiment=embodiment)
         batch = {IMAGES: torch.zeros(3, 224, 224)}
         result = preprocessor(batch)
 
@@ -579,7 +545,7 @@ class TestCosmos3Preprocessor:
 
     def test_explicit_viewpoint_override(self) -> None:
         """Test explicit view_point override takes precedence."""
-        preprocessor = Cosmos3Preprocessor(domain="pusht", view_point="custom_view")
+        preprocessor = Cosmos3Preprocessor(embodiment="pusht", view_point="custom_view")
         batch = {IMAGES: torch.zeros(3, 224, 224)}
         result = preprocessor(batch)
 
@@ -587,7 +553,7 @@ class TestCosmos3Preprocessor:
 
     def test_observation_input(self) -> None:
         """Test preprocessor handles Observation dataclass and preserves fields."""
-        preprocessor = Cosmos3Preprocessor(domain="droid_lerobot")
+        preprocessor = Cosmos3Preprocessor(embodiment="droid_lerobot")
         obs = Observation(
             images={
                 "wrist_image_left": torch.zeros(3, 224, 224),
@@ -606,7 +572,7 @@ class TestCosmos3Preprocessor:
 
     def test_lerobot_prefix_extraction(self) -> None:
         """Test preprocessor extracts cameras from observation.images.* format."""
-        preprocessor = Cosmos3Preprocessor(domain="droid_lerobot")
+        preprocessor = Cosmos3Preprocessor(embodiment="droid_lerobot")
         batch = {
             "observation.images.wrist_image_left": torch.zeros(3, 224, 224),
             "observation.images.exterior_image_1_left": torch.zeros(3, 224, 224),
@@ -620,7 +586,7 @@ class TestCosmos3Preprocessor:
 
     def test_channels_last_conversion(self) -> None:
         """Test (H, W, C) input is converted to channels-first (C, H, W)."""
-        preprocessor = Cosmos3Preprocessor(domain="pusht")
+        preprocessor = Cosmos3Preprocessor(embodiment="pusht")
         batch = {IMAGES: torch.zeros(224, 224, 3)}
         result = preprocessor(batch)
 
@@ -628,7 +594,7 @@ class TestCosmos3Preprocessor:
 
     def test_idempotency(self) -> None:
         """Test preprocessor is idempotent when batch is already preprocessed."""
-        preprocessor = Cosmos3Preprocessor(domain="droid_lerobot")
+        preprocessor = Cosmos3Preprocessor(embodiment="droid_lerobot")
         batch = {
             IMAGES: torch.zeros(3, 336, 224),
             "view_point": "concat_view",
@@ -639,7 +605,7 @@ class TestCosmos3Preprocessor:
 
     def test_missing_image_raises_key_error(self) -> None:
         """Test missing image in batch raises KeyError."""
-        preprocessor = Cosmos3Preprocessor(domain="pusht")
+        preprocessor = Cosmos3Preprocessor(embodiment="pusht")
         with pytest.raises(KeyError, match="No image tensor found"):
             preprocessor({"action": torch.zeros(10)})
 
@@ -834,7 +800,7 @@ class TestNormalization:
 
     def test_normalize_denormalize_roundtrip(self) -> None:
         """Quantile normalize/denormalize is a round-trip identity on the model seam."""
-        config = Cosmos3Config(chunk_size=4, domain="pusht")
+        config = Cosmos3Config(embodiment="pusht", chunk_size=4)
         pipe = MagicMock()
         pipe.transformer = MagicMock()
         model = Cosmos3Model.__new__(Cosmos3Model)  # avoid heavy init
@@ -891,7 +857,7 @@ class TestNormalization:
         """An explicit stats file whose width mismatches raw_dim raises ValueError."""
         import json
 
-        config = Cosmos3Config(chunk_size=4, domain="droid_lerobot")
+        config = Cosmos3Config(embodiment="droid_lerobot", chunk_size=4)
         model = Cosmos3Model.__new__(Cosmos3Model)
         torch.nn.Module.__init__(model)
         model.config = config
@@ -907,85 +873,19 @@ class TestNormalization:
             model._load_normalizer_stats_file(str(path))
 
 
-class TestPoseRepresentation:
-    """Reorthonormalization and gripper-source parity with cosmos-framework."""
-
-    def test_rot6d_to_matrix_projects_to_so3(self) -> None:
-        """A non-orthonormal rot6d decodes to a proper rotation (orthonormal, det +1)."""
-        import numpy as np
-
-        from physicalai.policies.cosmos3.representation import rot6d_to_matrix
-
-        # Columns are neither unit-length nor orthogonal -> requires SVD projection.
-        rot6d = np.array([1.0, 0.1, 0.0, 0.2, 0.9, 0.05], dtype=np.float32)
-        mat = rot6d_to_matrix(rot6d)
-        assert mat.shape == (3, 3)
-        np.testing.assert_allclose(mat.T @ mat, np.eye(3), atol=1e-5)
-        assert float(np.linalg.det(mat)) == pytest.approx(1.0, abs=1e-5)
-
-    def test_rot6d_roundtrip_orthonormal_is_identity(self) -> None:
-        """Encoding a rotation then decoding recovers it (SVD is a no-op on SO(3))."""
-        import numpy as np
-
-        from physicalai.policies.cosmos3.representation import (
-            euler_xyz_to_matrix,
-            matrix_to_rot6d,
-            rot6d_to_matrix,
-        )
-
-        rot = euler_xyz_to_matrix(np.array([[0.3, -0.7, 1.1]], dtype=np.float32))[0]
-        recovered = rot6d_to_matrix(matrix_to_rot6d(rot))
-        np.testing.assert_allclose(recovered, rot, atol=1e-5)
-
-    def test_droid_ee_action_gripper_flipped(self) -> None:
-        """droid_ee (robomind-franka) takes the last N ACTION-column gripper values, flipped."""
-        import numpy as np
-
-        from physicalai.policies.cosmos3.representation import represent_actions
-
-        state_seq = np.zeros((4, 7), dtype=np.float32)  # N+1 = 4 rows, [xyz, euler, gripper]
-        state_seq[:, 6] = 0.9  # observed state gripper (should be ignored)
-        action_grip = np.array([0.0, 0.2, 1.0], dtype=np.float32)  # N = 3 commanded values
-        chunk = represent_actions("robomind-franka", state_seq, action_gripper_seq=action_grip)
-        assert chunk.shape == (3, 10)
-        np.testing.assert_allclose(chunk[:, -1].numpy(), 1.0 - action_grip, atol=1e-6)
-
-    def test_bridge_action_gripper_unflipped(self) -> None:
-        """Bridge takes the last N ACTION-column gripper values, unflipped."""
-        import numpy as np
-
-        from physicalai.policies.cosmos3.representation import represent_actions
-
-        state_seq = np.zeros((4, 8), dtype=np.float32)  # N+1 = 4 rows, gripper at idx 7
-        state_seq[:, 7] = 0.5  # observed state gripper (should be ignored)
-        action_grip = np.array([0.1, 0.6, 0.9], dtype=np.float32)
-        chunk = represent_actions("bridge_orig_lerobot", state_seq, action_gripper_seq=action_grip)
-        assert chunk.shape == (3, 10)
-        np.testing.assert_allclose(chunk[:, -1].numpy(), action_grip, atol=1e-6)
-
-    def test_droid_ee_gripper_falls_back_to_state(self) -> None:
-        """Without an action gripper, droid_ee uses the last N state-gripper values, flipped."""
-        import numpy as np
-
-        from physicalai.policies.cosmos3.representation import represent_actions
-
-        state_seq = np.zeros((4, 7), dtype=np.float32)
-        state_seq[:, 6] = np.array([0.0, 0.3, 0.6, 1.0], dtype=np.float32)  # N+1 state gripper
-        chunk = represent_actions("robomind-franka", state_seq)
-        # Fallback selects the destination frame of each transition: state gripper[1:].
-        np.testing.assert_allclose(chunk[:, -1].numpy(), 1.0 - state_seq[1:, 6], atol=1e-6)
-
-
 class TestJointPosRepresentation:
     """DROID ``joint_pos`` (8D ``[joint(7), gripper(1)]``) parity with the released checkpoint."""
 
     def test_droid_maps_to_joint_pos(self) -> None:
-        """droid_lerobot uses the joint_pos representation, not ee-pose."""
-        from physicalai.policies.cosmos3.representation import domain_normalization, domain_representation
+        """droid_lerobot resolves to the joint_pos action space, not ee-pose."""
+        from physicalai.policies.cosmos3.representation import embodiment_normalization, resolve_action_space
 
-        assert domain_representation("droid_lerobot") == "joint_pos"
+        assert resolve_action_space("droid_lerobot") == "joint_pos"
+        assert resolve_action_space("pusht") == "identity"
+        # An explicit override wins over the embodiment default.
+        assert resolve_action_space("pusht", "joint_pos") == "joint_pos"
         # joint_pos actions are raw (no normalization), matching action_normalization=None.
-        assert domain_normalization("droid_lerobot") == "none"
+        assert embodiment_normalization("droid_lerobot") == "none"
 
     def test_droid_raw_action_dim_is_8(self) -> None:
         """The DROID raw action dim is pinned to 8 (joint_pos), overriding the diffusers default."""
@@ -999,10 +899,10 @@ class TestJointPosRepresentation:
         """DROID is gripper-flipped; the flip inverts only the final channel as 1 - g."""
         import numpy as np
 
-        from physicalai.policies.cosmos3.representation import domain_gripper_flipped, flip_gripper_last_channel
+        from physicalai.policies.cosmos3.representation import embodiment_gripper_flipped, flip_gripper_last_channel
 
-        assert domain_gripper_flipped("droid_lerobot") is True
-        assert domain_gripper_flipped("pusht") is False
+        assert embodiment_gripper_flipped("droid_lerobot") is True
+        assert embodiment_gripper_flipped("pusht") is False
         action = torch.tensor([[0.1, 0.2, 0.3, 0.7, 0.4, 0.5, 0.6, 0.0]])  # [1, 8]
         flipped = flip_gripper_last_channel(action)
         assert float(flipped[0, -1]) == pytest.approx(1.0)

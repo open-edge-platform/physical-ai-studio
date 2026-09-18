@@ -21,31 +21,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-T_SHAPE_DOMAINS = {
+T_SHAPE_EMBODIMENTS = {
     "droid_lerobot",
-    "agibotworld",
-    "agibot_gear_gripper",
-    "robomind-franka",
-    "robomind_franka",
 }
 
-HORIZONTAL_DOMAINS = {
-    "libero",
-}
+HORIZONTAL_EMBODIMENTS: set[str] = set()
 
-DEFAULT_DOMAIN_VIEWPOINTS: dict[str, str | None] = {
+DEFAULT_EMBODIMENT_VIEWPOINTS: dict[str, str | None] = {
     "droid_lerobot": "concat_view",
-    "agibotworld": "concat_view",
-    "agibot_gear_gripper": "concat_view",
-    "robomind-franka": "concat_view",
-    "robomind_franka": "concat_view",
-    "libero": "concat_view",
     "pusht": "top_down_2d_view",
-    "bridge_orig_lerobot": "ego_view",
-    "umi": "wrist_view",
-    "fractal": "ego_view",
-    "robomind-ur": "third_person_view",
-    "robomind_ur": "third_person_view",
     "aloha": None,
 }
 
@@ -432,13 +416,13 @@ class Cosmos3Preprocessor(nn.Module):
     """Preprocessor for Cosmos 3 inputs.
 
     Handles multi-camera view composition (T-shape mosaic, horizontal side-by-side)
-    and viewpoint assignment based on embodiment domain.
+    and viewpoint assignment based on the embodiment.
 
     Responsibilities:
-        - Inspect input batch / Observation.images dictionary and domain.
-        - If domain in {droid_lerobot, agibotworld, robomind-franka}:
+        - Inspect input batch / Observation.images dictionary and embodiment.
+        - If the embodiment uses a T-shape layout (e.g. droid_lerobot):
           apply T-shape composition (compose_t_views) and set view_point="concat_view".
-        - If domain is libero with multiple cameras:
+        - If the embodiment uses a horizontal layout with multiple cameras:
           apply horizontal concatenation (compose_horizontal_views) and set view_point="concat_view".
         - Otherwise:
           pass primary image through and assign corresponding viewpoint label.
@@ -446,18 +430,18 @@ class Cosmos3Preprocessor(nn.Module):
           and view_point metadata.
 
     Args:
-        domain: Embodiment domain identifier. Defaults to "pusht".
+        embodiment: Embodiment identifier. Defaults to "pusht".
         view_point: Optional explicit viewpoint override. Defaults to None.
     """
 
     def __init__(
         self,
-        domain: str = "pusht",
+        embodiment: str = "pusht",
         view_point: str | None = None,
     ) -> None:
         """Initialize Cosmos3Preprocessor."""
         super().__init__()
-        self.domain = domain
+        self.embodiment = embodiment
         self.view_point = view_point
 
     def forward(
@@ -496,22 +480,22 @@ class Cosmos3Preprocessor(nn.Module):
         min_t_cameras = 3
         min_horizontal_cameras = 2
 
-        if self.domain in T_SHAPE_DOMAINS and len(cameras) >= min_t_cameras:
+        if self.embodiment in T_SHAPE_EMBODIMENTS and len(cameras) >= min_t_cameras:
             top, left, right = _identify_t_views(cameras)
             composed_img = compose_t_views(top, left, right)
             inferred_viewpoint = "concat_view"
-        elif self.domain in HORIZONTAL_DOMAINS and len(cameras) >= min_horizontal_cameras:
+        elif self.embodiment in HORIZONTAL_EMBODIMENTS and len(cameras) >= min_horizontal_cameras:
             left, right = _identify_horizontal_views(cameras)
             composed_img = compose_horizontal_views(left, right)
             inferred_viewpoint = "concat_view"
         else:
             composed_img = _select_primary_image(cameras)
-            if self.domain in HORIZONTAL_DOMAINS and len(cameras) == 1:
+            if self.embodiment in HORIZONTAL_EMBODIMENTS and len(cameras) == 1:
                 key = next(iter(cameras.keys())).lower()
                 is_wrist = "wrist" in key or "hand" in key or "eye" in key
                 inferred_viewpoint = "wrist_view" if is_wrist else "third_person_view"
             else:
-                inferred_viewpoint = DEFAULT_DOMAIN_VIEWPOINTS.get(self.domain)
+                inferred_viewpoint = DEFAULT_EMBODIMENT_VIEWPOINTS.get(self.embodiment)
                 if inferred_viewpoint is None and len(cameras) == 1:
                     key = next(iter(cameras.keys())).lower()
                     if "wrist" in key:

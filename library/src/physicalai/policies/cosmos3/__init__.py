@@ -20,13 +20,13 @@ from .pipeline import (
 from .policy import Cosmos3
 from .preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 from .representation import (
-    DOMAIN_NORMALIZATION,
-    DOMAIN_REPRESENTATION,
+    EMBODIMENT_ACTION_SPACE,
+    EMBODIMENT_NORMALIZATION,
     assemble_state_sequence,
-    domain_normalization,
-    domain_representation,
-    represent_actions,
-    represent_state,
+    embodiment_gripper_flipped,
+    embodiment_normalization,
+    flip_gripper_last_channel,
+    resolve_action_space,
     uses_minmax_normalization,
 )
 from .surgery import (
@@ -41,8 +41,8 @@ from .surgery import (
 
 __all__ = [
     "DEFAULT_MIN_XPU_DRIVER",
-    "DOMAIN_NORMALIZATION",
-    "DOMAIN_REPRESENTATION",
+    "EMBODIMENT_ACTION_SPACE",
+    "EMBODIMENT_NORMALIZATION",
     "GEN_TOWER_KEYS",
     "HEAD_KEYS",
     "LORA_TARGETS",
@@ -58,15 +58,15 @@ __all__ = [
     "compose_horizontal_views",
     "compose_t_views",
     "configure_trainable",
-    "domain_normalization",
-    "domain_representation",
+    "embodiment_gripper_flipped",
+    "embodiment_normalization",
+    "flip_gripper_last_channel",
     "flow_matching_step",
     "init_domain_action_head",
     "load_finetuned",
     "load_stats_file",
-    "represent_actions",
-    "represent_state",
     "require_xpu_driver",
+    "resolve_action_space",
     "resolve_affine",
     "split_trainable_params",
     "state_action_mrope_ids",

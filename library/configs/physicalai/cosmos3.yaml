@@ -37,7 +37,7 @@ model:
     resolution_tier: 256
     fps: 10
     grad_checkpoint: true
-    domain: "pusht"
+    embodiment: "pusht"
     prompt: ""
     dtype: "bfloat16"
     optimizer_lr: 1.0e-4

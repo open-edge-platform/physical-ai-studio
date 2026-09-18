@@ -11,7 +11,7 @@ Example (CLI):
 
 Example (API):
     >>> from physicalai.policies.cosmos3 import Cosmos3Config
-    >>> config = Cosmos3Config()
+    >>> config = Cosmos3Config(embodiment="pusht")
 """
 
 from __future__ import annotations
@@ -31,6 +31,9 @@ class Cosmos3Config(Config):
     """Configuration for Cosmos 3 policy.
 
     Attributes:
+        embodiment: Required embodiment identifier ("pusht", "droid_lerobot", or "aloha").
+            Mapped internally to a numeric domain id, an action space, a normalization
+            method and gripper handling.
         pretrained_model_name_or_path: Hugging Face repo ID or local checkpoint path.
             Defaults to "nvidia/Cosmos3-Edge".
         mode: Training mode. "peft" trains LoRA/DoRA on attention projections and
@@ -52,21 +55,18 @@ class Cosmos3Config(Config):
             Must be one of (256, 480, 720). Defaults to 256.
         fps: Frames per second for conditioning and generation. Defaults to 10.
         grad_checkpoint: Enable gradient checkpointing for memory optimization. Defaults to True.
-        domain: Embodiment domain identifier (e.g., "pusht", "droid_lerobot", "bridge_orig_lerobot",
-            "aloha", "libero"). Defaults to "pusht".
-        view_point: Optional camera viewpoint tag (e.g., "concat_view", "ego_view", "wrist_view",
-            "third_person_view", "top_down_2d_view"). When None, inferred from domain and
-            composition. Defaults to None.
+        action_space: Optional override of the embodiment's action space ("identity" or
+            "joint_pos"). When None, resolved automatically from the embodiment
+            (droid_lerobot -> joint_pos, others -> identity). Defaults to None.
+        view_point: Optional camera viewpoint tag (e.g., "concat_view", "top_down_2d_view").
+            When None, inferred from the embodiment and composition. Defaults to None.
         normalizer_stats_path: Optional path to a cosmos-format action-normalizer stats JSON
             (flat ``{"q01", "q99"}`` or nested ``{"global", "global_raw"}``). When set, the
-            domain's normalization method is resolved against these stats (asserting the stats
-            width matches the raw action dim); required to run a pre-trained per-domain head
-            (e.g. a released Cosmos policy) that expects quantile-normalized actions. When None,
-            identity domains derive the affine from the dataset's raw-column stats, while pose
-            domains (droid_ee/bridge_ee) fall back to identity ("none") normalization: their
-            head trains in a transformed ``[translation, rot6d, gripper]`` space, so the dataset's
-            raw-column stats are in the wrong space and cannot be used — pass this file to
-            normalize them. Defaults to None.
+            embodiment's normalization method is resolved against these stats (asserting the
+            stats width matches the raw action dim); required to run a pre-trained per-embodiment
+            head (e.g. a released Cosmos policy) that expects quantile-normalized actions. When
+            None, identity embodiments derive the affine from the dataset's raw-column stats,
+            while joint_pos (DROID) keeps actions un-normalized. Defaults to None.
         prompt: Task instruction conditioning string. Defaults to "".
         guidance_scale: Classifier-free guidance scale for inference. Defaults to 3.0.
         flow_shift: Flow shift value for the UniPC multistep scheduler. Defaults to 8.0.
@@ -80,6 +80,7 @@ class Cosmos3Config(Config):
         optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping. Defaults to 1.0.
     """
 
+    embodiment: str
     pretrained_model_name_or_path: str = "nvidia/Cosmos3-Edge"
     mode: Literal["peft", "full"] = "peft"
     paradigm: Literal["policy", "fd", "id", "joint"] = "policy"
@@ -93,7 +94,7 @@ class Cosmos3Config(Config):
     resolution_tier: int = 256
     fps: int = 10
     grad_checkpoint: bool = True
-    domain: str = "pusht"
+    action_space: str | None = None
     view_point: str | None = None
     normalizer_stats_path: str | None = None
     prompt: str = ""

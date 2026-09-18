@@ -134,7 +134,7 @@ def split_trainable_params(tf: nn.Module) -> tuple[list[torch.nn.Parameter], lis
 def load_finetuned(
     pipe: PolicyPipelineWithState,
     adapter: str | Path,
-    domain: str,
+    embodiment: str,
     head: str | Path | None = None,
 ) -> dict[str, Any]:
     """Restore fine-tuned weights onto pipe.transformer.
@@ -142,7 +142,7 @@ def load_finetuned(
     Args:
         pipe: Cosmos3 pipeline instance.
         adapter: Path to adapter directory.
-        domain: Embodiment domain identifier.
+        embodiment: Embodiment identifier.
         head: Optional explicit path to the domain head checkpoint file.
 
     Returns:
@@ -162,7 +162,7 @@ def load_finetuned(
             if callable(load_lora_adapter_fn):
                 load_lora_adapter_fn(load_file(str(lora_safetensors)), prefix=None)
 
-    head_path = Path(head) if head is not None else adapter_path / f"{domain}_head.pt"
+    head_path = Path(head) if head is not None else adapter_path / f"{embodiment}_head.pt"
     ckpt: dict[str, Any] = torch.load(head_path, map_location="cpu", weights_only=True)
     tf.load_state_dict(ckpt["head"], strict=False)
     return ckpt
