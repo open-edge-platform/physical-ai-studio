@@ -36,8 +36,8 @@ dependencies = [
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
-    "openvino>=2026.3",
-    "openvino_tokenizers>=2026.3",
+    "openvino>=2026.4",
+    "openvino_tokenizers>=2026.4",
     "onnxscript",
     "peft>=0.20.0,<1.0.0",
     "jsonargparse[signatures]>=4.50,<5", # This could be extra
@@ -187,7 +187,8 @@ dev = [
 [tool.uv]
 exclude-newer = "7 days"
 # FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
-exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false, lightning = false }
+# FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
+exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
@@ -229,7 +230,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "de49e1fda4e38e0a5342b0a59a4cad11a1ee8de0" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "cdb6a02c3f082c6dca8b453886a1c816f2828517" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
