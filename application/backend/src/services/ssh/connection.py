@@ -5,11 +5,11 @@
 
 import asyncio
 import socket
-from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
 
 import asyncssh
 from loguru import logger
@@ -29,65 +29,23 @@ _REASON_CONNECTION_LOST: Final = "connection_lost"
 _PASSPHRASE_ERROR_PREFIX: Final = "Passphrase"  # noqa: S105
 
 
-class SshConnectionTarget(ABC):
+class SshConnectionTarget(Protocol):
     """Connect to one SSH target using target-specific configuration."""
 
     @property
-    @abstractmethod
     def name(self) -> str:
         """Return the non-secret target name used in errors and connection gates."""
-
-    @property
-    @abstractmethod
-    def host(self) -> str:
-        """Return the host argument passed to AsyncSSH."""
-
-    @abstractmethod
-    def _validate(self, settings: Settings) -> None:
-        """Validate the target before dialing."""
-
-    @abstractmethod
-    def _build_options(
-        self,
-        settings: Settings,
-        host_keys: AsyncSshHostKeyVerifier,
-    ) -> asyncssh.SSHClientConnectionOptions:
-        """Build target-specific AsyncSSH options."""
-
-    async def _open_socket(self, _settings: Settings) -> socket.socket | None:
-        return None
 
     async def connect(
         self,
         settings: Settings,
         accepted_host_key_fingerprint: str | None = None,
     ) -> asyncssh.SSHClientConnection:
-        """Validate, configure, and connect to this target."""
-        self._validate(settings)
-        host_keys = AsyncSshHostKeyVerifier(
-            self.name,
-            settings.ssh_known_hosts_path,
-            accepted_host_key_fingerprint,
-        )
-        try:
-            options = self._build_options(settings, host_keys)
-        except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError) as error:
-            raise _key_error(self.name, error) from None
-        except OSError:
-            raise SshAuthenticationError(self.name) from None
-
-        proxy_socket = None
-        try:
-            proxy_socket = await self._open_socket(settings)
-            return await asyncssh.connect(host=self.host, options=options, sock=proxy_socket)
-        except BaseException as error:
-            if proxy_socket is not None:
-                proxy_socket.close()
-            raise await _map_connect_error(self.name, error, options, host_keys) from None
+        """Connect to this target."""
 
 
 @dataclass(frozen=True, slots=True)
-class AliasTarget(SshConnectionTarget):
+class AliasTarget:
     """An SSH target resolved through the user's SSH config."""
 
     alias: str
@@ -96,32 +54,37 @@ class AliasTarget(SshConnectionTarget):
     def name(self) -> str:
         return self.alias
 
-    @property
-    def host(self) -> str:
-        return self.alias
-
-    def _validate(self, settings: Settings) -> None:
-        if not resolve_alias(settings.ssh_config_path, self.alias).found:
-            raise SshHostAliasNotFoundError(self.alias)
-
-    def _build_options(
+    async def connect(
         self,
         settings: Settings,
-        host_keys: AsyncSshHostKeyVerifier,
-    ) -> asyncssh.SSHClientConnectionOptions:
-        return asyncssh.SSHClientConnectionOptions(
-            host=self.alias,
-            client_factory=host_keys.create_client,
-            config=_existing_config_paths(settings.ssh_config_path),
-            known_hosts=host_keys.match_known_hosts,
-            connect_timeout=settings.ssh_connect_timeout_s,
-            keepalive_interval=settings.ssh_keepalive_interval_s,
-            keepalive_count_max=settings.ssh_keepalive_count_max,
+        accepted_host_key_fingerprint: str | None = None,
+    ) -> asyncssh.SSHClientConnection:
+        if not resolve_alias(settings.ssh_config_path, self.alias).found:
+            raise SshHostAliasNotFoundError(self.alias)
+        host_keys = AsyncSshHostKeyVerifier(
+            self.name,
+            settings.ssh_known_hosts_path,
+            accepted_host_key_fingerprint,
         )
+        try:
+            options = asyncssh.SSHClientConnectionOptions(
+                host=self.alias,
+                client_factory=host_keys.create_client,
+                config=_existing_config_paths(settings.ssh_config_path),
+                known_hosts=host_keys.match_known_hosts,
+                connect_timeout=settings.ssh_connect_timeout_s,
+                keepalive_interval=settings.ssh_keepalive_interval_s,
+                keepalive_count_max=settings.ssh_keepalive_count_max,
+            )
+        except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError) as error:
+            raise _key_error(self.name, error) from None
+        except OSError:
+            raise SshAuthenticationError(self.name) from None
+        return await _connect(self.name, self.alias, options, host_keys)
 
 
 @dataclass(frozen=True, slots=True)
-class DirectTarget(SshConnectionTarget):
+class DirectTarget:
     """An SSH target described without an SSH config alias."""
 
     hostname: str
@@ -133,36 +96,65 @@ class DirectTarget(SshConnectionTarget):
     def name(self) -> str:
         return self.hostname
 
-    @property
-    def host(self) -> str:
-        return self.hostname
-
-    def _validate(self, _settings: Settings) -> None:
-        return None
-
-    def _build_options(
+    async def connect(
         self,
         settings: Settings,
-        host_keys: AsyncSshHostKeyVerifier,
-    ) -> asyncssh.SSHClientConnectionOptions:
-        return asyncssh.SSHClientConnectionOptions(
-            host=self.hostname,
-            port=self.port,
-            username=self.username,
-            client_keys=[str(Path(self.identity_file).expanduser())] if self.identity_file else None,
-            client_factory=host_keys.create_client,
-            config=[],
-            known_hosts=host_keys.match_known_hosts,
-            connect_timeout=settings.ssh_connect_timeout_s,
-            keepalive_interval=settings.ssh_keepalive_interval_s,
-            keepalive_count_max=settings.ssh_keepalive_count_max,
+        accepted_host_key_fingerprint: str | None = None,
+    ) -> asyncssh.SSHClientConnection:
+        host_keys = AsyncSshHostKeyVerifier(
+            self.name,
+            settings.ssh_known_hosts_path,
+            accepted_host_key_fingerprint,
         )
+        try:
+            options = asyncssh.SSHClientConnectionOptions(
+                host=self.hostname,
+                port=self.port,
+                username=self.username,
+                client_keys=[str(Path(self.identity_file).expanduser())] if self.identity_file else None,
+                client_factory=host_keys.create_client,
+                config=[],
+                known_hosts=host_keys.match_known_hosts,
+                connect_timeout=settings.ssh_connect_timeout_s,
+                keepalive_interval=settings.ssh_keepalive_interval_s,
+                keepalive_count_max=settings.ssh_keepalive_count_max,
+            )
+        except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError) as error:
+            raise _key_error(self.name, error) from None
+        except OSError:
+            raise SshAuthenticationError(self.name) from None
 
-    async def _open_socket(self, settings: Settings) -> socket.socket | None:
         proxy = resolve_http_connect_proxy(self.hostname, self.port)
-        if proxy is None:
-            return None
-        return await open_http_connect_socket(proxy, self.hostname, self.port, settings.ssh_connect_timeout_s)
+        socket_factory = (
+            None
+            if proxy is None
+            else partial(
+                open_http_connect_socket,
+                proxy,
+                self.hostname,
+                self.port,
+                settings.ssh_connect_timeout_s,
+            )
+        )
+        return await _connect(self.name, self.hostname, options, host_keys, socket_factory)
+
+
+async def _connect(
+    name: str,
+    host: str,
+    options: asyncssh.SSHClientConnectionOptions,
+    host_keys: AsyncSshHostKeyVerifier,
+    socket_factory: Callable[[], Awaitable[socket.socket]] | None = None,
+) -> asyncssh.SSHClientConnection:
+    proxy_socket = None
+    try:
+        if socket_factory is not None:
+            proxy_socket = await socket_factory()
+        return await asyncssh.connect(host=host, options=options, sock=proxy_socket)
+    except BaseException as error:
+        if proxy_socket is not None:
+            proxy_socket.close()
+        raise await _map_connect_error(name, error, options, host_keys) from None
 
 
 def _existing_config_paths(config_path: Path) -> list[str]:
