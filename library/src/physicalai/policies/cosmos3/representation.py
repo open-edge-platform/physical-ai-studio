@@ -60,10 +60,30 @@ DOMAIN_STATE_GRIPPER_INDEX: dict[str, int] = {
     "bridge_orig_lerobot": 7,
 }
 
+# Index of the gripper channel within a domain's raw ``action`` row. cosmos-framework builds the
+# action-chunk gripper from the ACTION column (DROID/Bridge index 6), not the state, so the
+# training target's gripper is the commanded gripper for each action step rather than the observed
+# proprioceptive gripper. Domains not listed fall back to :data:`DOMAIN_STATE_GRIPPER_INDEX`.
+DOMAIN_ACTION_GRIPPER_INDEX: dict[str, int] = {
+    "droid_lerobot": 6,
+    "robomind-franka": 6,
+    "robomind_franka": 6,
+    "bridge_orig_lerobot": 6,
+}
+
 
 def domain_representation(domain: str) -> str:
     """Return the action-space representation ("identity", "droid_ee", "bridge_ee") for a domain."""
     return DOMAIN_REPRESENTATION.get(domain, "identity")
+
+
+def domain_action_gripper_index(domain: str) -> int | None:
+    """Return the gripper column index within a domain's raw ``action`` row, or ``None``.
+
+    cosmos-framework reads the action-chunk gripper from the ACTION column; callers use this to
+    pass the commanded gripper to :func:`represent_actions` instead of the observed state gripper.
+    """
+    return DOMAIN_ACTION_GRIPPER_INDEX.get(domain)
 
 
 def uses_minmax_normalization(domain: str) -> bool:
@@ -153,12 +173,38 @@ def matrix_to_rot6d(matrix: np.ndarray) -> np.ndarray:
     return np.swapaxes(matrix[..., :, :2], -1, -2).reshape(*matrix.shape[:-2], 6)
 
 
+def _normalize_rotation_matrices(rot_matrices: np.ndarray) -> np.ndarray:
+    """Project approximate matrices ``(...,3,3)`` onto ``SO(3)`` via SVD.
+
+    Decoding rot6d from network outputs yields near- but not exactly orthonormal columns; this
+    returns the closest proper rotation (determinant ``+1``), mirroring cosmos-framework's
+    ``pose_utils._normalize_rotation_matrices`` used by ``pose_rel_to_abs(normalize_rotation=True)``.
+    """
+    matrices = np.asarray(rot_matrices, dtype=np.float32)
+    original_shape = matrices.shape[:-2]
+    flat = matrices.reshape(-1, 3, 3)
+    u, _, vt = np.linalg.svd(flat)
+    normalized = u @ vt
+    reflection = np.linalg.det(normalized) < 0  # guard against improper rotations (det -1)
+    if np.any(reflection):
+        u_reflect = u.copy()
+        u_reflect[reflection, :, -1] *= -1
+        normalized[reflection] = u_reflect[reflection] @ vt[reflection]
+    return normalized.astype(np.float32).reshape(*original_shape, 3, 3)
+
+
 def rot6d_to_matrix(rot6d: np.ndarray) -> np.ndarray:
-    """Inverse of :func:`matrix_to_rot6d`; re-orthogonalizes via the cross product."""
+    """Inverse of :func:`matrix_to_rot6d`.
+
+    Builds the third column via the cross product, then projects onto ``SO(3)`` with an SVD,
+    matching cosmos-framework's ``convert_rotation(..., normalize_matrix=True)`` used when
+    decoding network-emitted rot6d back to a valid rotation.
+    """
     rot6d = np.asarray(rot6d, dtype=np.float32)
     col0, col1 = rot6d[..., :3], rot6d[..., 3:]
     col2 = np.cross(col0, col1)
-    return np.stack((col0, col1, col2), axis=-1).astype(np.float32)
+    matrices = np.stack((col0, col1, col2), axis=-1).astype(np.float32)
+    return _normalize_rotation_matrices(matrices)
 
 
 def _rel_rot6d_backward(poses: np.ndarray) -> np.ndarray:
@@ -191,17 +237,20 @@ def droid_ee_state_token(cartesian_position: np.ndarray, gripper: float) -> torc
 def droid_ee_relative_actions(cartesian_seq: np.ndarray, gripper_seq: np.ndarray) -> torch.Tensor:
     """Absolute ee trajectory -> DROID relative action chunk ``[N, 10]``.
 
-    ``cartesian_seq`` is ``[N+1, 6]`` absolute ``[xyz, euler_xyz]`` rows and ``gripper_seq``
-    is the matching ``[N+1]`` gripper values. Framewise-relative pose
-    (``delta_T = inv(T_i) @ T_{i+1}``) as ``[trans(3), rot6d(6)]`` in the OpenCV frame, with
-    the flipped gripper of the destination frame appended.
+    ``cartesian_seq`` is ``[N+1, 6]`` absolute ``[xyz, euler_xyz]`` rows and ``gripper_seq`` is the
+    matching gripper values. Framewise-relative pose (``delta_T = inv(T_i) @ T_{i+1}``) as
+    ``[trans(3), rot6d(6)]`` in the OpenCV frame, with the flipped gripper appended. The last ``N``
+    gripper values are used (cosmos-framework's ``gripper[-chunk_length:]``): when a per-action-step
+    gripper (length ``N``, e.g. the raw ACTION column) is passed they are used directly; when the
+    state gripper (length ``N+1``) is the fallback this selects each transition's destination frame.
     """
     cartesian_seq = np.asarray(cartesian_seq, dtype=np.float32)
     poses = np.tile(np.eye(4, dtype=np.float32), (len(cartesian_seq), 1, 1))
     poses[:, :3, :3] = euler_xyz_to_matrix(cartesian_seq[:, 3:6]) @ _DROID_TO_OPENCV
     poses[:, :3, 3] = cartesian_seq[:, :3]
     rel = _rel_rot6d_backward(poses)  # [N, 9]
-    grip = (1.0 - np.asarray(gripper_seq, dtype=np.float32).reshape(-1))[1:, None]  # dest-frame gripper, flipped
+    g = np.asarray(gripper_seq, dtype=np.float32).reshape(-1)[-rel.shape[0] :]
+    grip = (1.0 - g)[:, None]  # DROID gripper is flipped
     return torch.from_numpy(np.concatenate([rel, grip], axis=-1)).float()  # [N, 10]
 
 
@@ -263,10 +312,16 @@ def bridge_ee_state_token(state_row: np.ndarray, gripper: float) -> torch.Tensor
 
 
 def bridge_ee_relative_actions(state_seq: np.ndarray, gripper_seq: np.ndarray) -> torch.Tensor:
-    """Absolute Bridge state trajectory -> relative action chunk ``[N, 10]`` (source-frame gripper)."""
+    """Absolute Bridge state trajectory -> relative action chunk ``[N, 10]``.
+
+    Uses the last ``N`` gripper values (cosmos-framework's ``gripper[-chunk_length:]``), raw and
+    unflipped (the WidowX command). A per-action-step gripper (length ``N``, e.g. the raw ACTION
+    column) is used directly; a fallback state gripper (length ``N+1``) contributes its last ``N``.
+    """
     poses = _bridge_poses(np.asarray(state_seq, dtype=np.float32))
     rel = _rel_rot6d_backward(poses)  # [N, 9]
-    grip = np.asarray(gripper_seq, dtype=np.float32).reshape(-1)[: rel.shape[0], None]
+    g = np.asarray(gripper_seq, dtype=np.float32).reshape(-1)[-rel.shape[0] :]
+    grip = g[:, None]
     return torch.from_numpy(np.concatenate([rel, grip], axis=-1)).float()  # [N, 10]
 
 
@@ -345,8 +400,9 @@ def represent_actions(
 
     ``identity`` returns ``raw_action_seq`` unchanged; the ee representations build
     framewise-relative rot6d chunks from the absolute ``state_seq`` (``[N+1, >=6]``) and the
-    matching action gripper. When ``action_gripper_seq`` is not given it is read from the
-    domain's configured gripper index within ``state_seq``.
+    matching gripper. The gripper is the commanded ``action_gripper_seq`` when provided (cosmos
+    reads it from the raw ACTION column); otherwise it falls back to the observed state gripper at
+    the domain's :data:`DOMAIN_STATE_GRIPPER_INDEX` within ``state_seq``.
     """
     rep = domain_representation(domain)
     if rep == "droid_ee":

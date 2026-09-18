@@ -31,6 +31,7 @@ from .preprocessor import Cosmos3Preprocessor
 from .representation import (
     assemble_state_sequence,
     bridge_ee_absolute_to_relative,
+    domain_action_gripper_index,
     domain_normalization,
     domain_representation,
     droid_ee_absolute_to_relative,
@@ -466,6 +467,29 @@ class Cosmos3Model(Model):
             )
         return self._pack_cache[key]
 
+    def _pose_action_gripper(
+        self,
+        actions_tensor: torch.Tensor | None,
+        b: int,
+        device: torch.device,
+    ) -> torch.Tensor | None:
+        """Return sample ``b``'s commanded gripper channel from the raw action row, or ``None``.
+
+        cosmos-framework builds the pose action chunk's gripper from the raw ACTION column; this
+        extracts it at the domain's :func:`domain_action_gripper_index`. Returns ``None`` when the
+        domain has no configured index or the action tensor lacks that column, so
+        :func:`represent_actions` falls back to the observed state gripper.
+        """
+        gidx = domain_action_gripper_index(self.config.domain)
+        if actions_tensor is None or gidx is None:
+            return None
+        act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
+        if act_b.ndim == 1:
+            act_b = act_b.unsqueeze(0)
+        if act_b.shape[-1] <= gidx:
+            return None
+        return act_b[:, gidx]
+
     def compute_loss(  # ruff: ignore[too-many-locals]
         self,
         batch: dict[str, Any],
@@ -538,17 +562,22 @@ class Cosmos3Model(Model):
                 else:
                     st_raw = None
             else:
-                # Pose domains (droid_ee/bridge_ee): derive the native relative-pose action
-                # chunk and current-state token from the raw state sequence, mirroring
-                # cosmos-framework's dataset transform. The dataset's raw action column is not
-                # the native representation and is intentionally not used here.
+                # Pose domains (droid_ee/bridge_ee): derive the native relative-pose action chunk
+                # and current-state token from the raw state sequence, mirroring cosmos-framework's
+                # dataset transform. Poses come from the state; the chunk gripper is taken from the
+                # raw ACTION column (cosmos reads ``action[..., gripper_idx]``), falling back to the
+                # state gripper when the action tensor is unavailable.
                 if state_seq_batch is None:
                     msg = f"Pose domain '{self.config.domain}' requires observation state to build action targets."
                     raise ValueError(msg)
                 state_seq_b = state_seq_batch[b].to(device=device, dtype=torch.float32)
                 if state_seq_b.ndim == 1:
                     state_seq_b = state_seq_b.unsqueeze(0)
-                act_raw = represent_actions(self.config.domain, state_seq_b).to(device=device, dtype=torch.float32)
+                action_grip = self._pose_action_gripper(actions_tensor, b, device)
+                act_raw = represent_actions(self.config.domain, state_seq_b, action_gripper_seq=action_grip).to(
+                    device=device,
+                    dtype=torch.float32,
+                )
                 st_raw = represent_state(self.config.domain, state_seq_b[0]).to(device=device, dtype=torch.float32)
 
             # Apply the domain's normalization affine uniformly to the state token and action chunk.

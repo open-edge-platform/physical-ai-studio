@@ -905,3 +905,72 @@ class TestNormalization:
         path.write_text(json.dumps({"q01": [-1.0, -1.0], "q99": [1.0, 1.0]}))
         with pytest.raises(ValueError, match="does not match the raw action dim"):
             model._load_normalizer_stats_file(str(path))
+
+
+class TestPoseRepresentation:
+    """Reorthonormalization and gripper-source parity with cosmos-framework."""
+
+    def test_rot6d_to_matrix_projects_to_so3(self) -> None:
+        """A non-orthonormal rot6d decodes to a proper rotation (orthonormal, det +1)."""
+        import numpy as np
+
+        from physicalai.policies.cosmos3.representation import rot6d_to_matrix
+
+        # Columns are neither unit-length nor orthogonal -> requires SVD projection.
+        rot6d = np.array([1.0, 0.1, 0.0, 0.2, 0.9, 0.05], dtype=np.float32)
+        mat = rot6d_to_matrix(rot6d)
+        assert mat.shape == (3, 3)
+        np.testing.assert_allclose(mat.T @ mat, np.eye(3), atol=1e-5)
+        assert float(np.linalg.det(mat)) == pytest.approx(1.0, abs=1e-5)
+
+    def test_rot6d_roundtrip_orthonormal_is_identity(self) -> None:
+        """Encoding a rotation then decoding recovers it (SVD is a no-op on SO(3))."""
+        import numpy as np
+
+        from physicalai.policies.cosmos3.representation import (
+            euler_xyz_to_matrix,
+            matrix_to_rot6d,
+            rot6d_to_matrix,
+        )
+
+        rot = euler_xyz_to_matrix(np.array([[0.3, -0.7, 1.1]], dtype=np.float32))[0]
+        recovered = rot6d_to_matrix(matrix_to_rot6d(rot))
+        np.testing.assert_allclose(recovered, rot, atol=1e-5)
+
+    def test_droid_action_gripper_flipped(self) -> None:
+        """DROID takes the last N ACTION-column gripper values, flipped (1 - g)."""
+        import numpy as np
+
+        from physicalai.policies.cosmos3.representation import represent_actions
+
+        state_seq = np.zeros((4, 7), dtype=np.float32)  # N+1 = 4 rows, [xyz, euler, gripper]
+        state_seq[:, 6] = 0.9  # observed state gripper (should be ignored)
+        action_grip = np.array([0.0, 0.2, 1.0], dtype=np.float32)  # N = 3 commanded values
+        chunk = represent_actions("droid_lerobot", state_seq, action_gripper_seq=action_grip)
+        assert chunk.shape == (3, 10)
+        np.testing.assert_allclose(chunk[:, -1].numpy(), 1.0 - action_grip, atol=1e-6)
+
+    def test_bridge_action_gripper_unflipped(self) -> None:
+        """Bridge takes the last N ACTION-column gripper values, unflipped."""
+        import numpy as np
+
+        from physicalai.policies.cosmos3.representation import represent_actions
+
+        state_seq = np.zeros((4, 8), dtype=np.float32)  # N+1 = 4 rows, gripper at idx 7
+        state_seq[:, 7] = 0.5  # observed state gripper (should be ignored)
+        action_grip = np.array([0.1, 0.6, 0.9], dtype=np.float32)
+        chunk = represent_actions("bridge_orig_lerobot", state_seq, action_gripper_seq=action_grip)
+        assert chunk.shape == (3, 10)
+        np.testing.assert_allclose(chunk[:, -1].numpy(), action_grip, atol=1e-6)
+
+    def test_droid_gripper_falls_back_to_state(self) -> None:
+        """Without an action gripper, DROID uses the last N state-gripper values, flipped."""
+        import numpy as np
+
+        from physicalai.policies.cosmos3.representation import represent_actions
+
+        state_seq = np.zeros((4, 7), dtype=np.float32)
+        state_seq[:, 6] = np.array([0.0, 0.3, 0.6, 1.0], dtype=np.float32)  # N+1 state gripper
+        chunk = represent_actions("droid_lerobot", state_seq)
+        # Fallback selects the destination frame of each transition: state gripper[1:].
+        np.testing.assert_allclose(chunk[:, -1].numpy(), 1.0 - state_seq[1:, 6], atol=1e-6)
