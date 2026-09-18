@@ -72,6 +72,7 @@ _DATASET_REPO_ID = "snapshot"
 """Placeholder repo id: datasets are always loaded from a local root here."""
 
 PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
+    "molmoact2": "allenai/MolmoAct2",
     "pi05": "lerobot/pi05_base",
     "smolvla": "lerobot/smolvla_base",
 }
@@ -80,7 +81,7 @@ PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
 _WEIGHTS_ONLY_RESUME_POLICIES = frozenset({"pi0"})
 """Policies whose checkpoints must be reloaded with ``weights_only=True``."""
 
-PEFT_POLICIES = frozenset({"pi05", "pi0"})
+PEFT_POLICIES = frozenset({"molmoact2", "pi05", "pi0"})
 """Policies whose ``Config`` mixes in ``physicalai.policies.mixins.peft.PeftConfigMixin`` and
 support LoRA/DoRA fine-tuning."""
 
@@ -109,7 +110,7 @@ class TrainingJobSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    policy: str = Field(description="Policy name, e.g. 'act', 'pi0', 'pi05', 'smolvla', 'groot'.")
+    policy: str = Field(description="Policy name, e.g. 'act', 'molmoact2', 'pi0', 'pi05', 'smolvla', 'groot'.")
     policy_source: Literal["physicalai", "lerobot"] = Field(
         default="physicalai",
         description="Which implementation of the policy to train.",

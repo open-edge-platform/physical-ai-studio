@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from training import TrainingJobSpec
 
-_SUPPORTED_POLICIES = frozenset({"act", "pi0", "pi05", "smolvla"})
+_SUPPORTED_POLICIES = frozenset({"act", "molmoact2", "pi0", "pi05", "smolvla"})
 _DEFAULT_PROTOCOL_VERSION = 1
 
 

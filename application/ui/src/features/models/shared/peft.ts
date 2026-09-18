@@ -7,7 +7,7 @@
  * Mirrors `PEFT_POLICIES` in `application/backend/src/training/job.py`; the
  * backend rejects a mismatch, this only keeps the UI from offering one.
  */
-const PEFT_POLICIES: ReadonlySet<string> = new Set(['pi05', 'pi0']);
+const PEFT_POLICIES: ReadonlySet<string> = new Set(['molmoact2', 'pi05', 'pi0']);
 
 /** Whether a policy can be fine-tuned with LoRA/DoRA. */
 export const supportsLora = (policy: string): boolean => PEFT_POLICIES.has(policy.toLowerCase());

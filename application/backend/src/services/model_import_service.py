@@ -21,7 +21,7 @@ _REQUIRED_FILES = (
     "exports/torch/manifest.json",
 )
 _TORCH_MANIFEST_PATH = "exports/torch/manifest.json"
-_SUPPORTED_POLICIES = frozenset({"act", "smolvla", "pi05"})
+_SUPPORTED_POLICIES = frozenset({"act", "molmoact2", "smolvla", "pi05"})
 
 
 class ModelReader(Protocol):

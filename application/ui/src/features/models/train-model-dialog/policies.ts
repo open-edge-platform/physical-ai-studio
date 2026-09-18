@@ -32,6 +32,12 @@ export const MODELS: ReadonlyArray<{
         minVRAM: 3 * GB,
     },
     {
+        id: 'molmoact2',
+        name: 'MolmoAct2',
+        description: 'Vision-Language-Action model with flow-matching action generation (Apache 2.0 license)',
+        minVRAM: 80 * GB,
+    },
+    {
         id: 'pi05',
         name: 'Pi0.5',
         description: 'Enhanced Pi0 with discrete state encoding and longer context',
