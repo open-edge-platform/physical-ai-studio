@@ -32,9 +32,11 @@ from .representation import (
     assemble_state_sequence,
     bridge_ee_absolute_to_relative,
     domain_action_gripper_index,
+    domain_gripper_flipped,
     domain_normalization,
     domain_representation,
     droid_ee_absolute_to_relative,
+    flip_gripper_last_channel,
     represent_actions,
     represent_state,
 )
@@ -48,6 +50,12 @@ logger = logging.getLogger(__name__)
 # Register ALOHA embodiment if not already present in diffusers
 _EMBODIMENT_TO_DOMAIN_ID.setdefault("aloha", 10)
 _EMBODIMENT_TO_RAW_ACTION_DIM.setdefault("aloha", 14)
+
+# The released DROID policy checkpoints (e.g. nvidia/cosmos3-edge-policy-droid, model card:
+# 8D DROID action) emit an 8D ``joint_pos`` action ``[joint(7), gripper(1)]``, not the 10D
+# ee_pose the stock diffusers table assumes. Pin DROID to 8 so the head output is sliced
+# and conditioned at its true width.
+_EMBODIMENT_TO_RAW_ACTION_DIM["droid_lerobot"] = 8
 
 # Register top_down_2d_view in diffusers action viewpoint templates if not present
 _ACTION_VIEWPOINT_TEMPLATES.setdefault(
@@ -490,7 +498,7 @@ class Cosmos3Model(Model):
             return None
         return act_b[:, gidx]
 
-    def compute_loss(  # ruff: ignore[too-many-locals]
+    def compute_loss(  # noqa: PLR0912, PLR0915
         self,
         batch: dict[str, Any],
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
@@ -501,6 +509,9 @@ class Cosmos3Model(Model):
 
         Returns:
             Tuple of (total_loss, metrics_dict).
+
+        Raises:
+            ValueError: If a pose domain is used without an observation state.
         """
         preprocessed = self.preprocessor(batch)
         images_tensor = preprocessed[IMAGES]
@@ -548,8 +559,11 @@ class Cosmos3Model(Model):
                     image_size,
                 )
 
-            if self.representation == "identity":
-                # Identity domains (pusht/aloha): the raw action column is the model action space.
+            if self.representation in {"identity", "joint_pos"}:
+                # Identity (pusht/aloha) and joint_pos (DROID) domains: the raw action column
+                # is already the model action space. joint_pos additionally inverts the DROID
+                # gripper (cosmos-framework ``_is_gripper_action_flipped``) on both the action
+                # chunk and the prepended state token.
                 act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
                 if act_b.ndim == 1:
                     act_b = act_b.unsqueeze(0)
@@ -561,6 +575,10 @@ class Cosmos3Model(Model):
                     st_raw = st_b[: self.raw_dim]
                 else:
                     st_raw = None
+                if self.representation == "joint_pos" and domain_gripper_flipped(self.config.domain):
+                    act_raw = flip_gripper_last_channel(act_raw)
+                    if st_raw is not None:
+                        st_raw = flip_gripper_last_channel(st_raw)
             else:
                 # Pose domains (droid_ee/bridge_ee): derive the native relative-pose action chunk
                 # and current-state token from the raw state sequence, mirroring cosmos-framework's
@@ -684,7 +702,7 @@ class Cosmos3Model(Model):
         )
 
     @torch.no_grad()
-    def predict_action_chunk(  # ruff: ignore[too-many-locals]
+    def predict_action_chunk(  # noqa: PLR0912
         self,
         batch: dict[str, Any],
     ) -> torch.Tensor:
@@ -722,6 +740,13 @@ class Cosmos3Model(Model):
                     cur_state = cur_state[-1]
                 if self.representation == "identity":
                     native_state = cur_state[: self.raw_dim]
+                elif self.representation == "joint_pos":
+                    # Raw joint+gripper state token; invert the DROID gripper to the model's
+                    # convention and anchor the decoded chunk on it (use_state parity).
+                    native_state = cur_state[: self.raw_dim]
+                    if domain_gripper_flipped(self.config.domain):
+                        native_state = flip_gripper_last_channel(native_state)
+                    state_token = native_state
                 else:
                     # Pose domain: build the native ee state token, anchor the decoded chunk on it.
                     native_state = represent_state(self.config.domain, cur_state).to(device=device, dtype=torch.float32)

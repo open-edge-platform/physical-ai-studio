@@ -8,7 +8,12 @@ and the Cosmos 3 checkpoint expects each domain in the space it was trained on:
 
     * ``identity`` (pusht, aloha, libero): raw state/action values, scaled into the
       model's ``[-1, 1]`` range with per-dataset min-max normalization.
-    * ``droid_ee`` (droid_lerobot, robomind-franka): absolute end-effector pose token
+    * ``joint_pos`` (droid_lerobot): raw 8D ``[joint(7), gripper(1)]`` action and state
+      with a flipped gripper and no additional normalization. This is the action space of
+      the released DROID policy checkpoints (e.g. ``nvidia/cosmos3-edge-policy-droid``,
+      whose model card documents an 8D DROID action), matching cosmos-framework's
+      ``droid_lerobot_dataset`` ``action_space="joint_pos"`` recipe.
+    * ``droid_ee`` (robomind-franka): absolute end-effector pose token
       ``[pos(3), rot6d(6), gripper(1)]`` in the OpenCV camera frame with a flipped
       gripper. Framewise-relative pose chunks for actions. Already in the checkpoint's
       native space, so no additional min-max normalization is applied.
@@ -44,8 +49,10 @@ _BRIDGE_TCP_TO_FLANGE = np.array(
 )
 
 # Representation per embodiment domain. Domains not listed use the identity representation.
+# DROID uses ``joint_pos`` (8D raw joints + gripper) to match its released policy checkpoints;
+# RoboMIND-Franka / Bridge stay on the end-effector pose representations.
 DOMAIN_REPRESENTATION: dict[str, str] = {
-    "droid_lerobot": "droid_ee",
+    "droid_lerobot": "joint_pos",
     "robomind-franka": "droid_ee",
     "robomind_franka": "droid_ee",
     "bridge_orig_lerobot": "bridge_ee",
@@ -73,8 +80,27 @@ DOMAIN_ACTION_GRIPPER_INDEX: dict[str, int] = {
 
 
 def domain_representation(domain: str) -> str:
-    """Return the action-space representation ("identity", "droid_ee", "bridge_ee") for a domain."""
+    """Return the action-space representation ("identity", "joint_pos", "droid_ee", "bridge_ee")."""
     return DOMAIN_REPRESENTATION.get(domain, "identity")
+
+
+# Domains whose raw gripper command is inverted relative to the model's convention
+# (cosmos-framework ``_is_gripper_action_flipped``). DROID's LeRobot gripper is flipped.
+DOMAIN_GRIPPER_FLIPPED: dict[str, bool] = {
+    "droid_lerobot": True,
+}
+
+
+def domain_gripper_flipped(domain: str) -> bool:
+    """Whether the domain's raw gripper command must be inverted as ``1 - g``."""
+    return DOMAIN_GRIPPER_FLIPPED.get(domain, False)
+
+
+def flip_gripper_last_channel(action: torch.Tensor) -> torch.Tensor:
+    """Return a copy of ``action`` with its final (gripper) channel inverted as ``1 - g``."""
+    flipped = action.clone()
+    flipped[..., -1] = 1.0 - flipped[..., -1]
+    return flipped
 
 
 def domain_action_gripper_index(domain: str) -> int | None:
@@ -113,12 +139,12 @@ def domain_normalization(domain: str) -> str:
 
 
 # Split-column state layout: some datasets store the robot state as separate LeRobot
-# sub-columns (the original DROID layout: ``observation.state.cartesian_position`` +
-# ``observation.state.gripper_position``) rather than a single combined ``observation.state``
-# column. These are the ``(pose, gripper)`` sub-column names, in canonical order, used to
-# reassemble one ``[..., pose + gripper]`` state row.
+# sub-columns rather than a single combined ``observation.state`` column. These are the
+# ``(pose, gripper)`` sub-column names, in canonical order, used to reassemble one
+# ``[..., pose + gripper]`` state row. DROID's ``joint_pos`` state uses the joint-position
+# sub-column; the ee-pose domains use ``cartesian_position``.
 DOMAIN_SPLIT_STATE_COLUMNS: dict[str, tuple[str, str]] = {
-    "droid_lerobot": ("cartesian_position", "gripper_position"),
+    "droid_lerobot": ("joint_positions", "gripper_position"),
     "robomind-franka": ("cartesian_position", "gripper_position"),
     "robomind_franka": ("cartesian_position", "gripper_position"),
     "bridge_orig_lerobot": ("cartesian_position", "gripper_position"),

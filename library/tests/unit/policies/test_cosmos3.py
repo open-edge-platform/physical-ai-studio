@@ -937,8 +937,8 @@ class TestPoseRepresentation:
         recovered = rot6d_to_matrix(matrix_to_rot6d(rot))
         np.testing.assert_allclose(recovered, rot, atol=1e-5)
 
-    def test_droid_action_gripper_flipped(self) -> None:
-        """DROID takes the last N ACTION-column gripper values, flipped (1 - g)."""
+    def test_droid_ee_action_gripper_flipped(self) -> None:
+        """droid_ee (robomind-franka) takes the last N ACTION-column gripper values, flipped."""
         import numpy as np
 
         from physicalai.policies.cosmos3.representation import represent_actions
@@ -946,7 +946,7 @@ class TestPoseRepresentation:
         state_seq = np.zeros((4, 7), dtype=np.float32)  # N+1 = 4 rows, [xyz, euler, gripper]
         state_seq[:, 6] = 0.9  # observed state gripper (should be ignored)
         action_grip = np.array([0.0, 0.2, 1.0], dtype=np.float32)  # N = 3 commanded values
-        chunk = represent_actions("droid_lerobot", state_seq, action_gripper_seq=action_grip)
+        chunk = represent_actions("robomind-franka", state_seq, action_gripper_seq=action_grip)
         assert chunk.shape == (3, 10)
         np.testing.assert_allclose(chunk[:, -1].numpy(), 1.0 - action_grip, atol=1e-6)
 
@@ -963,14 +963,63 @@ class TestPoseRepresentation:
         assert chunk.shape == (3, 10)
         np.testing.assert_allclose(chunk[:, -1].numpy(), action_grip, atol=1e-6)
 
-    def test_droid_gripper_falls_back_to_state(self) -> None:
-        """Without an action gripper, DROID uses the last N state-gripper values, flipped."""
+    def test_droid_ee_gripper_falls_back_to_state(self) -> None:
+        """Without an action gripper, droid_ee uses the last N state-gripper values, flipped."""
         import numpy as np
 
         from physicalai.policies.cosmos3.representation import represent_actions
 
         state_seq = np.zeros((4, 7), dtype=np.float32)
         state_seq[:, 6] = np.array([0.0, 0.3, 0.6, 1.0], dtype=np.float32)  # N+1 state gripper
-        chunk = represent_actions("droid_lerobot", state_seq)
+        chunk = represent_actions("robomind-franka", state_seq)
         # Fallback selects the destination frame of each transition: state gripper[1:].
         np.testing.assert_allclose(chunk[:, -1].numpy(), 1.0 - state_seq[1:, 6], atol=1e-6)
+
+
+class TestJointPosRepresentation:
+    """DROID ``joint_pos`` (8D ``[joint(7), gripper(1)]``) parity with the released checkpoint."""
+
+    def test_droid_maps_to_joint_pos(self) -> None:
+        """droid_lerobot uses the joint_pos representation, not ee-pose."""
+        from physicalai.policies.cosmos3.representation import domain_normalization, domain_representation
+
+        assert domain_representation("droid_lerobot") == "joint_pos"
+        # joint_pos actions are raw (no normalization), matching action_normalization=None.
+        assert domain_normalization("droid_lerobot") == "none"
+
+    def test_droid_raw_action_dim_is_8(self) -> None:
+        """The DROID raw action dim is pinned to 8 (joint_pos), overriding the diffusers default."""
+        from diffusers.pipelines.cosmos.pipeline_cosmos3_omni import _EMBODIMENT_TO_RAW_ACTION_DIM
+
+        import physicalai.policies.cosmos3.model  # noqa: F401  (import applies the override)
+
+        assert _EMBODIMENT_TO_RAW_ACTION_DIM["droid_lerobot"] == 8
+
+    def test_gripper_flip_last_channel(self) -> None:
+        """DROID is gripper-flipped; the flip inverts only the final channel as 1 - g."""
+        import numpy as np
+
+        from physicalai.policies.cosmos3.representation import domain_gripper_flipped, flip_gripper_last_channel
+
+        assert domain_gripper_flipped("droid_lerobot") is True
+        assert domain_gripper_flipped("pusht") is False
+        action = torch.tensor([[0.1, 0.2, 0.3, 0.7, 0.4, 0.5, 0.6, 0.0]])  # [1, 8]
+        flipped = flip_gripper_last_channel(action)
+        assert float(flipped[0, -1]) == pytest.approx(1.0)
+        # Non-gripper channels are untouched.
+        np.testing.assert_allclose(flipped[0, :-1].numpy(), action[0, :-1].numpy())
+
+    def test_assemble_state_uses_joint_positions(self) -> None:
+        """DROID split-column state reassembles from joint_positions + gripper_position."""
+        import numpy as np
+
+        from physicalai.policies.cosmos3.representation import assemble_state_sequence
+
+        state = {
+            "joint_positions": torch.arange(7, dtype=torch.float32).unsqueeze(0),  # [1, 7]
+            "gripper_position": torch.tensor([[0.5]]),  # [1, 1]
+        }
+        assembled = assemble_state_sequence("droid_lerobot", state)
+        assert assembled.shape == (1, 8)
+        np.testing.assert_allclose(assembled[0, :7].numpy(), np.arange(7))
+        assert float(assembled[0, 7]) == pytest.approx(0.5)
