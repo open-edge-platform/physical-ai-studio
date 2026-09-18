@@ -331,5 +331,5 @@ Common errors: `ImportError` (backend not installed), `ValueError`
 ## See Also
 
 - [Export Design](../export/README.md) - How models are exported
-- [Policy Design](../policy/overview.md) - Policy architecture
-- [Export & Inference Guide](../../guides/export_inference.md) - Usage examples
+- [Policy Architecture](../policy/architecture.md) - Policy ownership and lifecycle
+- [Export & Inference Guide](../../how-to/export/export_inference.md) - Usage examples
