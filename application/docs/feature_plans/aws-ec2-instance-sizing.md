@@ -10,17 +10,14 @@ largest possible GPU.
 | --- | --- | --- | --- | --- |
 | ACT | `g4dn.xlarge` | NVIDIA T4 | 16 GB | Small ResNet and transformer policy |
 | SmolVLA | `g4dn.xlarge` | NVIDIA T4 | 16 GB | 500M backbone with expert-only training by default |
-| Pi0 | `g5.2xlarge` | NVIDIA A10G | 24 GB | Frozen PaliGemma with the action expert trained by default |
 | Pi0.5 | `g6e.2xlarge` | NVIDIA L40S | 48 GB | Full fine-tuning is enabled in the application default |
 
 ## Repository evidence
 
-- The application trainer accepts only `act`, `pi0`, `pi05`, and `smolvla`.
+- The application trainer accepts only `act`, `pi05`, and `smolvla`.
   See `application/backend/src/trainer/schemas.py`.
-- Pi0 freezes PaliGemma and trains the action expert by default. See
-  `library/configs/physicalai/pi0.yaml`.
 - Pi0.5 does not freeze the vision encoder and does not use expert-only training
-  by default. See `library/configs/physicalai/pi05.yaml`.
+  by default. See `library/configs/physicalai/pi05/aloha/default.yaml`.
 - SmolVLA uses expert-only training and freezes its vision encoder by default.
   See `library/src/physicalai/policies/smolvla/config.py`.
 

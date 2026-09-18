@@ -30,7 +30,7 @@ def cosine_decay_with_warmup_scheduler(
 ) -> LambdaLR:
     """Create a cosine decay scheduler with linear warmup.
 
-    Matches the schedule used by Physical Intelligence for Pi0/Pi05 training:
+    Matches the schedule used by Physical Intelligence for Pi0.5 training:
     - Linear warmup from ``peak_lr / (num_warmup_steps + 1)`` to ``peak_lr``.
     - Cosine decay from ``peak_lr`` down to ``decay_lr``.
     - After ``num_decay_steps`` the LR stays at ``decay_lr``.

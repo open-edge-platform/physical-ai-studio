@@ -27,7 +27,6 @@ Parameters:
     Default: ACT (g4dn.xlarge)
     AllowedValues:
       - ACT (g4dn.xlarge)
-      - Pi0 (g5.2xlarge)
       - Pi0.5 (g6e.2xlarge)
       - SmolVLA (g4dn.xlarge)
     Description: |-
@@ -52,7 +51,6 @@ Parameters:
     ConstraintDescription: Enter a valid IPv4 address, for example 203.0.113.10.
 
 Conditions:
-  IsPi0Policy: !Equals [!Ref TrainingPolicy, Pi0 (g5.2xlarge)]
   IsPi05Policy: !Equals [!Ref TrainingPolicy, Pi0.5 (g6e.2xlarge)]
   AllowSshFromAnywhere: !Equals [!Ref StudioIpAddress, 0.0.0.0]
 
@@ -148,7 +146,7 @@ Resources:
         Timeout: PT30M
     Properties:
       ImageId: "{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2023/gpu/recommended/image_id}}"
-      InstanceType: !If [IsPi0Policy, g5.2xlarge, !If [IsPi05Policy, g6e.2xlarge, g4dn.xlarge]]
+      InstanceType: !If [IsPi05Policy, g6e.2xlarge, g4dn.xlarge]
       KeyName: !Ref TrainerKeyPair
       BlockDeviceMappings:
         - DeviceName: /dev/xvda

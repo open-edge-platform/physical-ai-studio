@@ -6,9 +6,9 @@
 Tests validate the complete pipeline:
 1. Train a policy
 2. Validate/test the trained policy
-3. Export to multiple backends (TestE2E only)
-4. Load exported model for inference (TestE2E only)
-5. Verify numerical consistency (TestE2E only)
+3. Export to multiple backends
+4. Load exported model for inference
+5. Verify numerical consistency
 """
 
 from pathlib import Path
@@ -22,11 +22,7 @@ from physicalai.policies import get_policy
 from physicalai.policies.base.policy import Policy
 from physicalai.train import Trainer
 
-# Export backend constants
 DEPLOYMENT_EXPORT_BACKENDS = ["openvino", "onnx", "executorch"]
-
-# Policy names for parametrization
-FIRST_PARTY_VLA_POLICIES = ["groot", "pi0"]
 FIRST_PARTY_POLICIES_WITH_EXPORT = ["act", "smolvla", "pi05"]
 
 
@@ -52,6 +48,13 @@ class CoreE2ETests:
     @pytest.fixture(scope="class")
     def policy(self, policy_name: str) -> Policy:
         """Create first-party policy instance."""
+        if policy_name == "pi05":
+            return get_policy(
+                policy_name,
+                source="physicalai",
+                freeze_vision_encoder=True,
+                train_expert_only=True,
+            )
         return get_policy(policy_name, source="physicalai")
 
     @pytest.fixture(scope="class")
@@ -62,7 +65,7 @@ class CoreE2ETests:
 
     @pytest.fixture(scope="class")
     def initialized_policy(self, policy_name: str, datamodule: LeRobotDataModule) -> Policy:
-        """Create first-party policy instance."""
+        """Create first-party policy instance for export/inference."""
         return get_policy(policy_name, source="physicalai", dataset_stats=datamodule.train_dataset.stats).eval()
 
     def test_train_policy(self, trained_policy: Policy, trainer: Trainer) -> None:
@@ -157,7 +160,6 @@ class ExportE2ETests:
         batch_observation = FormatConverter.to_observation(sample_batch)
         single_observation = batch_observation[0:1].to("cpu")
 
-        # Get training output
         torch.manual_seed(42)
         initialized_policy.eval()
         with torch.no_grad():
@@ -168,7 +170,6 @@ class ExportE2ETests:
         if len(train_action.shape) > 1:
             train_action = train_action[0]
 
-        # Export and get inference output
         initialized_policy.export(export_dir, backend)
         inference_model = InferenceModel(export_dir)
 
@@ -183,83 +184,9 @@ class ExportE2ETests:
         torch.testing.assert_close(inference_output_cpu.to(train_action.dtype), train_action, rtol=0.2, atol=0.2)
 
 
-@pytest.mark.slow
-@pytest.mark.parametrize("policy_name", FIRST_PARTY_VLA_POLICIES, indirect=True)
-class TestE2ECore(CoreE2ETests):
-    """E2E core tests for VLA policies without export support (Groot, SmolVLA, etc.)."""
-
-    @pytest.fixture(scope="class")
-    def policy(self, policy_name: str) -> Policy:
-        """Create first-party policy instance with memory-efficient settings.
-
-        For VLA policies, we freeze most of the model to fit in 24GB GPU memory.
-        """
-        if policy_name == "groot":
-            return get_policy(
-                policy_name,
-                source="physicalai",
-                # Memory-efficient settings for 24GB GPU
-                tune_llm=False,
-                tune_visual=False,
-                tune_projector=True,
-                tune_diffusion_model=False,
-            )
-        if policy_name == "pi05":
-            return get_policy(
-                policy_name,
-                source="physicalai",
-                freeze_vision_encoder=True,
-                train_expert_only=True,
-            )
-        # Other VLA policies use defaults (already memory-efficient)
-        return get_policy(policy_name, source="physicalai")
-
-    @pytest.fixture(scope="class")
-    def datamodule(self) -> LeRobotDataModule:
-        """Create datamodule with image observations for VLA policies."""
-        return LeRobotDataModule(
-            repo_id="lerobot/aloha_sim_transfer_cube_human",
-            train_batch_size=1,  # Small batch for memory efficiency
-            episodes=list(range(2)),
-        )
-
-    def test_export_to_torch(self, trained_policy: Policy, tmp_path: Path) -> None:
-        """Test that trained policy can be exported to torch."""
-        export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_torch"
-        trained_policy.export(export_dir, "torch")
-
-        assert export_dir.exists()
-        assert (export_dir / "manifest.json").exists()
-        assert any(export_dir.glob("*.pt"))
-
-    def test_inference_with_exported_model(
-        self,
-        trained_policy: Policy,
-        datamodule: LeRobotDataModule,
-        tmp_path: Path,
-    ) -> None:
-        backend = "torch"
-        """Test that exported model can be loaded and used for inference."""
-        export_dir = tmp_path / f"{trained_policy.__class__.__name__.lower()}_{backend}"
-        trained_policy.export(export_dir, backend)
-
-        inference_model = InferenceModel(export_dir)
-        assert inference_model.backend == backend
-
-        sample_batch = next(iter(datamodule.train_dataloader()))
-
-        from physicalai.data.lerobot import FormatConverter
-
-        batch_observation = FormatConverter.to_observation(sample_batch)
-        inference_input = batch_observation[0:1].to_numpy().to_dict(flatten=False)
-        inference_output = inference_model.select_action(inference_input)
-
-        assert len(inference_output.shape) in {1, 2, 3}, f"Expected 1-3D tensor, got {inference_output.shape}"
-
-
 @pytest.mark.parametrize("policy_name", FIRST_PARTY_POLICIES_WITH_EXPORT, indirect=True)
 class TestE2E(CoreE2ETests, ExportE2ETests):
-    """E2E tests for policies with export support (ACT, etc.)."""
+    """E2E tests for first-party policies with export support."""
 
     @pytest.fixture(scope="class")
     def datamodule(self) -> LeRobotDataModule:

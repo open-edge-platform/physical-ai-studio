@@ -10,14 +10,14 @@ PyTorch Lightning wrappers for
 pip install physicalai-train
 
 # With Groot (NVIDIA GR00T-N1) support
-pip install physicalai-train[groot]
+pip install 'lerobot[groot]'
 
 # Everything
 pip install physicalai-train[all]
 ```
 
 > **Note**: Groot has heavy dependencies including transformers, flash-attn,
-> and peft. Only install if needed.
+> and peft. Install the LeRobot Groot extra only when needed.
 
 ## Quick Start
 

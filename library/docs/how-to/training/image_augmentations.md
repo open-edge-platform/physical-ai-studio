@@ -119,7 +119,7 @@ data:
 
 Any callable works here, not just these transforms. Wrap several in `torchvision.transforms.v2.Compose` to apply them all every time instead of sampling a subset.
 
-The same configuration works for all supported policies (ACT, SmolVLA, Pi0, Pi0.5, GR00T).
+The same configuration works for the supported first-party training policies.
 
 ### Default Values Reference
 

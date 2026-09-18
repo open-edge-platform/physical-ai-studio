@@ -177,7 +177,7 @@ class TestSnapFlowDistillation:
         assert payload.snapflow_start_epoch == 8
         assert payload.total_epochs == 11
 
-    @pytest.mark.parametrize("policy", ["act", "pi0", "groot"])
+    @pytest.mark.parametrize("policy", ["act"])
     def test_other_policies_are_rejected_rather_than_silently_trained_without_it(self, policy: str) -> None:
         with pytest.raises(ValidationError, match="not available for policy"):
             LocalTrainJobPayload(**{**_base_kwargs(), "policy": policy}, snapflow_enabled=True)

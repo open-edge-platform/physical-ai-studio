@@ -29,7 +29,7 @@ The following example loads a pretrained Pi0.5 checkpoint and runs the full LIBE
 We use the LIBERO imitation learning training set provided by the LeRobot found [in hugging face datasets](https://huggingface.co/datasets/HuggingFaceVLA/libero). Please see the LeRobot implementation [on there LIBERO section in the LeRobot docs](https://huggingface.co/docs/lerobot/libero).
 
 ```bash
-uv sync --extra libero --extra pi0
+uv sync --extra libero --extra pi05
 ```
 
 ## Code

@@ -5,7 +5,7 @@
 #   physicalai fit --config configs/lerobot/groot.yaml
 #
 # Requirements:
-#   - pip install physicalai-train[groot]
+#   - pip install 'lerobot[groot]'
 #   - Significant GPU memory (>24GB recommended with bf16)
 #
 # Override parameters:

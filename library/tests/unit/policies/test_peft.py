@@ -4,10 +4,9 @@
 """Unit tests for the shared, policy-agnostic PEFT (LoRA/DoRA) helpers.
 
 Uses small synthetic nn.Modules instead of a full policy model to keep these tests fast
-and independent of any specific policy (Pi0, Pi05, ACT, ...). Full-model integration for
-a given policy is covered by that policy's own test module (e.g.
-``tests/unit/policies/test_pi05.py::TestPi05LoRAIntegration`` and
-``tests/unit/policies/test_pi0.py::TestPi0LoRAIntegration``).
+and independent of any specific policy (Pi05, ACT, SmolVLA, ...). Full-model integration for
+a given policy is covered by that policy's own test module (for example
+``tests/unit/policies/test_pi05.py::TestPi05LoRAIntegration``).
 """
 
 from __future__ import annotations
@@ -584,7 +583,7 @@ class TestPeftPolicyMixinOnFitStart:
 
 
 class _CompiledPeftModel(torch.nn.Module):
-    """Toy model that compiles its forward on the instance, as Pi05/Pi0/SmolVLA do.
+    """Toy model that compiles its forward on the instance, as Pi05 and SmolVLA do.
 
     ``forward`` branches on training mode like a real policy: a loss during training
     (needing an ``action`` key export samples do not carry) and a prediction in eval.

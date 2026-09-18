@@ -34,7 +34,7 @@ export const MODELS: ReadonlyArray<{
     {
         id: 'pi05',
         name: 'Pi0.5',
-        description: 'Enhanced Pi0 with discrete state encoding and longer context (Gemma license)',
+        description: 'Flow-matching VLA with discrete state encoding and longer context (Gemma license)',
         minVRAM: 40 * GB,
     },
 ];

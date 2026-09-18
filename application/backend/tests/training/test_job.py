@@ -74,7 +74,7 @@ class TestTrainingJobSpec:
 
     def test_spec_round_trips_through_json(self) -> None:
         """Remote submission sends the spec as JSON; it must survive the trip."""
-        spec = TrainingJobSpec(policy="pi0", max_epochs=5, num_workers=4, device_type="xpu", device_index=1)
+        spec = TrainingJobSpec(policy="pi05", max_epochs=5, num_workers=4, device_type="xpu", device_index=1)
 
         assert TrainingJobSpec.model_validate_json(spec.model_dump_json()) == spec
 
@@ -107,7 +107,7 @@ class TestTrainingJobSpec:
 
         assert spec.snapflow_start_epoch == 5
 
-    @pytest.mark.parametrize("policy", ["act", "pi0"])
+    @pytest.mark.parametrize("policy", ["act"])
     def test_policies_without_a_flow_matching_sampler_cannot_be_distilled(self, policy: str) -> None:
         """Only the SnapFlowPolicyMixin policies implement enable_snapflow()."""
         with pytest.raises(ValidationError, match="not supported for policy"):
@@ -208,15 +208,6 @@ class TestBuildPolicy:
 
         assert policy is policy_class.load_from_checkpoint.return_value
         policy_class.load_from_checkpoint.assert_called_once_with(str(checkpoint))
-
-    def test_pi0_is_resumed_weights_only(self, tmp_path: Path) -> None:
-        """Pi0 checkpoints hold objects Lightning will not unpickle by default."""
-        policy_class = MagicMock()
-
-        with patch("physicalai.policies.get_physicalai_policy_class", return_value=policy_class):
-            build_policy(TrainingJobSpec(policy="pi0"), resume_from=tmp_path / CHECKPOINT_NAME)
-
-        assert policy_class.load_from_checkpoint.call_args.kwargs == {"weights_only": True}
 
     def test_lerobot_policies_are_resumed_through_the_wrapper(self, tmp_path: Path) -> None:
         checkpoint = tmp_path / CHECKPOINT_NAME
@@ -533,7 +524,7 @@ class TestRunTrainingJob:
 
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
-    @pytest.mark.parametrize("policy_name", ["act", "smolvla", "pi0", "pi05"])
+    @pytest.mark.parametrize("policy_name", ["act", "smolvla", "pi05"])
     def test_compiled_policy_exports_without_reloading(self, policy_name: str, tmp_path: Path) -> None:
         """Compiled policies are traced directly by the library; no checkpoint reload is needed."""
         policy = _ExportablePolicy([ExportBackend.OPENVINO])
