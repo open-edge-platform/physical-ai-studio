@@ -36,7 +36,10 @@ async def open_http_connect_socket(
     timeout_s: float,
 ) -> socket.socket:
     """Open a socket to an SSH target through an HTTP CONNECT proxy."""
-    target = f"{host}:{port}"
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in host):
+        raise ValueError("SSH host contains invalid control characters")
+    connect_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    target = f"{connect_host}:{port}"
     request = f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode("ascii")
     loop = asyncio.get_running_loop()
     proxy_socket: socket.socket | None = None
@@ -53,6 +56,9 @@ async def open_http_connect_socket(
                     candidate.close()
                     last_error = error
                     continue
+                except BaseException:
+                    candidate.close()
+                    raise
                 proxy_socket = candidate
                 break
             if proxy_socket is None:

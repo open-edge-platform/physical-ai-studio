@@ -58,8 +58,12 @@ _IDENTITY_PATH = "/home/tester/.ssh/id_secret_test_key"
 
 
 @pytest.fixture(autouse=True)
-def _clear_gates():
+def _clear_gates(monkeypatch):
     reset_alias_gates()
+    monkeypatch.setattr(
+        "services.ssh.connection.resolve_http_connect_proxy",
+        MagicMock(return_value=None),
+    )
     yield
     reset_alias_gates()
 
@@ -172,6 +176,29 @@ async def test_http_connect_socket_negotiates_tunnel(monkeypatch) -> None:
     assert result is proxy_socket
 
 
+async def test_http_connect_socket_brackets_ipv6_target(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock()
+    loop.sock_sendall = AsyncMock()
+    loop.sock_recv = AsyncMock(side_effect=[bytes([byte]) for byte in b"HTTP/1.1 200 Connection established\r\n\r\n"])
+    proxy_socket = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=proxy_socket))
+
+    await open_http_connect_socket(("proxy.example.com", 912), "2001:db8::1", 443, 10.0)
+
+    loop.sock_sendall.assert_awaited_once_with(
+        proxy_socket, b"CONNECT [2001:db8::1]:443 HTTP/1.1\r\nHost: [2001:db8::1]:443\r\n\r\n"
+    )
+
+
+@pytest.mark.parametrize("host", ["target.example.com\r\nInjected: value", "target.example.com\nCONNECT attacker:22"])
+async def test_http_connect_socket_rejects_control_characters(host: str) -> None:
+    with pytest.raises(ValueError, match="invalid control characters"):
+        await open_http_connect_socket(("proxy.example.com", 912), host, 443, 10.0)
+
+
 async def test_http_connect_socket_rejects_proxy_error(monkeypatch) -> None:
     loop = MagicMock()
     loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
@@ -202,6 +229,20 @@ async def test_http_connect_socket_closes_on_cancellation(monkeypatch) -> None:
         await open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
 
     proxy_socket.close.assert_called_once()
+
+
+async def test_http_connect_socket_closes_candidate_when_connect_is_cancelled(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock(side_effect=asyncio.CancelledError)
+    candidate = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=candidate))
+
+    with pytest.raises(asyncio.CancelledError):
+        await open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
+
+    candidate.close.assert_called_once()
 
 
 def test_http_connect_proxy_prefers_https_proxy(monkeypatch) -> None:
@@ -547,6 +588,38 @@ async def test_connect_reads_the_users_config_and_alias(settings: Settings, monk
     # asyncssh resolved the alias itself, from the user's own config file.
     assert captured["host"] == ALIAS
     assert captured["options"].host == _HOSTNAME
+    await transport.close()
+
+
+async def test_connect_proxies_to_the_resolved_alias_target(settings: Settings, monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    proxy_socket = MagicMock()
+    open_proxy_socket = AsyncMock(return_value=proxy_socket)
+    resolve_proxy = MagicMock(return_value=("proxy.example.com", 912))
+
+    async def fake_connect(*, host, options, **kwargs):
+        captured["host"] = host
+        captured["options"] = options
+        captured["sock"] = kwargs["sock"]
+        return MagicMock()
+
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+    monkeypatch.setattr("services.ssh.connection.resolve_http_connect_proxy", resolve_proxy)
+    monkeypatch.setattr("services.ssh.connection.open_http_connect_socket", open_proxy_socket)
+
+    transport = _alias_transport(settings)
+    await transport.connect()
+
+    resolve_proxy.assert_called_once_with(_HOSTNAME, 22)
+    open_proxy_socket.assert_awaited_once_with(
+        ("proxy.example.com", 912),
+        _HOSTNAME,
+        22,
+        settings.ssh_connect_timeout_s,
+    )
+    assert captured["host"] == ALIAS
+    assert captured["options"].host == _HOSTNAME
+    assert captured["sock"] is proxy_socket
     await transport.close()
 
 

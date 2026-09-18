@@ -80,7 +80,20 @@ class AliasTarget:
             raise _key_error(self.name, error) from None
         except OSError:
             raise SshAuthenticationError(self.name) from None
-        return await _connect(self.name, self.alias, options, host_keys)
+
+        proxy = resolve_http_connect_proxy(options.host, options.port)
+        socket_factory = (
+            None
+            if proxy is None
+            else partial(
+                open_http_connect_socket,
+                proxy,
+                options.host,
+                options.port,
+                settings.ssh_connect_timeout_s,
+            )
+        )
+        return await _connect(self.name, self.alias, options, host_keys, socket_factory)
 
 
 @dataclass(frozen=True, slots=True)
