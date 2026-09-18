@@ -9,6 +9,7 @@ Multimodal world model policy based on diffusers Cosmos3OmniPipeline and rectifi
 from .config import Cosmos3Config
 from .flow_matching import build_action_tokens, build_pack, flow_matching_step
 from .model import Cosmos3Model
+from .normalization import load_stats_file, resolve_affine
 from .pipeline import (
     DEFAULT_MIN_XPU_DRIVER,
     PolicyPipelineWithState,
@@ -19,8 +20,10 @@ from .pipeline import (
 from .policy import Cosmos3
 from .preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 from .representation import (
+    DOMAIN_NORMALIZATION,
     DOMAIN_REPRESENTATION,
     assemble_state_sequence,
+    domain_normalization,
     domain_representation,
     represent_actions,
     represent_state,
@@ -38,6 +41,8 @@ from .surgery import (
 
 __all__ = [
     "DEFAULT_MIN_XPU_DRIVER",
+    "DOMAIN_NORMALIZATION",
+    "DOMAIN_REPRESENTATION",
     "GEN_TOWER_KEYS",
     "HEAD_KEYS",
     "LORA_TARGETS",
@@ -45,7 +50,6 @@ __all__ = [
     "Cosmos3Config",
     "Cosmos3Model",
     "Cosmos3Preprocessor",
-    "DOMAIN_REPRESENTATION",
     "PolicyPipelineWithState",
     "assemble_state_sequence",
     "build_action_tokens",
@@ -54,13 +58,16 @@ __all__ = [
     "compose_horizontal_views",
     "compose_t_views",
     "configure_trainable",
+    "domain_normalization",
     "domain_representation",
     "flow_matching_step",
     "init_domain_action_head",
     "load_finetuned",
+    "load_stats_file",
     "represent_actions",
     "represent_state",
     "require_xpu_driver",
+    "resolve_affine",
     "split_trainable_params",
     "state_action_mrope_ids",
     "uses_minmax_normalization",

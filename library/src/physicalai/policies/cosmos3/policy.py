@@ -86,6 +86,7 @@ class Cosmos3(Policy):
         grad_checkpoint: bool = True,
         domain: str = "pusht",
         view_point: str | None = None,
+        normalizer_stats_path: str | None = None,
         prompt: str = "",
         guidance_scale: float = 3.0,
         flow_shift: float = 8.0,
@@ -118,6 +119,7 @@ class Cosmos3(Policy):
             grad_checkpoint=grad_checkpoint,
             domain=domain,
             view_point=view_point,
+            normalizer_stats_path=normalizer_stats_path,
             prompt=prompt,
             guidance_scale=guidance_scale,
             flow_shift=flow_shift,
@@ -334,7 +336,7 @@ class Cosmos3(Policy):
             clean_name = k.removeprefix("model.")
             is_trainable = clean_name in trainable_names
             is_head = any(hk in k for hk in HEAD_KEYS)
-            is_buffer = "a_min" in k or "a_max" in k or "domain_id" in k
+            is_buffer = "norm_offset" in k or "norm_scale" in k or "domain_id" in k
             if is_trainable or is_head or is_buffer:
                 filtered_sd[k] = v
 
@@ -379,8 +381,8 @@ class Cosmos3(Policy):
         torch.save(
             {
                 "head": head,
-                "action_min": self.model.a_min.cpu(),
-                "action_max": self.model.a_max.cpu(),
+                "norm_offset": self.model.norm_offset.cpu(),
+                "norm_scale": self.model.norm_scale.cpu(),
                 "prompt": self.config.prompt,
                 "paradigm": self.config.paradigm,
                 "domain": self.config.domain,
@@ -421,9 +423,9 @@ class Cosmos3(Policy):
             domain=dom,
             head=str(head_path) if head_path else None,
         )
-        if "action_min" in ckpt and "action_max" in ckpt:
-            self.model.a_min = ckpt["action_min"].to(self.model.a_min.device)
-            self.model.a_max = ckpt["action_max"].to(self.model.a_max.device)
+        if "norm_offset" in ckpt and "norm_scale" in ckpt:
+            self.model.norm_offset = ckpt["norm_offset"].to(self.model.norm_offset.device)
+            self.model.norm_scale = ckpt["norm_scale"].to(self.model.norm_scale.device)
         return ckpt
 
     @classmethod

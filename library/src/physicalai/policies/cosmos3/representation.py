@@ -32,18 +32,12 @@ from scipy.spatial.transform import Rotation as R
 
 # 90-degree clockwise rotation about Z, mapping the DROID Franka panda_link8
 # orientation into the OpenCV camera convention.
-_DROID_TO_OPENCV = np.array(
-    [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32
-)
+_DROID_TO_OPENCV = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
 
 # Bridge (WidowX) frame corrections: raw state rotation -> kinematics frame, a fixed
 # ee_gripper_link -> gripper_link re-reference, then kinematics -> OpenCV frame.
-_BRIDGE_DEFAULT_ROTATION = np.array(
-    [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]], dtype=np.float32
-)
-_BRIDGE_TO_OPENCV = np.array(
-    [[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]], dtype=np.float32
-)
+_BRIDGE_DEFAULT_ROTATION = np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]], dtype=np.float32)
+_BRIDGE_TO_OPENCV = np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]], dtype=np.float32)
 _BRIDGE_TCP_TO_FLANGE = np.array(
     [[1.0, 0.0, 0.0, -0.093575], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
     dtype=np.float32,
@@ -81,6 +75,23 @@ def uses_minmax_normalization(domain: str) -> bool:
     return domain_representation(domain) == "identity"
 
 
+# Per-domain action-normalization method, mirroring the cosmos-framework dataset defaults
+# (``resolve_action_normalization``). Domains not listed default to ``minmax`` (the identity
+# per-dataset scaling). Pose domains keep their cosmos-framework method: DROID trains raw
+# (``none``), Bridge / RoboMIND-Franka use ``quantile``. Values map to :mod:`normalization`.
+DOMAIN_NORMALIZATION: dict[str, str] = {
+    "droid_lerobot": "none",
+    "robomind-franka": "quantile",
+    "robomind_franka": "quantile",
+    "bridge_orig_lerobot": "quantile",
+}
+
+
+def domain_normalization(domain: str) -> str:
+    """Return the action-normalization method ("none"/"minmax"/"quantile"/...) for a domain."""
+    return DOMAIN_NORMALIZATION.get(domain, "minmax")
+
+
 # Split-column state layout: some datasets store the robot state as separate LeRobot
 # sub-columns (the original DROID layout: ``observation.state.cartesian_position`` +
 # ``observation.state.gripper_position``) rather than a single combined ``observation.state``
@@ -116,8 +127,7 @@ def assemble_state_sequence(domain: str, state: object) -> torch.Tensor:
     pose_key, grip_key = cols
     if pose_key not in state or grip_key not in state:
         msg = (
-            f"Split state for domain '{domain}' expects sub-columns '{pose_key}' and '{grip_key}', "
-            f"got {sorted(state)}."
+            f"Split state for domain '{domain}' expects sub-columns '{pose_key}' and '{grip_key}', got {sorted(state)}."
         )
         raise KeyError(msg)
     pose = state[pose_key]
@@ -154,12 +164,10 @@ def rot6d_to_matrix(rot6d: np.ndarray) -> np.ndarray:
 def _rel_rot6d_backward(poses: np.ndarray) -> np.ndarray:
     """Absolute poses ``[N+1, 4, 4]`` -> framewise-relative ``[trans(3), rot6d(6)]`` ``[N, 9]``."""
     inv = np.linalg.inv(poses)
-    return np.stack(
-        [
-            np.concatenate([(inv[i] @ poses[i + 1])[:3, 3], matrix_to_rot6d((inv[i] @ poses[i + 1])[:3, :3])])
-            for i in range(len(poses) - 1)
-        ]
-    ).astype(np.float32)
+    return np.stack([
+        np.concatenate([(inv[i] @ poses[i + 1])[:3, 3], matrix_to_rot6d((inv[i] @ poses[i + 1])[:3, :3])])
+        for i in range(len(poses) - 1)
+    ]).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -310,11 +318,19 @@ def represent_state(
     row = _as_numpy(state_row).astype(np.float32)
     if rep == "droid_ee":
         idx = DOMAIN_STATE_GRIPPER_INDEX.get(domain)
-        g = float(gripper) if gripper is not None else (float(row[idx]) if idx is not None and row.shape[-1] > idx else 0.0)
+        g = (
+            float(gripper)
+            if gripper is not None
+            else (float(row[idx]) if idx is not None and row.shape[-1] > idx else 0.0)
+        )
         return droid_ee_state_token(row[:6], g)
     if rep == "bridge_ee":
         idx = DOMAIN_STATE_GRIPPER_INDEX.get(domain)
-        g = float(gripper) if gripper is not None else (float(row[idx]) if idx is not None and row.shape[-1] > idx else 0.0)
+        g = (
+            float(gripper)
+            if gripper is not None
+            else (float(row[idx]) if idx is not None and row.shape[-1] > idx else 0.0)
+        )
         return bridge_ee_state_token(row, g)
     return torch.as_tensor(row).float()
 
@@ -336,12 +352,20 @@ def represent_actions(
     if rep == "droid_ee":
         seq = _as_numpy(state_seq).astype(np.float32)
         idx = DOMAIN_STATE_GRIPPER_INDEX.get(domain)
-        grip = _as_numpy(action_gripper_seq) if action_gripper_seq is not None else (seq[:, idx] if idx is not None else np.zeros(len(seq)))
+        grip = (
+            _as_numpy(action_gripper_seq)
+            if action_gripper_seq is not None
+            else (seq[:, idx] if idx is not None else np.zeros(len(seq)))
+        )
         return droid_ee_relative_actions(seq[:, :6], grip)
     if rep == "bridge_ee":
         seq = _as_numpy(state_seq).astype(np.float32)
         idx = DOMAIN_STATE_GRIPPER_INDEX.get(domain)
-        grip = _as_numpy(action_gripper_seq) if action_gripper_seq is not None else (seq[:, idx] if idx is not None else np.zeros(len(seq)))
+        grip = (
+            _as_numpy(action_gripper_seq)
+            if action_gripper_seq is not None
+            else (seq[:, idx] if idx is not None else np.zeros(len(seq)))
+        )
         return bridge_ee_relative_actions(seq, grip)
     if raw_action_seq is None:
         msg = f"identity domain '{domain}' requires raw_action_seq for represent_actions."

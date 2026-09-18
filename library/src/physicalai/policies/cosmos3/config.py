@@ -57,6 +57,16 @@ class Cosmos3Config(Config):
         view_point: Optional camera viewpoint tag (e.g., "concat_view", "ego_view", "wrist_view",
             "third_person_view", "top_down_2d_view"). When None, inferred from domain and
             composition. Defaults to None.
+        normalizer_stats_path: Optional path to a cosmos-format action-normalizer stats JSON
+            (flat ``{"q01", "q99"}`` or nested ``{"global", "global_raw"}``). When set, the
+            domain's normalization method is resolved against these stats (asserting the stats
+            width matches the raw action dim); required to run a pre-trained per-domain head
+            (e.g. a released Cosmos policy) that expects quantile-normalized actions. When None,
+            identity domains derive the affine from the dataset's raw-column stats, while pose
+            domains (droid_ee/bridge_ee) fall back to identity ("none") normalization: their
+            head trains in a transformed ``[translation, rot6d, gripper]`` space, so the dataset's
+            raw-column stats are in the wrong space and cannot be used — pass this file to
+            normalize them. Defaults to None.
         prompt: Task instruction conditioning string. Defaults to "".
         guidance_scale: Classifier-free guidance scale for inference. Defaults to 3.0.
         flow_shift: Flow shift value for the UniPC multistep scheduler. Defaults to 8.0.
@@ -85,6 +95,7 @@ class Cosmos3Config(Config):
     grad_checkpoint: bool = True
     domain: str = "pusht"
     view_point: str | None = None
+    normalizer_stats_path: str | None = None
     prompt: str = ""
     guidance_scale: float = 3.0
     flow_shift: float = 8.0

@@ -25,16 +25,17 @@ from physicalai.data.observation import ACTION, IMAGES, STATE
 from physicalai.policies.base import Model
 
 from .flow_matching import build_action_tokens, build_pack, flow_matching_step
+from .normalization import load_stats_file, resolve_affine
 from .pipeline import PolicyPipelineWithState
 from .preprocessor import Cosmos3Preprocessor
 from .representation import (
     assemble_state_sequence,
     bridge_ee_absolute_to_relative,
+    domain_normalization,
     domain_representation,
     droid_ee_absolute_to_relative,
     represent_actions,
     represent_state,
-    uses_minmax_normalization,
 )
 from .surgery import configure_trainable, init_domain_action_head
 
@@ -233,10 +234,11 @@ class Cosmos3Model(Model):
             raise ValueError(msg)
         self.raw_dim = _EMBODIMENT_TO_RAW_ACTION_DIM[config.domain]
 
-        # Action-space representation: pose domains (droid_ee/bridge_ee) are already in the
-        # checkpoint's native space; identity domains rely on per-dataset min-max normalization.
+        # Action-space representation: pose domains (droid_ee/bridge_ee) build a native
+        # relative-pose target; identity domains use the raw action column. The normalization
+        # method (none/minmax/quantile/...) mirrors the cosmos-framework dataset defaults.
         self.representation = domain_representation(config.domain)
-        self.use_minmax = uses_minmax_normalization(config.domain)
+        self.norm_method = domain_normalization(config.domain)
 
         # Build or wrap the pipeline
         if pipeline is not None:
@@ -297,42 +299,102 @@ class Cosmos3Model(Model):
         # Cache for fixed-shape sequence packs across steps
         self._pack_cache: dict[tuple[str, str, int, int, str | None], dict[str, Any]] = {}
 
-        # Action normalization bounds
-        self.register_buffer("a_min", -torch.ones(self.raw_dim, dtype=torch.float32))
-        self.register_buffer("a_max", torch.ones(self.raw_dim, dtype=torch.float32))
+        # Action normalization as an affine (offset, scale): normalize=(x-offset)/scale,
+        # denormalize=x*scale+offset. Default identity ("none"); populated from an explicit
+        # stats file or the dataset statistics below. Persisted with the domain head.
+        self.register_buffer("norm_offset", torch.zeros(self.raw_dim, dtype=torch.float32))
+        self.register_buffer("norm_scale", torch.ones(self.raw_dim, dtype=torch.float32))
         self.register_buffer(
             "domain_id",
             torch.tensor([self.domain_id_val], dtype=torch.long),
         )
 
-        if dataset_stats is not None:
+        stats_path = getattr(config, "normalizer_stats_path", None)
+        if stats_path is not None:
+            self._load_normalizer_stats_file(stats_path)
+        elif dataset_stats is not None:
             self.set_dataset_stats(dataset_stats)
 
-    def set_dataset_stats(self, dataset_stats: dict[str, Any]) -> None:
-        """Update normalization bounds from dataset statistics.
+    def _set_affine(self, offset: torch.Tensor, scale: torch.Tensor) -> None:
+        """Store the normalization affine, broadcasting scalars to ``raw_dim``."""
+        offset = offset.reshape(-1).float()
+        scale = scale.reshape(-1).float()
+        if offset.numel() == 1:
+            offset = offset.expand(self.raw_dim).clone()
+        if scale.numel() == 1:
+            scale = scale.expand(self.raw_dim).clone()
+        self.raw_dim = offset.numel()
+        self.norm_offset = offset.to(self.norm_offset.device)
+        self.norm_scale = scale.to(self.norm_scale.device)
 
-        Args:
-            dataset_stats: Normalization statistics dictionary.
+    def _load_normalizer_stats_file(self, path: str) -> None:
+        """Load an explicit cosmos-format stats file and set the normalization affine.
+
+        The domain's registered method is used; a ``none`` domain (e.g. DROID) is
+        promoted to ``quantile`` since supplying a stats file signals normalized actions.
+
+        Raises:
+            ValueError: If the stats width does not match the raw action dim.
         """
-        if not self.use_minmax:
-            # Pose-representation domains (droid_ee/bridge_ee) are already in the checkpoint's
-            # native space; min-max bounds would double-normalize, so keep identity bounds.
-            logger.info("Domain '%s' uses %s representation; skipping min-max dataset stats.", self.config.domain, self.representation)
+        method = self.norm_method if self.norm_method != "none" else "quantile"
+        stats = load_stats_file(path, method)
+        offset, scale = resolve_affine(method, stats)
+        if offset.numel() != self.raw_dim:
+            msg = (
+                f"Normalizer stats width {offset.numel()} from {path!r} does not match the "
+                f"raw action dim {self.raw_dim} for domain '{self.config.domain}'."
+            )
+            raise ValueError(msg)
+        self.norm_method = method
+        self._set_affine(offset, scale)
+        logger.info("Loaded %s normalizer stats for domain '%s' from %s", method, self.config.domain, path)
+
+    def set_dataset_stats(self, dataset_stats: dict[str, Any]) -> None:
+        """Update the normalization affine from dataset statistics.
+
+        Only identity domains consume dataset statistics: their raw action column is the
+        model action space. Pose domains (droid_ee/bridge_ee) build a transformed target,
+        so their raw-column dataset stats are in the wrong space and are ignored — supply
+        ``normalizer_stats_path`` to normalize them.
+        """
+        if self.representation != "identity":
+            logger.info(
+                "Domain '%s' uses the %s representation; dataset stats are in the raw space and "
+                "are ignored (pass normalizer_stats_path to normalize). Actions stay un-normalized.",
+                self.config.domain,
+                self.representation,
+            )
             return
 
         act_stat = dataset_stats.get(ACTION, dataset_stats.get("action", {}))
-        if "min" in act_stat and "max" in act_stat:
-            a_min = torch.as_tensor(act_stat["min"], dtype=torch.float32)
-            a_max = torch.as_tensor(act_stat["max"], dtype=torch.float32)
-        elif "q01" in act_stat and "q99" in act_stat:
-            a_min = torch.as_tensor(act_stat["q01"], dtype=torch.float32)
-            a_max = torch.as_tensor(act_stat["q99"], dtype=torch.float32)
-        else:
+        stats = {
+            k: torch.as_tensor(v, dtype=torch.float32) for k, v in act_stat.items() if isinstance(v, (list, tuple))
+        }
+        method = self.norm_method
+        if method in {"quantile", "quantile_rot"} and not {"q01", "q99"} <= stats.keys():
+            method = "minmax"  # dataset lacks quantiles; fall back to min-max
+        if method == "minmax" and not {"min", "max"} <= stats.keys():
             return
+        offset, scale = resolve_affine(method, stats)
+        self._set_affine(offset, scale)
 
-        self.raw_dim = len(a_min)
-        self.a_min = a_min.to(self.a_min.device)
-        self.a_max = a_max.to(self.a_max.device)
+    def _normalize_action(self, x: torch.Tensor) -> torch.Tensor:
+        """Affine-normalize the leading ``raw_dim`` channels: ``(x - offset) / scale``.
+
+        Returns:
+            The normalized tensor.
+        """
+        d = min(x.shape[-1], self.raw_dim)
+        return (x[..., :d] - self.norm_offset[:d].to(x)) / self.norm_scale[:d].to(x)
+
+    def _denormalize_action(self, y: torch.Tensor) -> torch.Tensor:
+        """Invert :meth:`_normalize_action`: ``y * scale + offset``.
+
+        Returns:
+            The denormalized tensor.
+        """
+        d = min(y.shape[-1], self.raw_dim)
+        return y[..., :d] * self.norm_scale[:d].to(y) + self.norm_offset[:d].to(y)
 
     def to(self, *args: object, **kwargs: object) -> Cosmos3Model:
         """Move the model and underlying pipeline components to the specified device.
@@ -462,38 +524,40 @@ class Cosmos3Model(Model):
                     image_size,
                 )
 
-            if self.use_minmax:
-                # Identity domains (pusht/aloha): raw action chunk + current-state token,
-                # min-max scaled into the model's [-1, 1] range.
+            if self.representation == "identity":
+                # Identity domains (pusht/aloha): the raw action column is the model action space.
                 act_b = actions_tensor[b].to(device=device, dtype=torch.float32)
                 if act_b.ndim == 1:
                     act_b = act_b.unsqueeze(0)
-                a_min_slice = self.a_min[: self.raw_dim]
-                a_max_slice = self.a_max[: self.raw_dim]
-                act_norm = 2.0 * (act_b[:, : self.raw_dim] - a_min_slice) / (a_max_slice - a_min_slice + 1e-8) - 1.0
+                act_raw = act_b[:, : self.raw_dim]
                 if state_seq_batch is not None:
                     st_b = state_seq_batch[b].to(device=device, dtype=torch.float32)
                     if st_b.ndim > 1:
                         st_b = st_b[0]  # Take initial frame state
-                    dim_st = min(len(st_b), self.raw_dim)
-                    st_min = self.a_min[:dim_st]
-                    st_max = self.a_max[:dim_st]
-                    st_norm = 2.0 * (st_b[:dim_st] - st_min) / (st_max - st_min + 1e-8) - 1.0
+                    st_raw = st_b[: self.raw_dim]
                 else:
-                    st_norm = torch.zeros(self.raw_dim, device=device, dtype=torch.float32)
+                    st_raw = None
             else:
                 # Pose domains (droid_ee/bridge_ee): derive the native relative-pose action
                 # chunk and current-state token from the raw state sequence, mirroring
-                # cosmos3-diffusers represent_actions/represent_state. The dataset's raw action
-                # column is not the native representation and is intentionally not used here.
+                # cosmos-framework's dataset transform. The dataset's raw action column is not
+                # the native representation and is intentionally not used here.
                 if state_seq_batch is None:
                     msg = f"Pose domain '{self.config.domain}' requires observation state to build action targets."
                     raise ValueError(msg)
                 state_seq_b = state_seq_batch[b].to(device=device, dtype=torch.float32)
                 if state_seq_b.ndim == 1:
                     state_seq_b = state_seq_b.unsqueeze(0)
-                act_norm = represent_actions(self.config.domain, state_seq_b).to(device=device, dtype=torch.float32)
-                st_norm = represent_state(self.config.domain, state_seq_b[0]).to(device=device, dtype=torch.float32)
+                act_raw = represent_actions(self.config.domain, state_seq_b).to(device=device, dtype=torch.float32)
+                st_raw = represent_state(self.config.domain, state_seq_b[0]).to(device=device, dtype=torch.float32)
+
+            # Apply the domain's normalization affine uniformly to the state token and action chunk.
+            act_norm = self._normalize_action(act_raw)
+            st_norm = (
+                self._normalize_action(st_raw)
+                if st_raw is not None
+                else torch.zeros(self.raw_dim, device=device, dtype=torch.float32)
+            )
 
             x0_action = build_action_tokens(
                 selected_paradigm,
@@ -583,10 +647,10 @@ class Cosmos3Model(Model):
             for i, (mn, mx, mu, sd) in enumerate(zip(mins, maxs, means, stds, strict=False))
         )
         logger.debug(
-            "Cosmos3 raw action output (domain=%s, representation=%s, use_minmax=%s):\n%s",
+            "Cosmos3 raw action output (domain=%s, representation=%s, norm_method=%s):\n%s",
             self.config.domain,
             self.representation,
-            self.use_minmax,
+            self.norm_method,
             rows,
         )
 
@@ -609,9 +673,7 @@ class Cosmos3Model(Model):
         state_tensor = preprocessed.get(STATE)
         # Reassemble split state sub-columns (e.g. the original DROID layout) into a single
         # canonical tensor; combined-column states pass through unchanged.
-        state_field = (
-            assemble_state_sequence(self.config.domain, state_tensor) if state_tensor is not None else None
-        )
+        state_field = assemble_state_sequence(self.config.domain, state_tensor) if state_tensor is not None else None
 
         device = self.transformer.device
         batch_size = img_tensor.shape[0] if img_tensor.ndim in {4, 5} else 1
@@ -629,15 +691,13 @@ class Cosmos3Model(Model):
                 cur_state = cur_state.to(device=device, dtype=torch.float32)
                 if cur_state.ndim > 1:
                     cur_state = cur_state[-1]
-                if self.use_minmax:
-                    dim_st = min(len(cur_state), self.raw_dim)
-                    st_min = self.a_min[:dim_st].to(device)
-                    st_max = self.a_max[:dim_st].to(device)
-                    cond_state = 2.0 * (cur_state[:dim_st] - st_min) / (st_max - st_min + 1e-8) - 1.0
+                if self.representation == "identity":
+                    native_state = cur_state[: self.raw_dim]
                 else:
-                    # Pose domain: build the native ee state token; no min-max scaling.
-                    cond_state = represent_state(self.config.domain, cur_state).to(device=device, dtype=torch.float32)
-                    state_token = cond_state
+                    # Pose domain: build the native ee state token, anchor the decoded chunk on it.
+                    native_state = represent_state(self.config.domain, cur_state).to(device=device, dtype=torch.float32)
+                    state_token = native_state
+                cond_state = self._normalize_action(native_state)
                 self.pipe.current_state = cond_state
             else:
                 self.pipe.current_state = None
@@ -673,12 +733,10 @@ class Cosmos3Model(Model):
             if logger.isEnabledFor(logging.DEBUG):
                 self._log_action_channel_stats(action_chunk)
 
-            if self.use_minmax:
-                # Denormalize to dataset space.
-                a_min_slice = self.a_min[: self.raw_dim].to(action_chunk)
-                a_max_slice = self.a_max[: self.raw_dim].to(action_chunk)
-                out_action = (action_chunk + 1.0) / 2.0 * (a_max_slice - a_min_slice) + a_min_slice
-            elif self.representation in {"droid_ee", "bridge_ee"} and state_token is not None:
+            # Invert the normalization affine back into the model action space.
+            native_chunk = self._denormalize_action(action_chunk)
+
+            if self.representation in {"droid_ee", "bridge_ee"} and state_token is not None:
                 # The head emits absolute ee pose tokens; convert to the framewise-relative
                 # action space (matching *_ee_relative_actions) anchored on the state token.
                 convert = (
@@ -686,10 +744,11 @@ class Cosmos3Model(Model):
                     if self.representation == "droid_ee"
                     else bridge_ee_absolute_to_relative
                 )
-                out_action = convert(state_token, action_chunk).to(action_chunk)
+                out_action = convert(state_token, native_chunk).to(action_chunk)
             else:
-                # Pose domain: predictions are already in the native relative-pose space.
-                out_action = action_chunk
+                # Identity domains: the denormalized chunk is already in the raw dataset space.
+                # Pose domains without a state token: predictions are the native relative-pose space.
+                out_action = native_chunk
 
             preds.append(out_action)
 

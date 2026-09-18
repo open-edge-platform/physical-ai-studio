@@ -234,8 +234,9 @@ class TestMockedCosmos3Model:
         }
         model.set_dataset_stats(stats)
         assert model.raw_dim == 2
-        torch.testing.assert_close(model.a_min, torch.tensor([10.0, 20.0]))
-        torch.testing.assert_close(model.a_max, torch.tensor([50.0, 80.0]))
+        # minmax -> offset=(min+max)/2, scale=(max-min)/2
+        torch.testing.assert_close(model.norm_offset, torch.tensor([30.0, 50.0]))
+        torch.testing.assert_close(model.norm_scale, torch.tensor([20.0, 30.0]))
 
     def test_predict_action_chunk_mocked(self) -> None:
         """Test predict_action_chunk flow with mock pipeline output."""
@@ -249,8 +250,9 @@ class TestMockedCosmos3Model:
         pipe.return_value = MagicMock(action=mock_actions)
 
         model = Cosmos3Model(config, pipeline=pipe)
-        model.a_min = torch.tensor([0.0, 0.0])
-        model.a_max = torch.tensor([10.0, 10.0])
+        # min=[0,0], max=[10,10] -> offset=[5,5], scale=[5,5]
+        model.norm_offset = torch.tensor([5.0, 5.0])
+        model.norm_scale = torch.tensor([5.0, 5.0])
 
         batch = {
             IMAGES: torch.zeros(1, 3, 224, 224),
@@ -306,16 +308,16 @@ class TestMockedCosmos3Model:
             "state_dict": {
                 "model.transformer.to_q.weight": torch.randn(2, 2),
                 "model.transformer.frozen_backbone.weight": torch.randn(10, 10),
-                "model.a_min": torch.tensor([-1.0, -1.0]),
-                "model.a_max": torch.tensor([1.0, 1.0]),
+                "model.norm_offset": torch.tensor([0.0, 0.0]),
+                "model.norm_scale": torch.tensor([1.0, 1.0]),
                 "model.domain_id": torch.tensor([4]),
             },
         }
         policy.on_save_checkpoint(checkpoint)
 
         saved_keys = checkpoint["state_dict"].keys()
-        assert "model.a_min" in saved_keys
-        assert "model.a_max" in saved_keys
+        assert "model.norm_offset" in saved_keys
+        assert "model.norm_scale" in saved_keys
         assert "model.domain_id" in saved_keys
         assert "model.transformer.frozen_backbone.weight" not in saved_keys
 
@@ -763,3 +765,143 @@ class TestFlowMatchingOutputUnpacking:
         assert isinstance(loss_v, torch.Tensor)
         assert isinstance(loss_a, torch.Tensor)
 
+
+# ============================================================================ #
+# Normalization Parity Tests                                                   #
+# ============================================================================ #
+
+
+class TestNormalization:
+    """Parity tests for the (offset, scale) affine seam vs cosmos-framework."""
+
+    def test_resolve_affine_none_is_identity(self) -> None:
+        """``none`` resolves to the identity affine."""
+        from physicalai.policies.cosmos3.normalization import resolve_affine
+
+        offset, scale = resolve_affine("none", {})
+        assert offset.item() == 0.0
+        assert scale.item() == 1.0
+
+    def test_resolve_affine_minmax(self) -> None:
+        """Minmax maps [min, max] -> [-1, 1] via offset=(hi+lo)/2, scale=(hi-lo)/2."""
+        from physicalai.policies.cosmos3.normalization import resolve_affine
+
+        stats = {"min": torch.tensor([0.0, -4.0]), "max": torch.tensor([10.0, 4.0])}
+        offset, scale = resolve_affine("minmax", stats)
+        torch.testing.assert_close(offset, torch.tensor([5.0, 0.0]))
+        torch.testing.assert_close(scale, torch.tensor([5.0, 4.0]))
+
+    def test_resolve_affine_quantile_matches_cosmos(self) -> None:
+        """Quantile uses q01/q99, mirroring cosmos ``resolve_action_normalization``."""
+        from physicalai.policies.cosmos3.normalization import resolve_affine
+
+        q01 = torch.tensor([-1.0, 2.0])
+        q99 = torch.tensor([3.0, 6.0])
+        offset, scale = resolve_affine("quantile", {"q01": q01, "q99": q99})
+        torch.testing.assert_close(offset, (q99 + q01) / 2.0)
+        torch.testing.assert_close(scale, (q99 - q01) / 2.0)
+
+    def test_resolve_affine_meanstd(self) -> None:
+        """Meanstd resolves to offset=mean, scale=std."""
+        from physicalai.policies.cosmos3.normalization import resolve_affine
+
+        stats = {"mean": torch.tensor([1.0, 2.0]), "std": torch.tensor([0.5, 4.0])}
+        offset, scale = resolve_affine("meanstd", stats)
+        torch.testing.assert_close(offset, torch.tensor([1.0, 2.0]))
+        torch.testing.assert_close(scale, torch.tensor([0.5, 4.0]))
+
+    def test_resolve_affine_scale_clamped(self) -> None:
+        """Zero-width stats produce a clamped, non-zero scale (no divide-by-zero)."""
+        from physicalai.policies.cosmos3.normalization import resolve_affine
+
+        offset, scale = resolve_affine("minmax", {"min": torch.tensor([5.0]), "max": torch.tensor([5.0])})
+        assert offset.item() == 5.0
+        assert scale.item() > 0.0
+
+    def test_resolve_affine_unknown_method(self) -> None:
+        """An unknown method raises ValueError."""
+        from physicalai.policies.cosmos3.normalization import resolve_affine
+
+        with pytest.raises(ValueError, match="Unknown normalization method"):
+            resolve_affine("bogus", {})
+
+    def test_resolve_affine_missing_keys(self) -> None:
+        """A method with missing stats keys raises KeyError."""
+        from physicalai.policies.cosmos3.normalization import resolve_affine
+
+        with pytest.raises(KeyError):
+            resolve_affine("quantile", {"q01": torch.tensor([0.0])})
+
+    def test_normalize_denormalize_roundtrip(self) -> None:
+        """Quantile normalize/denormalize is a round-trip identity on the model seam."""
+        config = Cosmos3Config(chunk_size=4, domain="pusht")
+        pipe = MagicMock()
+        pipe.transformer = MagicMock()
+        model = Cosmos3Model.__new__(Cosmos3Model)  # avoid heavy init
+        # Minimal manual setup of the affine seam.
+        torch.nn.Module.__init__(model)
+        model.raw_dim = 2
+        model.register_buffer("norm_offset", torch.tensor([1.0, -2.0]))
+        model.register_buffer("norm_scale", torch.tensor([2.0, 4.0]))
+
+        x = torch.tensor([[3.0, 6.0], [-1.0, -6.0]])
+        y = model._normalize_action(x)
+        torch.testing.assert_close(y, torch.tensor([[1.0, 2.0], [-1.0, -1.0]]))
+        torch.testing.assert_close(model._denormalize_action(y), x)
+
+    def test_load_stats_file_flat(self, tmp_path: Path) -> None:
+        """A flat cosmos JSON with q01/q99 resolves through load_stats_file + resolve_affine."""
+        import json
+
+        from physicalai.policies.cosmos3.normalization import load_stats_file, resolve_affine
+
+        path = tmp_path / "stats.json"
+        path.write_text(json.dumps({"q01": [-1.0, 2.0], "q99": [3.0, 6.0]}))
+        stats = load_stats_file(path, "quantile")
+        offset, scale = resolve_affine("quantile", stats)
+        torch.testing.assert_close(offset, torch.tensor([1.0, 4.0]))
+        torch.testing.assert_close(scale, torch.tensor([2.0, 2.0]))
+
+    def test_load_stats_file_nested_quantile_rot(self, tmp_path: Path) -> None:
+        """quantile_rot reads the ``global_raw`` block; quantile reads ``global``."""
+        import json
+
+        from physicalai.policies.cosmos3.normalization import load_stats_file
+
+        payload = {
+            "global": {"q01": [0.0], "q99": [2.0]},
+            "global_raw": {"q01": [-5.0], "q99": [5.0]},
+        }
+        path = tmp_path / "nested.json"
+        path.write_text(json.dumps(payload))
+
+        rot = load_stats_file(path, "quantile_rot")
+        torch.testing.assert_close(rot["q01"], torch.tensor([-5.0]))
+        plain = load_stats_file(path, "quantile")
+        torch.testing.assert_close(plain["q01"], torch.tensor([0.0]))
+
+    def test_load_stats_file_missing(self, tmp_path: Path) -> None:
+        """A missing stats file raises FileNotFoundError."""
+        from physicalai.policies.cosmos3.normalization import load_stats_file
+
+        with pytest.raises(FileNotFoundError):
+            load_stats_file(tmp_path / "nope.json", "quantile")
+
+    def test_load_normalizer_stats_file_shape_assert(self, tmp_path: Path) -> None:
+        """An explicit stats file whose width mismatches raw_dim raises ValueError."""
+        import json
+
+        config = Cosmos3Config(chunk_size=4, domain="droid_lerobot")
+        model = Cosmos3Model.__new__(Cosmos3Model)
+        torch.nn.Module.__init__(model)
+        model.config = config
+        model.raw_dim = 10
+        model.norm_method = "none"
+        model.register_buffer("norm_offset", torch.zeros(10))
+        model.register_buffer("norm_scale", torch.ones(10))
+
+        # File provides only 2 channels; raw_dim is 10 -> mismatch.
+        path = tmp_path / "stats.json"
+        path.write_text(json.dumps({"q01": [-1.0, -1.0], "q99": [1.0, 1.0]}))
+        with pytest.raises(ValueError, match="does not match the raw action dim"):
+            model._load_normalizer_stats_file(str(path))
