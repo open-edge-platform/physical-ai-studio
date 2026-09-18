@@ -238,15 +238,15 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-09-11T21:45:18.620168574Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
-lightning = false
+openvino-tokenizers = false
+pyrealsense2 = { timestamp = "2026-09-17T21:45:18.620179418Z", span = "P1D" }
 markupsafe = false
 openvino = false
-openvino-tokenizers = false
-pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
+lightning = false
 
 [manifest]
 overrides = [
@@ -3622,7 +3622,7 @@ dependencies = [
 
 [[package]]
 name = "physicalai-train"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "gym-pusht" },

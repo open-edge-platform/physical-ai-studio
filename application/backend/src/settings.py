@@ -226,7 +226,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Physical AI Studio"
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     summary: str = "Physical AI Studio server"
     description: str = (
         "Physical AI Studio is a framework to train robots. It allows the user to create datasets, "
