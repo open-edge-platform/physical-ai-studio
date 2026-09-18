@@ -33,6 +33,7 @@ from schemas.job_provisioning import JobProvisioning, JobProvisioningUpdate
 from schemas.remote_server import RemoteServer
 from services.ssh import docker_ops, sigstore_verify
 from services.ssh import provisioning as provisioning_module
+from services.ssh.connection import AliasTarget
 from services.ssh.docker_ops import JOB_LABEL, LIBRARY_VERSION_LABEL, MANAGED_LABEL, LibraryVersionCheck, ResolvedImage
 from services.ssh.preflight import PROTOCOL_LABEL
 from services.ssh.provisioning import ReattachFailureReason, SshProvisioningService
@@ -508,7 +509,7 @@ async def test_provisioned_trainer_teardown_uses_provisioning_settings(monkeypat
 
     await trainer.teardown()
 
-    assert captured["alias"] == "gpu-box"
+    assert captured["alias"] == AliasTarget("gpu-box")
     assert captured["settings"] is settings
 
 

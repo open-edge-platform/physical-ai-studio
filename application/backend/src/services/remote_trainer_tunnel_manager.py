@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from core.security import get_ssh_feature_availability
+from services.ssh.connection import DirectTarget
 from services.ssh.transport import SshTransport, open_transport
 from services.ssh.tunnel import SshTunnel
 from settings import get_settings
@@ -122,12 +123,13 @@ async def _open_locked(remote_trainer: RemoteTrainer, accepted_host_key_fingerpr
         connection_name = connection.hostname
         open_ssh_transport = partial(
             SshTransport,
-            connection.hostname,
+            DirectTarget(
+                hostname=connection.hostname,
+                port=connection.port,
+                username=connection.user,
+                identity_file=connection.identity_file,
+            ),
             settings,
-            hostname=connection.hostname,
-            port=connection.port,
-            username=connection.user,
-            identity_file=connection.identity_file,
             accepted_host_key_fingerprint=accepted_host_key_fingerprint,
         )
     else:

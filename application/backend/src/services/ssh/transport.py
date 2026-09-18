@@ -36,35 +36,20 @@ still fails closed as a mismatch. An ambiguous case also fails closed.
 """
 
 import asyncio
-import fcntl
-import os
 import shlex
-import socket
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
 from time import perf_counter
 from types import TracebackType
 from typing import Final, Self
-from urllib.parse import urlsplit
-from urllib.request import getproxies_environment
 
 import asyncssh
-from loguru import logger
 
-from exceptions import (
-    SshAgentRequiredError,
-    SshAuthenticationError,
-    SshConnectionError,
-    SshHostAliasNotFoundError,
-    SshHostKeyConfirmationRequiredError,
-    SshHostKeyMismatchError,
-    SshHostKeyUnknownError,
-)
+from exceptions import SshConnectionError
+from services.ssh.connection import AliasTarget, SshConnectionTarget
 from services.ssh.sanitize import sanitize_output
-from services.ssh_config_reader import resolve_alias
 from settings import Settings, get_settings
 
 # Exit status reported for a command that never produced one. 124 is the
@@ -72,94 +57,8 @@ from settings import Settings, get_settings
 COMMAND_TIMEOUT_EXIT_STATUS: Final = 124
 COMMAND_FAILED_EXIT_STATUS: Final = -1
 
-# Pre-approved `SshConnectionError.reason` categories. The reason reaches an API
-# response, so it is chosen from this set and never derived from exception text.
 _REASON_TIMEOUT: Final = "timeout"
-_REASON_UNREACHABLE: Final = "unreachable"
-_REASON_PROTOCOL: Final = "protocol_error"
 _REASON_CONNECTION_LOST: Final = "connection_lost"
-_MAX_PROXY_RESPONSE_SIZE: Final = 8192
-
-# `asyncssh` reports a passphrase-protected key it cannot decrypt with a
-# KeyImportError whose message starts with this word.
-# S105: this is the first word of an asyncssh error message, not a credential.
-_PASSPHRASE_ERROR_PREFIX: Final = "Passphrase"  # noqa: S105
-
-
-def _matches_no_proxy(host: str, port: int, no_proxy: str | None) -> bool:
-    if no_proxy is None:
-        return False
-    normalized_host = host.rstrip(".").lower()
-    host_with_port = f"{normalized_host}:{port}"
-    for entry in no_proxy.split(","):
-        candidate = entry.strip().lstrip(".").rstrip(".").lower()
-        if candidate == "*" or candidate in {normalized_host, host_with_port}:
-            return True
-        if ":" not in candidate and normalized_host.endswith(f".{candidate}"):
-            return True
-    return False
-
-
-def _resolve_http_connect_proxy(host: str, port: int) -> tuple[str, int] | None:
-    proxies = getproxies_environment()
-    if _matches_no_proxy(host, port, proxies.get("no")):
-        return None
-
-    proxy_url = proxies.get("https") or proxies.get("http")
-    if proxy_url is None:
-        return None
-    parsed = urlsplit(proxy_url)
-    if parsed.scheme != "http" or parsed.hostname is None or parsed.username is not None or parsed.password is not None:
-        raise ValueError("SSH proxy must be an unauthenticated http:// URL")
-    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
-        raise ValueError("SSH proxy URL must not contain a path, query, or fragment")
-    return parsed.hostname, parsed.port or 80
-
-
-async def _open_http_connect_socket(
-    proxy: tuple[str, int],
-    host: str,
-    port: int,
-    timeout_s: float,
-) -> socket.socket:
-    target = f"{host}:{port}"
-    request = f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode("ascii")
-    loop = asyncio.get_running_loop()
-    proxy_socket: socket.socket | None = None
-    try:
-        async with asyncio.timeout(timeout_s):
-            addresses = await loop.getaddrinfo(*proxy, type=socket.SOCK_STREAM)
-            last_error: OSError | None = None
-            for family, socket_type, protocol, _, address in addresses:
-                candidate = socket.socket(family, socket_type, protocol)
-                candidate.setblocking(False)
-                try:
-                    await loop.sock_connect(candidate, address)
-                except OSError as error:
-                    candidate.close()
-                    last_error = error
-                    continue
-                proxy_socket = candidate
-                break
-            if proxy_socket is None:
-                raise last_error or OSError("HTTP CONNECT proxy has no reachable address")
-
-            await loop.sock_sendall(proxy_socket, request)
-            response = bytearray()
-            while not response.endswith(b"\r\n\r\n"):
-                chunk = await loop.sock_recv(proxy_socket, 1)
-                if not chunk or len(response) >= _MAX_PROXY_RESPONSE_SIZE:
-                    raise OSError("Invalid HTTP CONNECT response")
-                response.extend(chunk)
-
-        status_line = bytes(response).split(b"\r\n", 1)[0].split()
-        if len(status_line) < 2 or not status_line[1].isdigit() or not 200 <= int(status_line[1]) < 300:
-            raise OSError("HTTP CONNECT proxy rejected the connection")
-        return proxy_socket
-    except BaseException:
-        if proxy_socket is not None:
-            proxy_socket.close()
-        raise
 
 
 class CommandFailure(StrEnum):
@@ -213,31 +112,6 @@ class CommandResult:
 
 
 @dataclass(slots=True)
-class _HostKeyMatch:
-    """What ``known_hosts`` held for this host before verification ran."""
-
-    consulted: bool = False
-    trusted_keys: int = 0
-    ca_keys: int = 0
-    revoked_keys: int = 0
-
-    @property
-    def has_entry(self) -> bool:
-        """True when ``known_hosts`` already held something for this host."""
-        return bool(self.trusted_keys or self.ca_keys or self.revoked_keys)
-
-
-class _FingerprintValidationClient(asyncssh.SSHClient):
-    """Accept and persist only host keys which have no prior trust entry."""
-
-    def __init__(self, transport: "SshTransport") -> None:
-        self._transport = transport
-
-    def validate_host_public_key(self, host: str, addr: str, port: int, key: asyncssh.SSHKey) -> bool:
-        return self._transport._validate_new_host_key(host, addr, port, key)
-
-
-@dataclass(slots=True)
 class _AliasGate:
     """Per-alias concurrency cap and connect-rate throttle."""
 
@@ -273,80 +147,13 @@ class _AliasGateRegistry:
 _GATES: Final = _AliasGateRegistry()
 
 
-def _existing_config_paths(config_path: Path) -> list[str]:
-    """Return the SSH config paths to hand ``asyncssh``.
-
-    A missing file is dropped rather than passed through: ``asyncssh`` raises
-    ``FileNotFoundError`` for a config path that does not exist, and an absent
-    SSH config must surface as "alias not found", not as an unhandled OS error.
-    """
-    return [str(config_path)] if config_path.is_file() else []
-
-
-def _identity_files(options: asyncssh.SSHClientConnectionOptions) -> list[str]:
-    """Return the ``IdentityFile`` entries the resolved config names."""
-    configured = options.config.get("IdentityFile")
-    if isinstance(configured, str):
-        return [configured]
-    if isinstance(configured, Sequence):
-        return [str(entry) for entry in configured]
-    return []
-
-
-def _is_passphrase_protected(path: Path) -> bool:
-    """True when importing this private key needs a passphrase.
-
-    Only the exception is inspected. A key that imports successfully is dropped
-    immediately, and no key material is retained or logged.
-    """
-    try:
-        asyncssh.read_private_key(str(path))
-    except asyncssh.KeyImportError as error:
-        return str(error).startswith(_PASSPHRASE_ERROR_PREFIX)
-    except (OSError, asyncssh.KeyEncryptionError, ValueError):
-        return False
-    return False
-
-
-async def _agent_has_keys(agent_path: str | None) -> bool:
-    """True when an SSH agent is reachable and holds at least one identity."""
-    try:
-        agent = await asyncssh.connect_agent(agent_path)
-    except (OSError, ValueError, asyncssh.Error):
-        return False
-    try:
-        return bool(await agent.get_keys())
-    except (OSError, ValueError, asyncssh.Error):
-        return False
-    finally:
-        agent.close()
-
-
-async def _needs_agent(options: asyncssh.SSHClientConnectionOptions) -> bool:
-    """True when the resolved identity is encrypted and no agent can unlock it.
-
-    Studio never prompts for or stores a passphrase, so an agent is the only way
-    a protected key can be used. Checked only after authentication already
-    failed, to turn a generic "permission denied" into the actionable cause.
-    """
-    encrypted = [
-        path
-        for path in (Path(entry).expanduser() for entry in _identity_files(options))
-        if path.is_file() and await asyncio.to_thread(_is_passphrase_protected, path)
-    ]
-    if not encrypted:
-        return False
-    agent_path = options.agent_path if isinstance(options.agent_path, str) else None
-    return not await _agent_has_keys(agent_path)
-
-
 class SshTransport:
-    """One bounded SSH connection to a configured host alias.
+    """One bounded SSH connection to an explicit target.
 
     Use as an async context manager so the connection, the per-alias
     concurrency slot, and the throttle are all released on every path::
 
-        async with SshTransport("gpu-box") as transport:
+        async with SshTransport(AliasTarget("gpu-box")) as transport:
             result = await transport.run_command(["docker", "version"])
 
     Attributes:
@@ -355,26 +162,17 @@ class SshTransport:
 
     def __init__(
         self,
-        alias: str,
+        target: SshConnectionTarget,
         settings: Settings | None = None,
         *,
-        hostname: str | None = None,
-        port: int = 22,
-        username: str | None = None,
-        identity_file: str | None = None,
         accepted_host_key_fingerprint: str | None = None,
     ) -> None:
-        self.alias = alias
+        self._target = target
+        self.alias = target.name
         self._settings = settings or get_settings()
-        self._hostname = hostname
-        self._port = port
-        self._username = username
-        self._identity_file = identity_file
-        self._accepted_host_key_fingerprint = accepted_host_key_fingerprint
         self._connection: asyncssh.SSHClientConnection | None = None
         self._gate: _AliasGate | None = None
-        self._host_key_match = _HostKeyMatch()
-        self._presented_host_key_fingerprint: str | None = None
+        self._accepted_host_key_fingerprint = accepted_host_key_fingerprint
 
     async def __aenter__(self) -> Self:
         """Open the connection."""
@@ -394,128 +192,6 @@ class SshTransport:
     def connected(self) -> bool:
         """True while a connection is open."""
         return self._connection is not None
-
-    def _build_options(self) -> asyncssh.SSHClientConnectionOptions:
-        """Build connect options from the user's SSH config.
-
-        The alias is passed as ``host`` together with the user's config, so
-        ``asyncssh`` performs the ``Host`` entry resolution itself. Studio does
-        not reimplement hostname/port/user/identity resolution.
-        """
-        settings = self._settings
-        self._host_key_match = _HostKeyMatch()
-        self._presented_host_key_fingerprint = None
-        if self._hostname is not None:
-            return asyncssh.SSHClientConnectionOptions(
-                host=self._hostname,
-                port=self._port,
-                username=self._username,
-                client_keys=[str(Path(self._identity_file).expanduser())] if self._identity_file else None,
-                client_factory=lambda: _FingerprintValidationClient(self),
-                config=[],
-                known_hosts=self._match_known_hosts,
-                connect_timeout=settings.ssh_connect_timeout_s,
-                keepalive_interval=settings.ssh_keepalive_interval_s,
-                keepalive_count_max=settings.ssh_keepalive_count_max,
-            )
-        return asyncssh.SSHClientConnectionOptions(
-            host=self.alias,
-            client_factory=lambda: _FingerprintValidationClient(self),
-            config=_existing_config_paths(settings.ssh_config_path),
-            known_hosts=self._match_known_hosts,
-            connect_timeout=settings.ssh_connect_timeout_s,
-            keepalive_interval=settings.ssh_keepalive_interval_s,
-            keepalive_count_max=settings.ssh_keepalive_count_max,
-        )
-
-    def _validate_new_host_key(self, host: str, addr: str, port: int, key: asyncssh.SSHKey) -> bool:
-        """Persist a first-seen host key, while rejecting changed keys."""
-        match = self._host_key_match
-        if not match.consulted or match.has_entry:
-            return False
-
-        fingerprint = key.get_fingerprint()
-        self._presented_host_key_fingerprint = fingerprint
-        if fingerprint != self._accepted_host_key_fingerprint:
-            return False
-
-        known_hosts_path = self._settings.ssh_known_hosts_path
-        known_hosts_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-        host_pattern = host if port == 22 else f"[{host}]:{port}"
-        entry = host_pattern.encode() + b" " + key.export_public_key().strip() + b"\n"
-        descriptor = os.open(known_hosts_path, os.O_CREAT | os.O_RDWR, 0o600)
-        with os.fdopen(descriptor, "r+b") as known_hosts_file:
-            fcntl.flock(known_hosts_file, fcntl.LOCK_EX)
-            current = asyncssh.match_known_hosts(known_hosts_file.read(), host, addr, port)
-            trusted_keys, ca_keys, revoked_keys = current[:3]
-            if revoked_keys or ca_keys:
-                return False
-            if trusted_keys:
-                return key in trusted_keys
-
-            known_hosts_file.seek(0, os.SEEK_END)
-            known_hosts_file.write(entry)
-            known_hosts_file.flush()
-            os.fsync(known_hosts_file.fileno())
-        logger.info("Accepted first-seen SSH host key for alias '{}'", self.alias)
-        return True
-
-    def _match_known_hosts(
-        self,
-        host: str,
-        addr: str,
-        port: int | None,
-    ) -> tuple[Sequence[object], ...]:
-        """Look up the host in ``known_hosts``, recording what matched.
-
-        The recorded counts are the only way to tell an unknown host from a
-        changed key: ``asyncssh`` collapses both into one exception. A missing
-        ``known_hosts`` file is treated as an empty one, which lands on the
-        unknown-host branch - the correct actionable outcome for a user who has
-        never accepted any fingerprint.
-        """
-        known_hosts_path = self._settings.ssh_known_hosts_path
-        source: str | bytes = str(known_hosts_path) if known_hosts_path.is_file() else b""
-        result = asyncssh.match_known_hosts(source, host, addr, port)
-        self._host_key_match = _HostKeyMatch(
-            consulted=True,
-            trusted_keys=len(result[0]),
-            ca_keys=len(result[1]),
-            revoked_keys=len(result[2]),
-        )
-        return result
-
-    def _host_key_error(
-        self,
-    ) -> SshHostKeyConfirmationRequiredError | SshHostKeyUnknownError | SshHostKeyMismatchError:
-        """Classify a host-key verification failure.
-
-        Fails closed: when the matcher never ran, or ran and found an entry, the
-        presented key is treated as a mismatch. Only a matcher that ran and
-        found nothing yields the "never accepted this host" error, because that
-        error tells the user to accept a fingerprint - advice that must never be
-        given for a key that actually changed.
-        """
-        match = self._host_key_match
-        if match.consulted and not match.has_entry:
-            if self._presented_host_key_fingerprint is not None:
-                return SshHostKeyConfirmationRequiredError(self.alias, self._presented_host_key_fingerprint)
-            return SshHostKeyUnknownError(self.alias)
-        return SshHostKeyMismatchError(self.alias)
-
-    def _key_error(self, error: Exception) -> SshAgentRequiredError | SshAuthenticationError:
-        """Classify a private-key load failure.
-
-        A key that could not be decrypted needs an agent; a key that is malformed
-        is not an agent problem, and saying so would send the user to ``ssh-add``
-        for a file that will never load. Only the exception's *category* is
-        inspected - its text can name the identity path.
-        """
-        if str(error).startswith(_PASSPHRASE_ERROR_PREFIX):
-            return SshAgentRequiredError(self.alias)
-        if isinstance(error, asyncssh.KeyEncryptionError):
-            return SshAgentRequiredError(self.alias)
-        return SshAuthenticationError(self.alias)
 
     async def _acquire_gate(self) -> _AliasGate:
         """Take a per-alias connection slot, honoring the connect throttle."""
@@ -553,98 +229,16 @@ class SshTransport:
         if self._connection is not None:
             return
 
-        # Pre-validated against the same config asyncssh will read, so an absent
-        # alias is an actionable 400 instead of a connection attempt against a
-        # hostname that is really an unresolved alias.
-        if self._hostname is None:
-            resolved = resolve_alias(self._settings.ssh_config_path, self.alias)
-            if not resolved.found:
-                raise SshHostAliasNotFoundError(self.alias)
-
-        # asyncssh loads the configured identities while building options, so a
-        # missing or corrupt IdentityFile fails here rather than on the wire. It
-        # still has to arrive as an actionable Ssh* error, not a raw OSError.
-        try:
-            options = self._build_options()
-        except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError) as error:
-            raise self._key_error(error) from None
-        except OSError:
-            # A configured identity that cannot be read at all.
-            raise SshAuthenticationError(self.alias) from None
-
         gate = await self._acquire_gate()
-        proxy_socket = None
         try:
-            if self._hostname is not None:
-                proxy = _resolve_http_connect_proxy(self._hostname, self._port)
-                if proxy is not None:
-                    proxy_socket = await _open_http_connect_socket(
-                        proxy,
-                        self._hostname,
-                        self._port,
-                        self._settings.ssh_connect_timeout_s,
-                    )
-            self._connection = await asyncssh.connect(
-                host=self._hostname or self.alias,
-                options=options,
-                sock=proxy_socket,
+            self._connection = await self._target.connect(
+                self._settings,
+                self._accepted_host_key_fingerprint,
             )
-        except BaseException as error:
-            if proxy_socket is not None:
-                proxy_socket.close()
+        except BaseException:
             gate.semaphore.release()
-            raise await self._map_connect_error(error, options) from None
+            raise
         self._gate = gate
-
-    # PLR0911: one return per failure category. The isinstance order is load-bearing
-    # (subclasses first), which a lookup table would obscure.
-    async def _map_connect_error(  # noqa: PLR0911
-        self,
-        error: BaseException,
-        options: asyncssh.SSHClientConnectionOptions,
-    ) -> BaseException:
-        """Translate a connect failure into an actionable Studio exception.
-
-        Deliberately drops the original exception text: it can contain the
-        resolved hostname and identity paths, and it reaches an API response.
-        """
-        if isinstance(error, asyncio.CancelledError):
-            return error
-
-        if isinstance(error, asyncssh.HostKeyNotVerifiable):
-            logger.warning("SSH host key verification failed for alias '{}'", self.alias)
-            return self._host_key_error()
-
-        if isinstance(error, asyncssh.PermissionDenied):
-            if await _needs_agent(options):
-                return SshAgentRequiredError(self.alias)
-            return SshAuthenticationError(self.alias)
-
-        # A key asyncssh could not load. An encrypted one needs an agent; a
-        # malformed one does not.
-        if isinstance(error, asyncssh.KeyImportError | asyncssh.KeyEncryptionError):
-            return self._key_error(error)
-
-        if isinstance(error, TimeoutError):
-            return SshConnectionError(self.alias, reason=_REASON_TIMEOUT)
-
-        if isinstance(error, asyncssh.ConnectionLost):
-            return SshConnectionError(self.alias, reason=_REASON_CONNECTION_LOST)
-
-        if isinstance(error, asyncssh.ProtocolError | asyncssh.KeyExchangeFailed):
-            return SshConnectionError(self.alias, reason=_REASON_PROTOCOL)
-
-        if isinstance(error, OSError | socket.gaierror):
-            return SshConnectionError(self.alias, reason=_REASON_UNREACHABLE)
-
-        if isinstance(error, asyncssh.Error):
-            return SshConnectionError(self.alias, reason=_REASON_PROTOCOL)
-
-        if isinstance(error, Exception):
-            logger.warning("Unexpected SSH failure for alias '{}': {}", self.alias, type(error).__name__)
-            return SshConnectionError(self.alias, reason=_REASON_UNREACHABLE)
-
-        return error
 
     # ASYNC109: an explicit `timeout` is part of this method's contract - a caller
     # gets a CommandResult carrying a TIMEOUT failure rather than a raised
@@ -851,7 +445,11 @@ def open_transport(
     Returns:
         An unconnected transport, usable as an async context manager.
     """
-    return SshTransport(alias, settings, accepted_host_key_fingerprint=accepted_host_key_fingerprint)
+    return SshTransport(
+        AliasTarget(alias),
+        settings,
+        accepted_host_key_fingerprint=accepted_host_key_fingerprint,
+    )
 
 
 def reset_alias_gates() -> None:

@@ -11,6 +11,7 @@ import pytest
 import services.remote_trainer_tunnel_manager as tunnel_manager
 from core.security.ssh_network_exposure import SshFeatureAvailability
 from schemas.remote_trainer import ManualSshConnection, RemoteTrainer, RemoteTrainerConnectionMode
+from services.ssh.connection import DirectTarget
 
 MODULE = "services.remote_trainer_tunnel_manager"
 
@@ -96,12 +97,13 @@ async def test_sync_tunnel_uses_persisted_manual_connection() -> None:
         tunnel_cls.call_args.args[0]()
 
     transport_cls.assert_called_once_with(
-        "gpu.example.test",
+        DirectTarget(
+            hostname="gpu.example.test",
+            port=2222,
+            username="trainer",
+            identity_file="~/.ssh/trainer",
+        ),
         ANY,
-        hostname="gpu.example.test",
-        port=2222,
-        username="trainer",
-        identity_file="~/.ssh/trainer",
         accepted_host_key_fingerprint=None,
     )
 
