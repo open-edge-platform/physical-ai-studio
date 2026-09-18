@@ -720,7 +720,7 @@ class ExportablePolicyMixin:
         backend: ExportBackend | str,
         input_sample: dict[str, torch.Tensor] | None = None,
         post_export_hooks: list[Callable[[str], None]] | None = None,
-        **export_kwargs: dict,
+        **export_kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Export the model to the specified backend format.
 
@@ -739,7 +739,7 @@ class ExportablePolicyMixin:
             post_export_hooks: Optional list of callables to run after export completes.
                 Each hook receives the exported model file path (str) and can perform
                 post-processing such as quantization or compression.
-            **export_kwargs (dict): Additional keyword arguments to pass to the
+            **export_kwargs (Any): Additional keyword arguments to pass to the
                 backend-specific export method.
 
         Raises:

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 import onnx
+import openvino
 import pytest
 import torch
 
@@ -825,7 +826,7 @@ class TestPostExportHooks:
 
         with patch("builtins.__import__", side_effect=mock_import):
             with pytest.raises(ImportError, match="physicalai-train\\[nncf\\]"):
-                compress_weights_openvino_int8_sym(str(tmp_path / "model.xml"))
+                compress_weights_openvino_int8_sym(tmp_path / "model.xml")
 
     def test_hook_calls_compress_weights_int8_sym(self, tmp_path):
         """Test that hook calls nncf.compress_weights with INT8_SYM mode."""
@@ -849,12 +850,12 @@ class TestPostExportHooks:
 
         mock_ov.save_model.side_effect = fake_save_model
 
-        model_path = str(tmp_path / "model.xml")
+        model_path = tmp_path / "model.xml"
 
         with patch.dict("sys.modules", {"nncf": mock_nncf, "openvino": mock_ov}):
             compress_weights_openvino_int8_sym(model_path)
 
-        mock_ov.Core.return_value.read_model.assert_called_once_with(model_path)
+        mock_ov.Core.return_value.read_model.assert_called_once_with(str(model_path))
         mock_nncf.compress_weights.assert_called_once_with(mock_model, mode="int8_sym")
 
         # The model is saved to a staged temp path (not the final path), then swapped

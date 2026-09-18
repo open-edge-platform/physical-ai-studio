@@ -32,14 +32,14 @@
       "path": "src/physicalai/data/datamodules.py",
       "code": -2,
       "name": "unsupported-operation",
-      "description": "Cannot set item in `dict[Any, Tensor]`\n  Argument `list[Unknown]` is not assignable to parameter `value` with type `Tensor` in function `dict.__setitem__`",
-      "concise_description": "Cannot set item in `dict[Any, Tensor]`",
+      "description": "Cannot set item in `dict[Unknown, Tensor]`\n  Argument `list[Unknown]` is not assignable to parameter `value` with type `Tensor` in function `dict.__setitem__`",
+      "concise_description": "Cannot set item in `dict[Unknown, Tensor]`",
       "severity": "error"
     },
     {
-      "line": 224,
+      "line": 257,
       "column": 32,
-      "stop_line": 227,
+      "stop_line": 260,
       "stop_column": 14,
       "path": "src/physicalai/data/datamodules.py",
       "code": -2,
@@ -49,9 +49,9 @@
       "severity": "error"
     },
     {
-      "line": 230,
+      "line": 263,
       "column": 33,
-      "stop_line": 233,
+      "stop_line": 266,
       "stop_column": 14,
       "path": "src/physicalai/data/datamodules.py",
       "code": -2,
@@ -61,9 +61,9 @@
       "severity": "error"
     },
     {
-      "line": 274,
+      "line": 311,
       "column": 31,
-      "stop_line": 274,
+      "stop_line": 311,
       "stop_column": 33,
       "path": "src/physicalai/data/datamodules.py",
       "code": -2,
@@ -73,9 +73,9 @@
       "severity": "error"
     },
     {
-      "line": 296,
+      "line": 333,
       "column": 31,
-      "stop_line": 296,
+      "stop_line": 333,
       "stop_column": 33,
       "path": "src/physicalai/data/datamodules.py",
       "code": -2,
@@ -97,9 +97,9 @@
       "severity": "error"
     },
     {
-      "line": 336,
+      "line": 349,
       "column": 21,
-      "stop_line": 336,
+      "stop_line": 349,
       "stop_column": 34,
       "path": "src/physicalai/data/lerobot/datamodule.py",
       "code": -2,
@@ -109,87 +109,15 @@
       "severity": "error"
     },
     {
-      "line": 354,
+      "line": 367,
       "column": 27,
-      "stop_line": 354,
+      "stop_line": 367,
       "stop_column": 40,
       "path": "src/physicalai/data/lerobot/datamodule.py",
       "code": -2,
       "name": "bad-argument-type",
       "description": "Argument `LeRobotDataset | _LeRobotDatasetAdapter` is not assignable to parameter `train_dataset` with type `Dataset` in function `physicalai.data.datamodules.DataModule.__init__`",
       "concise_description": "Argument `LeRobotDataset | _LeRobotDatasetAdapter` is not assignable to parameter `train_dataset` with type `Dataset` in function `physicalai.data.datamodules.DataModule.__init__`",
-      "severity": "error"
-    },
-    {
-      "line": 426,
-      "column": 32,
-      "stop_line": 426,
-      "stop_column": 56,
-      "path": "src/physicalai/data/lerobot/datamodule.py",
-      "code": -2,
-      "name": "missing-attribute",
-      "description": "Object of class `NoneType` has no attribute `items`",
-      "concise_description": "Object of class `NoneType` has no attribute `items`",
-      "severity": "error"
-    },
-    {
-      "line": 428,
-      "column": 17,
-      "stop_line": 428,
-      "stop_column": 49,
-      "path": "src/physicalai/data/lerobot/datamodule.py",
-      "code": -2,
-      "name": "unsupported-operation",
-      "description": "`None` is not subscriptable",
-      "concise_description": "`None` is not subscriptable",
-      "severity": "error"
-    },
-    {
-      "line": 429,
-      "column": 17,
-      "stop_line": 429,
-      "stop_column": 49,
-      "path": "src/physicalai/data/lerobot/datamodule.py",
-      "code": -2,
-      "name": "unsupported-operation",
-      "description": "`None` is not subscriptable",
-      "concise_description": "`None` is not subscriptable",
-      "severity": "error"
-    },
-    {
-      "line": 434,
-      "column": 36,
-      "stop_line": 434,
-      "stop_column": 60,
-      "path": "src/physicalai/data/lerobot/datamodule.py",
-      "code": -2,
-      "name": "missing-attribute",
-      "description": "Object of class `NoneType` has no attribute `items`",
-      "concise_description": "Object of class `NoneType` has no attribute `items`",
-      "severity": "error"
-    },
-    {
-      "line": 436,
-      "column": 21,
-      "stop_line": 436,
-      "stop_column": 51,
-      "path": "src/physicalai/data/lerobot/datamodule.py",
-      "code": -2,
-      "name": "unsupported-operation",
-      "description": "`None` is not subscriptable",
-      "concise_description": "`None` is not subscriptable",
-      "severity": "error"
-    },
-    {
-      "line": 437,
-      "column": 21,
-      "stop_line": 437,
-      "stop_column": 51,
-      "path": "src/physicalai/data/lerobot/datamodule.py",
-      "code": -2,
-      "name": "unsupported-operation",
-      "description": "`None` is not subscriptable",
-      "concise_description": "`None` is not subscriptable",
       "severity": "error"
     },
     {
@@ -349,81 +277,57 @@
       "severity": "error"
     },
     {
-      "line": 229,
-      "column": 16,
-      "stop_line": 235,
-      "stop_column": 10,
-      "path": "src/physicalai/eval/rollout/metric.py",
-      "code": -2,
-      "name": "bad-return",
-      "description": "Returned type `dict[str, Module | Tensor | Unknown]` is not assignable to declared return type `dict[str, Tensor]`",
-      "concise_description": "Returned type `dict[str, Module | Tensor | Unknown]` is not assignable to declared return type `dict[str, Tensor]`",
-      "severity": "error"
-    },
-    {
-      "line": 609,
+      "line": 615,
       "column": 13,
-      "stop_line": 609,
+      "stop_line": 615,
       "stop_column": 68,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.exir`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.exir`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.exir`",
       "severity": "error"
     },
     {
-      "line": 681,
+      "line": 684,
       "column": 17,
-      "stop_line": 681,
+      "stop_line": 684,
       "stop_column": 89,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.backends.openvino.partitioner`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.backends.openvino.partitioner`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.backends.openvino.partitioner`",
       "severity": "error"
     },
     {
-      "line": 682,
+      "line": 685,
       "column": 17,
-      "stop_line": 682,
+      "stop_line": 685,
       "stop_column": 80,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.exir.backend.backend_details`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.exir.backend.backend_details`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.exir.backend.backend_details`",
       "severity": "error"
     },
     {
-      "line": 687,
+      "line": 690,
       "column": 17,
-      "stop_line": 689,
+      "stop_line": 692,
       "stop_column": 18,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.backends.xnnpack.partition.xnnpack_partitioner`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.backends.xnnpack.partition.xnnpack_partitioner`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.backends.xnnpack.partition.xnnpack_partitioner`",
       "severity": "error"
     },
     {
-      "line": 748,
-      "column": 59,
-      "stop_line": 748,
-      "stop_column": 74,
-      "path": "src/physicalai/export/mixin_policy.py",
-      "code": -2,
-      "name": "bad-argument-type",
-      "description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `delegate` with type `Literal['openvino', 'portable', 'xnnpack'] | None` in function `ExportablePolicyMixin.to_executorch`",
-      "concise_description": "Unpacked keyword argument `dict[Unknown, Unknown]` is not assignable to parameter `delegate` with type `Literal['openvino', 'portable', 'xnnpack'] | None` in function `ExportablePolicyMixin.to_executorch`",
-      "severity": "error"
-    },
-    {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -433,9 +337,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -445,9 +349,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -457,9 +361,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -469,9 +373,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -481,9 +385,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -493,9 +397,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -505,9 +409,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -517,9 +421,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -529,9 +433,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -541,9 +445,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -553,9 +457,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -565,9 +469,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -577,9 +481,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -589,9 +493,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -601,9 +505,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -613,9 +517,9 @@
       "severity": "error"
     },
     {
-      "line": 777,
+      "line": 789,
       "column": 13,
-      "stop_line": 777,
+      "stop_line": 789,
       "stop_column": 28,
       "path": "src/physicalai/export/mixin_policy.py",
       "code": -2,
@@ -656,7 +560,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `libero.libero.benchmark`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `libero.libero.benchmark`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `libero.libero.benchmark`",
       "severity": "error"
     },
@@ -668,7 +572,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `libero.libero`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `libero.libero`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `libero.libero`",
       "severity": "error"
     },
@@ -680,7 +584,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `libero.libero`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `libero.libero`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `libero.libero`",
       "severity": "error"
     },
@@ -692,7 +596,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `libero.libero.envs`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `libero.libero.envs`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `libero.libero.envs`",
       "severity": "error"
     },
@@ -704,7 +608,7 @@
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `robosuite.utils.transform_utils`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `robosuite.utils.transform_utils`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `robosuite.utils.transform_utils`",
       "severity": "error"
     },
@@ -817,9 +721,9 @@
       "severity": "error"
     },
     {
-      "line": 412,
+      "line": 411,
       "column": 39,
-      "stop_line": 412,
+      "stop_line": 411,
       "stop_column": 52,
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
@@ -829,9 +733,9 @@
       "severity": "error"
     },
     {
-      "line": 418,
+      "line": 417,
       "column": 27,
-      "stop_line": 418,
+      "stop_line": 417,
       "stop_column": 49,
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
@@ -841,9 +745,9 @@
       "severity": "error"
     },
     {
-      "line": 459,
+      "line": 458,
       "column": 17,
-      "stop_line": 459,
+      "stop_line": 458,
       "stop_column": 31,
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
@@ -853,9 +757,9 @@
       "severity": "error"
     },
     {
-      "line": 482,
+      "line": 481,
       "column": 19,
-      "stop_line": 482,
+      "stop_line": 481,
       "stop_column": 31,
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
@@ -865,9 +769,9 @@
       "severity": "error"
     },
     {
-      "line": 587,
+      "line": 586,
       "column": 21,
-      "stop_line": 587,
+      "stop_line": 586,
       "stop_column": 43,
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
@@ -877,9 +781,9 @@
       "severity": "error"
     },
     {
-      "line": 664,
+      "line": 663,
       "column": 13,
-      "stop_line": 664,
+      "stop_line": 663,
       "stop_column": 48,
       "path": "src/physicalai/gyms/libero.py",
       "code": -2,
@@ -889,9 +793,21 @@
       "severity": "error"
     },
     {
-      "line": 59,
+      "line": 65,
       "column": 9,
-      "stop_line": 59,
+      "stop_line": 65,
+      "stop_column": 23,
+      "path": "src/physicalai/gyms/pusht.py",
+      "code": -2,
+      "name": "bad-override",
+      "description": "Class member `PushTGym.to_observation` overrides parent class `GymnasiumGym` in an inconsistent manner\n  `PushTGym.to_observation` has type `(self: PushTGym, raw_obs: dict[str, Any]) -> Observation`, which is not assignable to `(self: PushTGym, raw_obs: dict[str, Any] | ndarray[Unknown, Unknown]) -> Observation`, the type of `GymnasiumGym.to_observation`\n  Signature mismatch:\n  expected: def to_observation(self: PushTGym, raw_obs: dict[str, Any] | ndarray[Unknown, Unknown]) -> Observation: ...\n                                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ parameters\n  found:    def to_observation(self: PushTGym, raw_obs: dict[str, Any]) -> Observation: ...\n                                                                      ^ parameters",
+      "concise_description": "Class member `PushTGym.to_observation` overrides parent class `GymnasiumGym` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 87,
+      "column": 9,
+      "stop_line": 87,
       "stop_column": 35,
       "path": "src/physicalai/gyms/pusht.py",
       "code": -2,
@@ -920,7 +836,7 @@
       "path": "src/physicalai/inference/adapters/executorch.py",
       "code": -2,
       "name": "missing-import",
-      "description": "Cannot find module `executorch.runtime`\n  Looked in these locations (from config in `/home/devuser/daankrol/physical-ai-studio-feature-peft/library/pyproject.toml`):\n  Search path (from config file): [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]\n  Import root (inferred from project layout): \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"\n  Site package path queried from interpreter: [\"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/.venv/lib/python3.12/site-packages\", \"/home/devuser/daankrol/physical-ai-studio-feature-peft/library/src\"]",
+      "description": "Cannot find module `executorch.runtime`\n  Looked in these locations (from config in `/home/dlyakhov/Projects/physical-ai-studio/library/pyproject.toml`):\n  Search path (from config file): [\"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]\n  Import root (inferred from project layout): \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"\n  Site package path queried from interpreter: [\"/home/dlyakhov/Projects/physical-ai-studio/library/.venv/lib/python3.12/site-packages\", \"/home/dlyakhov/Projects/physical-ai-studio/library/src\"]",
       "concise_description": "Cannot find module `executorch.runtime`",
       "severity": "error"
     },
@@ -1045,9 +961,9 @@
       "severity": "error"
     },
     {
-      "line": 233,
+      "line": 243,
       "column": 14,
-      "stop_line": 233,
+      "stop_line": 243,
       "stop_column": 19,
       "path": "src/physicalai/policies/act/policy.py",
       "code": -2,
@@ -1057,9 +973,9 @@
       "severity": "error"
     },
     {
-      "line": 233,
+      "line": 243,
       "column": 14,
-      "stop_line": 233,
+      "stop_line": 243,
       "stop_column": 19,
       "path": "src/physicalai/policies/act/policy.py",
       "code": -2,
@@ -1069,9 +985,9 @@
       "severity": "error"
     },
     {
-      "line": 529,
+      "line": 577,
       "column": 9,
-      "stop_line": 529,
+      "stop_line": 577,
       "stop_column": 29,
       "path": "src/physicalai/policies/act/policy.py",
       "code": -2,
@@ -1105,9 +1021,9 @@
       "severity": "error"
     },
     {
-      "line": 273,
+      "line": 316,
       "column": 13,
-      "stop_line": 273,
+      "stop_line": 316,
       "stop_column": 32,
       "path": "src/physicalai/policies/lerobot/policy.py",
       "code": -2,
@@ -1117,21 +1033,9 @@
       "severity": "error"
     },
     {
-      "line": 317,
-      "column": 13,
-      "stop_line": 317,
-      "stop_column": 32,
-      "path": "src/physicalai/policies/lerobot/policy.py",
-      "code": -2,
-      "name": "unsupported-operation",
-      "description": "Cannot set item in `object`\n  Object of class `object` has no attribute `__setitem__`\n  Did you mean `__setattr__`?",
-      "concise_description": "Cannot set item in `object`",
-      "severity": "error"
-    },
-    {
-      "line": 514,
+      "line": 562,
       "column": 26,
-      "stop_line": 514,
+      "stop_line": 562,
       "stop_column": 38,
       "path": "src/physicalai/policies/lerobot/policy.py",
       "code": -2,
@@ -1141,45 +1045,33 @@
       "severity": "error"
     },
     {
-      "line": 540,
-      "column": 36,
-      "stop_line": 540,
-      "stop_column": 46,
-      "path": "src/physicalai/policies/lerobot/policy.py",
-      "code": -2,
-      "name": "bad-argument-type",
-      "description": "Argument `None` is not assignable to parameter `cls` with type `type[@_]` in function `physicalai.config.serializable.dict_to_dataclass`",
-      "concise_description": "Argument `None` is not assignable to parameter `cls` with type `type[@_]` in function `physicalai.config.serializable.dict_to_dataclass`",
-      "severity": "error"
-    },
-    {
-      "line": 638,
+      "line": 694,
       "column": 27,
-      "stop_line": 638,
+      "stop_line": 694,
       "stop_column": 37,
       "path": "src/physicalai/policies/lerobot/policy.py",
       "code": -2,
       "name": "bad-argument-type",
-      "description": "Argument `dict[str, dict[str, ndarray[Unknown, Unknown]]] | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy.__init__`",
-      "concise_description": "Argument `dict[str, dict[str, ndarray[Unknown, Unknown]]] | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy.__init__`",
+      "description": "Argument `dict[str, dict[str, ndarray[Unknown, Unknown]]] | dict[str, dict[Unknown, Unknown]] | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy.__init__`",
+      "concise_description": "Argument `dict[str, dict[str, ndarray[Unknown, Unknown]]] | dict[str, dict[Unknown, Unknown]] | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy.__init__`",
       "severity": "error"
     },
     {
-      "line": 798,
+      "line": 854,
       "column": 89,
-      "stop_line": 798,
+      "stop_line": 854,
       "stop_column": 94,
       "path": "src/physicalai/policies/lerobot/policy.py",
       "code": -2,
       "name": "bad-argument-type",
-      "description": "Argument `dict[str, dict[str, Tensor]] | dict[str, dict[str, ndarray[Unknown, Unknown]]] | Unknown | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy._initialize_policy`",
-      "concise_description": "Argument `dict[str, dict[str, Tensor]] | dict[str, dict[str, ndarray[Unknown, Unknown]]] | Unknown | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy._initialize_policy`",
+      "description": "Argument `dict[str, dict[str, Tensor]] | dict[str, dict[str, ndarray[Unknown, Unknown]]] | dict[str, dict[Unknown, Unknown]] | Unknown | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy._initialize_policy`",
+      "concise_description": "Argument `dict[str, dict[str, Tensor]] | dict[str, dict[str, ndarray[Unknown, Unknown]]] | dict[str, dict[Unknown, Unknown]] | Unknown | None` is not assignable to parameter `dataset_stats` with type `dict[str, dict[str, Tensor]] | None` in function `LeRobotPolicy._initialize_policy`",
       "severity": "error"
     },
     {
-      "line": 821,
+      "line": 877,
       "column": 16,
-      "stop_line": 821,
+      "stop_line": 877,
       "stop_column": 46,
       "path": "src/physicalai/policies/lerobot/policy.py",
       "code": -2,
@@ -1189,9 +1081,9 @@
       "severity": "error"
     },
     {
-      "line": 852,
+      "line": 908,
       "column": 9,
-      "stop_line": 852,
+      "stop_line": 908,
       "stop_column": 24,
       "path": "src/physicalai/policies/lerobot/policy.py",
       "code": -2,
@@ -1201,9 +1093,9 @@
       "severity": "error"
     },
     {
-      "line": 979,
+      "line": 1035,
       "column": 16,
-      "stop_line": 979,
+      "stop_line": 1035,
       "stop_column": 28,
       "path": "src/physicalai/policies/lerobot/policy.py",
       "code": -2,
@@ -1213,9 +1105,9 @@
       "severity": "error"
     },
     {
-      "line": 240,
+      "line": 248,
       "column": 75,
-      "stop_line": 240,
+      "stop_line": 248,
       "stop_column": 82,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1225,9 +1117,9 @@
       "severity": "error"
     },
     {
-      "line": 247,
+      "line": 255,
       "column": 12,
-      "stop_line": 247,
+      "stop_line": 255,
       "stop_column": 26,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1237,9 +1129,9 @@
       "severity": "error"
     },
     {
-      "line": 398,
+      "line": 406,
       "column": 9,
-      "stop_line": 398,
+      "stop_line": 406,
       "stop_column": 14,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1249,9 +1141,9 @@
       "severity": "error"
     },
     {
-      "line": 450,
+      "line": 458,
       "column": 27,
-      "stop_line": 450,
+      "stop_line": 458,
       "stop_column": 39,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1261,9 +1153,9 @@
       "severity": "error"
     },
     {
-      "line": 486,
+      "line": 494,
       "column": 63,
-      "stop_line": 486,
+      "stop_line": 494,
       "stop_column": 90,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1273,9 +1165,9 @@
       "severity": "error"
     },
     {
-      "line": 486,
+      "line": 494,
       "column": 63,
-      "stop_line": 486,
+      "stop_line": 494,
       "stop_column": 90,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1285,9 +1177,9 @@
       "severity": "error"
     },
     {
-      "line": 503,
+      "line": 511,
       "column": 37,
-      "stop_line": 511,
+      "stop_line": 519,
       "stop_column": 22,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1297,9 +1189,9 @@
       "severity": "error"
     },
     {
-      "line": 505,
+      "line": 513,
       "column": 25,
-      "stop_line": 505,
+      "stop_line": 513,
       "stop_column": 38,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1309,9 +1201,9 @@
       "severity": "error"
     },
     {
-      "line": 506,
+      "line": 514,
       "column": 25,
-      "stop_line": 506,
+      "stop_line": 514,
       "stop_column": 39,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1321,9 +1213,9 @@
       "severity": "error"
     },
     {
-      "line": 507,
+      "line": 515,
       "column": 25,
-      "stop_line": 507,
+      "stop_line": 515,
       "stop_column": 37,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1333,9 +1225,9 @@
       "severity": "error"
     },
     {
-      "line": 508,
+      "line": 516,
       "column": 25,
-      "stop_line": 508,
+      "stop_line": 516,
       "stop_column": 36,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1345,9 +1237,9 @@
       "severity": "error"
     },
     {
-      "line": 532,
+      "line": 540,
       "column": 54,
-      "stop_line": 532,
+      "stop_line": 540,
       "stop_column": 67,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1357,9 +1249,9 @@
       "severity": "error"
     },
     {
-      "line": 532,
+      "line": 540,
       "column": 69,
-      "stop_line": 532,
+      "stop_line": 540,
       "stop_column": 80,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1369,9 +1261,9 @@
       "severity": "error"
     },
     {
-      "line": 534,
+      "line": 542,
       "column": 29,
-      "stop_line": 534,
+      "stop_line": 542,
       "stop_column": 46,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1381,9 +1273,9 @@
       "severity": "error"
     },
     {
-      "line": 535,
+      "line": 543,
       "column": 29,
-      "stop_line": 535,
+      "stop_line": 543,
       "stop_column": 46,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1393,9 +1285,9 @@
       "severity": "error"
     },
     {
-      "line": 1012,
+      "line": 1019,
       "column": 30,
-      "stop_line": 1012,
+      "stop_line": 1019,
       "stop_column": 42,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1405,9 +1297,9 @@
       "severity": "error"
     },
     {
-      "line": 1014,
+      "line": 1021,
       "column": 31,
-      "stop_line": 1014,
+      "stop_line": 1021,
       "stop_column": 57,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1417,9 +1309,9 @@
       "severity": "error"
     },
     {
-      "line": 1016,
+      "line": 1023,
       "column": 29,
-      "stop_line": 1016,
+      "stop_line": 1023,
       "stop_column": 48,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1429,9 +1321,9 @@
       "severity": "error"
     },
     {
-      "line": 1018,
+      "line": 1025,
       "column": 20,
-      "stop_line": 1018,
+      "stop_line": 1025,
       "stop_column": 30,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1441,9 +1333,9 @@
       "severity": "error"
     },
     {
-      "line": 1314,
+      "line": 1281,
       "column": 77,
-      "stop_line": 1314,
+      "stop_line": 1281,
       "stop_column": 83,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1453,9 +1345,9 @@
       "severity": "error"
     },
     {
-      "line": 1314,
+      "line": 1281,
       "column": 85,
-      "stop_line": 1314,
+      "stop_line": 1281,
       "stop_column": 94,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1465,9 +1357,9 @@
       "severity": "error"
     },
     {
-      "line": 1323,
+      "line": 1290,
       "column": 26,
-      "stop_line": 1323,
+      "stop_line": 1290,
       "stop_column": 45,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1477,9 +1369,9 @@
       "severity": "error"
     },
     {
-      "line": 1325,
+      "line": 1292,
       "column": 27,
-      "stop_line": 1325,
+      "stop_line": 1292,
       "stop_column": 46,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1489,9 +1381,9 @@
       "severity": "error"
     },
     {
-      "line": 1400,
+      "line": 1367,
       "column": 43,
-      "stop_line": 1400,
+      "stop_line": 1367,
       "stop_column": 58,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1501,9 +1393,9 @@
       "severity": "error"
     },
     {
-      "line": 1403,
+      "line": 1370,
       "column": 26,
-      "stop_line": 1403,
+      "stop_line": 1370,
       "stop_column": 38,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1513,9 +1405,9 @@
       "severity": "error"
     },
     {
-      "line": 1404,
+      "line": 1371,
       "column": 29,
-      "stop_line": 1404,
+      "stop_line": 1371,
       "stop_column": 44,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1525,9 +1417,9 @@
       "severity": "error"
     },
     {
-      "line": 1405,
+      "line": 1372,
       "column": 27,
-      "stop_line": 1405,
+      "stop_line": 1372,
       "stop_column": 46,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1537,9 +1429,9 @@
       "severity": "error"
     },
     {
-      "line": 1407,
+      "line": 1374,
       "column": 25,
-      "stop_line": 1407,
+      "stop_line": 1374,
       "stop_column": 44,
       "path": "src/physicalai/policies/pi05/model.py",
       "code": -2,
@@ -1549,9 +1441,9 @@
       "severity": "error"
     },
     {
-      "line": 265,
+      "line": 269,
       "column": 14,
-      "stop_line": 265,
+      "stop_line": 269,
       "stop_column": 19,
       "path": "src/physicalai/policies/pi05/policy.py",
       "code": -2,
@@ -1561,9 +1453,9 @@
       "severity": "error"
     },
     {
-      "line": 265,
+      "line": 269,
       "column": 14,
-      "stop_line": 265,
+      "stop_line": 269,
       "stop_column": 19,
       "path": "src/physicalai/policies/pi05/policy.py",
       "code": -2,
@@ -1573,9 +1465,9 @@
       "severity": "error"
     },
     {
-      "line": 267,
+      "line": 271,
       "column": 14,
-      "stop_line": 267,
+      "stop_line": 271,
       "stop_column": 27,
       "path": "src/physicalai/policies/pi05/policy.py",
       "code": -2,
@@ -1585,9 +1477,9 @@
       "severity": "error"
     },
     {
-      "line": 476,
+      "line": 485,
       "column": 47,
-      "stop_line": 476,
+      "stop_line": 485,
       "stop_column": 101,
       "path": "src/physicalai/policies/pi05/policy.py",
       "code": -2,
@@ -1597,9 +1489,9 @@
       "severity": "error"
     },
     {
-      "line": 477,
+      "line": 486,
       "column": 48,
-      "stop_line": 477,
+      "stop_line": 486,
       "stop_column": 108,
       "path": "src/physicalai/policies/pi05/policy.py",
       "code": -2,
@@ -1609,9 +1501,9 @@
       "severity": "error"
     },
     {
-      "line": 480,
+      "line": 489,
       "column": 36,
-      "stop_line": 480,
+      "stop_line": 489,
       "stop_column": 103,
       "path": "src/physicalai/policies/pi05/policy.py",
       "code": -2,
@@ -1621,9 +1513,9 @@
       "severity": "error"
     },
     {
-      "line": 490,
+      "line": 499,
       "column": 40,
-      "stop_line": 490,
+      "stop_line": 499,
       "stop_column": 83,
       "path": "src/physicalai/policies/pi05/policy.py",
       "code": -2,
@@ -1633,9 +1525,9 @@
       "severity": "error"
     },
     {
-      "line": 712,
+      "line": 724,
       "column": 9,
-      "stop_line": 712,
+      "stop_line": 724,
       "stop_column": 29,
       "path": "src/physicalai/policies/pi05/policy.py",
       "code": -2,
@@ -1645,45 +1537,9 @@
       "severity": "error"
     },
     {
-      "line": 747,
-      "column": 32,
-      "stop_line": 747,
-      "stop_column": 50,
-      "path": "src/physicalai/policies/pi05/policy.py",
-      "code": -2,
-      "name": "bad-argument-type",
-      "description": "Argument `float | int` is not assignable to parameter `num_training_steps` with type `int | None` in function `physicalai.train.schedulers.cosine_decay_with_warmup_scheduler`",
-      "concise_description": "Argument `float | int` is not assignable to parameter `num_training_steps` with type `int | None` in function `physicalai.train.schedulers.cosine_decay_with_warmup_scheduler`",
-      "severity": "error"
-    },
-    {
-      "line": 172,
-      "column": 45,
-      "stop_line": 172,
-      "stop_column": 64,
-      "path": "src/physicalai/policies/pi05/preprocessor.py",
-      "code": -2,
-      "name": "bad-assignment",
-      "description": "`Identity` is not assignable to attribute `_state_action_normalizer` with type `FeatureNormalizeTransform`",
-      "concise_description": "`Identity` is not assignable to attribute `_state_action_normalizer` with type `FeatureNormalizeTransform`",
-      "severity": "error"
-    },
-    {
-      "line": 356,
-      "column": 41,
-      "stop_line": 356,
-      "stop_column": 60,
-      "path": "src/physicalai/policies/pi05/preprocessor.py",
-      "code": -2,
-      "name": "bad-assignment",
-      "description": "`Identity` is not assignable to attribute `_action_denormalizer` with type `FeatureNormalizeTransform`",
-      "concise_description": "`Identity` is not assignable to attribute `_action_denormalizer` with type `FeatureNormalizeTransform`",
-      "severity": "error"
-    },
-    {
-      "line": 1911,
+      "line": 2037,
       "column": 43,
-      "stop_line": 1911,
+      "stop_line": 2037,
       "stop_column": 47,
       "path": "src/physicalai/policies/smolvla/model.py",
       "code": -2,
@@ -1693,9 +1549,9 @@
       "severity": "error"
     },
     {
-      "line": 1913,
+      "line": 2039,
       "column": 29,
-      "stop_line": 1913,
+      "stop_line": 2039,
       "stop_column": 43,
       "path": "src/physicalai/policies/smolvla/model.py",
       "code": -2,
@@ -1705,9 +1561,9 @@
       "severity": "error"
     },
     {
-      "line": 647,
+      "line": 665,
       "column": 9,
-      "stop_line": 647,
+      "stop_line": 665,
       "stop_column": 29,
       "path": "src/physicalai/policies/smolvla/policy.py",
       "code": -2,
@@ -1717,21 +1573,9 @@
       "severity": "error"
     },
     {
-      "line": 120,
-      "column": 45,
-      "stop_line": 120,
-      "stop_column": 64,
-      "path": "src/physicalai/policies/smolvla/preprocessor.py",
-      "code": -2,
-      "name": "bad-assignment",
-      "description": "`Identity` is not assignable to attribute `_state_action_normalizer` with type `FeatureNormalizeTransform`",
-      "concise_description": "`Identity` is not assignable to attribute `_state_action_normalizer` with type `FeatureNormalizeTransform`",
-      "severity": "error"
-    },
-    {
-      "line": 135,
+      "line": 139,
       "column": 40,
-      "stop_line": 135,
+      "stop_line": 139,
       "stop_column": 51,
       "path": "src/physicalai/policies/smolvla/preprocessor.py",
       "code": -2,
@@ -1741,93 +1585,81 @@
       "severity": "error"
     },
     {
-      "line": 402,
-      "column": 41,
-      "stop_line": 402,
-      "stop_column": 60,
-      "path": "src/physicalai/policies/smolvla/preprocessor.py",
-      "code": -2,
-      "name": "bad-assignment",
-      "description": "`Identity` is not assignable to attribute `_action_denormalizer` with type `FeatureNormalizeTransform`",
-      "concise_description": "`Identity` is not assignable to attribute `_action_denormalizer` with type `FeatureNormalizeTransform`",
-      "severity": "error"
-    },
-    {
-      "line": 261,
+      "line": 276,
       "column": 21,
-      "stop_line": 261,
+      "stop_line": 276,
       "stop_column": 80,
       "path": "src/physicalai/policies/utils/normalization.py",
       "code": -2,
       "name": "bad-argument-type",
-      "description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
-      "concise_description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
       "severity": "error"
     },
     {
-      "line": 264,
+      "line": 279,
       "column": 55,
-      "stop_line": 264,
+      "stop_line": 279,
       "stop_column": 113,
       "path": "src/physicalai/policies/utils/normalization.py",
       "code": -2,
       "name": "bad-argument-type",
-      "description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
-      "concise_description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
       "severity": "error"
     },
     {
-      "line": 274,
+      "line": 289,
       "column": 55,
-      "stop_line": 274,
+      "stop_line": 289,
       "stop_column": 113,
       "path": "src/physicalai/policies/utils/normalization.py",
       "code": -2,
       "name": "bad-argument-type",
-      "description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
-      "concise_description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
-      "severity": "error"
-    },
-    {
-      "line": 275,
-      "column": 55,
-      "stop_line": 275,
-      "stop_column": 113,
-      "path": "src/physicalai/policies/utils/normalization.py",
-      "code": -2,
-      "name": "bad-argument-type",
-      "description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
-      "concise_description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
-      "severity": "error"
-    },
-    {
-      "line": 286,
-      "column": 21,
-      "stop_line": 286,
-      "stop_column": 79,
-      "path": "src/physicalai/policies/utils/normalization.py",
-      "code": -2,
-      "name": "bad-argument-type",
-      "description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
-      "concise_description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
       "severity": "error"
     },
     {
       "line": 290,
-      "column": 21,
+      "column": 55,
       "stop_line": 290,
+      "stop_column": 113,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "code": -2,
+      "name": "bad-argument-type",
+      "description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "severity": "error"
+    },
+    {
+      "line": 301,
+      "column": 21,
+      "stop_line": 301,
       "stop_column": 79,
       "path": "src/physicalai/policies/utils/normalization.py",
       "code": -2,
       "name": "bad-argument-type",
-      "description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
-      "concise_description": "Argument `float | list[float] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
       "severity": "error"
     },
     {
-      "line": 295,
+      "line": 305,
+      "column": 21,
+      "stop_line": 305,
+      "stop_column": 79,
+      "path": "src/physicalai/policies/utils/normalization.py",
+      "code": -2,
+      "name": "bad-argument-type",
+      "description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`\n  The declared type does not allow `None`. Consider narrowing the value with an `is not None` check.",
+      "concise_description": "Argument `float | list[float] | list[list[float]] | list[list[list[float]]] | None` is not assignable to parameter `arr` with type `Integral | Tensor | list[Unknown] | ndarray[Unknown, Unknown]` in function `get_torch_tensor`",
+      "severity": "error"
+    },
+    {
+      "line": 316,
       "column": 16,
-      "stop_line": 295,
+      "stop_line": 316,
       "stop_column": 29,
       "path": "src/physicalai/policies/utils/normalization.py",
       "code": -2,
@@ -1837,9 +1669,33 @@
       "severity": "error"
     },
     {
-      "line": 223,
+      "line": 369,
+      "column": 14,
+      "stop_line": 369,
+      "stop_column": 19,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override-mutable-attribute",
+      "description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner\n  `XR0.model` has type `XR0Model | None`, which is not consistent with `Model | None` in `Policy.model` (the type of read-write attributes cannot be changed)",
+      "concise_description": "Class member `XR0.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 608,
       "column": 9,
-      "stop_line": 223,
+      "stop_line": 608,
+      "stop_column": 29,
+      "path": "src/physicalai/policies/xr0/policy.py",
+      "code": -2,
+      "name": "bad-override",
+      "description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner\n  `XR0.configure_optimizers` has type `(self: XR0) -> dict[str, Any]`, which is not assignable to `(self: XR0) -> OptimizerLRScheduler`, the type of `Policy.configure_optimizers`\n  Signature mismatch:\n  expected: def configure_optimizers(self: XR0) -> OptimizerLRScheduler: ...\n                                                   ^^^^^^^^^^^^^^^^^^^^ return type\n  found:    def configure_optimizers(self: XR0) -> dict[str, Any]: ...\n                                                   ^^^^^^^^^^^^^^ return type",
+      "concise_description": "Class member `XR0.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "line": 298,
+      "column": 9,
+      "stop_line": 298,
       "stop_column": 21,
       "path": "src/physicalai/train/callbacks.py",
       "code": -2,
@@ -1849,9 +1705,9 @@
       "severity": "error"
     },
     {
-      "line": 228,
+      "line": 303,
       "column": 9,
-      "stop_line": 228,
+      "stop_line": 303,
       "stop_column": 27,
       "path": "src/physicalai/train/callbacks.py",
       "code": -2,
@@ -1861,9 +1717,9 @@
       "severity": "error"
     },
     {
-      "line": 247,
+      "line": 322,
       "column": 9,
-      "stop_line": 247,
+      "stop_line": 322,
       "stop_column": 28,
       "path": "src/physicalai/train/callbacks.py",
       "code": -2,
@@ -1873,9 +1729,9 @@
       "severity": "error"
     },
     {
-      "line": 257,
+      "line": 332,
       "column": 9,
-      "stop_line": 257,
+      "stop_line": 332,
       "stop_column": 32,
       "path": "src/physicalai/train/callbacks.py",
       "code": -2,
@@ -1885,9 +1741,9 @@
       "severity": "error"
     },
     {
-      "line": 276,
+      "line": 351,
       "column": 9,
-      "stop_line": 276,
+      "stop_line": 351,
       "stop_column": 32,
       "path": "src/physicalai/train/callbacks.py",
       "code": -2,
@@ -1897,9 +1753,9 @@
       "severity": "error"
     },
     {
-      "line": 303,
+      "line": 378,
       "column": 9,
-      "stop_line": 303,
+      "stop_line": 378,
       "stop_column": 29,
       "path": "src/physicalai/train/callbacks.py",
       "code": -2,
@@ -1909,9 +1765,9 @@
       "severity": "error"
     },
     {
-      "line": 313,
+      "line": 388,
       "column": 9,
-      "stop_line": 313,
+      "stop_line": 388,
       "stop_column": 27,
       "path": "src/physicalai/train/callbacks.py",
       "code": -2,
@@ -1921,9 +1777,9 @@
       "severity": "error"
     },
     {
-      "line": 333,
+      "line": 408,
       "column": 53,
-      "stop_line": 333,
+      "stop_line": 408,
       "stop_column": 58,
       "path": "src/physicalai/train/callbacks.py",
       "code": -2,
