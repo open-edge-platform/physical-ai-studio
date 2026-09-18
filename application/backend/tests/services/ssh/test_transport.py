@@ -44,6 +44,8 @@ from services.ssh.transport import (
     CommandFailure,
     CommandResult,
     SshTransport,
+    _open_http_connect_socket,
+    _resolve_http_connect_proxy,
     open_transport,
     reset_alias_gates,
 )
@@ -134,6 +136,88 @@ def _connected_transport(settings: Settings, connection: MagicMock) -> SshTransp
     transport = SshTransport(ALIAS, settings)
     transport._connection = connection
     return transport
+
+
+async def test_http_connect_socket_negotiates_tunnel(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock()
+    loop.sock_sendall = AsyncMock()
+    loop.sock_recv = AsyncMock(side_effect=[bytes([byte]) for byte in b"HTTP/1.1 200 Connection established\r\n\r\n"])
+    proxy_socket = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=proxy_socket))
+
+    result = await _open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
+
+    loop.sock_connect.assert_awaited_once_with(proxy_socket, ("192.0.2.1", 912))
+    loop.sock_sendall.assert_awaited_once_with(
+        proxy_socket, f"CONNECT {_HOSTNAME}:443 HTTP/1.1\r\nHost: {_HOSTNAME}:443\r\n\r\n".encode()
+    )
+    proxy_socket.setblocking.assert_called_once_with(False)
+    assert result is proxy_socket
+
+
+async def test_http_connect_socket_rejects_proxy_error(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock()
+    loop.sock_sendall = AsyncMock()
+    loop.sock_recv = AsyncMock(side_effect=[bytes([byte]) for byte in b"HTTP/1.1 403 Forbidden\r\n\r\n"])
+    proxy_socket = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=proxy_socket))
+
+    with pytest.raises(OSError, match="rejected"):
+        await _open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
+
+    proxy_socket.close.assert_called_once()
+
+
+async def test_http_connect_socket_closes_on_cancellation(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock()
+    loop.sock_sendall = AsyncMock()
+    loop.sock_recv = AsyncMock(side_effect=asyncio.CancelledError)
+    proxy_socket = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=proxy_socket))
+
+    with pytest.raises(asyncio.CancelledError):
+        await _open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
+
+    proxy_socket.close.assert_called_once()
+
+
+def test_http_connect_proxy_prefers_https_proxy(monkeypatch) -> None:
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setenv("HTTP_PROXY", "http://http-proxy.example.com:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://https-proxy.example.com:912")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    assert _resolve_http_connect_proxy(_HOSTNAME, 443) == ("https-proxy.example.com", 912)
+
+
+def test_http_connect_proxy_honors_no_proxy(monkeypatch) -> None:
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example.com:912")
+    monkeypatch.setenv("NO_PROXY", ".internal.example.com")
+
+    assert _resolve_http_connect_proxy(_HOSTNAME, 443) is None
+
+
+def test_http_connect_proxy_rejects_unsupported_url(monkeypatch) -> None:
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "socks5://proxy.example.com:912")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    with pytest.raises(ValueError, match="http://"):
+        _resolve_http_connect_proxy(_HOSTNAME, 443)
 
 
 def _process_error(*, exit_status: int | None, stdout: str = "", stderr: str = "", exit_signal=None):
@@ -454,15 +538,23 @@ async def test_connect_reads_the_users_config_and_alias(settings: Settings, monk
 
 async def test_connect_uses_manual_connection_without_resolving_an_alias(settings: Settings, monkeypatch) -> None:
     captured: dict[str, Any] = {}
+    proxy_socket = MagicMock()
+    open_proxy_socket = AsyncMock(return_value=proxy_socket)
 
     async def fake_connect(*, host, options, **_kwargs):
         captured["host"] = host
         captured["options"] = options
+        captured["sock"] = _kwargs["sock"]
         return MagicMock()
 
     resolve = MagicMock()
     monkeypatch.setattr(asyncssh, "connect", fake_connect)
     monkeypatch.setattr("services.ssh.transport.resolve_alias", resolve)
+    monkeypatch.setattr(
+        "services.ssh.transport._resolve_http_connect_proxy",
+        MagicMock(return_value=("proxy.example.com", 912)),
+    )
+    monkeypatch.setattr("services.ssh.transport._open_http_connect_socket", open_proxy_socket)
     transport = SshTransport(
         "remote-trainer-id",
         settings,
@@ -478,6 +570,13 @@ async def test_connect_uses_manual_connection_without_resolving_an_alias(setting
     assert captured["options"].host == "gpu.example.test"
     assert captured["options"].port == 2222
     assert captured["options"].username == "trainer"
+    assert captured["sock"] is proxy_socket
+    open_proxy_socket.assert_awaited_once_with(
+        ("proxy.example.com", 912),
+        "gpu.example.test",
+        2222,
+        settings.ssh_connect_timeout_s,
+    )
     await transport.close()
 
 

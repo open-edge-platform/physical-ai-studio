@@ -12,12 +12,15 @@ Metadata:
         Parameters:
           - TrainingPolicy
           - SshPublicKey
+          - SshPort
           - StudioIpAddress
     ParameterLabels:
       TrainingPolicy:
         default: Policy to train
       SshPublicKey:
         default: SSH public key
+      SshPort:
+        default: SSH port
       StudioIpAddress:
         default: Studio public IP address (The default value allows anyone with this SSH key to connect)
 
@@ -43,6 +46,13 @@ Parameters:
       "cat ~/.ssh/id_ed25519.pub". Copy the full line shown and paste it here.
     AllowedPattern: "^ssh-(rsa|ed25519|ecdsa-[A-Za-z0-9-]+) [A-Za-z0-9+/=]+(?: .*)?$"
     ConstraintDescription: Paste the full public key line.
+
+  SshPort:
+    Type: Number
+    Default: 22
+    MinValue: 1
+    MaxValue: 65535
+    Description: TCP port used for SSH connections to the trainer.
 
   StudioIpAddress:
     Type: String
@@ -121,8 +131,8 @@ Resources:
       GroupDescription: SSH-only access to the development trainer
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
+          FromPort: !Ref SshPort
+          ToPort: !Ref SshPort
           CidrIp: !If [AllowSshFromAnywhere, 0.0.0.0/0, !Sub "${StudioIpAddress}/32"]
           Description: SSH access to the remote trainer
       VpcId: !Ref TrainerVpc
@@ -188,6 +198,11 @@ Resources:
           trap 'signal $?' EXIT
 
           dnf install -y aws-cfn-bootstrap jq
+
+          printf 'Port %s\n' '${SshPort}' > /etc/ssh/sshd_config.d/99-physicalai-port.conf
+          sshd -t
+          systemctl restart sshd
+
           systemctl enable --now docker
 
           nvidia-smi
@@ -238,7 +253,7 @@ Outputs:
 
   SshPort:
     Description: Enter this value in the remote trainer SSH Port field.
-    Value: "22"
+    Value: !Ref SshPort
 
   SshHost:
     Description: Enter this value in the remote trainer SSH Host field.
