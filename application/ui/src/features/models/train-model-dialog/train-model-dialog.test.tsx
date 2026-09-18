@@ -312,6 +312,36 @@ describe('TrainModelDialog', () => {
         expect(submitted).toMatchObject({ snapflow_enabled: false });
     });
 
+    it('submits XR0 training parameters without LoRA or SnapFlow controls', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(await screen.findByLabelText('Select XR0 policy'));
+
+        expect(screen.queryByText('LoRA fine-tuning')).not.toBeInTheDocument();
+        expect(screen.queryByRole('checkbox', { name: /snapflow distillation/i })).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).toMatchObject({
+            policy: 'xr0',
+            lora_enabled: false,
+            snapflow_enabled: false,
+        });
+    });
+
     it('blocks Pi0.5 training when the token lacks gated-model access', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();

@@ -10,7 +10,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def compress_weights_openvino_int8_sym(model_path: str) -> None:
+def compress_weights_openvino_int8_sym(model_path: Path) -> None:
     """Compress an exported OpenVINO model to INT8 symmetric weights.
 
     Reads the model from ``model_path``, applies ``nncf.compress_weights``
@@ -36,7 +36,7 @@ def compress_weights_openvino_int8_sym(model_path: str) -> None:
 
     logger.info("Compressing weights to INT8_SYM: %s", model_path)
 
-    xml_path = Path(model_path)
+    xml_path = model_path
     bin_path = xml_path.with_suffix(".bin")
 
     core = openvino.Core()
