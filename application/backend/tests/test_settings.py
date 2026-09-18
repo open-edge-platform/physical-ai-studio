@@ -77,6 +77,37 @@ def test_huggingface_token_is_loaded_from_json(monkeypatch, tmp_path: Path) -> N
     assert load_user_settings_file() == {"huggingface": {"hf_token": "hf_example"}}
 
 
+def test_legacy_hf_token_is_loaded_from_a_real_environment_variable(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    monkeypatch.setenv("HF_TOKEN", "hf_from_env")
+
+    settings = Settings()
+
+    assert settings.hf_token is not None
+    assert settings.hf_token.get_secret_value() == "hf_from_env"
+
+
+def test_legacy_hf_token_is_loaded_from_a_dot_env_file(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("HF_TOKEN=hf_from_dotenv\n")
+
+    settings = Settings(_env_file=env_file)
+
+    assert settings.hf_token is not None
+    assert settings.hf_token.get_secret_value() == "hf_from_dotenv"
+
+
+def test_legacy_hf_token_treats_an_empty_value_as_unset(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    monkeypatch.setenv("HF_TOKEN", "")
+
+    settings = Settings()
+
+    assert settings.hf_token is None
+
+
 def test_hotkey_bindings_are_loaded_from_json(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
 

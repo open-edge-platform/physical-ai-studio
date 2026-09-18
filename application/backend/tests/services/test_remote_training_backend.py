@@ -344,10 +344,10 @@ class TestRemoteTrainingBackend:
         assert "hf_token" not in body["spec"]
 
     @pytest.mark.anyio
-    async def test_submit_sends_none_hf_token_when_unconfigured(self, tmp_path, monkeypatch):
+    async def test_submit_sends_none_hf_token_when_unconfigured(self, tmp_path):
         local_settings = MagicMock()
         local_settings.huggingface.hf_token = None
-        monkeypatch.delenv("HF_TOKEN", raising=False)
+        local_settings.hf_token = None
         with patch(f"{LOCAL}.get_settings", return_value=local_settings):
             body = await _submitted_body(_settings(), _context(tmp_path))
 

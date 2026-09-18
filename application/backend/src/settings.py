@@ -237,12 +237,22 @@ class Settings(BaseSettings):
     environment: Literal["dev", "prod"] = "dev"
     storage_dir: Path = Field(default_factory=get_default_storage_dir, alias="STORAGE_DIR")
     static_files_dir: str | None = Field(default=None, alias="STATIC_FILES_DIR")
+    # Legacy, environment/`.env`-sourced Hugging Face token; see `resolve_hf_token`.
+    hf_token: SecretStr | None = Field(default=None, alias="HF_TOKEN")
 
     @field_validator("storage_dir", mode="before")
     @classmethod
     def expand_storage_dir(cls, value: Path | str) -> Path:
         """Expand user-provided storage directories like ~/.local/share."""
         return Path(value).expanduser()
+
+    @field_validator("hf_token", mode="before")
+    @classmethod
+    def empty_hf_token_is_unset(cls, value: str | None) -> str | None:
+        """Treat an empty `HF_TOKEN` value the same as an unset one."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     # Data import/upload safety (shared for dataset/model/project imports)
     data_import_max_uncompressed_bytes: int = Field(

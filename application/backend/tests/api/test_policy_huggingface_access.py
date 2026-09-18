@@ -8,6 +8,7 @@ from settings import write_user_settings
 
 def test_huggingface_access_reports_missing_token(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    monkeypatch.setenv("HF_TOKEN", "")
 
     with TestClient(app) as client:
         response = client.get("/api/policies/pi05/huggingface-access")
