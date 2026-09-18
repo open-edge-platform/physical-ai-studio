@@ -54,20 +54,20 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-09-11T21:45:02.851544228Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
-lightning = false
-markupsafe = false
-openvino = false
 openvino-tokenizers = false
 physicalai-bimanual-so101-plugin = false
-physicalai-lerobot-plugin = false
+markupsafe = false
+openvino = false
+lightning = false
 physicalai-rebot-b601-plugin = false
-physicalai-stararm-plugin = false
+pyrealsense2 = { timestamp = "2026-09-17T21:45:02.851977523Z", span = "P1D" }
+physicalai-lerobot-plugin = false
 physicalai-studio-plugin = false
-pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
+physicalai-stararm-plugin = false
 
 [manifest]
 overrides = [
@@ -2854,7 +2854,7 @@ transport = [
 
 [[package]]
 name = "physicalai-studio"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
@@ -3021,7 +3021,7 @@ wheels = [
 
 [[package]]
 name = "physicalai-train"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "../../library" }
 dependencies = [
     { name = "gym-pusht" },
