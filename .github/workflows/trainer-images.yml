@@ -327,7 +327,7 @@ jobs:
           PY
 
       - name: Sign immutable trainer image
-        uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/sign-image@3690cbcc173cf90e0e0999b4822c3f8ebab9c137 # sign-image/v0.1.2
         with:
           image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
 
