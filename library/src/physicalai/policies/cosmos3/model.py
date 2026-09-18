@@ -221,7 +221,15 @@ class Cosmos3Model(Model):
             raise ValueError(msg)
 
         self.domain_id_val = _EMBODIMENT_TO_DOMAIN_ID[config.domain]
-        self.raw_dim = _EMBODIMENT_TO_RAW_ACTION_DIM.get(config.domain, 2)
+        if config.domain not in _EMBODIMENT_TO_RAW_ACTION_DIM:
+            # No silent fallback: an unregistered domain would slice actions to the wrong width.
+            msg = (
+                f"Domain '{config.domain}' has no registered raw action width. "
+                f"Registered: {sorted(_EMBODIMENT_TO_RAW_ACTION_DIM)}. Add its canonical action "
+                "width to _EMBODIMENT_TO_RAW_ACTION_DIM before using it."
+            )
+            raise ValueError(msg)
+        self.raw_dim = _EMBODIMENT_TO_RAW_ACTION_DIM[config.domain]
 
         # Action-space representation: pose domains (droid_ee/bridge_ee) are already in the
         # checkpoint's native space; identity domains rely on per-dataset min-max normalization.
@@ -561,6 +569,25 @@ class Cosmos3Model(Model):
             return self.compute_loss(batch)
         return self.predict_action_chunk(batch)
 
+    def _log_action_channel_stats(self, action_chunk: torch.Tensor) -> None:
+        """Log per-channel min/max/mean/std of the raw action-head output at DEBUG level."""
+        stats = action_chunk.detach().float().cpu()
+        mins = stats.amin(dim=0).tolist()
+        maxs = stats.amax(dim=0).tolist()
+        means = stats.mean(dim=0).tolist()
+        stds = stats.std(dim=0).tolist()
+        rows = "\n".join(
+            f"  ch{i:02d}: min={mn:+.4f} max={mx:+.4f} mean={mu:+.4f} std={sd:.4f}"
+            for i, (mn, mx, mu, sd) in enumerate(zip(mins, maxs, means, stds, strict=False))
+        )
+        logger.debug(
+            "Cosmos3 raw action output (domain=%s, representation=%s, use_minmax=%s):\n%s",
+            self.config.domain,
+            self.representation,
+            self.use_minmax,
+            rows,
+        )
+
     @torch.no_grad()
     def predict_action_chunk(  # ruff: ignore[too-many-locals]
         self,
@@ -635,6 +662,11 @@ class Cosmos3Model(Model):
                 action_chunk = result.action[0][1 : self.config.chunk_size + 1, : self.raw_dim]
             else:
                 action_chunk = result.action[0][: self.config.chunk_size, : self.raw_dim]
+
+            # Raw action-head output before any denorm; reveals per-channel calibration
+            # (e.g. rot6d/gripper in [-1, 1] vs translation scale) for the current checkpoint.
+            if logger.isEnabledFor(logging.DEBUG):
+                self._log_action_channel_stats(action_chunk)
 
             if self.use_minmax:
                 # Denormalize to dataset space.
