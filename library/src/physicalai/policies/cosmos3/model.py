@@ -29,7 +29,6 @@ from .normalization import load_stats_file, resolve_affine
 from .pipeline import PolicyPipelineWithState
 from .preprocessor import Cosmos3Preprocessor
 from .representation import (
-    assemble_state_sequence,
     embodiment_gripper_flipped,
     embodiment_normalization,
     flip_gripper_last_channel,
@@ -494,11 +493,9 @@ class Cosmos3Model(Model):
         actions_tensor = preprocessed.get(ACTION)
         state_tensor = preprocessed.get(STATE)
 
-        # Reassemble split state sub-columns (e.g. the original DROID layout) into a single
-        # canonical ``[B, T, pose + gripper]`` tensor; combined-column states pass through.
-        state_seq_batch = (
-            assemble_state_sequence(self.config.embodiment, state_tensor) if state_tensor is not None else None
-        )
+        # State arrives as a single combined ``[B, (T,) raw_dim]`` column (the datamodule owns
+        # composing split dataset sub-columns into one state vector).
+        state_seq_batch = state_tensor
 
         device = self.transformer.device
         dtype = self.transformer.dtype
@@ -674,11 +671,9 @@ class Cosmos3Model(Model):
         img_tensor = preprocessed[IMAGES]
         view_point = preprocessed.get("view_point")
         state_tensor = preprocessed.get(STATE)
-        # Reassemble split state sub-columns (e.g. the original DROID layout) into a single
-        # canonical tensor; combined-column states pass through unchanged.
-        state_field = (
-            assemble_state_sequence(self.config.embodiment, state_tensor) if state_tensor is not None else None
-        )
+        # State arrives as a single combined column (the datamodule owns composing split
+        # dataset sub-columns into one state vector).
+        state_field = state_tensor
 
         device = self.transformer.device
         batch_size = img_tensor.shape[0] if img_tensor.ndim in {4, 5} else 1

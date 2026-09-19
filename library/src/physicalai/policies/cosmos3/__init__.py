@@ -22,7 +22,6 @@ from .preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose
 from .representation import (
     EMBODIMENT_ACTION_SPACE,
     EMBODIMENT_NORMALIZATION,
-    assemble_state_sequence,
     embodiment_gripper_flipped,
     embodiment_normalization,
     flip_gripper_last_channel,
@@ -51,7 +50,6 @@ __all__ = [
     "Cosmos3Model",
     "Cosmos3Preprocessor",
     "PolicyPipelineWithState",
-    "assemble_state_sequence",
     "build_action_tokens",
     "build_pack",
     "check_xpu_driver",

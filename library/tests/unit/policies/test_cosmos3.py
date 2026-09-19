@@ -908,18 +908,3 @@ class TestJointPosRepresentation:
         assert float(flipped[0, -1]) == pytest.approx(1.0)
         # Non-gripper channels are untouched.
         np.testing.assert_allclose(flipped[0, :-1].numpy(), action[0, :-1].numpy())
-
-    def test_assemble_state_uses_joint_positions(self) -> None:
-        """DROID split-column state reassembles from joint_positions + gripper_position."""
-        import numpy as np
-
-        from physicalai.policies.cosmos3.representation import assemble_state_sequence
-
-        state = {
-            "joint_positions": torch.arange(7, dtype=torch.float32).unsqueeze(0),  # [1, 7]
-            "gripper_position": torch.tensor([[0.5]]),  # [1, 1]
-        }
-        assembled = assemble_state_sequence("droid_lerobot", state)
-        assert assembled.shape == (1, 8)
-        np.testing.assert_allclose(assembled[0, :7].numpy(), np.arange(7))
-        assert float(assembled[0, 7]) == pytest.approx(0.5)

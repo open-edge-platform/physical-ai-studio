@@ -23,15 +23,17 @@ Supported action spaces:
 Adding a new embodiment: register its numeric domain id in
 ``diffusers ... _EMBODIMENT_TO_DOMAIN_ID`` (and raw action width in
 ``_EMBODIMENT_TO_RAW_ACTION_DIM``), then map it here to a supported ``action_space`` (and, if
-needed, an entry in the normalization / gripper-flip / split-state registries below).
+needed, an entry in the normalization / gripper-flip registries below). The datamodule is
+responsible for delivering a single combined ``observation.state`` and ``action`` column
+(e.g. DROID's 8D ``[joint(7), gripper(1)]``), matching the other policies in this repo.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import cast
+from typing import TYPE_CHECKING
 
-import torch
+if TYPE_CHECKING:
+    import torch
 
 # Action space per embodiment. Embodiments not listed default to ``identity``.
 EMBODIMENT_ACTION_SPACE: dict[str, str] = {
@@ -84,49 +86,3 @@ EMBODIMENT_NORMALIZATION: dict[str, str] = {
 def embodiment_normalization(embodiment: str) -> str:
     """Return the action-normalization method ("none"/"minmax"/"quantile"/...) for an embodiment."""
     return EMBODIMENT_NORMALIZATION.get(embodiment, "minmax")
-
-
-# Split-column state layout: some datasets store the robot state as separate LeRobot
-# sub-columns rather than a single combined ``observation.state`` column. These are the
-# ``(pose, gripper)`` sub-column names, in canonical order, used to reassemble one
-# ``[..., pose + gripper]`` state row. DROID's ``joint_pos`` state uses the joint-position
-# sub-column.
-EMBODIMENT_SPLIT_STATE_COLUMNS: dict[str, tuple[str, str]] = {
-    "droid_lerobot": ("joint_positions", "gripper_position"),
-}
-
-
-def assemble_state_sequence(embodiment: str, state: object) -> torch.Tensor:
-    """Return the raw state as one tensor in canonical ``[pose..., gripper]`` column order.
-
-    Datasets provide the robot state either as a single combined column (already canonical,
-    returned unchanged) or as split sub-columns keyed by their LeRobot sub-column name
-    (e.g. ``{"joint_positions": [..., 7], "gripper_position": [...]}``, the original DROID
-    layout). The split layout is concatenated back into one ``[..., pose + 1]`` tensor so the
-    model always receives a uniform raw state row/sequence regardless of how the dataset stored it.
-
-    Raises:
-        KeyError: If the embodiment has no registered split-column layout, or a required
-            sub-column is missing from ``state``.
-    """
-    if not isinstance(state, Mapping):
-        return cast("torch.Tensor", state)  # already a single combined-column tensor
-    cols = EMBODIMENT_SPLIT_STATE_COLUMNS.get(embodiment)
-    if cols is None:
-        msg = (
-            f"Embodiment '{embodiment}' provides split state columns {sorted(state)} but no "
-            "split-column layout is registered in EMBODIMENT_SPLIT_STATE_COLUMNS."
-        )
-        raise KeyError(msg)
-    pose_key, grip_key = cols
-    if pose_key not in state or grip_key not in state:
-        msg = (
-            f"Split state for embodiment '{embodiment}' expects sub-columns '{pose_key}' and "
-            f"'{grip_key}', got {sorted(state)}."
-        )
-        raise KeyError(msg)
-    pose = state[pose_key]
-    grip = state[grip_key]
-    if grip.ndim < pose.ndim:
-        grip = grip.unsqueeze(-1)
-    return torch.cat([pose.to(grip.dtype), grip], dim=-1)
