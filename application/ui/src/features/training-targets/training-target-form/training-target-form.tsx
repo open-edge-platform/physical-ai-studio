@@ -20,6 +20,10 @@ import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { SshDeviceType, SshTargetFields } from '../training-targets-table/remote-server-form/ssh-target-fields';
 import { useRemoteServerFormMutation } from '../training-targets-table/remote-server-form/use-remote-server-form-mutation';
 import { VerifyAfterSaveDialog } from '../training-targets-table/remote-server-form/verify-after-save-dialog';
+import {
+    INSECURE_TRAINER_URL_WARNING,
+    isInsecureTrainerUrl,
+} from '../training-targets-table/remote-trainer-form/insecure-trainer-url';
 import { useRemoteTrainerFormMutation } from '../training-targets-table/remote-trainer-form/use-remote-trainer-form-mutation';
 import { useDeviceTypeDetection } from './use-device-type-detection';
 
@@ -86,6 +90,17 @@ export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormPr
     }, [sshHostAlias]);
 
     useEffect(() => {
+        // SSH availability can flip after the dialog is already open (the
+        // `/api/remote-servers` query resolving to `ssh_feature_unavailable`
+        // races the dialog opening on first mount) - fall back to the
+        // direct-URL fields rather than leaving `targetType` stuck on 'ssh'
+        // with no way to submit.
+        if (!sshAvailable && targetType === 'ssh') {
+            setTargetType('direct-url');
+        }
+    }, [sshAvailable, targetType]);
+
+    useEffect(() => {
         if (!deviceTypeTouched && detectedDeviceType !== undefined) {
             setDeviceType(detectedDeviceType);
         }
@@ -121,7 +136,20 @@ export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormPr
             return;
         }
 
-        saveTrainer({ name: name.trim(), url }, { onSuccess: close });
+        saveTrainer(
+            {
+                name: name.trim(),
+                connection_mode: 'direct',
+                url,
+                ssh_host_alias: null,
+                ssh_connection: null,
+                ssh_remote_port: null,
+                ssh_local_port: null,
+            },
+            // Always direct here (no SSH tunnel option in the create dialog), so a
+            // host-key confirmation prompt can never actually fire.
+            { onSuccess: close, onHostKeyConfirmationRequired: () => undefined }
+        );
     };
 
     if (savedServer !== undefined) {
@@ -181,15 +209,20 @@ export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormPr
                                 />
                             </>
                         ) : (
-                            <TextField
-                                isRequired
-                                label='Trainer URL'
-                                type='url'
-                                value={url}
-                                onChange={setUrl}
-                                description='Use the endpoint URL that accepts Physical AI Studio training jobs.'
-                                width='100%'
-                            />
+                            <>
+                                <TextField
+                                    isRequired
+                                    label='Trainer URL'
+                                    type='url'
+                                    value={url}
+                                    onChange={setUrl}
+                                    description='Use the endpoint URL that accepts Physical AI Studio training jobs.'
+                                    width='100%'
+                                />
+                                {isInsecureTrainerUrl(url) && (
+                                    <InlineAlert variant='warning'>{INSECURE_TRAINER_URL_WARNING}</InlineAlert>
+                                )}
+                            </>
                         )}
 
                         {errorMessage !== undefined && <InlineAlert variant='error'>{errorMessage}</InlineAlert>}

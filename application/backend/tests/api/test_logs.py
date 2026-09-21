@@ -13,7 +13,7 @@ class _StubLogService:
     def __init__(self) -> None:
         self.sources = [
             LogSource(id="application", name="Application", type="application"),
-            LogSource(id="job-123", name="Model A (pi0)", type="job"),
+            LogSource(id="job-123", name="Model A (pi05)", type="job"),
         ]
         self.paths: dict[str, Path | None] = {
             "application": Path("/tmp/app.log"),

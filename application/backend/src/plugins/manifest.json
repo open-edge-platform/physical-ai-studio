@@ -2,19 +2,38 @@
   {
     "id": "physicalai-rebot-b601-plugin",
     "name": "ReBot Robot Plugin",
-    "description": "ReBot B601 and Arm102 robot integrations.",
-    "repo_url": "https://github.com/MarkRedeman/physicalai-plugins",
-    "install_source": "physicalai-rebot-b601-plugin>=0.4.3",
+    "description": "ReBot B601 robot integrations.",
+    "repo_url": "https://github.com/openvinotoolkit/physicalai",
+    "install_source": "physicalai-rebot-b601-plugin>=0.7.0",
     "robots": [
       {
         "type": "ReBot_B601_DM_Follower",
         "display_name": "ReBot B601 DM Follower",
         "role": "follower"
+      }
+    ]
+  },
+  {
+    "id": "physicalai-stararm-plugin",
+    "name": "Stararm 102 Robot Plugin",
+    "description": "Stararm 102 robot integrations.",
+    "repo_url": "https://github.com/openvinotoolkit/physicalai",
+    "install_source": "physicalai-stararm-plugin>=0.3.0",
+    "robots": [
+      {
+        "type": "StarArm_102_LD_Leader",
+        "display_name": "Star Arm 102-LD Leader",
+        "role": "leader"
       },
       {
-        "type": "ReBot_Arm102_Leader",
-        "display_name": "ReBot Arm102 Leader",
+        "type": "StarArm_102_HD_Leader",
+        "display_name": "Star Arm 102-HD Leader",
         "role": "leader"
+      },
+      {
+        "type": "StarArm_102_FL_Follower",
+        "display_name": "Star Arm 102-FL Follower",
+        "role": "follower"
       }
     ]
   },
@@ -22,8 +41,8 @@
     "id": "physicalai-bimanual-so101-plugin",
     "name": "Bimanual SO-101 Robot Plugin",
     "description": "Bimanual twin SO-101 arms for learning from demonstration.",
-    "repo_url": "https://github.com/MarkRedeman/physicalai-plugins",
-    "install_source": "physicalai-bimanual-so101-plugin>=0.2.3",
+    "repo_url": "https://github.com/openvinotoolkit/physicalai",
+    "install_source": "physicalai-bimanual-so101-plugin>=0.5.0",
     "robots": [
       {
         "type": "BimanualSO101_Follower",
@@ -41,8 +60,8 @@
     "id": "physicalai-lerobot-plugin",
     "name": "LeRobot Robot Plugin",
     "description": "Robot and teleoperator configurations discovered from LeRobot.",
-    "repo_url": "https://github.com/MarkRedeman/physicalai-plugins",
-    "install_source": "physicalai-lerobot-plugin>=0.2.3",
+    "repo_url": "https://github.com/openvinotoolkit/physicalai",
+    "install_source": "physicalai-lerobot-plugin>=0.4.0",
     "robots": []
   }
 ]

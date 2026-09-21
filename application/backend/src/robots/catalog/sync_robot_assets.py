@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 - only used below via list-form, shell=False, pinned args
 import tempfile
 from pathlib import Path
 
@@ -53,4 +53,4 @@ def _run_git(args: list[str], cwd: Path | None = None) -> None:
     git = shutil.which("git")
     if git is None:
         raise FileNotFoundError("git executable was not found")
-    subprocess.run([git, *args], cwd=cwd, check=True)  # noqa: S603
+    subprocess.run([git, *args], cwd=cwd, check=True)  # noqa: S603  # nosec B603 - list form, shell=False

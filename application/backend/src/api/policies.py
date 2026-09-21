@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from huggingface_hub import HfApi
 from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
-from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
+from physicalai.policies import ACT, Pi05, SmolVLA
 from pydantic import BaseModel
 
 from services.training_backends.local import resolve_hf_token
@@ -15,7 +15,6 @@ _AccessStatus = Literal["granted", "missing_token", "denied", "unavailable", "no
 
 _POLICY_CLASSES = {
     "act": ACT,
-    "pi0": Pi0,
     "pi05": Pi05,
     "smolvla": SmolVLA,
 }

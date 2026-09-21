@@ -21,6 +21,7 @@ DoRA (Weight-Decomposed Low-Rank Adaptation) is also supported via
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Literal
 
 import peft
@@ -28,6 +29,8 @@ import torch
 from peft.tuners.tuners_utils import BaseTunerLayer
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from torch import nn
 
 logger = logging.getLogger(__name__)
@@ -155,20 +158,85 @@ def is_lora_injected(module: nn.Module) -> bool:
     return any(isinstance(m, BaseTunerLayer) for m in module.modules())
 
 
+def _iter_tuner_layers(module: nn.Module) -> list[tuple[nn.Module, str, BaseTunerLayer]]:
+    """Return every ``(parent, attribute_name, tuner_layer)`` triple under ``module``.
+
+    Returns:
+        A list of triples locating each PEFT tuner layer in the module tree.
+    """
+    return [
+        (parent, child_name, child)
+        for parent in list(module.modules())
+        for child_name, child in list(parent.named_children())
+        if isinstance(child, BaseTunerLayer)
+    ]
+
+
 def merge_lora_(module: nn.Module) -> None:
     """Merge LoRA adapters into their base layers in place, replacing tuner wrappers.
 
     After calling this, ``module`` behaves as a plain (adapter-free) network with the
-    adaptation folded into the base layer weights. Intended for use on a disposable
-    copy of a model prior to export, since merging is lossy under low precision and
-    is not reversible on the mutated instance without keeping a copy of the adapters.
+    adaptation folded into the base layer weights. Irreversible: the adapters are
+    dropped from the module tree, and merging is lossy under low precision. Use
+    :func:`merged_lora_scope` when the model has to survive the merge.
 
     Args:
         module: The model to merge adapters into, mutated in place.
     """
-    for parent in list(module.modules()):
-        for child_name, child in list(parent.named_children()):
-            if isinstance(child, BaseTunerLayer):
-                child.merge(safe_merge=False)
+    with torch.no_grad():
+        for parent, child_name, child in _iter_tuner_layers(module):
+            child.merge(safe_merge=False)
+            setattr(parent, child_name, child.get_base_layer())
+
+
+@contextmanager
+def merged_lora_scope(module: nn.Module) -> Generator[bool, None, None]:
+    """Temporarily fold LoRA adapters into ``module``'s base layers, then restore them.
+
+    Inside the block ``module`` is a plain, adapter-free network: the adaptation is
+    folded into the base weights and the ``peft`` tuner wrappers are swapped out of the
+    tree, so tracing and ``state_dict()`` see the same shape as a fully fine-tuned
+    model. On exit the wrappers are reattached and the base weights are restored
+    *exactly* from a snapshot, so the merge -- which is lossy in bfloat16 and would
+    otherwise corrupt the live model -- leaves no trace.
+
+    This deliberately mutates and restores ``module`` rather than exporting a
+    ``copy.deepcopy``: a deep copy doubles a multi-billion-parameter model on the
+    accelerator at exactly the moment export conversion needs the headroom, and it
+    silently breaks policies that compile hot methods by rebinding them on the instance
+    (``self.forward = torch.compile(self.forward)``), since ``copy`` treats plain
+    functions as atomic and the copy keeps dispatching into the original module.
+
+    The snapshot is kept on CPU and only covers the targeted layers, so the peak
+    accelerator memory increase is one layer's merge temporary.
+
+    Args:
+        module: The model whose adapters should be merged for the duration of the block.
+
+    Yields:
+        True if adapters were merged, False if ``module`` had none (a no-op scope).
+    """
+    tuner_layers = _iter_tuner_layers(module)
+    if not tuner_layers:
+        yield False
+        return
+
+    snapshots: list[dict[str, torch.Tensor]] = []
+    with torch.no_grad():
+        for parent, child_name, child in tuner_layers:
+            base_layer = child.get_base_layer()
+            snapshots.append({
+                name: param.detach().to("cpu", copy=True) for name, param in base_layer.named_parameters(recurse=False)
+            })
+            child.merge(safe_merge=False)
+            setattr(parent, child_name, base_layer)
+    try:
+        yield True
+    finally:
+        with torch.no_grad():
+            for (parent, child_name, child), snapshot in zip(tuner_layers, snapshots, strict=True):
+                setattr(parent, child_name, child)
                 base_layer = child.get_base_layer()
-                setattr(parent, child_name, base_layer)
+                for name, saved in snapshot.items():
+                    getattr(base_layer, name).data.copy_(saved)
+                child.merged_adapters.clear()

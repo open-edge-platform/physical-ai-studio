@@ -7,7 +7,7 @@ This module provides dataclass configurations for the Pi05 flow matching
 vision-language-action model.
 
 Example (CLI):
-    physicalai fit --config configs/physicalai/pi05.yaml
+    physicalai fit --config configs/physicalai/pi05/aloha/default.yaml
 
 Example (API):
     >>> from physicalai.policies.pi05 import Pi05Config
@@ -50,7 +50,7 @@ class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 200.
         gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to True.
         compile_model: Whether to use torch.compile. Defaults to False.
-        compile_mode: Torch compile mode. Defaults to "max-autotune".
+        compile_mode: Torch compile mode. Defaults to "default".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
         train_expert_only: Whether to train only the action expert. Defaults to False.
         lora_*: LoRA/DoRA fine-tuning fields, see
@@ -75,10 +75,9 @@ class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
         optimizer_weight_decay: Weight decay coefficient. Defaults to 0.01.
         optimizer_grad_clip_norm: Maximum gradient norm for clipping. Defaults to 1.0.
         scheduler_warmup_steps: Number of warmup steps. Defaults to 1000.
-        scheduler_decay_steps: Number of cosine decay steps. When ``None``,
-            automatically set to the total training steps via
-            ``trainer.estimated_stepping_batches``. Defaults to 30000
-            (matching lerobot pi05).
+        scheduler_decay_steps: Explicit cosine decay horizon in steps. When ``None``,
+            the horizon follows the trainer's total step budget
+            (``max_steps``/``max_epochs``). Defaults to None.
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
         use_random_input_noise: Whether to use random noise as the initial input for the denoising process
             during inference. If False, zeros are used instead. Defaults to False.
@@ -123,7 +122,7 @@ class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
 
     gradient_checkpointing: bool = True
     compile_model: bool = False
-    compile_mode: str = "max-autotune"
+    compile_mode: str = "default"
 
     freeze_vision_encoder: bool = False
     train_expert_only: bool = False
@@ -142,7 +141,7 @@ class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
     optimizer_grad_clip_norm: float = 1.0
 
     scheduler_warmup_steps: int = 1_000
-    scheduler_decay_steps: int | None = 30_000
+    scheduler_decay_steps: int | None = None
     scheduler_decay_lr: float = 2.5e-6
 
     use_random_input_noise: bool = True

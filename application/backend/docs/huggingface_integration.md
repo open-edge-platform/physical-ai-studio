@@ -1,7 +1,7 @@
 # Hugging Face Integration
 
-Several policies download assets from Hugging Face Hub (for example, SmolVLA, Pi0,
-and other Hub-backed models).
+Several policies download assets from Hugging Face Hub (for example, SmolVLA,
+Pi0.5, and other Hub-backed models).
 
 If `HF_TOKEN` is not set, the backend logs a warning and Hub access is
 unauthenticated.
@@ -67,7 +67,7 @@ docker compose up
 
 ## Verify setup
 
-- Start a training job for a Hub-backed policy (for example, SmolVLA or Pi0).
+- Start a training job for a Hub-backed policy (for example, SmolVLA or Pi0.5).
 - Confirm there is no warning about missing `HF_TOKEN`.
 
 ## Security notes

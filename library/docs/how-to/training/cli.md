@@ -17,7 +17,7 @@ the training subcommands through the `physicalai.cli.subcommands` entry-point gr
 ### Train with Config File
 
 ```bash
-physicalai fit --config configs/physicalai/act.yaml
+physicalai fit --config configs/physicalai/act/pusht/default.yaml
 ```
 
 ### Generate Config Template
@@ -147,7 +147,7 @@ trainer:
 ### Multi-GPU Training
 
 ```bash
-physicalai fit --config configs/physicalai/act.yaml --trainer.strategy=ddp --trainer.devices=4
+physicalai fit --config configs/physicalai/act/pusht/default.yaml --trainer.strategy=ddp --trainer.devices=4
 ```
 
 ### Custom Callbacks
@@ -176,7 +176,7 @@ model:
 ### Validate Before Training
 
 ```bash
-physicalai fit --config configs/physicalai/act.yaml --trainer.fast_dev_run=true
+physicalai fit --config configs/physicalai/act/pusht/default.yaml --trainer.fast_dev_run=true
 ```
 
 ## Tips
@@ -193,7 +193,7 @@ physicalai fit --config configs/physicalai/act.yaml --trainer.fast_dev_run=true
 **Import errors**: Test imports manually:
 
 ```bash
-python -c "from physicalai.policies.pi0.policy import Pi0"
+python -c "from physicalai.policies.pi05.policy import Pi05"
 ```
 
 **Type errors**: Check config matches class signature

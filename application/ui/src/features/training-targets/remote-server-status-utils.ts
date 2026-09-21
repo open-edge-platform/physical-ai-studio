@@ -8,6 +8,16 @@ import { CheckState } from './remote-trainer-health-utils';
 
 export type RemoteServerStatusVariant = 'positive' | 'notice' | 'negative' | 'neutral';
 
+// Checks in the connectivity path (an SSH session never even got a usable
+// shell). Backend `RemoteServerService.get_status`/`verify` only ever emit
+// "healthy" or "degraded" - there is no separate "unreachable" status value -
+// so a genuine connectivity failure is distinguished from an otherwise-reachable
+// server with e.g. no free disk space or a missing driver by which check failed.
+const CONNECTIVITY_CHECK_KEYS = new Set(['alias_resolved', 'reachable', 'authenticated', 'host_key_verified']);
+
+const isUnreachable = (checks: SchemaPreflightCheck[] | undefined): boolean =>
+    (checks ?? []).some((check) => CONNECTIVITY_CHECK_KEYS.has(check.key) && check.outcome === 'failed');
+
 const outcomeCheckState = (outcome: SchemaCheckOutcome): CheckState => {
     switch (outcome) {
         case 'passed':
@@ -46,7 +56,7 @@ export const remoteServerStatusVariant = (
         const isBusy = (status.checks ?? []).some((check) => check.key === 'gpu_free' && check.outcome === 'warning');
         return isBusy ? 'notice' : 'positive';
     }
-    if (status.status === 'degraded') return 'notice';
+    if (status.status === 'degraded') return isUnreachable(status.checks) ? 'negative' : 'notice';
     return 'negative';
 };
 
@@ -58,7 +68,7 @@ export const remoteServerStatusLabel = (
     const variant = remoteServerStatusVariant(status, isChecking);
     if (variant === 'notice' && status.status === 'healthy') return 'Busy';
     if (status.status === 'healthy') return 'Healthy';
-    if (status.status === 'degraded') return 'Degraded';
+    if (status.status === 'degraded') return isUnreachable(status.checks) ? 'Unreachable' : 'Degraded';
     return 'Unreachable';
 };
 

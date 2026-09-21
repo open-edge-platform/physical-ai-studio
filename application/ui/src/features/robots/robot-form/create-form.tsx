@@ -61,7 +61,7 @@ export const CreateRobotForm = () => {
 
     return (
         <Flex direction='column' gap='size-200'>
-            <RobotFormHeading heading='Add new robot' />
+            <RobotFormHeading heading='Configure new robot' />
             <Divider orientation='horizontal' size='S' />
             <Form onSubmit={handleSubmit}>
                 <Flex direction='column' gap='size-200'>

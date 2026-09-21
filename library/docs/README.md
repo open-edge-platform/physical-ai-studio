@@ -20,7 +20,7 @@ Documentation for the PhysicalAI Python library.
 pip install physicalai-train
 
 # Train
-physicalai fit --config configs/physicalai/act.yaml
+physicalai fit --config configs/physicalai/act/pusht/default.yaml
 
 # Benchmark
 physicalai benchmark \

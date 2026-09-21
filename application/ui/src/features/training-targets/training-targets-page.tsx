@@ -4,12 +4,17 @@ import { Button, DialogContainer, Flex, Icon, Text, View } from '@geti-ui/ui';
 import { Add } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
-import { isSshFeatureUnavailableError } from '../../api/errors';
+import { getApiErrorMessage, isSshFeatureUnavailableError } from '../../api/errors';
+import { InlineAlert } from '../robots/setup-wizard/shared/inline-alert';
 import { TrainingTargetForm } from './training-target-form/training-target-form';
 import { DeleteRemoteServerDialog } from './training-targets-table/delete-remote-server-dialog';
 import { DeleteRemoteTrainerDialog } from './training-targets-table/delete-remote-trainer-dialog';
 import { RemoteServerForm } from './training-targets-table/remote-server-form/remote-server-form';
 import { RemoteTrainerForm } from './training-targets-table/remote-trainer-form/remote-trainer-form';
+import {
+    SshHostKeyConfirmation,
+    SshHostKeyConfirmationDialog,
+} from './training-targets-table/ssh-host-key-confirmation-dialog';
 import { TrainingTargetRow } from './training-targets-table/training-target-row';
 import { TrainingTargetsTable } from './training-targets-table/training-targets-table';
 
@@ -32,7 +37,23 @@ export const TrainingTargetsPage = () => {
     // nearest error boundary.
     const { data: remoteServers, error: remoteServersError } = $api.useQuery('get', '/api/remote-servers');
     const sshUnavailable = isSshFeatureUnavailableError(remoteServersError);
+    // Any other failure (backend 500, network error, ...) is not the expected
+    // "feature disabled" state: silently falling back to an empty list would
+    // hide already-configured SSH targets and offer a create flow that looks
+    // fine but can't actually list what exists, so surface it distinctly.
+    const sshUnexpectedError = remoteServersError !== null && remoteServersError !== undefined && !sshUnavailable;
     const [action, setAction] = useState<TrainingTargetAction>();
+    const [hostKeyConfirmation, setHostKeyConfirmation] = useState<SshHostKeyConfirmation>();
+
+    const closeForm = () => {
+        setAction(undefined);
+        setHostKeyConfirmation(undefined);
+    };
+
+    const dismissHostKeyConfirmation = () => {
+        hostKeyConfirmation?.onCancel();
+        setHostKeyConfirmation(undefined);
+    };
 
     const rows: TrainingTargetRow[] = [
         ...remoteTrainers.map((trainer): TrainingTargetRow => ({ kind: 'direct-url', trainer })),
@@ -63,6 +84,14 @@ export const TrainingTargetsPage = () => {
                 </Text>
             )}
 
+            {sshUnexpectedError && (
+                <InlineAlert variant='error'>
+                    Couldn&apos;t load SSH-provisioned training targets
+                    {getApiErrorMessage(remoteServersError) ? `: ${getApiErrorMessage(remoteServersError)}` : '.'} Any
+                    configured SSH targets may not be shown below. Direct-URL trainers are unaffected.
+                </InlineAlert>
+            )}
+
             {rows.length === 0 ? (
                 <View UNSAFE_className={classes.container}>
                     <Text UNSAFE_className={classes.emptyList}>No training targets are configured.</Text>
@@ -75,28 +104,45 @@ export const TrainingTargetsPage = () => {
                 />
             )}
 
-            <DialogContainer onDismiss={() => setAction(undefined)}>
+            <DialogContainer onDismiss={closeForm}>
                 {action?.type === 'create' && (
-                    <TrainingTargetForm close={() => setAction(undefined)} sshAvailable={!sshUnavailable} />
+                    <TrainingTargetForm close={closeForm} sshAvailable={!sshUnavailable && !sshUnexpectedError} />
                 )}
                 {action?.type === 'edit' && action.row.kind === 'direct-url' && (
-                    <RemoteTrainerForm remoteTrainer={action.row.trainer} close={() => setAction(undefined)} />
+                    <RemoteTrainerForm
+                        remoteTrainer={action.row.trainer}
+                        close={closeForm}
+                        requestHostKeyConfirmation={setHostKeyConfirmation}
+                    />
                 )}
                 {action?.type === 'edit' && action.row.kind === 'ssh' && (
-                    <RemoteServerForm remoteServer={action.row.server} close={() => setAction(undefined)} />
+                    <RemoteServerForm remoteServer={action.row.server} close={closeForm} />
                 )}
                 {action?.type === 'delete' && action.row.kind === 'direct-url' && (
                     <DeleteRemoteTrainerDialog
                         remoteTrainer={action.row.trainer}
-                        onCancel={() => setAction(undefined)}
-                        onDeleted={() => setAction(undefined)}
+                        onCancel={closeForm}
+                        onDeleted={closeForm}
                     />
                 )}
                 {action?.type === 'delete' && action.row.kind === 'ssh' && (
                     <DeleteRemoteServerDialog
                         remoteServer={action.row.server}
-                        onCancel={() => setAction(undefined)}
-                        onDeleted={() => setAction(undefined)}
+                        onCancel={closeForm}
+                        onDeleted={closeForm}
+                    />
+                )}
+            </DialogContainer>
+            <DialogContainer onDismiss={dismissHostKeyConfirmation}>
+                {hostKeyConfirmation !== undefined && (
+                    <SshHostKeyConfirmationDialog
+                        host={hostKeyConfirmation.host}
+                        fingerprint={hostKeyConfirmation.fingerprint}
+                        onCancel={dismissHostKeyConfirmation}
+                        onConfirm={() => {
+                            setHostKeyConfirmation(undefined);
+                            hostKeyConfirmation.onConfirm();
+                        }}
                     />
                 )}
             </DialogContainer>

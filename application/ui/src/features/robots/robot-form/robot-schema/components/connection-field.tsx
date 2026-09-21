@@ -11,6 +11,11 @@ import { IdentifyError } from './identify-error';
 
 type Device = { serial_number: string | null; connection_string: string | null };
 
+const normalizeDevice = (device: Partial<Device>): Device => ({
+    serial_number: device.serial_number ?? null,
+    connection_string: device.connection_string ?? null,
+});
+
 type ComboBoxFieldProps = {
     label: string;
     value: string;
@@ -76,12 +81,13 @@ type ConnectionFieldProps = {
 export const ConnectionField = ({ robotType, payload, options, isRequired, onChange }: ConnectionFieldProps) => {
     const discover = useDiscoverRobotsQuery(robotType);
     const identify = useCatalogIdentifyMutation();
+    const devices = (discover.data ?? []).map(normalizeDevice);
     const connectionKey = options.bind.connection;
     const serialNumberKey = options.bind.serial_number;
     const value = String(payload[connectionKey] ?? '');
     const setManualValue = (next: string) => {
         // Selecting a serial-capable device emits its serial number as an input change after selection.
-        if ((discover.data ?? []).some((device) => device.serial_number !== null && deviceTextValue(device) === next)) {
+        if (devices.some((device) => device.serial_number !== null && deviceTextValue(device) === next)) {
             return;
         }
         onChange(connectionKey, next);
@@ -100,12 +106,12 @@ export const ConnectionField = ({ robotType, payload, options, isRequired, onCha
                         options.info === undefined ? undefined : <FieldContextualHelp info={options.info} />
                     }
                     value={value}
-                    devices={discover.data ?? []}
+                    devices={devices}
                     allowsCustomValue={options.manual_entry !== false}
                     isRequired={isRequired}
                     onInputChange={setManualValue}
                     onSelectionChange={(key) => {
-                        const device = (discover.data ?? []).find((item) => deviceKey(item) === key);
+                        const device = devices.find((item) => deviceKey(item) === key);
                         if (device === undefined) {
                             return;
                         }

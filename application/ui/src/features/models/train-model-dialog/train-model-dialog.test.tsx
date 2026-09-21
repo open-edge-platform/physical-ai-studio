@@ -15,7 +15,10 @@ const datasetId = '9f4e20fb-7dd8-4d2c-b207-a6d554311a12';
 const remoteTrainer = {
     id: remoteTrainerId,
     name: 'managed-trainer',
+    connection_mode: 'direct' as const,
     url: 'https://trainer.example.test/api',
+    ssh_remote_port: null,
+    ssh_local_port: null,
     created_at: '2026-07-14T12:00:00Z',
 };
 
@@ -87,6 +90,30 @@ const mockProjectWithRemoteTrainer = (options: { remoteServers?: (typeof healthy
                 hotkeys: { bindings: {} },
             })
         ),
+        http.get('/api/policies/backends', () =>
+            HttpResponse.json({
+                act: ['torch', 'openvino', 'onnx', 'executorch'],
+                smolvla: ['torch', 'openvino'],
+                pi05: ['torch', 'openvino'],
+            })
+        ),
+        http.get('/api/dataset/{dataset_id}/episodes', () =>
+            HttpResponse.json([{ episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 }])
+        ),
+        http.get('/api/dataset/{dataset_id}/episodes/{episode_index}', () =>
+            HttpResponse.json({
+                episode_index: 0,
+                length: 100,
+                fps: 30,
+                tasks: ['Test task'],
+                actions: [],
+                action_keys: [],
+                videos: {
+                    'observation.images.top': { start: 0, end: 3, path: 'top.mp4' },
+                    'observation.images.wrist': { start: 0, end: 3, path: 'wrist.mp4' },
+                },
+            })
+        ),
         http.get('/api/policies/{policy}/huggingface-access', ({ params }) => {
             const policy = params.policy;
             return HttpResponse.json({
@@ -122,6 +149,25 @@ const renderDialog = (props: { baseModel?: SchemaModel } = {}) =>
         path: '/projects/:project_id/models',
     });
 
+// Training is submitted from the last wizard step, so a test that wants to press
+// Train has to walk through the steps in between first. How many those are depends
+// on the policy, so walk until Train shows up.
+const goToLastStep = async (user: ReturnType<typeof userEvent.setup>) => {
+    while (screen.queryByRole('button', { name: 'Next' }) !== null) {
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+    }
+};
+
+// SnapFlow is offered on the training parameters step, which SmolVLA reaches
+// through its feature-mapping step. Waiting for each step to render keeps Next
+// from being pressed before the mapping has loaded and enabled it.
+const goToSmolVlaTrainingParameters = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByLabelText(/Gripper/i, { selector: 'button' });
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('slider', { name: /batch size/i });
+};
+
 describe('TrainModelDialog', () => {
     it('does not submit a remote job when the final health check fails', async () => {
         const user = userEvent.setup();
@@ -150,6 +196,7 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
         await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
         await screen.findByText('Remote trainer selected');
+        await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
         await waitFor(() => expect(healthCheckCount).toBeGreaterThan(1));
@@ -207,7 +254,7 @@ describe('TrainModelDialog', () => {
         expect(
             await screen.findByText(/This policy downloads pretrained assets from Hugging Face/i)
         ).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });
 
     it('offers SnapFlow distillation only for flow-matching policies', async () => {
@@ -217,11 +264,17 @@ describe('TrainModelDialog', () => {
         mockProjectWithRemoteTrainer();
 
         renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
 
-        expect(await screen.findByLabelText('Select ACT policy')).toBeInTheDocument();
+        // ACT skips feature mapping, so one Next lands on the training parameters.
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
         expect(screen.queryByRole('checkbox', { name: /snapflow distillation/i })).not.toBeInTheDocument();
 
-        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(await screen.findByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
 
         expect(await screen.findByRole('checkbox', { name: /snapflow distillation/i })).toBeInTheDocument();
     });
@@ -242,7 +295,9 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('button', { name: /select…/i }));
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
         await user.click(await screen.findByRole('checkbox', { name: /snapflow distillation/i }));
+        await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
         await waitFor(() => expect(submitted).toBeDefined());
@@ -269,6 +324,8 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('button', { name: /select…/i }));
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToSmolVlaTrainingParameters(user);
+        await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
         await waitFor(() => expect(submitted).toBeDefined());
@@ -299,6 +356,7 @@ describe('TrainModelDialog', () => {
         await user.click(screen.getByLabelText('Select Pi0.5 policy'));
 
         expect(await screen.findByText(/does not have access to this policy/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });
 
     it('blocks Pi0.5 training when the Hugging Face access check itself fails', async () => {
@@ -322,7 +380,7 @@ describe('TrainModelDialog', () => {
         await user.click(screen.getByLabelText('Select Pi0.5 policy'));
 
         expect(await screen.findByText(/couldn.t verify Hugging Face access/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });
 
     it('lists a configured SSH server alongside local and direct-URL trainers in a single control', async () => {
@@ -358,6 +416,7 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
         await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
+        await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
         await waitFor(() => expect(submittedPayload).not.toBeNull());
@@ -368,7 +427,7 @@ describe('TrainModelDialog', () => {
         expect(submittedPayload).not.toHaveProperty('remote_trainer_id');
     });
 
-    it('disables Train and shows a warning for a remote server that is not ready', async () => {
+    it('disables Next and shows a warning for a remote server that is not ready', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer({
             remoteServers: [{ ...healthyRemoteServer, last_check_status: 'unreachable' }],
@@ -387,7 +446,7 @@ describe('TrainModelDialog', () => {
                     element?.children.length === 0 && (element?.textContent ?? '').includes("isn't ready for training")
             )
         ).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });
 
     it('allows submitting a job against a never-verified SSH server, letting the backend verify it', async () => {
@@ -416,8 +475,9 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
 
         expect(await screen.findByText(/hasn't been verified yet/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Train' })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Next' })).not.toBeDisabled();
 
+        await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
         await waitFor(() => expect(submittedPayload).not.toBeNull());
@@ -452,6 +512,7 @@ describe('TrainModelDialog', () => {
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
         await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
         await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
+        await goToLastStep(user);
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
         expect(await screen.findByText(/is not ready for training/i)).toBeInTheDocument();
@@ -494,7 +555,7 @@ describe('TrainModelDialog', () => {
                     element?.children.length === 0 && (element?.textContent ?? '').includes("isn't ready for training")
             )
         ).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
         expect(jobSubmitted).toBe(false);
     });
 
@@ -549,9 +610,9 @@ describe('TrainModelDialog', () => {
         );
 
         renderDialog();
-
         await user.click(await screen.findByRole('button', { name: /select…/i }));
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
 
         const trainButton = screen.getByRole('button', { name: 'Train' });
 
@@ -564,5 +625,283 @@ describe('TrainModelDialog', () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         expect(submitCount).toBe(1);
+    });
+
+    it('maps the dataset cameras onto the SmolVLA camera slots in dataset order', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        // The dataset's two cameras fill the first two slots; the third stays empty.
+        expect(await screen.findByLabelText(/Overview/i, { selector: 'button' })).toHaveTextContent('top');
+        expect(screen.getByLabelText(/Gripper/i, { selector: 'button' })).toHaveTextContent('wrist');
+        expect(screen.getByLabelText(/Extra/i, { selector: 'button' })).toHaveTextContent('Empty');
+        expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+    });
+
+    it('blocks the mapping step while a dataset camera fills no slot', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        // Emptying the Gripper slot leaves 'wrist' mapped to nothing at all.
+        await user.click(await screen.findByLabelText(/Gripper/i, { selector: 'button' }));
+        await user.click(await screen.findByRole('option', { name: 'Empty' }));
+
+        expect(await screen.findByText(/wrist is not mapped yet/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    });
+
+    it('offers only the export formats the policy supports', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToLastStep(user);
+
+        // SmolVLA traces to Torch and OpenVINO only.
+        expect(await screen.findByRole('checkbox', { name: /PyTorch/i })).toBeInTheDocument();
+        expect(screen.getByRole('checkbox', { name: /OpenVINO/i })).toBeInTheDocument();
+        expect(screen.queryByRole('checkbox', { name: /ONNX/i })).not.toBeInTheDocument();
+    });
+
+    it('blocks training when no export format is picked', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
+
+        for (const format of [/PyTorch/i, /OpenVINO/i, /ONNX/i, /ExecuTorch/i]) {
+            await user.click(await screen.findByRole('checkbox', { name: format }));
+        }
+
+        expect(await screen.findByText(/at least one export format/i)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+    });
+
+    it('submits the camera mapping and the picked export formats', async () => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        await goToLastStep(user);
+        await user.click(await screen.findByRole('checkbox', { name: /PyTorch/i }));
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).not.toBeNull());
+        expect(submitted).toMatchObject({
+            // Keyed by camera name: the policy reads its images as `images.<name>`,
+            // so the dataset's `observation.images.` prefix must not ride along.
+            image_key_reorder_map: { top: 0, wrist: 1 },
+            num_cameras: 3,
+            export_backends: ['openvino'],
+        });
+    });
+
+    it('sends no camera mapping for a policy without a fixed camera order', async () => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).not.toBeNull());
+        expect(submitted).toMatchObject({ image_key_reorder_map: {}, num_cameras: 0 });
+        expect(submitted).toHaveProperty('export_backends', ['torch', 'openvino', 'onnx', 'executorch']);
+    });
+
+    it('skips the camera mapping when retraining, since the checkpoint keeps its own', async () => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog({ baseModel: { ...baseModel, policy: 'smolvla' } });
+        // The dataset is preselected from the base model, but Next stays disabled
+        // until the project has loaded it.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).not.toBeNull());
+        expect(submitted).toMatchObject({ image_key_reorder_map: {}, num_cameras: 0 });
+    });
+
+    it('exports every supported format when the format list cannot be loaded', async () => {
+        const user = userEvent.setup();
+        let submitted: Record<string, unknown> | null = null;
+
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/backends', () => HttpResponse.json({ detail: [] }, { status: 500 })),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+
+        await waitFor(() => expect(submitted).not.toBeNull());
+        // `null` is "every format the policy supports"; `[]` would export none.
+        expect(submitted).toHaveProperty('export_backends', null);
+    });
+
+    it('walks through the wizard steps and back', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+
+        // ACT has no fixed camera order, so Next lands on the training parameters
+        // rather than on a feature-mapping step.
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+
+        // Every step past the first recaps what the setup step settled.
+        expect(screen.getByText('Test dataset')).toBeInTheDocument();
+        expect(screen.getByText('ACT')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        // ACT exports to all four formats, and all of them are picked by default.
+        expect(await screen.findByRole('checkbox', { name: /PyTorch/i })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /ExecuTorch/i })).toBeChecked();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeEnabled();
+
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+    });
+
+    describe('image augmentation', () => {
+        const submitAndCapturePayload = async (toggle: boolean) => {
+            const user = userEvent.setup();
+            let body: Record<string, unknown> | undefined;
+
+            mockProjectWithRemoteTrainer();
+            server.use(
+                http.post('/api/jobs:train', async ({ request }) => {
+                    body = (await request.json()) as Record<string, unknown>;
+                    return HttpResponse.json({}, { status: 201 });
+                })
+            );
+
+            renderDialog();
+
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+            if (toggle) {
+                // The checkbox lives on the training parameters step, one Next away for ACT.
+                await user.click(screen.getByRole('button', { name: 'Next' }));
+                await user.click(await screen.findByRole('checkbox', { name: /augment images/i }));
+            }
+            await goToLastStep(user);
+            await user.click(screen.getByRole('button', { name: 'Train' }));
+
+            await waitFor(() => expect(body).toBeDefined());
+            return body;
+        };
+
+        it('is off unless the user opts in', async () => {
+            expect(await submitAndCapturePayload(false)).toMatchObject({ augment_images: false });
+        });
+
+        it('is submitted when the checkbox is ticked', async () => {
+            expect(await submitAndCapturePayload(true)).toMatchObject({ augment_images: true });
+        });
+    });
+
+    it('hides LoRA fine-tuning controls for a policy without PEFT support', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+
+        // ACT has no PEFT support, so its training parameters step offers no LoRA.
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByRole('slider', { name: /batch size/i })).toBeInTheDocument();
+
+        expect(screen.queryByText('LoRA fine-tuning')).not.toBeInTheDocument();
+    });
+
+    it('shows LoRA fine-tuning controls for Pi0.5', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        // Pi0.5 is gated behind a Hugging Face token by default, which blocks Next;
+        // this test is about the LoRA controls, not the gate.
+        server.use(
+            http.get('/api/policies/{policy}/huggingface-access', () => HttpResponse.json({ requirements: [] }))
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select Pi0.5 policy'));
+
+        // Pi0.5 reads no fixed camera order, so one Next lands on the training parameters.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(await screen.findByText('LoRA fine-tuning')).toBeInTheDocument();
+
+        // Rank/alpha/dropout/DoRA are hidden until LoRA itself is enabled.
+        expect(screen.queryByText('LoRA rank')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('checkbox', { name: 'LoRA fine-tuning' }));
+        expect(await screen.findByText('LoRA rank')).toBeInTheDocument();
     });
 });

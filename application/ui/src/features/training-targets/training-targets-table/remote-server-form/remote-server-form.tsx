@@ -37,10 +37,17 @@ export const RemoteServerForm = ({ remoteServer, close }: RemoteServerFormProps)
             { name: name.trim(), ssh_host_alias: sshHostAlias, device_type: deviceType },
             {
                 onSuccess: (saved) => {
-                    // Only a brand-new server needs the prompt: an edit changes
-                    // connection details on a server that may already be verified,
-                    // and re-prompting every time it's edited would be noise.
-                    if (isEditing) {
+                    // Connection-defining fields decide what a Tier 2 verification
+                    // actually attests to. The backend leaves `last_check_status`
+                    // untouched on update, so changing either one here makes that
+                    // persisted status stale (a job could otherwise skip
+                    // re-verification against a host/device it was never checked
+                    // against). Prompt the same "pull & verify" flow as a brand-new
+                    // server rather than silently closing over a stale result.
+                    const connectionChanged =
+                        isEditing &&
+                        (remoteServer?.ssh_host_alias !== sshHostAlias || remoteServer?.device_type !== deviceType);
+                    if (isEditing && !connectionChanged) {
                         close();
                         return;
                     }

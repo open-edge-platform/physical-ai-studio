@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'false' }}
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   TRAINER_API_PROTOCOL_VERSION: "1"
 
@@ -31,7 +32,7 @@ jobs:
       contents: read
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -53,7 +54,6 @@ jobs:
             test:
               - application/backend/**
               - application/docker/Dockerfile.trainer
-              - application/plugin/**
               - library/src/**
               - library/pyproject.toml
               - library/uv.lock
@@ -77,7 +77,7 @@ jobs:
         device: [cuda, xpu]
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -131,8 +131,7 @@ jobs:
           file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
-            plugin=application/plugin
-          target: physicalai-trainer-${{ matrix.device }}
+          target: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL == 'true' && format('physicalai-trainer-{0}', matrix.device) || format('physicalai-trainer-{0}-redistributable', matrix.device) }}
           platforms: linux/amd64
           load: true
           push: false
@@ -199,7 +198,7 @@ jobs:
         device: [cuda, xpu]
     steps:
       - name: Harden the runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -261,8 +260,7 @@ jobs:
           file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
-            plugin=application/plugin
-          target: physicalai-trainer-${{ matrix.device }}
+          target: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL == 'true' && format('physicalai-trainer-{0}', matrix.device) || format('physicalai-trainer-{0}-redistributable', matrix.device) }}
           platforms: linux/amd64
           push: true
           tags: |
@@ -329,7 +327,7 @@ jobs:
           PY
 
       - name: Sign immutable trainer image
-        uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/sign-image@3690cbcc173cf90e0e0999b4822c3f8ebab9c137 # sign-image/v0.1.2
         with:
           image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
 

@@ -41,6 +41,7 @@ from exceptions import (
 from schemas.hardware import DeviceType
 from schemas.job_provisioning import JobProvisioning, JobProvisioningUpdate
 from services.ssh import docker_ops
+from services.ssh.connection import AliasTarget
 from services.ssh.docker_ops import LibraryVersionCheck, ResolvedImage
 from services.ssh.transport import SshTransport, open_transport
 from services.ssh.tunnel import SshTunnel
@@ -147,7 +148,7 @@ class ProvisionedTrainer:
         """
         await self._tunnel.close()
         try:
-            async with SshTransport(self._server_alias, self._settings) as transport:
+            async with SshTransport(AliasTarget(self._server_alias), self._settings) as transport:
                 await docker_ops.stop_and_remove_container(transport, self.container_name, self._stop_timeout_s)
                 await docker_ops.remove_volume(transport, self._data_volume)
         except Exception as error:
@@ -232,7 +233,7 @@ class SshProvisioningService:
         launched = False
         volume_created = False
         try:
-            async with SshTransport(server.ssh_host_alias, settings) as transport:
+            async with SshTransport(AliasTarget(server.ssh_host_alias), settings) as transport:
                 image = await docker_ops.resolve_protocol_image(
                     transport, server.device_type, protocol_version, settings
                 )
@@ -260,7 +261,7 @@ class SshProvisioningService:
             )
 
             _phase(PhaseKey.TRAINER_START)
-            async with SshTransport(server.ssh_host_alias, settings) as transport:
+            async with SshTransport(AliasTarget(server.ssh_host_alias), settings) as transport:
                 render_gid = (
                     None
                     if server.device_type is DeviceType.CUDA
@@ -354,7 +355,7 @@ class SshProvisioningService:
                 await tunnel.close()
             if launched or volume_created:
                 try:
-                    async with SshTransport(server.ssh_host_alias, settings) as transport:
+                    async with SshTransport(AliasTarget(server.ssh_host_alias), settings) as transport:
                         if launched:
                             await docker_ops.stop_and_remove_container(
                                 transport, name, settings.ssh_container_stop_timeout_s
@@ -429,7 +430,7 @@ class SshProvisioningService:
         if name is None:
             return None
 
-        async with SshTransport(server.ssh_host_alias, settings) as transport:
+        async with SshTransport(AliasTarget(server.ssh_host_alias), settings) as transport:
             inspect = await transport.run_command(["docker", "inspect", "--format", "{{.State.Running}}", name])
             if not inspect.ok or inspect.first_line().lower() != "true":
                 return None
@@ -493,7 +494,7 @@ class SshProvisioningService:
 
         settings = self._settings
         try:
-            async with SshTransport(server.ssh_host_alias, settings) as transport:
+            async with SshTransport(AliasTarget(server.ssh_host_alias), settings) as transport:
                 inspection = await docker_ops.inspect_container(transport, name)
                 if inspection is None or not inspection.running:
                     return ReattachVerification(ok=False, reason=ReattachFailureReason.CONTAINER_GONE)
@@ -571,7 +572,7 @@ class SshProvisioningService:
         job_provisioning = await self._repository.get_by_job_id(job_id)
         if job_provisioning is None or job_provisioning.container_name is None:
             return
-        async with SshTransport(server.ssh_host_alias, self._settings) as transport:
+        async with SshTransport(AliasTarget(server.ssh_host_alias), self._settings) as transport:
             await docker_ops.stop_and_remove_container(
                 transport, job_provisioning.container_name, self._settings.ssh_container_stop_timeout_s
             )
@@ -593,7 +594,7 @@ class SshProvisioningService:
         """
         backend_instance_id = get_backend_instance_id()
         removed: list[str] = []
-        async with SshTransport(server.ssh_host_alias, self._settings) as transport:
+        async with SshTransport(AliasTarget(server.ssh_host_alias), self._settings) as transport:
             active_ids = {str(job_id) for job_id in active_job_ids}
             containers = await docker_ops.list_managed_containers(transport, backend_instance_id)
             for container in containers:

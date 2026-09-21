@@ -77,11 +77,9 @@ PRETRAINED_BASE_CHECKPOINTS: dict[str, str] = {
 }
 """Hub checkpoints used to initialize policies that only fine-tune from pretrained weights."""
 
-_WEIGHTS_ONLY_RESUME_POLICIES = frozenset({"pi0"})
-"""Policies whose checkpoints must be reloaded with ``weights_only=True``."""
-
-_COMPILED_EXPORT_RELOAD_POLICIES = frozenset({"act", "smolvla"})
-"""Policies that cannot be exported while ``torch.compile``d, so are reloaded first."""
+PEFT_POLICIES = frozenset({"pi05"})
+"""Policies whose ``Config`` mixes in ``physicalai.policies.mixins.peft.PeftConfigMixin`` and
+support LoRA/DoRA fine-tuning."""
 
 
 class RunOptions(BaseModel):
@@ -108,7 +106,7 @@ class TrainingJobSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    policy: str = Field(description="Policy name, e.g. 'act', 'pi0', 'pi05', 'smolvla', 'groot'.")
+    policy: str = Field(description="Policy name, e.g. 'act', 'pi05', or 'smolvla'.")
     policy_source: Literal["physicalai", "lerobot"] = Field(
         default="physicalai",
         description="Which implementation of the policy to train.",
@@ -126,7 +124,24 @@ class TrainingJobSpec(BaseModel):
     val_split: float = Field(default=0.1, ge=0.0, lt=1.0, description="Fraction of episodes held out for validation.")
     precision: str = Field(default="bf16-mixed", description="Lightning precision, e.g. '32-true' or 'bf16-mixed'.")
     compile_model: bool = Field(default=False, description="Whether to torch.compile the policy forward pass.")
+    augment_images: bool = Field(
+        default=False,
+        description="Whether to augment training images with the default pipeline.",
+    )
     auto_scale_batch_size: bool = Field(default=False, description="Whether to search for the largest fitting batch.")
+    image_key_reorder_map: dict[str, int] = Field(
+        default_factory=dict,
+        description="Dataset image key -> camera slot index, for policies with a fixed camera order.",
+    )
+    num_cameras: int = Field(
+        default=0,
+        ge=0,
+        description="Camera slots the policy reads; unfilled slots become masked empty images. 0 keeps the batch's.",
+    )
+    export_backends: list[str] | None = Field(
+        default=None,
+        description="Export formats to produce. None exports every backend the policy supports.",
+    )
     snapflow_start_epoch: int | None = Field(
         default=None,
         ge=1,
@@ -141,7 +156,47 @@ class TrainingJobSpec(BaseModel):
         ge=0,
         description="Zero-based index of the accelerator to train on. None lets Lightning pick one.",
     )
+    lora_enabled: bool = Field(
+        default=False,
+        description=(
+            "Fine-tune with LoRA/DoRA instead of full fine-tuning: freezes the base model and "
+            f"trains small low-rank adapters. Only available for {sorted(PEFT_POLICIES)}."
+        ),
+    )
+    lora_rank: int = Field(default=32, ge=1, le=256, description="LoRA rank. Ignored unless lora_enabled.")
+    lora_alpha: int | None = Field(
+        default=None,
+        ge=1,
+        description="LoRA scaling numerator (scaling = lora_alpha / lora_rank). None defaults to lora_rank.",
+    )
+    lora_dropout: float = Field(default=0.05, ge=0.0, lt=1.0, description="Dropout applied to LoRA adapter inputs.")
+    lora_use_dora: bool = Field(
+        default=False,
+        description="Use DoRA (Weight-Decomposed LoRA) instead of plain LoRA. Ignored unless lora_enabled.",
+    )
     run_options: RunOptions = Field(default_factory=RunOptions)
+
+    @model_validator(mode="after")
+    def validate_lora(self) -> TrainingJobSpec:
+        """Reject a LoRA request the run cannot honour, and DoRA requested without LoRA."""
+        if self.lora_use_dora and not self.lora_enabled:
+            msg = "lora_use_dora requires lora_enabled; DoRA is a variant of LoRA, not a standalone mode."
+            raise ValueError(msg)
+        if not self.lora_enabled:
+            return self
+        if self.policy_source != "physicalai":
+            msg = (
+                f"LoRA/DoRA fine-tuning requires policy_source='physicalai', got {self.policy_source!r}: "
+                "lerobot-wrapped policies do not accept lora_* constructor arguments."
+            )
+            raise ValueError(msg)
+        if self.policy.lower() not in PEFT_POLICIES:
+            msg = (
+                f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
+                f"supported policies are {sorted(PEFT_POLICIES)}."
+            )
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def validate_snapflow(self) -> TrainingJobSpec:
@@ -187,6 +242,8 @@ def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None
         The policy, compiled when ``spec.compile_model`` is set.
     """
     if resume_from is not None:
+        if spec.image_key_reorder_map or spec.num_cameras > 0:
+            logger.warning("Ignoring camera layout: a resumed policy keeps the layout stored in its checkpoint")
         return _load_policy_from_checkpoint(spec, Path(resume_from))
 
     from physicalai.policies import get_policy
@@ -196,7 +253,50 @@ def build_policy(spec: TrainingJobSpec, *, resume_from: Path | str | None = None
         pretrained = PRETRAINED_BASE_CHECKPOINTS.get(spec.policy.lower())
         if pretrained is not None:
             kwargs["pretrained_name_or_path"] = pretrained
+    kwargs.update(_camera_layout_kwargs(spec))
+    if spec.lora_enabled:
+        kwargs.update(
+            lora_enabled=True,
+            lora_rank=spec.lora_rank,
+            lora_alpha=spec.lora_alpha,
+            lora_dropout=spec.lora_dropout,
+            lora_use_dora=spec.lora_use_dora,
+        )
     return get_policy(spec.policy, source=spec.policy_source, **kwargs)
+
+
+_CAMERA_LAYOUT_PARAMS = ("image_key_reorder_map", "num_cameras")
+
+
+def _camera_layout_kwargs(spec: TrainingJobSpec) -> dict[str, Any]:
+    """Camera-slot arguments for a policy that reads its cameras in a fixed order.
+
+    Only some policies take these (SmolVLA does; ACT has no notion of a camera
+    slot), so they are passed only where the constructor accepts them — a spec
+    carrying a mapping for a policy that ignores camera order trains without it
+    rather than failing on an unexpected keyword.
+
+    Returns:
+        The camera kwargs to construct the policy with, empty when the spec asks
+        for no particular layout or the policy has no such parameters.
+    """
+    if not spec.image_key_reorder_map and spec.num_cameras <= 0:
+        return {}
+
+    if spec.policy_source != "physicalai":
+        logger.warning("Ignoring camera layout: %s policies are not configured through it", spec.policy_source)
+        return {}
+
+    import inspect
+
+    from physicalai.policies import get_physicalai_policy_class
+
+    parameters = inspect.signature(get_physicalai_policy_class(spec.policy).__init__).parameters
+    if any(name not in parameters for name in _CAMERA_LAYOUT_PARAMS):
+        logger.warning("Ignoring camera layout: policy '%s' does not read its cameras in a fixed order", spec.policy)
+        return {}
+
+    return {"image_key_reorder_map": spec.image_key_reorder_map, "num_cameras": spec.num_cameras}
 
 
 @contextlib.contextmanager
@@ -276,6 +376,7 @@ def run_training_job(
     from physicalai.data import LeRobotDataModule
     from physicalai.train.callbacks import ProgressReportingCallback
     from physicalai.train.trainer import Trainer
+    from physicalai.transforms import DefaultImageAugmentations
 
     from training.device import resolve_accelerator, resolve_devices, resolve_strategy
 
@@ -290,6 +391,9 @@ def run_training_job(
             train_batch_size=spec.batch_size,
             num_workers=spec.num_workers,
             val_split=spec.val_split,
+            # Applied to the train split only; the datamodule leaves validation
+            # images untouched so eval loss stays comparable across runs.
+            image_transforms=DefaultImageAugmentations() if spec.augment_images else None,
         )
         policy = build_policy(spec, resume_from=spec.run_options.resume_from)
 
@@ -327,10 +431,10 @@ def run_training_job(
         _publish(cache_dir, output_dir)
 
         export_policy = _export_policy(spec, policy, output_dir)
-        _detach_trainer(export_policy, trainer)
+        _detach_trainer(policy, trainer)
         del trainer, datamodule, policy
         _release_memory()
-        _export(export_policy, output_dir, report)
+        _export(export_policy, output_dir, report, spec.export_backends)
 
 
 def _build_snapflow_callback(spec: TrainingJobSpec) -> Any:
@@ -366,15 +470,14 @@ def _load_policy_from_checkpoint(spec: TrainingJobSpec, checkpoint: Path) -> Pol
         from physicalai.policies import get_physicalai_policy_class
 
         policy_class = get_physicalai_policy_class(spec.policy)
-        # Some policies store non-tensor objects Lightning cannot unpickle
-        # safely by default; those are loaded weights-only.
-        kwargs: dict[str, Any] = {"weights_only": True} if spec.policy.lower() in _WEIGHTS_ONLY_RESUME_POLICIES else {}
-        policy = policy_class.load_from_checkpoint(str(checkpoint), **kwargs)
+        policy = policy_class.load_from_checkpoint(str(checkpoint))
 
     if spec.compile_model:
         import torch
 
         compile_mode = getattr(policy.config, "compile_mode", "default")
+        if spec.policy.lower() == "pi05" and compile_mode == "max-autotune":
+            compile_mode = "default"
         policy.forward = torch.compile(policy.forward, mode=compile_mode)  # type: ignore[method-assign]
     return policy
 
@@ -451,8 +554,9 @@ def resolve_checkpoint(model_dir: Path | str) -> Path:
 def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> Policy:
     """Return the policy to export: reloaded from disk when that changes what gets exported.
 
-    Reloads are needed in two cases, and are always uncompiled since some
-    export backends cannot trace a ``torch.compile``d forward pass.
+    For SnapFlow runs, export reloads the distilled checkpoint so the exported
+    artifact matches what ``resolve_checkpoint`` (and therefore resume/download)
+    picks, rather than the final-epoch weights left in memory.
 
     Falls back to the trained policy if the reload fails — a failed export is
     better than a failed job.
@@ -461,43 +565,39 @@ def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> P
         The policy instance to hand to the export backends.
     """
     resolved = resolve_checkpoint(output_dir)
-    used_snapflow_checkpoint = resolved.name == SNAPFLOW_CHECKPOINT_NAME
-    needs_compiled_reload = spec.compile_model and spec.policy.lower() in _COMPILED_EXPORT_RELOAD_POLICIES
-    if not used_snapflow_checkpoint and not needs_compiled_reload:
+    if resolved.name != SNAPFLOW_CHECKPOINT_NAME:
         return policy
-    reload_from = resolved
 
     try:
-        logger.info("Reloading policy from %s for export", reload_from.name)
+        logger.info("Reloading policy from %s for export", resolved.name)
         uncompiled = spec.model_copy(update={"compile_model": False})
-        return _load_policy_from_checkpoint(uncompiled, reload_from)
+        return _load_policy_from_checkpoint(uncompiled, resolved)
     except Exception:  # reload is best-effort; the trained policy is a valid fallback
         logger.warning("Failed to reload policy for export; using trained policy", exc_info=True)
         return policy
 
 
-def _detach_trainer(export_policy: Policy, trainer: Any) -> None:
+def _detach_trainer(policy: Policy, trainer: Any) -> None:
     """Break the trainer<->policy<->datamodule reference cycle before export.
 
     Lightning wires ``policy._trainer = trainer``, ``trainer.datamodule =
     datamodule``, and ``trainer.strategy._lightning_module = policy`` during
-    ``fit``, and never undoes it. When ``export_policy`` is the very policy
-    that was just trained (the common case: no ``torch.compile`` reload), it
-    still holds that ``_trainer`` reference, which keeps the trainer — and
-    everything it holds: optimizer state, dataloaders, the strategy — alive
+    ``fit``, and never undoes it. ``policy`` is the object that was just trained,
+    so it holds that ``_trainer`` reference, which keeps the trainer, and
+    everything it holds (optimizer state, dataloaders, the strategy), alive
     and reachable no matter how many local names ``run_training_job`` deletes.
     ``gc.collect()`` only reclaims *unreachable* cycles, so without this the
-    memory release below is a no-op on the export object it matters most for.
+    memory release below is a no-op on the object it matters most for.
 
     Best-effort: a failure here must not abort the job.
     """
     try:
-        export_policy._trainer = None
+        policy._trainer = None
         if getattr(trainer, "strategy", None) is not None:
             trainer.strategy._lightning_module = None
         trainer.datamodule = None
-    except Exception as exc:
-        logger.warning("Could not detach trainer from policy: %s", exc)
+    except Exception:
+        logger.warning("Failed to detach trainer before export; continuing anyway", exc_info=True)
 
 
 def _release_memory() -> None:
@@ -528,16 +628,37 @@ def _release_memory() -> None:
         logger.warning("Could not release device cache: %s", exc)
 
 
-def _export(policy: Policy, output_dir: Path, report: ReportFn) -> None:
-    """Export the policy to every backend it declares support for."""
+def _backend_name(backend: Any) -> str:
+    """Return the wire name of an export backend, which may be an enum or a string."""
+    return backend.value if hasattr(backend, "value") else str(backend)
+
+
+def _export(policy: Policy, output_dir: Path, report: ReportFn, requested: list[str] | None = None) -> None:
+    """Export the policy to the requested backends, or to every one it supports.
+
+    A requested backend the policy cannot produce is skipped rather than
+    treated as an error: the caller asks for formats it wants, and which of
+    them a policy can trace is the policy's to say.
+    """
     from physicalai.export import ExportablePolicyMixin
 
     if not isinstance(policy, ExportablePolicyMixin):
         logger.info("Skipping export: policy does not support export backends")
         return
 
-    for backend in policy.get_supported_export_backends():
-        name = backend.value if hasattr(backend, "value") else str(backend)
+    supported = policy.get_supported_export_backends()
+    backends = supported if requested is None else [b for b in supported if _backend_name(b) in requested]
+
+    if requested is not None:
+        unsupported = sorted(set(requested) - {_backend_name(b) for b in supported})
+        if unsupported:
+            logger.warning("Skipping unsupported export backends: %s", ", ".join(unsupported))
+    if not backends:
+        logger.info("Skipping export: no requested backend is supported by this policy")
+        return
+
+    for backend in backends:
+        name = _backend_name(backend)
         try:
             logger.info("Exporting model to %s format", name)
             report(99, f"Exporting to {name} format", {})

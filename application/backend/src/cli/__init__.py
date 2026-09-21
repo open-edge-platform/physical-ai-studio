@@ -1,12 +1,13 @@
 """Command line interface for interacting with the Physical AI Studio application."""
 
-import subprocess
+import subprocess  # nosec B404 - imported only to catch CalledProcessError, never invoked here
 import sys
 from pathlib import Path
 
 import click
 
 from cli.database import database
+from cli.datasets import datasets
 from cli.models import models
 from cli.serve import serve
 from robots.catalog.assets import get_builtin_robot_assets_root
@@ -51,5 +52,6 @@ def sync_robot_assets(target_dir: str) -> None:
 
 
 cli.add_command(database)
+cli.add_command(datasets)
 cli.add_command(models)
 cli.add_command(serve)

@@ -192,7 +192,7 @@ const RobotListItem = ({
                 [classes.robotListItemActive]: isActive,
             })}
         >
-            <Flex justifyContent={'space-between'} direction='column' gap='size-100'>
+            <Flex justifyContent={'space-between'} direction='column' gap='size-200'>
                 <Grid areas={['icon name status', 'icon type status']} columns={['auto', '1fr']} columnGap={'size-100'}>
                     <View gridArea={'icon'} padding='size-100'>
                         <img src={RobotArm} style={{ maxWidth: '32px' }} alt='Robot arm icon' />
@@ -262,8 +262,8 @@ export const RobotsList = () => {
     const { data: runtimeSessions } = useRuntimeSessions();
 
     return (
-        <Flex direction='column' gap='size-100'>
-            <AddResourceButton to={paths.project.robots.new({ project_id })}>Add new robot</AddResourceButton>
+        <Flex direction='column' gap='size-200'>
+            <AddResourceButton to={paths.project.robots.new({ project_id })}>Configure new robot</AddResourceButton>
 
             {projectRobots.map((robot) => {
                 const onlineRobot = onlineProjectRobots?.find((r) => r.id === robot.id);

@@ -16,17 +16,17 @@ type VerifyAfterSaveDialogProps = {
  * has run the (multi-gigabyte, one-shot-container) Tier 2 check yet. Offering
  * it here, once, means the user doesn't have to separately discover the
  * "Pull & verify image" button on the training-targets table to get the
- * server ready for a job.
+ * server ready ahead of time.
  *
- * Skipping is allowed, but it is *not* a no-op deferral: the train-model
- * dialog treats any `last_check_status !== "healthy"` (including
- * `"unknown"`) as not ready and disables job submission until the server is
- * verified, either from this dialog, the "Pull & verify image" button on the
- * training-targets table, or the train-model dialog itself. The backend's
- * `services.training_targets.ssh.SshTrainingTargetHandler.prepare` does
- * auto-verify a never-checked server, but the UI never reaches that code
- * path since it blocks submission first - so don't describe skipping as
- * something job submission "handles for you".
+ * Skipping is allowed and *is* a real no-op deferral: the train-model dialog
+ * lets a job submit against an `"unknown"` server (see
+ * `TrainModelDialog`'s `sshUnverified`), and the backend's
+ * `services.training_targets.ssh.SshTrainingTargetHandler.prepare` runs the
+ * same Tier 2 verification automatically the first time a job actually needs
+ * it. This dialog only exists to let the user front-load that latency
+ * (pulling a multi-gigabyte image) instead of hitting it in the middle of
+ * submitting a job; the server works either way, once verified one way or
+ * the other.
  */
 export const VerifyAfterSaveDialog = ({ savedServer, close }: VerifyAfterSaveDialogProps) => {
     const checkMutation = useRemoteServerCheckMutation();
@@ -34,26 +34,24 @@ export const VerifyAfterSaveDialog = ({ savedServer, close }: VerifyAfterSaveDia
     // Fire-and-forget: Tier 2 (SSH connect, registry round trips, a one-shot
     // container launch to probe the device) can take tens of seconds, and
     // this dialog has no way to show incremental progress. Closing
-    // immediately instead of awaiting `onSuccess` keeps that latency from
-    // blocking the user behind a spinner. The mutation keeps running after
-    // this component unmounts - React Query doesn't abort in-flight
-    // mutations on unmount - and the global `MutationCache` in
-    // `query-client.ts` invalidates the server list once it resolves
-    // regardless of which component fired it, so the training-targets table
-    // (and its own "Pull & verify image" row action) picks up the real
-    // `last_check_status` on its own. A failure is surfaced as a toast since
-    // there's no longer a dialog around to show it inline.
+    // immediately keeps that latency from blocking the user behind a
+    // spinner. The mutation keeps running after this component unmounts -
+    // React Query doesn't abort in-flight mutations on unmount - and the
+    // global `MutationCache` in `query-client.ts` invalidates the server list
+    // once it resolves regardless of which component fired it, so the
+    // training-targets table (and its own "Pull & verify image" row action)
+    // picks up the real `last_check_status` on its own. A failure is
+    // surfaced as a toast since there's no longer a dialog around to show it
+    // inline - handled off `mutateAsync`'s own promise rather than the
+    // `mutate(...)`-time `onError` option, since that option is delivered by
+    // the mutation *observer* and is silently dropped once this component (and
+    // its observer) unmounts, which `close()` does immediately below.
     const startVerification = () => {
-        checkMutation.mutate(
-            { params: { path: { remote_server_id: savedServer.id } } },
-            {
-                onError: (error) => {
-                    const fallback = `'${savedServer.name}': image pull/verification failed.`;
-                    const hint = 'Try again from the training-targets table.';
-                    ToastQueue.negative(getApiErrorMessage(error) ?? `${fallback} ${hint}`);
-                },
-            }
-        );
+        checkMutation.mutateAsync({ params: { path: { remote_server_id: savedServer.id } } }).catch((error) => {
+            const fallback = `'${savedServer.name}': image pull/verification failed.`;
+            const hint = 'Try again from the training-targets table.';
+            ToastQueue.negative(getApiErrorMessage(error) ?? `${fallback} ${hint}`);
+        });
         close();
     };
 

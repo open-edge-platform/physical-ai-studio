@@ -19,7 +19,10 @@ const DEVICE_TYPE_DETECTION_PATH = '/api/remote-servers/aliases/{alias}/device-t
 const remoteTrainer = {
     id: 'b8b28d4f-e78f-48ad-afb8-03d060178a3c',
     name: 'managed-trainer',
+    connection_mode: 'direct' as const,
     url: 'https://trainer.example.test/api',
+    ssh_remote_port: null,
+    ssh_local_port: null,
     created_at: '2026-07-14T12:00:00Z',
 };
 
@@ -126,6 +129,30 @@ describe('TrainingTargetsPage', () => {
         ).toBeInTheDocument();
     });
 
+    it('surfaces an unexpected remote-servers failure instead of silently showing an empty SSH list', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
+            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json({ detail: [] } as never, { status: 500 }))
+        );
+
+        render(<TrainingTargetsPage />);
+
+        // The direct-URL trainer still renders, but the page says the SSH list
+        // may be incomplete rather than quietly showing none configured.
+        expect(await screen.findByText('managed-trainer')).toBeInTheDocument();
+        expect(await screen.findByText(/Couldn.t load SSH-provisioned training targets/i)).toBeInTheDocument();
+        expect(
+            screen.queryByText(/SSH-provisioned training targets are not available in this environment/i)
+        ).not.toBeInTheDocument();
+
+        // An unverifiable SSH list also means the create dialog can't safely
+        // offer the SSH target type, same as the feature-disabled case.
+        await user.click(await screen.findByRole('button', { name: /new training target/i }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).queryByText('Target type')).not.toBeInTheDocument();
+    });
+
     it('hides the SSH target-type toggle in the create dialog when SSH is unavailable', async () => {
         const user = userEvent.setup();
         server.use(
@@ -163,7 +190,16 @@ describe('TrainingTargetsPage', () => {
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json(trainers)),
             http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
                 const body = (await request.json()) as Pick<typeof remoteTrainer, 'name' | 'url'>;
-                trainers = [{ ...body, id: remoteTrainer.id, created_at: remoteTrainer.created_at }];
+                trainers = [
+                    {
+                        ...body,
+                        id: remoteTrainer.id,
+                        connection_mode: 'direct',
+                        ssh_remote_port: null,
+                        ssh_local_port: null,
+                        created_at: remoteTrainer.created_at,
+                    },
+                ];
                 return HttpResponse.json(trainers[0], { status: 201 });
             })
         );

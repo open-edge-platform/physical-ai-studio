@@ -42,7 +42,11 @@ def _library_root() -> Path:
 
 
 def _act_config_path() -> Path:
-    return _library_root() / "configs" / "physicalai" / "act.yaml"
+    return _library_root() / "configs" / "physicalai" / "act" / "pusht" / "default.yaml"
+
+
+def _molmoact2_config_path(name: str) -> Path:
+    return _library_root() / "configs" / "physicalai" / "molmoact2" / f"{name}.yaml"
 
 
 def _libero_config_path() -> Path:
@@ -50,7 +54,7 @@ def _libero_config_path() -> Path:
 
 
 def _pi05_snapflow_config_path() -> Path:
-    return _library_root() / "configs" / "physicalai" / "pi05_snapflow_distillation.yaml"
+    return _library_root() / "configs" / "physicalai" / "pi05" / "aloha" / "snapflow.yaml"
 
 
 class TestRegister:
@@ -86,6 +90,43 @@ class TestConfigParsing:
         assert cfg.data.class_path == "physicalai.data.lerobot.LeRobotDataModule"
         assert cfg.trainer.max_steps == 70000
 
+    def test_fit_parser_accepts_molmoact2_pusht_config(self) -> None:
+        parser = fit_module.register().parser
+        cfg = parser.parse_args([f"--config={_molmoact2_config_path('pusht')}"])
+
+        assert cfg.model.class_path == "physicalai.policies.MolmoAct2"
+        assert cfg.model.init_args.pretrained_name_or_path == "allenai/MolmoAct2"
+        assert cfg.model.init_args.chunk_size == 10
+        assert cfg.model.init_args.n_action_steps == 10
+        assert cfg.model.init_args.use_random_input_noise is True
+        assert cfg.model.init_args.optimizer_lr == pytest.approx(5e-5)
+        assert cfg.model.init_args.scheduler_decay_steps == 15_000
+        assert cfg.model.init_args.setup_type.startswith("single 2D point-mass pusher")
+        assert cfg.model.init_args.control_mode == "absolute planar end-effector position"
+        assert cfg.data.init_args.val_gym.class_path == "physicalai.gyms.pusht.PushTGym"
+        assert cfg.data.init_args.num_rollouts_val == 10
+        assert cfg.trainer.max_epochs == 30
+        assert cfg.trainer.val_check_interval == 500
+        assert cfg.trainer.check_val_every_n_epoch is None
+        video_callback = cfg.trainer.callbacks[0]
+        assert video_callback["class_path"] == "physicalai.train.RolloutVideoRecorderCallback"
+        assert video_callback["init_args"]["frame_key"] == "top"
+        assert video_callback["init_args"]["fps"] == 10
+
+    def test_fit_parser_accepts_molmoact2_so101_config(self) -> None:
+        parser = fit_module.register().parser
+        cfg = parser.parse_args([f"--config={_molmoact2_config_path('so101')}"])
+
+        assert cfg.model.class_path == "physicalai.policies.MolmoAct2"
+        assert cfg.model.init_args.pretrained_name_or_path == "allenai/MolmoAct2-SO100_101"
+        assert cfg.model.init_args.chunk_size == 30
+        assert cfg.model.init_args.n_action_steps == 30
+        assert cfg.model.init_args.adapt_to_so101 is True
+        assert cfg.model.init_args.optimizer_lr == pytest.approx(5e-5)
+        assert cfg.model.init_args.scheduler_decay_steps == 15_000
+        assert cfg.data.init_args.repo_id == "Daankrol/pick-and-place-multi-obj"
+        assert cfg.trainer.max_epochs == 8
+
     def test_benchmark_parser_accepts_existing_libero_config(self) -> None:
         parser = benchmark_module.register().parser
         cfg = parser.parse_args(
@@ -110,7 +151,7 @@ class TestDispatch:
 
         with patch.object(
             parser,
-            "instantiate_classes",
+            "instantiate",
             return_value=MagicMock(trainer=trainer, model=model, data=datamodule),
         ):
             exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
@@ -128,7 +169,7 @@ class TestDispatch:
 
         with patch.object(
             parser,
-            "instantiate_classes",
+            "instantiate",
             return_value=Namespace(
                 trainer=trainer,
                 model=model,
@@ -149,7 +190,7 @@ class TestDispatch:
 
         with patch.object(
             parser,
-            "instantiate_classes",
+            "instantiate",
             return_value=Namespace(
                 trainer=trainer,
                 model=object(),
@@ -186,7 +227,7 @@ class TestDispatch:
 
         with patch.object(
             parser,
-            "instantiate_classes",
+            "instantiate",
             return_value=Namespace(trainer=trainer, model=discarded_model, data=datamodule),
         ):
             exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
@@ -232,7 +273,7 @@ class TestDispatch:
 
         with patch.object(
             parser,
-            "instantiate_classes",
+            "instantiate",
             return_value=Namespace(trainer=trainer, model=_FakePolicy(), data=datamodule),
         ):
             exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
@@ -257,7 +298,7 @@ class TestDispatch:
 
         with patch.object(
             parser,
-            "instantiate_classes",
+            "instantiate",
             return_value=Namespace(trainer=trainer, model=model, data=datamodule),
         ):
             exit_code = fit_module.run(cast(ArgumentParser, parser), cast(Namespace, cfg))
@@ -282,7 +323,7 @@ class TestDispatch:
         fake_benchmark.gyms = [MagicMock(), MagicMock()]
 
         with (
-            patch.object(parser, "instantiate_classes", return_value=MagicMock(benchmark=fake_benchmark)),
+            patch.object(parser, "instantiate", return_value=MagicMock(benchmark=fake_benchmark)),
             patch("physicalai.cli.benchmark.load_policy", return_value=(fake_policy, "cpu")),
             patch("builtins.print"),
         ):

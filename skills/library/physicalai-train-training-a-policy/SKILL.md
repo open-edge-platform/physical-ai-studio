@@ -23,7 +23,7 @@ A config wires three pieces via `class_path` / `init_args`:
 - `data` — a `DataModule`, usually `physicalai.data.lerobot.LeRobotDataModule` with a `repo_id` (e.g. `lerobot/pusht`).
 - `trainer` — Lightning args (`max_epochs`, `accelerator`, `devices`, callbacks…).
 
-Configs live in `library/configs/physicalai/` (first-party: `act.yaml`, `pi0.yaml`, `pi05.yaml`, `groot.yaml`, `smolvla.yaml`) and `library/configs/lerobot/` (LeRobot-wrapped). Compose with `__base__` and override any field on the CLI (`--trainer.max_epochs 200 --data.train_batch_size 64`).
+First-party configs live under `library/configs/physicalai/<policy>/<embodiment>/`; LeRobot-wrapped configs live in `library/configs/lerobot/`. Compose with `__base__` and override any field on the CLI (`--trainer.max_epochs 200 --data.train_batch_size 64`).
 
 ## Python API workflow
 
@@ -55,17 +55,17 @@ Use this path when the user asks for terminal commands, docs under `library/docs
    - Done when: `physicalai fit --config <your.yaml> --print_config` renders the fully-resolved config with no errors.
 2. **Smoke-test the wiring** before a real run:
    ```bash
-   physicalai fit --config configs/physicalai/<name>.yaml --trainer.fast_dev_run=true
+   physicalai fit --config configs/physicalai/<policy>/<embodiment>/<config>.yaml --trainer.fast_dev_run=true
    ```
    - Done when: one train + one val batch complete without shape or config errors.
 3. **Run training**, overriding on the CLI as needed:
    ```bash
-   physicalai fit --config configs/physicalai/<name>.yaml --trainer.max_epochs 200
+   physicalai fit --config configs/physicalai/<policy>/<embodiment>/<config>.yaml --trainer.max_epochs 200
    ```
    - Done when: checkpoints appear under `experiments/{name}/version_N/`.
 4. **Validate / test / predict** from a checkpoint:
    ```bash
-   physicalai validate --config configs/physicalai/<name>.yaml --ckpt_path experiments/<name>/version_0/checkpoints/last.ckpt
+   physicalai validate --config configs/physicalai/<policy>/<embodiment>/<config>.yaml --ckpt_path experiments/<name>/version_0/checkpoints/last.ckpt
    ```
 5. **Iterate on metrics**, not just loss — confirm the val metric relevant to the task moves, and record the config + checkpoint that produced it.
 
@@ -89,7 +89,7 @@ Use this path when the user asks for terminal commands, docs under `library/docs
 
 ```bash
 # from library/
-physicalai fit --config configs/physicalai/<name>.yaml --trainer.fast_dev_run=true
+physicalai fit --config configs/physicalai/<policy>/<embodiment>/<config>.yaml --trainer.fast_dev_run=true
 uv run --no-sync pytest tests/unit/train
 ```
 

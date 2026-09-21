@@ -48,7 +48,7 @@ class SshTrainingTargetHandler:
         resolved = resolve_alias(get_settings().ssh_config_path, remote_server.ssh_host_alias)
         if not resolved.found:
             raise RemoteServerAliasNotFoundError(remote_server.name, remote_server.ssh_host_alias)
-        return payload
+        return payload.model_copy(update={"remote_server_name": remote_server.name})
 
     @staticmethod
     def target_key(payload: TrainJobPayload) -> str:

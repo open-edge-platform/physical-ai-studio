@@ -22,19 +22,19 @@ export const MODELS: ReadonlyArray<{
     {
         id: 'act',
         name: 'ACT',
-        description: 'Action Chunking with Transformers, lightweight and fast to train',
+        description: 'Action Chunking with Transformers, lightweight and fast to train (BSD 3-Clause license)',
         minVRAM: 2 * GB,
     },
     {
         id: 'smolvla',
         name: 'SmolVLA',
-        description: 'Small Vision-Language-Action model based on SmolVLM2-500M',
+        description: 'Small Vision-Language-Action model based on SmolVLM2-500M (Apache 2.0 license)',
         minVRAM: 3 * GB,
     },
     {
         id: 'pi05',
         name: 'Pi0.5',
-        description: 'Enhanced Pi0 with discrete state encoding and longer context',
+        description: 'Flow-matching VLA with discrete state encoding and longer context (Gemma license)',
         minVRAM: 40 * GB,
     },
 ];

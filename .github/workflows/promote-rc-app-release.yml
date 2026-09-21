@@ -38,7 +38,7 @@ jobs:
       docker_patch_tag: ${{ steps.validate.outputs.docker_patch_tag }}
     steps:
       - name: Harden the runner (audit all outbound calls)
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
@@ -154,7 +154,7 @@ jobs:
       contents: write # Permission to push release tag to git
     steps:
       - name: Harden the runner (audit all outbound calls)
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
@@ -202,13 +202,13 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        device: [xpu]
+        device: [xpu, cpu, cuda]
     env:
       RC_TAG: ${{ inputs.rc_tag }}
       DEVICE: ${{ matrix.device }}
     steps:
       - name: Harden the runner (audit all outbound calls)
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
 
@@ -224,11 +224,12 @@ jobs:
           DOCKER_RC_TAG: ${{ needs.validate.outputs.docker_rc_tag }}
           DOCKER_PATCH_TAG: ${{ needs.validate.outputs.docker_patch_tag }}
           DEVICE: ${{ matrix.device }}
+          OWNER: ${{ github.repository_owner }}
           FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
-          SOURCE_IMAGE="ghcr.io/open-edge-platform/physical-ai-studio-${DEVICE}:${DOCKER_RC_TAG}"
-          TARGET_IMAGE="ghcr.io/open-edge-platform/physical-ai-studio-${DEVICE}:${DOCKER_PATCH_TAG}"
+          SOURCE_IMAGE="ghcr.io/${OWNER}/physical-ai-studio-${DEVICE}:${DOCKER_RC_TAG}"
+          TARGET_IMAGE="ghcr.io/${OWNER}/physical-ai-studio-${DEVICE}:${DOCKER_PATCH_TAG}"
 
           echo "Pulling ${SOURCE_IMAGE}"
           docker pull "${SOURCE_IMAGE}"
@@ -257,19 +258,105 @@ jobs:
           docker push "${TARGET_IMAGE}"
 
       - name: Sign Docker image
-        uses: open-edge-platform/geti-ci/actions/sign-image@7d25e47329bbfcde4ee51ab3581aea8613e245e2
+        uses: open-edge-platform/geti-ci/actions/sign-image@3690cbcc173cf90e0e0999b4822c3f8ebab9c137 # sign-image/v0.1.2
         with:
-          image-uri: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}:${{ needs.validate.outputs.docker_patch_tag }}
+          image-uri: ghcr.io/${{ github.repository_owner }}/physical-ai-studio-${{ matrix.device }}:${{ needs.validate.outputs.docker_patch_tag }}
 
       - name: Print summary
         env:
           DOCKER_PATCH_TAG: ${{ needs.validate.outputs.docker_patch_tag }}
           DEVICE: ${{ matrix.device }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           {
             echo "## Promotion Complete"
             echo ""
             echo "### Docker Images"
-            echo "- \`ghcr.io/open-edge-platform/physical-ai-studio-${DEVICE}:${DOCKER_PATCH_TAG}\`"
+            echo "- \`ghcr.io/${OWNER}/physical-ai-studio-${DEVICE}:${DOCKER_PATCH_TAG}\`"
+            echo ""
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  promote-trainer-docker:
+    needs: [validate, create-release-tag]
+    if: inputs.dry_run == false
+    name: Promote RC trainer image to release image
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write # Permission to push packages to GHCR
+      id-token: write # Permission to request OIDC token for signing images
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        device: [cuda, xpu]
+    env:
+      RC_TAG: ${{ inputs.rc_tag }}
+      DEVICE: ${{ matrix.device }}
+    steps:
+      - name: Harden the runner (audit all outbound calls)
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote trainer image for ${{ matrix.device }}
+        env:
+          DOCKER_RC_TAG: ${{ needs.validate.outputs.docker_rc_tag }}
+          DOCKER_PATCH_TAG: ${{ needs.validate.outputs.docker_patch_tag }}
+          DEVICE: ${{ matrix.device }}
+          OWNER: ${{ github.repository_owner }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          SOURCE_IMAGE="ghcr.io/${OWNER}/physicalai-trainer-${DEVICE}:${DOCKER_RC_TAG}"
+          TARGET_IMAGE="ghcr.io/${OWNER}/physicalai-trainer-${DEVICE}:${DOCKER_PATCH_TAG}"
+
+          echo "Pulling ${SOURCE_IMAGE}"
+          docker pull "${SOURCE_IMAGE}"
+
+          # Pre-check: verify target tag is absent or already points to the same image
+          if docker manifest inspect "${TARGET_IMAGE}" >/dev/null 2>&1; then
+            echo "Target image ${TARGET_IMAGE} already exists in GHCR."
+            docker pull "${TARGET_IMAGE}"
+            SOURCE_ID=$(docker inspect --format='{{.Id}}' "${SOURCE_IMAGE}")
+            TARGET_ID=$(docker inspect --format='{{.Id}}' "${TARGET_IMAGE}")
+            if [[ "${SOURCE_ID}" == "${TARGET_ID}" ]]; then
+              echo "::notice::${TARGET_IMAGE} already points to the same image as ${SOURCE_IMAGE}. Skipping push (idempotent re-run)."
+              exit 0
+            elif [[ "${FORCE}" == "true" ]]; then
+              echo "::warning::${TARGET_IMAGE} exists with a different digest; overwriting because force=true."
+            else
+              echo "::error::${TARGET_IMAGE} already exists in GHCR with a different digest. Set 'force: true' to overwrite."
+              exit 1
+            fi
+          fi
+
+          echo "Tagging ${TARGET_IMAGE}"
+          docker tag "${SOURCE_IMAGE}" "${TARGET_IMAGE}"
+
+          echo "Pushing ${TARGET_IMAGE}"
+          docker push "${TARGET_IMAGE}"
+
+      - name: Sign trainer image
+        uses: open-edge-platform/geti-ci/actions/sign-image@3690cbcc173cf90e0e0999b4822c3f8ebab9c137 # sign-image/v0.1.2
+        with:
+          image-uri: ghcr.io/${{ github.repository_owner }}/physicalai-trainer-${{ matrix.device }}:${{ needs.validate.outputs.docker_patch_tag }}
+
+      - name: Print summary
+        env:
+          DOCKER_PATCH_TAG: ${{ needs.validate.outputs.docker_patch_tag }}
+          DEVICE: ${{ matrix.device }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          {
+            echo "## Promotion Complete"
+            echo ""
+            echo "### Docker Images"
+            echo "- \`ghcr.io/${OWNER}/physicalai-trainer-${DEVICE}:${DOCKER_PATCH_TAG}\`"
             echo ""
           } >> "${GITHUB_STEP_SUMMARY}"

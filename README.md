@@ -27,7 +27,7 @@ Physical AI Studio is an end-to-end framework for teaching robots to perform tas
 ## Key Features
 
 - **End-to-End Pipeline** - From demonstration recording to robot deployment
-- **State-of-the-Art Policies** - Native policy implementations such as [ACT](https://arxiv.org/abs/2304.13705), [Pi0](https://www.physicalintelligence.company/download/pi0.pdf), [SmolVLA](https://huggingface.co/lerobot/smolvla_base), [GR00T](https://arxiv.org/abs/2503.14734) and [Pi0.5](https://arxiv.org/pdf/2504.16054), plus full [LeRobot](https://github.com/huggingface/lerobot) policy zoo
+- **State-of-the-Art Policies** - Native policy implementations such as [ACT](https://arxiv.org/abs/2304.13705), [SmolVLA](https://huggingface.co/lerobot/smolvla_base), [Pi0.5](https://arxiv.org/pdf/2504.16054), and RLDX-1, plus the full [LeRobot](https://github.com/huggingface/lerobot) policy zoo
 - **Flexible Interface** - Use Python API, CLI, or GUI
 - **Production Export** - Deploy to [OpenVINO](https://docs.openvino.ai/), [ONNX](https://onnx.ai/), or [Torch](https://docs.pytorch.org/executorch/stable/index.html) for any hardware
 - **Standardized Benchmarks** - Evaluate on benchmarks such as [LIBERO](https://libero-project.github.io/), [PushT](https://diffusion-policy.cs.columbia.edu/), and [RoboCasa](https://robocasa.ai/)
@@ -69,7 +69,7 @@ docker compose up -d
 Application runs at <http://localhost:7860>. See the [Docker README](./application/docker/README.md) for
 hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
 
-If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
+If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0.5,
 and others), configure `HF_TOKEN` to avoid unauthenticated Hub access warnings. See
 [Hugging Face Integration](./application/backend/docs/huggingface_integration.md).
 
@@ -104,7 +104,7 @@ npm run start
 
 Open <http://localhost:3000> in your browser.
 
-If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
+If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0.5,
 and others), configure `HF_TOKEN` in your backend environment. See
 [Hugging Face Integration](./application/backend/docs/huggingface_integration.md).
 
@@ -187,7 +187,7 @@ while not done:
 
 ```bash
 # Train
-physicalai fit --config configs/physicalai/act.yaml
+physicalai fit --config configs/physicalai/act/pusht/default.yaml
 
 # Evaluate
 physicalai benchmark --config configs/benchmark/libero.yaml --ckpt_path model.ckpt

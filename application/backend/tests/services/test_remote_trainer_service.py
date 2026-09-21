@@ -5,8 +5,15 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerCreate, RemoteTrainerUpdate
+from core.security.ssh_network_exposure import SshFeatureAvailability
+from exceptions import (
+    ResourceAlreadyExistsError,
+    ResourceNotFoundError,
+    SshAuthenticationError,
+    SshFeatureDisabledError,
+    SshHostKeyConfirmationRequiredError,
+)
+from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode, RemoteTrainerCreate, RemoteTrainerUpdate
 from services import RemoteTrainerService
 
 MODULE = "services.remote_trainer_service"
@@ -77,6 +84,64 @@ async def test_update_ignores_explicit_null_fields() -> None:
 
 
 @pytest.mark.anyio
+async def test_update_clears_explicit_null_tunnel_fields() -> None:
+    session = _session()
+    remote_trainer = _remote_trainer()
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=remote_trainer)
+    repository.update = AsyncMock(return_value=remote_trainer)
+
+    with patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository):
+        await RemoteTrainerService(session).update_remote_trainer(
+            remote_trainer.id,
+            RemoteTrainerUpdate(ssh_host_alias=None, ssh_remote_port=None, ssh_local_port=None),
+        )
+
+    repository.update.assert_awaited_once_with(
+        remote_trainer, {"ssh_host_alias": None, "ssh_remote_port": None, "ssh_local_port": None}
+    )
+
+
+@pytest.mark.anyio
+async def test_update_restores_trainer_when_host_key_confirmation_is_required() -> None:
+    session = _session()
+    remote_trainer = _remote_trainer()
+    updated_trainer = remote_trainer.model_copy(update={"name": "updated"})
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=remote_trainer)
+    repository.update = AsyncMock(side_effect=[updated_trainer, remote_trainer])
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager") as tunnel_manager,
+        pytest.raises(SshHostKeyConfirmationRequiredError),
+    ):
+        tunnel_manager.sync_tunnel = AsyncMock(
+            side_effect=SshHostKeyConfirmationRequiredError("trainer.test", "SHA256:fingerprint")
+        )
+        await RemoteTrainerService(session).update_remote_trainer(
+            remote_trainer.id,
+            RemoteTrainerUpdate(name="updated"),
+        )
+
+    assert repository.update.await_count == 2
+    repository.update.assert_any_await(
+        updated_trainer,
+        remote_trainer.model_dump(
+            include={
+                "name",
+                "connection_mode",
+                "url",
+                "ssh_host_alias",
+                "ssh_connection",
+                "ssh_remote_port",
+                "ssh_local_port",
+            }
+        ),
+    )
+
+
+@pytest.mark.anyio
 async def test_delete_missing_remote_trainer_raises_not_found() -> None:
     session = _session()
     repository = MagicMock()
@@ -86,3 +151,87 @@ async def test_delete_missing_remote_trainer_raises_not_found() -> None:
         await RemoteTrainerService(session).delete_remote_trainer(uuid4())
 
     repository.delete_by_id.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_create_rejects_ssh_tunnel_config_when_feature_inactive() -> None:
+    session = _session()
+    repository = MagicMock()
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(
+            f"{MODULE}.get_ssh_feature_availability",
+            return_value=SshFeatureAvailability(network_exposed=True),
+        ),
+        pytest.raises(SshFeatureDisabledError),
+    ):
+        await RemoteTrainerService(session).create_remote_trainer(
+            RemoteTrainerCreate(
+                name="trainer",
+                connection_mode=RemoteTrainerConnectionMode.SSH,
+                ssh_host_alias="training-box",
+                ssh_remote_port=8001,
+                ssh_local_port=8001,
+            )
+        )
+
+    repository.save.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_create_syncs_the_tunnel_manager_on_success() -> None:
+    session = _session()
+    remote_trainer = _remote_trainer()
+    repository = MagicMock()
+    repository.save = AsyncMock(return_value=remote_trainer)
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager") as tunnel_manager,
+    ):
+        tunnel_manager.sync_tunnel = AsyncMock()
+        await RemoteTrainerService(session).create_remote_trainer(
+            RemoteTrainerCreate(name="trainer", url="https://trainer.test")
+        )
+
+    tunnel_manager.sync_tunnel.assert_awaited_once_with(remote_trainer, None)
+
+
+@pytest.mark.anyio
+async def test_create_deletes_trainer_when_tunnel_sync_fails() -> None:
+    session = _session()
+    remote_trainer = _remote_trainer()
+    repository = MagicMock()
+    repository.save = AsyncMock(return_value=remote_trainer)
+    repository.delete_by_id = AsyncMock()
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager") as tunnel_manager,
+        pytest.raises(SshAuthenticationError),
+    ):
+        tunnel_manager.sync_tunnel = AsyncMock(side_effect=SshAuthenticationError("trainer.test"))
+        await RemoteTrainerService(session).create_remote_trainer(
+            RemoteTrainerCreate(name="trainer", url="https://trainer.test")
+        )
+
+    repository.delete_by_id.assert_awaited_once_with(remote_trainer.id)
+
+
+@pytest.mark.anyio
+async def test_delete_stops_the_tunnel_manager() -> None:
+    session = _session()
+    remote_trainer = _remote_trainer()
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=remote_trainer)
+    repository.delete_by_id = AsyncMock()
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager") as tunnel_manager,
+    ):
+        tunnel_manager.stop_tunnel = AsyncMock()
+        await RemoteTrainerService(session).delete_remote_trainer(remote_trainer.id)
+
+    tunnel_manager.stop_tunnel.assert_awaited_once_with(remote_trainer.id)

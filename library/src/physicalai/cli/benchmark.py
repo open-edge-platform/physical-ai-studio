@@ -84,7 +84,7 @@ def run(parser: ArgumentParser, cfg: Namespace) -> int:
         Process exit code.
     """
     configure_console_logging()
-    instantiated = cast("Namespace", parser.instantiate_classes(Namespace(benchmark=cfg.benchmark)))
+    instantiated = cast("Namespace", parser.instantiate(Namespace(benchmark=cfg.benchmark)))
     benchmark = instantiated.benchmark
     policy, device = load_policy(cfg.policy, cfg.ckpt_path)
 

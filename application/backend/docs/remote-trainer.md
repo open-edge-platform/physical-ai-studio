@@ -66,7 +66,7 @@ directory.
 > [!WARNING]
 > Studio still accepts a plain `http://` URL when you register a direct remote trainer (the docker-compose loopback binding above is fine over `http://`, since the traffic never leaves the host). If you point Studio at a trainer on a different host, use `https://`: the Hugging Face token is sent in the `POST /jobs` body on every submission (see the [!IMPORTANT] note above), and `http://` to a remote host puts it on the wire unencrypted. The Studio UI warns when you enter a non-loopback `http://` URL, but does not block it.
 
-> The backend honors `HTTP_PROXY` and `HTTPS_PROXY`. A configured proxy receives all trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
+> The backend honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. SSH connections use `HTTPS_PROXY`, falling back to `HTTP_PROXY`, as an HTTP CONNECT proxy. A configured proxy receives trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
 
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |

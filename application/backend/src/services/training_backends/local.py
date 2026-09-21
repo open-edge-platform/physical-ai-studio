@@ -119,10 +119,21 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
         val_split=payload.val_split,
         precision=str(payload.precision),
         compile_model=payload.compile_model,
+        augment_images=payload.augment_images,
         auto_scale_batch_size=payload.auto_scale_batch_size,
+        lora_enabled=payload.lora_enabled,
+        lora_rank=payload.lora_rank,
+        lora_alpha=payload.lora_alpha,
+        lora_dropout=payload.lora_dropout,
+        lora_use_dora=payload.lora_use_dora,
         snapflow_start_epoch=payload.snapflow_start_epoch,
         device_type=str(device.type) if device else None,
         device_index=device.index if device else None,
+        image_key_reorder_map=payload.image_key_reorder_map,
+        num_cameras=payload.num_cameras,
+        export_backends=(
+            [str(backend) for backend in payload.export_backends] if payload.export_backends is not None else None
+        ),
     )
 
 

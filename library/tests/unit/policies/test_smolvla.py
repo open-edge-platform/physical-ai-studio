@@ -51,7 +51,7 @@ class TestSmolVLAConfig:
         assert config.optimizer_weight_decay == 1e-10
         assert config.optimizer_grad_clip_norm == 10
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps == 30_000
+        assert config.scheduler_decay_steps is None
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_expert_config_values(self) -> None:
@@ -557,6 +557,85 @@ class TestAttentionModes:
         """Test prefix length default value."""
         config = SmolVLAConfig()
         assert config.prefix_length == -1
+
+
+class TestMixedPrecisionDtypeCasting:
+    """`to_bfloat16_for_selected_params` casts most weights to bfloat16 while a batch's
+    raw tensors (state, actions) stay float32, so every projection that consumes them
+    must cast its input to its own weight dtype rather than assume float32 throughout.
+    """
+
+    def test_to_bfloat16_for_selected_params_keeps_expert_norm_in_float32(self) -> None:
+        """`lm_expert.norm` must stay float32, mirroring the VLM's own `text_model.norm`."""
+        from physicalai.policies.smolvla.model import VLAFlowMatching
+
+        class _FakeExpert(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.norm = torch.nn.LayerNorm(4)
+
+        class _FakeVlmWithExpert(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.lm_expert = _FakeExpert()
+
+        fake = torch.nn.Module()
+        fake.vlm_with_expert = _FakeVlmWithExpert()
+        fake.state_proj = torch.nn.Linear(4, 4)
+
+        VLAFlowMatching.to_bfloat16_for_selected_params(fake, "bfloat16")
+
+        assert fake.vlm_with_expert.lm_expert.norm.weight.dtype == torch.float32
+        assert fake.state_proj.weight.dtype == torch.bfloat16
+
+    def test_embed_prefix_casts_state_to_state_proj_dtype(self) -> None:
+        """`state` arrives as float32 from the batch; `state_proj`'s weight may be bfloat16."""
+        from physicalai.policies.smolvla.model import VLAFlowMatching
+
+        hidden_size = 8
+        stub = SimpleNamespace(
+            add_image_special_tokens=False,
+            vlm_with_expert=SimpleNamespace(
+                embed_image=lambda imgs: torch.zeros(imgs.shape[0], 1, hidden_size, dtype=torch.bfloat16),
+                embed_language_tokens=lambda tokens: torch.zeros(*tokens.shape, hidden_size, dtype=torch.bfloat16),
+            ),
+            state_proj=torch.nn.Linear(4, hidden_size).to(dtype=torch.bfloat16),
+            prefix_length=-1,
+        )
+
+        images = torch.zeros(1, 1, 1, 3, 8, 8)
+        img_masks = torch.ones(1, 1, dtype=torch.bool)
+        lang_tokens = torch.zeros(1, 2, dtype=torch.long)
+        lang_masks = torch.ones(1, 2, dtype=torch.bool)
+        state = torch.zeros(1, 4, dtype=torch.float32)
+
+        embs, _, _ = VLAFlowMatching.embed_prefix(stub, images, img_masks, lang_tokens, lang_masks, state=state)
+
+        assert embs.dtype == torch.bfloat16
+
+    def test_embed_suffix_casts_noisy_actions_to_action_in_proj_dtype(self) -> None:
+        """`noisy_actions` arrives as float32; `action_in_proj`'s weight may be bfloat16."""
+        from physicalai.policies.smolvla.model import VLAFlowMatching
+
+        expert_hidden_size = 8
+        action_in_proj = torch.nn.Linear(4, expert_hidden_size).to(dtype=torch.bfloat16)
+        stub = SimpleNamespace(
+            action_in_proj=action_in_proj,
+            action_time_mlp_in=torch.nn.Linear(expert_hidden_size * 2, expert_hidden_size).to(dtype=torch.bfloat16),
+            action_time_mlp_out=torch.nn.Linear(expert_hidden_size, expert_hidden_size).to(dtype=torch.bfloat16),
+            vlm_with_expert=SimpleNamespace(expert_hidden_size=expert_hidden_size),
+            _min_period=4e-3,
+            _max_period=4.0,
+            _chunk_size=2,
+            _snapflow_enabled=False,
+        )
+
+        noisy_actions = torch.zeros(1, 2, 4, dtype=torch.float32)
+        timestep = torch.zeros(1, dtype=torch.float32)
+
+        embs, _, _ = VLAFlowMatching.embed_suffix(stub, noisy_actions, timestep)
+
+        assert embs.dtype == torch.bfloat16
 
     def test_custom_prefix_length(self) -> None:
         """Test custom prefix length."""

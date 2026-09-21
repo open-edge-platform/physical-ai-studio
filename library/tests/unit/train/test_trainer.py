@@ -98,7 +98,6 @@ class TestTrainer:
 
         assert any(isinstance(cb, EarlyStopping) for cb in trainer.callbacks)
 
-
 class TestTensorBoardLogging:
     """Tests that TensorBoard logging works end to end."""
 

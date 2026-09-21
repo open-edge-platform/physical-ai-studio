@@ -153,12 +153,12 @@ right before you train.
 This differs by policy, mainly because of whether the policy starts from a
 pretrained backbone.
 
-| Policy      | Pretrained backbone?      | Typical epochs                                                     | Notes                                                                                                                 |
-| ----------- | ------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| ACT         | No — trained from scratch | No pretrained schedule; use validation loss to decide when to stop | Fast per step, good first baseline.                                                                                   |
-| Diffusion   | No — trained from scratch | Longer than ACT                                                    | Benefits from more training than ACT on the same data.                                                                |
-| SmolVLA     | Yes — pretrained VLM      | 5-10 epochs                                                        | Unfreezing the vision encoder often improves results on specialized tasks, at the cost of more VRAM and slower steps. |
-| Pi0 / Pi0.5 | Yes — pretrained VLA      | 5-10 epochs                                                        | Memory-heavy; a small dataset needs far fewer epochs than a large pretraining-scale one.                              |
+| Policy    | Pretrained backbone?      | Typical epochs                                                     | Notes                                                                                                                 |
+| --------- | ------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| ACT       | No — trained from scratch | No pretrained schedule; use validation loss to decide when to stop | Fast per step, good first baseline.                                                                                   |
+| Diffusion | No — trained from scratch | Longer than ACT                                                    | Benefits from more training than ACT on the same data.                                                                |
+| SmolVLA   | Yes — pretrained VLM      | 5-10 epochs                                                        | Unfreezing the vision encoder often improves results on specialized tasks, at the cost of more VRAM and slower steps. |
+| Pi0.5     | Yes — pretrained VLA      | 5-10 epochs                                                        | Memory-heavy; a small dataset needs far fewer epochs than a large pretraining-scale one.                              |
 
 For any pretrained policy, more epochs is not automatically better on a small,
 task-specific dataset: watch `val/loss`, not just the training loss, and stop
@@ -178,10 +178,10 @@ total_steps      = epochs * steps_per_epoch
 
 ```bash
 # Train with a policy config, overriding epochs directly
-physicalai fit --config configs/physicalai/pi05.yaml --trainer.max_epochs 10
+physicalai fit --config configs/physicalai/pi05/aloha/default.yaml --trainer.max_epochs 10
 
 # Or specify a raw step budget instead
-physicalai fit --config configs/physicalai/act.yaml --trainer.max_steps 40000
+physicalai fit --config configs/physicalai/act/pusht/default.yaml --trainer.max_steps 40000
 ```
 
 See [CLI Training](../training/cli.md) for the full set of override flags
@@ -221,7 +221,7 @@ as a baseline for comparison instead of deleting it.
 
 ## Why cyclic episodes matter (technical detail)
 
-Chunked-action policies (ACT, Pi0, Pi0.5, SmolVLA, ...) request `chunk_size`
+Chunked-action policies (ACT, Pi0.5, SmolVLA, ...) request `chunk_size`
 future actions for every recorded frame. Near the end of an episode those
 frames don't exist, so the underlying dataset library clamps the query to the
 last frame and repeats the final action instead:
@@ -238,12 +238,7 @@ out of the loss**:
 | ------- | ---------------------------------------------- | ------------------------------------------------ |
 | ACT     | Yes                                            | Yes                                              |
 | SmolVLA | Yes                                            | Yes                                              |
-| Pi0     | No                                             | No                                               |
 | Pi0.5   | Yes                                            | Yes                                              |
-
-For Pi0, the repeated final action is still trained on as if it were real
-supervision. With a 50-step action chunk and short episodes, this can end up
-being a meaningful fraction of all action targets.
 
 - Non-cyclic episodes -> the policy is trained to freeze **at the target**. Bad.
 - Cyclic episodes -> the policy is trained to hold **at home**. Safe, correct,

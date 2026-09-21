@@ -95,12 +95,6 @@ COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
 
-# Local plugin dependency manifest (required by backend's tool.uv.sources path).
-# Keep source out of builder-base so source-only changes do not invalidate
-# the shared hardware-independent sync layer.
-COPY --link --from=plugin ./pyproject.toml \
-    /app/application/plugin/pyproject.toml
-
 WORKDIR /app/application/backend
 
 # Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
@@ -126,7 +120,6 @@ FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    --mount=type=bind,from=plugin,target=/app/application/plugin \
     uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
@@ -144,7 +137,6 @@ FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    --mount=type=bind,from=plugin,target=/app/application/plugin \
     uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
@@ -155,17 +147,6 @@ RUN uv pip uninstall --python .venv/bin/python \
     pytest-rerunfailures \
     expecttest hypothesis sortedcontainers kgb parameterized
 
-# Remove redundant for XPU container image Triton GPU backends (NVIDIA and AMD)
-# that also contains non-redistributable files
-# Based on: https://docs.nvidia.com/cuda/eula/index.html
-RUN set -eu; \
-    CLEANUP_ROOT="$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
-    [ -n "$CLEANUP_ROOT" ] && [ -d "$CLEANUP_ROOT" ]; \
-    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/nvidia" \
-        -exec rm -rf {} + 2>/dev/null || true; \
-    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/amd" \
-        -exec rm -rf {} + 2>/dev/null || true
-
 # ===========================================================================
 # Stage 4c: CUDA builder
 # ===========================================================================
@@ -173,7 +154,6 @@ FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    --mount=type=bind,from=plugin,target=/app/application/plugin \
     uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
@@ -194,8 +174,7 @@ FROM builder-base AS robot-assets
 
 COPY --link --from=app-source /app/application/backend/src /app/application/backend/src
 
-RUN --mount=type=bind,from=plugin,target=/app/application/plugin \
-    PYTHONPATH=/app/application/backend/src:/app/application/plugin/src \
+RUN PYTHONPATH=/app/application/backend/src \
     /app/application/backend/.venv/bin/python -c \
     "from robots.catalog.sync_robot_assets import sync_robot_assets; sync_robot_assets()"
 
@@ -354,44 +333,18 @@ FROM runtime-base AS runtime-cuda
 # Debian 13's sqv GPG verifier cannot validate the NVIDIA signing key.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN echo "deb [arch=amd64 trusted=yes] https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64 /" \
-        > /etc/apt/sources.list.d/nvidia-cuda.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg gpgv \
+    && curl -fsSL \
+        https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/cuda-keyring_1.1-1_all.deb \
+        -o /tmp/cuda-keyring.deb \
+    && dpkg -i /tmp/cuda-keyring.deb \
+    && rm -f /tmp/cuda-keyring.deb \
+    && apt-get update -o APT::Key::GPGVCommand=/usr/bin/gpgv && apt-get install -y --no-install-recommends \
         cuda-cudart-12-8=12.8.90-1 \
         libcublas-12-8=12.8.4.1-1 \
         libcudnn9-cuda-12=9.19.0.56-1 \
     && rm -rf /var/lib/apt/lists/*
-
 SHELL ["/bin/sh", "-c"]
-
-# ---------------------------------------------------------------------------
-# EULA compliance cleanup — remove non-redistributable CUDA system components.
-# Keeps only the runtime shared libraries needed for inference.
-# Based on: https://docs.nvidia.com/cuda/eula/index.html
-# ---------------------------------------------------------------------------
-RUN set -eux; \
-    # Remove development tools (compilers, debuggers, profilers)
-    apt-get remove -y --allow-remove-essential \
-        cuda-compiler-12-8 cuda-cudart-dev-12-8 cuda-nvcc-12-8 \
-        cuda-gdb-12-8 cuda-nsight-12-8 cuda-nsight-compute-12-8 \
-        cuda-nsight-systems-12-8 || true; \
-    # Remove headers and static libraries
-    find /usr/local/cuda* /usr/lib/x86_64-linux-gnu/ \
-        \( -path '*/include' -o -path '*/headers' \) -type d \
-        -exec rm -rf {} + 2>/dev/null || true; \
-    # Keep system static archives (e.g. libc_nonshared.a) required by
-    # torch.compile/Triton runtime linking; remove only CUDA static libs.
-    find /usr/local/cuda* \
-        -name '*.a' -delete 2>/dev/null || true; \
-    # Remove documentation and samples
-    rm -rf /usr/local/cuda*/doc /usr/local/cuda*/samples \
-           /usr/local/cuda*/extras/demo_suite; \
-    # Remove CUPTI profiling libraries (non-redistributable)
-    rm -rf /usr/local/cuda*/extras/CUPTI; \
-    # Remove cuSolver multi-GPU component (requires separate license)
-    find /usr/lib/x86_64-linux-gnu/ -name 'libcusolverMg*' -delete 2>/dev/null || true; \
-    # Clean up
-    apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 FROM runtime-cuda AS physical-ai-studio-cuda
 
@@ -414,3 +367,45 @@ RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps 
 WORKDIR /app/application/backend
 USER appuser
 CMD ["./run.sh"]
+
+# Dedicated redistributable targets. The original targets above intentionally
+# retain the complete dependency and CUDA toolkit contents.
+FROM physical-ai-studio-cpu AS physical-ai-studio-cpu-redistributable
+USER root
+RUN set -eu; \
+    CLEANUP_ROOT="$(/app/application/backend/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    find "$CLEANUP_ROOT" -type d \( -path "*/triton/backends/nvidia" -o -path "*/triton/backends/amd" \) \
+        -exec rm -rf {} + 2>/dev/null || true
+USER appuser
+
+FROM physical-ai-studio-xpu AS physical-ai-studio-xpu-redistributable
+USER root
+RUN set -eu; \
+    CLEANUP_ROOT="$(/app/application/backend/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    find "$CLEANUP_ROOT" -type d \( -path "*/triton/backends/nvidia" -o -path "*/triton/backends/amd" \) \
+        -exec rm -rf {} + 2>/dev/null || true
+USER appuser
+
+FROM physical-ai-studio-cuda AS physical-ai-studio-cuda-redistributable
+USER root
+RUN set -eux; \
+    CLEANUP_ROOT="$(/app/application/backend/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/amd" \
+        -exec rm -rf {} + 2>/dev/null || true; \
+    find "$CLEANUP_ROOT" -type f \( \
+        -path "*/triton/backends/nvidia/bin/cuobjdump" -o \
+        -path "*/triton/backends/nvidia/bin/nvdisasm" \) \
+        -delete 2>/dev/null || true; \
+    apt-get remove -y --allow-remove-essential \
+        cuda-compiler-12-8 cuda-cudart-dev-12-8 cuda-nvcc-12-8 \
+        cuda-gdb-12-8 cuda-nsight-12-8 cuda-nsight-compute-12-8 \
+        cuda-nsight-systems-12-8 || true; \
+    find /usr/local/cuda* /usr/lib/x86_64-linux-gnu/ \
+        \( -path '*/include' -o -path '*/headers' \) -type d \
+        -exec rm -rf {} + 2>/dev/null || true; \
+    find /usr/local/cuda* -name '*.a' -delete 2>/dev/null || true; \
+    rm -rf /usr/local/cuda*/doc /usr/local/cuda*/samples \
+           /usr/local/cuda*/extras/demo_suite /usr/local/cuda*/extras/CUPTI; \
+    find /usr/lib/x86_64-linux-gnu/ -name 'libcusolverMg*' -delete 2>/dev/null || true; \
+    apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
+USER appuser

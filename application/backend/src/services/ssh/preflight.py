@@ -280,7 +280,7 @@ def _record_alias_check(recorder: _CheckRecorder, server: RemoteServer, settings
     """Record ``ALIAS_RESOLVED`` and return whether the alias is usable.
 
     Resolution goes through the read-only SSH config reader, which rejects a
-    wildcard-only match: a pattern stanza is not a usable target.
+    wildcard-only match: a pattern entry is not a usable target.
     """
     resolved = resolve_alias(settings.ssh_config_path, server.ssh_host_alias)
     if resolved.found:
@@ -290,7 +290,7 @@ def _record_alias_check(recorder: _CheckRecorder, server: RemoteServer, settings
         CheckKey.ALIAS_RESOLVED,
         CheckOutcome.FAILED,
         reason_code=REASON_ALIAS_NOT_FOUND,
-        detail="Alias is absent from the SSH config, or matches only a wildcard stanza.",
+        detail="Alias is absent from the SSH config, or matches only a wildcard entry.",
         method=METHOD_SSH_CONFIG,
     )
     return False

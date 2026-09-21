@@ -32,7 +32,7 @@ _FORBIDDEN_FIELD_WORDS = (
 )
 
 # `ssh_host_alias` is the one deliberate, documented exception: it is the name
-# of an SSH config `Host` stanza, not a hostname, credential, or port, and its
+# of an SSH config `Host` entry, not a hostname, credential, or port, and its
 # presence is the entire point of this schema
 _KNOWN_SAFE_FIELDS = frozenset({"ssh_host_alias"})
 

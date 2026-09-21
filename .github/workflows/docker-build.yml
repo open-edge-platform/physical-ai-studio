@@ -6,6 +6,9 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+env:
+  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'false' }}
+
 concurrency:
   group: docker-build-${{ github.ref }}
   cancel-in-progress: true
@@ -16,12 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run_workflow: ${{ steps.check_paths.outputs.run }}
+      matrix: ${{ steps.set_matrix.outputs.matrix }}
     permissions:
       contents: read
     steps:
       - &harden-runner
         name: Harden the runner
-        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           disable-sudo: false
           disable-telemetry: true
@@ -74,11 +78,27 @@ jobs:
               - '!**/*.md'
               - '!**/docs/**'
 
+      - name: Set build matrix
+        id: set_matrix
+        # Only same-repo PRs in upstream can use the self-hosted GPU runner.
+        # Fork paths build CUDA on ubuntu-latest without a GPU smoke test.
+        env:
+          CAN_USE_SELF_HOSTED_CUDA: ${{ github.repository_owner == 'open-edge-platform' && github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          CPU_XPU='{"device":"cpu","runner":["ubuntu-latest"]},{"device":"xpu","runner":["ubuntu-latest"]}'
+          if [ "${CAN_USE_SELF_HOSTED_CUDA}" = "true" ]; then
+            MATRIX="{\"include\":[${CPU_XPU},{\"device\":\"cuda\",\"runner\":[\"self-hosted\",\"linux\",\"x64\"]}]}"
+          else
+            MATRIX="{\"include\":[${CPU_XPU},{\"device\":\"cuda\",\"runner\":[\"ubuntu-latest\"]}]}"
+          fi
+          echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build (${{ matrix.device }})
     needs: check-paths
     if: needs.check-paths.outputs.run_workflow == 'true'
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120 # To check CUDA builds
     permissions:
       contents: read # Checkout code
       packages: write # Push/pull registry build cache on GHCR
@@ -86,16 +106,7 @@ jobs:
 
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # CPU and XPU build on GitHub-hosted runners
-          - device: cpu
-            runner: [ubuntu-latest]
-          - device: xpu
-            runner: [ubuntu-latest]
-          # CUDA needs GPU hardware for the smoke test
-          - device: cuda
-            runner: [self-hosted, linux, x64]
+      matrix: ${{ fromJSON(needs.check-paths.outputs.matrix) }}
 
     steps:
       - *harden-runner
@@ -103,6 +114,9 @@ jobs:
       - *checkout
 
       - name: Log in to Container Registry
+        # Fork PRs get a read-only token and don't need registry auth: the
+        # build reads public cache and never pushes.
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -113,14 +127,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.device }}
+          images: ghcr.io/${{ github.repository_owner }}/physical-ai-studio-${{ matrix.device }}
           tags: |
             type=sha
             type=ref,event=pr
 
       - name: Build Docker image
         id: docker_build
-        uses: ./.github/actions/docker-build
+        uses: $/.github/actions/docker-build
         with:
           device: ${{ matrix.device }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -128,8 +142,10 @@ jobs:
           # Fork PRs cannot write packages to the upstream org, so disable
           # cache export to avoid 403 errors from GHCR.
           cache-write: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          enable-compile-model: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL }}
 
       - name: Smoke-test docker image
+        if: matrix.device != 'cuda' || (github.repository_owner == 'open-edge-platform' && github.event.pull_request.head.repo.full_name == github.repository)
         env:
           IMAGE: ${{ steps.docker_build.outputs.image-name }}
           DEVICE: ${{ matrix.device }}
@@ -154,7 +170,7 @@ jobs:
 
             # Extract registry and tag from the built image name
             # IMAGE format: registry/org/name:tag
-            # Example: ghcr.io/open-edge-platform/physical-ai-studio-cpu:sha-abc123
+            # Example: ghcr.io/<owner>/physical-ai-studio-cpu:sha-abc123
             REGISTRY=$(echo "${IMAGE}" | sed 's|\(.*\)/[^/]*$|\1/|')
             IMAGE_TAG=$(echo "${IMAGE}" | sed 's|.*:||')
 
@@ -266,7 +282,7 @@ jobs:
           echo "human=${SIZE_MB} MB (${SIZE_GB} GB)" >> "$GITHUB_OUTPUT"
 
       - name: Post image size comment
-        # Skip this step for PRs from forks as the do not have write permissions
+        # Skip this step for PRs from forks as they do not have write permissions
         if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

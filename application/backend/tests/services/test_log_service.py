@@ -66,7 +66,7 @@ async def test_discover_job_sources_includes_training_name_and_created_at(tmp_pa
             "training_target": "local",
             "project_id": str(uuid4()),
             "dataset_id": str(uuid4()),
-            "policy": "pi0",
+            "policy": "pi05",
             "model_name": "My Model",
             "max_steps": 100,
             "batch_size": 8,
@@ -82,7 +82,7 @@ async def test_discover_job_sources_includes_training_name_and_created_at(tmp_pa
 
     assert len(job_sources) == 1
     assert job_sources[0].id == f"job-{job_id}"
-    assert job_sources[0].name == "My Model (pi0)"
+    assert job_sources[0].name == "My Model (pi05)"
     assert job_sources[0].created_at is not None
 
 
@@ -103,7 +103,7 @@ async def test_discover_job_sources_ignores_rotated_job_logs(tmp_path) -> None:
             "training_target": "local",
             "project_id": str(uuid4()),
             "dataset_id": str(uuid4()),
-            "policy": "pi0",
+            "policy": "pi05",
             "model_name": "Long Job",
             "max_steps": 100,
             "batch_size": 8,
@@ -119,7 +119,7 @@ async def test_discover_job_sources_ignores_rotated_job_logs(tmp_path) -> None:
 
     assert len(job_sources) == 1
     assert job_sources[0].id == f"job-{job_id}"
-    assert job_sources[0].name == "Long Job (pi0)"
+    assert job_sources[0].name == "Long Job (pi05)"
 
 
 def test_get_all_job_log_paths_returns_rotated_then_active(tmp_path) -> None:

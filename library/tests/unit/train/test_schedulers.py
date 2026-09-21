@@ -124,3 +124,17 @@ class TestCosineDecayWithWarmupScheduler:
             assert actual_lr == pytest.approx(expected_lr, rel=1e-5), (
                 f"Mismatch at step {step}: expected {expected_lr}, got {actual_lr}"
             )
+
+    def test_warmup_longer_than_budget_is_clamped(self, optimizer):
+        """A run shorter than the warmup still reaches decay_lr at the last step."""
+        total_steps = 500
+        scheduler = cosine_decay_with_warmup_scheduler(
+            optimizer,
+            peak_lr=self.PEAK_LR,
+            decay_lr=self.DECAY_LR,
+            num_warmup_steps=1_000,
+            num_decay_steps=total_steps,
+        )
+        for _ in range(total_steps):
+            scheduler.step()
+        assert optimizer.param_groups[0]["lr"] == pytest.approx(self.DECAY_LR, rel=1e-2)

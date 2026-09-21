@@ -33,10 +33,14 @@ from exceptions import (
     SshAuthenticationError,
     SshConnectionError,
     SshHostAliasNotFoundError,
+    SshHostKeyConfirmationRequiredError,
     SshHostKeyMismatchError,
     SshHostKeyUnknownError,
 )
-from services.ssh import transport as transport_module
+from services.ssh import connection as connection_module
+from services.ssh.connection import AliasTarget, DirectTarget
+from services.ssh.host_keys import AsyncSshHostKeyVerifier
+from services.ssh.http_proxy import open_http_connect_socket, resolve_http_connect_proxy
 from services.ssh.transport import (
     COMMAND_FAILED_EXIT_STATUS,
     COMMAND_TIMEOUT_EXIT_STATUS,
@@ -54,8 +58,12 @@ _IDENTITY_PATH = "/home/tester/.ssh/id_secret_test_key"
 
 
 @pytest.fixture(autouse=True)
-def _clear_gates():
+def _clear_gates(monkeypatch):
     reset_alias_gates()
+    monkeypatch.setattr(
+        "services.ssh.connection.resolve_http_connect_proxy",
+        MagicMock(return_value=None),
+    )
     yield
     reset_alias_gates()
 
@@ -130,9 +138,141 @@ def _await_args(mock: AsyncMock) -> tuple[tuple[Any, ...], Mapping[str, Any]]:
 
 def _connected_transport(settings: Settings, connection: MagicMock) -> SshTransport:
     """Return a transport with a fake open connection, skipping the dial."""
-    transport = SshTransport(ALIAS, settings)
+    transport = _alias_transport(settings)
     transport._connection = connection
     return transport
+
+
+def _alias_transport(
+    settings: Settings,
+    alias: str = ALIAS,
+    *,
+    accepted_host_key_fingerprint: str | None = None,
+) -> SshTransport:
+    return SshTransport(
+        AliasTarget(alias),
+        settings,
+        accepted_host_key_fingerprint=accepted_host_key_fingerprint,
+    )
+
+
+async def test_http_connect_socket_negotiates_tunnel(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock()
+    loop.sock_sendall = AsyncMock()
+    loop.sock_recv = AsyncMock(side_effect=[bytes([byte]) for byte in b"HTTP/1.1 200 Connection established\r\n\r\n"])
+    proxy_socket = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=proxy_socket))
+
+    result = await open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
+
+    loop.sock_connect.assert_awaited_once_with(proxy_socket, ("192.0.2.1", 912))
+    loop.sock_sendall.assert_awaited_once_with(
+        proxy_socket, f"CONNECT {_HOSTNAME}:443 HTTP/1.1\r\nHost: {_HOSTNAME}:443\r\n\r\n".encode()
+    )
+    proxy_socket.setblocking.assert_called_once_with(False)
+    assert result is proxy_socket
+
+
+async def test_http_connect_socket_brackets_ipv6_target(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock()
+    loop.sock_sendall = AsyncMock()
+    loop.sock_recv = AsyncMock(side_effect=[bytes([byte]) for byte in b"HTTP/1.1 200 Connection established\r\n\r\n"])
+    proxy_socket = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=proxy_socket))
+
+    await open_http_connect_socket(("proxy.example.com", 912), "2001:db8::1", 443, 10.0)
+
+    loop.sock_sendall.assert_awaited_once_with(
+        proxy_socket, b"CONNECT [2001:db8::1]:443 HTTP/1.1\r\nHost: [2001:db8::1]:443\r\n\r\n"
+    )
+
+
+@pytest.mark.parametrize("host", ["target.example.com\r\nInjected: value", "target.example.com\nCONNECT attacker:22"])
+async def test_http_connect_socket_rejects_control_characters(host: str) -> None:
+    with pytest.raises(ValueError, match="invalid control characters"):
+        await open_http_connect_socket(("proxy.example.com", 912), host, 443, 10.0)
+
+
+async def test_http_connect_socket_rejects_proxy_error(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock()
+    loop.sock_sendall = AsyncMock()
+    loop.sock_recv = AsyncMock(side_effect=[bytes([byte]) for byte in b"HTTP/1.1 403 Forbidden\r\n\r\n"])
+    proxy_socket = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=proxy_socket))
+
+    with pytest.raises(OSError, match="rejected"):
+        await open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
+
+    proxy_socket.close.assert_called_once()
+
+
+async def test_http_connect_socket_closes_on_cancellation(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock()
+    loop.sock_sendall = AsyncMock()
+    loop.sock_recv = AsyncMock(side_effect=asyncio.CancelledError)
+    proxy_socket = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=proxy_socket))
+
+    with pytest.raises(asyncio.CancelledError):
+        await open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
+
+    proxy_socket.close.assert_called_once()
+
+
+async def test_http_connect_socket_closes_candidate_when_connect_is_cancelled(monkeypatch) -> None:
+    loop = MagicMock()
+    loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
+    loop.sock_connect = AsyncMock(side_effect=asyncio.CancelledError)
+    candidate = MagicMock()
+    monkeypatch.setattr(asyncio, "get_running_loop", MagicMock(return_value=loop))
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=candidate))
+
+    with pytest.raises(asyncio.CancelledError):
+        await open_http_connect_socket(("proxy.example.com", 912), _HOSTNAME, 443, 10.0)
+
+    candidate.close.assert_called_once()
+
+
+def test_http_connect_proxy_prefers_https_proxy(monkeypatch) -> None:
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setenv("HTTP_PROXY", "http://http-proxy.example.com:8080")
+    monkeypatch.setenv("HTTPS_PROXY", "http://https-proxy.example.com:912")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    assert resolve_http_connect_proxy(_HOSTNAME, 443) == ("https-proxy.example.com", 912)
+
+
+def test_http_connect_proxy_honors_no_proxy(monkeypatch) -> None:
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.example.com:912")
+    monkeypatch.setenv("NO_PROXY", ".internal.example.com")
+
+    assert resolve_http_connect_proxy(_HOSTNAME, 443) is None
+
+
+def test_http_connect_proxy_rejects_unsupported_url(monkeypatch) -> None:
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "socks5://proxy.example.com:912")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    with pytest.raises(ValueError, match="http://"):
+        resolve_http_connect_proxy(_HOSTNAME, 443)
 
 
 def _process_error(*, exit_status: int | None, stdout: str = "", stderr: str = "", exit_signal=None):
@@ -214,7 +354,7 @@ async def test_run_command_rejects_an_empty_argv(settings: Settings) -> None:
 
 
 async def test_run_command_without_a_connection_raises(settings: Settings) -> None:
-    transport = SshTransport(ALIAS, settings)
+    transport = _alias_transport(settings)
 
     with pytest.raises(RuntimeError):
         await transport.run_command(["true"])
@@ -387,7 +527,7 @@ def test_command_result_first_line_of_empty_output_is_empty() -> None:
 async def test_connect_rejects_an_unknown_alias_without_dialing(settings: Settings, monkeypatch) -> None:
     connect = AsyncMock()
     monkeypatch.setattr(asyncssh, "connect", connect)
-    transport = SshTransport("not-in-config", settings)
+    transport = _alias_transport(settings, "not-in-config")
 
     with pytest.raises(SshHostAliasNotFoundError):
         await transport.connect()
@@ -396,7 +536,7 @@ async def test_connect_rejects_an_unknown_alias_without_dialing(settings: Settin
 
 
 async def test_connect_rejects_a_wildcard_only_alias(tmp_path: Path, monkeypatch) -> None:
-    # A pattern stanza is not a usable target, so it must not be dialed.
+    # A pattern entry is not a usable target, so it must not be dialed.
     config_path = tmp_path / "config"
     config_path.write_text("Host *\n  User tester\n")
     settings = Settings(SSH_CONFIG_PATH=config_path, SSH_KNOWN_HOSTS_PATH=tmp_path / "known_hosts")
@@ -404,7 +544,7 @@ async def test_connect_rejects_a_wildcard_only_alias(tmp_path: Path, monkeypatch
     monkeypatch.setattr(asyncssh, "connect", connect)
 
     with pytest.raises(SshHostAliasNotFoundError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
     connect.assert_not_awaited()
 
@@ -412,7 +552,7 @@ async def test_connect_rejects_a_wildcard_only_alias(tmp_path: Path, monkeypatch
 async def test_connect_is_idempotent(settings: Settings, monkeypatch) -> None:
     connect = AsyncMock(return_value=MagicMock())
     monkeypatch.setattr(asyncssh, "connect", connect)
-    transport = SshTransport(ALIAS, settings)
+    transport = _alias_transport(settings)
 
     await transport.connect()
     await transport.connect()
@@ -426,7 +566,7 @@ async def test_context_manager_connects_and_closes(settings: Settings, monkeypat
     connection.wait_closed = AsyncMock()
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=connection))
 
-    async with SshTransport(ALIAS, settings) as transport:
+    async with _alias_transport(settings) as transport:
         assert transport.connected is True
 
     connection.close.assert_called_once()
@@ -435,17 +575,96 @@ async def test_context_manager_connects_and_closes(settings: Settings, monkeypat
 async def test_connect_reads_the_users_config_and_alias(settings: Settings, monkeypatch) -> None:
     captured: dict[str, Any] = {}
 
-    async def fake_connect(*, options, **_kwargs):
+    async def fake_connect(*, host, options, **_kwargs):
+        captured["host"] = host
         captured["options"] = options
         return MagicMock()
 
     monkeypatch.setattr(asyncssh, "connect", fake_connect)
-    transport = SshTransport(ALIAS, settings)
+    transport = _alias_transport(settings)
 
     await transport.connect()
 
     # asyncssh resolved the alias itself, from the user's own config file.
+    assert captured["host"] == ALIAS
     assert captured["options"].host == _HOSTNAME
+    await transport.close()
+
+
+async def test_connect_proxies_to_the_resolved_alias_target(settings: Settings, monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    proxy_socket = MagicMock()
+    open_proxy_socket = AsyncMock(return_value=proxy_socket)
+    resolve_proxy = MagicMock(return_value=("proxy.example.com", 912))
+
+    async def fake_connect(*, host, options, **kwargs):
+        captured["host"] = host
+        captured["options"] = options
+        captured["sock"] = kwargs["sock"]
+        return MagicMock()
+
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+    monkeypatch.setattr("services.ssh.connection.resolve_http_connect_proxy", resolve_proxy)
+    monkeypatch.setattr("services.ssh.connection.open_http_connect_socket", open_proxy_socket)
+
+    transport = _alias_transport(settings)
+    await transport.connect()
+
+    resolve_proxy.assert_called_once_with(_HOSTNAME, 22)
+    open_proxy_socket.assert_awaited_once_with(
+        ("proxy.example.com", 912),
+        _HOSTNAME,
+        22,
+        settings.ssh_connect_timeout_s,
+    )
+    assert captured["host"] == ALIAS
+    assert captured["options"].host == _HOSTNAME
+    assert captured["sock"] is proxy_socket
+    await transport.close()
+
+
+async def test_connect_uses_manual_connection_without_resolving_an_alias(settings: Settings, monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+    proxy_socket = MagicMock()
+    open_proxy_socket = AsyncMock(return_value=proxy_socket)
+
+    async def fake_connect(*, host, options, **_kwargs):
+        captured["host"] = host
+        captured["options"] = options
+        captured["sock"] = _kwargs["sock"]
+        return MagicMock()
+
+    resolve = MagicMock()
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+    monkeypatch.setattr("services.ssh.connection.resolve_alias", resolve)
+    monkeypatch.setattr(
+        "services.ssh.connection.resolve_http_connect_proxy",
+        MagicMock(return_value=("proxy.example.com", 912)),
+    )
+    monkeypatch.setattr("services.ssh.connection.open_http_connect_socket", open_proxy_socket)
+    transport = SshTransport(
+        DirectTarget(
+            hostname="gpu.example.test",
+            port=2222,
+            username="trainer",
+        ),
+        settings,
+    )
+
+    await transport.connect()
+
+    resolve.assert_not_called()
+    assert captured["host"] == "gpu.example.test"
+    assert captured["options"].host == "gpu.example.test"
+    assert captured["options"].port == 2222
+    assert captured["options"].username == "trainer"
+    assert captured["sock"] is proxy_socket
+    open_proxy_socket.assert_awaited_once_with(
+        ("proxy.example.com", 912),
+        "gpu.example.test",
+        2222,
+        settings.ssh_connect_timeout_s,
+    )
     await transport.close()
 
 
@@ -478,11 +697,66 @@ def _verifying_connect(monkeypatch, match_result) -> None:
     monkeypatch.setattr(asyncssh, "connect", fake_connect)
 
 
-async def test_no_known_hosts_entry_is_reported_as_an_unknown_host(settings: Settings, monkeypatch) -> None:
-    _verifying_connect(monkeypatch, _match())
+async def test_no_known_hosts_entry_requires_confirmation(settings: Settings, monkeypatch) -> None:
+    key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
 
-    with pytest.raises(SshHostKeyUnknownError):
-        await SshTransport(ALIAS, settings).connect()
+    async def fake_connect(*, options, **_kwargs):
+        options.known_hosts(_HOSTNAME, "10.0.0.1", 22)
+        assert not options.protocol_factory().validate_host_public_key(_HOSTNAME, "10.0.0.1", 22, key)
+        raise asyncssh.HostKeyNotVerifiable("not trusted")
+
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+
+    with pytest.raises(SshHostKeyConfirmationRequiredError) as raised:
+        await _alias_transport(settings).connect()
+
+    assert raised.value.details["fingerprint"] == key.get_fingerprint()
+    assert not settings.ssh_known_hosts_path.exists()
+
+
+async def test_confirmed_host_key_is_accepted_and_persisted(settings: Settings, monkeypatch) -> None:
+    key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
+
+    async def fake_connect(*, options, **_kwargs):
+        options.known_hosts(_HOSTNAME, "10.0.0.1", 22)
+        assert options.protocol_factory().validate_host_public_key(_HOSTNAME, "10.0.0.1", 22, key)
+        return MagicMock()
+
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+    transport = _alias_transport(settings, accepted_host_key_fingerprint=key.get_fingerprint())
+
+    await transport.connect()
+
+    assert settings.ssh_known_hosts_path.read_bytes() == (
+        _HOSTNAME.encode() + b" " + key.export_public_key().strip() + b"\n"
+    )
+    await transport.close()
+
+
+async def test_concurrent_first_use_accepts_only_one_competing_key(settings: Settings) -> None:
+    keys = [asyncssh.generate_private_key("ssh-ed25519").convert_to_public() for _ in range(2)]
+    verifiers = [AsyncSshHostKeyVerifier(ALIAS, settings.ssh_known_hosts_path, key.get_fingerprint()) for key in keys]
+    for verifier in verifiers:
+        verifier.match_known_hosts(_HOSTNAME, "10.0.0.1", 22)
+
+    accepted = await asyncio.gather(
+        *(
+            asyncio.to_thread(verifier.validate_host_public_key, _HOSTNAME, "10.0.0.1", 22, key)
+            for verifier, key in zip(verifiers, keys, strict=True)
+        )
+    )
+
+    assert sum(accepted) == 1
+    assert len(settings.ssh_known_hosts_path.read_text().splitlines()) == 1
+
+
+async def test_nonstandard_port_uses_openssh_host_pattern(settings: Settings) -> None:
+    key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
+    verifier = AsyncSshHostKeyVerifier(ALIAS, settings.ssh_known_hosts_path, key.get_fingerprint())
+    verifier.match_known_hosts(_HOSTNAME, "10.0.0.1", 2222)
+
+    assert verifier.validate_host_public_key(_HOSTNAME, "10.0.0.1", 2222, key)
+    assert settings.ssh_known_hosts_path.read_text().startswith(f"[{_HOSTNAME}]:2222 ")
 
 
 async def test_an_existing_known_hosts_entry_is_reported_as_a_mismatch(settings: Settings, monkeypatch) -> None:
@@ -492,28 +766,47 @@ async def test_an_existing_known_hosts_entry_is_reported_as_a_mismatch(settings:
     _verifying_connect(monkeypatch, _match(trusted=1))
 
     with pytest.raises(SshHostKeyMismatchError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
+
+
+async def test_an_existing_known_hosts_entry_is_not_replaced(settings: Settings, monkeypatch) -> None:
+    original = f"{_HOSTNAME} ssh-ed25519 existing-key\n"
+    settings.ssh_known_hosts_path.write_text(original)
+    key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public()
+
+    async def fake_connect(*, options, **_kwargs):
+        options.known_hosts(_HOSTNAME, "10.0.0.1", 22)
+        assert not options.protocol_factory().validate_host_public_key(_HOSTNAME, "10.0.0.1", 22, key)
+        raise asyncssh.HostKeyNotVerifiable("not trusted")
+
+    monkeypatch.setattr(asyncssh, "match_known_hosts", lambda *_args: _match(trusted=1))
+    monkeypatch.setattr(asyncssh, "connect", fake_connect)
+
+    with pytest.raises(SshHostKeyMismatchError):
+        await _alias_transport(settings).connect()
+
+    assert settings.ssh_known_hosts_path.read_text() == original
 
 
 async def test_a_revoked_key_is_reported_as_a_mismatch(settings: Settings, monkeypatch) -> None:
     _verifying_connect(monkeypatch, _match(revoked=1))
 
     with pytest.raises(SshHostKeyMismatchError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
 
 async def test_a_ca_only_entry_is_reported_as_a_mismatch(settings: Settings, monkeypatch) -> None:
     _verifying_connect(monkeypatch, _match(ca=1))
 
     with pytest.raises(SshHostKeyMismatchError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
 
 async def test_the_matcher_state_does_not_leak_between_connects(settings: Settings, monkeypatch) -> None:
     # A mismatch recorded on one attempt must not make the next attempt - which
     # never consulted known_hosts - look like a mismatch for that reason.
     _verifying_connect(monkeypatch, _match(trusted=1))
-    transport = SshTransport(ALIAS, settings)
+    transport = _alias_transport(settings)
     with pytest.raises(SshHostKeyMismatchError):
         await transport.connect()
 
@@ -530,7 +823,7 @@ async def test_an_unconsulted_matcher_fails_closed_as_a_mismatch(settings: Setti
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=asyncssh.HostKeyNotVerifiable("not trusted")))
 
     with pytest.raises(SshHostKeyMismatchError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
 
 async def test_missing_known_hosts_file_is_treated_as_empty(settings: Settings, monkeypatch) -> None:
@@ -543,9 +836,9 @@ async def test_missing_known_hosts_file_is_treated_as_empty(settings: Settings, 
         return _match()
 
     monkeypatch.setattr(asyncssh, "match_known_hosts", fake_match)
-    transport = SshTransport(ALIAS, settings)
+    verifier = AsyncSshHostKeyVerifier(ALIAS, settings.ssh_known_hosts_path)
 
-    transport._match_known_hosts(_HOSTNAME, "10.0.0.1", 22)
+    verifier.match_known_hosts(_HOSTNAME, "10.0.0.1", 22)
 
     assert recorded["source"] == b""
 
@@ -559,9 +852,9 @@ async def test_existing_known_hosts_file_is_passed_by_path(settings: Settings, k
         return _match(trusted=1)
 
     monkeypatch.setattr(asyncssh, "match_known_hosts", fake_match)
-    transport = SshTransport(ALIAS, settings)
+    verifier = AsyncSshHostKeyVerifier(ALIAS, settings.ssh_known_hosts_path)
 
-    transport._match_known_hosts(_HOSTNAME, "10.0.0.1", 22)
+    verifier.match_known_hosts(_HOSTNAME, "10.0.0.1", 22)
 
     assert recorded["source"] == str(known_hosts)
 
@@ -594,7 +887,7 @@ async def test_map_connect_failures_to_a_connection_error(
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=error))
 
     with pytest.raises(expected) as raised:
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
     assert reason_fragment in raised.value.message
 
@@ -604,7 +897,7 @@ async def test_map_permission_denied_to_an_authentication_error(settings: Settin
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=asyncssh.PermissionDenied("denied")))
 
     with pytest.raises(SshAuthenticationError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
 
 async def test_map_permission_denied_with_a_locked_key_to_an_agent_error(
@@ -616,10 +909,10 @@ async def test_map_permission_denied_with_a_locked_key_to_an_agent_error(
     # the fact - otherwise the user is told to check their key instead of to run
     # ssh-add. The key here is genuinely encrypted, so the detection is real.
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=asyncssh.PermissionDenied("denied")))
-    monkeypatch.setattr(transport_module, "_agent_has_keys", AsyncMock(return_value=False))
+    monkeypatch.setattr(connection_module, "_agent_has_keys", AsyncMock(return_value=False))
 
     with pytest.raises(SshAgentRequiredError):
-        await SshTransport(ALIAS, encrypted_identity_settings).connect()
+        await _alias_transport(encrypted_identity_settings).connect()
 
 
 async def test_a_locked_key_with_a_loaded_agent_is_an_authentication_error(
@@ -629,10 +922,10 @@ async def test_a_locked_key_with_a_loaded_agent_is_an_authentication_error(
     # The agent holds keys, so the passphrase is not the problem: the server
     # rejected the identity.
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=asyncssh.PermissionDenied("denied")))
-    monkeypatch.setattr(transport_module, "_agent_has_keys", AsyncMock(return_value=True))
+    monkeypatch.setattr(connection_module, "_agent_has_keys", AsyncMock(return_value=True))
 
     with pytest.raises(SshAuthenticationError):
-        await SshTransport(ALIAS, encrypted_identity_settings).connect()
+        await _alias_transport(encrypted_identity_settings).connect()
 
 
 async def test_a_plaintext_key_rejection_is_an_authentication_error(tmp_path: Path, monkeypatch) -> None:
@@ -645,7 +938,7 @@ async def test_a_plaintext_key_rejection_is_an_authentication_error(tmp_path: Pa
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=asyncssh.PermissionDenied("denied")))
 
     with pytest.raises(SshAuthenticationError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
 
 @pytest.mark.parametrize(
@@ -663,7 +956,7 @@ async def test_map_encrypted_key_load_failures_to_an_agent_error(
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=error))
 
     with pytest.raises(SshAgentRequiredError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
 
 async def test_a_malformed_identity_file_is_an_authentication_error(tmp_path: Path, monkeypatch) -> None:
@@ -679,7 +972,7 @@ async def test_a_malformed_identity_file_is_an_authentication_error(tmp_path: Pa
     monkeypatch.setattr(asyncssh, "connect", connect)
 
     with pytest.raises(SshAuthenticationError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
     connect.assert_not_awaited()
 
@@ -693,7 +986,7 @@ async def test_a_missing_identity_file_is_an_authentication_error(tmp_path: Path
     monkeypatch.setattr(asyncssh, "connect", AsyncMock())
 
     with pytest.raises(SshAuthenticationError) as raised:
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
     assert str(tmp_path) not in raised.value.message
 
@@ -702,7 +995,7 @@ async def test_map_an_unexpected_exception_to_a_connection_error(settings: Setti
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=RuntimeError("something odd")))
 
     with pytest.raises(SshConnectionError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
 
 async def test_cancellation_is_not_swallowed(settings: Settings, monkeypatch) -> None:
@@ -710,7 +1003,7 @@ async def test_cancellation_is_not_swallowed(settings: Settings, monkeypatch) ->
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=asyncio.CancelledError))
 
     with pytest.raises(asyncio.CancelledError):
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
 
 @pytest.mark.parametrize(
@@ -733,7 +1026,7 @@ async def test_mapped_errors_never_leak_hostnames_or_key_paths(
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=error))
 
     with pytest.raises(StudioBaseException) as raised:
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
     message = raised.value.message
     assert _HOSTNAME not in message
@@ -748,7 +1041,7 @@ async def test_mapped_errors_drop_the_original_exception_chain(settings: Setting
     monkeypatch.setattr(asyncssh, "connect", AsyncMock(side_effect=asyncssh.ProtocolError(f"talking to {_HOSTNAME}")))
 
     with pytest.raises(SshConnectionError) as raised:
-        await SshTransport(ALIAS, settings).connect()
+        await _alias_transport(settings).connect()
 
     assert raised.value.__cause__ is None
 
@@ -765,7 +1058,7 @@ async def test_the_per_alias_connection_slot_is_released_on_failure(settings: Se
 
     for _ in range(settings.ssh_max_connections_per_server + 2):
         with pytest.raises(SshConnectionError):
-            await SshTransport(ALIAS, settings).connect()
+            await _alias_transport(settings).connect()
 
 
 async def test_concurrent_connections_to_one_alias_are_capped(
@@ -796,7 +1089,7 @@ async def test_concurrent_connections_to_one_alias_are_capped(
         return connection
 
     monkeypatch.setattr(asyncssh, "connect", fake_connect)
-    transports = [SshTransport(ALIAS, settings) for _ in range(5)]
+    transports = [_alias_transport(settings) for _ in range(5)]
 
     async def dial(transport: SshTransport) -> None:
         await transport.connect()
@@ -808,7 +1101,7 @@ async def test_concurrent_connections_to_one_alias_are_capped(
 
 
 async def test_close_is_safe_without_a_connection(settings: Settings) -> None:
-    transport = SshTransport(ALIAS, settings)
+    transport = _alias_transport(settings)
 
     await transport.close()
 
@@ -822,7 +1115,7 @@ async def test_close_releases_the_slot_even_if_wait_closed_fails(settings: Setti
     settings_with_room = settings
 
     for _ in range(settings_with_room.ssh_max_connections_per_server + 2):
-        transport = SshTransport(ALIAS, settings_with_room)
+        transport = _alias_transport(settings_with_room)
         await transport.connect()
         await transport.close()
 

@@ -3,12 +3,26 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer, field_validator, model_validator
 
 from schemas.base_job import BaseJob, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.hardware import DeviceType
-from training.job import SNAPFLOW_POLICIES
+from training.job import PEFT_POLICIES, SNAPFLOW_POLICIES
+
+
+class ExportBackend(StrEnum):
+    """Export formats a policy can produce.
+
+    Mirrors ``physicalai.export.backends.ExportBackend``; kept local so the
+    schemas package stays free of a runtime ``physicalai`` import (see
+    test_export_backend_matches_library for the parity check).
+    """
+
+    ONNX = "onnx"
+    OPENVINO = "openvino"
+    TORCH = "torch"
+    EXECUTORCH = "executorch"
 
 
 class TrainingPrecision(StrEnum):
@@ -105,6 +119,22 @@ class TrainJobPayloadBase(BaseModel):
     )
     batch_size: int = Field(default=8, ge=1, le=256, description="Training batch size")
 
+    @field_validator("image_key_reorder_map")
+    @classmethod
+    def strip_observation_prefix(cls, value: dict[str, int]) -> dict[str, int]:
+        """Accept a dataset feature key where a camera name is expected.
+
+        A dataset stores its cameras as ``observation.images.<name>`` while the
+        policy reads them as ``images.<name>`` and prefixes ``images.`` onto
+        whatever mapping it is handed. Stripping the dataset's ``observation.``
+        here means either spelling resolves to the same key instead of failing
+        minutes into a run with a mapping that matches nothing.
+
+        Returns:
+            The mapping keyed the way the policy reads its images.
+        """
+        return {key.removeprefix("observation."): slot for key, slot in value.items()}
+
     @model_validator(mode="after")
     def resolve_training_limit(self) -> "TrainJobPayloadBase":
         """Resolve training-limit fields, applying precedence and defaults.
@@ -142,6 +172,70 @@ class TrainJobPayloadBase(BaseModel):
         description="Training precision ('32-true', 'bf16-mixed')",
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
+    image_key_reorder_map: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Camera name -> camera slot index, for a policy pretrained on a fixed camera order (SmolVLA). "
+            "Keys are bare camera names ('gripper'), not dataset feature keys: the policy sees its images "
+            "as 'images.<name>'. A LeRobot 'observation.' prefix is accepted and stripped. Empty keeps the "
+            "dataset's own camera order. When set it must cover every camera the dataset has, since the "
+            "policy matches it against the batch's image keys."
+        ),
+    )
+    num_cameras: int = Field(
+        default=0,
+        ge=0,
+        le=8,
+        description=(
+            "Camera slots the policy reads. Slots not filled by 'image_key_reorder_map' are trained on "
+            "masked empty images. 0 keeps only the dataset's cameras."
+        ),
+    )
+    export_backends: list[ExportBackend] | None = Field(
+        default=None,
+        description=(
+            "Export formats to produce after training. Null exports every format the policy supports; "
+            "formats the policy does not support are ignored."
+        ),
+    )
+    augment_images: bool = Field(
+        default=False,
+        description="Apply the default image augmentation pipeline to training images",
+    )
+    lora_enabled: bool = Field(
+        default=False,
+        description=(
+            "Fine-tune with LoRA/DoRA instead of full fine-tuning: freezes the base model and trains "
+            f"small low-rank adapters, using much less memory. Only available for {sorted(PEFT_POLICIES)}."
+        ),
+    )
+    lora_rank: int = Field(
+        default=32,
+        ge=1,
+        le=256,
+        description="LoRA rank (dimension of the low-rank decomposition). Ignored unless lora_enabled.",
+    )
+    lora_alpha: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "LoRA scaling numerator (scaling = lora_alpha / lora_rank). None defaults to lora_rank "
+            "(scaling = 1.0). Ignored unless lora_enabled."
+        ),
+    )
+    lora_dropout: float = Field(
+        default=0.05,
+        ge=0.0,
+        lt=1.0,
+        description="Dropout probability applied to LoRA adapter inputs. Ignored unless lora_enabled.",
+    )
+    lora_use_dora: bool = Field(
+        default=False,
+        description=(
+            "Use DoRA (Weight-Decomposed Low-Rank Adaptation) instead of plain LoRA; typically improves "
+            "quality at low ranks at the cost of slightly more compute/memory. Ignored unless lora_enabled."
+        ),
+    )
     snapflow_enabled: bool = Field(
         default=False,
         description=(
@@ -159,6 +253,22 @@ class TrainJobPayloadBase(BaseModel):
             "max_epochs teacher run. Ignored when snapflow_enabled is false."
         ),
     )
+
+    @model_validator(mode="after")
+    def validate_lora(self) -> "TrainJobPayloadBase":
+        """Reject a LoRA request the policy cannot honour, and DoRA requested without LoRA."""
+        if self.lora_use_dora and not self.lora_enabled:
+            msg = "lora_use_dora requires lora_enabled; DoRA is a variant of LoRA, not a standalone mode."
+            raise ValueError(msg)
+        if not self.lora_enabled:
+            return self
+        if self.policy.lower() not in PEFT_POLICIES:
+            msg = (
+                f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
+                f"it requires one of {sorted(PEFT_POLICIES)}."
+            )
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def validate_snapflow(self) -> "TrainJobPayloadBase":
@@ -285,6 +395,10 @@ class SshTrainJobPayload(TrainJobPayloadBase):
 
     training_target: Literal[TrainingTarget.SSH] = TrainingTarget.SSH
     remote_server_id: UUID = Field(..., description="Configured SSH-provisioned remote server selected for an SSH run")
+    remote_server_name: str | None = Field(
+        default=None,
+        description="Resolved remote server name pinned when the job is submitted, for display once deleted",
+    )
 
 
 TrainJobPayload = Annotated[

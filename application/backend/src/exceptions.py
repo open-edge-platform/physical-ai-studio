@@ -28,11 +28,20 @@ class BaseException(Exception):
     :param http_status: int default http status code to return to user
     """
 
-    def __init__(self, message: str, error_code: str, http_status: int, *, phase: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        error_code: str,
+        http_status: int,
+        *,
+        phase: str | None = None,
+        details: dict[str, str] | None = None,
+    ) -> None:
         self.message = message
         self.error_code = error_code
         self.http_status = http_status
         self.phase = phase
+        self.details = details or {}
         super().__init__(message)
 
 
@@ -427,7 +436,7 @@ class SshHostAliasNotFoundError(BaseException):
     """Raised when a server's SSH host alias is absent from the user's SSH config.
 
     Distinct from a connection failure: nothing was dialed, because there was no
-    host to dial. A wildcard-only match lands here too - a pattern stanza is not
+    host to dial. A wildcard-only match lands here too - a pattern entry is not
     a usable target.
     """
 
@@ -443,20 +452,25 @@ class SshHostAliasNotFoundError(BaseException):
 
 
 class SshHostKeyUnknownError(BaseException):
-    """Raised when the host is absent from ``known_hosts``.
-
-    Fails closed. Studio neither pins nor writes host keys, so the recovery is
-    for the user to accept the fingerprint themselves.
-    """
+    """Raised when AsyncSSH cannot validate an unknown host key."""
 
     def __init__(self, alias: str) -> None:
         super().__init__(
-            message=(
-                f"The host key for '{alias}' has not been accepted yet. "
-                f"Run `ssh {alias}` once and accept its fingerprint, then try again."
-            ),
+            message=f"The host key for '{alias}' could not be validated.",
             error_code="ssh_host_key_unknown",
             http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshHostKeyConfirmationRequiredError(BaseException):
+    """Raised when a first-seen SSH host key needs user confirmation."""
+
+    def __init__(self, alias: str, fingerprint: str) -> None:
+        super().__init__(
+            message=f"Confirm the SSH host key fingerprint for '{alias}' before connecting.",
+            error_code="ssh_host_key_confirmation_required",
+            http_status=http.HTTPStatus.PRECONDITION_REQUIRED,
+            details={"fingerprint": fingerprint},
         )
 
 

@@ -1,3 +1,50 @@
 .errorMessage {
     color: var(--spectrum-global-color-static-red-600);
 }
+
+.modeFields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spectrum-global-dimension-size-100);
+    height: 300px;
+}
+
+.fieldRow {
+    display: flex;
+    gap: var(--spectrum-global-dimension-size-200);
+}
+
+.fieldRow > * {
+    min-width: 0;
+}
+
+@media (max-width: 360px) {
+    .modeFields {
+        height: auto;
+    }
+
+    .fieldRow {
+        flex-direction: column;
+    }
+}
+
+.awsIcon {
+    width: var(--spectrum-global-dimension-size-500);
+    height: auto;
+}
+
+.awsStackLinkContent {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spectrum-global-dimension-size-50);
+}
+
+.awsPrompt {
+    flex-wrap: wrap;
+}
+
+.awsStackLinkContent svg {
+    width: var(--spectrum-global-dimension-size-175);
+    height: var(--spectrum-global-dimension-size-175);
+    flex-shrink: 0;
+}

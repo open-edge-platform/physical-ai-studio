@@ -39,7 +39,7 @@ export const CreateProject = ({ trigger }: CreateProjectProps) => {
             {trigger}
             {(close) => (
                 <Dialog width={'size-6000'}>
-                    <Heading>Create project</Heading>
+                    <Heading>Create new project</Heading>
                     <Divider />
                     <Content>
                         <Form id={'create-project-form'} onSubmit={save} validationBehavior='native'>

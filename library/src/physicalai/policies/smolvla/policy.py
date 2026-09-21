@@ -89,7 +89,8 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: Weight decay for optimizer. Default: 1e-10.
         optimizer_grad_clip_norm: Gradient clipping norm value. Default: 10.
         scheduler_warmup_steps: Number of warmup steps for scheduler. Default: 1_000.
-        scheduler_decay_steps: Number of steps between learning rate decays. Default: 30_000.
+        scheduler_decay_steps: Explicit cosine decay horizon in steps. When ``None``, the horizon
+            follows the trainer's total step budget. Default: None.
         scheduler_decay_lr: Learning rate decay factor. Default: 2.5e-6.
         dataset_stats: Dataset normalization statistics for eager initialization. Default: None.
 
@@ -164,7 +165,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: float = 1e-10,
         optimizer_grad_clip_norm: float = 10,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int = 30_000,
+        scheduler_decay_steps: int | None = None,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization (for checkpoint loading)
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -381,7 +382,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         optimizer_weight_decay: float = 1e-10,
         optimizer_grad_clip_norm: float = 10,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int = 30_000,
+        scheduler_decay_steps: int | None = None,
         scheduler_decay_lr: float = 2.5e-6,
     ) -> tuple[SmolVLAConfig, dict[str, dict[str, list[float] | str | tuple]] | None, Path | None]:
         """Template loader for SmolVLA pretrained config/weights from local path or HF Hub.
@@ -664,6 +665,11 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
+        The cosine decay horizon defaults to the total training step budget
+        (``self.trainer.estimated_stepping_batches``, derived from ``max_steps``
+        or ``max_epochs``), so the LR reaches ``scheduler_decay_lr`` exactly at
+        the end of training. Set ``scheduler_decay_steps`` to override it.
+
         Returns:
             Optimizer configuration dict.
         """
@@ -676,9 +682,13 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             lr=self.config.optimizer_lr,
             weight_decay=self.config.optimizer_weight_decay,
             betas=self.config.optimizer_betas,
+            eps=self.config.optimizer_eps,
         )
 
         num_decay_steps = self.config.scheduler_decay_steps
+        if num_decay_steps is None:
+            num_decay_steps = int(self.trainer.estimated_stepping_batches)
+
         scheduler = cosine_decay_with_warmup_scheduler(
             optimizer,
             peak_lr=self.config.optimizer_lr,
