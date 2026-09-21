@@ -1,0 +1,262 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |-
+  Creates a Physical AI Studio remote trainer with a GPU EC2 instance and a 100 GiB EBS volume.
+  Charges vary by selected training policy and AWS Region.
+  Delete the entire stack after training to stop charges and remove its resources.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Required connection settings
+        Parameters:
+          - TrainingPolicy
+          - SshPublicKey
+          - SshPort
+          - StudioIpAddress
+    ParameterLabels:
+      TrainingPolicy:
+        default: Policy to train
+      SshPublicKey:
+        default: SSH public key
+      SshPort:
+        default: SSH port
+      StudioIpAddress:
+        default: Studio public IP address (The default value allows anyone with this SSH key to connect)
+
+Parameters:
+  TrainingPolicy:
+    Type: String
+    Default: ACT (g4dn.xlarge)
+    AllowedValues:
+      - ACT (g4dn.xlarge)
+      - Pi0.5 (g6e.2xlarge)
+      - SmolVLA (g4dn.xlarge)
+    Description: |-
+      Select the policy you plan to train. Its recommended GPU instance is shown in parentheses.
+      Pricing: Review the current On-Demand price in this AWS Region.
+      Cleanup: Delete the stack immediately after training to stop charges.
+
+  SshPublicKey:
+    Type: String
+    Description: >-
+      Don't have an SSH key? On Linux or macOS, open a terminal and run
+      "ssh-keygen -t ed25519". Press Enter at each prompt. Then run
+      "cat ~/.ssh/id_ed25519.pub". Copy the full line shown and paste it here.
+    AllowedPattern: "^ssh-(rsa|ed25519|ecdsa-[A-Za-z0-9-]+) [A-Za-z0-9+/=]+(?: .*)?$"
+    ConstraintDescription: Paste the full public key line.
+
+  SshPort:
+    Type: Number
+    Default: 22
+    MinValue: 1
+    MaxValue: 65535
+    Description: TCP port used for SSH connections to the trainer.
+
+  StudioIpAddress:
+    Type: String
+    Default: 0.0.0.0
+    Description: Enter the public IPv4 address of the computer or network running Studio.
+    AllowedPattern: "^(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(?:\\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}$"
+    ConstraintDescription: Enter a valid IPv4 address, for example 203.0.113.10.
+
+Conditions:
+  IsPi05Policy: !Equals [!Ref TrainingPolicy, Pi0.5 (g6e.2xlarge)]
+  AllowSshFromAnywhere: !Equals [!Ref StudioIpAddress, 0.0.0.0]
+
+Resources:
+  TrainerVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-vpc
+
+  TrainerInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-igw
+
+  TrainerGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref TrainerInternetGateway
+      VpcId: !Ref TrainerVpc
+
+  TrainerSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ""
+      CidrBlock: 10.42.1.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref TrainerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-subnet
+
+  TrainerRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TrainerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-routes
+
+  TrainerDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: TrainerGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref TrainerInternetGateway
+      RouteTableId: !Ref TrainerRouteTable
+
+  TrainerSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref TrainerRouteTable
+      SubnetId: !Ref TrainerSubnet
+
+  TrainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SSH-only access to the development trainer
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref SshPort
+          ToPort: !Ref SshPort
+          CidrIp: !If [AllowSshFromAnywhere, 0.0.0.0/0, !Sub "${StudioIpAddress}/32"]
+          Description: SSH access to the remote trainer
+      VpcId: !Ref TrainerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-ssh
+
+  TrainerKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub ${AWS::StackName}-key
+      PublicKeyMaterial: !Ref SshPublicKey
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-key
+
+  TrainerInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: TrainerDefaultRoute
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT30M
+    Properties:
+      ImageId: "{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2023/gpu/recommended/image_id}}"
+      InstanceType: !If [IsPi05Policy, g6e.2xlarge, g4dn.xlarge]
+      KeyName: !Ref TrainerKeyPair
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: 100
+            VolumeType: gp3
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          DeviceIndex: "0"
+          GroupSet:
+            - !Ref TrainerSecurityGroup
+          SubnetId: !Ref TrainerSubnet
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-remote-trainer-delete-stack-to-remove
+        - Key: ManagedBy
+          Value: AWS CloudFormation
+        - Key: CloudFormationStack
+          Value: !Ref AWS::StackName
+        - Key: Purpose
+          Value: development-gpu-training
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+
+          signal() {
+            /opt/aws/bin/cfn-signal \
+              --exit-code "$1" \
+              --stack "${AWS::StackName}" \
+              --resource TrainerInstance \
+              --region "${AWS::Region}"
+          }
+          trap 'signal $?' EXIT
+
+          dnf install -y aws-cfn-bootstrap jq
+
+          printf 'Port %s\n' '${SshPort}' > /etc/ssh/sshd_config.d/99-physicalai-port.conf
+          sshd -t
+          systemctl restart sshd
+
+          systemctl enable --now docker
+
+          nvidia-smi
+
+          COSIGN_VERSION="v3.1.3"
+          COSIGN_SHA256="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+          curl --fail --silent --show-error --location --output /usr/local/bin/cosign \
+            "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/cosign-linux-amd64"
+          echo "$COSIGN_SHA256  /usr/local/bin/cosign" | sha256sum --check
+          chmod +x /usr/local/bin/cosign
+
+          IMAGE="ghcr.io/open-edge-platform/physicalai-trainer-cuda"
+          TAG="main"
+          VERIFIED_JSON=$(cosign verify \
+            --certificate-identity-regexp 'https://github\.com/open-edge-platform/physical-ai-studio/\.github/workflows/.+' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            --output json "$IMAGE:$TAG")
+          DIGEST=$(echo "$VERIFIED_JSON" | jq --exit-status --raw-output \
+            '.[0].critical.image["docker-manifest-digest"] | select(test("^sha256:[0-9a-f]{64}$"))')
+          VERIFIED_IMAGE="$IMAGE@$DIGEST"
+
+          docker pull "$VERIFIED_IMAGE"
+          docker run -d \
+            --name physicalai-trainer \
+            --restart unless-stopped \
+            --gpus all \
+            --ipc=host \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=1g \
+            -p 127.0.0.1:8001:8001 \
+            -v physicalai-trainer-data:/var/lib/physicalai-trainer \
+            "$VERIFIED_IMAGE"
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:8001/health >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          docker logs physicalai-trainer >&2
+          exit 1
+
+Outputs:
+  SshUserName:
+    Description: Enter this value in the remote trainer SSH User field.
+    Value: ec2-user
+
+  SshPort:
+    Description: Enter this value in the remote trainer SSH Port field.
+    Value: !Ref SshPort
+
+  SshHost:
+    Description: Enter this value in the remote trainer SSH Host field.
+    Value: !GetAtt TrainerInstance.PublicDnsName
+
+  RemoteTrainerPort:
+    Description: Enter this value in the remote trainer Remote port field.
+    Value: "8001"

@@ -56,8 +56,8 @@ pip install physicalai-train
 To install with specific backend support:
 
 ```bash
-# With PI0 policy support
-pip install physicalai-train[pi0]
+# With Pi0.5 policy support
+pip install physicalai-train[pi05]
 
 # With SmolVLA policy support
 pip install physicalai-train[smolvla]

@@ -142,6 +142,10 @@ describe('ModelsPage - Current Training', () => {
         await user.click(await screen.findByRole('button', { name: 'Train model' }));
         await user.click(await screen.findByRole('button', { name: /select…/i }));
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        // Training is submitted from the last wizard step, so walk there first.
+        while (screen.queryByRole('button', { name: 'Next' }) !== null) {
+            await user.click(screen.getByRole('button', { name: 'Next' }));
+        }
         await user.click(screen.getByRole('button', { name: 'Train' }));
 
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

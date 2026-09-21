@@ -50,7 +50,7 @@ class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
         tokenizer_max_length: Maximum length for tokenizer output. Defaults to 200.
         gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to True.
         compile_model: Whether to use torch.compile. Defaults to False.
-        compile_mode: Torch compile mode. Defaults to "max-autotune".
+        compile_mode: Torch compile mode. Defaults to "default".
         freeze_vision_encoder: Whether to freeze vision encoder during training. Defaults to False.
         train_expert_only: Whether to train only the action expert. Defaults to False.
         lora_*: LoRA/DoRA fine-tuning fields, see
@@ -122,7 +122,7 @@ class Pi05Config(PeftConfigMixin, SnapFlowConfigMixin, Config):
 
     gradient_checkpointing: bool = True
     compile_model: bool = False
-    compile_mode: str = "max-autotune"
+    compile_mode: str = "default"
 
     freeze_vision_encoder: bool = False
     train_expert_only: bool = False

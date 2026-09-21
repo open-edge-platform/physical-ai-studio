@@ -19,7 +19,7 @@ import { INFERENCE_BACKENDS, type InferenceBackendConfig } from '../inference-ba
 import { RuntimeExportDialog } from './runtime-export-dialog';
 
 type BackendExportDetail = components['schemas']['BackendExportDetail'];
-type ExportBackend = components['schemas']['ExportBackend'];
+type ExportBackend = components['schemas']['physicalai__export__backends__ExportBackend'];
 type ModelDetailResponse = components['schemas']['ModelDetailResponse'];
 
 export const InferenceBackendLogo = ({

@@ -33,6 +33,10 @@ inputs:
       builds to ensure reproducibility and prevent cache poisoning attacks.
     required: false
     default: "true"
+  enable-compile-model:
+    description: "Use the image target containing CUDA compiler files"
+    required: false
+    default: "false"
 
 outputs:
   digest:
@@ -61,7 +65,7 @@ runs:
         file: application/docker/Dockerfile
         build-contexts: |
           libs=library
-        target: physical-ai-studio-${{ inputs.device }}
+        target: ${{ inputs.enable-compile-model == 'true' && format('physical-ai-studio-{0}', inputs.device) || format('physical-ai-studio-{0}-redistributable', inputs.device) }}
         platforms: linux/amd64
         push: ${{ inputs.push }}
         tags: ${{ inputs.tags }}
@@ -76,13 +80,15 @@ runs:
         # Registry-based cache: each device variant gets its own cache
         # image in GHCR, avoiding the 10 GB GHA cache limit that caused
         # cache thrashing across cpu/xpu/cuda scopes (~18-20 GB total).
+        # The cache lives under the repo owner's namespace so forks read
+        # and write their own cache instead of the upstream org's.
         # The caller must log in to ghcr.io before invoking this action.
         # Cache reads always work (public packages); writes require
         # packages:write which fork PRs do not have.
         # Cache is disabled for RC/release builds (use-cache=false)
         # to prevent cache poisoning and ensure reproducible builds.
-        cache-from: ${{ inputs.use-cache == 'true' && format('type=registry,ref=ghcr.io/open-edge-platform/physical-ai-studio-{0}:buildcache', inputs.device) || '' }}
-        cache-to: ${{ inputs.cache-write == 'true' && inputs.use-cache == 'true' && format('type=registry,ref=ghcr.io/open-edge-platform/physical-ai-studio-{0}:buildcache,mode=max,compression=zstd,image-manifest=true,ignore-error=true', inputs.device) || '' }}
+        cache-from: ${{ inputs.use-cache == 'true' && format('type=registry,ref=ghcr.io/{0}/physical-ai-studio-{1}:buildcache', github.repository_owner, inputs.device) || '' }}
+        cache-to: ${{ inputs.cache-write == 'true' && inputs.use-cache == 'true' && format('type=registry,ref=ghcr.io/{0}/physical-ai-studio-{1}:buildcache,mode=max,compression=zstd,image-manifest=true,ignore-error=true', github.repository_owner, inputs.device) || '' }}
 
     - name: Extract first image tag
       id: first-tag

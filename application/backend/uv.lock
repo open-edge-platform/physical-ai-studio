@@ -60,14 +60,16 @@ exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for 
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
-physicalai-bimanual-so101-plugin = false
-markupsafe = false
 lightning = false
-physicalai-rebot-b601-plugin = false
-pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
+markupsafe = false
+openvino = false
+openvino-tokenizers = false
+physicalai-bimanual-so101-plugin = false
 physicalai-lerobot-plugin = false
-physicalai-studio-plugin = false
+physicalai-rebot-b601-plugin = false
 physicalai-stararm-plugin = false
+physicalai-studio-plugin = false
+pyrealsense2 = { timestamp = "0001-01-01T00:00:00Z", span = "P1D" }
 
 [manifest]
 overrides = [
@@ -2711,21 +2713,21 @@ wheels = [
 
 [[package]]
 name = "openvino"
-version = "2026.3.1"
+version = "2026.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "openvino-telemetry" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/83/f1/21f1503b5d4a6671730d75e4d0006e9483dfd21ed9899b1ea956a1e683b8/openvino-2026.3.1-22476-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:3b23fc1669e63b22bdeb3f7cbfcd59b6d6e39ede6e68310ab74a8aaaf3912e70", size = 31612248, upload-time = "2026-08-26T09:17:23.804Z" },
-    { url = "https://files.pythonhosted.org/packages/37/91/bb4cee4b1cbc244d6090fdb7625a0b3e1fe4f368bd2075bff67455451fbe/openvino-2026.3.1-22476-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:40bf3724ec70bce0fce4f9547cd1f19a576ef299172ce4ce2552249d10064acc", size = 57510470, upload-time = "2026-08-26T09:17:27.775Z" },
-    { url = "https://files.pythonhosted.org/packages/88/c1/4291be34f2677af39933516356d805177effcd7457bf5cf99d289ecbb849/openvino-2026.3.1-22476-cp312-cp312-manylinux_2_35_aarch64.whl", hash = "sha256:e6b78918aef61ee4650bd6bbd6b17e5b8cd90f55f145adff5d7f6def907f33be", size = 28778134, upload-time = "2026-08-26T09:17:30.917Z" },
-    { url = "https://files.pythonhosted.org/packages/27/79/77c474c3d8600185792bcb830638198ff3d15fe702028902bd07f4581026/openvino-2026.3.1-22476-cp312-cp312-win_amd64.whl", hash = "sha256:b686302a47abf7c87b48cb265b3a894f787a1b6380f4ab9f5a511de838ba3c64", size = 75818370, upload-time = "2026-08-26T09:17:35.803Z" },
-    { url = "https://files.pythonhosted.org/packages/75/cc/66b460cc6266c1b4d49a458dc56ab1d10a2fd7016613010b0971330dd879/openvino-2026.3.1-22476-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:5b0acfa02cfb822de0b5a38a314ecb1c67f122b55a491a3c6eb0c4945c550d96", size = 31612322, upload-time = "2026-08-26T09:17:39.719Z" },
-    { url = "https://files.pythonhosted.org/packages/73/f9/b40f5c5921cac3906f74911ca038d28e6a2905b632e37a51289137ae1817/openvino-2026.3.1-22476-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:bb39ba741cea93277cc6c80cf7f70d1c19dea9a0f2a37f07543e0b4a7e00e0c4", size = 57510484, upload-time = "2026-08-26T09:17:43.482Z" },
-    { url = "https://files.pythonhosted.org/packages/27/0c/a430eb38645fe164928f2387d81d7214599138ca18b95a187076856243e7/openvino-2026.3.1-22476-cp313-cp313-manylinux_2_35_aarch64.whl", hash = "sha256:45304d238719b98d51a605752df8ba4696e8bcf6c4560acc00ffd676ef7e70c0", size = 28778137, upload-time = "2026-08-26T09:17:46.985Z" },
-    { url = "https://files.pythonhosted.org/packages/fa/79/4b4a115d47e95e48ea76fda5bc6fc00200c441b65bbc38aa5f136eba7712/openvino-2026.3.1-22476-cp313-cp313-win_amd64.whl", hash = "sha256:a17b7e982b5ca5f9b7eb06bc15c1eb3f7ff13115700129123ca20d3d0038c6bb", size = 75818554, upload-time = "2026-08-26T09:17:51.341Z" },
+    { url = "https://files.pythonhosted.org/packages/55/43/e5a7fd6a13f6bc0fb389461a5a2e79b5bbaaa4388341fd040e3466890e71/openvino-2026.4.0-22959-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:171b876d1e732b2cf1c6a47d48dc6065fe7a36abe3d2a0035c8d3be36c0d67a1", size = 33344189, upload-time = "2026-09-16T14:54:28.189Z" },
+    { url = "https://files.pythonhosted.org/packages/09/96/106f20950f8636f23925fa9867f9b1d7d10dd20f7b0300b10f8da40fdf16/openvino-2026.4.0-22959-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:75245768f656afffd49078cee55b50b9501bb6778798aec3cc30e5613a86e370", size = 59130214, upload-time = "2026-09-16T14:54:33.131Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/73/ccfe5e280ba9a1123ee2fbc3fe60e95d9a1ad8f2ea3668d418c45b890b73/openvino-2026.4.0-22959-cp312-cp312-manylinux_2_35_aarch64.whl", hash = "sha256:cf2e8b12fd08588a69b11a8d2fe48c4373fb96eec28564dfc4754062c3f90439", size = 30292605, upload-time = "2026-09-16T14:54:36.743Z" },
+    { url = "https://files.pythonhosted.org/packages/62/95/6b1a095f865cd5a02f773590a419525ee9f9fc25770901cf461dad38aa29/openvino-2026.4.0-22959-cp312-cp312-win_amd64.whl", hash = "sha256:1d64a3178e750ea35f4095dc8ee6e0492795a5cf85c0dd24593a29f8a60c209d", size = 84025991, upload-time = "2026-09-16T14:54:41.519Z" },
+    { url = "https://files.pythonhosted.org/packages/51/59/f6cf3e684a31ddf4db3df645cc452b18f33edac6a4becff1c141692fab4c/openvino-2026.4.0-22959-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:2483df2786ab9c5b63f5f712d2aed38d6d227dc5f400dbbeb49dc2c84c2109e3", size = 33344519, upload-time = "2026-09-16T14:54:45.242Z" },
+    { url = "https://files.pythonhosted.org/packages/75/b0/692a6f0aa313791126a0d646b7c0ba88ee368c7f76d1b8c8cd50b977975a/openvino-2026.4.0-22959-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:186abfe5f355c33f19b50fe48340f9af0110e92fd279b7358a023fcbd225c380", size = 59128449, upload-time = "2026-09-16T14:54:49.963Z" },
+    { url = "https://files.pythonhosted.org/packages/31/61/fc2344dbcd86c4b1e9b9afa98b20f9e4c1bf9a31171785d894657e5691c0/openvino-2026.4.0-22959-cp313-cp313-manylinux_2_35_aarch64.whl", hash = "sha256:7a335edb34838d9d19a4d6cd79267f0d086e40b0847373e1cee82fc96cff758f", size = 30292247, upload-time = "2026-09-16T14:54:53.22Z" },
+    { url = "https://files.pythonhosted.org/packages/be/bf/a18d0a0a67b572b76445fbd2fa7a5fe955de882010eb0f316d298ca42c16/openvino-2026.4.0-22959-cp313-cp313-win_amd64.whl", hash = "sha256:e822141285804444ef5fa5e916f5d42e50f7fafebfbfc5d0d7c3a335de1aa5fb", size = 84025941, upload-time = "2026-09-16T14:54:58.136Z" },
 ]
 
 [[package]]
@@ -2739,16 +2741,16 @@ wheels = [
 
 [[package]]
 name = "openvino-tokenizers"
-version = "2026.3.1.0"
+version = "2026.4.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "openvino" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f5/ee/43aae7a36b1ce8b4e525cddee0e3d01115ecb8a4b742eeece35d03c1d372/openvino_tokenizers-2026.3.1.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:881950692961f5fdc5628437210777fee9b97952737ba361830e5bb0a5a17539", size = 1750191, upload-time = "2026-08-26T09:20:55.183Z" },
-    { url = "https://files.pythonhosted.org/packages/b5/2a/e50406892a96b98bb1adeaf5197adf7a7ef6ead6638837e67ea0f2d8259e/openvino_tokenizers-2026.3.1.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:4dc45f6b62e31b1a9d7ae0a84c1897d6f385688e89a6c87398c43e23944e6edd", size = 1833713, upload-time = "2026-08-26T09:20:56.732Z" },
-    { url = "https://files.pythonhosted.org/packages/76/70/4192b1ecfd06d5af9da63df513c02143940a14dc8931fa28291e40baf89a/openvino_tokenizers-2026.3.1.0-py3-none-manylinux_2_31_aarch64.whl", hash = "sha256:596c686cf92b942b48e94e071fa13ef3f3e53c3be097419a08240f57656e0d32", size = 1745649, upload-time = "2026-08-26T09:20:58.393Z" },
-    { url = "https://files.pythonhosted.org/packages/13/d0/fdc569ef7dea6b679154a13ff30412733b04c4b9fc0018b4f23818e486ca/openvino_tokenizers-2026.3.1.0-py3-none-win_amd64.whl", hash = "sha256:9a18ac537abc02b8a8cc0d7165cffe79fe16e5087e3fe6625d40d0b84bccb1b9", size = 1541935, upload-time = "2026-08-26T09:20:59.758Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/e6/5009a1657104c61ce10928c072337557170dcb8ed5c0ccd140d3fc5a509b/openvino_tokenizers-2026.4.0.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:6a8f9576e063e505449944fc349135815b8db624de3ec46a8d3c72956afb21db", size = 1613103, upload-time = "2026-09-16T15:00:02.766Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/91/b1d382a5120e196f5b800dca71de5485cf04c6ef13231827362dccdcbe19/openvino_tokenizers-2026.4.0.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:3a44cbc3d5f0004f3d17e9facfc268955bdfb7c4a676646dc49a65d19e95227c", size = 1850543, upload-time = "2026-09-16T15:00:04.676Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/19/f48163be26c4270dabe3de3aea068015f35f6ab5b2ee5ba1fc09be9511eb/openvino_tokenizers-2026.4.0.0-py3-none-manylinux_2_31_aarch64.whl", hash = "sha256:f5cbe1a8da1db7f9264c57d7989e7595045fbb5e34e1bc636552170263768f27", size = 1761770, upload-time = "2026-09-16T15:00:06.188Z" },
+    { url = "https://files.pythonhosted.org/packages/95/9d/ecbb42f2c3f28e414460d0d796c2a876c90a72a305dc009fd73e10a739a1/openvino_tokenizers-2026.4.0.0-py3-none-win_amd64.whl", hash = "sha256:9dee980553ea67561c0f176fe52cc8a80245a346232168092ed26ab02a7e7876", size = 1556881, upload-time = "2026-09-16T15:00:07.469Z" },
 ]
 
 [[package]]
@@ -2848,8 +2850,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.1.2.dev93+gde49e1f"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=de49e1fda4e38e0a5342b0a59a4cad11a1ee8de0#de49e1fda4e38e0a5342b0a59a4cad11a1ee8de0" }
+version = "0.1.2.dev94+gcdb6a02"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=cdb6a02c3f082c6dca8b453886a1c816f2828517#cdb6a02c3f082c6dca8b453886a1c816f2828517" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2915,7 +2917,7 @@ dependencies = [
     { name = "packaging" },
     { name = "physicalai", extra = ["capture", "robots", "transport"] },
     { name = "physicalai-studio-plugin" },
-    { name = "physicalai-train", extra = ["pi0", "rldx1", "smolvla"] },
+    { name = "physicalai-train", extra = ["pi05", "rldx1", "smolvla"] },
     { name = "psutil" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -2995,11 +2997,11 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
     { name = "packaging", specifier = ">=24.0" },
-    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=de49e1fda4e38e0a5342b0a59a4cad11a1ee8de0" },
+    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=cdb6a02c3f082c6dca8b453886a1c816f2828517" },
     { name = "physicalai-studio-plugin", specifier = ">=0.2.0" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
-    { name = "physicalai-train", extras = ["pi0", "smolvla", "rldx1"], editable = "../../library" },
+    { name = "physicalai-train", extras = ["pi05", "smolvla", "rldx1"], editable = "../../library" },
     { name = "psutil", specifier = "~=7.2" },
     { name = "pydantic", specifier = ">=2.12,<2.13" },
     { name = "pydantic-settings", specifier = ">=2.10.1" },
@@ -3082,7 +3084,7 @@ dependencies = [
 executorch = [
     { name = "executorch" },
 ]
-pi0 = [
+pi05 = [
     { name = "pillow" },
     { name = "safetensors" },
     { name = "sentencepiece" },
@@ -3104,12 +3106,9 @@ smolvla = [
 
 [package.metadata]
 requires-dist = [
-    { name = "decord", marker = "(platform_machine == 'AMD64' and extra == 'groot') or (platform_machine == 'x86_64' and extra == 'groot')", specifier = ">=0.6.0,<1.0.0" },
     { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.38.0" },
-    { name = "diffusers", marker = "extra == 'groot'", specifier = ">=0.38.0" },
     { name = "diffusers", marker = "extra == 'rldx1'", specifier = ">=0.38.0" },
     { name = "diffusers", marker = "extra == 'tests'", specifier = ">=0.38.0" },
-    { name = "dm-tree", marker = "extra == 'groot'", specifier = ">=0.1.8,<1.0.0" },
     { name = "executorch", marker = "extra == 'executorch'", specifier = ">=1.1.0" },
     { name = "executorch", marker = "extra == 'executorch-openvino'", specifier = ">=1.1.0" },
     { name = "gym-pusht", specifier = ">=0.1.5" },
@@ -3121,62 +3120,59 @@ requires-dist = [
     { name = "lightning", specifier = ">=2.6.6" },
     { name = "lightning-utilities" },
     { name = "mypy", marker = "extra == 'tests'" },
-    { name = "ninja", marker = "extra == 'groot'", specifier = ">=1.11.1,<2.0.0" },
     { name = "nncf", marker = "extra == 'nncf'", specifier = ">=3.0.0" },
     { name = "num2words", marker = "extra == 'smolvla'", specifier = ">=0.5.14,<0.6.0" },
     { name = "onnx" },
     { name = "onnxscript" },
-    { name = "openvino", specifier = ">=2026.3" },
-    { name = "openvino-tokenizers", specifier = ">=2026.3" },
+    { name = "openvino", specifier = ">=2026.4" },
+    { name = "openvino-tokenizers", specifier = ">=2026.4" },
     { name = "peft", specifier = ">=0.20.0,<1.0.0" },
+    { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=de49e1fda4e38e0a5342b0a59a4cad11a1ee8de0" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=cdb6a02c3f082c6dca8b453886a1c816f2828517" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
-    { name = "physicalai-train", extras = ["groot"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
+    { name = "physicalai-train", extras = ["molmoact2"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["nncf"], marker = "extra == 'executorch-openvino'" },
-    { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'pi05'" },
-    { name = "physicalai-train", extras = ["pi0"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["pi05"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["policies"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["rldx1"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["smolvla"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["tests"], marker = "extra == 'all'" },
     { name = "pillow" },
-    { name = "pillow", marker = "extra == 'groot'", specifier = ">=10.0.0,<13.0.0" },
-    { name = "pillow", marker = "extra == 'pi0'", specifier = ">=10.0.0,<13.0.0" },
+    { name = "pillow", marker = "extra == 'pi05'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'rldx1'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pydantic" },
     { name = "pymunk", specifier = ">=6.6.0,<7.0.0" },
     { name = "pytest", marker = "extra == 'tests'" },
     { name = "pytest-examples", marker = "extra == 'tests'", specifier = ">=0.0.13" },
     { name = "pytest-mock", marker = "extra == 'tests'" },
-    { name = "safetensors", marker = "extra == 'groot'", specifier = ">=0.4.3,<1.0.0" },
-    { name = "safetensors", marker = "extra == 'pi0'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "safetensors", marker = "extra == 'molmoact2'", specifier = ">=0.4.3,<1.0.0" },
+    { name = "safetensors", marker = "extra == 'pi05'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'rldx1'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'smolvla'", specifier = ">=0.4.3,<1.0.0" },
     { name = "scipy", marker = "extra == 'rldx1'", specifier = ">=1.11.0,<2.0.0" },
-    { name = "sentencepiece", marker = "extra == 'pi0'", specifier = "<=0.2.1" },
+    { name = "sentencepiece", marker = "extra == 'pi05'", specifier = "<=0.2.1" },
     { name = "tensorboard", marker = "extra == 'loggers'", specifier = ">=2.20" },
-    { name = "timm", marker = "extra == 'groot'", specifier = ">=1.0.0,<1.1.0" },
     { name = "torch", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torch", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torch", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
     { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
-    { name = "transformers", marker = "extra == 'groot'", specifier = ">=5.15.1,<5.16.0" },
-    { name = "transformers", marker = "extra == 'pi0'", specifier = ">=5.15.1,<5.16.0" },
+    { name = "transformers", marker = "extra == 'molmoact2'", specifier = ">=5.15.1,<5.16.0" },
+    { name = "transformers", marker = "extra == 'pi05'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'smolvla'", specifier = ">=5.15.1,<5.16.0" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi0", "pi05", "groot", "smolvla", "rldx1", "nncf", "executorch", "executorch-openvino", "policies", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi05", "smolvla", "molmoact2", "rldx1", "nncf", "executorch", "executorch-openvino", "policies", "all"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "diffusers", specifier = ">=0.38.0" },
     { name = "mypy", specifier = ">=1.19.1" },
+    { name = "peft", specifier = ">=0.13.0,<1.0.0" },
     { name = "pyrefly", specifier = ">=0.18.0" },
     { name = "ruff", specifier = ">=0.14.14" },
 ]

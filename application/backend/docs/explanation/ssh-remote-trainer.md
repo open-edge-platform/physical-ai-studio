@@ -31,6 +31,11 @@ signature policy are not part of this group and remain environment-only:
 they configure *how* Studio trusts a host or an image, which the
 (unauthenticated) settings API must never be able to move.
 
+Studio uses trust on first use for SSH host keys. The first connection to an
+unknown host stores its key in the configured `known_hosts` file automatically.
+Later connections reject changed, revoked, or ambiguous keys instead of
+replacing them.
+
 > [!NOTE]
 > Signature verification runs on this backend's own host, not on a registered
 > remote trainer server: the image reference it checks is a fully qualified

@@ -37,6 +37,7 @@ from schemas.remote_server import RemoteServer
 from schemas.ssh_preflight import CheckKey, CheckOutcome
 from services.ssh import preflight as preflight_module
 from services.ssh import transport as transport_module
+from services.ssh.connection import AliasTarget
 from services.ssh.preflight import run_tier1_preflight
 from services.ssh.transport import SshTransport
 from settings import Settings
@@ -213,7 +214,7 @@ async def test_transport_connects_and_runs_a_command_against_real_sshd(
     containerized_sshd: _ContainerizedSshd,
 ) -> None:
     """`SshTransport` performs a real connect, host-key check, auth, and exec."""
-    async with SshTransport(_ALIAS, containerized_sshd.settings) as transport:
+    async with SshTransport(AliasTarget(_ALIAS), containerized_sshd.settings) as transport:
         result = await transport.run_command(["echo", "hello-from-container"])
 
     assert result.ok
@@ -228,7 +229,7 @@ async def test_transport_rejects_an_untrusted_host_key(containerized_sshd: _Cont
     settings = containerized_sshd.settings.model_copy(update={"ssh_known_hosts_path": empty_known_hosts})
 
     with pytest.raises(SshHostKeyUnknownError):
-        async with SshTransport(_ALIAS, settings):
+        async with SshTransport(AliasTarget(_ALIAS), settings):
             pass
 
 

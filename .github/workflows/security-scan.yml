@@ -226,7 +226,7 @@ jobs:
         with:
           artifact-name: "trivy-scan-container-${{ matrix.ai-device }}"
           scan_type: "image"
-          scan_target: "ghcr.io/open-edge-platform/physical-ai-studio-${{ matrix.ai-device }}:main"
+          scan_target: "ghcr.io/${{ github.repository_owner }}/physical-ai-studio-${{ matrix.ai-device }}:main"
           scan-scope: all
           severity: "LOW"
           scanners: "vuln,secret,config"
@@ -267,7 +267,7 @@ jobs:
         with:
           artifact-name: "trivy-scan-trainer-${{ matrix.device }}"
           scan_type: "image"
-          scan_target: "ghcr.io/open-edge-platform/physicalai-trainer-${{ matrix.device }}:main"
+          scan_target: "ghcr.io/${{ github.repository_owner }}/physicalai-trainer-${{ matrix.device }}:main"
           scan-scope: all
           severity: "LOW"
           scanners: "vuln,secret,config"
@@ -317,8 +317,9 @@ jobs:
       - name: Pull container image for ${{ matrix.ai-device }}
         env:
           DEVICE: ${{ matrix.ai-device }}
+          OWNER: ${{ github.repository_owner }}
         run: |
-          IMAGE_NAME="ghcr.io/open-edge-platform/physical-ai-studio-${DEVICE}:main"
+          IMAGE_NAME="ghcr.io/${OWNER}/physical-ai-studio-${DEVICE}:main"
           echo "Pulling image: $IMAGE_NAME"
           docker pull "$IMAGE_NAME"
 
@@ -326,9 +327,10 @@ jobs:
         id: run-image
         env:
           DEVICE: ${{ matrix.ai-device }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           CONTAINER_NAME="physical-ai-studio-${DEVICE}"
-          IMAGE_NAME="ghcr.io/open-edge-platform/physical-ai-studio-${DEVICE}:main"
+          IMAGE_NAME="ghcr.io/${OWNER}/physical-ai-studio-${DEVICE}:main"
 
           # Start the container in detached mode
           docker run -d \

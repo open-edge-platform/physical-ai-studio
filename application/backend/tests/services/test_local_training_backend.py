@@ -128,6 +128,30 @@ class TestBuildSpec:
 
         assert (spec.device_type, spec.device_index) == (None, None)
 
+    def test_camera_mapping_is_forwarded(self, tmp_path):
+        payload = _payload(
+            policy="smolvla",
+            image_key_reorder_map={"observation.images.top": 0, "observation.images.wrist": 1},
+            num_cameras=3,
+        )
+        spec = build_spec(_context(tmp_path, payload))
+
+        # The payload normalizes a dataset feature key to what the policy matches on.
+        assert spec.image_key_reorder_map == {"images.top": 0, "images.wrist": 1}
+        assert spec.num_cameras == 3
+
+    def test_export_backends_are_forwarded_as_plain_names(self, tmp_path):
+        """The spec is a wire format shared with the trainer service, so no enums ride along."""
+        spec = build_spec(_context(tmp_path, _payload(export_backends=["openvino", "torch"])))
+
+        assert spec.export_backends == ["openvino", "torch"]
+
+    def test_every_supported_format_is_exported_when_none_is_requested(self, tmp_path):
+        spec = build_spec(_context(tmp_path, _payload()))
+
+        assert spec.export_backends is None
+        assert (spec.image_key_reorder_map, spec.num_cameras) == ({}, 0)
+
     @pytest.mark.parametrize("augment_images", [True, False])
     def test_image_augmentation_choice_is_forwarded(self, tmp_path, augment_images):
         spec = build_spec(_context(tmp_path, _payload(augment_images=augment_images)))
@@ -150,10 +174,10 @@ class TestBuildSpec:
 
     def test_resumed_run_trains_the_base_model_policy(self, tmp_path):
         """A resumed run's architecture comes from the checkpoint, not the request."""
-        base_model = _model(tmp_path / "base", policy="pi0")
+        base_model = _model(tmp_path / "base", policy="pi05")
         context = _context(tmp_path, _payload(base_model_id=base_model.id), base_model=base_model)
 
-        assert build_spec(context).policy == "pi0"
+        assert build_spec(context).policy == "pi05"
 
     def test_a_flow_matching_run_carries_no_distillation_boundary(self, tmp_path):
         assert build_spec(_context(tmp_path, _payload())).snapflow_start_epoch is None

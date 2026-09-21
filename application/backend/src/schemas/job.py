@@ -3,12 +3,26 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer, field_validator, model_validator
 
 from schemas.base_job import BaseJob, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.hardware import DeviceType
 from training.job import PEFT_POLICIES, SNAPFLOW_POLICIES
+
+
+class ExportBackend(StrEnum):
+    """Export formats a policy can produce.
+
+    Mirrors ``physicalai.export.backends.ExportBackend``; kept local so the
+    schemas package stays free of a runtime ``physicalai`` import (see
+    test_export_backend_matches_library for the parity check).
+    """
+
+    ONNX = "onnx"
+    OPENVINO = "openvino"
+    TORCH = "torch"
+    EXECUTORCH = "executorch"
 
 
 class TrainingPrecision(StrEnum):
@@ -105,6 +119,22 @@ class TrainJobPayloadBase(BaseModel):
     )
     batch_size: int = Field(default=8, ge=1, le=256, description="Training batch size")
 
+    @field_validator("image_key_reorder_map")
+    @classmethod
+    def strip_observation_prefix(cls, value: dict[str, int]) -> dict[str, int]:
+        """Accept a dataset feature key where a camera name is expected.
+
+        A dataset stores its cameras as ``observation.images.<name>`` while the
+        policy reads them as ``images.<name>`` and prefixes ``images.`` onto
+        whatever mapping it is handed. Stripping the dataset's ``observation.``
+        here means either spelling resolves to the same key instead of failing
+        minutes into a run with a mapping that matches nothing.
+
+        Returns:
+            The mapping keyed the way the policy reads its images.
+        """
+        return {key.removeprefix("observation."): slot for key, slot in value.items()}
+
     @model_validator(mode="after")
     def resolve_training_limit(self) -> "TrainJobPayloadBase":
         """Resolve training-limit fields, applying precedence and defaults.
@@ -142,6 +172,32 @@ class TrainJobPayloadBase(BaseModel):
         description="Training precision ('32-true', 'bf16-mixed')",
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
+    image_key_reorder_map: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Camera name -> camera slot index, for a policy pretrained on a fixed camera order (SmolVLA). "
+            "Keys are bare camera names ('gripper'), not dataset feature keys: the policy sees its images "
+            "as 'images.<name>'. A LeRobot 'observation.' prefix is accepted and stripped. Empty keeps the "
+            "dataset's own camera order. When set it must cover every camera the dataset has, since the "
+            "policy matches it against the batch's image keys."
+        ),
+    )
+    num_cameras: int = Field(
+        default=0,
+        ge=0,
+        le=8,
+        description=(
+            "Camera slots the policy reads. Slots not filled by 'image_key_reorder_map' are trained on "
+            "masked empty images. 0 keeps only the dataset's cameras."
+        ),
+    )
+    export_backends: list[ExportBackend] | None = Field(
+        default=None,
+        description=(
+            "Export formats to produce after training. Null exports every format the policy supports; "
+            "formats the policy does not support are ignored."
+        ),
+    )
     augment_images: bool = Field(
         default=False,
         description="Apply the default image augmentation pipeline to training images",

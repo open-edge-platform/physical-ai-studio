@@ -96,7 +96,7 @@ class Trainer(lightning.Trainer):
         limit_val_batches: float | None = None,
         limit_test_batches: float | None = None,
         limit_predict_batches: float | None = None,
-        val_check_interval: float | None = None,
+        val_check_interval: int | float | None = None,  # noqa: PYI041
         check_val_every_n_epoch: int | None = 1,
         num_sanity_val_steps: int | None = 0,  # Default to 0 for embodied AI
         # Optimization

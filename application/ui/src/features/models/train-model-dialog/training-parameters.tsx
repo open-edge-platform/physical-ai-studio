@@ -1,4 +1,30 @@
-import { Checkbox, Content, ContextualHelp, Flex, Heading, Item, Key, NumberField, Picker, Text } from '@geti-ui/ui';
+import {
+    Checkbox,
+    Content,
+    ContextualHelp,
+    Flex,
+    Heading,
+    Item,
+    Key,
+    NumberField,
+    Picker,
+    Slider,
+    Switch,
+    Text,
+} from '@geti-ui/ui';
+
+export const MIN_BATCH_SIZE_EXPONENT = 0;
+export const MAX_BATCH_SIZE_EXPONENT = 8;
+
+// The slider moves in exponents so every stop is a power of two (1, 2, 4, ... 256),
+// which is what the trainer expects; the label maps back to the batch size itself.
+export const batchSizeToExponent = (batchSize: number): number => {
+    const exponent = Math.round(Math.log2(Math.max(batchSize, 1)));
+
+    return Math.min(Math.max(exponent, MIN_BATCH_SIZE_EXPONENT), MAX_BATCH_SIZE_EXPONENT);
+};
+
+export const exponentToBatchSize = (exponent: number): number => 2 ** exponent;
 
 export const RECOMMENDED_PRECISION: Record<string, string> = {
     cuda: 'bf16-mixed',
@@ -89,38 +115,53 @@ export const TrainingParameters = ({
 }: TrainingParametersProps) => (
     <Flex direction='column' gap='size-150' width='100%'>
         <Flex direction='row' gap='size-150' width='100%'>
-            <Flex direction='column' gap='size-150' width='100%'>
-                <NumberField
+            <Flex direction='row' gap='size-300' width='100%'>
+                <Slider
                     label='Batch Size'
-                    value={batchSize}
-                    onChange={onBatchSizeChange}
-                    minValue={1}
-                    maxValue={256}
+                    value={batchSizeToExponent(batchSize)}
+                    onChange={(exponent) => onBatchSizeChange(exponentToBatchSize(exponent))}
+                    getValueLabel={(exponent) => `${exponentToBatchSize(exponent)}`}
+                    minValue={MIN_BATCH_SIZE_EXPONENT}
+                    maxValue={MAX_BATCH_SIZE_EXPONENT}
                     step={1}
-                    width='100%'
-                    isDisabled={autoScaleBatchSize}
                     flex
+                    isFilled
+                    isDisabled={autoScaleBatchSize}
+                    contextualHelp={
+                        <ContextualHelp variant='info'>
+                            <Heading>Batch size</Heading>
+                            <Content>
+                                <Text>
+                                    Number of samples processed in each training step. Larger batches use the device
+                                    more efficiently and give smoother gradient updates, but need more memory and a much
+                                    larger batch may need a higher learning rate to train as well.
+                                </Text>
+                            </Content>
+                        </ContextualHelp>
+                    }
                 />
                 <Flex direction='row' gap='size-100' alignItems='center'>
-                    <Checkbox
+                    <Switch
                         isEmphasized
                         isSelected={autoScaleBatchSize}
                         onChange={onAutoScaleBatchSizeChange}
                         isDisabled={isAutoScaleBatchDisabled}
                     >
-                        Auto scale batch size
-                    </Checkbox>
+                        Auto
+                    </Switch>
                     <ContextualHelp variant='info'>
                         <Heading>Auto scale batch size</Heading>
                         <Content>
                             <Text>
                                 Automatically finds the largest batch size that fits in GPU memory before training
-                                starts. On XPU auto batch size is disabled.
+                                starts, so the batch size slider is ignored. On XPU auto batch size is disabled.
                             </Text>
                         </Content>
                     </ContextualHelp>
                 </Flex>
             </Flex>
+        </Flex>
+        <Flex direction='row' gap='size-150' width='100%'>
             <NumberField
                 label='Max Epochs'
                 value={maxEpochs}
@@ -196,38 +237,38 @@ export const TrainingParameters = ({
                 <Item key='bf16-true'>BF16 True</Item>
                 <Item key='32-true'>32-bit</Item>
             </Picker>
-            <Flex direction='column' gap='size-150' alignSelf={'end'}>
-                <Flex direction='row' alignItems='center'>
-                    <Checkbox isEmphasized isSelected={compileModel} onChange={onCompileModelChange}>
-                        Compile model
-                    </Checkbox>
-                    <ContextualHelp variant='info'>
-                        <Heading>Compile model</Heading>
-                        <Content>
-                            <Text>
-                                Enables torch.compile for all policies. Can significantly speed up training after an
-                                initial compilation warmup, but increases startup time.
-                            </Text>
-                        </Content>
-                    </ContextualHelp>
-                </Flex>
-                <Flex direction='row' alignItems='center'>
-                    <Checkbox isEmphasized isSelected={augmentImages} onChange={onAugmentImagesChange}>
-                        Augment images
-                    </Checkbox>
-                    <ContextualHelp variant='info'>
-                        <Heading>Augment images</Heading>
-                        <Content>
-                            <Text>
-                                Randomly varies brightness, contrast, saturation, hue, sharpness and small rotations on
-                                training images, so the policy is less tied to the exact lighting and camera placement
-                                it was recorded under. This could help when your dataset is small or was recorded in one
-                                fixed setup but the robot will run somewhere more varied. It does not always improve
-                                results and makes each epoch slightly slower. Validation images are left untouched.
-                            </Text>
-                        </Content>
-                    </ContextualHelp>
-                </Flex>
+        </Flex>
+        <Flex direction='row' gap='size-200' width='100%'>
+            <Checkbox isEmphasized isSelected={compileModel} onChange={onCompileModelChange}>
+                Compile model
+            </Checkbox>
+            <ContextualHelp variant='info'>
+                <Heading>Compile model</Heading>
+                <Content>
+                    <Text>
+                        Enables torch.compile for all policies. Can significantly speed up training after an initial
+                        compilation warmup, but increases startup time.
+                    </Text>
+                </Content>
+            </ContextualHelp>
+        </Flex>
+        <Flex direction='row' gap='size-200' width='100%'>
+            <Flex direction='row' alignItems='center'>
+                <Checkbox isEmphasized isSelected={augmentImages} onChange={onAugmentImagesChange}>
+                    Augment images
+                </Checkbox>
+                <ContextualHelp variant='info'>
+                    <Heading>Augment images</Heading>
+                    <Content>
+                        <Text>
+                            Randomly varies brightness, contrast, saturation, hue, sharpness and small rotations on
+                            training images, so the policy is less tied to the exact lighting and camera placement it
+                            was recorded under. This could help when your dataset is small or was recorded in one fixed
+                            setup but the robot will run somewhere more varied. It does not always improve results and
+                            makes each epoch slightly slower. Validation images are left untouched.
+                        </Text>
+                    </Content>
+                </ContextualHelp>
             </Flex>
         </Flex>
         {isLoraSupported && (

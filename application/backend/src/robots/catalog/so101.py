@@ -16,10 +16,10 @@ from physicalai_studio_plugin import (
     robot_field_ui,
     robot_payload_ui,
 )
+from physicalai_studio_plugin.schemas import SerialPortInfo
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from exceptions import RobotIdentifyError
-from schemas import SerialPortInfo
 from schemas.robot_type import BaseRobot
 
 SO101Types = Literal["SO101_Follower", "SO101_Leader"]

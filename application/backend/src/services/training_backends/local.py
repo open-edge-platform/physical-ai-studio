@@ -129,6 +129,11 @@ def build_spec(context: TrainingContext) -> TrainingJobSpec:
         snapflow_start_epoch=payload.snapflow_start_epoch,
         device_type=str(device.type) if device else None,
         device_index=device.index if device else None,
+        image_key_reorder_map=payload.image_key_reorder_map,
+        num_cameras=payload.num_cameras,
+        export_backends=(
+            [str(backend) for backend in payload.export_backends] if payload.export_backends is not None else None
+        ),
     )
 
 

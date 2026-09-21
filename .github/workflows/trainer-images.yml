@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'false' }}
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   TRAINER_API_PROTOCOL_VERSION: "1"
 
@@ -130,7 +131,7 @@ jobs:
           file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
-          target: physicalai-trainer-${{ matrix.device }}
+          target: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL == 'true' && format('physicalai-trainer-{0}', matrix.device) || format('physicalai-trainer-{0}-redistributable', matrix.device) }}
           platforms: linux/amd64
           load: true
           push: false
@@ -259,7 +260,7 @@ jobs:
           file: application/docker/Dockerfile.trainer
           build-contexts: |
             libs=library
-          target: physicalai-trainer-${{ matrix.device }}
+          target: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL == 'true' && format('physicalai-trainer-{0}', matrix.device) || format('physicalai-trainer-{0}-redistributable', matrix.device) }}
           platforms: linux/amd64
           push: true
           tags: |
@@ -326,7 +327,7 @@ jobs:
           PY
 
       - name: Sign immutable trainer image
-        uses: open-edge-platform/geti-ci/actions/sign-image@7e686c1248b3939f8ee8e04e2612da727e379d91
+        uses: open-edge-platform/geti-ci/actions/sign-image@3690cbcc173cf90e0e0999b4822c3f8ebab9c137 # sign-image/v0.1.2
         with:
           image-uri: ${{ env.IMAGE_REGISTRY }}/physicalai-trainer-${{ matrix.device }}:${{ steps.build-metadata.outputs.version }}-dev-${{ steps.build-metadata.outputs.short-sha }}
 

@@ -31,6 +31,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -143,6 +145,7 @@ class VideoRecorder:
         codec: str = "h264",
         record_mode: RecordMode = "all",
         caption: str | None = None,
+        frame_key: str | Sequence[str] | None = None,
     ) -> None:
         """Initialize video recorder.
 
@@ -152,6 +155,8 @@ class VideoRecorder:
             codec: Video codec for encoding.
             record_mode: When to save videos.
             caption: Optional text burned into a bar at the bottom of every frame.
+            frame_key: Observation image key or keys to record. Uses the rollout's
+                frame key when omitted.
         """
         _check_imageio_available()
 
@@ -161,6 +166,7 @@ class VideoRecorder:
         self.codec = codec
         self.record_mode = record_mode
         self.caption = caption
+        self.frame_key = frame_key
 
         self._frames: list[np.ndarray] = []
         self._current_episode_name: str | None = None

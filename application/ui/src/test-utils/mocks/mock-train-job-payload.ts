@@ -21,6 +21,7 @@ const basePayload = {
     val_split: 0.1,
     precision: 'bf16-mixed' as const,
     compile_model: false,
+    num_cameras: 0,
     lora_enabled: false,
     lora_rank: 8,
     lora_dropout: 0.0,

@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
-from physicalai.inference.constants import IMAGES
+from physicalai.inference.constants import IMAGES, TASK
 
 from exceptions import BaseException as AppBaseException
 from exceptions import ModelCameraMismatchError
@@ -56,6 +56,11 @@ def check_camera_keys(model: InferenceModel, camera_keys: Sequence[str]) -> None
     missing = expected_images - provided
     if missing:
         raise ModelCameraMismatchError(expected=sorted(expected_images), provided=sorted(provided))
+
+
+def requires_task(model: InferenceModel) -> bool:
+    """Return whether the model manifest declares a language task input."""
+    return any(feature.name == TASK for feature in model.input_features)
 
 
 class PolicyLoader:
@@ -113,6 +118,8 @@ class PolicyLoader:
         try:
             source = self._build_source(command)
             source.connect(bus=bus, session_id=session_id)  # type: ignore[arg-type]
+            if requires_task(source._model):
+                source.set_task("")
             snapshot = observation_provider()
             if snapshot is not None:
                 robot_state, camera_frames = snapshot

@@ -27,7 +27,7 @@ Examples:
 
     Multi-policy comparison:
 
-        >>> results = benchmark.evaluate([act, pi0, groot])
+        >>> results = benchmark.evaluate([act, pi05, smolvla])
         >>> for name, result in results.items():
         ...     print(f"{name}: {result.overall_success_rate:.1%}")
 """

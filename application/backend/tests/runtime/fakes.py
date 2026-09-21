@@ -156,6 +156,7 @@ class FakeInferenceModel:
         self.backend = backend
         self.device = device
         self.adapter = FakeAdapter(input_names or ["state"])
+        self.input_features: list = []
         self._chunk = np.zeros((4, 1), dtype=np.float32) if chunk is None else np.asarray(chunk, dtype=np.float32)
         self.chunk_size = int(self._chunk.shape[0])
         self.predict_calls: list[dict] = []

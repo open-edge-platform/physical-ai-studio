@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, status
 
 from api.dependencies import get_remote_trainer_service
 from schemas.remote_trainer import RemoteTrainer, RemoteTrainerCreate, RemoteTrainerHealth, RemoteTrainerUpdate
@@ -22,9 +22,10 @@ async def list_remote_trainers(
 async def create_remote_trainer(
     config: RemoteTrainerCreate,
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+    accepted_host_key_fingerprint: Annotated[str | None, Header()] = None,
 ) -> RemoteTrainer:
     """Persist a direct trainer endpoint."""
-    return await remote_trainer_service.create_remote_trainer(config)
+    return await remote_trainer_service.create_remote_trainer(config, accepted_host_key_fingerprint)
 
 
 @router.get("/{remote_trainer_id}/health")
@@ -41,9 +42,10 @@ async def update_remote_trainer(
     remote_trainer_id: UUID,
     update: RemoteTrainerUpdate,
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+    accepted_host_key_fingerprint: Annotated[str | None, Header()] = None,
 ) -> RemoteTrainer:
     """Update a configured direct trainer endpoint."""
-    return await remote_trainer_service.update_remote_trainer(remote_trainer_id, update)
+    return await remote_trainer_service.update_remote_trainer(remote_trainer_id, update, accepted_host_key_fingerprint)
 
 
 @router.delete("/{remote_trainer_id}", status_code=status.HTTP_204_NO_CONTENT)

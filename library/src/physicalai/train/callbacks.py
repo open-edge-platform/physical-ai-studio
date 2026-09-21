@@ -5,7 +5,7 @@
 
 import logging
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, cast, runtime_checkable
 
@@ -14,6 +14,7 @@ import torch
 from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 from lightning.pytorch.utilities import rank_zero_only, rank_zero_warn
 
+from physicalai.eval.video import RecordMode, VideoRecorder
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,80 @@ SNAPFLOW_CHECKPOINT_KEY = "snapflow"
 """Checkpoint dict key holding the SnapFlow phase metadata stamped at save time."""
 
 _PARAM_COUNT_MILLIONS_THRESHOLD = 1_000_000
+
+
+class RolloutVideoRecorderCallback(Callback):
+    """Attach a video recorder to a policy's validation rollout metric."""
+
+    def __init__(
+        self,
+        output_dir: str | Path,
+        fps: int = 30,
+        codec: str = "h264",
+        record_mode: RecordMode = "all",
+        caption: str | None = None,
+        frame_key: str | Sequence[str] = "image",
+    ) -> None:
+        """Store video settings until training starts on the global rank.
+
+        Args:
+            output_dir: Directory where rollout videos are written.
+            fps: Video frame rate.
+            codec: Video encoding codec.
+            record_mode: Which rollout outcomes to retain.
+            caption: Optional caption rendered below each frame.
+            frame_key: Observation image key or keys to record.
+        """
+        super().__init__()
+        self.output_dir = Path(output_dir)
+        self.fps = fps
+        self.codec = codec
+        self.record_mode = record_mode
+        self.caption = caption
+        self.frame_key = frame_key
+        self._video_recorder: VideoRecorder | None = None
+
+    def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        """Create and attach the validation rollout recorder.
+
+        Raises:
+            TypeError: If the Lightning module does not expose a configurable validation rollout.
+        """
+        if not trainer.is_global_zero:
+            return
+        rollout = getattr(pl_module, "val_rollout", None)
+        if rollout is None or not hasattr(rollout, "video_recorder"):
+            msg = "RolloutVideoRecorderCallback requires a policy with val_rollout.video_recorder."
+            raise TypeError(msg)
+        self._video_recorder = VideoRecorder(
+            output_dir=self.output_dir,
+            fps=self.fps,
+            codec=self.codec,
+            record_mode=self.record_mode,
+            caption=self.caption,
+            frame_key=self.frame_key,
+        )
+        rollout.video_recorder = self._video_recorder
+
+    def _close(self) -> None:
+        if self._video_recorder is not None:
+            self._video_recorder.close()
+            self._video_recorder = None
+
+    def on_fit_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        """Close the recorder after training."""
+        del trainer, pl_module
+        self._close()
+
+    def on_exception(
+        self,
+        trainer: L.Trainer,
+        pl_module: L.LightningModule,
+        exception: BaseException,
+    ) -> None:
+        """Close the recorder when training exits with an exception."""
+        del trainer, pl_module, exception
+        self._close()
 
 
 def _format_param_count(count: int) -> str:
