@@ -32,6 +32,7 @@ Parameters:
       - ACT (g4dn.xlarge)
       - Pi0.5 (g6e.2xlarge)
       - SmolVLA (g4dn.xlarge)
+      - MolmoAct2 (p5.4xlarge)
     Description: |-
       Select the policy you plan to train. Its recommended GPU instance is shown in parentheses.
       Pricing: Review the current On-Demand price in this AWS Region.
