@@ -61,8 +61,18 @@ Parameters:
     AllowedPattern: "^(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(?:\\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}$"
     ConstraintDescription: Enter a valid IPv4 address, for example 203.0.113.10.
 
+Mappings:
+  PolicyInstanceType:
+    ACT (g4dn.xlarge):
+      InstanceType: g4dn.xlarge
+    Pi0.5 (g6e.2xlarge):
+      InstanceType: g6e.2xlarge
+    SmolVLA (g4dn.xlarge):
+      InstanceType: g4dn.xlarge
+    MolmoAct2 (p5.4xlarge):
+      InstanceType: p5.4xlarge
+
 Conditions:
-  IsPi05Policy: !Equals [!Ref TrainingPolicy, Pi0.5 (g6e.2xlarge)]
   AllowSshFromAnywhere: !Equals [!Ref StudioIpAddress, 0.0.0.0]
 
 Resources:
@@ -157,7 +167,7 @@ Resources:
         Timeout: PT30M
     Properties:
       ImageId: "{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2023/gpu/recommended/image_id}}"
-      InstanceType: !If [IsPi05Policy, g6e.2xlarge, g4dn.xlarge]
+      InstanceType: !FindInMap [PolicyInstanceType, !Ref TrainingPolicy, InstanceType]
       KeyName: !Ref TrainerKeyPair
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
