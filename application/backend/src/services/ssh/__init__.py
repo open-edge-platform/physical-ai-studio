@@ -18,6 +18,7 @@ resolves that alias against the user's own ``~/.ssh/config`` and verifies the ho
 against their own ``~/.ssh/known_hosts``.
 """
 
+from services.ssh.connection import AliasTarget, DirectTarget
 from services.ssh.preflight import (
     DEFAULT_PROTOCOL_VERSION,
     reset_transport_factory,
@@ -30,8 +31,10 @@ from services.ssh.transport import CommandFailure, CommandResult, SshTransport, 
 
 __all__ = [
     "DEFAULT_PROTOCOL_VERSION",
+    "AliasTarget",
     "CommandFailure",
     "CommandResult",
+    "DirectTarget",
     "SshTransport",
     "open_transport",
     "reset_alias_gates",

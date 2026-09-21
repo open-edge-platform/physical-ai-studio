@@ -63,7 +63,7 @@ directory.
 > [!WARNING]
 > The trainer has no built-in authentication. Anyone who can reach its port can submit or cancel jobs and download model artifacts. Keep it on a private network that only the Physical AI Studio backend IP address can reach—never expose it to the internet.
 
-> The backend honors `HTTP_PROXY` and `HTTPS_PROXY`. A configured proxy receives all trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
+> The backend honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. SSH connections use `HTTPS_PROXY`, falling back to `HTTP_PROXY`, as an HTTP CONNECT proxy. A configured proxy receives trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
 
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |

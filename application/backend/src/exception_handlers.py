@@ -36,7 +36,10 @@ def handle_base_exception(request: Request, exception: Exception) -> Response:
     else:
         raise exception
 
-    response = jsonable_encoder({"error_code": error_code, "message": message, "http_status": http_status})
+    response_data = {"error_code": error_code, "message": message, "http_status": http_status}
+    if isinstance(exception, BaseException):
+        response_data.update(exception.details)
+    response = jsonable_encoder(response_data)
     headers: dict[str, str] | None = None
     # 204 skipped as No Content needs to be revalidated
     if http_status not in [200, 201, 202, 203, 205, 206, 207, 208, 226] and request.method == "GET":

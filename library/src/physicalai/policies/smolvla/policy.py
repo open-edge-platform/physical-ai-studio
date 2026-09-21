@@ -682,6 +682,7 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
             lr=self.config.optimizer_lr,
             weight_decay=self.config.optimizer_weight_decay,
             betas=self.config.optimizer_betas,
+            eps=self.config.optimizer_eps,
         )
 
         num_decay_steps = self.config.scheduler_decay_steps

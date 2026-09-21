@@ -12,7 +12,7 @@ import torch
 from torch import nn
 
 from physicalai.data import Feature, FeatureType, NormalizationParameters
-from physicalai.data.observation import ACTION, PREV_CHUNK_LEFT_OVER
+from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER
 
 
 class NormalizationType(StrEnum):
@@ -92,7 +92,16 @@ class FeatureNormalizeTransform(nn.Module):
         """
         for raw_name, ft in self._features.items():
             for batch_key in batch:
-                if batch_key.endswith("." + raw_name) or batch_key == raw_name:
+                matches = (
+                    batch_key == raw_name
+                    or batch_key.endswith("." + raw_name)
+                    or raw_name.endswith("." + batch_key)
+                    or (
+                        raw_name == IMAGES
+                        and (batch_key == IMAGES or batch_key.startswith(f"{IMAGES}.") or f".{IMAGES}." in batch_key)
+                    )
+                )
+                if matches:
                     norm_mode = self._norm_map[str(ft.ftype)]
                     buffer = self.buffers_lookup.get(raw_name, nn.ParameterDict())
                     self._apply_normalization(batch, batch_key, norm_mode, buffer, inverse=self._inverse)

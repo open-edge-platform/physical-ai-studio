@@ -82,7 +82,7 @@ All configuration is done through the `.env` file. Copy `.env.example` to get st
 | `HTTPS_PROXY`      | *(empty)*                     | HTTPS proxy for builds and runtime                       |
 | `NO_PROXY`         | *(empty)*                     | Proxy exclusion list                                     |
 
-If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
+If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0.5,
 and others), set `HF_TOKEN` in `.env` to avoid unauthenticated Hub access warnings.
 See [Hugging Face Integration](../backend/docs/huggingface_integration.md) for token
 creation and setup details.

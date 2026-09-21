@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from itertools import pairwise
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -12,7 +13,14 @@ from physicalai.inference.constants import IMAGES, STATE
 
 from exceptions import ModelCameraMismatchError
 from runtime.action_source import StudioActionSource
-from runtime.contract import ErrorEvent, InMemoryCommandMailbox, LoadModelCommand, QueueEventSink, StartTaskCommand
+from runtime.contract import (
+    ErrorEvent,
+    InMemoryCommandMailbox,
+    LoadModelCommand,
+    QueueEventSink,
+    SetFollowerSourceCommand,
+    StartTaskCommand,
+)
 from runtime.policy_loader import check_camera_keys
 from schemas import InferenceBackend, InferenceDevice
 
@@ -136,6 +144,38 @@ def test_warmup_runs_on_the_loader_thread(tmp_path, monkeypatch: pytest.MonkeyPa
     after_play = len(warmup_threads)
     source.update(follower.get_observation(), {}, 4)
     assert len(warmup_threads) == after_play
+    source.shutdown_policy()
+
+
+def test_language_model_warmup_uses_empty_task(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model_id = uuid4()
+    _export_dir(tmp_path, model_id)
+    models: list[FakeInferenceModel] = []
+
+    class LanguageModel(FakeInferenceModel):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self.input_features = [SimpleNamespace(name="task")]
+            models.append(self)
+
+    monkeypatch.setattr("physicalai.inference.InferenceModel", LanguageModel)
+    source, mailbox, _events, follower = _source(models_dir=tmp_path)
+    source.update(follower.get_observation(), {}, 0)
+    mailbox.apply(LoadModelCommand(model_id=model_id, inference_device=_DEVICE))
+    source.update(follower.get_observation(), {}, 1)
+
+    _wait_until(lambda: source._policy is not None and source._model_loaded)
+    assert models[0].predict_calls[0]["task"] == [""]
+
+    mailbox.apply(SetFollowerSourceCommand(follower_source="policy"))
+    source.update(follower.get_observation(), {}, 2)
+    _wait_until(lambda: source.follower_source == "policy")
+    source.update(follower.get_observation(), {}, 3)
+    assert all(call["task"] == [""] for call in models[0].predict_calls)
+
+    mailbox.apply(StartTaskCommand(task="pick"))
+    source.update(follower.get_observation(), {}, 4)
+    _wait_until(lambda: models[0].predict_calls[-1].get("task") == ["pick"])
     source.shutdown_policy()
 
 

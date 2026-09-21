@@ -75,13 +75,14 @@ Both `Policy` and `InferenceModel` satisfy this protocol, enabling:
 
 ## Implemented Policies
 
-| Policy        | Description                  | Source                |
-| ------------- | ---------------------------- | --------------------- |
-| **ACT**       | Action Chunking Transformer  | Native implementation |
-| **Diffusion** | Diffusion Policy             | LeRobot wrapper       |
-| **GROOT**     | Vision-language policy       | Native implementation |
-| **Pi0**       | Physical Intelligence model  | Native implementation |
-| **SmolVLA**   | Small Vision-Language-Action | Native + LeRobot      |
+| Policy      | Description                             | Source                |
+| ----------- | --------------------------------------- | --------------------- |
+| **ACT**     | Action Chunking Transformer             | Native implementation |
+| **Pi0.5**   | Physical Intelligence flow-matching VLA | Native implementation |
+| **RLDX-1**  | RLWRLD multi-embodiment VLA             | Native implementation |
+| **SmolVLA** | Small Vision-Language-Action            | Native + LeRobot      |
+
+LeRobot wrappers are documented separately in [`lerobot.md`](./lerobot.md).
 
 ## Creating a New Policy
 

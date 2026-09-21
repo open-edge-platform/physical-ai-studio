@@ -13,7 +13,10 @@ const REMOTE_TRAINER_HEALTH_PATH = '/api/remote-trainers/{remote_trainer_id}/hea
 const remoteTrainer = {
     id: 'b8b28d4f-e78f-48ad-afb8-03d060178a3c',
     name: 'managed-trainer',
+    connection_mode: 'direct' as const,
     url: 'https://trainer.example.test/api',
+    ssh_remote_port: null,
+    ssh_local_port: null,
     created_at: '2026-07-14T12:00:00Z',
 };
 

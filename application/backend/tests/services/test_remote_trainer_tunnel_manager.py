@@ -3,14 +3,15 @@
 
 """Tests for the standing per-trainer SSH tunnel manager."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 from uuid import uuid4
 
 import pytest
 
 import services.remote_trainer_tunnel_manager as tunnel_manager
 from core.security.ssh_network_exposure import SshFeatureAvailability
-from schemas.remote_trainer import RemoteTrainer
+from schemas.remote_trainer import ManualSshConnection, RemoteTrainer, RemoteTrainerConnectionMode
+from services.ssh.connection import DirectTarget
 
 MODULE = "services.remote_trainer_tunnel_manager"
 
@@ -20,6 +21,7 @@ def _trainer(*, ssh_host_alias: str | None = "training-box", local_port: int | N
         id=uuid4(),
         name="trainer",
         url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH if ssh_host_alias else RemoteTrainerConnectionMode.DIRECT,
         ssh_host_alias=ssh_host_alias,
         ssh_remote_port=8001 if ssh_host_alias else None,
         ssh_local_port=local_port if ssh_host_alias else None,
@@ -65,6 +67,45 @@ async def test_sync_tunnel_opens_a_tunnel_when_configured_and_feature_active() -
     tunnel_cls.assert_called_once()
     tunnel.open.assert_awaited_once()
     assert tunnel_manager._tunnels[trainer.id] is tunnel
+
+
+@pytest.mark.anyio
+async def test_sync_tunnel_uses_persisted_manual_connection() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="trainer",
+        url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH,
+        ssh_connection=ManualSshConnection(
+            hostname="gpu.example.test",
+            port=2222,
+            user="trainer",
+            identity_file="~/.ssh/trainer",
+        ),
+        ssh_remote_port=8001,
+        ssh_local_port=8001,
+    )
+    tunnel = AsyncMock()
+    tunnel.local_port = 8001
+
+    with (
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_active_availability()),
+        patch(f"{MODULE}.SshTransport") as transport_cls,
+        patch(f"{MODULE}.SshTunnel", return_value=tunnel) as tunnel_cls,
+    ):
+        await tunnel_manager.sync_tunnel(trainer)
+        tunnel_cls.call_args.args[0]()
+
+    transport_cls.assert_called_once_with(
+        DirectTarget(
+            hostname="gpu.example.test",
+            port=2222,
+            username="trainer",
+            identity_file="~/.ssh/trainer",
+        ),
+        ANY,
+        accepted_host_key_fingerprint=None,
+    )
 
 
 @pytest.mark.anyio
@@ -144,7 +185,31 @@ async def test_start_all_skips_trainers_without_ssh_config() -> None:
 
 
 @pytest.mark.anyio
-async def test_open_tunnel_failure_is_swallowed_and_leaves_no_tunnel_registered() -> None:
+async def test_start_all_restores_configured_tunnels_best_effort() -> None:
+    trainer = _trainer()
+
+    with patch(f"{MODULE}.sync_tunnel", new=AsyncMock()) as sync:
+        await tunnel_manager.start_all([trainer])
+
+    sync.assert_awaited_once_with(trainer)
+
+
+@pytest.mark.anyio
+async def test_start_all_continues_when_a_trainer_tunnel_fails() -> None:
+    first = _trainer()
+    second = _trainer()
+
+    with patch(
+        f"{MODULE}.sync_tunnel",
+        new=AsyncMock(side_effect=[RuntimeError("host unreachable"), None]),
+    ) as sync:
+        await tunnel_manager.start_all([first, second])
+
+    assert sync.await_args_list == [((first,),), ((second,),)]
+
+
+@pytest.mark.anyio
+async def test_open_tunnel_failure_is_raised_and_leaves_no_tunnel_registered() -> None:
     trainer = _trainer()
     tunnel = AsyncMock()
     tunnel.open.side_effect = RuntimeError("host unreachable")
@@ -152,6 +217,7 @@ async def test_open_tunnel_failure_is_swallowed_and_leaves_no_tunnel_registered(
     with (
         patch(f"{MODULE}.get_ssh_feature_availability", return_value=_active_availability()),
         patch(f"{MODULE}.SshTunnel", return_value=tunnel),
+        pytest.raises(RuntimeError, match="host unreachable"),
     ):
         await tunnel_manager.sync_tunnel(trainer)
 

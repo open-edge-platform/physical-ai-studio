@@ -91,8 +91,8 @@ uv run --extra xpu physicalai-studio serve
 
 The backend runs at http://localhost:7860
 
-If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0,
-and others), set `HF_TOKEN` in `backend/.env`. See
+If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA,
+Pi0.5, and others), configure `HF_TOKEN` in `backend/.env`. See
 [Hugging Face Integration](../backend/docs/huggingface_integration.md).
 
 ### Frontend

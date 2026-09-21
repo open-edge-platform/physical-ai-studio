@@ -193,7 +193,7 @@ physicalai fit --config configs/physicalai/act/pusht/default.yaml --trainer.fast
 **Import errors**: Test imports manually:
 
 ```bash
-python -c "from physicalai.policies.pi0.policy import Pi0"
+python -c "from physicalai.policies.pi05.policy import Pi05"
 ```
 
 **Type errors**: Check config matches class signature

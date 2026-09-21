@@ -11,6 +11,9 @@ from physicalai.config import Config
 
 from physicalai.data import Feature  # noqa: TC001 - Needed at runtime for type hint resolution
 
+IMAGENET_MEAN: list[float] = [0.485, 0.456, 0.406]
+IMAGENET_STD: list[float] = [0.229, 0.224, 0.225]
+
 
 @dataclass(frozen=True)
 class ACTConfig(Config):
@@ -53,6 +56,9 @@ class ACTConfig(Config):
             `None` means no pretrained weights.
         replace_final_stride_with_dilation: Whether to replace the ResNet's final 2x2 stride with a dilated
             convolution.
+        use_imagenet_stats: Whether to normalize 3-channel visual observations using ImageNet
+            mean and std ([0.485, 0.456, 0.406] and [0.229, 0.224, 0.225]) instead of empirical
+            dataset statistics. Matches LeRobot's default behavior for ACT.
         pre_norm: Whether to use "pre-norm" in the transformer blocks.
         dim_model: The transformer blocks' main hidden dimension.
         n_heads: The number of heads to use in the transformer blocks' multi-head attention.
@@ -89,6 +95,7 @@ class ACTConfig(Config):
     pretrained_backbone_weights: str | None = "ResNet18_Weights.IMAGENET1K_V1"
     replace_final_stride_with_dilation: bool = False
     image_size: tuple[int, int] = (512, 512)
+    use_imagenet_stats: bool = True
     # Transformer layers.
     pre_norm: bool = False
     dim_model: int = 512
@@ -113,8 +120,9 @@ class ACTConfig(Config):
     dropout: float = 0.1
     kl_weight: float = 10.0
 
-    optimizer_lr: float = 1e-4
+    optimizer_lr: float = 1e-5
+    optimizer_lr_backbone: float = 1e-5
     optimizer_weight_decay: float = 1e-4
-    optimizer_grad_clip_norm: float = 10000
+    optimizer_grad_clip_norm: float = 10.0
 
     compile_model: bool = False

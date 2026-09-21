@@ -8,6 +8,10 @@ import { SchemaRemoteTrainer } from '../../api/openapi-spec';
 import { DeleteRemoteTrainerDialog } from './remote-trainers-table/delete-remote-trainer-dialog';
 import { RemoteTrainerForm } from './remote-trainers-table/remote-trainer-form/remote-trainer-form';
 import { RemoteTrainersTable } from './remote-trainers-table/remote-trainers-table';
+import {
+    SshHostKeyConfirmation,
+    SshHostKeyConfirmationDialog,
+} from './remote-trainers-table/ssh-host-key-confirmation-dialog';
 
 import classes from './remote-trainers-page.module.css';
 
@@ -20,6 +24,17 @@ type RemoteTrainerAction =
 export const RemoteTrainersPage = () => {
     const { data: remoteTrainers } = $api.useSuspenseQuery('get', '/api/remote-trainers');
     const [action, setAction] = useState<RemoteTrainerAction>();
+    const [hostKeyConfirmation, setHostKeyConfirmation] = useState<SshHostKeyConfirmation>();
+
+    const closeForm = () => {
+        setAction(undefined);
+        setHostKeyConfirmation(undefined);
+    };
+
+    const dismissHostKeyConfirmation = () => {
+        hostKeyConfirmation?.onCancel();
+        setHostKeyConfirmation(undefined);
+    };
 
     return (
         <View padding='size-400' height='100%' maxWidth='240ch' marginX='auto'>
@@ -51,11 +66,12 @@ export const RemoteTrainersPage = () => {
                 />
             )}
 
-            <DialogContainer onDismiss={() => setAction(undefined)}>
+            <DialogContainer onDismiss={closeForm}>
                 {(action?.type === 'create' || action?.type === 'edit') && (
                     <RemoteTrainerForm
                         remoteTrainer={action.type === 'edit' ? action.remoteTrainer : undefined}
-                        close={() => setAction(undefined)}
+                        close={closeForm}
+                        requestHostKeyConfirmation={setHostKeyConfirmation}
                     />
                 )}
                 {action?.type === 'delete' && (
@@ -63,6 +79,19 @@ export const RemoteTrainersPage = () => {
                         remoteTrainer={action.remoteTrainer}
                         onCancel={() => setAction(undefined)}
                         onDeleted={() => setAction(undefined)}
+                    />
+                )}
+            </DialogContainer>
+            <DialogContainer onDismiss={dismissHostKeyConfirmation}>
+                {hostKeyConfirmation !== undefined && (
+                    <SshHostKeyConfirmationDialog
+                        host={hostKeyConfirmation.host}
+                        fingerprint={hostKeyConfirmation.fingerprint}
+                        onCancel={dismissHostKeyConfirmation}
+                        onConfirm={() => {
+                            setHostKeyConfirmation(undefined);
+                            hostKeyConfirmation.onConfirm();
+                        }}
                     />
                 )}
             </DialogContainer>

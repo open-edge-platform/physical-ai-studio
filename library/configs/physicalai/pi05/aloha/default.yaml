@@ -31,7 +31,7 @@ model:
     train_expert_only: false
 
     # LoRA (Low-Rank Adaptation) fine-tuning. Requires a pretrained_name_or_path.
-    # `peft` is a core dependency (see pyproject.toml); the `pi0`/`pi05` extras are only
+    # `peft` is a core dependency (see pyproject.toml); the `pi05` extra is only
     # needed for Pi0.5's transformers/tokenizer stack, not for `peft` itself.
     # Set lora_enabled: true to enable; lora_rank/lora_alpha already have sensible defaults
     # (rank 32, alpha = rank).

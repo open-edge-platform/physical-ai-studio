@@ -81,7 +81,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         tokenizer_max_length: Maximum tokenizer length. Default: 200.
         gradient_checkpointing: Enable gradient checkpointing. Default: True.
         compile_model: Whether to use torch.compile. Default: False.
-        compile_mode: Torch compile mode. Default: "max-autotune".
+        compile_mode: Torch compile mode. Default: "default".
         freeze_vision_encoder: Freeze vision encoder. Default: False.
         train_expert_only: Train only action expert. Default: False.
         normalization_mode: Normalization method for state/action features — ``"QUANTILES"``
@@ -147,7 +147,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         # Optimization
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
-        compile_mode: str = "max-autotune",
+        compile_mode: str = "default",
         # Finetuning
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = False,
@@ -325,7 +325,6 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
             train_expert_only=self.config.train_expert_only,
             gradient_checkpointing=self.config.gradient_checkpointing,
             compile_model=self.config.compile_model,
-            compile_mode=self.config.compile_mode,
             use_random_input_noise=self.config.use_random_input_noise,
         )
         if weights_file is not None:
@@ -386,7 +385,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         snapflow_num_inference_steps: int | None = None,
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
-        compile_mode: str | None = "max-autotune",
+        compile_mode: str | None = "default",
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = False,
         lora_enabled: bool = False,
