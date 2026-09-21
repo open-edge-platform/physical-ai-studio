@@ -310,7 +310,7 @@ class Rldx1(Rldx1ExportMixin, Policy):
         # Save `pretrained_name_or_path` so load_from_checkpoint() reconstructs
         # from the same base repo the checkpoint was actually fine-tuned from,
         # instead of silently falling back to this constructor's default.
-        self.save_hyperparameters(ignore=["config"])
+        self.save_hyperparameters(ignore=["config", "compile_model"])
 
         self.model: Rldx1Model | None = None  # type: ignore[assignment]
         self._preprocessor: torch.nn.Module = cast("torch.nn.Module", None)
