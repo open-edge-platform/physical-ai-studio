@@ -17,7 +17,7 @@ model:
     # Start each generated action trajectory from fresh Gaussian noise.
     use_random_input_noise: true
 
-    # Add low-rank adapters to the VLM while fully training the action expert.
+    # Add low-rank adapters to the VLM and action expert while freezing base weights.
     lora_enabled: true
 
     # Recompute intermediate activations during backward passes to save GPU memory.
@@ -33,17 +33,17 @@ model:
     setup_type: "single so100/so101 robotic arm in molmoact2"
     control_mode: "absolute joint pose"
 
-    # Use the shared optimizer recipe validated on PushT.
-    optimizer_lr: 5e-5
-    optimizer_vit_lr: 5e-5
-    optimizer_connector_lr: 5e-5
+    # Optimization hyperparameters.
+    optimizer_lr: 1e-5
+    optimizer_vit_lr: 5e-6
+    optimizer_connector_lr: 5e-6
     optimizer_action_expert_lr: 5e-5
     optimizer_betas: [0.9, 0.95]
     optimizer_eps: 1e-6
     optimizer_weight_decay: 0.0
     optimizer_grad_clip_norm: 1.0
     scheduler_warmup_steps: 200
-    scheduler_decay_steps: 15000
+    scheduler_decay_steps: 24000
     scheduler_decay_lr: 1e-6
 
 data:
@@ -67,6 +67,16 @@ trainer:
   # Mixed bfloat16 reduces memory use while retaining float32-like range.
   precision: bf16-mixed
   log_every_n_steps: 20
-  # Validate every 500 optimizer steps, including across epoch boundaries.
-  val_check_interval: 500
+  # Validate every 2000 optimizer steps, including across epoch boundaries.
+  val_check_interval: 2000
   check_val_every_n_epoch: null
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/loss
+        mode: min
+        save_top_k: 2
+        save_last: true
+        save_weights_only: true
+        filename: "molmoact2-{epoch:03d}-{step:06d}"
+        auto_insert_metric_name: false

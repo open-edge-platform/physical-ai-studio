@@ -133,6 +133,9 @@ class Rldx1(Rldx1ExportMixin, Policy):
         use_bf16: Whether to use bfloat16 precision.
         gradient_checkpointing: Whether to enable activation checkpointing in
             MSAT during training.
+        compile_model: Reserved for API compatibility with other first-party
+            policies. ``Rldx1`` does not support ``torch.compile`` yet; when
+            set, the value is ignored and a warning is logged.
         video_length: Number of VTC temporal frames per observation step (default 4).
         video_stride: Action-step stride between VTC video frames (default 2).
             With ``video_length=4, video_stride=2`` the offsets are ``[-6,-4,-2,0]``
@@ -192,6 +195,7 @@ class Rldx1(Rldx1ExportMixin, Policy):
         # Precision / compilation
         use_bf16: bool = True,
         gradient_checkpointing: bool = True,
+        compile_model: bool = False,
         # VTC video window
         video_length: int = 4,
         video_stride: int = 2,
@@ -209,6 +213,8 @@ class Rldx1(Rldx1ExportMixin, Policy):
     ) -> None:
         """Initialize the RLDX-1 policy and save hyperparameters."""
         super().__init__(n_action_steps=n_action_steps)
+        if compile_model:
+            logger.warning("compile_model is not yet supported for Rldx1; ignoring request")
         self._camera_names: list[str] = []
 
         shard_files = None
@@ -304,7 +310,7 @@ class Rldx1(Rldx1ExportMixin, Policy):
         # Save `pretrained_name_or_path` so load_from_checkpoint() reconstructs
         # from the same base repo the checkpoint was actually fine-tuned from,
         # instead of silently falling back to this constructor's default.
-        self.save_hyperparameters(ignore=["config"])
+        self.save_hyperparameters(ignore=["config", "compile_model"])
 
         self.model: Rldx1Model | None = None  # type: ignore[assignment]
         self._preprocessor: torch.nn.Module = cast("torch.nn.Module", None)

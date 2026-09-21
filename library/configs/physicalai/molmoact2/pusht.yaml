@@ -16,9 +16,9 @@ model:
     # Start each generated action trajectory from fresh Gaussian noise.
     use_random_input_noise: true
 
-    # Add low-rank adapters to the VLM while fully training the action expert.
+    # Add low-rank adapters to the VLM and action expert while freezing base weights.
     lora_enabled: true
-    gradient_checkpointing: true
+    gradient_checkpointing: false
 
     # PushT uses the base embodiment frame and dataset-owned normalization.
     adapt_to_so101: false
@@ -29,11 +29,10 @@ model:
     setup_type: "single 2D point-mass pusher robot in the PushT block-pushing simulation"
     control_mode: "absolute planar end-effector position"
 
-    # Independent learning rates for the text backbone, vision encoder, image
-    # connector, and action expert respectively.
-    optimizer_lr: 5e-5
-    optimizer_vit_lr: 5e-5
-    optimizer_connector_lr: 5e-5
+    # Optimization rates.
+    optimizer_lr: 1e-5
+    optimizer_vit_lr: 5e-6
+    optimizer_connector_lr: 5e-6
     optimizer_action_expert_lr: 5e-5
     optimizer_betas: [0.9, 0.95]
     optimizer_eps: 1e-6
@@ -41,7 +40,7 @@ model:
     optimizer_grad_clip_norm: 1.0
 
     scheduler_warmup_steps: 200
-    scheduler_decay_steps: 15000
+    scheduler_decay_steps: 24000
     scheduler_decay_lr: 1e-6
 
 data:
@@ -60,14 +59,14 @@ data:
     num_workers: 0
 
 trainer:
-  max_epochs: 30
+  max_epochs: 8
   accelerator: gpu
   devices: 1
   # Mixed bfloat16 reduces memory use while retaining float32-like range.
   precision: bf16-mixed
   log_every_n_steps: 20
-  # Run gym rollouts every 500 optimizer steps, including across epoch boundaries.
-  val_check_interval: 500
+  # Run gym rollouts every 2000 optimizer steps, including across epoch boundaries.
+  val_check_interval: 2000
   check_val_every_n_epoch: null
   callbacks:
     - class_path: physicalai.train.RolloutVideoRecorderCallback

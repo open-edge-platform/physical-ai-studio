@@ -337,8 +337,8 @@ class MolmoAct2Model(PeftModelMixin, Model):
 
     @classmethod
     def get_default_peft_targets(cls) -> str:
-        """Return the default adapter targets for the VLM."""
-        return _lora_target_modules(enable_action_expert=False)
+        """Return the default adapter targets for the VLM and action expert."""
+        return _lora_target_modules(enable_action_expert=True)
 
     def enable_gradient_checkpointing(self) -> None:
         """Enable activation checkpointing on text, vision, and action stacks."""

@@ -659,8 +659,6 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         config = self._require_config()
         if config.use_lora:
             self._inject_lora()
-            if config.lora_target_modules is None:
-                model.unfreeze_action_expert()
 
         if self.compile_model:
             model.enable_compile()

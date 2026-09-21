@@ -55,6 +55,9 @@ class TestMolmoAct2E2E(CoreE2ETests):
             repo_id="lerobot/pusht",
             train_batch_size=1,
             episodes=[0],
+            num_workers=0,
+            pin_memory=False,
+            persistent_workers=False,
         )
         datamodule.val_eval_dataset = datamodule.train_dataset
         return datamodule

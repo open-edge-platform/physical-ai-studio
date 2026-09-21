@@ -43,4 +43,10 @@ export const MODELS: ReadonlyArray<{
         description: 'Flow-matching VLA with discrete state encoding and longer context (Gemma license)',
         minVRAM: 40 * GB,
     },
+    {
+        id: 'rldx1',
+        name: 'RLDX-1',
+        description: 'General-purpose robot foundation model for dexterous manipulation (RLWRLD Model License v1.0)',
+        minVRAM: 40 * GB,
+    },
 ];

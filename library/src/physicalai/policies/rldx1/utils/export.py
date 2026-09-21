@@ -63,6 +63,37 @@ def export_image_resolution_from_stats(dataset_stats: dict[str, dict[str, Any]] 
     return int(resolution[0]), int(resolution[1])
 
 
+def export_image_resolution_after_preprocessor_from_stats(
+    dataset_stats: dict[str, dict[str, Any]] | None,
+    *,
+    image_max_area: int,
+    image_resize_m: int,
+    image_min_area: int | None,
+) -> tuple[int, int]:
+    """Return post-AspectAreaResizeAndCrop ``(height, width)`` from dataset stats.
+
+    Mirrors :class:`AspectAreaResizeAndCrop` geometry: area-budget resize then
+    ``m_alignment`` center-crop. The runtime RLDX-1 preprocessor assumes this
+    frozen post-transform shape.
+    """
+    orig_h, orig_w = export_image_resolution_from_stats(dataset_stats)
+    current_area = orig_h * orig_w
+
+    if image_min_area is not None and current_area < image_min_area:
+        scale = (image_min_area / current_area) ** 0.5
+    elif current_area > image_max_area:
+        scale = (image_max_area / current_area) ** 0.5
+    else:
+        scale = 1.0
+
+    resized_h = round(orig_h * scale)
+    resized_w = round(orig_w * scale)
+
+    crop_h = (resized_h // image_resize_m) * image_resize_m
+    crop_w = (resized_w // image_resize_m) * image_resize_m
+    return int(crop_h), int(crop_w)
+
+
 def build_rldx1_token_composer_params(
     *,
     tokenizer: _TokenizerLike,

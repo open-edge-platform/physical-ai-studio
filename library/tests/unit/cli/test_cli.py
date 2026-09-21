@@ -99,14 +99,17 @@ class TestConfigParsing:
         assert cfg.model.init_args.chunk_size == 10
         assert cfg.model.init_args.n_action_steps == 10
         assert cfg.model.init_args.use_random_input_noise is True
-        assert cfg.model.init_args.optimizer_lr == pytest.approx(5e-5)
-        assert cfg.model.init_args.scheduler_decay_steps == 15_000
+        assert cfg.model.init_args.optimizer_lr == pytest.approx(1e-5)
+        assert cfg.model.init_args.optimizer_vit_lr == pytest.approx(5e-6)
+        assert cfg.model.init_args.optimizer_connector_lr == pytest.approx(5e-6)
+        assert cfg.model.init_args.gradient_checkpointing is False
+        assert cfg.model.init_args.scheduler_decay_steps == 24_000
         assert cfg.model.init_args.setup_type.startswith("single 2D point-mass pusher")
         assert cfg.model.init_args.control_mode == "absolute planar end-effector position"
         assert cfg.data.init_args.val_gym.class_path == "physicalai.gyms.pusht.PushTGym"
         assert cfg.data.init_args.num_rollouts_val == 10
-        assert cfg.trainer.max_epochs == 30
-        assert cfg.trainer.val_check_interval == 500
+        assert cfg.trainer.max_epochs == 8
+        assert cfg.trainer.val_check_interval == 2000
         assert cfg.trainer.check_val_every_n_epoch is None
         video_callback = cfg.trainer.callbacks[0]
         assert video_callback["class_path"] == "physicalai.train.RolloutVideoRecorderCallback"
@@ -122,10 +125,13 @@ class TestConfigParsing:
         assert cfg.model.init_args.chunk_size == 30
         assert cfg.model.init_args.n_action_steps == 30
         assert cfg.model.init_args.adapt_to_so101 is True
-        assert cfg.model.init_args.optimizer_lr == pytest.approx(5e-5)
-        assert cfg.model.init_args.scheduler_decay_steps == 15_000
+        assert cfg.model.init_args.optimizer_lr == pytest.approx(1e-5)
+        assert cfg.model.init_args.optimizer_vit_lr == pytest.approx(5e-6)
+        assert cfg.model.init_args.optimizer_connector_lr == pytest.approx(5e-6)
+        assert cfg.model.init_args.scheduler_decay_steps == 24_000
         assert cfg.data.init_args.repo_id == "Daankrol/pick-and-place-multi-obj"
         assert cfg.trainer.max_epochs == 8
+        assert cfg.trainer.val_check_interval == 2000
 
     def test_benchmark_parser_accepts_existing_libero_config(self) -> None:
         parser = benchmark_module.register().parser

@@ -95,7 +95,7 @@ uvx \
   --index https://pypi.org/simple \
   --index https://download.pytorch.org/whl/xpu \
   --index-strategy unsafe-best-match \
-  --from "physicalai-studio[xpu]==0.1.0" \
+  --from "physicalai-studio[xpu]==0.2.0" \
   physicalai-studio serve
 ```
 
@@ -159,7 +159,7 @@ robot asset file count: <non-zero>
 Use the wheel directly, without publishing to PyPI:
 
 ```bash
-WHEEL="/home/intel/physical-ai-studio/application/backend/dist/physicalai_studio-0.1.0-py3-none-any.whl"
+WHEEL="/home/intel/physical-ai-studio/application/backend/dist/physicalai_studio-0.2.0-py3-none-any.whl"
 
 uvx --isolated --no-cache \
   --index https://download.pytorch.org/whl/xpu \

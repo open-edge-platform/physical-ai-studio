@@ -181,18 +181,31 @@ class TorchAdapter(RuntimeAdapter):
         """
         if isinstance(torch_outputs, torch.Tensor):
             # Single output
-            return {self._output_names[0]: torch_outputs.detach().cpu().numpy()}
+            return {self._output_names[0]: self._tensor_to_numpy(torch_outputs)}
         if isinstance(torch_outputs, dict):
             # Dict output
-            return {k: v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v for k, v in torch_outputs.items()}
+            return {k: self._tensor_to_numpy(v) if isinstance(v, torch.Tensor) else v for k, v in torch_outputs.items()}
         if isinstance(torch_outputs, (list, tuple)):
             # Multiple outputs as list/tuple
             outputs_iter = zip(self._output_names, torch_outputs, strict=True)
-            return {name: out.detach().cpu().numpy() for name, out in outputs_iter}
+            return {name: self._tensor_to_numpy(out) for name, out in outputs_iter}
 
         # Unexpected output type
         msg = f"Unexpected output type: {type(torch_outputs)}"
         raise TypeError(msg)
+
+    @staticmethod
+    def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
+        """Convert a tensor to numpy, upcasting dtypes numpy cannot represent.
+
+        Returns:
+            NumPy array converted from the input tensor.
+        """
+        tensor = tensor.detach().cpu()
+        # NumPy has no bfloat16 dtype; upcast to float32 before conversion.
+        if tensor.dtype == torch.bfloat16:
+            tensor = tensor.to(torch.float32)
+        return tensor.numpy()
 
     @property
     def input_names(self) -> list[str]:
