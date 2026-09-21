@@ -3,10 +3,10 @@
 Several policies download assets from Hugging Face Hub (for example, SmolVLA,
 Pi0.5, and other Hub-backed models).
 
-If `HF_TOKEN` is not set, the backend logs a warning and Hub access is
-unauthenticated.
+If no Hugging Face token is configured, the backend logs a warning and Hub
+access is unauthenticated.
 
-Set `HF_TOKEN` for any workflow that depends on Hugging Face-hosted assets.
+Configure a token for any workflow that depends on Hugging Face-hosted assets.
 Without a token, model downloads may fail (for example, due to anonymous rate
 limits or access restrictions on gated/private repositories).
 
@@ -31,24 +31,16 @@ you plan to train from.
 4. Set permissions to read-only model access (see required permissions above).
 5. Copy the token value.
 
-## Configure `HF_TOKEN`
-
-Set `HF_TOKEN` in the environment used by the backend.
+## Configure the token
 
 ### Native backend
 
-Add the token to `application/backend/.env`:
+Set the token from the UI: **Settings > General > Hugging Face**. This persists
+the token to the backend's `settings.json` file.
 
-```env
-HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Then start the backend as usual:
-
-```bash
-cd application/backend
-./run.sh
-```
+Alternatively, edit `settings.json` directly (see
+[`get_settings_file_path`](../src/settings.py) for its location) and set
+`huggingface.hf_token`.
 
 ### Docker deployment
 
@@ -58,7 +50,8 @@ Add the token to `application/docker/.env`:
 HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-Then run Docker Compose as usual:
+docker-compose injects this as a real container environment variable. Then run
+Docker Compose as usual:
 
 ```bash
 cd application/docker
@@ -68,10 +61,10 @@ docker compose up
 ## Verify setup
 
 - Start a training job for a Hub-backed policy (for example, SmolVLA or Pi0.5).
-- Confirm there is no warning about missing `HF_TOKEN`.
+- Confirm there is no warning about a missing Hugging Face token.
 
 ## Security notes
 
 - Never commit real tokens to source control.
-- Store tokens in local `.env` files or your secret manager.
+- Store tokens in `settings.json`, the Docker `.env` file, or your secret manager.
 - Rotate the token immediately if it is exposed.

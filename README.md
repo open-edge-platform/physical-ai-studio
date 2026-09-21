@@ -105,7 +105,8 @@ npm run start
 Open <http://localhost:3000> in your browser.
 
 If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0.5,
-and others), configure `HF_TOKEN` in your backend environment. See
+and others), configure a Hugging Face token in Settings > General > Hugging Face in the
+UI to avoid unauthenticated Hub access warnings. See
 [Hugging Face Integration](./application/backend/docs/huggingface_integration.md).
 
 ### Library (Python/CLI)

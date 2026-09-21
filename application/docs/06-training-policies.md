@@ -19,7 +19,7 @@ First, choose the model policy. We currently support:
 - SmolVLA
 - Pi0.5
 
-Some policies download assets from Hugging Face Hub during setup or training. Configure `HF_TOKEN` before training Hub-backed policies such as SmolVLA or Pi0.5, especially on shared networks or when using gated/private models.
+Some policies download assets from Hugging Face Hub during setup or training. Configure a Hugging Face token before training Hub-backed policies such as SmolVLA or Pi0.5, especially on shared networks or when using gated/private models.
 
 Depending on the amount of VRAM available on your GPU, you may need to adjust the advanced settings.
 These settings include _batch size_, _training steps_, _amount of data workers_, _precision_, and an option to _compile model_ before training.
@@ -27,7 +27,7 @@ You may need to tune these settings to get an optimal result.
 
 ## Hugging Face Hub access
 
-If `HF_TOKEN` is not set, the backend uses unauthenticated Hugging Face Hub access and may log a warning. Downloads can fail without a token because of anonymous rate limits or access restrictions on gated/private repositories.
+If no token is configured, the backend uses unauthenticated Hugging Face Hub access and may log a warning. Downloads can fail without a token because of anonymous rate limits or access restrictions on gated/private repositories.
 
 Use a token with read-only model access:
 
@@ -56,19 +56,12 @@ Then recreate or start the Docker stack from `application/docker/`:
 docker compose up -d --force-recreate
 ```
 
-For native backend deployments, add the token to `application/backend/.env`:
+For native backend deployments, set the token from the UI: **Settings > General >
+Hugging Face**. This persists the token to the backend's `settings.json` file.
+Alternatively, edit `settings.json` directly. Setting `HF_TOKEN` in
+`application/backend/.env` has no effect for the native backend.
 
-```env
-HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Then start the backend from `application/backend/`:
-
-```bash
-./run.sh
-```
-
-Never commit real tokens to source control. Store them only in local `.env` files or your secret manager, and rotate the token immediately if it is exposed.
+Never commit real tokens to source control. Store them only in `settings.json`, the Docker `.env` file, or your secret manager, and rotate the token immediately if it is exposed.
 
 ## Choose where training runs
 
