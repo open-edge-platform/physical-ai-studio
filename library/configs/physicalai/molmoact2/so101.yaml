@@ -78,5 +78,5 @@ trainer:
         save_top_k: 2
         save_last: true
         save_weights_only: true
-        filename: "molmoact2-{epoch:03d}-{step:06d}-{val/loss:.4f}"
+        filename: "molmoact2-{epoch:03d}-{step:06d}"
         auto_insert_metric_name: false
