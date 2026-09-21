@@ -26,6 +26,13 @@ def test_model_assembly_and_checkpoint_keys(model: MolmoAct2Model) -> None:
     assert not hasattr(model, "config")
 
 
+def test_default_peft_targets_include_vlm_and_action_expert() -> None:
+    targets = MolmoAct2Model.get_default_peft_targets()
+
+    assert "backbone\\.model\\.(transformer|vision_backbone)" in targets
+    assert "backbone\\.model\\.action_expert" in targets
+
+
 def test_merge_image_features_matches_compact_update_with_per_example_padding() -> None:
     embeddings = torch.arange(24, dtype=torch.float32).reshape(2, 4, 3).requires_grad_()
     raw_image_features = torch.tensor(
@@ -238,8 +245,8 @@ def test_enable_compile_wraps_inference_entrypoint(
     assert compiled == ["predict_action_chunk"]
 
 
-def test_default_peft_targets_include_vlm_only() -> None:
+def test_default_peft_targets_include_vlm_and_action_expert_modules() -> None:
     targets = MolmoAct2Model.get_default_peft_targets()
 
     assert "vision_backbone" in targets
-    assert "action_expert" not in targets
+    assert "action_expert" in targets

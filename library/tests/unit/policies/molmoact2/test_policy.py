@@ -1206,11 +1206,11 @@ def test_model_modifications_apply_shared_peft(monkeypatch: pytest.MonkeyPatch) 
 
     model.enable_gradient_checkpointing.assert_called_once_with()
     policy._inject_lora.assert_called_once_with()
-    model.unfreeze_action_expert.assert_called_once_with()
+    model.unfreeze_action_expert.assert_not_called()
     model.enable_compile.assert_called_once_with()
 
 
-def test_shared_peft_trains_vlm_adapters_and_full_action_expert(tiny_molmoact2_config: MolmoAct2Config) -> None:
+def test_shared_peft_trains_vlm_and_action_expert_adapters(tiny_molmoact2_config: MolmoAct2Config) -> None:
     pytest.importorskip("peft")
     from physicalai.policies.mixins.peft import is_lora_injected
 
@@ -1234,8 +1234,8 @@ def test_shared_peft_trains_vlm_adapters_and_full_action_expert(tiny_molmoact2_c
     assert any("transformer" in name and "lora_" in name for name in trainable)
     assert any("vision_backbone" in name and "lora_" in name for name in trainable)
     assert action_expert
-    assert all(parameter.requires_grad for _, parameter in action_expert)
-    assert not any("lora_" in name for name, _ in action_expert)
+    assert any("lora_" in name and parameter.requires_grad for name, parameter in action_expert)
+    assert not any("lora_" not in name and parameter.requires_grad for name, parameter in action_expert)
 
 
 def test_supported_export_backends() -> None:
