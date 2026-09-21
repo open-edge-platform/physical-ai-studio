@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+import yaml
 from physicalai.config import validate_config
 from physicalai.runtime import RobotRuntime
 
@@ -16,7 +17,6 @@ from runtime.config_builder import (
     policy_source_fragment,
     runtime_camera_keys,
     runtime_config_change_me,
-    runtime_config_yaml,
     runtime_export_readme,
     runtime_identity_digest,
 )
@@ -96,7 +96,7 @@ async def test_builder_emits_valid_runtime_recipe_and_round_trips(mocker: Any) -
     assert isinstance(calibration, dict)
 
     with NamedTemporaryFile(mode="w", suffix=".yaml") as config_file:
-        config_file.write(runtime_config_yaml(document))
+        config_file.write(yaml.safe_dump(document, sort_keys=False, default_flow_style=False))
         config_file.flush()
         runtime = RobotRuntime.from_config(config_file.name)
     assert isinstance(runtime, RobotRuntime)

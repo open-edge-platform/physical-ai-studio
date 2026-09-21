@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
+import yaml
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
@@ -33,7 +34,6 @@ from runtime.config_builder import (
     build_runtime_config,
     policy_source_fragment,
     runtime_config_change_me,
-    runtime_config_yaml,
     runtime_export_readme,
 )
 from schemas import Model, ModelDetailResponse
@@ -89,7 +89,9 @@ async def _runtime_recipe_texts(
 
     unresolved = runtime_config_change_me(document)
     comments = "".join(f"# CHANGE_ME: replace machine-specific device path {path}\n" for path in unresolved)
-    return comments + runtime_config_yaml(document), runtime_export_readme(document, unresolved=unresolved)
+    return comments + yaml.safe_dump(document, sort_keys=False, default_flow_style=False), runtime_export_readme(
+        document, unresolved=unresolved
+    )
 
 
 @router.get("/{model_id}")

@@ -1,12 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
+import yaml
 from fastapi import APIRouter, Depends, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import Response
 
 from api.dependencies import RobotClientFactoryDep, get_environment_id, get_environment_service, get_project_id
-from runtime.config_builder import RUNTIME_FPS, build_runtime_config, runtime_config_change_me, runtime_config_yaml
+from runtime.config_builder import RUNTIME_FPS, build_runtime_config, runtime_config_change_me
 from schemas.environment import Environment, EnvironmentWithRelations, TeleoperatorRobotWithRobot
 from services.environment_service import EnvironmentService
 
@@ -75,7 +76,7 @@ async def get_runtime_config(
     unresolved = runtime_config_change_me(document)
     comments = "".join(f"# CHANGE_ME: replace machine-specific device path {path}\n" for path in unresolved)
     return Response(
-        content=comments + runtime_config_yaml(document),
+        content=comments + yaml.safe_dump(document, sort_keys=False, default_flow_style=False),
         media_type="application/yaml",
         headers={"Content-Disposition": 'attachment; filename="runtime.yaml"'},
     )

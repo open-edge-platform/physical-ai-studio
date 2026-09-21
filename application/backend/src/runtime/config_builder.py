@@ -4,7 +4,6 @@ import hashlib
 import json
 from typing import TYPE_CHECKING, Any, cast
 
-import yaml
 from physicalai.capture import ColorMode, SharedCamera
 from physicalai.config import Config, validate_config
 from physicalai_studio_plugin import shared_robot_name
@@ -22,11 +21,6 @@ if TYPE_CHECKING:
 
 RUNTIME_FPS = 30.0
 POLICY_REQUEST_THRESHOLD = 0.5
-
-
-def runtime_config_yaml(document: dict[str, Any]) -> str:
-    """Serialize a validated runtime recipe using the supported YAML shape."""
-    return yaml.safe_dump(Config.from_dict(document).to_dict(), sort_keys=False, default_flow_style=False)
 
 
 class _StoredPortFallback:
