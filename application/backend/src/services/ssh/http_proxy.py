@@ -4,6 +4,7 @@
 """HTTP CONNECT proxy support for direct SSH connections."""
 
 import asyncio
+import ipaddress
 import socket
 from typing import Final
 from urllib.parse import urlsplit
@@ -87,10 +88,21 @@ def _matches_no_proxy(host: str, port: int, no_proxy: str | None) -> bool:
         return False
     normalized_host = host.rstrip(".").lower()
     host_with_port = f"{normalized_host}:{port}"
+    try:
+        host_ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        host_ip = None
     for entry in no_proxy.split(","):
         candidate = entry.strip().lstrip(".").rstrip(".").lower()
         if candidate == "*" or candidate in {normalized_host, host_with_port}:
             return True
+        if host_ip is not None and "/" in candidate:
+            try:
+                if host_ip in ipaddress.ip_network(candidate, strict=False):
+                    return True
+            except ValueError:
+                pass
+            continue
         if ":" not in candidate and normalized_host.endswith(f".{candidate}"):
             return True
     return False
