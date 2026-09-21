@@ -107,7 +107,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
     && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 10 \
         "https://keyserver.ubuntu.com/pks/lookup?op=get&options=mr&exact=on&search=0x0C0E6AF955CE463C03FC51574D098D70AFBE5E1F" \
         | gpg --dearmor -o /etc/apt/keyrings/kobuk-intel.gpg \
     && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/kobuk-intel.gpg] https://ppa.launchpadcontent.net/kobuk-team/intel-graphics/ubuntu noble main" \
