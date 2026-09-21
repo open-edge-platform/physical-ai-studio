@@ -54,7 +54,7 @@ export const paths = {
     root,
     settings: {
         index: settings,
-        compute: settings.path('/compute'),
+        trainingTargets: settings.path('/training-targets'),
         hotkeys: settings.path('/hotkeys'),
         storage: settings.path('/storage'),
         about: settings.path('/about'),
@@ -144,7 +144,7 @@ export const router = createBrowserRouter([
                                 element: <Settings />,
                             },
                             {
-                                path: paths.settings.compute.pattern,
+                                path: paths.settings.trainingTargets.pattern,
                                 element: <Settings />,
                             },
                             {
