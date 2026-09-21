@@ -20,11 +20,8 @@ import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { SshDeviceType, SshTargetFields } from '../training-targets-table/remote-server-form/ssh-target-fields';
 import { useRemoteServerFormMutation } from '../training-targets-table/remote-server-form/use-remote-server-form-mutation';
 import { VerifyAfterSaveDialog } from '../training-targets-table/remote-server-form/verify-after-save-dialog';
-import {
-    INSECURE_TRAINER_URL_WARNING,
-    isInsecureTrainerUrl,
-} from '../training-targets-table/remote-trainer-form/insecure-trainer-url';
-import { useRemoteTrainerFormMutation } from '../training-targets-table/remote-trainer-form/use-remote-trainer-form-mutation';
+import { RemoteTrainerForm } from '../training-targets-table/remote-trainer-form/remote-trainer-form';
+import { SshHostKeyConfirmation } from '../training-targets-table/ssh-host-key-confirmation-dialog';
 import { useDeviceTypeDetection } from './use-device-type-detection';
 
 import classes from './training-target-form.module.css';
@@ -41,6 +38,7 @@ const DEVICE_TYPE_DESCRIPTION = 'Determines which trainer image is provisioned.'
 
 type TrainingTargetFormProps = {
     close: () => void;
+    requestHostKeyConfirmation: (confirmation: SshHostKeyConfirmation) => void;
     // Whether the SSH-provisioned target type is selectable at all. The
     // backend fails closed on every SSH-provisioned route whenever this
     // Studio instance is not eligible to run the feature (e.g. it is bound to
@@ -54,13 +52,14 @@ type TrainingTargetFormProps = {
 /**
  * Unified "New training target" entry point. A single dialog with a segmented
  * type switch at the top, rather than a menu that opens one of two separate
- * dialogs — the two target kinds share the Name field and this shell, and
- * only the fields below the switch change.
+ * dialogs. The "SSH provisioned" kind is handled entirely here; the "Direct
+ * trainer URL" kind delegates to `RemoteTrainerForm` (which already covers a
+ * direct URL, an SSH-tunneled trainer, and the "Deploy AWS stack" prompt) so
+ * that richer form isn't duplicated for the create flow.
  */
-export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormProps) => {
+export const TrainingTargetForm = ({ close, requestHostKeyConfirmation, sshAvailable }: TrainingTargetFormProps) => {
     const [targetType, setTargetType] = useState<TargetType>(sshAvailable ? 'ssh' : 'direct-url');
     const [name, setName] = useState('');
-    const [url, setUrl] = useState('');
     const [sshHostAlias, setSshHostAlias] = useState<string | undefined>(undefined);
     const [deviceType, setDeviceType] = useState<SshDeviceType | undefined>(undefined);
     // True once the user picks a device type themselves, so a later
@@ -73,11 +72,6 @@ export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormPr
     // has no such preflight, so it always just closes on save.
     const [savedServer, setSavedServer] = useState<SchemaRemoteServer | undefined>(undefined);
 
-    const {
-        save: saveTrainer,
-        isPending: isSavingTrainer,
-        error: trainerError,
-    } = useRemoteTrainerFormMutation(undefined);
     const { save: saveServer, isPending: isSavingServer, error: serverError } = useRemoteServerFormMutation(undefined);
 
     const { detectedDeviceType, isDetecting } = useDeviceTypeDetection(targetType === 'ssh' ? sshHostAlias : undefined);
@@ -112,48 +106,52 @@ export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormPr
           ? 'Auto-detected from the SSH host. Change it if this is wrong.'
           : DEVICE_TYPE_DESCRIPTION;
 
-    const isPending = targetType === 'ssh' ? isSavingServer : isSavingTrainer;
-    const error = targetType === 'ssh' ? serverError : trainerError;
-    const errorMessage = error
-        ? (getApiErrorMessage(error) ?? 'The training target could not be saved. Try again.')
+    const errorMessage = serverError
+        ? (getApiErrorMessage(serverError) ?? 'The training target could not be saved. Try again.')
         : undefined;
 
-    const canSubmit =
-        name.trim() !== '' &&
-        (targetType === 'ssh' ? sshHostAlias !== undefined && deviceType !== undefined : url !== '');
+    const canSubmit = name.trim() !== '' && sshHostAlias !== undefined && deviceType !== undefined;
 
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
-        if (targetType === 'ssh') {
-            if (sshHostAlias === undefined || deviceType === undefined) {
-                return;
-            }
-            saveServer(
-                { name: name.trim(), ssh_host_alias: sshHostAlias, device_type: deviceType },
-                { onSuccess: setSavedServer }
-            );
+        if (sshHostAlias === undefined || deviceType === undefined) {
             return;
         }
-
-        saveTrainer(
-            {
-                name: name.trim(),
-                connection_mode: 'direct',
-                url,
-                ssh_host_alias: null,
-                ssh_connection: null,
-                ssh_remote_port: null,
-                ssh_local_port: null,
-            },
-            // Always direct here (no SSH tunnel option in the create dialog), so a
-            // host-key confirmation prompt can never actually fire.
-            { onSuccess: close, onHostKeyConfirmationRequired: () => undefined }
+        saveServer(
+            { name: name.trim(), ssh_host_alias: sshHostAlias, device_type: deviceType },
+            { onSuccess: setSavedServer }
         );
     };
 
     if (savedServer !== undefined) {
         return <VerifyAfterSaveDialog savedServer={savedServer} close={close} />;
+    }
+
+    const typeSwitch = sshAvailable && (
+        <Flex direction='column' gap='size-75'>
+            <Text UNSAFE_className={classes.toggleLabel}>Target type</Text>
+            <ToggleButtons
+                options={TARGET_TYPES}
+                selectedOption={targetType}
+                onOptionChange={setTargetType}
+                getLabel={(option) => TARGET_TYPE_LABELS[option]}
+            />
+            <Text UNSAFE_className={classes.hint}>
+                SSH targets launch a trainer container per job. Direct endpoints run an already-managed trainer.
+            </Text>
+        </Flex>
+    );
+
+    if (targetType === 'direct-url') {
+        return (
+            <RemoteTrainerForm
+                close={close}
+                requestHostKeyConfirmation={requestHostKeyConfirmation}
+                typeSwitch={typeSwitch}
+                initialName={name}
+            />
+        );
     }
 
     return (
@@ -172,68 +170,31 @@ export const TrainingTargetForm = ({ close, sshAvailable }: TrainingTargetFormPr
                             onChange={setName}
                             width='100%'
                         />
-
-                        {sshAvailable && (
-                            <Flex direction='column' gap='size-75'>
-                                <Text UNSAFE_className={classes.toggleLabel}>Target type</Text>
-                                <ToggleButtons
-                                    options={TARGET_TYPES}
-                                    selectedOption={targetType}
-                                    onOptionChange={setTargetType}
-                                    getLabel={(option) => TARGET_TYPE_LABELS[option]}
-                                />
-                                <Text UNSAFE_className={classes.hint}>
-                                    SSH targets launch a trainer container per job. Direct endpoints run an
-                                    already-managed trainer.
-                                </Text>
-                            </Flex>
-                        )}
-
-                        {sshAvailable && targetType === 'ssh' ? (
-                            <>
-                                <InlineAlert variant='warning'>
-                                    <strong>Security risk:</strong> SSH servers have no built-in authentication. Anyone
-                                    who can reach this Studio backend can run arbitrary code as root on the server. Only
-                                    connect to servers you trust, and only run Studio on a single-user, localhost-only
-                                    workstation.
-                                </InlineAlert>
-                                <SshTargetFields
-                                    sshHostAlias={sshHostAlias}
-                                    onSshHostAliasChange={setSshHostAlias}
-                                    deviceType={deviceType}
-                                    onDeviceTypeChange={(value) => {
-                                        setDeviceTypeTouched(true);
-                                        setDeviceType(value);
-                                    }}
-                                    deviceTypeDescription={deviceTypeDescription}
-                                />
-                            </>
-                        ) : (
-                            <>
-                                <TextField
-                                    isRequired
-                                    label='Trainer URL'
-                                    type='url'
-                                    value={url}
-                                    onChange={setUrl}
-                                    description='Use the endpoint URL that accepts Physical AI Studio training jobs.'
-                                    width='100%'
-                                />
-                                {isInsecureTrainerUrl(url) && (
-                                    <InlineAlert variant='warning'>{INSECURE_TRAINER_URL_WARNING}</InlineAlert>
-                                )}
-                            </>
-                        )}
-
+                        {typeSwitch}
+                        <InlineAlert variant='warning'>
+                            <strong>Security risk:</strong> SSH servers have no built-in authentication. Anyone who can
+                            reach this Studio backend can run arbitrary code as root on the server. Only connect to
+                            servers you trust, and only run Studio on a single-user, localhost-only workstation.
+                        </InlineAlert>
+                        <SshTargetFields
+                            sshHostAlias={sshHostAlias}
+                            onSshHostAliasChange={setSshHostAlias}
+                            deviceType={deviceType}
+                            onDeviceTypeChange={(value) => {
+                                setDeviceTypeTouched(true);
+                                setDeviceType(value);
+                            }}
+                            deviceTypeDescription={deviceTypeDescription}
+                        />
                         {errorMessage !== undefined && <InlineAlert variant='error'>{errorMessage}</InlineAlert>}
                     </Flex>
                 </Content>
                 <ButtonGroup>
-                    <Button variant='secondary' onPress={close} isDisabled={isPending}>
+                    <Button variant='secondary' onPress={close} isDisabled={isSavingServer}>
                         Cancel
                     </Button>
-                    <Button variant='accent' type='submit' isDisabled={!canSubmit} isPending={isPending}>
-                        {targetType === 'ssh' ? 'Verify & save' : 'Add trainer'}
+                    <Button variant='accent' type='submit' isDisabled={!canSubmit} isPending={isSavingServer}>
+                        Verify & save
                     </Button>
                 </ButtonGroup>
             </Dialog>

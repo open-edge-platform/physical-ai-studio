@@ -179,7 +179,7 @@ describe('TrainingTargetsPage', () => {
         // form goes straight to the direct-URL trainer fields.
         expect(within(dialog).queryByText('Target type')).not.toBeInTheDocument();
         expect(within(dialog).queryByRole('button', { name: 'SSH provisioned' })).not.toBeInTheDocument();
-        expect(within(dialog).getByLabelText(/trainer url/i)).toBeInTheDocument();
+        expect(within(dialog).getByRole('textbox', { name: /trainer url/i })).toBeInTheDocument();
         expect(within(dialog).getByRole('button', { name: 'Add trainer' })).toBeInTheDocument();
     });
 
@@ -208,10 +208,13 @@ describe('TrainingTargetsPage', () => {
 
         expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
         await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        const dialog = await screen.findByRole('dialog');
+        let dialog = await screen.findByRole('dialog');
         await user.type(within(dialog).getByLabelText(/name/i), remoteTrainer.name);
         await user.click(within(dialog).getByRole('button', { name: 'Direct trainer URL' }));
-        await user.type(within(dialog).getByLabelText(/trainer url/i), remoteTrainer.url);
+        // Switching the type switch swaps in `RemoteTrainerForm`, a distinct
+        // dialog element, so the earlier `dialog` handle is now stale.
+        dialog = await screen.findByRole('dialog');
+        await user.type(within(dialog).getByRole('textbox', { name: /trainer url/i }), remoteTrainer.url);
         await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
 
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();

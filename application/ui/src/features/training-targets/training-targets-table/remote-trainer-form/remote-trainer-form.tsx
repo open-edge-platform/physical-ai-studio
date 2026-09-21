@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, ReactNode, useState } from 'react';
 
 import {
     Button,
@@ -42,12 +42,27 @@ type RemoteTrainerFormProps = {
     remoteTrainer?: SchemaRemoteTrainer;
     close: () => void;
     requestHostKeyConfirmation: (confirmation: SshHostKeyConfirmation) => void;
+    // Rendered above the connection-method tabs, between the Name field and
+    // the rest of the form. Used by `TrainingTargetForm` to inject its
+    // "SSH provisioned / Direct trainer URL" type switch so a single dialog
+    // covers both target kinds without duplicating this form's fields.
+    typeSwitch?: ReactNode;
+    // Seeds the Name field. Used by `TrainingTargetForm` to carry over a name
+    // already typed before switching the type switch to "Direct trainer URL",
+    // since that switch mounts this form fresh.
+    initialName?: string;
 };
 
 type SshHostSource = 'manual' | 'pick';
 
-export const RemoteTrainerForm = ({ remoteTrainer, close, requestHostKeyConfirmation }: RemoteTrainerFormProps) => {
-    const [name, setName] = useState(remoteTrainer?.name ?? '');
+export const RemoteTrainerForm = ({
+    remoteTrainer,
+    close,
+    requestHostKeyConfirmation,
+    typeSwitch,
+    initialName,
+}: RemoteTrainerFormProps) => {
+    const [name, setName] = useState(remoteTrainer?.name ?? initialName ?? '');
     const [url, setUrl] = useState(remoteTrainer?.url ?? '');
     const [connectionMode, setConnectionMode] = useState(remoteTrainer?.connection_mode ?? 'direct');
     const [sshHostSource, setSshHostSource] = useState<SshHostSource>(
@@ -146,6 +161,7 @@ export const RemoteTrainerForm = ({ remoteTrainer, close, requestHostKeyConfirma
                             onChange={setName}
                             width='100%'
                         />
+                        {typeSwitch}
                         <Tabs
                             selectedKey={connectionMode}
                             onSelectionChange={(key) => setConnectionMode(key as 'direct' | 'ssh')}
