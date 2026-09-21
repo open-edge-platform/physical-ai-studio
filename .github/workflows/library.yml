@@ -222,6 +222,13 @@ jobs:
           # NVML"), and the driver can't be repaired from CI. OSMesa needs no GPU.
           MUJOCO_GL: osmesa
           PYOPENGL_PLATFORM: osmesa
+          # This self-hosted runner reuses /tmp across jobs. A dataset video left
+          # partially downloaded by a cancelled/killed job would otherwise poison
+          # every later run. runner.temp is emptied at the start/end of each job, 
+          # so scope the cache to it.
+          # Trade-off: datasets are re-downloaded every run instead of reused from
+          # a warm /tmp cache, adding to job runtime in exchange for reliability.
+          HF_LEROBOT_HOME: ${{ runner.temp }}/lerobot_test
         run: |
           uv run --no-sync pytest tests/integration -m "not slow"
 
