@@ -224,7 +224,7 @@ jobs:
           PYOPENGL_PLATFORM: osmesa
           # This self-hosted runner reuses /tmp across jobs. A dataset video left
           # partially downloaded by a cancelled/killed job would otherwise poison
-          # every later run. runner.temp is emptied at the start/end of each job, 
+          # every later run. runner.temp is emptied at the start/end of each job,
           # so scope the cache to it.
           # Trade-off: datasets are re-downloaded every run instead of reused from
           # a warm /tmp cache, adding to job runtime in exchange for reliability.

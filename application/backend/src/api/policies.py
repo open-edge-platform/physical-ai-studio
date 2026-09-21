@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from huggingface_hub import HfApi
 from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
-from physicalai.policies import ACT, Pi05, MolmoAct2, Rldx1, SmolVLA
+from physicalai.policies import ACT, MolmoAct2, Pi05, Rldx1, SmolVLA
 from pydantic import BaseModel
 
 from services.training_backends.local import resolve_hf_token
