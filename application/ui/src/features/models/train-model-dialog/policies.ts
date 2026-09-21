@@ -40,7 +40,7 @@ export const MODELS: ReadonlyArray<{
     {
         id: 'rldx1',
         name: 'RLDX-1',
-        description: 'General-purpose robot foundation model for dexterous manipulation',
+        description: 'General-purpose robot foundation model for dexterous manipulation (RLWRLD Model License v1.0)',
         minVRAM: 40 * GB,
     },
 ];
