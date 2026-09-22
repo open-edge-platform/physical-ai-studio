@@ -106,6 +106,7 @@
       matchManagers: ["custom.regex"],
       matchDatasources: ["docker"],
       matchDepNames: ["python"],
+      matchUpdateTypes: ["digest"],
       groupName: "Container images",
       schedule: ["* * * * 6"], // weekly on Saturday
       automergeType: "pr",
