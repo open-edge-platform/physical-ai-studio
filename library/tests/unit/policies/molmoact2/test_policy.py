@@ -15,8 +15,10 @@ import torch
 from physicalai.data import Feature, FeatureType, NormalizationParameters, Observation
 from physicalai.data.dataset import Dataset
 from physicalai.export import ExportablePolicyMixin, ExportBackend
+from physicalai.inference import InferenceModel
 from physicalai.policies import get_policy
 from physicalai.policies.molmoact2 import MolmoAct2, MolmoAct2Config
+from physicalai.policies.mixins.peft import is_lora_injected
 from physicalai.policies.molmoact2.constants import (
     SO101_DEGREES_PER_NORMALIZED_UNIT,
     SO101_JOINT_OFFSETS,
@@ -57,11 +59,9 @@ def test_model_methods_require_initialization(method: str) -> None:
         getattr(policy, method)(Observation(state=torch.zeros(1, 4)))
 
 
-def test_invalid_lora_options() -> None:
+def test_lora_is_incompatible_with_action_head_only() -> None:
     with pytest.raises(ValueError, match="incompatible"):
         MolmoAct2(pretrained_name_or_path=None, lora_enabled=True, train_action_head_only=True)
-    with pytest.raises(ValueError, match="lora_rank"):
-        MolmoAct2(pretrained_name_or_path=None, lora_enabled=True, lora_rank=0)
 
 
 @pytest.mark.parametrize(
@@ -804,6 +804,92 @@ def test_load_from_checkpoint_restores_config_and_weights(
         torch.testing.assert_close(restored.state_dict()[name], value)
 
 
+def test_lora_checkpoint_exports_loadable_merged_torch_model(
+    tiny_molmoact2_config: MolmoAct2Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(MolmoAct2, "_openvino_token_ids", lambda _self: (1, 0, [10, 11, 12]))
+    config = replace(
+        tiny_molmoact2_config,
+        lora_enabled=True,
+        lora_rank=2,
+        lora_alpha=2,
+        lora_dropout=0.0,
+    )
+    policy = MolmoAct2.from_config(config)
+    checkpoint = {
+        "state_dict": policy.state_dict(),
+        "pytorch-lightning_version": lightning.__version__,
+        "hyper_parameters": dict(policy.hparams),
+    }
+    policy.on_save_checkpoint(checkpoint)
+    checkpoint_path = tmp_path / "molmoact2-lora.ckpt"
+    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch  # Test-only trusted data.
+    torch.save(checkpoint, checkpoint_path)
+
+    restored = MolmoAct2.load_from_checkpoint(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=True,
+    )
+
+    assert restored.config is not None and restored.config.lora_enabled is True
+    assert is_lora_injected(restored._require_model())
+
+    export_dir = tmp_path / "molmoact2-lora-torch"
+    restored.eval().export(export_dir, backend="torch")
+
+    exported_checkpoint_path = export_dir / "molmoact2.pt"
+    # This test loads an artifact it generated locally using PyTorch's restricted weights-only unpickler.
+    # nosemgrep: trailofbits.python.pickles-in-pytorch.pickles-in-pytorch
+    exported_checkpoint = torch.load(
+        exported_checkpoint_path,
+        map_location="cpu",
+        weights_only=True,
+    )
+    assert exported_checkpoint["policy_config"]["lora_enabled"] is False
+    assert not any(
+        "base_layer" in name or "lora_A" in name or "lora_B" in name
+        for name in exported_checkpoint["state_dict"]
+    )
+    assert is_lora_injected(restored._require_model())
+
+    inference_model = InferenceModel.from_pretrained(
+        export_dir,
+        backend="torch",
+        device="cpu",
+    )
+    assert inference_model.backend == "torch"
+
+
+def test_torch_export_loads_with_downloaded_tokenizer(
+    tiny_molmoact2_config: MolmoAct2Config,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(MolmoAct2, "_openvino_token_ids", lambda _self: (1, 0, [10, 11, 12]))
+    policy = MolmoAct2.from_config(tiny_molmoact2_config).eval()
+    export_dir = tmp_path / "molmoact2-torch"
+    policy.export(export_dir, backend="torch")
+
+    fallback_path = tmp_path / "fallback" / "tokenizer.json"
+    fallback_path.parent.mkdir()
+    fallback_path.write_text("{}", encoding="utf-8")
+    Path(tiny_molmoact2_config.tokenizer_name_or_path, "tokenizer.json").unlink()
+    download = Mock(return_value=str(fallback_path))
+    monkeypatch.setattr("physicalai.policies.molmoact2.processors.tokenizers.hf_hub_download", download)
+
+    inference_model = InferenceModel.from_pretrained(export_dir, backend="torch", device="cpu")
+
+    assert inference_model.backend == "torch"
+    download.assert_called_once_with(
+        repo_id="allenai/MolmoAct2",
+        filename="tokenizer.json",
+        revision="e432d85f6e039edca44afb93c262f3084ab72a9c",
+    )
+
+
 def test_load_from_checkpoint_preserves_normalization_and_training_arguments(
     tiny_molmoact2_config: MolmoAct2Config,
     tmp_path: Path,
@@ -951,6 +1037,32 @@ def test_from_config_defaults_match_init_defaults() -> None:
         assert parameter.default == init_parameters[name].default
 
 
+def test_from_config_uses_explicit_tokenizer_json_path(
+    tiny_molmoact2_config: MolmoAct2Config,
+    tmp_path: Path,
+) -> None:
+    tokenizer_path = tmp_path / "override" / "custom-tokenizer.json"
+    tokenizer_path.parent.mkdir()
+    tokenizer_path.write_text("{}", encoding="utf-8")
+
+    policy = MolmoAct2.from_config(tiny_molmoact2_config, tokenizer_json_path=tokenizer_path)
+
+    assert policy.config is not None
+    assert policy.config.tokenizer_name_or_path == str(tokenizer_path.resolve())
+
+
+@pytest.mark.parametrize("override", ["missing/tokenizer.json", "missing-directory"])
+def test_from_config_rejects_missing_explicit_tokenizer_override(
+    tiny_molmoact2_config: MolmoAct2Config,
+    tmp_path: Path,
+    override: str,
+) -> None:
+    tokenizer_path = tmp_path / override
+
+    with pytest.raises(FileNotFoundError, match="Explicit MolmoAct2 tokenizer override"):
+        MolmoAct2.from_config(tiny_molmoact2_config, tokenizer_json_path=tokenizer_path)
+
+
 def test_lora_optimizer_explicit_learning_rates_take_precedence() -> None:
     policy = MolmoAct2(
         pretrained_name_or_path=None,
@@ -1079,6 +1191,7 @@ def test_openvino_compression_is_used_by_export(
     export_args = policy.extra_export_args[ExportBackend.OPENVINO]
 
     assert export_args.compress_to_fp16 is True
+    assert export_args.tokenizer_truncation is True
 
 
 def test_openvino_export_forwards_runtime_input_config(

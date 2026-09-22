@@ -312,6 +312,7 @@ class MolmoAct2ExportMixin(ExportablePolicyMixin):
             ExportBackend.OPENVINO: OpenVINOExportParameters(
                 outputs=[feature.name for feature in outputs_schema],
                 export_tokenizer=True,
+                tokenizer_truncation=True,
                 compress_to_fp16=self.openvino_compress_to_fp16,
                 via_onnx=False,
                 preprocessors_specs=preprocessors,

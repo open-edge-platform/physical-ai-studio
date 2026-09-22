@@ -214,6 +214,7 @@ jobs:
             files.pythonhosted.org:443
             fulcio.sigstore.dev:443
             ghcr.io:443
+            gitlab.com:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
             keyserver.ubuntu.com:443
