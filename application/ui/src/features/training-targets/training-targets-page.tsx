@@ -106,7 +106,11 @@ export const TrainingTargetsPage = () => {
 
             <DialogContainer onDismiss={closeForm}>
                 {action?.type === 'create' && (
-                    <TrainingTargetForm close={closeForm} sshAvailable={!sshUnavailable && !sshUnexpectedError} />
+                    <TrainingTargetForm
+                        close={closeForm}
+                        requestHostKeyConfirmation={setHostKeyConfirmation}
+                        sshAvailable={!sshUnavailable && !sshUnexpectedError}
+                    />
                 )}
                 {action?.type === 'edit' && action.row.kind === 'direct-url' && (
                     <RemoteTrainerForm
