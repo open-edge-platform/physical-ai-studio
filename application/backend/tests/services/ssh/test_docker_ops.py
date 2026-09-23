@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for Docker image resolution, verification, GPU-busy waiting, and container lifecycle."""
+"""Tests for Docker image resolution and container lifecycle."""
 
 from __future__ import annotations
 
@@ -9,19 +9,11 @@ import json
 
 import pytest
 
-from exceptions import (
-    GpuBusyTimeoutError,
-    RemoteDiskSpaceError,
-    TrainerContainerLaunchError,
-    TrainerImagePullError,
-    TrainerImageResolutionError,
-    TrainerImageVerificationError,
-    TrainerLibraryVersionError,
-)
+from exceptions import TrainerContainerLaunchError, TrainerImagePullError, TrainerImageResolutionError
 from schemas.hardware import DeviceType
-from services.ssh import docker_ops, sigstore_verify
+from services.ssh import docker_ops
 from services.ssh.docker_ops import LIBRARY_VERSION_LABEL, ResolvedImage
-from services.ssh.preflight import PROTOCOL_LABEL
+from services.ssh.trainer_image import PROTOCOL_LABEL
 from services.ssh.transport import CommandResult
 from settings import Settings
 
@@ -152,7 +144,7 @@ async def test_resolve_protocol_image_rejects_unparseable_protocol_label(setting
 
 
 # --------------------------------------------------------------------------- #
-# verify_image_signature                                                      #
+# Container launch                                                            #
 # --------------------------------------------------------------------------- #
 
 
@@ -163,221 +155,6 @@ def _image() -> ResolvedImage:
         digest=_DIGEST,
         library_version="0.5.0",
     )
-
-
-async def test_verify_image_signature_fails_closed_when_unavailable(settings, monkeypatch) -> None:
-    async def fake_verify(image_ref, *, identity_regexp, oidc_issuer):
-        raise sigstore_verify.SignatureUnavailableError("registry unreachable")
-
-    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify)
-
-    with pytest.raises(TrainerImageVerificationError):
-        await docker_ops.verify_image_signature(_image(), settings)
-
-
-async def test_verify_image_signature_fails_closed_on_failed_verification(settings, monkeypatch) -> None:
-    async def fake_verify(image_ref, *, identity_regexp, oidc_issuer):
-        raise sigstore_verify.SignatureVerificationError("no matching signatures")
-
-    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify)
-
-    with pytest.raises(TrainerImageVerificationError):
-        await docker_ops.verify_image_signature(_image(), settings)
-
-
-async def test_verify_image_signature_passes_and_pins_identity(settings, monkeypatch) -> None:
-    calls = []
-
-    async def fake_verify(image_ref, *, identity_regexp, oidc_issuer):
-        calls.append((image_ref, identity_regexp, oidc_issuer))
-
-    monkeypatch.setattr(sigstore_verify, "verify_signature", fake_verify)
-
-    await docker_ops.verify_image_signature(_image(), settings)
-
-    assert calls == [
-        (_image().digest_reference, settings.cosign_certificate_identity_regexp, settings.cosign_oidc_issuer)
-    ]
-
-
-# --------------------------------------------------------------------------- #
-# check_library_version                                                       #
-# --------------------------------------------------------------------------- #
-
-
-def test_check_library_version_no_label_is_silent() -> None:
-    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version=None)
-    result = docker_ops.check_library_version(image, minimum_version="1.0.0")
-    assert result.warning is None
-    assert result.reported_version is None
-
-
-def test_check_library_version_no_label_fails_closed_for_a_named_policy() -> None:
-    """A strict, non-default policy must not be bypassable by omitting the label."""
-    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version=None)
-    with pytest.raises(TrainerLibraryVersionError):
-        docker_ops.check_library_version(image, minimum_version="1.0.0", policy_name="pi05")
-
-
-def test_check_library_version_older_is_a_warning_not_a_failure() -> None:
-    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="0.9.0")
-    result = docker_ops.check_library_version(image, minimum_version="1.0.0")
-    assert result.warning is not None
-
-
-def test_check_library_version_equal_or_newer_is_silent() -> None:
-    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="1.2.0")
-    result = docker_ops.check_library_version(image, minimum_version="1.0.0")
-    assert result.warning is None
-
-
-def test_check_library_version_below_named_policy_minimum_fails() -> None:
-    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="0.9.0")
-    with pytest.raises(TrainerLibraryVersionError):
-        docker_ops.check_library_version(image, minimum_version="1.0.0", policy_name="pi05")
-
-
-def test_check_library_version_unparseable_label_is_treated_as_unreported() -> None:
-    """An unparseable label (e.g. the Dockerfile's `unknown` default) must warn, not raise.
-
-    `reported_version` must come back `None`, not the raw unparseable string:
-    `SshProvisioningService.provision()` treats any non-`None` `reported_version`
-    as authoritative against `/health`'s real version, and would otherwise raise
-    `TrainerLibraryVersionMismatchError` on every image whose label isn't a
-    valid PEP 440 version string.
-    """
-    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="unknown")
-    result = docker_ops.check_library_version(image, minimum_version="1.0.0")
-    assert result.reported_version is None
-    assert result.warning is not None
-
-
-def test_check_library_version_invalid_minimum_version_fails_fast() -> None:
-    """A misconfigured minimum is config, not untrusted image data: it must raise."""
-    image = ResolvedImage(tag_reference="t", digest_reference="d", digest=_DIGEST, library_version="1.0.0")
-    with pytest.raises(ValueError):
-        docker_ops.check_library_version(image, minimum_version="not-a-version")
-
-
-# --------------------------------------------------------------------------- #
-# GPU-busy wait                                                               #
-# --------------------------------------------------------------------------- #
-
-
-async def test_is_gpu_busy_cuda_low_memory_usage_is_not_busy() -> None:
-    """A process holding a trivial slice of GPU memory must not block a job."""
-    transport = FakeTransport({"nvidia-smi -i 0 --query-gpu=memory.used": _ok("1000, 40000\n")})
-    assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is False
-
-
-async def test_is_gpu_busy_cuda_high_memory_usage_is_busy() -> None:
-    transport = FakeTransport({"nvidia-smi -i 0 --query-gpu=memory.used": _ok("30000, 40000\n")})
-    assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is True
-
-
-async def test_is_gpu_busy_cuda_unknown_when_command_fails() -> None:
-    transport = FakeTransport({"nvidia-smi -i 0 --query-gpu=memory.used": _fail()})
-    assert await docker_ops.is_gpu_busy(transport, DeviceType.CUDA) is None
-
-
-async def test_wait_for_gpu_free_returns_once_free(settings) -> None:
-    # busy once (30GB/40GB used), then free (1GB/40GB used)
-    calls = iter([_ok("30000, 40000\n"), _ok("1000, 40000\n")])
-
-    class _Sequenced(FakeTransport):
-        async def connect(self) -> None:
-            return None
-
-        async def close(self) -> None:
-            return None
-
-        async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
-            return next(calls)
-
-    waits: list[float] = []
-
-    async def on_wait(elapsed: float) -> None:
-        waits.append(elapsed)
-
-    sleeps: list[float] = []
-
-    async def fake_sleep(seconds: float) -> None:
-        sleeps.append(seconds)
-
-    clock_values = iter([0.0, 0.0, 5.0])
-
-    def fake_clock() -> float:
-        return next(clock_values, 5.0)
-
-    await docker_ops.wait_for_gpu_free(
-        lambda: _Sequenced(),
-        DeviceType.CUDA,
-        settings,
-        "gpu-box",
-        on_wait=on_wait,
-        clock=fake_clock,
-        sleep=fake_sleep,
-    )
-
-    assert waits == [0.0]
-    assert sleeps  # backed off at least once
-
-
-async def test_wait_for_gpu_free_gives_up_after_timeout(settings) -> None:
-    settings = settings.model_copy(update={"ssh_gpu_wait_giveup_s": 1.0, "ssh_gpu_wait_initial_backoff_s": 0.01})
-
-    class _AlwaysBusy(FakeTransport):
-        async def connect(self) -> None:
-            return None
-
-        async def close(self) -> None:
-            return None
-
-        async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
-            return _ok("30000, 40000\n")  # 75% used, always busy
-
-    async def fake_sleep(seconds: float) -> None:
-        return None
-
-    clock_values = iter([0.0, 0.5, 2.0])
-
-    def fake_clock() -> float:
-        return next(clock_values, 2.0)
-
-    with pytest.raises(GpuBusyTimeoutError):
-        await docker_ops.wait_for_gpu_free(
-            lambda: _AlwaysBusy(),
-            DeviceType.CUDA,
-            settings,
-            "gpu-box",
-            clock=fake_clock,
-            sleep=fake_sleep,
-        )
-
-
-# --------------------------------------------------------------------------- #
-# Disk re-check                                                               #
-# --------------------------------------------------------------------------- #
-
-_DF_HEADER = "Filesystem 1B-blocks Used Available Capacity Mounted on\n"
-_PLENTY_OF_DISK = f"{_DF_HEADER}/dev/sda1 900000000000 100000000000 85899345920 12% /var/lib/docker\n"
-_ALMOST_NO_DISK = f"{_DF_HEADER}/dev/sda1 900000000000 890000000000 1073741824 99% /var/lib/docker\n"
-
-
-async def test_check_disk_for_job_passes_with_enough_free_space() -> None:
-    transport = FakeTransport({"df -B1 -P /var/lib/docker": _ok(_PLENTY_OF_DISK)})
-    await docker_ops.check_disk_for_job(transport, required_bytes=10 * 1024**3, server_name="gpu-box")
-
-
-async def test_check_disk_for_job_fails_against_actual_snapshot_size() -> None:
-    transport = FakeTransport({"df -B1 -P /var/lib/docker": _ok(_ALMOST_NO_DISK)})
-    with pytest.raises(RemoteDiskSpaceError):
-        await docker_ops.check_disk_for_job(transport, required_bytes=500 * 1024**3, server_name="gpu-box")
-
-
-# --------------------------------------------------------------------------- #
-# Container launch                                                            #
-# --------------------------------------------------------------------------- #
 
 
 def test_build_run_argv_security_properties() -> None:
@@ -669,34 +446,6 @@ async def test_launch_container_raises_on_failure() -> None:
         await docker_ops.launch_container(transport, ["docker", "run"], "gpu-box")
 
 
-async def test_resolve_published_port_parses_docker_port_output() -> None:
-    transport = FakeTransport({"docker port": _ok("127.0.0.1:54321\n")})
-    port = await docker_ops.resolve_published_port(transport, "physicalai-trainer-abc", 8080)
-    assert port == 54321
-
-
-# --------------------------------------------------------------------------- #
-# Orphan sweep listing                                                        #
-# --------------------------------------------------------------------------- #
-
-
-async def test_list_managed_containers_parses_docker_ps_json_lines() -> None:
-    line = json.dumps(
-        {
-            "ID": "abc123",
-            "Names": "physicalai-trainer-job1",
-            "Labels": f"{docker_ops.MANAGED_LABEL}=true,{docker_ops.JOB_LABEL}=job1",
-        }
-    )
-    transport = FakeTransport({"docker ps": _ok(line + "\n")})
-
-    containers = await docker_ops.list_managed_containers(transport, backend_instance_id="instance-1")
-
-    assert len(containers) == 1
-    assert containers[0].container_id == "abc123"
-    assert containers[0].job_id == "job1"
-
-
 # --------------------------------------------------------------------------- #
 # Data volume lifecycle                                                       #
 # --------------------------------------------------------------------------- #
@@ -734,22 +483,6 @@ async def test_remove_volume_tolerates_missing_volume() -> None:
     await docker_ops.remove_volume(transport, "physicalai-trainer-data-abc")
 
     assert transport.ran("docker volume rm physicalai-trainer-data-abc")
-
-
-async def test_list_managed_volumes_parses_docker_volume_ls_json_lines() -> None:
-    line = json.dumps(
-        {
-            "Name": "physicalai-trainer-data-job1",
-            "Labels": f"{docker_ops.MANAGED_LABEL}=true,{docker_ops.JOB_LABEL}=job1",
-        }
-    )
-    transport = FakeTransport({"docker volume ls": _ok(line + "\n")})
-
-    volumes = await docker_ops.list_managed_volumes(transport, backend_instance_id="instance-1")
-
-    assert len(volumes) == 1
-    assert volumes[0].name == "physicalai-trainer-data-job1"
-    assert volumes[0].job_id == "job1"
 
 
 # --------------------------------------------------------------------------- #
@@ -829,3 +562,72 @@ async def test_inspect_container_reports_stopped_state() -> None:
 
     assert result is not None
     assert result.running is False
+
+
+# --------------------------------------------------------------------------- #
+# remove_stale_containers_on_port                                             #
+# --------------------------------------------------------------------------- #
+
+
+class _PortConflictTransport(FakeTransport):
+    """Answers `docker ps`/`inspect`/`rm` per container id, not just by prefix.
+
+    Regression fixture for a persistent SSH trainer whose fixed remote port
+    was left held by a stale container: a real `docker ps --filter publish=`
+    followed by per-id `docker inspect` calls needs distinct responses per id,
+    which the plain prefix-matching `FakeTransport` can't express.
+    """
+
+    def __init__(self, ids_on_port: list[str], labels_by_id: dict[str, dict[str, str]]) -> None:
+        super().__init__()
+        self._ids_on_port = ids_on_port
+        self._labels_by_id = labels_by_id
+        self.removed: list[str] = []
+
+    async def run_command(self, argv, timeout: float | None = None) -> CommandResult:  # noqa: ASYNC109
+        self.commands.append(tuple(argv))
+        joined = " ".join(argv)
+        if joined.startswith("docker ps -a --filter publish="):
+            return _ok("\n".join(self._ids_on_port))
+        if "--format {{.State.Running}}" in joined:
+            return _ok("false\n")
+        if "--format {{json .Config.Labels}}" in joined:
+            container_id = argv[-1]
+            return _ok(json.dumps(self._labels_by_id.get(container_id, {})))
+        if joined.startswith("docker rm -f"):
+            self.removed.append(argv[-1])
+            return _ok()
+        return _fail(f"unscripted command: {joined}")
+
+
+async def test_remove_stale_containers_on_port_only_removes_the_same_trainers_container() -> None:
+    owned_labels = {
+        docker_ops.MANAGED_LABEL: "true",
+        docker_ops.INSTANCE_LABEL: "this-instance",
+        docker_ops.SERVER_LABEL: "trainer-id",
+    }
+    foreign_labels = {**owned_labels, docker_ops.INSTANCE_LABEL: "other-instance"}
+    other_trainer_labels = {**owned_labels, docker_ops.SERVER_LABEL: "another-trainer"}
+    transport = _PortConflictTransport(
+        ids_on_port=["owned-id", "foreign-id", "other-trainer-id", "unmanaged-id"],
+        labels_by_id={
+            "owned-id": owned_labels,
+            "foreign-id": foreign_labels,
+            "other-trainer-id": other_trainer_labels,
+            "unmanaged-id": {},
+        },
+    )
+
+    removed = await docker_ops.remove_stale_containers_on_port(transport, 8001, "this-instance", "trainer-id")
+
+    assert removed == ["owned-id"]
+    assert transport.removed == ["owned-id"]
+
+
+async def test_remove_stale_containers_on_port_is_a_noop_when_nothing_holds_the_port() -> None:
+    transport = _PortConflictTransport(ids_on_port=[], labels_by_id={})
+
+    removed = await docker_ops.remove_stale_containers_on_port(transport, 8001, "this-instance", "trainer-id")
+
+    assert removed == []
+    assert transport.removed == []

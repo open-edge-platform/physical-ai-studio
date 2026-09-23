@@ -15,9 +15,5 @@ export const getTrainerLabel = (payload: TrainJobPayload | undefined): string | 
         return 'Local';
     }
 
-    if (payload.training_target === 'ssh') {
-        return payload.remote_server_name ?? 'SSH';
-    }
-
     console.error('Unhandled training_target', payload satisfies never);
 };

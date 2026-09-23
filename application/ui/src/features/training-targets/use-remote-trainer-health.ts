@@ -1,6 +1,7 @@
 import { $api } from '../../api/client';
 
 const REMOTE_UNAVAILABLE_POLL_MS = 15000;
+const REMOTE_STARTING_POLL_MS = 5000;
 
 /**
  * Reads a remote trainer's health and retries unavailable trainers until they recover.
@@ -13,8 +14,11 @@ export const useRemoteTrainerHealth = (remoteTrainerId: string | null) => {
         {
             enabled: remoteTrainerId !== null,
             refetchOnMount: 'always',
-            refetchInterval: (healthQuery) =>
-                healthQuery.state.data?.status === 'unreachable' ? REMOTE_UNAVAILABLE_POLL_MS : false,
+            refetchInterval: (healthQuery) => {
+                const status = healthQuery.state.data?.status;
+                if (status === 'starting') return REMOTE_STARTING_POLL_MS;
+                return status === 'unreachable' ? REMOTE_UNAVAILABLE_POLL_MS : false;
+            },
         }
     );
 

@@ -4,7 +4,6 @@
 import {
     SchemaLocalTrainJobPayloadOutput,
     SchemaRemoteTrainJobPayloadOutput,
-    SchemaSshTrainJobPayloadOutput,
     SchemaTrainJob,
 } from '../../api/openapi-spec';
 
@@ -48,9 +47,6 @@ export function getMockedTrainJobPayload(
 export function getMockedTrainJobPayload(
     overrides: VariantOverrides<SchemaRemoteTrainJobPayloadOutput>
 ): SchemaRemoteTrainJobPayloadOutput;
-export function getMockedTrainJobPayload(
-    overrides: VariantOverrides<SchemaSshTrainJobPayloadOutput>
-): SchemaSshTrainJobPayloadOutput;
 export function getMockedTrainJobPayload(overrides: Partial<TrainJobPayload> = {}): TrainJobPayload {
     return {
         ...basePayload,

@@ -66,18 +66,82 @@ export const isSshFeatureUnavailableError = (error: unknown): boolean =>
 
 interface ApiErrorBody {
     error_code?: string;
-    message?: string;
+    message?: string | Record<string, string[]>;
     http_status?: number;
 }
 
+// The app's own `exception_handlers.py` reshapes a body-validation failure
+// into one of two shapes before it ever reaches the client - the raw FastAPI
+// `{ detail: [...] }` default is never actually returned by this backend, but
+// handled below too as a defensive fallback:
+//   - `RequestValidationError` (a field failed its own Pydantic constraint,
+//     e.g. a pattern mismatch) -> `validation_exception_handler` ->
+//     `message` is a `Record<field, string[]>`, not a string (see
+//     `ApiErrorBody.message` above).
+//   - a `pydantic.ValidationError` raised directly by application code ->
+//     `pydantic_validation_exception_handler` -> `{ errors: [{ message,
+//     location }] }`, with no top-level `message` at all.
+interface PydanticValidationErrorBody {
+    errors?: { message?: string; location?: string }[];
+}
+
+interface ValidationErrorBody {
+    detail?: { loc?: (string | number)[]; msg?: string }[];
+}
+
+const joinFieldMessages = (field: string | undefined, messages: string[]): string =>
+    field !== undefined && field !== '' ? `${field}: ${messages.join(', ')}` : messages.join(', ');
+
 /**
- * Extracts the human-readable `message` from a backend error response
- * (`{ error_code, message, http_status }`). Returns undefined when absent.
+ * Extracts the human-readable message from a backend error response.
+ *
+ * Tries, in order: a plain string `message`; the app's reshaped field-level
+ * validation error (`message` as `Record<field, string[]>`); the app's
+ * reshaped pydantic validation error (`errors: [{ message, location }]`);
+ * FastAPI's raw `{ detail: [...] }` default, for a request that somehow
+ * never reached this app's own handlers. Multiple field errors are joined
+ * with '; '. Returns undefined when nothing readable is found.
  */
 export const getApiErrorMessage = (error: unknown): string | undefined => {
-    if (typeof error === 'object' && error !== null && 'message' in error) {
+    if (typeof error !== 'object' || error === null) {
+        return undefined;
+    }
+    if ('message' in error) {
         const { message } = error as ApiErrorBody;
-        return typeof message === 'string' ? message : undefined;
+        if (typeof message === 'string' && message !== '') {
+            return message;
+        }
+        if (typeof message === 'object' && message !== null) {
+            const fieldMessages = Object.entries(message)
+                .filter((entry): entry is [string, string[]] => Array.isArray(entry[1]))
+                .map(([field, messages]) => joinFieldMessages(field, messages));
+            if (fieldMessages.length > 0) {
+                return fieldMessages.join('; ');
+            }
+        }
+    }
+    if ('errors' in error) {
+        const { errors } = error as PydanticValidationErrorBody;
+        const messages = (errors ?? [])
+            .filter((item): item is { message: string; location?: string } => typeof item.message === 'string')
+            .map((item) => joinFieldMessages(item.location, [item.message]));
+        if (messages.length > 0) {
+            return messages.join('; ');
+        }
+    }
+    if ('detail' in error) {
+        const { detail } = error as ValidationErrorBody;
+        const messages = (detail ?? [])
+            .map((item) => {
+                const field = item.loc?.at(-1);
+                return typeof item.msg === 'string' && item.msg !== ''
+                    ? joinFieldMessages(typeof field === 'string' ? field : undefined, [item.msg])
+                    : undefined;
+            })
+            .filter((msg): msg is string => msg !== undefined);
+        if (messages.length > 0) {
+            return messages.join('; ');
+        }
     }
     return undefined;
 };

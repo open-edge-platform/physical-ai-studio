@@ -73,19 +73,16 @@ _DEFAULT_SSH_CONNECT_TIMEOUT_S = 10.0
 _DEFAULT_SSH_COMMAND_TIMEOUT_S = 15.0
 _DEFAULT_SSH_PREFLIGHT_TIMEOUT_S = 30.0
 _DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S = 1800.0
-_DEFAULT_SSH_READINESS_TIMEOUT_S = 120.0
-_DEFAULT_SSH_GPU_WAIT_GIVEUP_S = 1800.0
-_DEFAULT_SSH_MIN_FREE_DISK_BYTES = 50 * 1024 * 1024 * 1024
 
 
 class SshProvisioningSettings(BaseModel):
     """User-editable settings for SSH-provisioned training.
 
     Deliberately a *subset* of the `SSH_*` settings. The remaining ones - the
-    SSH config and `known_hosts` paths, the trainer image registry, and the
-    cosign signature policy - stay environment-only: they configure *how*
-    Studio trusts a host or an image, which is not something this
-    (unauthenticated) settings API should be able to move.
+    SSH config and `known_hosts` paths and the trainer image registry - stay
+    environment-only: they configure *how* Studio trusts a host or an image,
+    which is not something this (unauthenticated) settings API should be able
+    to move.
 
     The feature is always active (subject
     only to the fail-closed network-exposure check in
@@ -104,9 +101,6 @@ class SshProvisioningSettings(BaseModel):
     command_timeout_s: float = Field(default=_DEFAULT_SSH_COMMAND_TIMEOUT_S, gt=0)
     preflight_timeout_s: float = Field(default=_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S, gt=0)
     image_pull_timeout_s: float = Field(default=_DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S, gt=0)
-    readiness_timeout_s: float = Field(default=_DEFAULT_SSH_READINESS_TIMEOUT_S, gt=0)
-    gpu_wait_giveup_s: float = Field(default=_DEFAULT_SSH_GPU_WAIT_GIVEUP_S, gt=0)
-    min_free_disk_bytes: int = Field(default=_DEFAULT_SSH_MIN_FREE_DISK_BYTES, ge=0)
 
     @classmethod
     def from_settings(cls, settings: "Settings") -> "SshProvisioningSettings":
@@ -123,9 +117,6 @@ _SSH_FIELD_MAP: dict[str, str] = {
     "command_timeout_s": "ssh_command_timeout_s",
     "preflight_timeout_s": "ssh_preflight_timeout_s",
     "image_pull_timeout_s": "ssh_image_pull_timeout_s",
-    "readiness_timeout_s": "ssh_readiness_timeout_s",
-    "gpu_wait_giveup_s": "ssh_gpu_wait_giveup_s",
-    "min_free_disk_bytes": "ssh_min_free_disk_bytes",
 }
 
 
@@ -338,12 +329,6 @@ class Settings(BaseSettings):
     # SSH keepalive interval, so a dead tunnel is detected rather than hanging.
     ssh_keepalive_interval_s: float = Field(default=15.0, alias="SSH_KEEPALIVE_INTERVAL_S")
     ssh_keepalive_count_max: int = Field(default=3, alias="SSH_KEEPALIVE_COUNT_MAX")
-    # Free disk a server must have at save time for the image plus a nominal job.
-    # The actual dataset size is re-checked at provisioning time.
-    ssh_min_free_disk_bytes: int = Field(
-        default=_DEFAULT_SSH_MIN_FREE_DISK_BYTES,
-        alias="SSH_MIN_FREE_DISK_BYTES",
-    )
     # Maximum characters of streamed remote command output forwarded per line and
     # per message. Remote output is environment-influenced, not trusted text.
     ssh_output_max_line_chars: int = Field(default=512, alias="SSH_OUTPUT_MAX_LINE_CHARS")
@@ -354,47 +339,15 @@ class Settings(BaseSettings):
         alias="TRAINER_IMAGE_REGISTRY",
     )
 
-    # --- SSH provisioning: GPU-busy wait ------------------------------------
-    # Backoff between GPU-busy re-checks while a job waits `pending`.
-    ssh_gpu_wait_initial_backoff_s: float = Field(default=5.0, alias="SSH_GPU_WAIT_INITIAL_BACKOFF_S")
-    ssh_gpu_wait_max_backoff_s: float = Field(default=60.0, alias="SSH_GPU_WAIT_MAX_BACKOFF_S")
-    # A job waiting this long for a busy GPU fails rather than waiting forever.
-    ssh_gpu_wait_giveup_s: float = Field(default=_DEFAULT_SSH_GPU_WAIT_GIVEUP_S, alias="SSH_GPU_WAIT_GIVEUP_S")
-
     # --- SSH provisioning: container lifecycle ------------------------------
     # `docker stop`'s grace period before SIGKILL, bounding teardown latency.
     ssh_container_stop_timeout_s: int = Field(default=30, alias="SSH_CONTAINER_STOP_TIMEOUT_S")
-    # Budget for the container to report healthy after launch, before the job
-    # fails rather than uploading a dataset to a trainer that never came up.
-    ssh_readiness_timeout_s: float = Field(default=_DEFAULT_SSH_READINESS_TIMEOUT_S, alias="SSH_READINESS_TIMEOUT_S")
-    ssh_readiness_poll_interval_s: float = Field(default=2.0, alias="SSH_READINESS_POLL_INTERVAL_S")
 
     # --- SSH provisioning: tunnel reconnect ---------------------------------
     # Total time budget to reconnect a dropped tunnel and resume against the
     # still-running container before the job fails.
     ssh_tunnel_reconnect_budget_s: float = Field(default=300.0, alias="SSH_TUNNEL_RECONNECT_BUDGET_S")
     ssh_tunnel_reconnect_backoff_max_s: float = Field(default=15.0, alias="SSH_TUNNEL_RECONNECT_BACKOFF_MAX_S")
-
-    # --- SSH provisioning: image signature verification ---------------------
-    # Pinned to the Studio release workflow so a Sigstore-signed image cannot
-    # be satisfied by a signature from an unrelated identity/issuer.
-    # See `services.ssh.sigstore_verify`, which uses the `sigstore` PyPI
-    # package to check the same certificate identity/issuer `cosign verify
-    # --certificate-identity-regexp`/`--certificate-oidc-issuer` would.
-    cosign_certificate_identity_regexp: str = Field(
-        default=r"https://github\.com/open-edge-platform/physical-ai-studio/\.github/workflows/.+",
-        alias="COSIGN_CERTIFICATE_IDENTITY_REGEXP",
-    )
-    cosign_oidc_issuer: str = Field(
-        default="https://token.actions.githubusercontent.com",
-        alias="COSIGN_OIDC_ISSUER",
-    )
-
-    # --- SSH provisioning: library-version policy ---------------------------
-    # Minimum `physicalai-train` version a trainer image must report. A job
-    # policy (e.g. a specific model family) can require newer; see
-    # `services.ssh.docker_ops.check_library_version`.
-    ssh_min_library_version: str = Field(default="0.1.0", alias="SSH_MIN_LIBRARY_VERSION")
 
     @field_validator("ssh_config_path", "ssh_known_hosts_path", mode="before")
     @classmethod

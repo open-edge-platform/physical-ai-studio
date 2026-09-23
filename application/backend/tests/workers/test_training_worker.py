@@ -17,13 +17,7 @@ import pytest
 import core.scheduler  # noqa: F401
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Snapshot
-from schemas.job import (
-    LocalTrainJobPayload,
-    RemoteTrainJobPayload,
-    SshTrainJobPayload,
-    TrainingPrecision,
-    TrainJobPayload,
-)
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingPrecision, TrainJobPayload
 from schemas.model import Model
 
 if TYPE_CHECKING:
@@ -68,16 +62,6 @@ def _make_remote_payload(*, remote_trainer_id: UUID | None = None) -> RemoteTrai
         policy="act",
         model_name="test-model",
         remote_trainer_id=remote_trainer_id or uuid4(),
-    )
-
-
-def _make_ssh_payload(*, remote_server_id: UUID | None = None) -> SshTrainJobPayload:
-    return SshTrainJobPayload(
-        project_id=uuid4(),
-        dataset_id=uuid4(),
-        policy="act",
-        model_name="test-model",
-        remote_server_id=remote_server_id or uuid4(),
     )
 
 
@@ -530,74 +514,29 @@ class TestTargetKey:
         payload = _make_remote_payload()
         assert TrainingWorker._target_key(payload) == f"remote:{payload.remote_trainer_id}"
 
-    def test_ssh_target_key_uses_remote_server_id(self) -> None:
-        from workers.training_worker import TrainingWorker
-
-        payload = _make_ssh_payload()
-        assert TrainingWorker._target_key(payload) == f"ssh:{payload.remote_server_id}"
-
-    def test_ssh_and_remote_targets_never_collide_on_none(self) -> None:
-        """Two well-formed jobs on different servers never collapse onto one key."""
-        from workers.training_worker import TrainingWorker
-
-        first = _make_ssh_payload()
-        second = _make_ssh_payload()
-
-        first_key = TrainingWorker._target_key(first)
-        second_key = TrainingWorker._target_key(second)
-
-        assert first_key != second_key
-        assert "None" not in first_key
-        assert "None" not in second_key
-
 
 class TestSetupRecovery:
-    """`setup()` must recover SSH jobs before the generic orphan abort runs."""
+    """`setup()` no longer runs SSH job recovery: SSH training now goes through
+    the same reattach path as any other direct-URL remote trainer.
+    """
 
     @pytest.mark.anyio
-    async def test_setup_runs_ssh_recovery_before_generic_orphan_abort(self, worker) -> None:
+    async def test_setup_runs_generic_orphan_abort(self, worker) -> None:
         from workers.training_worker import TrainingWorker
 
         calls: list[str] = []
-        handled_job_id = uuid4()
-
-        async def fake_recover_ssh_jobs() -> frozenset[UUID]:
-            calls.append("recover_ssh_jobs")
-            return frozenset({handled_job_id})
 
         async def fake_abort_orphan_jobs(*, exclude_job_ids: frozenset[UUID] | None = None) -> None:
             calls.append("abort_orphan_jobs")
-            assert exclude_job_ids == frozenset({handled_job_id})
+            assert exclude_job_ids is None
 
         with (
-            patch.object(TrainingWorker, "_recover_ssh_jobs", staticmethod(fake_recover_ssh_jobs)),
             patch.object(TrainingWorker, "_abort_orphan_jobs", staticmethod(fake_abort_orphan_jobs)),
             patch(f"{MODULE}.BaseProcessWorker.setup", new=AsyncMock()),
         ):
             await worker.setup()
 
-        assert calls == ["recover_ssh_jobs", "abort_orphan_jobs"]
-
-    @pytest.mark.anyio
-    async def test_recover_ssh_jobs_wires_recovery_dependencies(self, worker) -> None:
-        """`_recover_ssh_jobs` builds the repo/service trio and logs the report."""
-        from services.ssh.recovery import SshRecoveryReport
-
-        report = SshRecoveryReport(confirmed=1, transient=2, failed=3, stale_rows_cleaned=4, orphans_removed=5)
-
-        with (
-            patch(f"{MODULE}.JobProvisioningRepository") as MockProvisioningRepo,
-            patch(f"{MODULE}.RemoteServerService") as MockRemoteServerService,
-            patch(f"{MODULE}.JobService") as MockJobService,
-            patch(f"{MODULE}.recover_ssh_jobs", AsyncMock(return_value=report)) as mock_recover,
-        ):
-            await worker._recover_ssh_jobs()
-
-            mock_recover.assert_awaited_once_with(
-                MockJobService.return_value,
-                MockProvisioningRepo.return_value,
-                MockRemoteServerService.return_value,
-            )
+        assert calls == ["abort_orphan_jobs"]
 
 
 class TestTrainingScheduling:

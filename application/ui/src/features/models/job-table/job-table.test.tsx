@@ -131,14 +131,6 @@ describe('TrainingRow', () => {
         await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local'));
     });
 
-    it('shows SSH for an ssh job in the Trainer column', async () => {
-        renderTrainingRow({
-            payload: { ...localJob.payload, training_target: 'ssh', remote_server_id: 'server-1' },
-        });
-
-        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('SSH'));
-    });
-
     it('shows "-" in the Dataset and Environment cells when those requests fail', async () => {
         server.use(
             http.get('/api/dataset/{dataset_id}', () => HttpResponse.error()),

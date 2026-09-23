@@ -133,14 +133,14 @@ def test_patch_rejects_non_positive_ssh_timeout(monkeypatch, tmp_path: Path) -> 
 def test_patch_ssh_settings_ignores_environment_only_fields(monkeypatch, tmp_path: Path) -> None:
     """Config the settings page must never be able to override.
 
-    `ssh_config_path`, `ssh_known_hosts_path`, `trainer_image_registry`, and
-    the cosign policy configure *how* Studio trusts a host or an image, not a
-    bounded timeout - they stay environment-only even after this migration,
-    and the (extra) keys below are silently dropped by `SshProvisioningSettings`
-    rather than accepted.
+    `ssh_config_path`, `ssh_known_hosts_path`, and `trainer_image_registry`
+    configure *how* Studio trusts a host or an image, not a bounded timeout -
+    they stay environment-only even after this migration, and the (extra)
+    keys below are silently dropped by `SshProvisioningSettings` rather than
+    accepted.
     """
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
-    identity_regexp_before = get_settings().cosign_certificate_identity_regexp
+    registry_before = get_settings().trainer_image_registry
 
     with TestClient(app) as client:
         response = client.patch(
@@ -148,7 +148,6 @@ def test_patch_ssh_settings_ignores_environment_only_fields(monkeypatch, tmp_pat
             json={
                 "ssh": {
                     "connect_timeout_s": 42.0,
-                    "cosign_certificate_identity_regexp": ".*",
                     "ssh_known_hosts_path": "/tmp/attacker-known-hosts",
                     "trainer_image_registry": "attacker.example/registry",
                 }
@@ -157,10 +156,9 @@ def test_patch_ssh_settings_ignores_environment_only_fields(monkeypatch, tmp_pat
 
     assert response.status_code == 200
     settings_file = (tmp_path / "settings.json").read_text(encoding="utf-8")
-    assert "cosign" not in settings_file.lower()
     assert "known_hosts" not in settings_file.lower()
     assert "attacker" not in settings_file.lower()
-    assert get_settings().cosign_certificate_identity_regexp == identity_regexp_before
+    assert get_settings().trainer_image_registry == registry_before
 
 
 def test_ssh_settings_no_longer_read_from_environment(monkeypatch, tmp_path: Path) -> None:

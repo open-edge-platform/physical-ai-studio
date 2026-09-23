@@ -10,12 +10,6 @@ describe('getTrainerLabel', () => {
         expect(getTrainerLabel(getMockedTrainJobPayload({ training_target: 'local' }))).toBe('Local');
     });
 
-    it("returns 'SSH' for an ssh training target", () => {
-        expect(
-            getTrainerLabel(getMockedTrainJobPayload({ training_target: 'ssh', remote_server_id: 'server-1' }))
-        ).toBe('SSH');
-    });
-
     it('returns the remote_trainer_name for a remote training target', () => {
         expect(
             getTrainerLabel(

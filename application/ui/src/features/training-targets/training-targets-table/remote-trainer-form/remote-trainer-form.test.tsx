@@ -19,6 +19,7 @@ describe('RemoteTrainerForm', () => {
 
         renderForm();
         await user.click(screen.getByRole('tab', { name: /ssh tunnel/i }));
+        await user.click(screen.getByRole('tab', { name: /connection details/i }));
 
         expect(screen.getByText('Connect through SSH when the trainer is not directly reachable.')).toBeInTheDocument();
         expect(screen.getByRole('tab', { name: /connection details/i })).toHaveAttribute('aria-selected', 'true');
@@ -59,6 +60,7 @@ describe('RemoteTrainerForm', () => {
 
         await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'managed-trainer');
         await user.click(screen.getByRole('tab', { name: /ssh tunnel/i }));
+        await user.click(screen.getByRole('tab', { name: /connection details/i }));
         await user.type(screen.getByRole('textbox', { name: /^Host/ }), 'gpu.example.test');
         await user.clear(screen.getByRole('textbox', { name: /^Port/ }));
         await user.type(screen.getByRole('textbox', { name: /^Port/ }), '2222');
@@ -156,6 +158,7 @@ describe('RemoteTrainerForm', () => {
 
         renderForm();
         await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'managed-trainer');
+        await user.click(screen.getByRole('tab', { name: 'Trainer URL' }));
         await user.type(screen.getByRole('textbox', { name: /trainer url/i }), 'http://trainer.example.test/api');
 
         expect(

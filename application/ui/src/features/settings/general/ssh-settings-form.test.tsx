@@ -12,9 +12,6 @@ const baseSsh = {
     command_timeout_s: 15,
     preflight_timeout_s: 30,
     image_pull_timeout_s: 1800,
-    readiness_timeout_s: 120,
-    gpu_wait_giveup_s: 1800,
-    min_free_disk_bytes: 53687091200,
 };
 
 describe('SshSettingsForm', () => {

@@ -90,7 +90,11 @@ async def validation_exception_handler(_request: Request, exception: Exception) 
         # with a message explaining what the problem with the parameter is.
         loc, msg = pydantic_error["loc"], pydantic_error["msg"]
         filtered_loc = loc[1:] if loc[0] in ("body", "query", "path") else loc
-        field_string = ".".join(str(filtered_loc))  # nested fields with dot-notation
+        # `str(filtered_loc)` would stringify the whole tuple (e.g. "('alias',)")
+        # before `.join` walked its individual characters, producing garbage
+        # like "(.'.a.l.i.a.s.'.,.)" instead of "alias" - each segment must be
+        # stringified on its own.
+        field_string = ".".join(str(segment) for segment in filtered_loc)
         reformatted_message[field_string].append(msg)
 
     headers = {"Cache-Control": "no-cache"}  # always revalidate

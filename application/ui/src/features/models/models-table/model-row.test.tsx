@@ -209,17 +209,6 @@ describe('ModelRow', () => {
         expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local');
     });
 
-    it('shows SSH in the Trainer column for an ssh job', () => {
-        renderModelRow({
-            trainingJobOverride: {
-                ...trainingJob,
-                payload: { ...trainingJob.payload, training_target: 'ssh', remote_server_id: 'server-1' },
-            },
-        });
-
-        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('SSH');
-    });
-
     it('shows "-" in the Trainer column when there is no trainingJob at all', () => {
         renderModelRow();
 

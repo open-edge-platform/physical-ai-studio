@@ -76,7 +76,11 @@ def add_host_alias(config_path: Path, config: SshHostAliasCreate) -> SshHostAlia
 
 
 async def add_verified_host_alias(
-    config_path: Path, config: SshHostAliasCreate, settings: Settings | None = None
+    config_path: Path,
+    config: SshHostAliasCreate,
+    settings: Settings | None = None,
+    *,
+    accepted_host_key_fingerprint: str | None = None,
 ) -> SshHostAliasOption:
     """Append a new ``Host`` entry and confirm Studio can actually dial it.
 
@@ -86,6 +90,13 @@ async def add_verified_host_alias(
     before the original ``Ssh*Error`` (already an actionable
     `exceptions.BaseException`) is re-raised, so a typo never lands in the
     user's real ``~/.ssh/config``.
+
+    ``accepted_host_key_fingerprint`` carries a user's explicit confirmation of
+    a first-seen host key, the same way `RemoteTrainerService.create_remote_trainer`
+    and `update_remote_trainer` do for a direct trainer's tunnel: a genuinely
+    new host has no entry in ``known_hosts`` yet, so the first attempt raises
+    `exceptions.SshHostKeyUnknownError` (the caller then re-submits with the
+    fingerprint it surfaced).
 
     Raises:
         ResourceAlreadyExistsError: ``config.alias`` already exists.
@@ -101,7 +112,9 @@ async def add_verified_host_alias(
 
     try:
         async with asyncio.timeout(settings.ssh_preflight_timeout_s):
-            async with open_transport(config.alias, settings):
+            async with open_transport(
+                config.alias, settings, accepted_host_key_fingerprint=accepted_host_key_fingerprint
+            ):
                 pass
     except TimeoutError as error:
         _rollback(resolved_path, prior_size)
