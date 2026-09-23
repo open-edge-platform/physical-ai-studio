@@ -132,7 +132,6 @@ SHELL ["/bin/sh", "-c"]
 
 FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS builder-base
 
-
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 # UV_PROJECT_ENVIRONMENT must match the runtime COPY destination (/opt/venv).
 # uv embeds an absolute shebang in console-script entry points; if the venv
@@ -193,7 +192,10 @@ RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
 FROM builder-cuda AS builder-cuda-redistributable
 RUN set -eu; \
     CLEANUP_ROOT="$(/opt/venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
-    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/amd" \
+    find "$CLEANUP_ROOT" -type d \( \
+        -path "*/triton/backends/amd" -o \
+        -path "*/nvidia/cuda_cupti/include" -o \
+        -path "*/nvidia/cudnn/include" \) \
         -exec rm -rf {} + 2>/dev/null || true; \
     find "$CLEANUP_ROOT" -type f \( \
         -path "*/triton/backends/nvidia/bin/ptxas" -o \
@@ -204,11 +206,10 @@ RUN set -eu; \
         -path "*/triton/backends/nvidia/lib/cupti/libnvperf_host_static.a" -o \
         -path "*/triton/backends/nvidia/lib/cupti/libnvperf_target.so" -o \
         -path "*/triton/backends/nvidia/lib/cupti/libpcsamplingutil.so" -o \
-        -path "*/nvidia/*/include" -o \
         -path "*/nvidia/cuda_cupti/lib/libcheckpoint.so" -o \
         -path "*/nvidia/cuda_cupti/lib/libnvperf_host.so" -o \
         -path "*/nvidia/cuda_cupti/lib/libnvperf_target.so" -o \
-        -path "*/nvidia/cuda_cupti/lib/libpcsamplingutil.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libpcsamplingutil.so" \) \
         -delete 2>/dev/null || true
 
 FROM builder-base AS builder-xpu

@@ -315,7 +315,10 @@ RUN find .venv -type f \( \
 FROM builder-cuda AS builder-cuda-redistributable
 RUN set -eu; \
     CLEANUP_ROOT="$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
-    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/amd" \
+    find "$CLEANUP_ROOT" -type d \( \
+        -path "*/triton/backends/amd" -o \
+        -path "*/nvidia/cuda_cupti/include" -o \
+        -path "*/nvidia/cudnn/include" \) \
         -exec rm -rf {} + 2>/dev/null || true; \
     find "$CLEANUP_ROOT" -type f \( \
         -path "*/triton/backends/nvidia/bin/ptxas" -o \
@@ -326,11 +329,10 @@ RUN set -eu; \
         -path "*/triton/backends/nvidia/lib/cupti/libnvperf_host_static.a" -o \
         -path "*/triton/backends/nvidia/lib/cupti/libnvperf_target.so" -o \
         -path "*/triton/backends/nvidia/lib/cupti/libpcsamplingutil.so" -o \
-        -path "*/nvidia/*/include" -o \
         -path "*/nvidia/cuda_cupti/lib/libcheckpoint.so" -o \
         -path "*/nvidia/cuda_cupti/lib/libnvperf_host.so" -o \
         -path "*/nvidia/cuda_cupti/lib/libnvperf_target.so" -o \
-        -path "*/nvidia/cuda_cupti/lib/libpcsamplingutil.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libpcsamplingutil.so" \) \
         -delete 2>/dev/null || true
 
 # ===========================================================================
