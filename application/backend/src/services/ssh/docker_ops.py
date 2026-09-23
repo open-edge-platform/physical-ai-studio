@@ -23,8 +23,14 @@ from typing import TYPE_CHECKING, Final
 
 from loguru import logger
 
-from exceptions import TrainerContainerLaunchError, TrainerImagePullError, TrainerImageResolutionError
+from exceptions import (
+    TrainerContainerLaunchError,
+    TrainerImagePullError,
+    TrainerImageResolutionError,
+    TrainerImageVerificationError,
+)
 from schemas.hardware import DeviceType
+from services.ssh import sigstore_verify
 from services.ssh.trainer_image import (
     PROTOCOL_LABEL,
     image_present_locally,
@@ -258,6 +264,18 @@ async def resolve_protocol_image(
         digest=digest,
         library_version=raw_library_version if isinstance(raw_library_version, str) else None,
     )
+
+
+async def verify_image_signature(image: ResolvedImage, settings: Settings) -> None:
+    """Authenticate the exact digest before any pull or launch; fail closed."""
+    try:
+        await sigstore_verify.verify_signature(
+            image.digest_reference,
+            identity_regexp=settings.cosign_certificate_identity_regexp,
+            oidc_issuer=settings.cosign_oidc_issuer,
+        )
+    except (sigstore_verify.SignatureUnavailableError, sigstore_verify.SignatureVerificationError) as error:
+        raise TrainerImageVerificationError(image.digest_reference, str(error)) from error
 
 
 def _device_run_args(device_type: DeviceType, render_gid: str | None = None) -> list[str]:

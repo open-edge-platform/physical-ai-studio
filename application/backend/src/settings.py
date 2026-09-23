@@ -317,6 +317,14 @@ class Settings(BaseSettings):
         default="ghcr.io/open-edge-platform",
         alias="TRAINER_IMAGE_REGISTRY",
     )
+    cosign_certificate_identity_regexp: str = Field(
+        default=r"https://github\.com/open-edge-platform/physical-ai-studio/\.github/workflows/.+",
+        alias="COSIGN_CERTIFICATE_IDENTITY_REGEXP",
+    )
+    cosign_oidc_issuer: str = Field(
+        default="https://token.actions.githubusercontent.com",
+        alias="COSIGN_OIDC_ISSUER",
+    )
 
     # --- Managed trainer container lifecycle --------------------------------
     # `docker stop`'s grace period before SIGKILL, bounding teardown latency.

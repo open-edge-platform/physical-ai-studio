@@ -38,6 +38,7 @@ dependencies = [
   "psutil~=7.2",
   "physicalai-studio-plugin>=0.2.0",
   "asyncssh~=2.24",
+  "sigstore>=4.0,<5",
 ]
 
 [project.scripts]

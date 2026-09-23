@@ -519,6 +519,17 @@ class TrainerImageResolutionError(BaseException):
         )
 
 
+class TrainerImageVerificationError(BaseException):
+    """Raised when the resolved trainer image cannot be authenticated."""
+
+    def __init__(self, image_ref: str, reason: str) -> None:
+        super().__init__(
+            message=f"Could not verify the signature of trainer image '{image_ref}': {reason}.",
+            error_code="trainer_image_verification_failed",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
 class TrainerImagePullError(BaseException):
     """Raised when `docker pull` of the resolved digest failed on the remote host."""
 

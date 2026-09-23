@@ -76,9 +76,11 @@ describe('getApiErrorMessage', () => {
         expect(getApiErrorMessage({ detail: [{ loc: [], msg: 'Invalid request body' }] })).toBe('Invalid request body');
     });
 
-    it('returns undefined for an empty or malformed detail array', () => {
+    it('returns undefined for empty or malformed validation details', () => {
         expect(getApiErrorMessage({ detail: [] })).toBeUndefined();
-        expect(getApiErrorMessage({ detail: [{ loc: ['body'] }] })).toBeUndefined();
+        expect(getApiErrorMessage({ detail: 'Not found' })).toBeUndefined();
+        expect(getApiErrorMessage({ detail: [{ loc: ['body'] }, null] })).toBeUndefined();
+        expect(getApiErrorMessage({ errors: 'Not found' })).toBeUndefined();
     });
 
     it("reads the app's reshaped field-validation error (message as a field->messages record)", () => {

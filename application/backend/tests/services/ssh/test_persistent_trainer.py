@@ -22,6 +22,12 @@ _IMAGE = ResolvedImage(
 )
 
 
+@pytest.fixture(autouse=True)
+def _mock_signature_verification():
+    with patch(f"{MODULE}.verify_image_signature", new_callable=AsyncMock) as verify:
+        yield verify
+
+
 def _ssh_trainer() -> RemoteTrainer:
     return RemoteTrainer(
         id=uuid4(),
@@ -66,6 +72,24 @@ async def test_get_launch_phase_is_none_before_and_after_a_successful_start() ->
 
     assert persistent_trainer.get_launch_phase(trainer.id) is None
     docker_ops_module.launch_container.assert_awaited_once()
+
+
+async def test_unverified_image_is_never_pulled_or_launched() -> None:
+    trainer = _ssh_trainer()
+    with (
+        patch(f"{MODULE}.SshTransport", return_value=_fake_transport_cm()),
+        patch(f"{MODULE}.docker_ops") as docker_ops_module,
+        patch(f"{MODULE}.verify_image_signature", new_callable=AsyncMock, side_effect=RuntimeError("unsigned")),
+        pytest.raises(RuntimeError, match="unsigned"),
+    ):
+        docker_ops_module.inspect_container = AsyncMock(return_value=None)
+        docker_ops_module.resolve_protocol_image = AsyncMock(return_value=_IMAGE)
+        docker_ops_module.pull_image = AsyncMock()
+        docker_ops_module.launch_container = AsyncMock()
+        await persistent_trainer.start(trainer)
+
+    docker_ops_module.pull_image.assert_not_awaited()
+    docker_ops_module.launch_container.assert_not_awaited()
 
 
 async def test_get_launch_phase_reports_the_current_phase_while_running() -> None:

@@ -119,8 +119,11 @@ export const getApiErrorMessage = (error: unknown): string | undefined => {
     }
     if ('errors' in error) {
         const { errors } = error as PydanticValidationErrorBody;
-        const messages = (errors ?? [])
-            .filter((item): item is { message: string; location?: string } => typeof item.message === 'string')
+        const messages = (Array.isArray(errors) ? errors : [])
+            .filter(
+                (item): item is { message: string; location?: string } =>
+                    item !== null && typeof item === 'object' && typeof item.message === 'string'
+            )
             .map((item) => joinFieldMessages(item.location, [item.message]));
         if (messages.length > 0) {
             return messages.join('; ');
@@ -128,10 +131,10 @@ export const getApiErrorMessage = (error: unknown): string | undefined => {
     }
     if ('detail' in error) {
         const { detail } = error as ValidationErrorBody;
-        const messages = (detail ?? [])
+        const messages = (Array.isArray(detail) ? detail : [])
             .map((item) => {
-                const field = item.loc?.at(-1);
-                return typeof item.msg === 'string' && item.msg !== ''
+                const field = Array.isArray(item?.loc) ? item.loc.at(-1) : undefined;
+                return typeof item?.msg === 'string' && item.msg !== ''
                     ? joinFieldMessages(typeof field === 'string' ? field : undefined, [item.msg])
                     : undefined;
             })

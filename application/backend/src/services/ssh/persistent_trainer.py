@@ -10,6 +10,7 @@ from schemas.hardware import DeviceType
 from schemas.remote_trainer import RemoteTrainer
 from services.ssh import docker_ops
 from services.ssh.connection import AliasTarget, DirectTarget
+from services.ssh.docker_ops import verify_image_signature
 from services.ssh.trainer_image import DEFAULT_PROTOCOL_VERSION, resolve_render_group_gid
 from services.ssh.transport import SshTransport
 from settings import get_settings
@@ -123,6 +124,8 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
                 raise ValueError("No supported CUDA or XPU accelerator found on SSH trainer")
             _launch_phase[remote_trainer.id] = "Resolving trainer image…"
             image = await docker_ops.resolve_protocol_image(transport, device, DEFAULT_PROTOCOL_VERSION, settings)
+            _launch_phase[remote_trainer.id] = "Verifying trainer image…"
+            await verify_image_signature(image, settings)
             _launch_phase[remote_trainer.id] = "Pulling trainer image…"
             await docker_ops.pull_image(transport, image, settings)
             labels = docker_ops.management_labels(

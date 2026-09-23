@@ -6,12 +6,18 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from exceptions import TrainerContainerLaunchError, TrainerImagePullError, TrainerImageResolutionError
+from exceptions import (
+    TrainerContainerLaunchError,
+    TrainerImagePullError,
+    TrainerImageResolutionError,
+    TrainerImageVerificationError,
+)
 from schemas.hardware import DeviceType
-from services.ssh import docker_ops
+from services.ssh import docker_ops, sigstore_verify
 from services.ssh.docker_ops import LIBRARY_VERSION_LABEL, ResolvedImage
 from services.ssh.trainer_image import PROTOCOL_LABEL
 from services.ssh.transport import CommandResult
@@ -52,6 +58,20 @@ class FakeTransport:
 @pytest.fixture
 def settings() -> Settings:
     return Settings(TRAINER_IMAGE_REGISTRY=_REGISTRY)
+
+
+async def test_verify_image_signature_pins_digest_and_fails_closed(settings: Settings) -> None:
+    image = ResolvedImage(_CUDA_TAG_REF, f"{_REGISTRY}/physicalai-trainer-cuda@{_DIGEST}", _DIGEST, None)
+    with patch.object(sigstore_verify, "verify_signature", new_callable=AsyncMock) as verify:
+        await docker_ops.verify_image_signature(image, settings)
+        verify.assert_awaited_once_with(
+            image.digest_reference,
+            identity_regexp=settings.cosign_certificate_identity_regexp,
+            oidc_issuer=settings.cosign_oidc_issuer,
+        )
+        verify.side_effect = sigstore_verify.SignatureUnavailableError("offline")
+        with pytest.raises(TrainerImageVerificationError):
+            await docker_ops.verify_image_signature(image, settings)
 
 
 # --------------------------------------------------------------------------- #

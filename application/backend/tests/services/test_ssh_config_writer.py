@@ -8,6 +8,7 @@ from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
+from pydantic import ValidationError
 
 import services.ssh_config_writer as ssh_config_writer_module
 from exceptions import ResourceAlreadyExistsError, SshAuthenticationError, SshConnectionError
@@ -44,6 +45,15 @@ def test_add_host_alias_writes_entry_to_missing_config(tmp_path: Path) -> None:
     assert resolved.hostname == "10.0.0.9"
     assert resolved.port == 2222
     assert resolved.user == "trainer"
+
+
+@pytest.mark.parametrize("field", ["hostname", "user", "identity_file"])
+@pytest.mark.parametrize(
+    "injection", ["\n    ProxyCommand false", "\rProxyCommand false", "\x00", "\u2028ProxyCommand false"]
+)
+def test_alias_values_reject_ssh_config_directives(field: str, injection: str) -> None:
+    with pytest.raises(ValidationError):
+        SshHostAliasCreate.model_validate({"alias": "gpu", "hostname": "gpu.example", field: f"valid{injection}value"})
 
 
 def test_add_host_alias_appends_after_existing_content(tmp_path: Path) -> None:
