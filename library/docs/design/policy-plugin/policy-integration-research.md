@@ -1,6 +1,6 @@
 # Policy integration research
 
-**Status:** Research and design record for a completed design interview. Decisions are recorded in [ADR 0001](0001-library-first-policy-orchestration.md) through [ADR 0004](0004-official-checkpoints-and-runtime-inference.md); remaining details are designed during the first proof.
+**Status:** Research and design record for a completed design interview. Decisions are recorded in [ADR 0001](0001-library-first-policy-orchestration.md) through [ADR 0004](0004-official-checkpoints-and-runtime-inference.md). The first proof now validates GR00T, a first-party policy, and then a second upstream provider (Xiaomi-Robotics-1).
 
 **Inspected:** 2026-09-22. Source inspection only: no upstream installation, model download, training, export, or benchmark execution. CI configuration was inspected, not recent CI results.
 
@@ -274,6 +274,10 @@ The user agreed to every Round 7 recommendation, and to designing the remaining 
 ### Status: interview complete
 
 No design question remains open. Deferred to the first proof: export and quantization details, a lightweight orchestration package for upstream Python environments, specific upstream contributions, concrete robot dataset mappings, where Studio-maintained plugins live, and physical-test cadence. The user has not requested implementation; this record is documentation only.
+
+### Round 8: additional provider validation
+
+The user agreed to add Xiaomi-Robotics-1 as a second upstream provider in the proof, after the initial GR00T vertical slice and first-party policy. XR0 is an existing first-party Xiaomi-Robotics-0 Lightning policy, not an implementation of XR1. It is a comparison candidate; do not make XR0-versus-XR1 model performance an acceptance criterion unless compatible embodiments, data/action semantics, and a fair task/evaluation protocol are established. This validates the generic provider design without making GR00T's initial delivery wait on XR1's separate dataset contract.
 
 ## Sources
 

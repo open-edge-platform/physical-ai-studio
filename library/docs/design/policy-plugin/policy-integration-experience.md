@@ -1,6 +1,6 @@
 # Policy integration: proposed user experience
 
-**Status:** Design interview complete through round 7. Decisions are recorded in [ADR 0001](0001-library-first-policy-orchestration.md) through [ADR 0004](0004-official-checkpoints-and-runtime-inference.md); the remaining items are designed during the first proof. New classes, commands, and recipe identifiers below are illustrative and do not exist yet.
+**Status:** Design interview complete through round 8. Decisions are recorded in [ADR 0001](0001-library-first-policy-orchestration.md) through [ADR 0004](0004-official-checkpoints-and-runtime-inference.md); XR1 is added as a second upstream-provider validation after the initial GR00T slice. Remaining details are designed during the proof. New classes, commands, and recipe identifiers below are illustrative and do not exist yet.
 
 The agreed foundations are in [ADR 0001](0001-library-first-policy-orchestration.md) and [ADR 0002](0002-upstream-first-policy-integration.md). Source evidence is in the [research note](policy-integration-research.md). This proposal does not authorize implementation or changes to the GR00T issue.
 
@@ -278,20 +278,30 @@ Runtime already discovers inference adapters from installed packages; an adapter
 
 ## 9. First proof: agreed
 
+**Phase 1 — Prove one upstream-native integration plus the first-party route:**
+
 1. Convert a Studio LeRobot dataset to GR00T's format with the library converter, starting from NVIDIA's SO-100 or reBot B601 DM example as the baseline.
 2. Set up GR00T's Python environment.
 3. Fine-tune GR00T N1.7 through the GR00T plugin.
 4. Reload the official checkpoint.
 5. Run inference.
+6. Run one first-party policy, such as SmolVLA, through `Engine` in its own Python environment.
 
-In the same proof, run one first-party policy, such as SmolVLA, through `Engine` in its own Python environment. Physical robot testing follows later.
+**Phase 2 — Validate provider generality with a second upstream repository:**
+
+- Add Xiaomi-Robotics-1 through its official framework workflow and its own dataset/config contract.
+- Use XR0, the existing Studio-owned Xiaomi-Robotics-0 Lightning policy, as a comparison candidate—not as an implementation of XR1.
+- Compare XR0 and XR1 only if we establish compatible embodiments, dataset/action semantics, and a fair shared task/evaluation protocol. Treat model-performance comparison as separate from proving that the orchestration supports a second upstream provider.
+
+Physical robot testing and the hardware release schedule follow later.
 
 ## Deferred to the first proof
 
 - Export and quantization details.
 - A lightweight orchestration package usable inside upstream Python environments.
-- Specific changes to propose upstream, such as a programmatic GR00T fine-tuning function.
+- Specific changes to propose upstream, such as programmatic fine-tuning interfaces for GR00T and Xiaomi-Robotics-1.
 - Concrete SO-101 and reBot B601-RS dataset mappings.
+- An XR0-versus-XR1 performance comparison until a fair shared task and dataset are confirmed.
 - Where Studio-maintained plugins live.
 - Physical-test cadence and the robot/scenario matrix.
 
