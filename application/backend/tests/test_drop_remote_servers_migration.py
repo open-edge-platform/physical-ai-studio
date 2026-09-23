@@ -11,7 +11,8 @@ from db.migration import MigrationManager
 from settings import Settings
 
 
-def test_migration_refuses_to_orphan_provisioned_containers(tmp_path: Path) -> None:
+@pytest.mark.parametrize("container_column", ["container_name", "container_id"])
+def test_migration_refuses_to_orphan_provisioned_containers(tmp_path: Path, container_column: str) -> None:
     settings = Settings(STORAGE_DIR=tmp_path, DATABASE_FILE="test.db")
     alembic_cfg = MigrationManager(settings).get_alembic_config()
     command.upgrade(alembic_cfg, "4b8d2f6a1c30")
@@ -28,14 +29,14 @@ def test_migration_refuses_to_orphan_provisioned_containers(tmp_path: Path) -> N
             (json.dumps({"training_target": "ssh"}),),
         )
         connection.execute(
-            "INSERT INTO job_provisioning (job_id, remote_server_id, ssh_host_alias, container_name) "
+            f"INSERT INTO job_provisioning (job_id, remote_server_id, ssh_host_alias, {container_column}) "
             "VALUES ('ssh-job', 'server', 'gpu-host', 'physicalai-trainer-ssh-job')"
         )
 
     with pytest.raises(RuntimeError, match="physicalai-trainer-ssh-job"):
         command.upgrade(alembic_cfg, "7c1a9e2b4d6f")
     with sqlite3.connect(db_path) as connection:
-        assert connection.execute("SELECT container_name FROM job_provisioning").fetchone() == (
+        assert connection.execute(f"SELECT {container_column} FROM job_provisioning").fetchone() == (
             "physicalai-trainer-ssh-job",
         )
         connection.execute("DELETE FROM job_provisioning WHERE job_id = 'ssh-job'")

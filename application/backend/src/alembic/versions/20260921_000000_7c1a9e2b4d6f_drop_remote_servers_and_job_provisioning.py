@@ -22,6 +22,19 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Remove unsupported SSH jobs and their tables."""
+    container = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "SELECT coalesce(container_name, container_id) FROM job_provisioning "
+                "WHERE container_name IS NOT NULL OR container_id IS NOT NULL LIMIT 1"
+            )
+        )
+        .scalar()
+    )
+    if container is not None:
+        raise RuntimeError(f"Remove provisioned container {container} before migrating")
+
     # Retain trained models without a reference to their deleted jobs.
     op.execute(
         sa.text(
