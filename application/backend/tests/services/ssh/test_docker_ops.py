@@ -81,7 +81,7 @@ async def test_resolve_protocol_image_returns_digest_and_labels(settings) -> Non
 
 
 async def test_resolve_protocol_image_has_no_fallback_tag(settings) -> None:
-    """Unlike Tier 1's advisory preflight, there is no `latest` fallback here."""
+    """An unresolved protocol tag must fail without falling back to `latest`."""
     transport = FakeTransport({})  # every command fails: unscripted
 
     with pytest.raises(TrainerImageResolutionError):
@@ -235,11 +235,7 @@ async def test_pull_image_raises_on_failure(settings) -> None:
 
 
 async def test_pull_image_skips_pull_when_digest_already_present_locally(settings) -> None:
-    """Regression guard: before this check, every job start re-pulled the image
-    over SSH even when Tier 2's own "Pull & verify image" check had already
-    fetched the exact same digest moments earlier, showing up as a surprising
-    second `docker pull` immediately after a successful verification.
-    """
+    """A cached image digest does not need another pull."""
     image = _image()
     transport = FakeTransport(
         {
@@ -295,12 +291,7 @@ async def _no_sleep(_seconds: float) -> None:
 
 
 async def test_pull_image_waits_for_in_progress_background_pull_then_skips(settings, monkeypatch) -> None:
-    """Regression guard: a job dispatched while Tier 2's detached tag pull is
-    still transferring must not race it with a second, concurrent `docker
-    pull` of the identical content by digest - indistinguishable in logs from
-    pulling an unrelated image. It should wait for the tag pull to finish and
-    pick up the now-cached image instead.
-    """
+    """Wait for an in-progress pull before fetching the same digest."""
     image = _image()
     monkeypatch.setattr(docker_ops.asyncio, "sleep", _no_sleep)
     transport = _SequencedTransport(
@@ -317,10 +308,7 @@ async def test_pull_image_waits_for_in_progress_background_pull_then_skips(setti
 
 
 async def test_pull_image_falls_back_to_direct_pull_when_background_pull_never_finishes(settings, monkeypatch) -> None:
-    """A background pull that stalls (or was never actually started) must not
-    block a job forever - once the wait budget is spent, provisioning falls
-    back to its own direct digest pull exactly as before this behavior existed.
-    """
+    """A stalled background pull cannot block a direct digest pull indefinitely."""
     image = _image()
     monkeypatch.setattr(docker_ops.asyncio, "sleep", _no_sleep)
     stalled_settings = settings.model_copy(update={"ssh_image_pull_timeout_s": 0})

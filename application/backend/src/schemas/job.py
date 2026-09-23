@@ -92,10 +92,7 @@ class TrainJobPayloadBase(BaseModel):
     Concrete payloads are `LocalTrainJobPayload` and `RemoteTrainJobPayload`
     below: each adds only the fields meaningful for its
     target and forbids the rest (`extra="forbid"`), so a payload can never
-    express two targets at once and target-specific fields don't need a
-    manual mutual-exclusion validator. Adding a target (e.g. a future
-    AWS-provisioned trainer) means adding one subclass here and one entry in
-    the `TrainJobPayload` union, not another branch in a validator.
+    express two targets at once.
     """
 
     model_config = ConfigDict(extra="forbid")

@@ -55,7 +55,7 @@ _CONNECTION_FIELDS = {"connection_mode", "url", "ssh_host_alias", "ssh_connectio
 
 
 class RemoteTrainerService:
-    """Manage global direct remote trainer endpoint configurations."""
+    """Manage configured remote trainer endpoints."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -283,13 +283,7 @@ class RemoteTrainerService:
     async def create_remote_trainer(
         self, config: RemoteTrainerCreate, accepted_host_key_fingerprint: str | None = None
     ) -> RemoteTrainer:
-        """Persist a direct trainer endpoint.
-
-        Rejects an SSH tunnel config outright while the SSH remote-trainer
-        feature is unavailable, the same way SSH-provisioned server
-        create/update does - a trainer must never be saved carrying tunnel
-        config the backend is currently unwilling to act on.
-        """
+        """Persist a trainer endpoint, requiring SSH availability for managed trainers."""
         self._require_ssh_feature_if_tunneled(config.connection_mode)
         remote_trainer = RemoteTrainer(id=uuid4(), **config.model_dump())
         await self._ensure_unique_ssh_remote_port(remote_trainer)
@@ -315,7 +309,7 @@ class RemoteTrainerService:
         update: RemoteTrainerUpdate,
         accepted_host_key_fingerprint: str | None = None,
     ) -> RemoteTrainer:
-        """Update a direct trainer endpoint."""
+        """Update a remote trainer endpoint."""
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))

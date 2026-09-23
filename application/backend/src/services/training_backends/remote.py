@@ -95,10 +95,8 @@ class RemoteTrainingBackend:
         # Suppress duplicate consecutive progress lines (e.g. the trainer
         # re-emitting the final training state while it optimizes/exports).
         self._last_progress_log: str | None = None
-        # An injected device (e.g. an SSH-provisioned server's configured
-        # accelerator) is sent to the trainer instead of stripping the spec's
-        # device to None. The direct-URL registry path never sets this, so its
-        # behavior is unchanged: the trainer keeps selecting its own device.
+        # An explicitly supplied device is sent to the trainer; otherwise the
+        # trainer selects its own device.
         self._device = device
         # Prefix every log line from this backend with its trainer, so a job's
         # log (and the shared "training" worker log) identify which remote
@@ -153,7 +151,7 @@ class RemoteTrainingBackend:
     async def get_training_devices(self) -> list[DeviceInfo]:
         """Fetch the compute devices available on the trainer service.
 
-        Lets the studio surface the remote server's real hardware (GPU/XPU) instead of the studio host's local device.
+        Reports the trainer's hardware (GPU/XPU) to Studio.
         Raises RemoteTrainingError on any transport or parsing failure so callers can fall back.
         """
         try:
@@ -337,11 +335,8 @@ class RemoteTrainingBackend:
         """
         from services.training_backends.local import build_spec, resolve_hf_token
 
-        # An injected device (SSH-provisioned server) is sent as-is: that trainer
-        # image runs on one known accelerator, so there is nothing to probe. The
-        # direct-URL registry path leaves ``self._device`` unset and keeps the
-        # existing behavior of stripping the device so the trainer selects its
-        # own hardware.
+        # An explicitly supplied device takes precedence; otherwise the trainer
+        # selects its own hardware.
         device_update = (
             {"device_type": str(self._device.type), "device_index": self._device.index}
             if self._device is not None

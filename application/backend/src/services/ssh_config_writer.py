@@ -20,9 +20,7 @@ entry it did not create.
 ``add_verified_host_alias`` is the entry point everything above this module
 should call: it never leaves an entry in the file that Studio has not itself
 confirmed it can dial. A typo'd hostname, port, user, or key path is rejected
-before it ever reaches the user's real ``~/.ssh/config``, the same way a
-training-server save is gated on Tier 1 preflight before it reaches the
-database.
+before it reaches the user's real ``~/.ssh/config``.
 """
 
 import asyncio

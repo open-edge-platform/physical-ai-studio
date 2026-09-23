@@ -1,14 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""API tests for the remote-server router.
-
-Only SSH host alias bookkeeping and the SSH feature-status probe remain here.
-Registering a separate "SSH-provisioned" training target (Tier 1/2 preflight,
-CRUD, status polling) has been retired: SSH-tunneled training now goes through
-a regular remote trainer (see `api.remote_trainers`), which starts one
-persistent trainer container per saved trainer instead of one per job.
-"""
+"""API tests for SSH host aliases and SSH feature availability."""
 
 from unittest.mock import AsyncMock
 

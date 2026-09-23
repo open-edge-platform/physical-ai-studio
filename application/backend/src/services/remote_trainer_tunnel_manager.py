@@ -1,25 +1,12 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Standing SSH port-forward tunnels for direct-URL remote trainers.
+"""Standing SSH port-forward tunnels for managed remote trainers.
 
-A direct trainer's URL is dialed directly by every caller (health checks,
-`RemoteTrainingBackend`) - nothing in this codepath rewrites it. When a
-trainer is configured with an ``ssh_host_alias``, this module keeps one
-`SshTunnel` open per trainer for as long as Studio runs, forwarding
-`ssh_local_port` on the studio host to `ssh_remote_port` on the SSH host's own
-loopback interface. The trainer's `url` is expected to already point at that
-local port (e.g. ``http://127.0.0.1:<ssh_local_port>``), so every other
-codepath keeps working unmodified once the tunnel is up.
-
-Gated the same way as every other SSH capability: `sync_tunnel` is a no-op
-whenever `get_ssh_feature_availability().active` is False, so a trainer saved
-with tunnel config while the feature was on never dials SSH once it's off
-(e.g. after a restart with a changed bind host).
-
-Module-level rather than a class: tunnels are a process-wide resource (one
-per studio process, not one per caller), so there is nothing a second
-instance would ever mean.
+Each SSH trainer has a local loopback URL forwarded to its container's
+loopback port on the SSH host. Health checks and training use that URL.
+Tunnels are process-wide resources and are opened only while the SSH feature
+is active.
 """
 
 from __future__ import annotations

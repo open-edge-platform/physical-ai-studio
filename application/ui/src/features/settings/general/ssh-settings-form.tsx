@@ -49,7 +49,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
 
     return (
         <SettingsSection
-            title='SSH-Provisioned Training'
+            title='Managed SSH Training'
             description='Connect to a remote GPU server over SSH and run training jobs on it.'
             isDirty={dirty}
             isPending={patchMutation.isPending}
@@ -72,7 +72,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 width='100%'
             />
             <NumberField
-                label='Preflight timeout (s)'
+                label='SSH host verification timeout (s)'
                 value={preflightTimeoutS}
                 onChange={(value) => update(setPreflightTimeoutS, value)}
                 minValue={0.1}

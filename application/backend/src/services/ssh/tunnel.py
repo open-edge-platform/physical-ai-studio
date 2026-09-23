@@ -1,15 +1,11 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""SSH local-forward tunnel to an SSH-provisioned trainer container.
+"""SSH local-forward tunnel to a managed remote trainer.
 
-The tunnel is the only path a studio process ever reaches a provisioned
-trainer through: the container publishes on its host's loopback interface
-only, and :class:`SshTunnel` forwards a local loopback port to it over the
-same SSH connection class the rest of :mod:`services.ssh` uses. A dropped
-tunnel reconnects and re-forwards against the still-running container within a
-bounded retry budget, so a flaky network path never fails a job that is
-otherwise progressing fine.
+Trainer containers publish on the SSH host's loopback interface.
+:class:`SshTunnel` forwards a local loopback port to the container and
+reconnects within a bounded retry budget when the SSH connection drops.
 """
 
 from __future__ import annotations

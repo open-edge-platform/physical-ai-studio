@@ -76,8 +76,8 @@ class TrainingService:
         """
         Reconcile RUNNING training jobs left behind by a previous process.
 
-        Called on training-worker setup and teardown. A remote or SSH-provisioned
-        trainer keeps running independently of the studio, so a RUNNING job that
+        Called on training-worker setup and teardown. Remote trainers run
+        independently of Studio, so a RUNNING job that
         already recorded its ``remote_job_id`` is requeued (back to PENDING) to
         reattach and mirror progress on the next pickup -- this is what lets a run
         survive the studio restarting (e.g. the laptop was closed overnight). Any
@@ -85,8 +85,7 @@ class TrainingService:
 
         Args:
             job_service: Used to list and update RUNNING training jobs.
-            exclude_job_ids: Job ids to skip entirely, because another
-                recovery pass already rendered an explicit verdict for them.
+            exclude_job_ids: Job ids already handled by another recovery pass.
         """
         excluded = frozenset(exclude_job_ids) if exclude_job_ids is not None else frozenset()
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}

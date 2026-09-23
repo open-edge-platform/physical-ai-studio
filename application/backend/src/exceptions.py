@@ -502,9 +502,8 @@ class SshConnectionError(BaseException):
 class TrainerImageResolutionError(BaseException):
     """Raised when the device-specific `protocol-<N>` trainer image cannot be resolved.
 
-    There is deliberately no fallback tag: a `latest` fallback here (unlike
-    Tier 1's advisory preflight check) would silently run a job against an
-    image whose protocol compatibility was never established.
+    An image must advertise the required protocol version; no fallback tag
+    is used when the matching image cannot be resolved.
     """
 
     def __init__(self, image_ref: str, protocol_version: int, detail: str | None = None) -> None:

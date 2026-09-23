@@ -516,9 +516,7 @@ class TestTargetKey:
 
 
 class TestSetupRecovery:
-    """`setup()` no longer runs SSH job recovery: SSH training now goes through
-    the same reattach path as any other direct-URL remote trainer.
-    """
+    """Worker startup reconciles remote jobs through the shared reattach path."""
 
     @pytest.mark.anyio
     async def test_setup_runs_generic_orphan_abort(self, worker) -> None:

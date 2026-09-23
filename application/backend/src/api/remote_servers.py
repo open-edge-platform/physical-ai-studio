@@ -1,16 +1,10 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""SSH host alias configuration.
+"""Read and add SSH host aliases for managed remote trainers.
 
-Registering a training target as an SSH-provisioned server (a separate device
-with its own Tier 1/2 preflight and per-job container lifecycle) has been
-retired: SSH-tunneled training now goes through a regular remote trainer (see
-`api.remote_trainers`), which starts one persistent trainer container per
-saved trainer (`services.ssh.persistent_trainer`) instead of one per job. What
-remains here is purely SSH *host alias* bookkeeping - reading/writing
-``~/.ssh/config`` ``Host`` entries - which the remote-trainer form's SSH host
-picker still needs.
+Aliases are ``Host`` entries in the user's ``~/.ssh/config`` and are
+selectable in the remote-trainer form.
 """
 
 from typing import Annotated
@@ -26,7 +20,7 @@ from services import ssh_config_reader, ssh_config_writer
 # except `/feature-status` itself, which must stay reachable to explain *why*
 # everything else is unavailable (see its docstring below), so that dependency
 # is applied per-route below rather than at the router level.
-router = APIRouter(prefix="/api/remote-servers", tags=["Remote servers"])
+router = APIRouter(prefix="/api/remote-servers", tags=["SSH hosts"])
 
 
 @router.get("/aliases", dependencies=[Depends(require_ssh_feature_active)])

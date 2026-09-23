@@ -60,7 +60,7 @@ def test_patch_empty_huggingface_token_clears_setting(monkeypatch, tmp_path: Pat
     assert get_settings().huggingface.hf_token is None
 
 
-def test_get_settings_reports_ssh_provisioning_defaults(monkeypatch, tmp_path: Path) -> None:
+def test_get_settings_reports_ssh_defaults(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
 
     with TestClient(app) as client:

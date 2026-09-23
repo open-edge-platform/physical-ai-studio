@@ -42,15 +42,13 @@ if TYPE_CHECKING:
 # from the registry manifest before any pull.
 LIBRARY_VERSION_LABEL: Final = "org.open-edge-platform.physicalai.trainer.library-version"
 
-# Management labels. `MANAGED_LABEL` alone never proves ownership: the orphan
-# sweep also requires `INSTANCE_LABEL` to match this installation's own
-# backend_instance_id (see `core.backend_instance`).
+# Management labels identify containers owned by this installation and trainer.
+# Cleanup checks the managed, instance, and trainer identifiers together.
 MANAGED_LABEL: Final = "org.open-edge-platform.physicalai.managed"
 JOB_LABEL: Final = "org.open-edge-platform.physicalai.job-id"
 SERVER_LABEL: Final = "org.open-edge-platform.physicalai.server-id"
 INSTANCE_LABEL: Final = "org.open-edge-platform.physicalai.backend-instance-id"
-# Recorded so a reattach can detect drift between the persisted row and the
-# container actually running, without a second registry round trip.
+# Records the image digest used to start the container.
 IMAGE_DIGEST_LABEL: Final = "org.open-edge-platform.physicalai.image-digest"
 
 # Named volume backing the trainer's writable storage directory. Disk-backed,
@@ -86,23 +84,16 @@ class ResolvedImage:
     library_version: str | None
 
 
-def data_volume_name(job_id: str) -> str:
-    """Return the deterministic data-volume name for one trainer.
-
-    Deterministic so teardown can find the volume by name without persisting
-    anything beyond the trainer id itself.
-    """
-    return f"{_DATA_VOLUME_NAME_PREFIX}{job_id}"
+def data_volume_name(trainer_id: str) -> str:
+    """Return a trainer's deterministic data-volume name."""
+    return f"{_DATA_VOLUME_NAME_PREFIX}{trainer_id}"
 
 
 def management_labels(*, job_id: str, server_id: str, backend_instance_id: str, image_digest: str) -> dict[str, str]:
     """Return the labels every Studio-launched trainer container carries.
 
-    `INSTANCE_LABEL` is the ownership marker `remove_stale_containers_on_port`
-    requires in addition to `MANAGED_LABEL`: an SSH host can be shared by more
-    than one Studio installation, and cleanup must never touch a container it
-    merely recognizes the shape of. `IMAGE_DIGEST_LABEL` records which digest
-    a running container was launched from.
+    Port cleanup checks `MANAGED_LABEL`, `INSTANCE_LABEL`, and `SERVER_LABEL`
+    before removing a container. `IMAGE_DIGEST_LABEL` records its image digest.
     """
     return {
         MANAGED_LABEL: "true",
@@ -209,8 +200,8 @@ async def resolve_protocol_image(
     and pulls no layer.
 
     Args:
-        transport: An open transport to the remote server.
-        device_type: The server's configured accelerator.
+        transport: An open transport to the SSH host.
+        device_type: The detected accelerator.
         protocol_version: Studio's own compiled-in trainer protocol version.
         settings: Application settings (registry location).
 
@@ -305,8 +296,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
     * Non-root, every capability dropped, no `--privileged`, and only the
       device nodes the configured accelerator needs are passed through.
     * `--read-only` root filesystem, a bounded `--tmpfs` for `/tmp` scratch,
-      and a job-scoped data volume mounted at the trainer's storage directory
-      for datasets and model artifacts.
+      and a trainer-scoped data volume for datasets and model artifacts.
 
     `render_gid`, from `services.ssh.trainer_image.resolve_render_group_gid`,
     is required for a working XPU container: without it the fixed non-root
@@ -387,14 +377,14 @@ async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Se
 
 # Substrings of a `docker rmi` failure that mean "already handled, not an
 # error": the image is still referenced by a running/stopped container, or it
-# is already gone (a concurrent prune on the same remote server won the race).
+# is already gone (a concurrent prune on the same SSH host won the race).
 _TOLERATED_RMI_FAILURES: Final = ("image is being used", "no such image")
 
 
 async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> list[str]:
     """Remove other locally cached images of `image`'s repository, freeing disk.
 
-    A remote server otherwise keeps every distinct digest it has ever pulled
+    An SSH host otherwise keeps every distinct digest it has ever pulled
     for a `physicalai-trainer-<device>` repository, filling its disk from
     accumulated image history. Called after `pull_image` confirms
     `image.digest_reference` is present, so reclaiming here never costs a
@@ -406,7 +396,7 @@ async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> l
     best-effort bookkeeping, never something a launch should fail over.
 
     Args:
-        transport: An open transport to the remote server.
+        transport: An open transport to the SSH host.
         image: The resolved image just confirmed present; its repository
             (everything before the ``@``) is what gets swept, and its digest
             is the one entry that is always kept.
