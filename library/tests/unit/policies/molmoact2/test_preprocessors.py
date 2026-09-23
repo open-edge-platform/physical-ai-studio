@@ -11,9 +11,9 @@ import torch
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Feature, FeatureType, NormalizationParameters
 from physicalai.policies.molmoact2 import MolmoAct2Config
 from physicalai.policies.molmoact2.constants import (
-    SO101_DEGREES_PER_NORMALIZED_UNIT,
     SO101_JOINT_OFFSETS,
     SO101_JOINT_SIGNS,
+    get_so101_degrees_per_normalized_unit_from_config
 )
 from physicalai.policies.molmoact2.processors import (
     MolmoAct2Postprocessor,
@@ -366,3 +366,63 @@ def test_invalid_processor_inputs_raise() -> None:
         StateTaskImageExtractor(image_keys=[]).extract({TASK: "task"})
     with pytest.raises(ValueError, match="action tensor"):
         MolmoAct2Postprocessor(output_features=[])({})
+
+
+def test_get_so101_degrees_per_normalized_unit_from_config():
+    calibration = {
+        "shoulder_pan": {"range_min": 701, "range_max": 3381},
+        "shoulder_lift": {"range_min": 882, "range_max": 3244},
+        "elbow_flex": {"range_min": 888, "range_max": 3088},
+        "wrist_flex": {"range_min": 778, "range_max": 3092},
+        "wrist_roll": {"range_min": 28, "range_max": 4065},
+        # Gripper is intentionally not included.
+        "gripper": {"range_min": 2031, "range_max": 3538},
+    }
+
+    result = get_so101_degrees_per_normalized_unit_from_config(calibration)
+
+    expected = tuple(
+        width * 360.0 / (200.0 * 4095.0)
+        for width in (2680, 2362, 2200, 2314, 4037)
+    )
+
+    assert result == pytest.approx(expected)
+
+
+def test_get_so101_degrees_per_normalized_unit_from_config_missing_joint():
+    calibration = {
+        "shoulder_pan": {"range_min": 701, "range_max": 3381},
+        "shoulder_lift": {"range_min": 882, "range_max": 3244},
+        "elbow_flex": {"range_min": 888, "range_max": 3088},
+        "wrist_flex": {"range_min": 778, "range_max": 3092},
+        # wrist_roll missing
+    }
+
+    with pytest.raises(ValueError, match="missing required joint 'wrist_roll'"):
+        get_so101_degrees_per_normalized_unit_from_config(calibration)
+
+
+def test_get_so101_degrees_per_normalized_unit_from_config_missing_range():
+    calibration = {
+        "shoulder_pan": {"range_min": 701},
+        "shoulder_lift": {"range_min": 882, "range_max": 3244},
+        "elbow_flex": {"range_min": 888, "range_max": 3088},
+        "wrist_flex": {"range_min": 778, "range_max": 3092},
+        "wrist_roll": {"range_min": 28, "range_max": 4065},
+    }
+
+    with pytest.raises(ValueError, match="missing 'range_max'"):
+        get_so101_degrees_per_normalized_unit_from_config(calibration)
+
+
+def test_get_so101_degrees_per_normalized_unit_from_config_invalid_range():
+    calibration = {
+        "shoulder_pan": {"range_min": 3381, "range_max": 701},
+        "shoulder_lift": {"range_min": 882, "range_max": 3244},
+        "elbow_flex": {"range_min": 888, "range_max": 3088},
+        "wrist_flex": {"range_min": 778, "range_max": 3092},
+        "wrist_roll": {"range_min": 28, "range_max": 4065},
+    }
+
+    with pytest.raises(ValueError, match="Invalid SO-101 calibration range"):
+        get_so101_degrees_per_normalized_unit_from_config(calibration)

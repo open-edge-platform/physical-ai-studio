@@ -20,7 +20,6 @@ from physicalai.policies import get_policy
 from physicalai.policies.molmoact2 import MolmoAct2, MolmoAct2Config
 from physicalai.policies.mixins.peft import is_lora_injected
 from physicalai.policies.molmoact2.constants import (
-    SO101_DEGREES_PER_NORMALIZED_UNIT,
     SO101_JOINT_OFFSETS,
     SO101_JOINT_SIGNS,
 )
