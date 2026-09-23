@@ -46,7 +46,7 @@ Design proposal for the policy extension mechanism and model enablement strategy
 
 | Document | Description |
 | --- | --- |
-| [Policy Plugin and Model Enablement Strategy](policy-plugin/plugin-options.md) | Proposal making an installed `Policy` subclass the unit of extension; covers discovery, capabilities, deployment enablement, and migration |
+| [Policy Integration Design](policy-plugin/README.md) | Upstream-first integrations, Python environments, dataset conversion, validation, checkpoints, and Runtime inference |
 
 ## Architecture
 
