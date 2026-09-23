@@ -7,6 +7,9 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+env:
+  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'true' }}
+
 concurrency:
   group: docker-publish
   cancel-in-progress: false
@@ -100,6 +103,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           use-cache: "false" # To ensure that the application container images remain buildable
+          enable-compile-model: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL }}
 
       - name: Resolve primary image tag for signing
         id: primary-tag

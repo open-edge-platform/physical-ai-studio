@@ -1,0 +1,105 @@
+name: Docker Cache Warm
+
+# Keeps the per-device GHCR build cache authoritative from `main` so that PR
+# builds branch from a warm cache and avoid re-downloading multi-GB dependency
+# wheels (e.g. torch ~800 MB) on a layer miss. Runs on `main` only, so PRs from
+# different branches no longer overwrite each other's shared buildcache.
+on:
+  push:
+    branches: [main]
+    paths:
+      - library/src/**
+      - library/pyproject.toml
+      - library/uv.lock
+      - library/MANIFEST.in
+      - library/.dockerignore
+      - application/**
+      - .github/actions/docker-build/**
+      - .github/workflows/docker-cache-warm.yml
+      - '!**/*.md'
+      - '!**/docs/**'
+  workflow_dispatch: # Allow manual cache refresh
+
+permissions: {} # No permissions by default on workflow level
+
+jobs:
+  warm:
+    name: Warm cache (${{ matrix.device }})
+    # Warm on the same runner class the PR build uses, so the ~12 GB CUDA image
+    # builds reliably on the self-hosted runner instead of a disk-limited
+    # GitHub-hosted one. The registry buildcache is content-addressed, so it is
+    # consumable regardless of which runner produced it.
+    runs-on: ${{ matrix.runner }}
+    # Per-device group so all three variants warm in parallel; a newer `main`
+    # push supersedes an in-flight warm for the same device.
+    concurrency:
+      group: docker-cache-warm-${{ matrix.device }}
+      cancel-in-progress: true
+    permissions:
+      contents: read # Checkout code
+      packages: write # Push registry build cache on GHCR
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # CPU and XPU warm on GitHub-hosted runners.
+          - device: cpu
+            runner: [ubuntu-latest]
+          - device: xpu
+            runner: [ubuntu-latest]
+          # CUDA warms on self-hosted to match the PR build.
+          - device: cuda
+            runner: [self-hosted, linux, x64]
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            auth.docker.io:443
+            centralus.data.mcr.microsoft.com:443
+            deb.debian.org:80
+            developer.download.nvidia.com:443
+            download.pytorch.org:443
+            download-r2.pytorch.org:443
+            files.pythonhosted.org:443
+            ghcr.io:443
+            ghcr1production.blob.core.windows.net:443
+            github.com:443
+            index.crates.io:443
+            pkg-containers.githubusercontent.com:443
+            ppa.launchpadcontent.net:443
+            production.cloudflare.docker.com:443
+            production.cloudfront.docker.com:443
+            pypi.org:443
+            registry.npmjs.org:443
+            registry-1.docker.io:443
+            static.crates.io:443
+            static.rust-lang.org:443
+            www.google-analytics.com:443
+            dl-cdn.alpinelinux.org:443
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build to refresh cache
+        uses: ./.github/actions/docker-build
+        with:
+          device: ${{ matrix.device }}
+          push: "false"
+          use-cache: "true"
+          cache-write: "true"

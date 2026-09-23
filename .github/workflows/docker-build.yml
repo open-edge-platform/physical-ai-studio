@@ -7,7 +7,7 @@ on:
 permissions: {} # No permissions by default on workflow level
 
 env:
-  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'false' }}
+  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'true' }}
 
 concurrency:
   group: docker-build-${{ github.ref }}
