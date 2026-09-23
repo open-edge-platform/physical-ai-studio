@@ -33,7 +33,10 @@ const healthyTrainer = {
 
 describe('TrainingTargetsPage', () => {
     beforeEach(() => {
-        server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
+        server.use(
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)),
+            http.get('/api/remote-servers/feature-status', () => HttpResponse.json({ network_exposed: false }))
+        );
     });
 
     it('shows configured remote trainers', async () => {
@@ -56,6 +59,56 @@ describe('TrainingTargetsPage', () => {
         const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
         expect(within(dialog).queryByText('Target type')).not.toBeInTheDocument();
         expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toBeInTheDocument();
+    });
+
+    it('disables SSH and defaults to a direct URL when SSH is unavailable', async () => {
+        const user = userEvent.setup();
+        let created: Record<string, unknown> | undefined;
+        let aliasRequests = 0;
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.get('/api/remote-servers/feature-status', () => HttpResponse.json({ network_exposed: true })),
+            http.get('/api/remote-servers/aliases', () => {
+                aliasRequests++;
+                return HttpResponse.json([], { status: 503 });
+            }),
+            http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
+                created = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json(remoteTrainer, { status: 201 });
+            })
+        );
+
+        render(<TrainingTargetsPage />);
+
+        expect(await screen.findByText(/SSH training targets are unavailable/i)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /new training target/i }));
+        const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
+        expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toHaveAttribute('aria-disabled', 'true');
+        expect(within(dialog).getByRole('tab', { name: 'Trainer URL' })).toHaveAttribute('aria-selected', 'true');
+        expect(within(dialog).queryByRole('button', { name: /add ssh connection/i })).not.toBeInTheDocument();
+        await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'direct-trainer');
+        await user.type(within(dialog).getByRole('textbox', { name: /trainer url/i }), 'https://trainer.example.test');
+        await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
+        await waitFor(() => expect(created).toBeDefined());
+        expect(created).toMatchObject({ connection_mode: 'direct', ssh_connection: null });
+        expect(aliasRequests).toBe(0);
+    });
+
+    it('fails closed when SSH availability cannot be checked', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.get('/api/remote-servers/feature-status', () =>
+                HttpResponse.json({ network_exposed: true }, { status: 503 })
+            )
+        );
+
+        render(<TrainingTargetsPage />);
+
+        await user.click(await screen.findByRole('button', { name: /new training target/i }));
+        const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
+        expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toHaveAttribute('aria-disabled', 'true');
+        expect(within(dialog).getByRole('tab', { name: 'Trainer URL' })).toHaveAttribute('aria-selected', 'true');
     });
 
     it('creates a configured remote trainer URL', async () => {

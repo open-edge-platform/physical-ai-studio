@@ -45,14 +45,22 @@ type RemoteTrainerFormProps = {
     remoteTrainer?: SchemaRemoteTrainer;
     close: () => void;
     requestHostKeyConfirmation: (confirmation: SshHostKeyConfirmation) => void;
+    sshAvailable?: boolean;
 };
 
 type SshHostSource = 'manual' | 'pick';
 
-export const RemoteTrainerForm = ({ remoteTrainer, close, requestHostKeyConfirmation }: RemoteTrainerFormProps) => {
+export const RemoteTrainerForm = ({
+    remoteTrainer,
+    close,
+    requestHostKeyConfirmation,
+    sshAvailable = true,
+}: RemoteTrainerFormProps) => {
     const [name, setName] = useState(remoteTrainer?.name ?? '');
     const [url, setUrl] = useState(remoteTrainer?.url ?? '');
-    const [connectionMode, setConnectionMode] = useState(remoteTrainer?.connection_mode ?? 'ssh');
+    const [connectionMode, setConnectionMode] = useState(
+        remoteTrainer?.connection_mode ?? (sshAvailable ? 'ssh' : 'direct')
+    );
     const [sshHostSource, setSshHostSource] = useState<SshHostSource>(
         remoteTrainer?.ssh_connection ? 'manual' : 'pick'
     );
@@ -66,7 +74,7 @@ export const RemoteTrainerForm = ({ remoteTrainer, close, requestHostKeyConfirma
     const [sshRemotePort, setSshRemotePort] = useState<number | undefined>(remoteTrainer?.ssh_remote_port ?? 8001);
     const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(remoteTrainer?.ssh_local_port ?? 8001);
     const isEditing = remoteTrainer !== undefined;
-    const { aliases } = useSshHostAliases();
+    const { aliases } = useSshHostAliases(sshAvailable);
     const { save, reset, isPending, error } = useRemoteTrainerFormMutation(remoteTrainer);
 
     const isSsh = connectionMode === 'ssh';
@@ -121,15 +129,19 @@ export const RemoteTrainerForm = ({ remoteTrainer, close, requestHostKeyConfirma
         });
     };
 
-    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        submit();
-    };
-
     const hasValidSshHost = isManual ? sshHostname.trim() !== '' : sshHostAlias.trim() !== '';
     const canSubmit =
         name.trim() !== '' &&
-        (isSsh ? hasValidSshHost && Boolean(sshRemotePort) && Boolean(sshLocalPort) : url.trim() !== '');
+        (isSsh
+            ? sshAvailable && hasValidSshHost && Boolean(sshRemotePort) && Boolean(sshLocalPort)
+            : url.trim() !== '');
+
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (canSubmit) {
+            submit();
+        }
+    };
 
     const isInsecureUrl = isInsecureTrainerUrl(url);
 
@@ -151,6 +163,7 @@ export const RemoteTrainerForm = ({ remoteTrainer, close, requestHostKeyConfirma
                         />
                         <Tabs
                             selectedKey={connectionMode}
+                            disabledKeys={!sshAvailable ? ['ssh'] : []}
                             onSelectionChange={(key) => setConnectionMode(key as 'direct' | 'ssh')}
                         >
                             <TabList aria-label='Connection method'>
@@ -183,7 +196,8 @@ export const RemoteTrainerForm = ({ remoteTrainer, close, requestHostKeyConfirma
                             {!isSsh && isInsecureUrl && (
                                 <Text UNSAFE_className={classes.errorMessage}>{INSECURE_TRAINER_URL_WARNING}</Text>
                             )}
-                            {isSsh && (
+                            {isSsh && !sshAvailable && <Text>SSH is unavailable in this environment.</Text>}
+                            {isSsh && sshAvailable && (
                                 <Flex direction='column' gap='size-100'>
                                     <div className={classes.fieldRow}>
                                         <NumberField

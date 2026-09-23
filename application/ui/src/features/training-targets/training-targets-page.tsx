@@ -24,6 +24,8 @@ type TrainingTargetAction =
 
 export const TrainingTargetsPage = () => {
     const { data: remoteTrainers } = $api.useSuspenseQuery('get', '/api/remote-trainers');
+    const { data: sshFeature } = $api.useQuery('get', '/api/remote-servers/feature-status', {}, { retry: false });
+    const sshAvailable = sshFeature?.network_exposed === false;
     const [action, setAction] = useState<TrainingTargetAction>();
     const [hostKeyConfirmation, setHostKeyConfirmation] = useState<SshHostKeyConfirmation>();
 
@@ -59,6 +61,12 @@ export const TrainingTargetsPage = () => {
                 </Button>
             </Flex>
 
+            {sshFeature?.network_exposed && (
+                <Text UNSAFE_className={classes.notice}>
+                    SSH training targets are unavailable in this environment. Direct-URL trainers are unaffected.
+                </Text>
+            )}
+
             {rows.length === 0 ? (
                 <View UNSAFE_className={classes.container}>
                     <Text UNSAFE_className={classes.emptyList}>No training targets are configured.</Text>
@@ -73,13 +81,18 @@ export const TrainingTargetsPage = () => {
 
             <DialogContainer onDismiss={closeForm}>
                 {action?.type === 'create' && (
-                    <TrainingTargetForm close={closeForm} requestHostKeyConfirmation={setHostKeyConfirmation} />
+                    <TrainingTargetForm
+                        close={closeForm}
+                        requestHostKeyConfirmation={setHostKeyConfirmation}
+                        sshAvailable={sshAvailable}
+                    />
                 )}
                 {action?.type === 'edit' && action.row.kind === 'direct-url' && (
                     <RemoteTrainerForm
                         remoteTrainer={action.row.trainer}
                         close={closeForm}
                         requestHostKeyConfirmation={setHostKeyConfirmation}
+                        sshAvailable={sshAvailable}
                     />
                 )}
                 {action?.type === 'delete' && action.row.kind === 'direct-url' && (
