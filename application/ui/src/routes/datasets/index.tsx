@@ -22,7 +22,7 @@ const Datasets = ({ datasets }: DatasetsProps) => {
     const { project_id } = useProjectId();
     const navigate = useNavigate();
     const params = useParams();
-    const dataset_id = params.dataset_id ?? datasets[0]?.id;
+    const dataset_id = params.dataset_id;
 
     if (datasets.length === 0) {
         return (

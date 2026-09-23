@@ -71,6 +71,7 @@ class MolmoAct2FromHFMixin:
     control_mode: str | None
     adapt_to_so101: bool
     convert_pretrained_so101_stats: bool
+    tokenizer_json_path: str | Path | None
     use_random_input_noise: bool
     lora_enabled: bool
     lora_rank: int
@@ -358,6 +359,11 @@ class MolmoAct2FromHFMixin:
             if self.control_mode is None:
                 control_mode = str(tag_metadata.get("control_mode") or "")
 
+        tokenizer_name_or_path = (
+            str(Path(self.tokenizer_json_path).expanduser().resolve())
+            if self.tokenizer_json_path is not None
+            else str(snapshot_dir)
+        )
         return replace(
             config,
             input_features=input_features,
@@ -373,7 +379,7 @@ class MolmoAct2FromHFMixin:
             convert_pretrained_so101_stats=self.convert_pretrained_so101_stats,
             normalization_mode=normalization_mode,
             tokenizer_config=tokenizer_config,
-            tokenizer_name_or_path=str(snapshot_dir),
+            tokenizer_name_or_path=tokenizer_name_or_path,
             use_random_input_noise=self.use_random_input_noise,
             lora_enabled=self.lora_enabled,
             lora_rank=self.lora_rank,

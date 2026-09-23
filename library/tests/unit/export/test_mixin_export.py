@@ -354,6 +354,36 @@ class TestQuietOnnxExportLogs:
 class TestToOpenVINO:
     """Tests for to_openvino method."""
 
+    def test_exported_tokenizer_enables_truncation(self, tmp_path) -> None:
+        """Converted tokenizers enforce the same fixed width as training."""
+        wrapper = ExportWrapper(ModelWithSampleInput())
+        wrapper._preprocessor.tokenizer = MagicMock()
+        wrapper._preprocessor.max_token_len = 31
+        wrapper._extra_export_args = {
+            ExportBackend.OPENVINO: OpenVINOExportParameters(
+                export_tokenizer=True,
+                tokenizer_truncation=True,
+            ),
+        }
+        converted_tokenizer = MagicMock()
+
+        with (
+            patch(
+                "physicalai.export.mixin_policy.openvino_tokenizers.convert_tokenizer",
+                return_value=converted_tokenizer,
+            ) as convert_tokenizer,
+            patch("physicalai.export.mixin_policy.openvino.save_model"),
+        ):
+            wrapper.to_openvino(tmp_path / "model.xml")
+
+        convert_tokenizer.assert_called_once_with(
+            wrapper._preprocessor.tokenizer,
+            with_detokenizer=False,
+            max_length=31,
+            use_max_padding=True,
+            truncation=True,
+        )
+
     def test_to_openvino_with_sample_input_from_model(self, tmp_path):
         """Test OpenVINO export using model's sample_input property."""
         model = ModelWithSampleInput(input_dim=10, output_dim=5)

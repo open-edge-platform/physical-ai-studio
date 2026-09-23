@@ -528,6 +528,7 @@ class ExportablePolicyMixin:
                 with_detokenizer=False,
                 max_length=self._preprocessor.max_token_len,
                 use_max_padding=True,
+                truncation=extra_model_args.tokenizer_truncation,
             )
             if ov_tokenizer is not None:
                 openvino.save_model(ov_tokenizer, export_dir / "tokenizer.xml")

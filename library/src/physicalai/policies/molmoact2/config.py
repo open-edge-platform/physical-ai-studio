@@ -154,7 +154,7 @@ class MolmoAct2Config(PeftConfigMixin, Config):
 
     # Tokenizer
     tokenizer_name_or_path: str = "allenai/MolmoAct2"
-    tokenizer_revision: str | None = None
+    tokenizer_revision: str | None = "e432d85f6e039edca44afb93c262f3084ab72a9c"
     tokenizer_max_length: int = 256
     tokenizer_padding: Literal["max_length", "longest"] = "max_length"
     tokenizer_config: dict[str, Any] | None = None

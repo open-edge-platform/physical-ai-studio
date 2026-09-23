@@ -16,6 +16,7 @@ def test_defaults_match_pretrained_architecture() -> None:
     assert (config.hidden_size, config.num_hidden_layers, config.num_attention_heads) == (2560, 36, 32)
     assert (config.chunk_size, config.n_action_steps, config.max_action_dim) == (30, 30, 32)
     assert config.tokenizer_name_or_path == "allenai/MolmoAct2"
+    assert config.tokenizer_revision == "e432d85f6e039edca44afb93c262f3084ab72a9c"
     assert config.lora_enabled is False
     assert (config.lora_rank, config.lora_alpha, config.lora_dropout) == (64, 16, 0.05)
     assert config.lora_target_modules is None

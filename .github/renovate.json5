@@ -99,6 +99,22 @@
       versioning: "regex:^(?<compatibility>[^/]+)/v?(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
     },
 
+    // The python base-image digest pin tracked via custom.regex (e.g. security-scan.yml)
+    // rides along with the "Container images" group/schedule instead of "GitHub Actions"
+    {
+      enabled: true,
+      matchManagers: ["custom.regex"],
+      matchDatasources: ["docker"],
+      matchDepNames: ["python"],
+      matchUpdateTypes: ["digest"],
+      groupName: "Container images",
+      schedule: ["* * * * 6"], // weekly on Saturday
+      automergeType: "pr",
+      reviewers: ["sys-geti"],
+      platformAutomerge: true,
+      assignAutomerge: true,
+    },
+
     // uv version used in GitHub Actions is updated manually
     {
       enabled: false,
@@ -191,6 +207,7 @@
       matchStrings: [
         "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+.+version: (?<currentValue>.*)",
         "# renovate: datasource=(?<datasource>.*?)\\s+export RENOVATE_IMAGE=(?<depName>[^:]+):(?<currentValue>[^@]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?",
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+base-image: [\"']?[^:\"']+:(?<currentValue>[^@\"']+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?[\"']?",
       ],
     },
   ],

@@ -7,34 +7,24 @@
 
 from __future__ import annotations
 
+import logging
 import re
-from copy import copy
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 import torch
+from huggingface_hub import hf_hub_download
+from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError
 from transformers import Qwen2Tokenizer
+
+from physicalai.policies.molmoact2.constants import MOLMOACT2_TOKENIZER_REPO_ID, MOLMOACT2_TOKENIZER_REVISION
 
 _TOKENIZER_JSON_FILENAME = "tokenizer.json"
 _MIN_TOKEN_LEN = 2
-_OUTPUT_ONLY_TOKEN = re.compile(r"^<(?:action|extra)_\d+>$")
+_COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
 
-
-def _drop_output_only_added_tokens(tokenizer: Qwen2Tokenizer) -> Qwen2Tokenizer:
-    """Return a conversion view without decoder-only action and extra tokens."""
-    kept_tokens = {
-        token_id: token
-        for token_id, token in tokenizer.added_tokens_decoder.items()
-        if not _OUTPUT_ONLY_TOKEN.match(token.content)
-    }
-    trimmed = copy(tokenizer)
-    trimmed.__class__ = type(
-        f"OpenVINO{type(tokenizer).__name__}",
-        (type(tokenizer),),
-        {"added_tokens_decoder": property(lambda _self: kept_tokens)},
-    )
-    return trimmed
+logger = logging.getLogger(__name__)
 
 
 class MolmoAct2Tokenizers:
@@ -45,13 +35,14 @@ class MolmoAct2Tokenizers:
         2. Lazily load the Qwen tokenizer when first needed.
         3. Tokenize, truncate, and pad prompt text.
         4. Insert BOS while preserving valid-token attention masks.
-        5. Expose an export-safe tokenizer without output-only tokens.
+        5. Expose the tokenizer for OpenVINO conversion.
     """
 
     def __init__(
         self,
         *,
         tokenizer_name_or_path: str,
+        tokenizer_revision: str | None = None,
         max_token_len: int = 256,
         padding: Literal["max_length", "longest"] = "max_length",
         tokenizer_config: dict[str, Any] | None = None,
@@ -65,34 +56,66 @@ class MolmoAct2Tokenizers:
             msg = "max_token_len must be at least 2 to reserve space for BOS."
             raise ValueError(msg)
         self.tokenizer_name_or_path = tokenizer_name_or_path
+        self.tokenizer_revision = tokenizer_revision
         self.max_token_len = max_token_len
         self.padding = padding
         self.tokenizer_config = tokenizer_config or {}
         self._tokenizer: Qwen2Tokenizer | None = None
-        self._openvino_tokenizer: Qwen2Tokenizer | None = None
+        self._tokenizer_file: str | None = None
         self._tokenizer_dir = self._resolve_tokenizer_dir()
 
     def _resolve_tokenizer_dir(self) -> str:
-        """Resolve a local directory containing tokenizer files.
+        """Resolve local tokenizer assets or download the pinned default tokenizer.
 
         Returns:
             The validated tokenizer directory.
 
         Raises:
-            FileNotFoundError: If tokenizer.json is not present locally.
+            FileNotFoundError: If tokenizer.json is unavailable locally and cannot be downloaded.
+            ValueError: If the tokenizer revision is not a full commit SHA.
         """
         local_path = Path(self.tokenizer_name_or_path)
-        if not local_path.is_dir() or not (local_path / _TOKENIZER_JSON_FILENAME).is_file():
-            msg = f"MolmoAct2 tokenizer directory must contain '{_TOKENIZER_JSON_FILENAME}': {local_path}"
-            raise FileNotFoundError(msg)
-        return str(local_path)
+        if local_path.is_file() and local_path.suffix.lower() == ".json":
+            self._tokenizer_file = str(local_path)
+            return str(local_path.parent)
+        if local_path.is_dir() and (local_path / _TOKENIZER_JSON_FILENAME).is_file():
+            return str(local_path)
+
+        if self.tokenizer_name_or_path != MOLMOACT2_TOKENIZER_REPO_ID:
+            logger.warning(
+                "MolmoAct2 tokenizer.json was not found at %s; downloading the pinned default tokenizer.",
+                local_path,
+            )
+        revision = self.tokenizer_revision or MOLMOACT2_TOKENIZER_REVISION
+        if _COMMIT_SHA_PATTERN.fullmatch(revision) is None:
+            msg = f"MolmoAct2 tokenizer revision must be a full 40-character commit SHA, got {revision!r}."
+            raise ValueError(msg)
+        try:
+            tokenizer_path = Path(
+                hf_hub_download(
+                    repo_id=MOLMOACT2_TOKENIZER_REPO_ID,
+                    filename=_TOKENIZER_JSON_FILENAME,
+                    revision=revision,
+                ),
+            )
+        except (HfHubHTTPError, LocalEntryNotFoundError, OSError) as error:
+            msg = (
+                "MolmoAct2 tokenizer.json is unavailable locally and could not be downloaded from "
+                f"{MOLMOACT2_TOKENIZER_REPO_ID}@{revision}. Supply a valid tokenizer_json_path."
+            )
+            logger.warning(msg)
+            raise FileNotFoundError(msg) from error
+        return str(tokenizer_path.parent)
 
     def _qwen_tokenizer(self) -> Qwen2Tokenizer:
         if self._tokenizer is None:
+            tokenizer_config = dict(self.tokenizer_config)
+            if self._tokenizer_file is not None:
+                tokenizer_config["tokenizer_file"] = self._tokenizer_file
             self._tokenizer = Qwen2Tokenizer.from_pretrained(  # nosec: B615
                 self._tokenizer_dir,
                 local_files_only=True,
-                **self.tokenizer_config,
+                **tokenizer_config,
             )
         if self._tokenizer is None:
             msg = "Tokenizer initialization failed"
@@ -101,10 +124,8 @@ class MolmoAct2Tokenizers:
 
     @property
     def tokenizer(self) -> Qwen2Tokenizer:
-        """The OpenVINO-safe tokenizer view."""
-        if self._openvino_tokenizer is None:
-            self._openvino_tokenizer = _drop_output_only_added_tokens(self._qwen_tokenizer())
-        return self._openvino_tokenizer
+        """The tokenizer used for OpenVINO conversion."""
+        return self._qwen_tokenizer()
 
     @property
     def pad_token_id(self) -> int:
