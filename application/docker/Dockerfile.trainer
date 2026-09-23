@@ -353,6 +353,7 @@ RUN apt-get update \
     && rm -f /etc/apt/nvidia-cuda-sequoia-policy.toml \
     && rm -rf /var/lib/apt/lists/*
 SHELL ["/bin/sh", "-c"]
+USER trainer
 
 FROM runtime-cuda AS physicalai-trainer-cuda
 ARG GIT_SHA=unknown
