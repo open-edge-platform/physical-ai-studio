@@ -145,20 +145,20 @@ triton-xpu = { index = "pytorch-xpu" }
 
 [dependency-groups]
 dev = [
-  "ruff~=0.11.2",
-  "pyrefly>=0.18.0",
+  "ruff==0.11.13",
+  "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
 ]
 lint = [
-  "ruff~=0.11.2",
-  "mypy~=1.17",
-  "pyrefly>=0.18.0",
+  "ruff==0.11.13",
+  "mypy==1.20.2",
+  "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
 ]
 all = [
-  "ruff~=0.11.2",
-  "mypy~=1.17",
-  "pyrefly>=0.18.0",
+  "ruff==0.11.13",
+  "mypy==1.20.2",
+  "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
 ]
 
