@@ -326,29 +326,11 @@ RUN set -eu; \
         -path "*/triton/backends/nvidia/lib/cupti/libnvperf_host_static.a" -o \
         -path "*/triton/backends/nvidia/lib/cupti/libnvperf_target.so" -o \
         -path "*/triton/backends/nvidia/lib/cupti/libpcsamplingutil.so" -o \
-        -path "*/nvidia/cuda_cupti/include/cupti_checkpoint.h" -o \
-        -path "*/nvidia/cuda_cupti/include/nvperf_common.h" -o \
-        -path "*/nvidia/cuda_cupti/include/nvperf_cuda_host.h" -o \
-        -path "*/nvidia/cuda_cupti/include/nvperf_host.h" -o \
-        -path "*/nvidia/cuda_cupti/include/nvperf_target.h" -o \
+        -path "*/nvidia/*/include" -o \
         -path "*/nvidia/cuda_cupti/lib/libcheckpoint.so" -o \
         -path "*/nvidia/cuda_cupti/lib/libnvperf_host.so" -o \
         -path "*/nvidia/cuda_cupti/lib/libnvperf_target.so" -o \
         -path "*/nvidia/cuda_cupti/lib/libpcsamplingutil.so" -o \
-        -path "*/nvidia/cudnn/include/cudnn.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_adv.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_adv_v9.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_backend.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_backend_v9.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_cnn.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_cnn_v9.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_graph.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_graph_v9.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_ops.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_ops_v9.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_v9.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_version.h" -o \
-        -path "*/nvidia/cudnn/include/cudnn_version_v9.h" \) \
         -delete 2>/dev/null || true
 
 # ===========================================================================
