@@ -29,14 +29,19 @@ def test_migration_refuses_to_orphan_provisioned_containers(tmp_path: Path, cont
             (json.dumps({"training_target": "ssh"}),),
         )
         connection.execute(
-            f"INSERT INTO job_provisioning (job_id, remote_server_id, ssh_host_alias, {container_column}) "
-            "VALUES ('ssh-job', 'server', 'gpu-host', 'physicalai-trainer-ssh-job')"
+            "INSERT INTO job_provisioning "
+            "(job_id, remote_server_id, ssh_host_alias, container_name, container_id) "
+            "VALUES ('ssh-job', 'server', 'gpu-host', ?, ?)",
+            (
+                "physicalai-trainer-ssh-job" if container_column == "container_name" else None,
+                "physicalai-trainer-ssh-job" if container_column == "container_id" else None,
+            ),
         )
 
     with pytest.raises(RuntimeError, match="physicalai-trainer-ssh-job"):
         command.upgrade(alembic_cfg, "7c1a9e2b4d6f")
     with sqlite3.connect(db_path) as connection:
-        assert connection.execute(f"SELECT {container_column} FROM job_provisioning").fetchone() == (
+        assert connection.execute("SELECT coalesce(container_name, container_id) FROM job_provisioning").fetchone() == (
             "physicalai-trainer-ssh-job",
         )
         connection.execute("DELETE FROM job_provisioning WHERE job_id = 'ssh-job'")
