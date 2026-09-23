@@ -7,11 +7,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal, override
+from typing import IO, TYPE_CHECKING, Any, Literal, cast, override
 
 import torch
 from torch import Tensor
@@ -126,6 +127,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         control_mode: str | None = None,
         adapt_to_so101: bool | None = None,
         convert_pretrained_so101_stats: bool = False,
+        calibration: dict | Path | None = None,
         preserve_pretrained_normalization_in_training: bool = False,
         # weight management
         compile_model: bool = False,
@@ -172,7 +174,10 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             convert_pretrained_so101_stats: Whether to convert the released SO-101
                 checkpoint's degree-based statistics for the PhysicalAI SO101 driver's
                 normalized joint units. This compatibility option requires
-                ``adapt_to_so101=True`` and the ``so100_so101_molmoact2`` normalization tag.
+                ``adapt_to_so101=True``, a calibration file for the SO101
+                and the ``so100_so101_molmoact2`` normalization tag.
+            calibration: Calibration dictionary or path to a JSON file containing joint calibration data.
+                Only works for SO101 currently, and is ignored if ``convert_pretrained_so101_stats=False``.
             preserve_pretrained_normalization_in_training: Whether ``setup("fit")`` keeps state and action
                 normalization from an initialized pretrained policy when adopting the training
                 dataset's feature contract. This does not affect explicit ``set_features`` calls.
@@ -219,6 +224,14 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         if convert_pretrained_so101_stats and norm_tag != "so100_so101_molmoact2":
             msg = "convert_pretrained_so101_stats is only supported with norm_tag='so100_so101_molmoact2'."
             raise ValueError(msg)
+        if convert_pretrained_so101_stats and calibration is None:
+            msg = "Zero-shot SO-101 conversion requires a calibration dictionary or JSON file path."
+            raise ValueError(msg)
+        # convert json to dict helper for calibration files
+        if isinstance(calibration, Path):
+            with calibration.open(encoding="utf-8") as file:
+                calibration = json.load(file)
+                calibration = cast("dict[str, Any]", calibration)
 
         # args
         self.input_features = input_features
@@ -232,6 +245,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         self.control_mode = control_mode
         self.adapt_to_so101 = resolved_adapt_to_so101
         self.convert_pretrained_so101_stats = convert_pretrained_so101_stats
+        self.calibration = calibration
         self.preserve_pretrained_normalization_in_training = preserve_pretrained_normalization_in_training
         self.compile_model = compile_model
         self.openvino_compress_to_fp16 = openvino_compress_to_fp16
@@ -339,6 +353,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             control_mode=config.control_mode,
             adapt_to_so101=config.adapt_to_so101,
             convert_pretrained_so101_stats=config.convert_pretrained_so101_stats,
+            calibration=config.calibration,
             preserve_pretrained_normalization_in_training=preserve_pretrained_normalization_in_training,
             compile_model=compile_model,
             openvino_compress_to_fp16=openvino_compress_to_fp16,
@@ -476,6 +491,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
                 control_mode=self.control_mode or "",
                 adapt_to_so101=self.adapt_to_so101,
                 convert_pretrained_so101_stats=self.convert_pretrained_so101_stats,
+                calibration=self.calibration,
                 use_random_input_noise=self.use_random_input_noise,
                 lora_enabled=self.lora_enabled,
                 lora_rank=self.lora_rank,
@@ -517,6 +533,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         self.control_mode = config.control_mode
         self.adapt_to_so101 = config.adapt_to_so101
         self.convert_pretrained_so101_stats = config.convert_pretrained_so101_stats
+        self.calibration = config.calibration
 
         self.model = MolmoAct2Model.from_config(config)
         self._preprocessor, self._postprocessor = make_molmoact2_preprocessors(config)
@@ -553,6 +570,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             ...     norm_tag="so100_so101_molmoact2",
             ...     adapt_to_so101=True,
             ...     convert_pretrained_so101_stats=True,
+            ...     calibration="so101_calibration.json",
             ... )
             >>> policy.set_features(
             ...     input_features=input_features,

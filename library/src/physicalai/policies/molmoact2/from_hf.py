@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from huggingface_hub import snapshot_download
 
@@ -19,11 +19,7 @@ from physicalai.policies.utils import JointFrameTransform
 from physicalai.policies.utils.features import get_feature_by_type
 
 from .config import MolmoAct2Config
-from .constants import (
-    SO101_DEGREES_PER_NORMALIZED_UNIT,
-    SO101_JOINT_OFFSETS,
-    SO101_JOINT_SIGNS,
-)
+from .constants import SO101_JOINT_OFFSETS, SO101_JOINT_SIGNS, get_so101_degrees_per_normalized_unit_from_config
 from .pretrained_utils import (
     ACTION_EXPERT_CONFIG_MAP,
     ADAPTER_CONFIG_MAP,
@@ -37,21 +33,26 @@ from .pretrained_utils import (
 def _pretrained_normalization_to_so101_runtime(
     features: list[Feature],
     feature_type: FeatureType,
+    scales: Sequence[float],
 ) -> list[Feature]:
     feature = get_feature_by_type(features, feature_type)
+
     if feature is None or feature.normalization_data is None:
         return list(features)
+
     if not feature.shape:
         msg = f"Cannot convert pretrained {feature_type.value} normalization without a concrete feature shape."
         raise ValueError(msg)
+
     normalization = JointFrameTransform(
         signs=SO101_JOINT_SIGNS,
         offsets=SO101_JOINT_OFFSETS,
     ).forward_normalization_from_scaled_input(
         feature.normalization_data,
         dimension=feature.shape[-1],
-        scales=SO101_DEGREES_PER_NORMALIZED_UNIT,
+        scales=scales,
     )
+
     return [
         replace(candidate, normalization_data=normalization) if candidate is feature else candidate
         for candidate in features
@@ -71,6 +72,7 @@ class MolmoAct2FromHFMixin:
     control_mode: str | None
     adapt_to_so101: bool
     convert_pretrained_so101_stats: bool
+    calibration: dict[str, Any] | None
     tokenizer_json_path: str | Path | None
     use_random_input_noise: bool
     lora_enabled: bool
@@ -302,6 +304,7 @@ class MolmoAct2FromHFMixin:
 
         Raises:
             TypeError: If normalization metadata is malformed.
+            ValueError: If SO-101 calibration data is required but not provided.
         """
         flat_config: dict[str, Any] = {}
         copy_component(hf_config, flat_config, "text_config", TEXT_CONFIG_MAP)
@@ -339,13 +342,19 @@ class MolmoAct2FromHFMixin:
                 normalize_gripper=normalize_gripper,
             )
             if self.convert_pretrained_so101_stats:
+                if self.calibration is None:
+                    msg = "SO-101 calibration data is required to convert pretrained normalization statistics."
+                    raise ValueError(msg)
+                scales = get_so101_degrees_per_normalized_unit_from_config(self.calibration)
                 tag_input_features = _pretrained_normalization_to_so101_runtime(
                     tag_input_features,
                     FeatureType.STATE,
+                    scales,
                 )
                 tag_output_features = _pretrained_normalization_to_so101_runtime(
                     tag_output_features,
                     FeatureType.ACTION,
+                    scales,
                 )
             input_features = self.input_features if self.input_features is not None else tag_input_features
             output_features = self.output_features if self.output_features is not None else tag_output_features
