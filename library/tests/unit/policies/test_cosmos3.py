@@ -321,16 +321,20 @@ class TestMockedCosmos3Model:
         assert "loss_action" in loss_dict
 
     def test_on_save_checkpoint_filtering(self) -> None:
-        """Test policy on_save_checkpoint removes frozen parameters."""
-        config = Cosmos3Config(embodiment="pusht", chunk_size=4)
+        """Test policy on_save_checkpoint removes frozen parameters and keeps trainable ones."""
         pipe = self._create_mock_pipeline()
         policy = Cosmos3(chunk_size=4, embodiment="pusht", pipeline=pipe)
+
+        # Register trainable and frozen parameters to simulate LoRA and base weights
+        assert policy.model is not None
+        policy.model.trainable_lora = torch.nn.Parameter(torch.randn(2, 2), requires_grad=True)
+        policy.model.frozen_backbone = torch.nn.Parameter(torch.randn(10, 10), requires_grad=False)
 
         # Mock state_dict with frozen and trainable keys
         checkpoint = {
             "state_dict": {
-                "model.transformer.to_q.weight": torch.randn(2, 2),
-                "model.transformer.frozen_backbone.weight": torch.randn(10, 10),
+                "model.trainable_lora": torch.randn(2, 2),
+                "model.frozen_backbone": torch.randn(10, 10),
                 "model.norm_offset": torch.tensor([0.0, 0.0]),
                 "model.norm_scale": torch.tensor([1.0, 1.0]),
                 "model.domain_id": torch.tensor([4]),
@@ -339,10 +343,11 @@ class TestMockedCosmos3Model:
         policy.on_save_checkpoint(checkpoint)
 
         saved_keys = checkpoint["state_dict"].keys()
+        assert "model.trainable_lora" in saved_keys
         assert "model.norm_offset" in saved_keys
         assert "model.norm_scale" in saved_keys
         assert "model.domain_id" in saved_keys
-        assert "model.transformer.frozen_backbone.weight" not in saved_keys
+        assert "model.frozen_backbone" not in saved_keys
 
     def test_pretrained_action_head_detection(self, tmp_path: Path) -> None:
         """Test _has_pretrained_action_head detection for local files and remote repos."""

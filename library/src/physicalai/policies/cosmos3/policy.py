@@ -338,7 +338,7 @@ class Cosmos3(Policy):
         for k, v in checkpoint["state_dict"].items():
             # Check if parameter is trainable or a critical buffer
             clean_name = k.removeprefix("model.")
-            is_trainable = clean_name in trainable_names
+            is_trainable = k in trainable_names or clean_name in trainable_names
             is_head = any(hk in k for hk in HEAD_KEYS)
             is_buffer = "norm_offset" in k or "norm_scale" in k or "domain_id" in k
             if is_trainable or is_head or is_buffer:
