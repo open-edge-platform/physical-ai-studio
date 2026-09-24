@@ -26,7 +26,9 @@ model:
     # Convert dataset samples and quantiles into the checkpoint's legacy SO101
     # coordinate frame, without importing or retaining checkpoint normalization stats.
     adapt_to_so101: true
-    convert_pretrained_so101_stats: false
+    # Optional SO-101 calibration JSON; scales runtime joint units to checkpoint degrees.
+    # Required with preserve_pretrained_normalization_in_training: true.
+    # calibration: path/to/so101_follower_calibration.json
     preserve_pretrained_normalization_in_training: false
 
     # Text inserted into the model prompt to describe the embodiment and action space.

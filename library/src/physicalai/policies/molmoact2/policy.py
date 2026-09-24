@@ -7,12 +7,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, Literal, cast, override
+from typing import IO, TYPE_CHECKING, Any, Literal, override
 
 import torch
 from torch import Tensor
@@ -26,11 +25,9 @@ from physicalai.data.observation import (
 )
 from physicalai.policies.base import Policy
 from physicalai.policies.mixins.peft import PeftPolicyMixin, is_lora_injected
-from physicalai.policies.utils import JointFrameTransform
 from physicalai.policies.utils.features import get_feature_by_type
 
 from .config import MolmoAct2Config
-from .constants import SO101_JOINT_OFFSETS, SO101_JOINT_SIGNS
 from .export import MolmoAct2ExportMixin
 from .from_hf import MolmoAct2FromHFMixin
 from .model import MolmoAct2Model
@@ -40,11 +37,13 @@ from .processors import (
     MolmoAct2Preprocessor,
     make_molmoact2_preprocessors,
 )
+from .so101 import load_so101_calibration, make_so101_joint_transform
 
 if TYPE_CHECKING:
     from lightning.pytorch.utilities.types import OptimizerLRScheduler
 
     from physicalai.gyms import Gym
+    from physicalai.policies.utils import JointFrameTransform
 
 logger = logging.getLogger(__name__)
 
@@ -87,17 +86,18 @@ def _copy_feature_normalization(
     ]
 
 
-def _normalization_to_checkpoint(features: list[Feature], feature_type: FeatureType) -> list[Feature]:
+def _normalization_to_checkpoint(
+    features: list[Feature],
+    feature_type: FeatureType,
+    joint_transform: JointFrameTransform,
+) -> list[Feature]:
     feature = get_feature_by_type(features, feature_type)
     if feature is None or feature.normalization_data is None:
         return list(features)
     if not feature.shape:
         msg = f"Cannot adapt {feature_type.value} normalization without a concrete feature shape."
         raise ValueError(msg)
-    normalization = JointFrameTransform(
-        signs=SO101_JOINT_SIGNS,
-        offsets=SO101_JOINT_OFFSETS,
-    ).forward_normalization(
+    normalization = joint_transform.forward_normalization(
         feature.normalization_data,
         dimension=feature.shape[-1],
     )
@@ -110,7 +110,7 @@ def _normalization_to_checkpoint(features: list[Feature], feature_type: FeatureT
 class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Policy):
     """MolmoAct2 policy wrapper for loading pretrained checkpoints and configs."""
 
-    def __init__(  # noqa: PLR0913, PLR0915
+    def __init__(  # noqa: PLR0913
         self,
         # Input and output features
         input_features: list[Feature] | None = None,
@@ -126,8 +126,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         setup_type: str | None = None,
         control_mode: str | None = None,
         adapt_to_so101: bool | None = None,
-        convert_pretrained_so101_stats: bool = False,
-        calibration: dict | Path | None = None,
+        calibration: dict[str, Any] | str | Path | None = None,
         preserve_pretrained_normalization_in_training: bool = False,
         # weight management
         compile_model: bool = False,
@@ -169,15 +168,12 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             n_obs_steps: Number of observation steps included in the input history.
             setup_type: Optional setup identifier used by the model configuration.
             control_mode: Optional control mode used by the model configuration.
-            adapt_to_so101: Whether to train in the legacy SO-101 checkpoint frame.
+            adapt_to_so101: Whether to map SO-101 joints into the legacy checkpoint frame
+                (``checkpoint = sign * scale * runtime + offset``).
                 When omitted, the SO-100/101 normalization tag enables it automatically.
-            convert_pretrained_so101_stats: Whether to convert the released SO-101
-                checkpoint's degree-based statistics for the PhysicalAI SO101 driver's
-                normalized joint units. This compatibility option requires
-                ``adapt_to_so101=True``, a calibration file for the SO101
-                and the ``so100_so101_molmoact2`` normalization tag.
-            calibration: Calibration dictionary or path to a JSON file containing joint calibration data.
-                Only works for SO101 currently, and is ignored if ``convert_pretrained_so101_stats=False``.
+            calibration: SO-101 calibration dictionary or path to its JSON file. With
+                ``adapt_to_so101=True`` it sets the per-joint degrees-per-runtime-unit scale, which is
+                required to use the released checkpoint's statistics zero-shot. Without it the scale is 1.
             preserve_pretrained_normalization_in_training: Whether ``setup("fit")`` keeps state and action
                 normalization from an initialized pretrained policy when adopting the training
                 dataset's feature contract. This does not affect explicit ``set_features`` calls.
@@ -218,20 +214,6 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             raise ValueError(msg)
 
         resolved_adapt_to_so101 = norm_tag == "so100_so101_molmoact2" if adapt_to_so101 is None else adapt_to_so101
-        if convert_pretrained_so101_stats and not resolved_adapt_to_so101:
-            msg = "convert_pretrained_so101_stats requires adapt_to_so101=True."
-            raise ValueError(msg)
-        if convert_pretrained_so101_stats and norm_tag != "so100_so101_molmoact2":
-            msg = "convert_pretrained_so101_stats is only supported with norm_tag='so100_so101_molmoact2'."
-            raise ValueError(msg)
-        if convert_pretrained_so101_stats and calibration is None:
-            msg = "Zero-shot SO-101 conversion requires a calibration dictionary or JSON file path."
-            raise ValueError(msg)
-        # convert json to dict helper for calibration files
-        if isinstance(calibration, Path):
-            with calibration.open(encoding="utf-8") as file:
-                calibration = json.load(file)
-                calibration = cast("dict[str, Any]", calibration)
 
         # args
         self.input_features = input_features
@@ -244,8 +226,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         self.setup_type = setup_type
         self.control_mode = control_mode
         self.adapt_to_so101 = resolved_adapt_to_so101
-        self.convert_pretrained_so101_stats = convert_pretrained_so101_stats
-        self.calibration = calibration
+        self.calibration = load_so101_calibration(calibration)
         self.preserve_pretrained_normalization_in_training = preserve_pretrained_normalization_in_training
         self.compile_model = compile_model
         self.openvino_compress_to_fp16 = openvino_compress_to_fp16
@@ -352,7 +333,6 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             setup_type=config.setup_type,
             control_mode=config.control_mode,
             adapt_to_so101=config.adapt_to_so101,
-            convert_pretrained_so101_stats=config.convert_pretrained_so101_stats,
             calibration=config.calibration,
             preserve_pretrained_normalization_in_training=preserve_pretrained_normalization_in_training,
             compile_model=compile_model,
@@ -490,7 +470,6 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
                 setup_type=self.setup_type or "",
                 control_mode=self.control_mode or "",
                 adapt_to_so101=self.adapt_to_so101,
-                convert_pretrained_so101_stats=self.convert_pretrained_so101_stats,
                 calibration=self.calibration,
                 use_random_input_noise=self.use_random_input_noise,
                 lora_enabled=self.lora_enabled,
@@ -532,7 +511,6 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         self.setup_type = config.setup_type
         self.control_mode = config.control_mode
         self.adapt_to_so101 = config.adapt_to_so101
-        self.convert_pretrained_so101_stats = config.convert_pretrained_so101_stats
         self.calibration = config.calibration
 
         self.model = MolmoAct2Model.from_config(config)
@@ -569,7 +547,6 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             ...     pretrained_name_or_path="allenai/MolmoAct2-SO100_101",
             ...     norm_tag="so100_so101_molmoact2",
             ...     adapt_to_so101=True,
-            ...     convert_pretrained_so101_stats=True,
             ...     calibration="so101_calibration.json",
             ... )
             >>> policy.set_features(
@@ -586,8 +563,17 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         resolved_input_features = list(input_features)
         resolved_output_features = list(output_features)
         if config.adapt_to_so101:
-            resolved_input_features = _normalization_to_checkpoint(resolved_input_features, FeatureType.STATE)
-            resolved_output_features = _normalization_to_checkpoint(resolved_output_features, FeatureType.ACTION)
+            joint_transform = make_so101_joint_transform(config.calibration)
+            resolved_input_features = _normalization_to_checkpoint(
+                resolved_input_features,
+                FeatureType.STATE,
+                joint_transform,
+            )
+            resolved_output_features = _normalization_to_checkpoint(
+                resolved_output_features,
+                FeatureType.ACTION,
+                joint_transform,
+            )
         if copy_state_normalization:
             resolved_input_features = _copy_feature_normalization(
                 resolved_input_features,
@@ -746,8 +732,17 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             return
 
         if self.adapt_to_so101:
-            dataset_input_features = _normalization_to_checkpoint(dataset_input_features, FeatureType.STATE)
-            dataset_output_features = _normalization_to_checkpoint(dataset_output_features, FeatureType.ACTION)
+            joint_transform = make_so101_joint_transform(self.calibration)
+            dataset_input_features = _normalization_to_checkpoint(
+                dataset_input_features,
+                FeatureType.STATE,
+                joint_transform,
+            )
+            dataset_output_features = _normalization_to_checkpoint(
+                dataset_output_features,
+                FeatureType.ACTION,
+                joint_transform,
+            )
         self.input_features = dataset_input_features
         self.output_features = dataset_output_features
         self.initialize_model()

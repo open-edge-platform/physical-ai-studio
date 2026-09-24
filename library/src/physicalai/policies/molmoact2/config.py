@@ -41,8 +41,7 @@ class MolmoAct2Config(PeftConfigMixin, Config):
     setup_type: str = ""
     control_mode: str = ""
     adapt_to_so101: bool = False
-    # Compatibility for the released degree-statistics checkpoint, not native SO101 training.
-    convert_pretrained_so101_stats: bool = False
+    # SO-101 calibration; sets the runtime-to-degrees joint scales used with ``adapt_to_so101``.
     calibration: dict[str, Any] | None = None
 
     # Text transformer

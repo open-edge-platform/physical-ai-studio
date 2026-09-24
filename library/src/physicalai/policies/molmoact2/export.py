@@ -28,6 +28,7 @@ from physicalai.export.backends import ExportParameters, OpenVINOExportParameter
 from physicalai.policies.utils.features import get_feature_by_type
 
 from .constants import SO101_JOINT_OFFSETS, SO101_JOINT_SIGNS
+from .so101 import so101_joint_scales
 
 if TYPE_CHECKING:
     from .config import MolmoAct2Config
@@ -277,6 +278,7 @@ class MolmoAct2ExportMixin(ExportablePolicyMixin):
                     feature=STATE,
                     signs=list(SO101_JOINT_SIGNS),
                     offsets=list(SO101_JOINT_OFFSETS),
+                    scales=list(so101_joint_scales(config.calibration)),
                 ),
             )
         torch_postprocessors = []
@@ -295,6 +297,7 @@ class MolmoAct2ExportMixin(ExportablePolicyMixin):
                     feature=ACTION,
                     signs=list(SO101_JOINT_SIGNS),
                     offsets=list(SO101_JOINT_OFFSETS),
+                    scales=list(so101_joint_scales(config.calibration)),
                 ),
             )
         if self.chunk_size != self.n_action_steps:
