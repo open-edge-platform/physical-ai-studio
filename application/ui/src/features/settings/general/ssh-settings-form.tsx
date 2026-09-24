@@ -96,8 +96,8 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 width='100%'
             />
             <Text>
-                Applies only to new containers. A running container keeps its current size. After jobs finish, stop the container and save its training target to
-                recreate it.
+                Applies only to new containers. A running container keeps its current size. After jobs finish, stop the
+                container and save its training target to recreate it.
             </Text>
         </SettingsSection>
     );
