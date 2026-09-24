@@ -115,11 +115,15 @@ def test_joint_transform_maps_normalization_to_checkpoint_frame() -> None:
     assert transformed is not normalization
 
 
-def test_joint_transform_aligns_pretrained_stats_with_normalized_so101_runtime() -> None:
-    degree_scales = [*SO101_DEGREES_PER_NORMALIZED_UNIT, 1.0]
+def test_joint_transform_aligns_pretrained_stats_with_normalized_so101_runtime(mock_so101_calibration) -> None:
+    degree_scales = [
+        *get_so101_degrees_per_normalized_unit_from_config(mock_so101_calibration),
+        1.0,
+    ]
     offsets = [0.0, 90.0, 90.0, 0.0, 0.0, 0.0]
     runtime_q01 = [-80.0, 110.0, -50.0, -25.0, -10.0, 2.0]
     runtime_q99 = [70.0, -60.0, 60.0, 35.0, 20.0, 95.0]
+
     checkpoint_q01 = [
         offsets[index] + degree_scales[index] * (value - offsets[index])
         for index, value in enumerate(runtime_q01)
@@ -128,6 +132,7 @@ def test_joint_transform_aligns_pretrained_stats_with_normalized_so101_runtime()
         offsets[index] + degree_scales[index] * (value - offsets[index])
         for index, value in enumerate(runtime_q99)
     ]
+
     normalization = NormalizationParameters(
         mean=checkpoint_q01,
         std=[2.0 * scale for scale in degree_scales],
@@ -141,52 +146,93 @@ def test_joint_transform_aligns_pretrained_stats_with_normalized_so101_runtime()
     transformed = _so101_joint_transform().forward_normalization_from_scaled_input(
         normalization,
         dimension=6,
-        scales=SO101_DEGREES_PER_NORMALIZED_UNIT,
+        scales=degree_scales,
     )
+
+    expected_min = [
+        min(a, b)
+        for a, b in zip(runtime_q01, runtime_q99, strict=True)
+    ]
+    expected_max = [
+        max(a, b)
+        for a, b in zip(runtime_q01, runtime_q99, strict=True)
+    ]
 
     assert transformed.mean == pytest.approx(runtime_q01)
     assert transformed.std == pytest.approx([2.0] * 6)
-    assert transformed.min == pytest.approx([min(a, b) for a, b in zip(runtime_q01, runtime_q99, strict=True)])
-    assert transformed.max == pytest.approx([max(a, b) for a, b in zip(runtime_q01, runtime_q99, strict=True)])
-    assert transformed.q01 == pytest.approx([min(a, b) for a, b in zip(runtime_q01, runtime_q99, strict=True)])
-    assert transformed.q99 == pytest.approx([max(a, b) for a, b in zip(runtime_q01, runtime_q99, strict=True)])
+    assert transformed.min == pytest.approx(expected_min)
+    assert transformed.max == pytest.approx(expected_max)
+    assert transformed.q01 == pytest.approx(expected_min)
+    assert transformed.q99 == pytest.approx(expected_max)
     assert transformed.mask == normalization.mask
 
 
-def test_corrected_pretrained_stats_match_explicit_degree_conversion() -> None:
-    degree_scales = torch.tensor([*SO101_DEGREES_PER_NORMALIZED_UNIT, 1.0])
+def test_corrected_pretrained_stats_match_explicit_degree_conversion(mock_so101_calibration) -> None:
+    degree_scales = torch.tensor(
+        [
+            *get_so101_degrees_per_normalized_unit_from_config(
+                mock_so101_calibration,
+            ),
+            1.0,
+        ]
+    )
     signs = torch.tensor(SO101_JOINT_SIGNS)
     offsets = torch.tensor(SO101_JOINT_OFFSETS)
+
     checkpoint_stats = NormalizationParameters(
         q01=[-42.0, 44.0, 38.0, 6.0, -63.0, 1.0],
         q99=[48.0, 185.0, 173.0, 92.0, 43.0, 44.0],
     )
+
     corrected_stats = _so101_joint_transform().forward_normalization_from_scaled_input(
         checkpoint_stats,
         dimension=6,
-        scales=SO101_DEGREES_PER_NORMALIZED_UNIT,
+        scales=degree_scales.tolist(),
     )
+
     checkpoint_feature = Feature(
         name=STATE,
         ftype=FeatureType.STATE,
         shape=(6,),
         normalization_data=checkpoint_stats,
     )
-    corrected_feature = replace(checkpoint_feature, normalization_data=corrected_stats)
+    corrected_feature = replace(
+        checkpoint_feature,
+        normalization_data=corrected_stats,
+    )
+
     robot_state = torch.tensor([[-50.0, 25.0, -30.0, 10.0, 15.0, 60.0]])
     checkpoint_state = signs * degree_scales * robot_state + offsets
     adapted_state = _so101_joint_transform().forward(robot_state)
-    reference_normalizer = MolmoAct2NormalizeTransform(input_features=[checkpoint_feature], output_features=[])
-    corrected_normalizer = MolmoAct2NormalizeTransform(input_features=[corrected_feature], output_features=[])
+
+    reference_normalizer = MolmoAct2NormalizeTransform(
+        input_features=[checkpoint_feature],
+        output_features=[],
+    )
+    corrected_normalizer = MolmoAct2NormalizeTransform(
+        input_features=[corrected_feature],
+        output_features=[],
+    )
 
     reference_state = reference_normalizer({STATE: checkpoint_state})[STATE]
     corrected_state = corrected_normalizer({STATE: adapted_state})[STATE]
 
     torch.testing.assert_close(corrected_state, reference_state)
 
-    normalized_action = torch.tensor([[[-0.5, 0.25, 0.75, -0.25, 0.0, 0.5]]])
-    checkpoint_action_feature = replace(checkpoint_feature, name=ACTION, ftype=FeatureType.ACTION)
-    corrected_action_feature = replace(checkpoint_action_feature, normalization_data=corrected_stats)
+    normalized_action = torch.tensor(
+        [[[-0.5, 0.25, 0.75, -0.25, 0.0, 0.5]]]
+    )
+
+    checkpoint_action_feature = replace(
+        checkpoint_feature,
+        name=ACTION,
+        ftype=FeatureType.ACTION,
+    )
+    corrected_action_feature = replace(
+        checkpoint_action_feature,
+        normalization_data=corrected_stats,
+    )
+
     reference_denormalizer = MolmoAct2NormalizeTransform(
         input_features=[],
         output_features=[checkpoint_action_feature],
@@ -197,9 +243,18 @@ def test_corrected_pretrained_stats_match_explicit_degree_conversion() -> None:
         output_features=[corrected_action_feature],
         inverse=True,
     )
-    checkpoint_action = reference_denormalizer({ACTION: normalized_action})[ACTION]
-    expected_robot_action = _so101_joint_transform().inverse(checkpoint_action) / degree_scales
-    corrected_action = corrected_denormalizer({ACTION: normalized_action})[ACTION]
+
+    checkpoint_action = reference_denormalizer(
+        {ACTION: normalized_action}
+    )[ACTION]
+
+    expected_robot_action = (
+        _so101_joint_transform().inverse(checkpoint_action) / degree_scales
+    )
+
+    corrected_action = corrected_denormalizer(
+        {ACTION: normalized_action}
+    )[ACTION]
     actual_robot_action = _so101_joint_transform().inverse(corrected_action)
 
     torch.testing.assert_close(actual_robot_action, expected_robot_action)

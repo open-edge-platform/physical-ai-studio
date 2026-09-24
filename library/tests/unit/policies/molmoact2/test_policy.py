@@ -6,6 +6,7 @@
 from dataclasses import replace
 from inspect import Parameter, signature
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 
 import lightning
@@ -22,6 +23,7 @@ from physicalai.policies.mixins.peft import is_lora_injected
 from physicalai.policies.molmoact2.constants import (
     SO101_JOINT_OFFSETS,
     SO101_JOINT_SIGNS,
+    get_so101_degrees_per_normalized_unit_from_config,
 )
 
 
@@ -101,7 +103,7 @@ def test_pretrained_so101_stats_conversion_rejects_incompatible_modes(
         )
 
 
-def test_from_config_uses_resolved_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_from_config_uses_resolved_config(monkeypatch: pytest.MonkeyPatch, mock_so101_calibration) -> None:
     config = MolmoAct2Config(
         n_action_steps=3,
         chunk_size=5,
@@ -109,6 +111,7 @@ def test_from_config_uses_resolved_config(monkeypatch: pytest.MonkeyPatch) -> No
         norm_tag="so100_so101_molmoact2",
         adapt_to_so101=True,
         convert_pretrained_so101_stats=True,
+        calibration=mock_so101_calibration,
     )
     initialized: list[MolmoAct2Config] = []
 
@@ -170,7 +173,7 @@ def test_explicit_features_override_norm_tag_features_without_inheriting_statist
     assert config.output_features[0].normalization_data is None
 
 
-def test_convert_config_corrects_pretrained_so101_statistics_once(tmp_path: Path) -> None:
+def test_convert_config_corrects_pretrained_so101_statistics_once(tmp_path: Path, mock_so101_calibration) -> None:
     checkpoint_q01 = [-40.0, 50.0, 40.0, -30.0, -20.0, 2.0]
     checkpoint_q99 = [45.0, 180.0, 170.0, 35.0, 30.0, 95.0]
     norm_stats = {
@@ -191,6 +194,7 @@ def test_convert_config_corrects_pretrained_so101_statistics_once(tmp_path: Path
         norm_tag="so100_so101_molmoact2",
         adapt_to_so101=True,
         convert_pretrained_so101_stats=True,
+        calibration=mock_so101_calibration,
     )
 
     config = policy._convert_config({}, norm_stats, {}, tmp_path)
@@ -208,7 +212,7 @@ def test_convert_config_corrects_pretrained_so101_statistics_once(tmp_path: Path
         for value, offset, scale in zip(
             checkpoint_q01[:5],
             offsets,
-            SO101_DEGREES_PER_NORMALIZED_UNIT,
+            get_so101_degrees_per_normalized_unit_from_config(mock_so101_calibration),
             strict=True,
         )
     ] + [checkpoint_q01[-1]]
@@ -217,7 +221,7 @@ def test_convert_config_corrects_pretrained_so101_statistics_once(tmp_path: Path
         for value, offset, scale in zip(
             checkpoint_q99[:5],
             offsets,
-            SO101_DEGREES_PER_NORMALIZED_UNIT,
+            get_so101_degrees_per_normalized_unit_from_config(mock_so101_calibration),
             strict=True,
         )
     ] + [checkpoint_q99[-1]]
@@ -892,12 +896,14 @@ def test_torch_export_loads_with_downloaded_tokenizer(
 def test_load_from_checkpoint_preserves_normalization_and_training_arguments(
     tiny_molmoact2_config: MolmoAct2Config,
     tmp_path: Path,
+    mock_so101_calibration: dict[str, Any],
 ) -> None:
     adapted_config = replace(
         tiny_molmoact2_config,
         norm_tag="so100_so101_molmoact2",
         adapt_to_so101=True,
         convert_pretrained_so101_stats=True,
+        calibration=mock_so101_calibration,
     )
     policy = MolmoAct2.from_config(
         adapted_config,
@@ -1268,12 +1274,14 @@ def test_openvino_export_preserves_resolved_so101_mode_and_statistics(
 def test_openvino_export_uses_corrected_pretrained_so101_statistics(
     tiny_molmoact2_config: MolmoAct2Config,
     monkeypatch: pytest.MonkeyPatch,
+    mock_so101_calibration: dict[str, Any],
 ) -> None:
     config = replace(
         tiny_molmoact2_config,
         norm_tag="so100_so101_molmoact2",
         adapt_to_so101=True,
         convert_pretrained_so101_stats=True,
+        calibration=mock_so101_calibration,
     )
     policy = MolmoAct2.from_config(config)
     monkeypatch.setattr(policy, "_openvino_token_ids", lambda: (1, 0, [10, 11, 12]))
