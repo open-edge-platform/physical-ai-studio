@@ -3,18 +3,16 @@
 
 """Tests for MolmoAct2 preprocessing and postprocessing."""
 
+import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 import torch
 
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Feature, FeatureType, NormalizationParameters
 from physicalai.policies.molmoact2 import MolmoAct2Config
-from physicalai.policies.molmoact2.constants import (
-    SO101_JOINT_OFFSETS,
-    SO101_JOINT_SIGNS,
-    get_so101_degrees_per_normalized_unit_from_config
-)
+from physicalai.policies.molmoact2.constants import SO101_JOINT_OFFSETS, SO101_JOINT_SIGNS
 from physicalai.policies.molmoact2.processors import (
     MolmoAct2Postprocessor,
     MolmoAct2Preprocessor,
@@ -34,6 +32,12 @@ from physicalai.policies.molmoact2.processors.preprocess_steps import (
     PreprocessBatchBundle,
     RobotPromptEncoder,
     StateTaskImageExtractor,
+)
+from physicalai.policies.molmoact2.so101 import (
+    load_so101_calibration,
+    make_so101_joint_transform,
+    so101_degrees_per_runtime_unit,
+    so101_joint_scales,
 )
 from physicalai.policies.utils import JointFrameTransform
 
@@ -115,149 +119,90 @@ def test_joint_transform_maps_normalization_to_checkpoint_frame() -> None:
     assert transformed is not normalization
 
 
-def test_joint_transform_aligns_pretrained_stats_with_normalized_so101_runtime(mock_so101_calibration) -> None:
-    degree_scales = [
-        *get_so101_degrees_per_normalized_unit_from_config(mock_so101_calibration),
-        1.0,
-    ]
-    offsets = [0.0, 90.0, 90.0, 0.0, 0.0, 0.0]
-    runtime_q01 = [-80.0, 110.0, -50.0, -25.0, -10.0, 2.0]
-    runtime_q99 = [70.0, -60.0, 60.0, 35.0, 20.0, 95.0]
-
-    checkpoint_q01 = [
-        offsets[index] + degree_scales[index] * (value - offsets[index])
-        for index, value in enumerate(runtime_q01)
-    ]
-    checkpoint_q99 = [
-        offsets[index] + degree_scales[index] * (value - offsets[index])
-        for index, value in enumerate(runtime_q99)
-    ]
-
-    normalization = NormalizationParameters(
-        mean=checkpoint_q01,
-        std=[2.0 * scale for scale in degree_scales],
-        min=checkpoint_q01,
-        max=checkpoint_q99,
-        q01=checkpoint_q01,
-        q99=checkpoint_q99,
-        mask=[True, True, True, True, True, True],
-    )
-
-    transformed = _so101_joint_transform().forward_normalization_from_scaled_input(
-        normalization,
-        dimension=6,
-        scales=degree_scales,
-    )
-
-    expected_min = [
-        min(a, b)
-        for a, b in zip(runtime_q01, runtime_q99, strict=True)
-    ]
-    expected_max = [
-        max(a, b)
-        for a, b in zip(runtime_q01, runtime_q99, strict=True)
-    ]
-
-    assert transformed.mean == pytest.approx(runtime_q01)
-    assert transformed.std == pytest.approx([2.0] * 6)
-    assert transformed.min == pytest.approx(expected_min)
-    assert transformed.max == pytest.approx(expected_max)
-    assert transformed.q01 == pytest.approx(expected_min)
-    assert transformed.q99 == pytest.approx(expected_max)
-    assert transformed.mask == normalization.mask
-
-
-def test_corrected_pretrained_stats_match_explicit_degree_conversion(mock_so101_calibration) -> None:
-    degree_scales = torch.tensor(
-        [
-            *get_so101_degrees_per_normalized_unit_from_config(
-                mock_so101_calibration,
-            ),
-            1.0,
-        ]
-    )
+def test_so101_joint_transform_maps_runtime_units_to_checkpoint_degrees(mock_so101_calibration) -> None:
+    transform = make_so101_joint_transform(mock_so101_calibration)
+    scales = torch.tensor(so101_degrees_per_runtime_unit(mock_so101_calibration))
     signs = torch.tensor(SO101_JOINT_SIGNS)
     offsets = torch.tensor(SO101_JOINT_OFFSETS)
+    runtime_state = torch.tensor([[0.0, 0.0, 0.0, 0.0, 0.0, 50.0], [-100.0, 100.0, 50.0, -20.0, 10.0, 0.0]])
+
+    checkpoint_state = transform.forward(runtime_state)
+
+    torch.testing.assert_close(checkpoint_state, signs * scales * runtime_state + offsets)
+    torch.testing.assert_close(checkpoint_state[0], torch.tensor([0.0, 90.0, 90.0, 0.0, 0.0, 50.0]))
+    torch.testing.assert_close(transform.inverse(checkpoint_state), runtime_state)
+
+
+def test_so101_processors_match_lerobot_degrees_pipeline(mock_so101_calibration) -> None:
+    """Runtime ticks through PhysicalAI units must match LeRobot degrees through the same checkpoint stats."""
+    joints = ("shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper")
+    range_min = torch.tensor([float(mock_so101_calibration[joint]["range_min"]) for joint in joints])
+    range_max = torch.tensor([float(mock_so101_calibration[joint]["range_max"]) for joint in joints])
+    range_mid = (range_min + range_max) / 2
+    range_width = range_max - range_min
+    is_body = torch.tensor([True, True, True, True, True, False])
+
+    def runtime_from_ticks(ticks: torch.Tensor) -> torch.Tensor:
+        body = (ticks - range_mid) * 200.0 / range_width
+        gripper = (ticks - range_min) * 100.0 / range_width
+        return torch.where(is_body, body, gripper)
+
+    def lerobot_from_ticks(ticks: torch.Tensor) -> torch.Tensor:
+        body = (ticks - range_mid) * 360.0 / 4095.0
+        gripper = (ticks - range_min) * 100.0 / range_width
+        return torch.where(is_body, body, gripper)
+
+    def ticks_from_runtime(values: torch.Tensor) -> torch.Tensor:
+        body = values * range_width / 200.0 + range_mid
+        gripper = values * range_width / 100.0 + range_min
+        return torch.where(is_body, body, gripper)
+
+    def ticks_from_lerobot(values: torch.Tensor) -> torch.Tensor:
+        body = values * 4095.0 / 360.0 + range_mid
+        gripper = values * range_width / 100.0 + range_min
+        return torch.where(is_body, body, gripper)
 
     checkpoint_stats = NormalizationParameters(
         q01=[-42.0, 44.0, 38.0, 6.0, -63.0, 1.0],
         q99=[48.0, 185.0, 173.0, 92.0, 43.0, 44.0],
     )
+    state_feature = Feature(name=STATE, ftype=FeatureType.STATE, shape=(6,), normalization_data=checkpoint_stats)
+    action_feature = Feature(name=ACTION, ftype=FeatureType.ACTION, shape=(6,), normalization_data=checkpoint_stats)
+    normalizer = MolmoAct2NormalizeTransform(input_features=[state_feature], output_features=[])
+    denormalizer = MolmoAct2NormalizeTransform(input_features=[], output_features=[action_feature], inverse=True)
+    physicalai_transform = make_so101_joint_transform(mock_so101_calibration)
+    lerobot_transform = JointFrameTransform(signs=SO101_JOINT_SIGNS, offsets=SO101_JOINT_OFFSETS)
 
-    corrected_stats = _so101_joint_transform().forward_normalization_from_scaled_input(
-        checkpoint_stats,
-        dimension=6,
-        scales=degree_scales.tolist(),
+    ticks = range_min + torch.tensor([[0.1, 0.3, 0.5, 0.7, 0.9, 0.2]]) * range_width
+    physicalai_state = normalizer({STATE: physicalai_transform.forward(runtime_from_ticks(ticks))})[STATE]
+    lerobot_state = normalizer({STATE: lerobot_transform.forward(lerobot_from_ticks(ticks))})[STATE]
+
+    torch.testing.assert_close(physicalai_state, lerobot_state)
+
+    checkpoint_action = denormalizer({ACTION: torch.tensor([[-0.5, 0.25, 0.75, -0.25, 0.0, 0.5]])})[ACTION]
+    physicalai_ticks = ticks_from_runtime(physicalai_transform.inverse(checkpoint_action))
+    lerobot_ticks = ticks_from_lerobot(lerobot_transform.inverse(checkpoint_action))
+
+    torch.testing.assert_close(physicalai_ticks, lerobot_ticks)
+
+
+def test_factory_uses_calibrated_so101_joint_transform(
+    tiny_molmoact2_config: MolmoAct2Config,
+    mock_so101_calibration,
+) -> None:
+    config = replace(tiny_molmoact2_config, adapt_to_so101=True, calibration=mock_so101_calibration)
+    preprocessor, postprocessor = make_molmoact2_preprocessors(config)
+    expected = make_so101_joint_transform(mock_so101_calibration)
+    runtime_values = torch.tensor([[10.0, -20.0, 30.0, -40.0]])
+
+    torch.testing.assert_close(
+        preprocessor._joint_transform.forward(runtime_values),
+        expected.forward(runtime_values),
     )
-
-    checkpoint_feature = Feature(
-        name=STATE,
-        ftype=FeatureType.STATE,
-        shape=(6,),
-        normalization_data=checkpoint_stats,
+    torch.testing.assert_close(
+        postprocessor._joint_transform.inverse(runtime_values),
+        expected.inverse(runtime_values),
     )
-    corrected_feature = replace(
-        checkpoint_feature,
-        normalization_data=corrected_stats,
-    )
-
-    robot_state = torch.tensor([[-50.0, 25.0, -30.0, 10.0, 15.0, 60.0]])
-    checkpoint_state = signs * degree_scales * robot_state + offsets
-    adapted_state = _so101_joint_transform().forward(robot_state)
-
-    reference_normalizer = MolmoAct2NormalizeTransform(
-        input_features=[checkpoint_feature],
-        output_features=[],
-    )
-    corrected_normalizer = MolmoAct2NormalizeTransform(
-        input_features=[corrected_feature],
-        output_features=[],
-    )
-
-    reference_state = reference_normalizer({STATE: checkpoint_state})[STATE]
-    corrected_state = corrected_normalizer({STATE: adapted_state})[STATE]
-
-    torch.testing.assert_close(corrected_state, reference_state)
-
-    normalized_action = torch.tensor(
-        [[[-0.5, 0.25, 0.75, -0.25, 0.0, 0.5]]]
-    )
-
-    checkpoint_action_feature = replace(
-        checkpoint_feature,
-        name=ACTION,
-        ftype=FeatureType.ACTION,
-    )
-    corrected_action_feature = replace(
-        checkpoint_action_feature,
-        normalization_data=corrected_stats,
-    )
-
-    reference_denormalizer = MolmoAct2NormalizeTransform(
-        input_features=[],
-        output_features=[checkpoint_action_feature],
-        inverse=True,
-    )
-    corrected_denormalizer = MolmoAct2NormalizeTransform(
-        input_features=[],
-        output_features=[corrected_action_feature],
-        inverse=True,
-    )
-
-    checkpoint_action = reference_denormalizer(
-        {ACTION: normalized_action}
-    )[ACTION]
-
-    expected_robot_action = (
-        _so101_joint_transform().inverse(checkpoint_action) / degree_scales
-    )
-
-    corrected_action = corrected_denormalizer(
-        {ACTION: normalized_action}
-    )[ACTION]
-    actual_robot_action = _so101_joint_transform().inverse(corrected_action)
-
-    torch.testing.assert_close(actual_robot_action, expected_robot_action)
 
 
 def test_joint_transform_rejects_mismatched_statistic_length() -> None:
@@ -423,28 +368,28 @@ def test_invalid_processor_inputs_raise() -> None:
         MolmoAct2Postprocessor(output_features=[])({})
 
 
-def test_get_so101_degrees_per_normalized_unit_from_config():
+def test_so101_degrees_per_runtime_unit():
     calibration = {
         "shoulder_pan": {"range_min": 701, "range_max": 3381},
         "shoulder_lift": {"range_min": 882, "range_max": 3244},
         "elbow_flex": {"range_min": 888, "range_max": 3088},
         "wrist_flex": {"range_min": 778, "range_max": 3092},
         "wrist_roll": {"range_min": 28, "range_max": 4065},
-        # Gripper is intentionally not included.
+        # The gripper keeps [0, 100] in both conventions, so its range is ignored.
         "gripper": {"range_min": 2031, "range_max": 3538},
     }
 
-    result = get_so101_degrees_per_normalized_unit_from_config(calibration)
+    result = so101_degrees_per_runtime_unit(calibration)
 
-    expected = tuple(
-        width * 360.0 / (200.0 * 4095.0)
-        for width in (2680, 2362, 2200, 2314, 4037)
+    expected = (
+        *(width * 360.0 / (200.0 * 4095.0) for width in (2680, 2362, 2200, 2314, 4037)),
+        1.0,
     )
 
     assert result == pytest.approx(expected)
 
 
-def test_get_so101_degrees_per_normalized_unit_from_config_missing_joint():
+def test_so101_degrees_per_runtime_unit_missing_joint():
     calibration = {
         "shoulder_pan": {"range_min": 701, "range_max": 3381},
         "shoulder_lift": {"range_min": 882, "range_max": 3244},
@@ -454,10 +399,10 @@ def test_get_so101_degrees_per_normalized_unit_from_config_missing_joint():
     }
 
     with pytest.raises(ValueError, match="missing required joint 'wrist_roll'"):
-        get_so101_degrees_per_normalized_unit_from_config(calibration)
+        so101_degrees_per_runtime_unit(calibration)
 
 
-def test_get_so101_degrees_per_normalized_unit_from_config_missing_range():
+def test_so101_degrees_per_runtime_unit_missing_range():
     calibration = {
         "shoulder_pan": {"range_min": 701},
         "shoulder_lift": {"range_min": 882, "range_max": 3244},
@@ -467,10 +412,10 @@ def test_get_so101_degrees_per_normalized_unit_from_config_missing_range():
     }
 
     with pytest.raises(ValueError, match="missing 'range_max'"):
-        get_so101_degrees_per_normalized_unit_from_config(calibration)
+        so101_degrees_per_runtime_unit(calibration)
 
 
-def test_get_so101_degrees_per_normalized_unit_from_config_invalid_range():
+def test_so101_degrees_per_runtime_unit_invalid_range():
     calibration = {
         "shoulder_pan": {"range_min": 3381, "range_max": 701},
         "shoulder_lift": {"range_min": 882, "range_max": 3244},
@@ -480,4 +425,21 @@ def test_get_so101_degrees_per_normalized_unit_from_config_invalid_range():
     }
 
     with pytest.raises(ValueError, match="Invalid SO-101 calibration range"):
-        get_so101_degrees_per_normalized_unit_from_config(calibration)
+        so101_degrees_per_runtime_unit(calibration)
+
+
+def test_so101_joint_scales_default_to_one_without_calibration():
+    assert so101_joint_scales(None) == (1.0,) * 6
+
+
+@pytest.mark.parametrize("as_type", [str, Path])
+def test_load_so101_calibration_reads_json_path(tmp_path: Path, mock_so101_calibration, as_type) -> None:
+    path = tmp_path / "calibration.json"
+    path.write_text(json.dumps(mock_so101_calibration), encoding="utf-8")
+
+    assert load_so101_calibration(as_type(path)) == mock_so101_calibration
+
+
+def test_load_so101_calibration_passes_through_dict_and_none(mock_so101_calibration) -> None:
+    assert load_so101_calibration(mock_so101_calibration) is mock_so101_calibration
+    assert load_so101_calibration(None) is None

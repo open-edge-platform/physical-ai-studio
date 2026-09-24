@@ -3,6 +3,7 @@
 
 """Tests for the MolmoAct2 policy wrapper."""
 
+import json
 from dataclasses import replace
 from inspect import Parameter, signature
 from pathlib import Path
@@ -20,11 +21,8 @@ from physicalai.inference import InferenceModel
 from physicalai.policies import get_policy
 from physicalai.policies.molmoact2 import MolmoAct2, MolmoAct2Config
 from physicalai.policies.mixins.peft import is_lora_injected
-from physicalai.policies.molmoact2.constants import (
-    SO101_JOINT_OFFSETS,
-    SO101_JOINT_SIGNS,
-    get_so101_degrees_per_normalized_unit_from_config,
-)
+from physicalai.policies.molmoact2.constants import SO101_JOINT_OFFSETS, SO101_JOINT_SIGNS
+from physicalai.policies.molmoact2.so101 import make_so101_joint_transform, so101_joint_scales
 
 
 def test_registration_and_lazy_initialization() -> None:
@@ -82,25 +80,13 @@ def test_so101_norm_tag_respects_explicit_adaptation_mode(
     assert policy.adapt_to_so101 is expected
 
 
-@pytest.mark.parametrize(
-    ("norm_tag", "adapt_to_so101", "message"),
-    [
-        ("so100_so101_molmoact2", False, "requires adapt_to_so101=True"),
-        ("other", True, "only supported with norm_tag"),
-    ],
-)
-def test_pretrained_so101_stats_conversion_rejects_incompatible_modes(
-    norm_tag: str,
-    adapt_to_so101: bool,
-    message: str,
-) -> None:
-    with pytest.raises(ValueError, match=message):
-        MolmoAct2(
-            pretrained_name_or_path=None,
-            norm_tag=norm_tag,
-            adapt_to_so101=adapt_to_so101,
-            convert_pretrained_so101_stats=True,
-        )
+def test_calibration_accepts_json_path(tmp_path: Path, mock_so101_calibration: dict[str, Any]) -> None:
+    path = tmp_path / "so101_calibration.json"
+    path.write_text(json.dumps(mock_so101_calibration), encoding="utf-8")
+
+    policy = MolmoAct2(pretrained_name_or_path=None, adapt_to_so101=True, calibration=str(path))
+
+    assert policy.calibration == mock_so101_calibration
 
 
 def test_from_config_uses_resolved_config(monkeypatch: pytest.MonkeyPatch, mock_so101_calibration) -> None:
@@ -110,7 +96,6 @@ def test_from_config_uses_resolved_config(monkeypatch: pytest.MonkeyPatch, mock_
         use_random_input_noise=True,
         norm_tag="so100_so101_molmoact2",
         adapt_to_so101=True,
-        convert_pretrained_so101_stats=True,
         calibration=mock_so101_calibration,
     )
     initialized: list[MolmoAct2Config] = []
@@ -132,7 +117,7 @@ def test_from_config_uses_resolved_config(monkeypatch: pytest.MonkeyPatch, mock_
     assert policy.pretrained_name_or_path is None
     assert (policy.n_action_steps, policy.chunk_size) == (3, 5)
     assert policy.preserve_pretrained_normalization_in_training is True
-    assert policy.convert_pretrained_so101_stats is True
+    assert policy.calibration == mock_so101_calibration
     assert policy.compile_model is True
     assert policy.optimizer_lr == 2e-5
 
@@ -173,7 +158,7 @@ def test_explicit_features_override_norm_tag_features_without_inheriting_statist
     assert config.output_features[0].normalization_data is None
 
 
-def test_convert_config_corrects_pretrained_so101_statistics_once(tmp_path: Path, mock_so101_calibration) -> None:
+def test_convert_config_keeps_pretrained_so101_statistics(tmp_path: Path, mock_so101_calibration) -> None:
     checkpoint_q01 = [-40.0, 50.0, 40.0, -30.0, -20.0, 2.0]
     checkpoint_q99 = [45.0, 180.0, 170.0, 35.0, 30.0, 95.0]
     norm_stats = {
@@ -193,46 +178,73 @@ def test_convert_config_corrects_pretrained_so101_statistics_once(tmp_path: Path
         pretrained_name_or_path=None,
         norm_tag="so100_so101_molmoact2",
         adapt_to_so101=True,
-        convert_pretrained_so101_stats=True,
         calibration=mock_so101_calibration,
     )
 
     config = policy._convert_config({}, norm_stats, {}, tmp_path)
 
-    assert config.convert_pretrained_so101_stats is True
+    assert config.adapt_to_so101 is True
+    assert config.calibration == mock_so101_calibration
     assert config.input_features is not None
     assert config.output_features is not None
     state_stats = config.input_features[-1].normalization_data
     action_stats = config.output_features[0].normalization_data
     assert state_stats is not None
     assert action_stats is not None
-    offsets = [0.0, 90.0, 90.0, 0.0, 0.0]
-    expected_q01 = [
-        offset + (value - offset) / scale
-        for value, offset, scale in zip(
-            checkpoint_q01[:5],
-            offsets,
-            get_so101_degrees_per_normalized_unit_from_config(mock_so101_calibration),
-            strict=True,
-        )
-    ] + [checkpoint_q01[-1]]
-    expected_q99 = [
-        offset + (value - offset) / scale
-        for value, offset, scale in zip(
-            checkpoint_q99[:5],
-            offsets,
-            get_so101_degrees_per_normalized_unit_from_config(mock_so101_calibration),
-            strict=True,
-        )
-    ] + [checkpoint_q99[-1]]
-    assert state_stats.q01 == pytest.approx(expected_q01)
-    assert state_stats.q99 == pytest.approx(expected_q99)
+    assert state_stats.q01 == checkpoint_q01
+    assert state_stats.q99 == checkpoint_q99
     assert action_stats == state_stats
 
     restored = MolmoAct2Config.from_dict(config.to_dict())
 
+    assert restored.calibration == mock_so101_calibration
     assert restored.input_features[-1].normalization_data == state_stats
     assert restored.output_features[0].normalization_data == action_stats
+
+
+def test_convert_config_warns_when_so101_calibration_is_missing(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    norm_stats = {
+        "metadata_by_tag": {
+            "so100_so101_molmoact2": {
+                "camera_keys": [],
+                "state_key": "observation.state",
+                "state_stats": {"q01": [-1.0] * 6, "q99": [1.0] * 6},
+                "action_key": "action",
+                "action_stats": {"q01": [-1.0] * 6, "q99": [1.0] * 6},
+                "action_horizon": 30,
+                "normalize_gripper": True,
+            },
+        },
+    }
+    policy = MolmoAct2(pretrained_name_or_path=None, norm_tag="so100_so101_molmoact2", adapt_to_so101=True)
+
+    with caplog.at_level("WARNING"):
+        policy._convert_config({}, norm_stats, {}, tmp_path)
+
+    assert "without an SO-101 calibration" in caplog.text
+
+
+def test_set_features_applies_calibrated_so101_frame_to_dataset_statistics(
+    tiny_molmoact2_config: MolmoAct2Config,
+    mock_so101_calibration: dict[str, Any],
+) -> None:
+    config = replace(tiny_molmoact2_config, adapt_to_so101=True, calibration=mock_so101_calibration)
+    policy = MolmoAct2.from_config(config)
+    runtime_stats = NormalizationParameters(q01=[-50.0, -60.0, -70.0, -80.0], q99=[50.0, 60.0, 70.0, 80.0])
+    input_features = [
+        replace(feature, normalization_data=runtime_stats) if feature.ftype == FeatureType.STATE else feature
+        for feature in config.input_features
+    ]
+    output_features = [replace(config.output_features[0], normalization_data=runtime_stats)]
+
+    policy.set_features(input_features, output_features)
+
+    expected = make_so101_joint_transform(mock_so101_calibration).forward_normalization(runtime_stats, dimension=4)
+    assert policy.input_features[-1].normalization_data == expected
+    assert policy.output_features[0].normalization_data == expected
 
 
 def test_set_features_copies_only_requested_state_normalization(
@@ -902,7 +914,6 @@ def test_load_from_checkpoint_preserves_normalization_and_training_arguments(
         tiny_molmoact2_config,
         norm_tag="so100_so101_molmoact2",
         adapt_to_so101=True,
-        convert_pretrained_so101_stats=True,
         calibration=mock_so101_calibration,
     )
     policy = MolmoAct2.from_config(
@@ -934,9 +945,9 @@ def test_load_from_checkpoint_preserves_normalization_and_training_arguments(
 
     assert restored.preserve_pretrained_normalization_in_training is True
     assert restored.adapt_to_so101 is True
-    assert restored.convert_pretrained_so101_stats is True
+    assert restored.calibration == mock_so101_calibration
     assert restored.config is not None and restored.config.adapt_to_so101 is True
-    assert restored.config.convert_pretrained_so101_stats is True
+    assert restored.config.calibration == mock_so101_calibration
     assert restored.input_features[-1].normalization_data == policy.input_features[-1].normalization_data
     assert restored.output_features[0].normalization_data == policy.output_features[0].normalization_data
     assert restored.n_action_steps == policy.n_action_steps
@@ -1010,7 +1021,7 @@ def test_training_defaults_match_verified_optimizer_recipe() -> None:
     assert policy.setup_type is None
     assert policy.control_mode is None
     assert policy.adapt_to_so101 is False
-    assert policy.convert_pretrained_so101_stats is False
+    assert policy.calibration is None
     assert policy.preserve_pretrained_normalization_in_training is False
     assert policy.gradient_checkpointing is False
     assert policy.use_random_input_noise is False
@@ -1265,13 +1276,15 @@ def test_openvino_export_preserves_resolved_so101_mode_and_statistics(
         assert joint_postprocessor.signs == list(SO101_JOINT_SIGNS)
         assert joint_preprocessor.offsets == list(SO101_JOINT_OFFSETS)
         assert joint_postprocessor.offsets == list(SO101_JOINT_OFFSETS)
+        assert joint_preprocessor.scales == [1.0] * len(SO101_JOINT_SIGNS)
+        assert joint_postprocessor.scales == [1.0] * len(SO101_JOINT_SIGNS)
     assert preprocessor.state_stats["q01"] == expected_q01
     assert preprocessor.state_stats["q99"] == expected_q99
     assert postprocessor.action_stats["q01"] == expected_q01
     assert postprocessor.action_stats["q99"] == expected_q99
 
 
-def test_openvino_export_uses_corrected_pretrained_so101_statistics(
+def test_openvino_export_uses_pretrained_so101_statistics_and_calibration_scales(
     tiny_molmoact2_config: MolmoAct2Config,
     monkeypatch: pytest.MonkeyPatch,
     mock_so101_calibration: dict[str, Any],
@@ -1280,7 +1293,6 @@ def test_openvino_export_uses_corrected_pretrained_so101_statistics(
         tiny_molmoact2_config,
         norm_tag="so100_so101_molmoact2",
         adapt_to_so101=True,
-        convert_pretrained_so101_stats=True,
         calibration=mock_so101_calibration,
     )
     policy = MolmoAct2.from_config(config)
@@ -1294,11 +1306,14 @@ def test_openvino_export_uses_corrected_pretrained_so101_statistics(
     assert state_stats is not None
     assert action_stats is not None
 
-    assert export_args.preprocessors_specs[0].type == "joint_frame_preprocess"
-    assert export_args.postprocessors_specs[:2] == [
-        postprocessor,
-        next(spec for spec in export_args.postprocessors_specs if spec.type == "joint_frame_postprocess"),
-    ]
+    joint_preprocessor = export_args.preprocessors_specs[0]
+    joint_postprocessor = next(
+        spec for spec in export_args.postprocessors_specs if spec.type == "joint_frame_postprocess"
+    )
+    assert joint_preprocessor.type == "joint_frame_preprocess"
+    assert export_args.postprocessors_specs[:2] == [postprocessor, joint_postprocessor]
+    assert joint_preprocessor.scales == list(so101_joint_scales(mock_so101_calibration))
+    assert joint_postprocessor.scales == list(so101_joint_scales(mock_so101_calibration))
     assert preprocessor.state_stats == {
         "q01": state_stats.q01,
         "q99": state_stats.q99,
