@@ -322,11 +322,14 @@ import torch
 
 from physicalai.policies import MolmoAct2
 
+calibration_so101 = "SO101 Follower-calibration.json"
+
 policy = MolmoAct2(
     pretrained_name_or_path="allenai/MolmoAct2-SO100_101",
     norm_tag="so100_so101_molmoact2",
     adapt_to_so101=True,
     convert_pretrained_so101_stats=True,
+    calibration=calibration_so101,
 )
 
 policy.set_features(
@@ -349,6 +352,58 @@ normalization already present on that replacement feature.
 
 Start the SO-101 from an extended pose near the task workspace. Starting from a
 rest pose can cause the policy to remain there.
+
+The MolmoAct2 pretrained weights for SO100-101 were trained using a previous version of LeRobot, which used degrees instead of normalized units.
+For this reason we have to supply a calibration file for our Follower arm, then we convert the ranges and convert our normalized units to degrees.
+
+An example calibration file looks like this:
+
+```json
+{
+  "shoulder_pan": {
+    "id": 1,
+    "drive_mode": 0,
+    "homing_offset": -457,
+    "range_min": 701,
+    "range_max": 3381
+  },
+  "shoulder_lift": {
+    "id": 2,
+    "drive_mode": 0,
+    "homing_offset": 260,
+    "range_min": 882,
+    "range_max": 3244
+  },
+  "elbow_flex": {
+    "id": 3,
+    "drive_mode": 0,
+    "homing_offset": 642,
+    "range_min": 888,
+    "range_max": 3088
+  },
+  "wrist_flex": {
+    "id": 4,
+    "drive_mode": 0,
+    "homing_offset": 1056,
+    "range_min": 778,
+    "range_max": 3092
+  },
+  "wrist_roll": {
+    "id": 5,
+    "drive_mode": 0,
+    "homing_offset": -56,
+    "range_min": 28,
+    "range_max": 4065
+  },
+  "gripper": {
+    "id": 6,
+    "drive_mode": 0,
+    "homing_offset": -807,
+    "range_min": 2031,
+    "range_max": 3538
+  }
+}
+```
 
 ## Repository and Normalization Tags
 
