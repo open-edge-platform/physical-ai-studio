@@ -171,7 +171,8 @@ targets and their statistics. Passing the recording arm's `calibration` puts
 them in the checkpoint's true degree units:
 
 - It is **required** with `preserve_pretrained_normalization_in_training=True`,
-  because the checkpoint's statistics are in degrees.
+  because the checkpoint's statistics are in degrees. Training raises a
+  `ValueError` without it.
 - It is optional otherwise. Dataset statistics absorb the unit scale, and only the
   signs and offsets matter.
 
@@ -338,8 +339,13 @@ for the same arm, from servo ticks in to servo ticks out.
 
 The scales come from one arm's calibration and are embedded in the Torch
 processors and the OpenVINO manifest (`joint_frame_preprocess` /
-`joint_frame_postprocess`). Re-export for an arm with different ranges. Without
-a calibration the scale is 1, and runtime units are treated as degrees.
+`joint_frame_postprocess`). Re-export for an arm with different ranges.
+
+`calibration` is required for zero-shot use. `set_features(...,
+copy_state_normalization=True)` or `copy_action_normalization=True` raises a
+`ValueError` with `adapt_to_so101=True` and no calibration. Using the tag
+features directly without a calibration logs a warning, and runtime units are
+then treated as degrees.
 
 ```python
 import torch

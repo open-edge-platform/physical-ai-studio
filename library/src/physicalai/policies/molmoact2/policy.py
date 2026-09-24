@@ -172,8 +172,10 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
                 (``checkpoint = sign * scale * runtime + offset``).
                 When omitted, the SO-100/101 normalization tag enables it automatically.
             calibration: SO-101 calibration dictionary or path to its JSON file. With
-                ``adapt_to_so101=True`` it sets the per-joint degrees-per-runtime-unit scale, which is
-                required to use the released checkpoint's statistics zero-shot. Without it the scale is 1.
+                ``adapt_to_so101=True`` it sets the per-joint degrees-per-runtime-unit scale. It is
+                required when the checkpoint's statistics are used (zero-shot, or
+                ``preserve_pretrained_normalization_in_training=True``) and optional when fine-tuning
+                with dataset statistics. Without it the scale is 1.
             preserve_pretrained_normalization_in_training: Whether ``setup("fit")`` keeps state and action
                 normalization from an initialized pretrained policy when adopting the training
                 dataset's feature contract. This does not affect explicit ``set_features`` calls.
@@ -539,6 +541,9 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
             copy_action_normalization: Whether to fill missing replacement action normalization
                 with normalization resolved during policy initialization.
 
+        Raises:
+            ValueError: If SO-101 normalization is copied with ``adapt_to_so101=True`` but no calibration.
+
         Example:
             Initializing, setting features, and exporting a policy model:
 
@@ -559,6 +564,15 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         """
         self._require_model()
         config = self._require_config()
+
+        # Copied checkpoint statistics are in degrees, so runtime units need the calibration scales.
+        copies_pretrained_normalization = copy_state_normalization or copy_action_normalization
+        if config.adapt_to_so101 and config.calibration is None and copies_pretrained_normalization:
+            msg = (
+                "Copying pretrained SO-101 normalization requires `calibration` to scale runtime joint units "
+                "to the checkpoint's degrees."
+            )
+            raise ValueError(msg)
 
         resolved_input_features = list(input_features)
         resolved_output_features = list(output_features)

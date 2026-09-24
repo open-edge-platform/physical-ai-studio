@@ -397,8 +397,9 @@ def test_set_features_transforms_dataset_normalization_in_adapted_mode(
 
 def test_set_features_does_not_transform_copied_policy_normalization_twice(
     tiny_molmoact2_config: MolmoAct2Config,
+    mock_so101_calibration: dict[str, Any],
 ) -> None:
-    config = replace(tiny_molmoact2_config, adapt_to_so101=True)
+    config = replace(tiny_molmoact2_config, adapt_to_so101=True, calibration=mock_so101_calibration)
     policy = MolmoAct2.from_config(config)
     replacement_inputs = [
         replace(feature, normalization_data=None) if feature.ftype == FeatureType.STATE else feature
@@ -414,6 +415,39 @@ def test_set_features_does_not_transform_copied_policy_normalization_twice(
 
     assert policy.input_features[-1].normalization_data == config.input_features[-1].normalization_data
     assert policy.output_features[0].normalization_data == config.output_features[0].normalization_data
+
+
+@pytest.mark.parametrize(
+    ("copy_state_normalization", "copy_action_normalization"),
+    [(True, False), (False, True)],
+)
+def test_set_features_requires_calibration_to_copy_so101_normalization(
+    tiny_molmoact2_config: MolmoAct2Config,
+    copy_state_normalization: bool,
+    copy_action_normalization: bool,
+) -> None:
+    config = replace(tiny_molmoact2_config, adapt_to_so101=True)
+    policy = MolmoAct2.from_config(config)
+
+    with pytest.raises(ValueError, match="requires `calibration`"):
+        policy.set_features(
+            list(config.input_features),
+            list(config.output_features),
+            copy_state_normalization=copy_state_normalization,
+            copy_action_normalization=copy_action_normalization,
+        )
+
+
+def test_set_features_without_copy_does_not_require_calibration(
+    tiny_molmoact2_config: MolmoAct2Config,
+) -> None:
+    config = replace(tiny_molmoact2_config, adapt_to_so101=True)
+    policy = MolmoAct2.from_config(config)
+
+    policy.set_features(list(config.input_features), list(config.output_features))
+
+    assert policy.config is not None
+    assert policy.config.calibration is None
 
 
 def test_set_features_rejects_incompatible_normalization_shape_atomically(
@@ -646,8 +680,9 @@ def test_setup_preserves_pretrained_normalization_with_dataset_feature_contract(
 def test_setup_preserves_checkpoint_frame_normalization_without_transforming_twice(
     tiny_molmoact2_config: MolmoAct2Config,
     monkeypatch: pytest.MonkeyPatch,
+    mock_so101_calibration: dict[str, Any],
 ) -> None:
-    config = replace(tiny_molmoact2_config, adapt_to_so101=True)
+    config = replace(tiny_molmoact2_config, adapt_to_so101=True, calibration=mock_so101_calibration)
     policy = MolmoAct2.from_config(config, preserve_pretrained_normalization_in_training=True)
     dataset_stats = NormalizationParameters(
         q01=[-2.0, -3.0, -4.0, -5.0],
@@ -669,6 +704,27 @@ def test_setup_preserves_checkpoint_frame_normalization_without_transforming_twi
 
     assert policy.input_features[-1].normalization_data == config.input_features[-1].normalization_data
     assert policy.output_features[0].normalization_data == config.output_features[0].normalization_data
+
+
+def test_setup_requires_calibration_to_preserve_so101_normalization(
+    tiny_molmoact2_config: MolmoAct2Config,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = replace(tiny_molmoact2_config, adapt_to_so101=True)
+    policy = MolmoAct2.from_config(config, preserve_pretrained_normalization_in_training=True)
+    dataset_stats = NormalizationParameters(q01=[-2.0, -3.0, -4.0, -5.0], q99=[2.0, 3.0, 4.0, 5.0])
+    dataset_inputs = [
+        replace(feature, normalization_data=dataset_stats) if feature.ftype == FeatureType.STATE else feature
+        for feature in config.input_features
+    ]
+    dataset_outputs = [replace(config.output_features[0], normalization_data=dataset_stats)]
+    trainer = Mock()
+    trainer.datamodule.train_dataset = Mock(spec=Dataset)
+    policy._trainer = trainer
+    monkeypatch.setattr(policy, "_dataset_features", lambda _dataset: (dataset_inputs, dataset_outputs))
+
+    with pytest.raises(ValueError, match="requires `calibration`"):
+        policy.setup("fit")
 
 
 def test_setup_uses_dataset_normalization_when_uninitialized(
