@@ -1,0 +1,78 @@
+import type {CodeLine, Stage} from './WorkflowDemo';
+
+export const stages: Stage[] = [
+  {
+    number: '01',
+    title: 'Train',
+    detail: 'LeRobot dataset → ACT policy',
+    start: 48,
+    end: 142,
+    accent: '#7c9cff',
+  },
+  {
+    number: '02',
+    title: 'Benchmark',
+    detail: 'Evaluate in PushT simulation',
+    start: 154,
+    end: 244,
+    accent: '#c084fc',
+  },
+  {
+    number: '03',
+    title: 'Export',
+    detail: 'Optimized OpenVINO artifact',
+    start: 256,
+    end: 334,
+    accent: '#21d4a7',
+  },
+  {
+    number: '04',
+    title: 'Deploy',
+    detail: 'Run with Physical AI Runtime',
+    start: 346,
+    end: 430,
+    accent: '#ffb86b',
+  },
+];
+
+export const apiLines: CodeLine[] = [
+  {text: 'from physicalai.benchmark.gyms import PushTBenchmark', start: 18},
+  {text: 'from physicalai.data import LeRobotDataModule', start: 24},
+  {text: 'from physicalai.inference import InferenceModel', start: 30},
+  {text: 'from physicalai.policies import ACT', start: 36},
+  {text: 'from physicalai.train import Trainer', start: 42},
+  {text: '', start: 0},
+  {text: 'datamodule = LeRobotDataModule(repo_id="lerobot/pusht")', start: 58, stage: 0},
+  {text: 'policy = ACT()', start: 70, stage: 0},
+  {text: 'trainer = Trainer(max_epochs=100)', start: 94, stage: 0},
+  {text: 'trainer.fit(model=policy, datamodule=datamodule)', start: 106, stage: 0},
+  {text: '', start: 0},
+  {text: 'benchmark = PushTBenchmark(num_episodes=50)', start: 164, stage: 1},
+  {text: 'results = benchmark.evaluate(policy)', start: 184, stage: 1},
+  {text: '', start: 0},
+  {text: 'policy.export("./exports/act", backend="openvino")', start: 266, stage: 2},
+  {text: '', start: 0},
+  {text: 'runtime_policy = InferenceModel("./exports/act")', start: 356, stage: 3},
+  {text: 'action = runtime_policy.select_action(observation)', start: 376, stage: 3},
+];
+
+export const cliLines: CodeLine[] = [
+  {text: '# Train', start: 48, stage: 0},
+  {text: 'physicalai fit \\', start: 58, stage: 0},
+  {text: '  --config configs/physicalai/act/pusht/default.yaml', start: 70, stage: 0},
+  {text: '', start: 0},
+  {text: '# Benchmark', start: 154, stage: 1},
+  {text: 'physicalai benchmark \\', start: 164, stage: 1},
+  {text: '  --config configs/benchmark/pusht.yaml \\', start: 176, stage: 1},
+  {text: '  --policy physicalai.policies.ACT \\', start: 188, stage: 1},
+  {text: '  --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt', start: 200, stage: 1},
+  {text: '', start: 0},
+  {text: '# Export', start: 256, stage: 2},
+  {text: 'physicalai export \\', start: 266, stage: 2},
+  {text: '  --policy physicalai.policies.ACT \\', start: 278, stage: 2},
+  {text: '  --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt \\', start: 290, stage: 2},
+  {text: '  --backend openvino --output_dir exports/act', start: 302, stage: 2},
+  {text: '', start: 0},
+  {text: '# Deploy', start: 346, stage: 3},
+  {text: 'physicalai run --config robot.yaml', start: 356, stage: 3},
+];

@@ -4,211 +4,165 @@
 
 <div align="center">
 
-**Train and deploy Vision-Language-Action (VLA) models for robotic imitation learning**
+**Train, benchmark, and deploy robot policies with Python, the CLI, or a visual Studio.**
 
-[Key Features](#key-features) •
-[Quick Start](#quick-start) •
-[Documentation](#documentation) •
-[Contributing](#contributing)
-
-<!-- TODO: Add badges here -->
-<!-- [![python](https://img.shields.io/badge/python-3.10%2B-green)]()
-[![pytorch](https://img.shields.io/badge/pytorch-2.0%2B-orange)]()
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE) -->
+[Python API](#python-api) •
+[Studio UI](#studio-ui) •
+[CLI](#cli) •
+[Install](#install) •
+[Docs](#documentation)
 
 </div>
 
 ---
 
-## What is Physical AI Studio?
+## Python API
 
-Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations.
-
-## Key Features
-
-- **End-to-End Pipeline** - From demonstration recording to robot deployment
-- **State-of-the-Art Policies** - Native policy implementations such as [ACT](https://arxiv.org/abs/2304.13705), [SmolVLA](https://huggingface.co/lerobot/smolvla_base), [Pi0.5](https://arxiv.org/pdf/2504.16054), and RLDX-1, plus the full [LeRobot](https://github.com/huggingface/lerobot) policy zoo
-- **Flexible Interface** - Use Python API, CLI, or GUI
-- **Production Export** - Deploy to [OpenVINO](https://docs.openvino.ai/), [ONNX](https://onnx.ai/), or [Torch](https://docs.pytorch.org/executorch/stable/index.html) for any hardware
-- **Standardized Benchmarks** - Evaluate on benchmarks such as [LIBERO](https://libero-project.github.io/), [PushT](https://diffusion-policy.cs.columbia.edu/), and [RoboCasa](https://robocasa.ai/)
-- **Built on Lightning** - [PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) for distributed training, mixed precision, and more
-
-## Quick Start
-
-### Application (GUI)
-
-For users who prefer a visual interface for end-to-end workflow:
+Train, benchmark, export, and deploy a policy from Python.
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
-  <a href="docs/assets/physical_ai_studio_full_overview.mp4">
-    <img src="docs/assets/physical_ai_studio_overview.gif" alt="Application demo" width="100%">
-  </a>
+  <img src="docs/assets/readme/api-demo.gif" alt="Python API demo: train, benchmark, export, and deploy a policy" width="100%">
 </p>
 <!-- markdownlint-enable MD033 -->
 
-[Download the full demo video →](docs/assets/physical_ai_studio_full_overview.mp4)
+<details>
+<summary>Copy the example</summary>
 
-[Application Documentation →](./application/README.md)
-
-#### Docker
-
-Run the full application (backend + UI) in a single container (using [Docker](https://docs.docker.com/engine/install/ubuntu/)):
-
-```bash
-# Clone the repository
-git clone https://github.com/open-edge-platform/physical-ai-studio.git
-cd physical-ai-studio
-
-# Setup and run docker services
-cd application/docker
-./setup-devices.sh --xpu # or use --cuda, --cpu
-docker compose up -d
-```
-
-Application runs at <http://localhost:7860>. See the [Docker README](./application/docker/README.md) for
-hardware configuration (Intel XPU, NVIDIA CUDA) and device setup.
-
-If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0.5,
-and others), configure `HF_TOKEN` to avoid unauthenticated Hub access warnings. See
-[Hugging Face Integration](./application/backend/docs/huggingface_integration.md).
-
-#### Native: installation & running
-
-Run the application in development mode, using [uv package manager](https://docs.astral.sh/uv/getting-started/installation/) and [node v24](https://nodejs.org/en/download) (we recommend using nvm)
-
-Note: native setup requires additional OS-level libraries (OpenCV/video/USB and Python
-build dependencies). See the **Prerequisites** section in
-[Application Installation](./application/docs/01-installation.md#prerequisites).
-
-```bash
-# Clone the repository
-git clone https://github.com/open-edge-platform/physical-ai-studio.git
-cd physical-ai-studio
-
-# Install and run backend
-cd application/backend
-
-# Start the backend, or use --extra cpu, --extra cuda
-uv run --extra xpu physicalai-studio serve  # or: ./run.sh
-```
-
-```bash
-# In a new terminal: install and run UI
-cd application/ui
-npm install
-
-# Start the UI
-npm run start
-```
-
-Open <http://localhost:3000> in your browser.
-
-If you plan to train Hugging Face Hub-backed policies (for example, SmolVLA, Pi0.5,
-and others), configure a Hugging Face token in Settings > General > Hugging Face in the
-UI to avoid unauthenticated Hub access warnings. See
-[Hugging Face Integration](./application/backend/docs/huggingface_integration.md).
-
-### Library (Python/CLI)
-
-For programmatic control over training, benchmarking, and deployment with both API and CLI
-
-```bash
-pip install physicalai-train
-```
-
-<details open>
-<summary>Training</summary>
-
-```python test="skip" reason="requires dataset download"
+```python test="skip" reason="requires dataset download and robot observation"
+from physicalai.benchmark.gyms import PushTBenchmark
 from physicalai.data import LeRobotDataModule
+from physicalai.inference import InferenceModel
 from physicalai.policies import ACT
 from physicalai.train import Trainer
 
-datamodule = LeRobotDataModule(repo_id="lerobot/aloha_sim_transfer_cube_human")
-model = ACT()
+datamodule = LeRobotDataModule(repo_id="lerobot/pusht")
+policy = ACT()
+
 trainer = Trainer(max_epochs=100)
-trainer.fit(model=model, datamodule=datamodule)
-```
+trainer.fit(model=policy, datamodule=datamodule)
 
-</details>
-
-<details>
-<summary>Benchmark</summary>
-
-```python test="skip" reason="requires checkpoint and libero"
-from physicalai.benchmark import LiberoBenchmark
-from physicalai.policies import ACT
-
-policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
-benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
+benchmark = PushTBenchmark(num_episodes=50)
 results = benchmark.evaluate(policy)
-print(f"Success rate: {results.aggregate_success_rate:.1f}%")
+
+policy.export("./exports/act", backend="openvino")
+
+runtime_policy = InferenceModel("./exports/act")
+action = runtime_policy.select_action(observation)
 ```
 
 </details>
 
-<details>
-<summary>Export</summary>
+## Studio UI
 
-```python test="skip" reason="requires checkpoint"
-from physicalai.export import get_available_backends
-from physicalai.policies import ACT
+Collect demonstrations, train models, and run inference from a visual interface.
 
-# See available backends
-print(get_available_backends())  # ['onnx', 'openvino', 'torch', 'executorch']
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/assets/readme/gui-demo.gif" alt="Physical AI Studio UI demo: configure robots and cameras, record data, train, review models, and deploy to robots" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
 
-# Export to OpenVINO
-policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
-policy.export("./policy", backend="openvino")
-```
+## CLI
 
-</details>
+Run the same train, benchmark, export, and deploy workflow from the terminal.
 
-<details>
-<summary>Inference</summary>
-
-```python test="skip" reason="requires exported model and environment"
-from physicalai.inference import InferenceModel
-
-policy = InferenceModel("./policy")
-obs, info = env.reset()
-done = False
-
-while not done:
-    action = policy.select_action(obs)
-    obs, reward, terminated, truncated, info = env.step(action)
-    done = terminated or truncated
-```
-
-</details>
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/assets/readme/cli-demo.gif" alt="CLI demo: train, benchmark, export, and deploy a policy" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
 
 <details>
-<summary>CLI Usage</summary>
+<summary>Copy the commands</summary>
 
 ```bash
-# Train
 physicalai fit --config configs/physicalai/act/pusht/default.yaml
 
-# Evaluate
-physicalai benchmark --config configs/benchmark/libero.yaml --ckpt_path model.ckpt
+physicalai benchmark --config configs/benchmark/pusht.yaml \
+  --policy physicalai.policies.ACT \
+  --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt
 
-# Export (Python API only - CLI coming soon)
-# Use: policy.export("./policy", backend="openvino")
+physicalai export --policy physicalai.policies.ACT \
+  --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt \
+  --backend openvino --output_dir exports/act
+
+physicalai run --config robot.yaml
+```
+
+Replace `robot.yaml` with the Runtime configuration for your robot and exported policy.
+
+</details>
+
+## Policies
+
+Use one API across native Physical AI Studio policies.
+
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/assets/readme/policies.png" alt="Native policies: ACT, Pi0.5, SmolVLA, MolmoAct2, RLDX-1, and XR0" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
+
+<details>
+<summary>Switch policies</summary>
+
+```python test="skip" reason="downloads pretrained policy weights"
+from physicalai.policies import ACT, MolmoAct2, Pi05, Rldx1, SmolVLA, XR0
+
+act = ACT()
+pi05 = Pi05(pretrained_name_or_path="lerobot/pi05_base")
+smolvla = SmolVLA()
+molmoact2 = MolmoAct2()
+rldx1 = Rldx1()
+xr0 = XR0()
 ```
 
 </details>
 
-[Library Documentation →](./library/README.md)
+## Install
+
+Start with the library, or run the full Studio application with Docker.
+
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/assets/readme/install-demo.gif" alt="Installation demo: install the library, start Studio with Docker, and open the application" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
+
+<details>
+<summary>Copy the commands</summary>
+
+```bash
+# Python API and CLI
+pip install physicalai-train
+
+# Studio UI with Docker
+git clone https://github.com/open-edge-platform/physical-ai-studio.git
+cd physical-ai-studio/application/docker
+cp .env.example .env
+./setup-devices.sh --cpu  # or --xpu, --cuda
+docker compose up -d
+```
+
+Open <http://localhost:7860>. For native development, see [Application installation](./application/docs/01-installation.md). Hugging Face–backed policies need an `HF_TOKEN`; see [Hugging Face integration](./application/backend/docs/huggingface_integration.md).
+
+</details>
+
+## What you can build
+
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/assets/readme/build.png" alt="Capabilities: native policies, benchmarks, deployment exports, and Lightning training" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
 
 ## Documentation
 
-| Resource                                    | Description                         |
-| ------------------------------------------- | ----------------------------------- |
-| [Library Docs](./library/README.md)         | API reference, guides, and examples |
-| [Application Docs](./application/README.md) | GUI setup and usage                 |
-| [Contributing](./CONTRIBUTING.md)           | Contributing and development setup  |
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <img src="docs/assets/readme/documentation.png" alt="Documentation: library, application, and contributing guides" width="100%">
+</p>
+<!-- markdownlint-enable MD033 -->
 
-## Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+[Library docs](./library/README.md) • [Application docs](./application/README.md) • [Contributing](./CONTRIBUTING.md)
