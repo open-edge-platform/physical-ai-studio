@@ -419,6 +419,8 @@ class RemoteTrainingBackend:
             if received_event or reachable:
                 if disconnected:
                     self._log.info("Trainer connection restored")
+                    # A message-less trainer state cannot clear the stored outage message.
+                    context.progress(self._last_progress, message="Trainer connection restored")
                 disconnected = warned = False
                 last_contact = time.monotonic()
                 backoff_s = _RECONNECT_BACKOFF_S
