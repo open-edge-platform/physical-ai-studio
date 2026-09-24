@@ -20,8 +20,21 @@ submitted against a remote trainer registered in the Studio UI/API.
 Then:
 
 1. The service queues the job and trains, exports, and zips the model.
-2. The backend polls progress, downloads the archive, and imports it as a model.
-3. The service deletes the uploaded dataset once the job finishes.
+2. The backend follows progress over SSE, with `GET /jobs/{id}` as a fallback,
+   then downloads the archive and imports it as a model.
+3. The service deletes the uploaded dataset after training. After Studio
+   downloads and extracts a completed model, it also asks the trainer to
+   delete that job's retained artifacts.
+
+If the connection drops after submission, training continues on the trainer.
+Studio keeps the job ID, retries with backoff, and retrieves a completed model
+when contact returns. The reconnect timeouts in Studio are warning thresholds,
+not reasons to fail a job. If a trainer is permanently unreachable, **Stop**
+the job and wait for the worker to acknowledge cancellation before **Delete**
+becomes available. These actions remove Studio's local tracking; remote
+cancellation and artifact cleanup cannot be guaranteed while offline. The
+[SSH training targets guide](explanation/ssh-remote-trainer.md) covers managed
+tunnels and restart behavior.
 
 > [!IMPORTANT]
 > A Hugging Face token is resolved once by the Studio backend (Settings page,
@@ -194,11 +207,12 @@ before work is accepted:
 
 ### Run a container manually
 
-Use manual startup only for administrator validation or the existing static
-remote-trainer workflow. SSH-provisioned jobs will create a job-scoped
-container, loopback port, and SSH tunnel automatically when that feature is
-enabled. Do not expose the trainer port publicly: the service has no built-in
-authentication.
+Use manual startup only for administrator validation or a direct-URL training
+target. An SSH training target instead uses one persistent managed container,
+trainer-scoped data volume, fixed loopback port, and standing SSH tunnel for
+its jobs. Studio starts the container when the target is saved; the container
+is not tied to any one job or SSH session. Do not expose the trainer port
+publicly: the service has no built-in authentication.
 
 [`application/docker/docker-compose.trainer.yaml`](../../docker/docker-compose.trainer.yaml)
 wraps the `docker run` invocations below in a Docker Compose file with `cuda`
@@ -344,10 +358,14 @@ docker volume rm physicalai-trainer-data
 | ------ | --------------------- | ------------------------------------- |
 | POST   | `/jobs`               | Enqueue a training job.               |
 | PUT    | `/jobs/{id}/dataset`  | Upload the dataset ZIP.               |
+| HEAD   | `/jobs/{id}/dataset`  | Get the staged upload offset.         |
 | GET    | `/jobs/{id}`          | Current job state.                    |
 | GET    | `/jobs/{id}/events`   | SSE stream of state changes.          |
+| GET    | `/jobs/{id}/metrics`  | SSE stream of training metrics.       |
 | GET    | `/jobs/{id}/artifact` | Download the model archive.           |
 | POST   | `/jobs/{id}/cancel`   | Cancel a queued or running job.       |
+| DELETE | `/jobs/{id}`          | Remove a terminal job and artifacts.  |
+| GET    | `/devices`            | Trainer compute devices.              |
 | GET    | `/health`             | Liveness and image/protocol metadata. |
 
 ## Security

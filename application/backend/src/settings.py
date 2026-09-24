@@ -47,7 +47,7 @@ class TrainerClientSettings(BaseModel):
 
     request_timeout_s: float = Field(default=30.0)
     download_read_timeout_s: float = Field(default=120.0)
-    stream_reconnect_max_s: float = Field(default=900.0)
+    stream_reconnect_max_s: float = Field(default=900.0)  # Warning threshold; never fail a job for lost connectivity.
     stream_reconnect_backoff_max_s: float = Field(default=30.0)
 
 
@@ -331,8 +331,8 @@ class Settings(BaseSettings):
     ssh_container_stop_timeout_s: int = Field(default=30, alias="SSH_CONTAINER_STOP_TIMEOUT_S")
 
     # --- SSH tunnel reconnect -----------------------------------------------
-    # Total time budget to reconnect a dropped tunnel and resume against the
-    # still-running container before the job fails.
+    # Warn after this much time reconnecting a dropped tunnel; keep retrying
+    # so completed remote jobs can still be retrieved when the VPN returns.
     ssh_tunnel_reconnect_budget_s: float = Field(default=300.0, alias="SSH_TUNNEL_RECONNECT_BUDGET_S")
     ssh_tunnel_reconnect_backoff_max_s: float = Field(default=15.0, alias="SSH_TUNNEL_RECONNECT_BACKOFF_MAX_S")
 

@@ -32,7 +32,12 @@ _tunnels: dict[UUID, SshTunnel] = {}
 _lock = asyncio.Lock()
 
 
-async def sync_tunnel(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
+async def sync_tunnel(
+    remote_trainer: RemoteTrainer,
+    accepted_host_key_fingerprint: str | None = None,
+    *,
+    retry_on_failure: bool = False,
+) -> None:
     """Open, replace, or close this trainer's tunnel to match its current config.
 
     Connection failures propagate to create and update requests so they cannot
@@ -48,7 +53,7 @@ async def sync_tunnel(remote_trainer: RemoteTrainer, accepted_host_key_fingerpri
                 remote_trainer.name,
             )
             return
-        await _open_locked(remote_trainer, accepted_host_key_fingerprint)
+        await _open_locked(remote_trainer, accepted_host_key_fingerprint, retry_on_failure=retry_on_failure)
 
 
 async def stop_tunnel(remote_trainer_id: UUID) -> None:
@@ -67,7 +72,7 @@ async def start_all(remote_trainers: list[RemoteTrainer]) -> None:
     for remote_trainer in remote_trainers:
         if remote_trainer.ssh_host_alias is not None or remote_trainer.ssh_connection is not None:
             try:
-                await sync_tunnel(remote_trainer)
+                await sync_tunnel(remote_trainer, retry_on_failure=True)
             except Exception as error:
                 if remote_trainer.ssh_host_alias is not None:
                     connection_name = remote_trainer.ssh_host_alias
@@ -90,7 +95,12 @@ async def stop_all() -> None:
             await _close_locked(remote_trainer_id)
 
 
-async def _open_locked(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
+async def _open_locked(
+    remote_trainer: RemoteTrainer,
+    accepted_host_key_fingerprint: str | None = None,
+    *,
+    retry_on_failure: bool = False,
+) -> None:
     settings = get_settings()
     alias = remote_trainer.ssh_host_alias
     connection = remote_trainer.ssh_connection
@@ -128,10 +138,14 @@ async def _open_locked(remote_trainer: RemoteTrainer, accepted_host_key_fingerpr
         settings,
         local_port=local_port,
     )
-    await tunnel.open()
+    if retry_on_failure:
+        await tunnel.open(retry_on_failure=True)
+    else:
+        await tunnel.open()
     _tunnels[remote_trainer.id] = tunnel
     logger.info(
-        "SSH tunnel open for trainer '{}': 127.0.0.1:{} -> {} (127.0.0.1:{})",
+        "SSH tunnel {} for trainer '{}': 127.0.0.1:{} -> {} (127.0.0.1:{})",
+        "registered" if retry_on_failure else "open",
         remote_trainer.name,
         tunnel.local_port,
         connection_name,

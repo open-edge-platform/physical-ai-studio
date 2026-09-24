@@ -10,6 +10,7 @@ download) runs for real.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
@@ -104,6 +105,7 @@ class _Controller:
         self.artifact_headers: dict = {}
         self.artifact_batches: list[tuple[list[bytes], dict]] | None = None
         self.artifact_range_headers: list[str | None] = []
+        self.artifact_connection_errors_remaining = 0
         self.upload_offset = 0
         self.upload_ranges: list[str] = []
         self.posted_urls: list[str] = []
@@ -190,6 +192,9 @@ class _FakeClient:
                 raise httpx.ConnectError("All connection attempts failed")
             return _FakeStreamCtx(_FakeResponse(lines=self._c.event_lines()))
         self._c.artifact_range_headers.append(headers.get("Range") if headers else None)
+        if self._c.artifact_connection_errors_remaining:
+            self._c.artifact_connection_errors_remaining -= 1
+            raise httpx.ConnectError("VPN disconnected")
         if self._c.artifact_batches:
             chunks, artifact_headers = self._c.artifact_batches.pop(0)
             return _FakeStreamCtx(_FakeResponse(chunks=chunks, headers=artifact_headers))
@@ -426,6 +431,26 @@ class TestRemoteTrainingBackend:
                 await backend.train(context)
 
     @pytest.mark.anyio
+    async def test_download_retries_after_vpn_outage(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[{"status": "completed", "progress": 100}])
+        controller.poll_state = {"status": "completed", "progress": 100}
+        controller.artifact_connection_errors_remaining = 4
+        safe_zip = MagicMock()
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            await asyncio.wait_for(_backend(settings).train(context), timeout=2)
+
+        assert controller.artifact_range_headers == [None] * 5
+        safe_zip.extract_to.assert_called_once()
+
+    @pytest.mark.anyio
     async def test_truncated_artifact_download_raises(self, tmp_path):
         """A short read versus Content-Length must fail loudly, not hang or extract garbage."""
         settings = _settings()
@@ -508,31 +533,61 @@ class TestRemoteTrainingBackend:
         safe_zip.extract_to.assert_called_once()
 
     @pytest.mark.anyio
-    async def test_abandons_job_when_trainer_unreachable_past_budget(self, tmp_path):
-        """Persistent unreachability past the reconnect budget aborts the job."""
+    async def test_reconnects_after_outage_exceeds_warning_threshold(self, tmp_path):
+        """Losing the VPN must not turn a completed remote job into a failed one."""
         settings = _settings()
-        # Zero budget: the first failed reconnect+poll cycle exhausts it.
         settings.trainer.stream_reconnect_max_s = 0.0
         settings.trainer.stream_reconnect_backoff_max_s = 0.0
         context = _context(tmp_path)
         controller = _Controller(states=[])
         controller.raise_connection_error = True
+        controller.poll_state = {"status": "completed", "progress": 100}
+        safe_zip = MagicMock()
 
-        from services.training_backends.remote import RemoteTrainingError
+        class RecoveringClient(_FakeClient):
+            async def get(self, url: str) -> _FakeResponse:
+                if url.endswith(f"/jobs/{controller.remote_job_id}") and controller.poll_count >= 2:
+                    controller.raise_connection_error = False
+                return await super().get(url)
 
         with (
             patch(f"{REMOTE}.get_settings", return_value=settings),
-            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: RecoveringClient(controller, **kw)),
+            patch(f"{REMOTE}.SafeZipArchive", return_value=safe_zip),
             patch(f"{REMOTE}._EVENT_WAIT_TIMEOUT_S", 0.01),
             patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
         ):
-            backend = _backend(settings)
-            with pytest.raises(RemoteTrainingError, match="unreachable"):
-                await backend.train(context)
+            await asyncio.wait_for(_backend(settings).train(context), timeout=2)
 
-        # Both the stream and the poll fallback were attempted before giving up.
-        assert controller.event_stream_opens >= 1
-        assert controller.poll_count >= 1
+        assert controller.event_stream_opens >= 2
+        assert controller.poll_count >= 3
+        assert any(
+            call.kwargs.get("message") == "Trainer unreachable; waiting to reconnect"
+            for call in context.progress.call_args_list
+        )
+        safe_zip.extract_to.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_missing_remote_job_fails_instead_of_waiting_forever(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+
+        class MissingJobClient(_FakeClient):
+            async def get(self, url: str) -> _FakeResponse:
+                if url.endswith(f"/jobs/{controller.remote_job_id}"):
+                    request = httpx.Request("GET", url)
+                    response = httpx.Response(404, request=request)
+                    raise httpx.HTTPStatusError("Not Found", request=request, response=response)
+                return await super().get(url)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: MissingJobClient(controller, **kw)),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+            pytest.raises(RemoteTrainingError, match="no longer exists"),
+        ):
+            await asyncio.wait_for(_backend(settings)._wait_for_completion(context, controller.remote_job_id), 2)
 
     @pytest.mark.anyio
     async def test_reattaches_to_running_job_without_resubmitting(self, tmp_path):

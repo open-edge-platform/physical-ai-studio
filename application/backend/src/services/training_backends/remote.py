@@ -95,6 +95,7 @@ class RemoteTrainingBackend:
         # Suppress duplicate consecutive progress lines (e.g. the trainer
         # re-emitting the final training state while it optimizes/exports).
         self._last_progress_log: str | None = None
+        self._last_progress = SNAPSHOT_UPLOAD_PROGRESS
         # An explicitly supplied device is sent to the trainer; otherwise the
         # trainer selects its own device.
         self._device = device
@@ -217,7 +218,14 @@ class RemoteTrainingBackend:
         """Wait for the remote job, then download and extract its model."""
         await self._wait_for_completion(context, remote_job_id)
         context.progress(TRAINING_PROGRESS_END, message="Downloading trained model")
-        await self._download_and_extract(context, remote_job_id)
+        while True:
+            try:
+                await self._download_and_extract(context, remote_job_id)
+                break
+            except httpx.TransportError:
+                self._log.warning("Model download lost connection; waiting to resume")
+                await asyncio.sleep(_RECONNECT_BACKOFF_S)
+                await self._wait_for_completion(context, remote_job_id)
         await self._delete_remote_job(remote_job_id)
         context.progress(100, message="Model downloaded")
 
@@ -374,23 +382,25 @@ class RemoteTrainingBackend:
         The job keeps running on the trainer regardless of this connection, so a
         dropped stream is recoverable: we reconnect with exponential backoff, and
         also poll the plain job endpoint as a fallback for middleboxes that break
-        long-lived SSE (see :meth:`_poll_state`). We only abandon the job once the
-        trainer has been continuously unreachable for ``trainer.stream_reconnect_max_s``
-        seconds.
+        long-lived SSE (see :meth:`_poll_state`). Prolonged outages are logged
+        but never mistaken for training failures.
         """
         settings = get_settings()
+        if isinstance(context.job.progress, int):
+            self._last_progress = max(self._last_progress, context.job.progress)
         unreachable_budget_s = settings.trainer.stream_reconnect_max_s
         max_backoff_s = settings.trainer.stream_reconnect_backoff_max_s
         backoff_s = _RECONNECT_BACKOFF_S
         # Monotonic timestamp of the last successful contact with the trainer
         # (an event received, or a successful poll). Resets the outage budget.
         last_contact = time.monotonic()
+        warned = False
         while True:
             try:
                 completed, received_event = await self._consume_event_stream(context, remote_job_id)
             except httpx.HTTPError as exc:
                 # Connection-level failure while opening or reading the stream.
-                self._log.warning("Trainer event stream connection failed, reconnecting: {}", exc)
+                self._log.debug("Trainer event stream connection failed, reconnecting: {}", exc)
                 completed, received_event = False, False
 
             if completed:
@@ -406,12 +416,15 @@ class RemoteTrainingBackend:
                 return
 
             if received_event or reachable:
+                if warned:
+                    self._log.info("Trainer connection restored")
+                warned = False
                 last_contact = time.monotonic()
                 backoff_s = _RECONNECT_BACKOFF_S
-            elif time.monotonic() - last_contact > unreachable_budget_s:
-                raise RemoteTrainingError(
-                    f"Trainer unreachable for over {unreachable_budget_s:.0f}s; abandoning progress tracking"
-                )
+            elif not warned and time.monotonic() - last_contact > unreachable_budget_s:
+                self._log.warning("Trainer unreachable for over {:.0f}s; waiting for connection", unreachable_budget_s)
+                context.progress(self._last_progress, message="Trainer unreachable; waiting to reconnect")
+                warned = True
 
             await asyncio.sleep(backoff_s)
             backoff_s = min(backoff_s * 2, max_backoff_s)
@@ -428,6 +441,10 @@ class RemoteTrainingBackend:
                 response = await client.get(f"{self._base_url}/jobs/{remote_job_id}")
                 response.raise_for_status()
                 data = response.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (404, 410):
+                raise RemoteTrainingError(f"Remote training job {remote_job_id} no longer exists") from exc
+            return False, False
         except httpx.HTTPError:
             return False, False
         if not isinstance(data, dict):
@@ -469,7 +486,7 @@ class RemoteTrainingBackend:
                         continue
                     if kind == "error":
                         # Transient read error: surface to the reconnect loop.
-                        self._log.warning("Trainer event stream read error: {}", payload)
+                        self._log.debug("Trainer event stream read error: {}", payload)
                         result = False, received_event
                         continue
 
@@ -523,11 +540,8 @@ class RemoteTrainingBackend:
         remote_progress = self._coerce_progress(state.get("progress"))
         raw_extra = state.get("extra_info")
         extra_info = self._sanitize_extra_info(raw_extra)
-        context.progress(
-            self._to_local_progress(remote_progress),
-            message=state.get("message"),
-            extra_info=extra_info,
-        )
+        self._last_progress = max(self._last_progress, self._to_local_progress(remote_progress))
+        context.progress(self._last_progress, message=state.get("message"), extra_info=extra_info)
         line = render_progress_log(extra_info) if extra_info else None
         if line is None:
             message = state.get("message")
@@ -652,6 +666,8 @@ class RemoteTrainingBackend:
                 raise RemoteTrainingError(f"Artifact download truncated: received {received} of {expected_bytes} bytes")
             except (httpx.HTTPError, RemoteTrainingError) as exc:
                 if attempt == _TRANSFER_RETRY_LIMIT:
+                    if isinstance(exc, httpx.TransportError):
+                        raise
                     raise RemoteTrainingError(str(exc) or "Model download could not be resumed") from exc
                 self._log.warning("Model download interrupted; resuming from {} bytes", received)
         raise RemoteTrainingError("Model download could not be resumed")
