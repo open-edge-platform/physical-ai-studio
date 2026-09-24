@@ -1276,8 +1276,9 @@ def test_openvino_export_preserves_resolved_so101_mode_and_statistics(
         assert joint_postprocessor.signs == list(SO101_JOINT_SIGNS)
         assert joint_preprocessor.offsets == list(SO101_JOINT_OFFSETS)
         assert joint_postprocessor.offsets == list(SO101_JOINT_OFFSETS)
-        assert joint_preprocessor.scales == [1.0] * len(SO101_JOINT_SIGNS)
-        assert joint_postprocessor.scales == [1.0] * len(SO101_JOINT_SIGNS)
+        # Uncalibrated manifests omit scales so older Runtime versions can still load them.
+        assert "scales" not in joint_preprocessor.model_dump()
+        assert "scales" not in joint_postprocessor.model_dump()
     assert preprocessor.state_stats["q01"] == expected_q01
     assert preprocessor.state_stats["q99"] == expected_q99
     assert postprocessor.action_stats["q01"] == expected_q01
