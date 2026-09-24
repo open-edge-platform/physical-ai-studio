@@ -56,8 +56,10 @@ async def test_get_launch_phase_is_none_before_and_after_a_successful_start() ->
     with (
         patch(f"{MODULE}.SshTransport", return_value=_fake_transport_cm()),
         patch(f"{MODULE}.get_backend_instance_id", return_value="this-instance"),
+        patch(f"{MODULE}.get_settings") as settings,
         patch(f"{MODULE}.docker_ops") as docker_ops_module,
     ):
+        settings.return_value.ssh_trainer_shm_size_gb = 8
         docker_ops_module.inspect_container = AsyncMock(return_value=None)
         docker_ops_module.resolve_protocol_image = AsyncMock(return_value=_IMAGE)
         docker_ops_module.pull_image = AsyncMock()
@@ -71,6 +73,7 @@ async def test_get_launch_phase_is_none_before_and_after_a_successful_start() ->
         await persistent_trainer.start(trainer)
 
     assert persistent_trainer.get_launch_phase(trainer.id) is None
+    assert docker_ops_module.build_run_argv.call_args.kwargs["shm_size_gb"] == 8
     docker_ops_module.launch_container.assert_awaited_once()
 
 

@@ -533,6 +533,30 @@ class TestRemoteTrainingBackend:
         safe_zip.extract_to.assert_called_once()
 
     @pytest.mark.anyio
+    async def test_reports_disconnection_before_warning_threshold(self, tmp_path):
+        settings = _settings()  # The warning is 900s away; UI should not wait for it.
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        controller.raise_connection_error = True
+        controller.poll_state = {"status": "completed", "progress": 100}
+
+        class RecoveringClient(_FakeClient):
+            async def get(self, url: str) -> _FakeResponse:
+                if url.endswith(f"/jobs/{controller.remote_job_id}") and controller.poll_count >= 1:
+                    controller.raise_connection_error = False
+                return await super().get(url)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: RecoveringClient(controller, **kw)),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            await asyncio.wait_for(_backend(settings)._wait_for_completion(context, controller.remote_job_id), 2)
+
+        assert context.progress.call_args_list[0].kwargs["message"] == "Trainer unreachable; waiting to reconnect"
+        assert context.progress.call_args_list[-1].kwargs["message"] is None
+
+    @pytest.mark.anyio
     async def test_reconnects_after_outage_exceeds_warning_threshold(self, tmp_path):
         """Losing the VPN must not turn a completed remote job into a failed one."""
         settings = _settings()

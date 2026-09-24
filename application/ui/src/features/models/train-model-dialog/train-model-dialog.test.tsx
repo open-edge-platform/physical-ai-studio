@@ -73,6 +73,7 @@ const mockProjectWithRemoteTrainer = () => {
                     command_timeout_s: 15,
                     preflight_timeout_s: 30,
                     image_pull_timeout_s: 1800,
+                    trainer_shm_size_gb: 32,
                 },
                 hotkeys: { bindings: {} },
             })

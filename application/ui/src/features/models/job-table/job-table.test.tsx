@@ -99,6 +99,25 @@ describe('TrainingRow', () => {
         expect(screen.getByRole('progressbar')).toBeInTheDocument();
     });
 
+    it('badges a disconnected remote job without extra text', () => {
+        renderTrainingRow({
+            message: 'Trainer unreachable; waiting to reconnect',
+            payload: { ...localJob.payload, training_target: 'remote', remote_trainer_id: remoteTrainer.id },
+        });
+
+        expect(screen.getByText('Connection lost')).toBeInTheDocument();
+        expect(screen.getByText(/Started:/)).toBeInTheDocument();
+        expect(screen.queryByText(/Elapsed:/)).not.toBeInTheDocument();
+        expect(screen.getByRole('progressbar')).toBeInTheDocument();
+    });
+
+    it('does not show a connection warning for a local job', () => {
+        renderTrainingRow({ message: 'Trainer unreachable; waiting to reconnect' });
+
+        expect(screen.queryByText('Connection lost')).not.toBeInTheDocument();
+        expect(screen.getByText(/Elapsed:/)).toBeInTheDocument();
+    });
+
     it('renders no ProgressBar for a non-running job', () => {
         renderTrainingRow({ status: 'completed', end_time: '2026-07-14T10:30:00Z' });
 

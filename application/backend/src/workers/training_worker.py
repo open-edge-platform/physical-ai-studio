@@ -195,7 +195,7 @@ class TrainingWorker(BaseProcessWorker):
                 update={
                     "status": JobStatus.RUNNING,
                     "message": "Training started",
-                    "start_time": datetime.datetime.now(tz=datetime.UTC),
+                    "start_time": job.start_time or datetime.datetime.now(tz=datetime.UTC),
                 },
             )
         dispatcher = TrainingTrackingDispatcher(

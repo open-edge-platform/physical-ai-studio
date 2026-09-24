@@ -145,6 +145,7 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
                 remote_container_port=8001,
                 stop_timeout_s=settings.ssh_container_stop_timeout_s,
                 render_gid=(None if device is DeviceType.CUDA else await resolve_render_group_gid(transport)),
+                shm_size_gb=settings.ssh_trainer_shm_size_gb,
             )
             # The tunnel needs a stable loopback port for the reusable trainer container.
             argv[argv.index("127.0.0.1::8001")] = f"127.0.0.1:{remote_port}:8001"

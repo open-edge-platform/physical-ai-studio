@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { NumberField } from '@geti-ui/ui';
+import { NumberField, Text } from '@geti-ui/ui';
 
 import { SchemaSettingsUpdate, SchemaSshProvisioningSettings } from '../../../api/openapi-spec';
 import { SettingsSection } from './settings-section';
@@ -15,6 +15,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
     const [commandTimeoutS, setCommandTimeoutS] = useState(ssh.command_timeout_s);
     const [preflightTimeoutS, setPreflightTimeoutS] = useState(ssh.preflight_timeout_s);
     const [imagePullTimeoutS, setImagePullTimeoutS] = useState(ssh.image_pull_timeout_s);
+    const [trainerShmSizeGb, setTrainerShmSizeGb] = useState(ssh.trainer_shm_size_gb);
     const [dirty, setDirty] = useState(false);
     const [saved, setSaved] = useState(false);
 
@@ -34,6 +35,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 command_timeout_s: commandTimeoutS,
                 preflight_timeout_s: preflightTimeoutS,
                 image_pull_timeout_s: imagePullTimeoutS,
+                trainer_shm_size_gb: trainerShmSizeGb,
             },
         };
         patchMutation.mutate(
@@ -85,6 +87,18 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 minValue={0.1}
                 width='100%'
             />
+            <NumberField
+                label='Trainer shared memory (GiB)'
+                value={trainerShmSizeGb}
+                onChange={(value) => update(setTrainerShmSizeGb, value)}
+                minValue={1}
+                step={1}
+                width='100%'
+            />
+            <Text>
+                Applies only to new containers. After jobs finish, stop the container and save its training target to
+                recreate it.
+            </Text>
         </SettingsSection>
     );
 };

@@ -52,13 +52,17 @@ for configured targets; an SSH host that is temporarily offline at startup is
 retried in the background. A container that stopped independently may still
 need to be started again by saving the target.
 
-Settings > General > SSH-provisioned training exposes four timeouts:
-`connect_timeout_s`, `command_timeout_s`, `preflight_timeout_s`, and
-`image_pull_timeout_s`. They can also be changed with `PATCH /api/settings`
-under `ssh`, for example `{"ssh": {"connect_timeout_s": 15}}`. These settings
-are stored in Studio's settings file; environment variables do not override
-them. SSH config and `known_hosts` paths, the image registry, and signature
-policy are environment-only settings.
+Settings > General > Managed SSH Training exposes four timeouts
+(`connect_timeout_s`, `command_timeout_s`, `preflight_timeout_s`, and
+`image_pull_timeout_s`) and the trainer's shared-memory size
+(`trainer_shm_size_gb`, default 32 GiB). They can also be changed with
+`PATCH /api/settings` under `ssh`, for example
+`{"ssh": {"trainer_shm_size_gb": 48}}`. These settings are stored in Studio's
+settings file; environment variables do not override them. Changing shared
+memory affects only newly created containers; stop an existing trainer and
+save its target to recreate it with the same data volume. SSH config and
+`known_hosts` paths, the image registry, and signature policy are
+environment-only settings.
 
 ## Connection loss and cleanup
 

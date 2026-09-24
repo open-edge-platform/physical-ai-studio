@@ -7,6 +7,7 @@ import asyncio
 import multiprocessing as mp
 import queue
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -94,6 +95,7 @@ def _make_job(payload: TrainJobPayload) -> MagicMock:
     job.id = uuid4()
     job.type = JobType.TRAINING
     job.status = JobStatus.PENDING
+    job.start_time = None
     job.message = "Job created"
     job.payload = payload.model_dump()
     return job
@@ -193,8 +195,36 @@ class TestTraining:
 
             backend.train.assert_awaited_once()
             job_service.update_job.assert_called_once()
+            assert isinstance(job_service.update_job.call_args.kwargs["update"]["start_time"], datetime)
             failed_call = job_service.update_job_status.call_args_list[0]
             assert failed_call.kwargs["status"] == JobStatus.FAILED
+
+    @pytest.mark.anyio
+    async def test_remote_reattach_preserves_original_start_time(self, worker, tmp_path):
+        """Reattaching after a restart must not restart the elapsed-time clock."""
+        from services.training_backends import TrainingCanceledError
+
+        payload = _make_remote_payload().model_copy(update={"remote_job_id": uuid4()})
+        job = _make_job(payload)
+        started = datetime(2026, 9, 23, 14, 0, tzinfo=UTC)
+        job.start_time = started
+        backend = MagicMock()
+        backend.train = AsyncMock(side_effect=TrainingCanceledError("stopped"))
+        dispatcher = MagicMock()
+        dispatcher.is_alive.return_value = False
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
+            patch(f"{MODULE}.JobService") as job_service_type,
+        ):
+            job_service = job_service_type.return_value
+            job_service.update_job_status = AsyncMock(return_value=job)
+            job_service.update_job = AsyncMock(return_value=job)
+            await worker._train_model(job, _make_model(tmp_path), None, payload)
+
+        assert job_service.update_job.call_args.kwargs["update"]["start_time"] == started
 
     @pytest.mark.anyio
     async def test_cancellation_raised_by_backend_marks_canceled(self, worker, tmp_path):

@@ -303,6 +303,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
     remote_container_port: int,
     stop_timeout_s: int,
     render_gid: str | None = None,
+    shm_size_gb: int = 32,
 ) -> list[str]:
     """Build the least-privilege `docker run` command for one trainer container.
 
@@ -315,6 +316,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
       device nodes the configured accelerator needs are passed through.
     * `--read-only` root filesystem, a bounded `--tmpfs` for `/tmp` scratch,
       and a trainer-scoped data volume for datasets and model artifacts.
+    * A private, sized `/dev/shm` for PyTorch DataLoader multiprocessing.
 
     `render_gid`, from `services.ssh.trainer_image.resolve_render_group_gid`,
     is required for a working XPU container: without it the fixed non-root
@@ -345,6 +347,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
         "--security-opt",
         "no-new-privileges",
         "--read-only",
+        f"--shm-size={shm_size_gb}g",
         "--tmpfs",
         f"/tmp:size=2g,{tmpfs_owner}",  # noqa: S108  # nosec B108 - a `docker run` mount spec, not a local temp-file access
         "--mount",
