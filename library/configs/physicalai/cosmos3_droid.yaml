@@ -40,7 +40,7 @@ model:
     chunk_size: 32
     n_action_steps: 32
     resolution_tier: 256
-    fps: 10
+    fps: 15
     grad_checkpoint: true
     embodiment: "droid_lerobot"
     prompt: ""
