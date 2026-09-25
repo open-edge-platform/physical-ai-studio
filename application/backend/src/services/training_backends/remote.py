@@ -394,6 +394,7 @@ class RemoteTrainingBackend:
         # Monotonic timestamp of the last successful contact with the trainer
         # (an event received, or a successful poll). Resets the outage budget.
         last_contact = time.monotonic()
+        disconnected = False
         warned = False
         while True:
             try:
@@ -416,15 +417,22 @@ class RemoteTrainingBackend:
                 return
 
             if received_event or reachable:
-                if warned:
+                if disconnected:
                     self._log.info("Trainer connection restored")
-                warned = False
+                    # A message-less trainer state cannot clear the stored outage message.
+                    context.progress(self._last_progress, message="Trainer connection restored")
+                disconnected = warned = False
                 last_contact = time.monotonic()
                 backoff_s = _RECONNECT_BACKOFF_S
-            elif not warned and time.monotonic() - last_contact > unreachable_budget_s:
-                self._log.warning("Trainer unreachable for over {:.0f}s; waiting for connection", unreachable_budget_s)
-                context.progress(self._last_progress, message="Trainer unreachable; waiting to reconnect")
-                warned = True
+            else:
+                if not disconnected:
+                    context.progress(self._last_progress, message="Trainer unreachable; waiting to reconnect")
+                    disconnected = True
+                if not warned and time.monotonic() - last_contact > unreachable_budget_s:
+                    self._log.warning(
+                        "Trainer unreachable for over {:.0f}s; waiting for connection", unreachable_budget_s
+                    )
+                    warned = True
 
             await asyncio.sleep(backoff_s)
             backoff_s = min(backoff_s * 2, max_backoff_s)

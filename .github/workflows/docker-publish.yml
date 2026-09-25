@@ -7,6 +7,9 @@ on:
 
 permissions: {} # No permissions by default on workflow level
 
+env:
+  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'true' }}
+
 concurrency:
   group: docker-publish
   cancel-in-progress: false
@@ -45,6 +48,7 @@ jobs:
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
+            gitlab.com:443
             index.crates.io:443
             pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
@@ -99,6 +103,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           use-cache: "false" # To ensure that the application container images remain buildable
+          enable-compile-model: ${{ env.PUBLIC_ENABLE_COMPILE_MODEL }}
 
       - name: Resolve primary image tag for signing
         id: primary-tag

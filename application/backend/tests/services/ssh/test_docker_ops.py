@@ -194,7 +194,23 @@ def test_build_run_argv_security_properties() -> None:
     assert "--privileged" not in argv
     assert "ALL" in argv and "--cap-drop" in argv
     assert "--stop-timeout=30" in argv
+    assert "--shm-size=32g" in argv  # Docker's 64 MiB default exhausts PyTorch worker queues.
     assert not any(":latest" in part or part.endswith(":protocol-1") for part in argv)
+
+
+def test_build_run_argv_allows_tuning_shared_memory() -> None:
+    argv = docker_ops.build_run_argv(
+        image_digest_ref=f"{_REGISTRY}/physicalai-trainer-cuda@{_DIGEST}",
+        device_type=DeviceType.CUDA,
+        name="physicalai-trainer-abc",
+        labels={},
+        data_volume="physicalai-trainer-data-abc",
+        remote_container_port=8080,
+        stop_timeout_s=30,
+        shm_size_gb=8,
+    )
+
+    assert "--shm-size=8g" in argv
 
 
 def test_build_run_argv_mounts_disk_backed_data_volume_not_tmpfs() -> None:

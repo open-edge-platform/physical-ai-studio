@@ -255,7 +255,13 @@ PyTorch data loaders can exhaust Docker's default 64 MB `/dev/shm` allocation
 during larger training jobs. On a trusted single-tenant host, prefer the host's
 shared-memory pool with `--ipc=host` (or `ipc: host` in Docker Compose). If you
 need an isolated limit instead, set an explicit shared-memory size such as
-`--shm-size=16g` (or `shm_size: 16g` in Docker Compose).
+`--shm-size=32g` (or `shm_size: 32g` in Docker Compose). Managed SSH trainers
+use an isolated 32 GiB `/dev/shm` by default; tune **Trainer shared memory
+(GiB)** in Studio's Managed SSH Training settings (or `ssh.trainer_shm_size_gb`
+via `PATCH /api/settings`). Changing this setting does not resize an existing
+container. Stop the container and save the training target to recreate it
+with the same data volume; an interrupted running job
+will fail on restart, and queued jobs can then proceed.
 
 #### CUDA
 

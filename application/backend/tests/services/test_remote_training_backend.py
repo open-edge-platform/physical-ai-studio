@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import httpx
@@ -21,9 +21,11 @@ import pytest
 from loguru import logger
 from pydantic import SecretStr
 
+from schemas.base_job import JobStatus
 from schemas.dataset import Snapshot
 from schemas.job import RemoteTrainJobPayload, TrainingDevice
 from schemas.model import Model
+from services.job_service import JobService
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingContext
 from services.training_backends.local import build_spec
@@ -531,6 +533,76 @@ class TestRemoteTrainingBackend:
         # Completion came from the poll, and the artifact was still ingested.
         assert controller.poll_count >= 1
         safe_zip.extract_to.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_reports_disconnection_before_warning_threshold(self, tmp_path):
+        settings = _settings()  # The warning is 900s away; UI should not wait for it.
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        controller.raise_connection_error = True
+        controller.poll_state = {"status": "completed", "progress": 100}
+
+        class RecoveringClient(_FakeClient):
+            async def get(self, url: str) -> _FakeResponse:
+                if url.endswith(f"/jobs/{controller.remote_job_id}") and controller.poll_count >= 1:
+                    controller.raise_connection_error = False
+                return await super().get(url)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: RecoveringClient(controller, **kw)),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            await asyncio.wait_for(_backend(settings)._wait_for_completion(context, controller.remote_job_id), 2)
+
+        assert context.progress.call_args_list[0].kwargs["message"] == "Trainer unreachable; waiting to reconnect"
+        assert context.progress.call_args_list[-1].kwargs["message"] is None
+
+    @pytest.mark.anyio
+    async def test_recovery_clears_persisted_connection_warning_without_trainer_message(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        controller.raise_connection_error = True
+        controller.poll_state = {"status": "running", "progress": 50}
+        job = MagicMock(id=uuid4(), message="Training")
+        service = JobService(MagicMock())
+        service.repo.get_by_id = AsyncMock(return_value=job)
+
+        def persist(_job, updates):
+            job.message = updates.get("message", job.message)
+            return job
+
+        service.repo.update = AsyncMock(side_effect=persist)
+        pending = []
+
+        def report(progress, *, message=None, extra_info=None):
+            pending.append(
+                asyncio.create_task(
+                    service.update_job_status(job.id, JobStatus.RUNNING, message=message, progress=progress)
+                )
+            )
+
+        context.progress = report
+
+        class RecoveringClient(_FakeClient):
+            async def get(self, url: str) -> _FakeResponse:
+                if url.endswith(f"/jobs/{controller.remote_job_id}"):
+                    if controller.poll_count >= 1:
+                        controller.raise_connection_error = False
+                    if controller.poll_count >= 2:
+                        controller.poll_state = {"status": "completed", "progress": 100}
+                return await super().get(url)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: RecoveringClient(controller, **kw)),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            await asyncio.wait_for(_backend(settings)._wait_for_completion(context, controller.remote_job_id), 2)
+            await asyncio.gather(*pending)
+
+        assert job.message == "Trainer connection restored"
 
     @pytest.mark.anyio
     async def test_reconnects_after_outage_exceeds_warning_threshold(self, tmp_path):

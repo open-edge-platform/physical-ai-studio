@@ -46,20 +46,31 @@ const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload']
 };
 
 const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
+    const disconnected =
+        job.payload.training_target === 'remote' && job.message === 'Trainer unreachable; waiting to reconnect';
     if (job.status === 'running') {
         return (
             <Flex direction={'column'} gap={'size-50'}>
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
-                    <SplitBadge first={job.status} second={job.message} />
+                    {disconnected ? (
+                        <SingleBadge color='var(--spectrum-global-color-orange-600)' text='Connection lost' />
+                    ) : (
+                        <SplitBadge first={job.status} second={job.message} />
+                    )}
                     <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
                     <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
                     <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time ? (
                     <Text UNSAFE_className={classes.rowInfo}>
-                        Started: {new Date(job.start_time).toLocaleString()} | Elapsed:{' '}
-                        <ElapsedDuration date={job.start_time} />
+                        Started: {new Date(job.start_time).toLocaleString()}
+                        {!disconnected && (
+                            <>
+                                {' | Elapsed: '}
+                                <ElapsedDuration date={job.start_time} />
+                            </>
+                        )}
                     </Text>
                 ) : (
                     <></>
