@@ -32,9 +32,11 @@ class TestCosmos3Config:
 
     def test_default_config(self) -> None:
         """Test default configuration values."""
+        from physicalai.policies.cosmos3 import DEFAULT_COSMOS3_REVISION
+
         config = Cosmos3Config(embodiment="pusht")
         assert config.pretrained_model_name_or_path == "nvidia/Cosmos3-Edge"
-        assert config.revision is None
+        assert config.revision == DEFAULT_COSMOS3_REVISION
         assert config.mode == "peft"
         assert config.lora_enabled is True
         assert config.paradigm == "policy"
@@ -294,42 +296,44 @@ class TestCosmos3Policy:
 # ============================================================================ #
 
 
+def _create_mock_cosmos3_pipeline() -> MagicMock:
+    """Create mock diffusers pipeline with required attributes."""
+    pipe = MagicMock()
+    pipe.transformer = MagicMock()
+    pipe.transformer.device = torch.device("cpu")
+    pipe.transformer.dtype = torch.float32
+    pipe.transformer.config.action_dim = 64
+
+    # Action projection head mock layers for init_domain_action_head
+    num_domains, in_size, out_size = 32, 64, 64
+    for proj_name in ("action_proj_in", "action_proj_out"):
+        proj = MagicMock()
+        proj.num_domains = num_domains
+        proj.input_size = in_size
+        proj.output_size = out_size
+        proj.fc.weight = torch.nn.Parameter(torch.randn(num_domains * in_size * out_size))
+        proj.bias.weight = torch.nn.Parameter(torch.randn(num_domains, out_size))
+        setattr(pipe.transformer, proj_name, proj)
+
+    pipe.transformer.action_modality_embed = torch.nn.Parameter(torch.randn(1, 64))
+    pipe.transformer.parameters.return_value = [torch.nn.Parameter(torch.zeros(2, 2))]
+    pipe.transformer.named_parameters.return_value = [
+        ("to_q.weight", torch.nn.Parameter(torch.zeros(2, 2))),
+        ("action_proj_in.weight", torch.nn.Parameter(torch.zeros(2, 2))),
+    ]
+    pipe.vae = MagicMock()
+    pipe.vae.device = torch.device("cpu")
+    pipe.vae.dtype = torch.float32
+    pipe.video_processor = MagicMock()
+    pipe.scheduler = None
+    return pipe
+
+
 class TestMockedCosmos3Model:
     """Tests for Cosmos3Model wrapping mock pipeline primitives."""
 
     def _create_mock_pipeline(self) -> MagicMock:
-        """Create mock diffusers pipeline with required attributes."""
-        pipe = MagicMock()
-        pipe.transformer = MagicMock()
-        pipe.transformer.device = torch.device("cpu")
-        pipe.transformer.dtype = torch.float32
-        pipe.transformer.config.action_dim = 64
-
-        # Action projection head mock layers for init_domain_action_head
-        num_domains, in_size, out_size = 32, 64, 64
-        for proj_name in ("action_proj_in", "action_proj_out"):
-            proj = MagicMock()
-            proj.num_domains = num_domains
-            proj.input_size = in_size
-            proj.output_size = out_size
-            proj.fc.weight = torch.nn.Parameter(torch.randn(num_domains * in_size * out_size))
-            proj.bias.weight = torch.nn.Parameter(torch.randn(num_domains, out_size))
-            setattr(pipe.transformer, proj_name, proj)
-
-        pipe.transformer.action_modality_embed = torch.nn.Parameter(torch.randn(1, 64))
-
-        pipe.transformer.parameters.return_value = [torch.nn.Parameter(torch.zeros(2, 2))]
-        pipe.transformer.named_parameters.return_value = [
-            ("to_q.weight", torch.nn.Parameter(torch.zeros(2, 2))),
-            ("action_proj_in.weight", torch.nn.Parameter(torch.zeros(2, 2))),
-        ]
-
-        pipe.vae = MagicMock()
-        pipe.video_processor = MagicMock()
-        pipe.scheduler = MagicMock()
-        pipe.scheduler.config = {}
-
-        return pipe
+        return _create_mock_cosmos3_pipeline()
 
     def test_delta_indices(self) -> None:
         """Test model exposes expected action and observation delta indices."""
@@ -476,10 +480,10 @@ class TestMockedCosmos3Model:
         # 1. Non-existent path returns False
         assert not _has_pretrained_action_head(str(tmp_path / "nonexistent"), "droid_lerobot")
 
-        # 2. Local folder with <domain>_head.pt
+        # 2. Local folder with <domain>_head.safetensors
         head_dir = tmp_path / "ckpt_head"
         head_dir.mkdir()
-        (head_dir / "droid_lerobot_head.pt").touch()
+        (head_dir / "droid_lerobot_head.safetensors").touch()
         assert _has_pretrained_action_head(str(head_dir), "droid_lerobot")
         assert not _has_pretrained_action_head(str(head_dir), "pusht")
 
@@ -1013,6 +1017,72 @@ class TestNormalization:
 
         with pytest.raises(FileNotFoundError):
             load_stats_file(tmp_path / "nope.json", "quantile")
+
+    def test_load_stats_file_invalid_extension(self, tmp_path: Path) -> None:
+        """A non-json stats file path raises ValueError."""
+        from physicalai.policies.cosmos3.normalization import load_stats_file
+
+        txt_file = tmp_path / "stats.txt"
+        txt_file.write_text("{}")
+        with pytest.raises(ValueError, match="Expected normalizer stats file with .json extension"):
+            load_stats_file(txt_file, "quantile")
+
+    def test_save_and_load_pretrained_adapter_safetensors(self, tmp_path: Path) -> None:
+        """Test save_pretrained_adapter and load_pretrained_adapter with .safetensors format."""
+        from safetensors.torch import load_file
+
+        from physicalai.policies.cosmos3.surgery import HEAD_KEYS
+
+        pipe = _create_mock_cosmos3_pipeline()
+        policy = Cosmos3(chunk_size=4, embodiment="pusht", pipeline=pipe)
+        assert policy.model is not None
+        tf = policy.model.transformer
+
+        # Mock head parameter
+        linear = torch.nn.Linear(2, 2)
+        setattr(tf, HEAD_KEYS[0], linear)
+        policy.model.norm_offset = torch.tensor([1.5, -2.5])
+        policy.model.norm_scale = torch.tensor([3.0, 4.0])
+
+        out_dir = tmp_path / "saved_adapter"
+        policy.save_pretrained_adapter(out_dir)
+
+        head_safetensors = out_dir / "pusht_head.safetensors"
+        head_json = out_dir / "pusht_head.json"
+        assert head_safetensors.is_file()
+        assert head_json.is_file()
+
+        # Check that saved file contains weights as safetensors
+        tensors = load_file(str(head_safetensors))
+        assert "norm_offset" in tensors
+        assert "norm_scale" in tensors
+        torch.testing.assert_close(tensors["norm_offset"], torch.tensor([1.5, -2.5]))
+
+        # Test load_pretrained_adapter
+        load_pipe = _create_mock_cosmos3_pipeline()
+        load_policy = Cosmos3(chunk_size=4, embodiment="pusht", pipeline=load_pipe)
+        ckpt = load_policy.load_pretrained_adapter(out_dir)
+
+        assert "norm_offset" in ckpt
+        assert "norm_scale" in ckpt
+        torch.testing.assert_close(load_policy.model.norm_offset, torch.tensor([1.5, -2.5]))
+        torch.testing.assert_close(load_policy.model.norm_scale, torch.tensor([3.0, 4.0]))
+
+    def test_load_finetuned_path_traversal_check(self, tmp_path: Path) -> None:
+        """Test load_finetuned path security checks."""
+        from physicalai.policies.cosmos3.surgery import load_finetuned
+
+        pipe = _create_mock_cosmos3_pipeline()
+        adapter_dir = tmp_path / "adapter"
+        adapter_dir.mkdir()
+
+        # 1. Invalid embodiment name with path traversal
+        with pytest.raises(ValueError, match="Invalid embodiment filename component"):
+            load_finetuned(pipe, adapter_dir, embodiment="../../evil")
+
+        # 2. Non-existent explicit head file
+        with pytest.raises(FileNotFoundError, match="Head checkpoint file not found"):
+            load_finetuned(pipe, adapter_dir, embodiment="pusht", head=tmp_path / "nonexistent.safetensors")
 
     def test_load_normalizer_stats_file_shape_assert(self, tmp_path: Path) -> None:
         """An explicit stats file whose width mismatches raw_dim raises ValueError."""

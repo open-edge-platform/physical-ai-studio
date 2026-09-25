@@ -6,7 +6,7 @@
 Multimodal world model policy based on diffusers Cosmos3OmniPipeline and rectified flow matching.
 """
 
-from .config import Cosmos3Config
+from .config import DEFAULT_COSMOS3_REVISION, Cosmos3Config
 from .flow_matching import build_action_tokens, build_pack, flow_matching_step
 from .model import Cosmos3Model
 from .normalization import load_stats_file, resolve_affine
@@ -39,6 +39,7 @@ from .surgery import (
 )
 
 __all__ = [
+    "DEFAULT_COSMOS3_REVISION",
     "DEFAULT_MIN_XPU_DRIVER",
     "EMBODIMENT_ACTION_SPACE",
     "EMBODIMENT_NORMALIZATION",

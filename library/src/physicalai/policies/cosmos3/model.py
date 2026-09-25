@@ -75,7 +75,9 @@ def _has_pretrained_action_head(
     """
     path_obj = Path(pretrained_path)
     if path_obj.is_dir():
-        return (path_obj / f"{embodiment}_head.pt").is_file() or (path_obj / "checkpoint.json").is_file()
+        head_safe = (path_obj / f"{embodiment}_head.safetensors").is_file()
+        checkpoint_json = (path_obj / "checkpoint.json").is_file()
+        return head_safe or checkpoint_json
 
     try:
         return file_exists(repo_id=pretrained_path, filename="checkpoint.json", revision=revision)
@@ -255,29 +257,7 @@ class Cosmos3Model(Model):
             raise ValueError(msg)
         self.norm_method = embodiment_normalization(config.embodiment)
 
-        # Build or wrap the pipeline
-        if pipeline is not None:
-            self.pipe = pipeline
-        else:
-            logger.info("Loading Cosmos3 pipeline from %s", config.pretrained_model_name_or_path)
-            self.pipe = PolicyPipelineWithState.from_pretrained(
-                config.pretrained_model_name_or_path,
-                revision=config.revision,
-                torch_dtype=self.torch_dtype,
-                enable_safety_checker=False,
-            )
-            _materialize_meta_parameters(self.pipe.transformer)
-            _materialize_meta_parameters(self.pipe.vae)
-
-        if device is not None:
-            self.pipe.to(device)
-
-        # Update scheduler flow shift for inference
-        if hasattr(self.pipe, "scheduler") and self.pipe.scheduler is not None:
-            self.pipe.scheduler = UniPCMultistepScheduler.from_config(
-                self.pipe.scheduler.config,
-                flow_shift=config.flow_shift,
-            )
+        self.pipe = self._load_pipeline(config, pipeline, device)
 
         # Register submodules for PyTorch parameter tracking and device movement
         self.transformer = self.pipe.transformer
@@ -335,6 +315,46 @@ class Cosmos3Model(Model):
             self._load_normalizer_stats_file(stats_path)
         elif dataset_stats is not None:
             self.set_dataset_stats(dataset_stats)
+
+    def _load_pipeline(
+        self,
+        config: Cosmos3Config,
+        pipeline: PolicyPipelineWithState | None,
+        device: torch.device | None,
+    ) -> PolicyPipelineWithState:
+        """Load or wrap the underlying PolicyPipelineWithState.
+
+        Returns:
+            Initialized or wrapped PolicyPipelineWithState instance.
+        """
+        if pipeline is not None:
+            pipe = pipeline
+        else:
+            if config.revision is None and not Path(config.pretrained_model_name_or_path).exists():
+                logger.warning(
+                    "Downloading '%s' without a pinned 'revision'; resolving to HEAD is not reproducible "
+                    "(security rule #9). Pass revision=<commit-sha>.",
+                    config.pretrained_model_name_or_path,
+                )
+            logger.info("Loading Cosmos3 pipeline from %s", config.pretrained_model_name_or_path)
+            pipe = PolicyPipelineWithState.from_pretrained(
+                config.pretrained_model_name_or_path,
+                revision=config.revision,
+                torch_dtype=self.torch_dtype,
+                enable_safety_checker=False,
+            )
+            _materialize_meta_parameters(pipe.transformer)
+            _materialize_meta_parameters(pipe.vae)
+
+        if device is not None:
+            pipe.to(device)
+
+        if hasattr(pipe, "scheduler") and pipe.scheduler is not None:
+            pipe.scheduler = UniPCMultistepScheduler.from_config(
+                pipe.scheduler.config,
+                flow_shift=config.flow_shift,
+            )
+        return pipe
 
     def _set_affine(self, offset: torch.Tensor, scale: torch.Tensor) -> None:
         """Store the normalization affine, broadcasting scalars to ``raw_dim``."""

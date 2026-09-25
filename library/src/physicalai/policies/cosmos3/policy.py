@@ -5,18 +5,20 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import torch
+from safetensors.torch import save_file
 
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import Observation
 from physicalai.policies.base import Policy
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
-from .config import Cosmos3Config
+from .config import DEFAULT_COSMOS3_REVISION, Cosmos3Config
 from .model import Cosmos3Model
 from .pipeline import PolicyPipelineWithState, require_xpu_driver
 from .preprocessor import Cosmos3Preprocessor
@@ -42,7 +44,7 @@ class Cosmos3(Policy):
         embodiment: Required embodiment identifier ("pusht", "droid_lerobot", or "aloha").
         pretrained_model_name_or_path: Hugging Face model repo ID or local checkpoint path.
         revision: Pinned git commit SHA for model and checkpoint downloads (lib.security rule 9).
-            Defaults to None.
+            Defaults to DEFAULT_COSMOS3_REVISION when using default model.
         mode: Training mode ("peft" or "full"). Default: "peft".
         lora_enabled: Whether LoRA/DoRA fine-tuning is enabled. True implies mode="peft",
             False implies mode="full". Default: None (inferred from mode).
@@ -84,7 +86,7 @@ class Cosmos3(Policy):
         self,
         pretrained_model_name_or_path: str = "nvidia/Cosmos3-Edge",
         *,
-        revision: str | None = None,
+        revision: str | None = DEFAULT_COSMOS3_REVISION,
         embodiment: str,
         mode: Literal["peft", "full"] = "peft",
         lora_enabled: bool | None = None,
@@ -431,6 +433,8 @@ class Cosmos3(Policy):
     def save_pretrained_adapter(self, output_dir: str | Path) -> None:
         """Save fine-tuned weights and domain action head to target directory.
 
+        Saves adapter and head weights in .safetensors format (library security rules #10 and #13).
+
         Args:
             output_dir: Target directory path for saved adapter weights.
 
@@ -441,30 +445,35 @@ class Cosmos3(Policy):
             msg = "Model is not initialized."
             raise RuntimeError(msg)
 
-        out_path = Path(output_dir)
+        out_path = Path(output_dir).expanduser().resolve()
         out_path.mkdir(parents=True, exist_ok=True)
         tf = self.model.transformer
 
         if self.config.mode == "full":
-            torch.save(
-                {n: p.detach().cpu() for n, p in tf.named_parameters() if p.requires_grad},
-                out_path / "transformer_full.pt",
-            )
+            trainable_tensors = {n: p.detach().cpu().contiguous() for n, p in tf.named_parameters() if p.requires_grad}
+            save_file(trainable_tensors, str(out_path / "transformer_full.safetensors"))
         else:
             tf.save_lora_adapter(str(out_path))
 
-        head = {n: p.detach().cpu() for n, p in tf.named_parameters() if any(k in n for k in HEAD_KEYS)}
-        torch.save(
-            {
-                "head": head,
-                "norm_offset": self.model.norm_offset.cpu(),
-                "norm_scale": self.model.norm_scale.cpu(),
-                "prompt": self.config.prompt,
-                "paradigm": self.config.paradigm,
-                "embodiment": self.config.embodiment,
-            },
-            out_path / f"{self.config.embodiment}_head.pt",
-        )
+        head_weights = {
+            f"head.{n}": p.detach().cpu().contiguous()
+            for n, p in tf.named_parameters()
+            if any(k in n for k in HEAD_KEYS)
+        }
+        head_weights["norm_offset"] = self.model.norm_offset.detach().cpu().contiguous()
+        head_weights["norm_scale"] = self.model.norm_scale.detach().cpu().contiguous()
+
+        metadata = {
+            "prompt": str(self.config.prompt),
+            "paradigm": str(self.config.paradigm),
+            "embodiment": str(self.config.embodiment),
+        }
+
+        head_path = out_path / f"{self.config.embodiment}_head.safetensors"
+        save_file(head_weights, str(head_path), metadata=metadata)
+        with (out_path / f"{self.config.embodiment}_head.json").open("w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+
         logger.info("Saved Cosmos3 %s adapter and head to %s", self.config.mode, out_path)
 
     def load_pretrained_adapter(

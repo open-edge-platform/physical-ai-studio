@@ -11,6 +11,7 @@ head vs. base groups for differential learning rates.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -150,6 +151,33 @@ def split_trainable_params(tf: nn.Module) -> tuple[list[torch.nn.Parameter], lis
     return base_params, head_params
 
 
+def _resolve_head_path(adapter_path: Path, embodiment: str, head: str | Path | None) -> Path:
+    """Resolve and validate the head checkpoint path.
+
+    Returns:
+        Validated Path to the head checkpoint file.
+
+    Raises:
+        ValueError: If embodiment or head path is invalid or escapes directory.
+        FileNotFoundError: If the head checkpoint file does not exist.
+    """
+    if head is not None:
+        head_path = Path(head).expanduser().resolve()
+    else:
+        if not re.fullmatch(r"^[a-zA-Z0-9_-]{1,64}$", embodiment):
+            msg = f"Invalid embodiment filename component: {embodiment!r}"
+            raise ValueError(msg)
+        head_path = (adapter_path / f"{embodiment}_head.safetensors").resolve()
+        if not head_path.is_relative_to(adapter_path):
+            msg = f"Head path escapes adapter directory: {head_path}"
+            raise ValueError(msg)
+
+    if not head_path.is_file():
+        msg = f"Head checkpoint file not found: {head_path}"
+        raise FileNotFoundError(msg)
+    return head_path
+
+
 def load_finetuned(
     pipe: PolicyPipelineWithState,
     adapter: str | Path,
@@ -157,6 +185,8 @@ def load_finetuned(
     head: str | Path | None = None,
 ) -> dict[str, Any]:
     """Restore fine-tuned weights onto pipe.transformer.
+
+    Weights must be saved in .safetensors format (library security rules #10 and #13).
 
     Args:
         pipe: Cosmos3 pipeline instance.
@@ -166,16 +196,13 @@ def load_finetuned(
 
     Returns:
         Head checkpoint dictionary containing metadata and normalization bounds.
-
-    Raises:
-        ValueError: If embodiment is invalid or resolves outside adapter directory.
     """
-    adapter_path = Path(adapter)
+    adapter_path = Path(adapter).expanduser().resolve()
     tf = pipe.transformer
-    full_path = adapter_path / "transformer_full.pt"
-    if full_path.exists():
-        # Security rule #10: weights_only=True
-        full_weights = torch.load(full_path, map_location="cpu", weights_only=True)
+    full_safetensors = adapter_path / "transformer_full.safetensors"
+
+    if full_safetensors.exists():
+        full_weights = load_file(str(full_safetensors))
         tf.load_state_dict(full_weights, strict=False)
     else:
         lora_safetensors = adapter_path / "pytorch_lora_weights.safetensors"
@@ -184,17 +211,23 @@ def load_finetuned(
             if callable(load_lora_adapter_fn):
                 load_lora_adapter_fn(load_file(str(lora_safetensors)), prefix=None)
 
-    if head is not None:
-        head_path = Path(head)
-    else:
-        if not re.fullmatch(r"^[a-zA-Z0-9_-]{1,64}$", embodiment):
-            msg = f"Invalid embodiment filename component: {embodiment!r}"
-            raise ValueError(msg)
-        head_path = (adapter_path / f"{embodiment}_head.pt").resolve()
-        if not head_path.is_relative_to(adapter_path.resolve()):
-            msg = f"Head path escapes adapter directory: {head_path}"
-            raise ValueError(msg)
+    head_path = _resolve_head_path(adapter_path, embodiment, head)
+    raw_tensors = load_file(str(head_path))
+    head_tensors = {}
+    ckpt: dict[str, Any] = {}
+    for k, v in raw_tensors.items():
+        if k.startswith("head."):
+            head_tensors[k.removeprefix("head.")] = v
+        elif k in {"norm_offset", "norm_scale"}:
+            ckpt[k] = v
+        else:
+            head_tensors[k] = v
+    ckpt["head"] = head_tensors
 
-    ckpt: dict[str, Any] = torch.load(head_path, map_location="cpu", weights_only=True)
+    meta_json_path = head_path.with_suffix(".json")
+    if meta_json_path.is_file():
+        with meta_json_path.open(encoding="utf-8") as f:
+            ckpt.update(json.load(f))
+
     tf.load_state_dict(ckpt["head"], strict=False)
     return ckpt

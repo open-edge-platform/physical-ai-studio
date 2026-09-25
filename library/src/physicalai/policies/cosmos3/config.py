@@ -24,6 +24,7 @@ from physicalai.config import Config
 _DEFAULT_PEFT_HEAD_MULT = 2.0
 _DEFAULT_FULL_HEAD_MULT = 10.0
 _EPS = 1e-6
+DEFAULT_COSMOS3_REVISION = "344d602b128d1bbdacb43b08d0a3626f46343e29"
 
 
 @dataclass(frozen=True)
@@ -36,8 +37,8 @@ class Cosmos3Config(Config):
             method and gripper handling.
         pretrained_model_name_or_path: Hugging Face repo ID or local checkpoint path.
             Defaults to "nvidia/Cosmos3-Edge".
-        revision: Optional git commit SHA to pin the model download (lib.security rule 9).
-            Defaults to None.
+        revision: Pinned git commit SHA for model and checkpoint downloads (lib.security rule 9).
+            Defaults to DEFAULT_COSMOS3_REVISION.
         mode: Training mode. "peft" trains LoRA/DoRA on attention projections and
             a domain action head; "full" fine-tunes the generation tower and vision
             projections. Defaults to "peft".
@@ -92,7 +93,7 @@ class Cosmos3Config(Config):
 
     embodiment: str
     pretrained_model_name_or_path: str = "nvidia/Cosmos3-Edge"
-    revision: str | None = None
+    revision: str | None = DEFAULT_COSMOS3_REVISION
     mode: Literal["peft", "full"] = "peft"
     lora_enabled: bool = True
     paradigm: Literal["policy", "fd", "id", "joint"] = "policy"

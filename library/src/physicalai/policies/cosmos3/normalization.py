@@ -110,10 +110,15 @@ def load_stats_file(
         to a 1-D float32 tensor.
 
     Raises:
+        ValueError: If ``path`` contains directory traversal sequences or invalid extensions.
         FileNotFoundError: If ``path`` does not exist.
         KeyError: If the requested nested stats block is absent.
     """
-    stats_path = Path(path)
+    stats_path = Path(path).expanduser().resolve()
+    if stats_path.suffix.lower() != ".json":
+        msg = f"Expected normalizer stats file with .json extension, got: {stats_path}"
+        raise ValueError(msg)
+
     if not stats_path.is_file():
         msg = f"Normalizer stats file not found: {stats_path}"
         raise FileNotFoundError(msg)
