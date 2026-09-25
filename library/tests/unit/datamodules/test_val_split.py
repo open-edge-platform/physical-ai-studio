@@ -16,6 +16,7 @@ import torch
 
 from physicalai.data import Observation
 from physicalai.data.lerobot.datamodule import LeRobotDataModule, _read_total_episodes
+from physicalai.data.lerobot.dataset import _LeRobotDatasetAdapter
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 
@@ -420,3 +421,40 @@ class TestReformatIncludesValDataset:
         # Should not raise
         reformat_dataset_to_match_policy(mock_policy, dm)
         assert "action" in dm.train_dataset.delta_indices
+
+    def test_reformat_propagates_action_deltas_to_split_action_columns(self, monkeypatch):
+        """reformat_dataset_to_match_policy assigns action_delta_indices to split action columns."""
+        mock_lerobot = MagicMock()
+        mock_lerobot.fps = 10
+        mock_lerobot.tolerance_s = 0.0001
+        mock_lerobot.features = {
+            "observation.state.joint_positions": {"shape": (7,)},
+            "observation.state.gripper_position": {"shape": (1,)},
+            "action.joint_position": {"shape": (7,)},
+            "action.gripper_position": {"shape": (1,)},
+        }
+        mock_lerobot.delta_indices = {}
+
+        action_cols = ["action.joint_position", "action.gripper_position"]
+        adapter = _LeRobotDatasetAdapter.from_lerobot(
+            mock_lerobot,
+            action_columns=action_cols,
+        )
+
+        dm = MagicMock()
+        dm.train_dataset = adapter
+        dm.val_eval_dataset = None
+
+        mock_policy = MagicMock()
+        mock_policy.lerobot_policy = None
+        mock_policy.model.action_delta_indices = list(range(16))
+        mock_policy.model.observation_delta_indices = None
+        mock_policy.model.reward_delta_indices = None
+
+        reformat_dataset_to_match_policy(mock_policy, dm)
+
+        assert "action.joint_position" in adapter.delta_indices
+        assert "action.gripper_position" in adapter.delta_indices
+        assert adapter.delta_indices["action.joint_position"] == list(range(16))
+        assert adapter.delta_indices["action.gripper_position"] == list(range(16))
+        assert "action" not in adapter.delta_indices
