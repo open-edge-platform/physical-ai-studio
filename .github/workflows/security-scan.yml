@@ -396,7 +396,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
+      packages: read
       matrix:
         ai-device: [xpu]
     steps:
