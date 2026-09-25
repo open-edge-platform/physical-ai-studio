@@ -11,16 +11,24 @@ from __future__ import annotations
 import copy
 import logging
 import math
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
 from torch import nn
 
-from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.data.observation import ACTION, IMAGES, STATE
-from physicalai.policies.base import Model, in_episode_bound, reduce_losses
-from physicalai.policies.mixins import SnapFlowModelMixin
+from physicalai.data.constants import (
+    IMAGE_MASKS,
+    RTC_EXECUTION_HORIZON,
+    RTC_INFERENCE_DELAY,
+    RTC_MAX_GUIDANCE_WEIGHT,
+    TOKENIZED_PROMPT,
+    TOKENIZED_PROMPT_MASK,
+)
+from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE
+from physicalai.policies.base import Model
+from physicalai.policies.mixins import RTCModelMixin, SnapFlowModelMixin
+from physicalai.policies.utils import in_episode_bound, reduce_losses
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -54,13 +62,24 @@ def _lazy_import_transformers() -> tuple:
 logger = logging.getLogger(__name__)
 
 
-class SmolVLAModel(Model):
+def _resolve_precision_dtype(precision: Literal["bfloat16", "float32"]) -> torch.dtype:
+    if precision == "bfloat16":
+        return torch.bfloat16
+    if precision == "float32":
+        return torch.float32
+
+    msg = f"Invalid precision: {precision}"
+    raise ValueError(msg)
+
+
+class SmolVLAModel(RTCModelMixin, Model):
     """SmolVLA flow matching vision-language-action model."""
 
     def __init__(  # noqa: PLR0913
         self,
         dataset_stats: dict[str, dict[str, list[float] | str | tuple[int, ...]]],
         *,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         chunk_size: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
@@ -95,6 +114,7 @@ class SmolVLAModel(Model):
             dataset_stats: Dictionary containing dataset statistics with keys mapping to
                 dictionaries that hold statistics values (lists of floats), string metadata,
                 or tuple information used for normalization and preprocessing.
+            dtype: Precision used for model weights. Can be either "bfloat16" or "float32".
             chunk_size: Size of action chunks for prediction.
             max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
             max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
@@ -135,6 +155,7 @@ class SmolVLAModel(Model):
         self._vlm_model_name = vlm_model_name
         self._tokenizer_max_length = tokenizer_max_length
         self._model = VLAFlowMatching(
+            dtype=dtype,
             chunk_size=chunk_size,
             max_state_dim=max_state_dim,
             max_action_dim=max_action_dim,
@@ -215,13 +236,18 @@ class SmolVLAModel(Model):
         lang_tokens = batch[TOKENIZED_PROMPT]
         lang_masks = batch[TOKENIZED_PROMPT_MASK]
         loss_dict: dict[str, torch.Tensor | float] = {}
-        losses = self._model.forward(images, img_masks, lang_tokens, lang_masks, state, actions)
+        losses, cd_idx = self._model.forward(images, img_masks, lang_tokens, lang_masks, state, actions)
 
         # Truncate losses to actual action dimensions to avoid dilution from padding
         original_action_dim = int(self._dataset_stats[ACTION]["shape"][-1])
         losses = losses[:, :, :original_action_dim]
 
-        loss = reduce_losses(losses, in_episode_bound(batch))
+        # Mask out action steps that only exist because the chunk query was
+        # clamped at an episode boundary. SnapFlow consistency-distillation
+        # samples (cd_idx) are exempt: they regress onto a self-generated
+        # teacher velocity rather than the dataset action, so padded steps
+        # carry no bad supervision there.
+        loss = reduce_losses(losses, in_episode_bound(batch, cd_idx))
         # Detached tensor, not `.item()` float: see Model.compute_loss docstring.
         loss_dict["loss"] = loss.detach()
         return loss, loss_dict
@@ -272,11 +298,17 @@ class SmolVLAModel(Model):
 
         Args:
             batch: A dictionary containing input tensors including images, state information,
-                and tokenized prompts with their masks.
+                and tokenized prompts with their masks. When ``self.enable_rtc`` is True,
+                also expects RTC keys: ``prev_chunk_left_over``, ``inference_delay``,
+                ``max_guidance_weight``, and ``execution_horizon``.
 
         Returns:
             torch.Tensor: A tensor of predicted actions with shape matching the original
                 action dimensions from the dataset statistics.
+
+        Raises:
+            ValueError: If RTC is enabled and the batch is missing
+                ``prev_chunk_left_over``.
         """
         processed_batch = self._preprocess_batch(batch)
         images, img_masks = processed_batch[IMAGES], processed_batch[IMAGE_MASKS]
@@ -284,12 +316,32 @@ class SmolVLAModel(Model):
         lang_tokens = processed_batch[TOKENIZED_PROMPT]
         lang_masks = processed_batch[TOKENIZED_PROMPT_MASK]
 
+        rtc_kwargs: dict[str, Any] = {}
+        if self.enable_rtc:
+            max_guidance = batch.get(RTC_MAX_GUIDANCE_WEIGHT, 0.0)
+            execution_horizon = batch.get(RTC_EXECUTION_HORIZON, 0)
+            inference_delay = batch.get(RTC_INFERENCE_DELAY, 0.0)
+
+            if PREV_CHUNK_LEFT_OVER not in batch:
+                msg = f"Expected {PREV_CHUNK_LEFT_OVER} in batch when RTC is enabled."
+                raise ValueError(msg)
+
+            rtc_kwargs = {
+                "rtc_max_guidance": max_guidance,
+                "rtc_prefix_weights": self._compute_prefix_weights(
+                    inference_delay=torch.as_tensor(inference_delay, device=state.device),
+                    execution_horizon=torch.as_tensor(execution_horizon, device=state.device),
+                ),
+                "rtc_prev_action_chunk": self._pad_prev_chunk(batch.get(PREV_CHUNK_LEFT_OVER)),
+            }
+
         actions = self._model.sample_actions(
             images,
             img_masks,
             lang_tokens,
             lang_masks,
             state,
+            **rtc_kwargs,
         )
 
         # Unpad actions
@@ -666,6 +718,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
     def __init__(  # noqa: PLR0913
         self,
         *,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         chunk_size: int = 50,
         max_state_dim: int = 32,
         max_action_dim: int = 32,
@@ -694,6 +747,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         """Initialize the SmolVLA model.
 
         Args:
+            dtype: Precision used for model weights.
             chunk_size: Size of action chunks for prediction.
             max_state_dim: Maximum dimension for state vectors; shorter vectors will be padded.
             max_action_dim: Maximum dimension for action vectors; shorter vectors will be padded.
@@ -740,6 +794,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
 
         self.vlm_with_expert = _SmolVLMWithExpertModel(
             model_id=vlm_model_name,
+            dtype=dtype,
             freeze_vision_encoder=freeze_vision_encoder,
             train_expert_only=train_expert_only,
             load_vlm_weights=load_vlm_weights,
@@ -796,6 +851,35 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         for params in self.state_proj.parameters():
             params.requires_grad = self._train_state_proj
 
+    def to_bfloat16_for_selected_params(
+        self,
+        precision: Literal["bfloat16", "float32"] = "bfloat16",
+    ) -> None:
+        """Convert model weights to the requested precision.
+
+        Keeps numerically sensitive vision and normalization layers in float32 when
+        running the rest of the model in bfloat16.
+        """
+        if precision == "float32":
+            self.to(dtype=torch.float32)
+            return
+
+        target_dtype = _resolve_precision_dtype(precision)
+        self.to(dtype=target_dtype)
+
+        params_to_keep_float32 = [
+            "vision_model",
+            "connector",
+            "input_layernorm",
+            "post_attention_layernorm",
+            "text_model.norm",
+            "lm_expert.norm",
+        ]
+
+        for name, param in self.named_parameters():
+            if any(selector in name for selector in params_to_keep_float32):
+                param.data = param.data.to(dtype=torch.float32)
+
     def _sample_noise(self, shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
         if not self._use_random_input_noise:
             return torch.zeros(shape, dtype=torch.float32, device=device)
@@ -811,7 +895,12 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
 
     @staticmethod
     def _sample_time(bsize: int, device: torch.device) -> torch.Tensor:
-        beta_dist = torch.distributions.Beta(concentration1=1.5, concentration0=1.0)
+        # Concentrations are forced to float32: the Dirichlet sampler backing Beta has no bf16/fp16 kernel,
+        # and low-precision training sets the global default dtype.
+        beta_dist = torch.distributions.Beta(
+            concentration1=torch.tensor(1.5, dtype=torch.float32),
+            concentration0=torch.tensor(1.0, dtype=torch.float32),
+        )
         time_beta = beta_dist.sample((bsize,)).to(device=device, dtype=torch.float32)
         return time_beta * 0.999 + 0.001
 
@@ -830,8 +919,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             img_masks: List of boolean masks for each image indicating valid regions.
             lang_tokens: Token IDs for language input to be embedded.
             lang_masks: Boolean mask for language tokens indicating valid tokens.
-            state: Optional state tensor to be projected and included in the prefix.
-                If None, state embedding is still computed.
+            state: State tensor to be projected and included in the prefix.
 
         Returns:
             A tuple containing:
@@ -842,6 +930,9 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
                 - att_masks: Boolean tensor of shape (batch_size, seq_len) for attention
                     masking, where True indicates positions that should be masked
                     (state tokens are masked from image/language attention).
+
+        Raises:
+            ValueError: If ``state`` is None.
 
         Note:
             If the total sequence length is less than `self.prefix_length`, the outputs
@@ -922,7 +1013,10 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         num_lang_embs = lang_emb.shape[1]
         att_masks += [0] * num_lang_embs
 
-        state_emb = self.state_proj(state)
+        if state is None:
+            msg = "state must be provided to embed_prefix."
+            raise ValueError(msg)
+        state_emb = self.state_proj(state.to(dtype=self.state_proj.weight.dtype))
         emb_dim = 2
         state_emb = state_emb[:, None, :] if state_emb.ndim == emb_dim else state_emb
         embs.append(state_emb)
@@ -985,7 +1079,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         att_masks = []
 
         # Fuse timestep + action information using an MLP
-        action_emb = self.action_in_proj(noisy_actions)
+        action_emb = self.action_in_proj(noisy_actions.to(dtype=self.action_in_proj.weight.dtype))
         device = action_emb.device
         bsize = action_emb.shape[0]
         dtype = action_emb.dtype
@@ -1058,8 +1152,9 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             fill_kv_cache=False,
         )
         suffix_out = suffix_out[:, -self._chunk_size :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
-        return self.action_out_proj(suffix_out)
+        if suffix_out.dtype != self.action_out_proj.weight.dtype:
+            suffix_out = suffix_out.to(dtype=self.action_out_proj.weight.dtype)
+        return self.action_out_proj(suffix_out).to(dtype=torch.float32)
 
     def _forward_fm(
         self,
@@ -1129,7 +1224,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         actions: torch.Tensor,
         noise: torch.Tensor | None = None,
         time: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Compute flow matching training loss, optionally with SnapFlow self-distillation.
 
         When ``snapflow_enabled`` is *False* this delegates to :meth:`_forward_fm`.
@@ -1148,10 +1243,17 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             time: Optional diffusion time step tensor.
 
         Returns:
-            Per-element MSE loss tensor of shape (batch_size, chunk_size, action_dim).
+            Tuple of (per-element MSE loss tensor of shape
+            ``(batch_size, chunk_size, action_dim)``, indices of samples
+            routed through the consistency-distillation branch, or ``None``
+            when SnapFlow is disabled). CD samples do not regress onto the
+            dataset action, so callers should treat ``cd_idx`` as exempt from
+            action-padding masking (see
+            :func:`physicalai.policies.base.in_episode_bound`).
         """
         if not self._snapflow_enabled:
-            return self._forward_fm(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
+            losses = self._forward_fm(images, img_masks, lang_tokens, lang_masks, state, actions, noise, time)
+            return losses, None
 
         if noise is None:
             noise = self._sample_noise(actions.shape, actions.device)
@@ -1171,9 +1273,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
 
-        # SmolVLA does not exempt consistency-distillation samples from the
-        # action-padding mask (unlike Pi05); the CD indices are discarded here.
-        losses, _cd_idx = self.snapflow_mixed_loss(
+        losses, cd_idx = self.snapflow_mixed_loss(
             u_t=u_t,
             x_t=x_t,
             time=time,
@@ -1184,7 +1284,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             sample_noise=self._sample_noise,
             predict_velocity=self._predict_velocity,
         )
-        return losses
+        return losses, cd_idx
 
     def sample_actions(  # noqa: PLR0914
         self,
@@ -1194,6 +1294,9 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         lang_masks: torch.Tensor,
         state: torch.Tensor,
         noise: torch.Tensor | None = None,
+        rtc_max_guidance: float = 0.0,
+        rtc_prefix_weights: torch.Tensor | None = None,
+        rtc_prev_action_chunk: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Perform full inference forward pass to compute actions using a diffusion-based sampling process.
 
@@ -1210,6 +1313,10 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             state: Current state tensor of shape (batch_size, state_dim).
             noise: Optional pre-sampled noise tensor. If None, noise will be sampled
                 with shape (batch_size, chunk_size, max_action_dim).
+            rtc_max_guidance: Real-Time Chunking maximum guidance weight.
+            rtc_prefix_weights: Precomputed ``(1, chunk_size, 1)`` prefix attention weights.
+            rtc_prev_action_chunk: Unconsumed tail of the previous chunk. RTC guidance is
+                applied only when this is provided.
 
         Returns:
             Tensor: Predicted actions of shape (batch_size, chunk_size, max_action_dim),
@@ -1256,6 +1363,17 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
                 timestep=time_tensor,
                 target_time=target_time,
             )
+
+            if rtc_prev_action_chunk is not None and rtc_prefix_weights is not None:
+                v_t = RTCModelMixin._rtc_correct(  # noqa: SLF001
+                    x_t,
+                    v_t,
+                    prev_chunk_left_over=rtc_prev_action_chunk,
+                    prefix_weights=rtc_prefix_weights,
+                    time=time,
+                    max_guidance_weight=torch.as_tensor(rtc_max_guidance, device=device),
+                )
+
             x_t += dt * v_t
 
         return x_t
@@ -1314,8 +1432,9 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
         )
         suffix_out = outputs_embeds[1]
         suffix_out = suffix_out[:, -self._chunk_size :]
-        suffix_out = suffix_out.to(dtype=torch.float32)
-        return self.action_out_proj(suffix_out)
+        if suffix_out.dtype != self.action_out_proj.weight.dtype:
+            suffix_out = suffix_out.to(dtype=self.action_out_proj.weight.dtype)
+        return self.action_out_proj(suffix_out).to(dtype=torch.float32)
 
 
 def _apply_rope(x: torch.Tensor, positions: torch.Tensor, max_wavelength: int = 10_000) -> torch.Tensor:
@@ -1369,6 +1488,7 @@ class _SmolVLMWithExpertModel(nn.Module):
         self,
         model_id: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
         *,
+        dtype: Literal["bfloat16", "float32"] = "bfloat16",
         load_vlm_weights: bool = True,
         train_expert_only: bool = True,
         freeze_vision_encoder: bool = False,
@@ -1394,7 +1514,7 @@ class _SmolVLMWithExpertModel(nn.Module):
             self.vlm = auto_model_for_image_text_to_text_cls.from_pretrained(
                 model_id,
                 device_map=device,
-                dtype="bfloat16",
+                dtype=dtype,
                 low_cpu_mem_usage=True,
             )
             config = self.vlm.config
@@ -1895,12 +2015,19 @@ class _SmolVLMWithExpertModel(nn.Module):
                     att_out = att_output[:, start:end]
                     out_emb = layer.self_attn.o_proj(att_out)
 
-                    out_emb += hidden_states
+                    residual = hidden_states
+                    if residual.dtype != out_emb.dtype:
+                        residual = residual.to(dtype=out_emb.dtype)
+                    out_emb += residual
                     after_first_residual = out_emb.clone()
 
                     out_emb = layer.post_attention_layernorm(out_emb)
+                    if out_emb.dtype != layer.mlp.gate_proj.weight.dtype:
+                        out_emb = out_emb.to(dtype=layer.mlp.gate_proj.weight.dtype)
                     out_emb = layer.mlp(out_emb)
 
+                    if after_first_residual.dtype != out_emb.dtype:
+                        after_first_residual = after_first_residual.to(dtype=out_emb.dtype)
                     out_emb += after_first_residual
 
                     outputs_embeds.append(out_emb)

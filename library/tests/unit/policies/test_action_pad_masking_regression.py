@@ -17,10 +17,10 @@ quietly dropped from an existing one: for every policy listed in
 to "tail padded" must actually change the reported loss.
 
 Note:
-    ``pi0`` and ``groot`` do not currently mask ``action_is_pad`` at all
-    (upstream behaviour), so they are intentionally excluded from
-    ``MASKING_POLICIES``. If padding masking is added for them, add their
-    loss-stub factories here and include them in the parametrization.
+    This regression suite covers the first-party chunked-action policies that
+    currently implement padding masking. LeRobot wrappers are exercised in
+    their own wrapper/equivalence suites rather than through these direct
+    model stubs.
 """
 
 from __future__ import annotations
@@ -119,7 +119,7 @@ def _smolvla_loss(action_is_pad: torch.Tensor) -> float:
         _preprocess_batch=lambda b: b,
         _prepare_state=lambda b: None,
         _prepare_action=lambda b: None,
-        _model=SimpleNamespace(forward=lambda *_a, **_kw: losses.clone()),
+        _model=SimpleNamespace(forward=lambda *_a, **_kw: (losses.clone(), None)),
         _dataset_stats={ACTION: {"shape": (ACTION_DIM,)}},
     )
     loss, _ = SmolVLAModel.compute_loss(stub, batch)

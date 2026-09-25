@@ -3,8 +3,9 @@
 
 """Tests for training callbacks."""
 
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import lightning as L
 import pytest
@@ -15,6 +16,7 @@ from physicalai.train.callbacks import (
     SNAPFLOW_PROGRESS_BAR_KEY,
     IterationTimer,
     ProgressReportingCallback,
+    RolloutVideoRecorderCallback,
     SnapFlowPhaseCallback,
 )
 
@@ -40,6 +42,49 @@ def _trainer(
     # non-iterable mock and break the SnapFlow checkpoint-prefixing walk.
     trainer.checkpoint_callbacks = []
     return trainer
+
+
+class TestRolloutVideoRecorderCallback:
+    """Tests for validation rollout video recording."""
+
+    @patch("physicalai.train.callbacks.VideoRecorder")
+    def test_attaches_and_closes_recorder(self, video_recorder: MagicMock, tmp_path: Path) -> None:
+        callback = RolloutVideoRecorderCallback(
+            output_dir=tmp_path,
+            fps=10,
+            record_mode="all",
+            caption="Push the block.",
+            frame_key="top",
+        )
+        trainer = MagicMock(spec=L.Trainer)
+        trainer.is_global_zero = True
+        rollout = SimpleNamespace(video_recorder=None)
+        policy = MagicMock(spec=L.LightningModule)
+        policy.val_rollout = rollout
+
+        callback.on_fit_start(trainer, policy)
+        callback.on_fit_end(trainer, policy)
+
+        video_recorder.assert_called_once_with(
+            output_dir=tmp_path,
+            fps=10,
+            codec="h264",
+            record_mode="all",
+            caption="Push the block.",
+            frame_key="top",
+        )
+        assert rollout.video_recorder is video_recorder.return_value
+        video_recorder.return_value.close.assert_called_once_with()
+
+    @patch("physicalai.train.callbacks.VideoRecorder")
+    def test_skips_recorder_on_non_global_rank(self, video_recorder: MagicMock, tmp_path: Path) -> None:
+        callback = RolloutVideoRecorderCallback(output_dir=tmp_path)
+        trainer = MagicMock(spec=L.Trainer)
+        trainer.is_global_zero = False
+
+        callback.on_fit_start(trainer, MagicMock(spec=L.LightningModule))
+
+        video_recorder.assert_not_called()
 
 
 class TestProgressReportingCallback:

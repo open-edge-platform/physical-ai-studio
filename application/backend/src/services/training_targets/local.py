@@ -16,8 +16,8 @@ class LocalTrainingTargetHandler:
     async def prepare(self, payload: TrainJobPayload) -> TrainJobPayload:
         """Reject a local device SystemService reports as unsupported for training.
 
-        A remote or SSH-provisioned trainer validates its own devices, so only
-        local device choices are checked here. `device` is a shared field
+        Remote trainers validate their own devices, so only local device
+        choices are checked here. `device` is a shared field
         (declared on `TrainJobPayloadBase`), so no narrowing to
         `LocalTrainJobPayload` is needed to read it.
         """

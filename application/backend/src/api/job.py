@@ -14,7 +14,7 @@ from api.dependencies import (
     get_scheduler,
 )
 from core.scheduler import Scheduler
-from exceptions import ResourceNotFoundError, ResourceType
+from exceptions import InvalidJobStateError, ResourceNotFoundError, ResourceType
 from schemas import Job
 from schemas.base_job import JobStatus
 from schemas.job import RemoteTrainJobPayload, TrainJob, TrainJobPayload
@@ -70,10 +70,15 @@ async def interrupt_job(
     if job is None:
         raise ResourceNotFoundError(ResourceType.JOB, job_id)
 
-    if job.status == JobStatus.RUNNING:
-        # Flag only this job's interrupt so concurrently running jobs on other
-        # targets are unaffected.
+    if job.status == JobStatus.CANCELED:
+        return
+    if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
+        raise InvalidJobStateError("Cannot stop a finished job")
+    if job.status == JobStatus.RUNNING and isinstance(job, TrainJob):
+        # Keep the job RUNNING until the worker has stopped and flushed progress.
+        # Otherwise Delete can remove it while the worker still owns it.
         scheduler.job_interrupt_flags[str(job_id)] = True
+        return
     await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
 
 

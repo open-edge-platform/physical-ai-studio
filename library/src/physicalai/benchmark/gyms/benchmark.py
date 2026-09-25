@@ -23,7 +23,7 @@ Example:
 
     Compare multiple policies:
 
-        results = {p.name: benchmark.evaluate(p) for p in [act, pi0, groot]}
+        results = {p.name: benchmark.evaluate(p) for p in [act, pi05, smolvla]}
         for name, result in results.items():
             print(f"{name}: {result.overall_success_rate:.1%}")
 

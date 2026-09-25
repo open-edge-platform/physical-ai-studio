@@ -13,7 +13,6 @@ class ResourceType(StrEnum):
     DATASET = "Dataset"
     MODEL = "Model"
     REMOTE_TRAINER = "Remote trainer"
-    REMOTE_SERVER = "Remote server"
     JOB = "JOB"
     JOB_FILE = "JOB_FILE"
     PLUGIN = "Plugin"
@@ -28,11 +27,20 @@ class BaseException(Exception):
     :param http_status: int default http status code to return to user
     """
 
-    def __init__(self, message: str, error_code: str, http_status: int, *, phase: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        error_code: str,
+        http_status: int,
+        *,
+        phase: str | None = None,
+        details: dict[str, str] | None = None,
+    ) -> None:
         self.message = message
         self.error_code = error_code
         self.http_status = http_status
         self.phase = phase
+        self.details = details or {}
         super().__init__(message)
 
 
@@ -135,43 +143,6 @@ class RemoteResumeUnsupportedError(BaseException):
             ),
             error_code="remote_resume_unsupported",
             http_status=http.HTTPStatus.BAD_REQUEST,
-        )
-
-
-class RemoteServerNotReadyError(BaseException):
-    """Raised when an SSH job targets a server that has not passed preflight.
-
-    Studio never dials SSH from job submission (only the explicit save/check
-    actions do); this only consults the server's persisted last-check summary.
-    """
-
-    def __init__(self, server_name: str, last_check_status: str) -> None:
-        super().__init__(
-            message=(
-                f"Remote server '{server_name}' is not ready for training "
-                f"(last check status: {last_check_status}). Verify the server before submitting a job."
-            ),
-            error_code="remote_server_not_ready",
-            http_status=http.HTTPStatus.CONFLICT,
-        )
-
-
-class RemoteServerAliasNotFoundError(BaseException):
-    """Raised when an SSH job's server names an SSH alias no longer in the config.
-
-    Unlike `RemoteServerNotReadyError`, this is checked by parsing the SSH
-    config file directly (no SSH dial), so it also catches a `Host` entry that
-    was renamed or removed since the server was last verified.
-    """
-
-    def __init__(self, server_name: str, ssh_host_alias: str) -> None:
-        super().__init__(
-            message=(
-                f"Remote server '{server_name}' points at SSH host alias '{ssh_host_alias}', "
-                "which is no longer in your SSH config. Restore the Host entry, or edit the server."
-            ),
-            error_code="remote_server_alias_not_found",
-            http_status=http.HTTPStatus.CONFLICT,
         )
 
 
@@ -423,7 +394,7 @@ class SshHostAliasNotFoundError(BaseException):
     """Raised when a server's SSH host alias is absent from the user's SSH config.
 
     Distinct from a connection failure: nothing was dialed, because there was no
-    host to dial. A wildcard-only match lands here too - a pattern stanza is not
+    host to dial. A wildcard-only match lands here too - a pattern entry is not
     a usable target.
     """
 
@@ -439,20 +410,25 @@ class SshHostAliasNotFoundError(BaseException):
 
 
 class SshHostKeyUnknownError(BaseException):
-    """Raised when the host is absent from ``known_hosts``.
-
-    Fails closed. Studio neither pins nor writes host keys, so the recovery is
-    for the user to accept the fingerprint themselves.
-    """
+    """Raised when AsyncSSH cannot validate an unknown host key."""
 
     def __init__(self, alias: str) -> None:
         super().__init__(
-            message=(
-                f"The host key for '{alias}' has not been accepted yet. "
-                f"Run `ssh {alias}` once and accept its fingerprint, then try again."
-            ),
+            message=f"The host key for '{alias}' could not be validated.",
             error_code="ssh_host_key_unknown",
             http_status=http.HTTPStatus.BAD_REQUEST,
+        )
+
+
+class SshHostKeyConfirmationRequiredError(BaseException):
+    """Raised when a first-seen SSH host key needs user confirmation."""
+
+    def __init__(self, alias: str, fingerprint: str) -> None:
+        super().__init__(
+            message=f"Confirm the SSH host key fingerprint for '{alias}' before connecting.",
+            error_code="ssh_host_key_confirmation_required",
+            http_status=http.HTTPStatus.PRECONDITION_REQUIRED,
+            details={"fingerprint": fingerprint},
         )
 
 
@@ -517,34 +493,17 @@ class SshConnectionError(BaseException):
     def __init__(self, alias: str, reason: str | None = None) -> None:
         detail = f" ({reason})" if reason else ""
         super().__init__(
-            message=f"Could not connect to '{alias}'{detail}. Check that the server is reachable.",
+            message=f"Could not connect to '{alias}'{detail}. Verify that the server is reachable.",
             error_code="ssh_connection_failed",
             http_status=http.HTTPStatus.BAD_GATEWAY,
-        )
-
-
-class RemoteServerPreflightError(BaseException):
-    """Raised when a server's blocking Tier 1 checks fail on create or update.
-
-    Carries the structured per-check results so the UI can show which check
-    failed rather than only that something did.
-    """
-
-    def __init__(self, message: str, failures: list[str] | None = None) -> None:
-        self.failures = failures or []
-        super().__init__(
-            message=message,
-            error_code="remote_server_preflight_failed",
-            http_status=http.HTTPStatus.BAD_REQUEST,
         )
 
 
 class TrainerImageResolutionError(BaseException):
     """Raised when the device-specific `protocol-<N>` trainer image cannot be resolved.
 
-    There is deliberately no fallback tag: a `latest` fallback here (unlike
-    Tier 1's advisory preflight check) would silently run a job against an
-    image whose protocol compatibility was never established.
+    An image must advertise the required protocol version; no fallback tag
+    is used when the matching image cannot be resolved.
     """
 
     def __init__(self, image_ref: str, protocol_version: int, detail: str | None = None) -> None:
@@ -556,6 +515,17 @@ class TrainerImageResolutionError(BaseException):
                 "job can run."
             ),
             error_code="trainer_image_unresolved",
+            http_status=http.HTTPStatus.CONFLICT,
+        )
+
+
+class TrainerImageVerificationError(BaseException):
+    """Raised when the resolved trainer image cannot be authenticated."""
+
+    def __init__(self, image_ref: str, reason: str) -> None:
+        super().__init__(
+            message=f"Could not verify the signature of trainer image '{image_ref}': {reason}.",
+            error_code="trainer_image_verification_failed",
             http_status=http.HTTPStatus.CONFLICT,
         )
 
@@ -572,85 +542,6 @@ class TrainerImagePullError(BaseException):
         )
 
 
-class TrainerImageVerificationError(BaseException):
-    """Raised when the trainer image's signature could not be verified.
-
-    Fails closed by default: this covers both a failed `cosign verify` and
-    `cosign` being unavailable on the remote host. `cosign` being unavailable
-    can be downgraded to a non-blocking warning via
-    `Settings.ssh_require_cosign_verification`; a failed `cosign verify`
-    always raises.
-    """
-
-    def __init__(self, image_ref: str, reason: str) -> None:
-        super().__init__(
-            message=f"Could not verify the signature of trainer image '{image_ref}': {reason}.",
-            error_code="trainer_image_verification_failed",
-            http_status=http.HTTPStatus.CONFLICT,
-        )
-
-
-class TrainerLibraryVersionError(BaseException):
-    """Raised when the registry-reported `physicalai-train` version is below policy.
-
-    Read from the registry manifest label before any pull, so a version-policy
-    rejection never costs a multi-gigabyte transfer.
-    """
-
-    def __init__(self, policy_name: str, required_version: str, reported_version: str) -> None:
-        super().__init__(
-            message=(
-                f"Trainer image reports physicalai-train version '{reported_version}', which does not meet "
-                f"the '{policy_name}' policy's minimum of '{required_version}'."
-            ),
-            error_code="trainer_library_version_unmet",
-            http_status=http.HTTPStatus.CONFLICT,
-        )
-
-
-class TrainerLibraryVersionMismatchError(BaseException):
-    """Raised when the launched container's `/health` disagrees with the registry label.
-
-    Defense in depth: the registry-manifest label is read before the pull, and
-    this re-confirms it against the running container's own report.
-    """
-
-    def __init__(self, label_version: str, health_version: str) -> None:
-        super().__init__(
-            message=(
-                f"Trainer image's registry label reports physicalai-train version '{label_version}', but the "
-                f"running container's /health reports '{health_version}'."
-            ),
-            error_code="trainer_library_version_mismatch",
-            http_status=http.HTTPStatus.CONFLICT,
-        )
-
-
-class GpuBusyTimeoutError(BaseException):
-    """Raised when a remote GPU stayed busy past the configured give-up timeout."""
-
-    def __init__(self, server_name: str, waited_s: float) -> None:
-        super().__init__(
-            message=f"GPU on remote server '{server_name}' stayed busy for {waited_s:.0f}s; giving up.",
-            error_code="gpu_busy_timeout",
-            http_status=http.HTTPStatus.CONFLICT,
-        )
-
-
-class RemoteDiskSpaceError(BaseException):
-    """Raised when a remote server lacks room for this job's actual snapshot."""
-
-    def __init__(self, server_name: str, free_bytes: int, required_bytes: int) -> None:
-        super().__init__(
-            message=(
-                f"Remote server '{server_name}' has {free_bytes / (1024**3):.1f} GiB free, "
-                f"but this job needs {required_bytes / (1024**3):.1f} GiB."
-            ),
-            error_code="remote_disk_insufficient",
-            http_status=http.HTTPStatus.CONFLICT,
-        )
-
-
 class TrainerContainerLaunchError(BaseException):
     """Raised when the trainer container could not be started on the remote host."""
 
@@ -663,39 +554,8 @@ class TrainerContainerLaunchError(BaseException):
         )
 
 
-class TrainerReadinessTimeoutError(BaseException):
-    """Raised when the launched trainer never became ready, or reported no protocol version."""
-
-    def __init__(self, server_name: str, detail: str | None = None) -> None:
-        extra = f": {detail}" if detail else ""
-        super().__init__(
-            message=f"Trainer on remote server '{server_name}' did not become ready in time{extra}.",
-            error_code="trainer_readiness_timeout",
-            http_status=http.HTTPStatus.BAD_GATEWAY,
-        )
-
-
-class TrainerProtocolVersionMismatchError(BaseException):
-    """Raised when the launched trainer's reported protocol version does not match.
-
-    Strict for SSH-provisioned trainers: unlike Tier 1's advisory preflight,
-    provisioning a real job never proceeds on a protocol mismatch.
-    """
-
-    def __init__(self, server_name: str, expected: int, reported: int | None) -> None:
-        reported_text = str(reported) if reported is not None else "none"
-        super().__init__(
-            message=(
-                f"Trainer on remote server '{server_name}' reports protocol version {reported_text}, "
-                f"expected {expected}."
-            ),
-            error_code="trainer_protocol_mismatch",
-            http_status=http.HTTPStatus.CONFLICT,
-        )
-
-
 class SshFeatureDisabledError(BaseException):
-    """Raised when the SSH remote-trainer feature is off, or fails closed on network exposure.
+    """Raised when the SSH remote-trainer feature fails closed on network exposure.
 
     Carries the evaluated reason (if any) rather than any server/alias detail,
     since this error can reach an unauthenticated caller.

@@ -8,7 +8,11 @@ import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 type PolicyAccessAlertProps = { policy: string };
 
 export const PolicyAccessAlert = ({ policy }: PolicyAccessAlertProps) => {
-    const { data: policyAccess } = $api.useQuery('get', '/api/policies/{policy}/huggingface-access', {
+    const {
+        data: policyAccess,
+        isError: policyAccessCheckFailed,
+        isLoading: isCheckingPolicyAccess,
+    } = $api.useQuery('get', '/api/policies/{policy}/huggingface-access', {
         params: { path: { policy } },
     });
 
@@ -42,7 +46,7 @@ export const PolicyAccessAlert = ({ policy }: PolicyAccessAlertProps) => {
     }
 
     const unavailable = policyAccess?.requirements.some((requirement) => requirement.status === 'unavailable');
-    if (unavailable) {
+    if (unavailable || (policyAccessCheckFailed && !isCheckingPolicyAccess)) {
         return (
             <InlineAlert variant='warning'>
                 We couldn&apos;t verify Hugging Face access. Check your network connection and try again.

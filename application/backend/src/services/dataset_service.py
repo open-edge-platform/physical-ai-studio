@@ -41,4 +41,4 @@ class DatasetService:
         await self.repo.delete_by_id(dataset_id)
 
         if remove_files:
-            shutil.rmtree(Path(dataset.path).expanduser())
+            shutil.rmtree(Path(dataset.path).expanduser(), ignore_errors=True)

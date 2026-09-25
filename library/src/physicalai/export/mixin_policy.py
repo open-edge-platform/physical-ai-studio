@@ -125,7 +125,7 @@ class ExportablePolicyMixin:
             # a leading batch dimension; tensor-shaped features get a batch of 1.
             shape = feature.shape if feature.shape == () else (1, *feature.shape)
             if feature.dtype is InferenceFeatureDtype.INT64:
-                input_sample[feature.name] = torch.zeros(shape, dtype=torch.int64)
+                input_sample[feature.name] = torch.ones(shape, dtype=torch.int64)
             else:
                 input_sample[feature.name] = torch.randn(shape, dtype=torch.float32)
 
@@ -171,14 +171,40 @@ class ExportablePolicyMixin:
         return {}
 
     @contextmanager
-    def _scoped_rtc(self, *, enable: bool) -> Generator[None, None, None]:
-        """Temporarily set enable_rtc on the model, restoring the previous value on exit."""
-        prev = getattr(self.model, "enable_rtc", False)
-        setattr(self.model, "enable_rtc", enable)  # noqa: B010
+    def _export_ready_model(self) -> Generator[None, None, None]:
+        """Put ``self.model`` in eval mode with ``torch.compile`` wrappers removed.
+
+        Policies compile hot methods by rebinding them on the instance, e.g.
+        ``self.forward = torch.compile(self.forward)``. Tracing through those
+        wrappers is what ``torch.export`` chokes on, and they also survive
+        ``copy.deepcopy`` unchanged (``copy`` treats plain functions as atomic),
+        so a copied module keeps dispatching into the *original* instance --
+        ignoring any ``eval()`` applied to the copy. Dropping the instance
+        attribute makes the uncompiled class-level method resolve again.
+
+        Both the wrappers and the original training mode are restored on exit,
+        including when the block raises.
+        """
+        model = self.model
+        if not isinstance(model, torch.nn.Module):
+            yield
+            return
+
+        compiled: list[tuple[torch.nn.Module, str, Any]] = []
+        for module in model.modules():
+            for name, value in list(vars(module).items()):
+                if hasattr(value, "_torchdynamo_orig_callable"):
+                    compiled.append((module, name, value))
+                    del vars(module)[name]
+
+        was_training = model.training
+        model.eval()
         try:
             yield
         finally:
-            setattr(self.model, "enable_rtc", prev)  # noqa: B010
+            model.train(was_training)
+            for module, name, value in compiled:
+                vars(module)[name] = value
 
     def create_manifest(
         self,
@@ -189,6 +215,7 @@ class ExportablePolicyMixin:
         postprocessors: list[ComponentSpec] | None = None,
         input_names: list[str] | None = None,
         output_names: list[str] | None = None,
+        callbacks: list[ComponentSpec] | None = None,
         **extras: Any,  # noqa: ANN401
     ) -> None:
         """Create ``manifest.json`` for an exported model.
@@ -199,6 +226,7 @@ class ExportablePolicyMixin:
             runner: Runner component spec to include in the manifest.
             preprocessors: Preprocessor component specs to include in the manifest.
             postprocessors: Postprocessor component specs to include in the manifest.
+            callbacks: Callback component specs to include in the manifest.
             input_names: Optional ordered list of model input names.
             output_names: Optional ordered list of model output names.
             **extras: Additional keyword arguments to forward to the manifest.
@@ -222,6 +250,7 @@ class ExportablePolicyMixin:
                 artifacts={str(backend): artifact_filename},
                 preprocessors=preprocessors or [],
                 postprocessors=postprocessors or [],
+                callbacks=callbacks or [],
                 input_features=extras.pop("input_features", []),
                 output_features=extras.pop("output_features", []),
             ),
@@ -340,6 +369,7 @@ class ExportablePolicyMixin:
             runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
+            callbacks=extra_model_args.callbacks_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
@@ -378,46 +408,44 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
-        enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
-        with self._scoped_rtc(enable=enable_rtc):
-            if input_sample is None:
-                input_sample = self._get_default_export_input_sample()
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
 
-            if input_sample is None:
-                msg = "An input sample must be provided for ONNX export, or the policy must implement "
-                "`sample_input` property."
-                raise RuntimeError(msg)
+        if input_sample is None:
+            msg = "An input sample must be provided for ONNX export, or the policy must implement "
+            "`sample_input` property."
+            raise RuntimeError(msg)
 
-            model_path = self._prepare_export_path(output_path, ".onnx")
-            export_dir = model_path.parent
+        model_path = self._prepare_export_path(output_path, ".onnx")
+        export_dir = model_path.parent
 
-            extra_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
-            extra_export_kwargs = extra_model_args.exporter_kwargs
-            extra_export_kwargs.update(export_kwargs)
+        extra_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
+        extra_export_kwargs = extra_model_args.exporter_kwargs
+        extra_export_kwargs.update(export_kwargs)
 
-            arg_name = self._get_forward_arg_name()
+        arg_name = self._get_forward_arg_name()
 
-            self.model.eval()
-            self._onnx_core_export_step(
-                model_path=model_path,
-                input_sample=input_sample,
-                arg_name=arg_name,
-                **extra_export_kwargs,
-            )
+        self._export_ready_model()(self._onnx_core_export_step)(
+            model_path=model_path,
+            input_sample=input_sample,
+            arg_name=arg_name,
+            **extra_export_kwargs,
+        )
 
-            if extra_model_args.export_tokenizer:
-                msg = "Tokenizer export is not supported for ONNX backend at this time."
-                raise NotImplementedError(msg)
+        if extra_model_args.export_tokenizer:
+            msg = "Tokenizer export is not supported for ONNX backend at this time."
+            raise NotImplementedError(msg)
 
-            self.create_manifest(
-                export_dir,
-                ExportBackend.ONNX,
-                runner=ComponentSpec.from_class(SinglePass),
-                preprocessors=extra_model_args.preprocessors_specs,
-                postprocessors=extra_model_args.postprocessors_specs,
-                input_features=self._to_component_specs(self.inputs_schema or []),
-                output_features=self._to_component_specs(self.outputs_schema or []),
-            )
+        self.create_manifest(
+            export_dir,
+            ExportBackend.ONNX,
+            runner=ComponentSpec.from_class(SinglePass),
+            preprocessors=extra_model_args.preprocessors_specs,
+            postprocessors=extra_model_args.postprocessors_specs,
+            callbacks=extra_model_args.callbacks_specs,
+            input_features=self._to_component_specs(self.inputs_schema or []),
+            output_features=self._to_component_specs(self.outputs_schema or []),
+        )
 
     @torch.no_grad()
     def to_openvino(
@@ -457,58 +485,41 @@ class ExportablePolicyMixin:
             )
             raise NotImplementedError(msg)
 
-        enable_rtc = bool(export_kwargs.pop("enable_rtc", False))
-        with self._scoped_rtc(enable=enable_rtc):
-            if input_sample is None:
-                input_sample = self._get_default_export_input_sample()
+        if input_sample is None:
+            input_sample = self._get_default_export_input_sample()
 
-            if input_sample is None:
-                msg = "An input sample must be provided for OpenVINO export, or the policy must implement "
-                "`sample_input` property."
-                raise RuntimeError(msg)
+        if input_sample is None:
+            msg = "An input sample must be provided for OpenVINO export, or the policy must implement "
+            "`sample_input` property."
+            raise RuntimeError(msg)
 
-            model_path = self._prepare_export_path(output_path, ".xml")
-            export_dir = model_path.parent
+        model_path = self._prepare_export_path(output_path, ".xml")
+        export_dir = model_path.parent
 
-            arg_name = self._get_forward_arg_name()
-            input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
+        arg_name = self._get_forward_arg_name()
+        input_shapes = [openvino.Shape(tuple(tensor.shape)) for tensor in input_sample.values()]
 
-            extra_model_args: OpenVINOExportParameters = cast(
-                "OpenVINOExportParameters",
-                self._get_export_extra_args(ExportBackend.OPENVINO),
-            )
-            extra_export_kwargs = extra_model_args.exporter_kwargs
+        extra_model_args: OpenVINOExportParameters = cast(
+            "OpenVINOExportParameters",
+            self._get_export_extra_args(ExportBackend.OPENVINO),
+        )
+        extra_export_kwargs = extra_model_args.exporter_kwargs
 
-            if extra_model_args.via_onnx:
-                onnx_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
-                extra_export_kwargs = onnx_model_args.exporter_kwargs
+        if extra_model_args.via_onnx:
+            onnx_model_args = cast("ONNXExportParameters", self._get_export_extra_args(ExportBackend.ONNX))
+            extra_export_kwargs = onnx_model_args.exporter_kwargs
 
-            extra_export_kwargs.update(export_kwargs)
+        extra_export_kwargs.update(export_kwargs)
 
-            self.model.eval()
-
-            if extra_model_args.via_onnx:
-                with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
-                    self._onnx_core_export_step(
-                        model_path=Path(tmp.name),
-                        input_sample=input_sample,
-                        arg_name=arg_name,
-                        **extra_export_kwargs,
-                    )
-                    with _quiet_loggers(_ONNX_PROBE_NOISE_LOGGERS, level=logging.ERROR):
-                        ov_model = openvino.convert_model(
-                            tmp.name,
-                            example_input={arg_name: input_sample},
-                            input=input_shapes,
-                        )
-            else:
-                ov_model = openvino.convert_model(
-                    self.model,
-                    example_input={arg_name: input_sample},
-                    input=input_shapes,
-                    **extra_export_kwargs,
-                )
-            _postprocess_openvino_model(ov_model, extra_model_args.outputs)
+        ov_model = self._export_ready_model()(self._openvino_convert_step)(
+            extra_model_args=extra_model_args,
+            input_sample=input_sample,
+            arg_name=arg_name,
+            input_shapes=input_shapes,
+            extra_export_kwargs=extra_export_kwargs,
+        )
+        _set_openvino_input_names(ov_model, extra_model_args.inputs)
+        _postprocess_openvino_model(ov_model, extra_model_args.outputs)
 
         openvino.save_model(ov_model, str(model_path), compress_to_fp16=extra_model_args.compress_to_fp16)
         if extra_model_args.export_tokenizer:
@@ -517,6 +528,7 @@ class ExportablePolicyMixin:
                 with_detokenizer=False,
                 max_length=self._preprocessor.max_token_len,
                 use_max_padding=True,
+                truncation=extra_model_args.tokenizer_truncation,
             )
             if ov_tokenizer is not None:
                 openvino.save_model(ov_tokenizer, export_dir / "tokenizer.xml")
@@ -533,6 +545,7 @@ class ExportablePolicyMixin:
             runner=ComponentSpec.from_class(SinglePass),
             preprocessors=extra_model_args.preprocessors_specs,
             postprocessors=extra_model_args.postprocessors_specs,
+            callbacks=extra_model_args.callbacks_specs,
             input_features=self._to_component_specs(self.inputs_schema or []),
             output_features=self._to_component_specs(self.outputs_schema or []),
         )
@@ -612,14 +625,12 @@ class ExportablePolicyMixin:
             raise ImportError(msg) from e
 
         # ExecuTorch doesn't support CUDA/XPU tensors (segfaults instead of
-        # raising), so trace on CPU. Original device/train mode are always
-        # restored.
+        # raising), so trace on CPU. The original device is always restored;
+        # train mode is restored by _export_ready_model().
         original_device = self.device
-        was_training = self.model.training
         self.model.to("cpu")
-        self.model.eval()
         try:
-            self._export_executorch_pte(
+            self._export_ready_model()(self._export_executorch_pte)(
                 model_path=model_path,
                 input_sample=input_sample,
                 extra_export_kwargs=extra_export_kwargs,
@@ -629,12 +640,12 @@ class ExportablePolicyMixin:
             )
         finally:
             self.model.to(original_device)
-            self.model.train(was_training)
 
         self.create_manifest(
             export_dir,
             ExportBackend.EXECUTORCH,
             runner=ComponentSpec.from_class(SinglePass),
+            callbacks=extra_model_args.callbacks_specs,
             input_names=list(input_sample.keys()),  # type: ignore[arg-type, union-attr]
             output_names=extra_model_args.output_names,
             input_features=self._to_component_specs(self.inputs_schema or []),
@@ -717,7 +728,7 @@ class ExportablePolicyMixin:
         backend: ExportBackend | str,
         input_sample: dict[str, torch.Tensor] | None = None,
         post_export_hooks: list[Callable[[str], None]] | None = None,
-        **export_kwargs: dict,
+        **export_kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Export the model to the specified backend format.
 
@@ -736,7 +747,7 @@ class ExportablePolicyMixin:
             post_export_hooks: Optional list of callables to run after export completes.
                 Each hook receives the exported model file path (str) and can perform
                 post-processing such as quantization or compression.
-            **export_kwargs (dict): Additional keyword arguments to pass to the
+            **export_kwargs (Any): Additional keyword arguments to pass to the
                 backend-specific export method.
 
         Raises:
@@ -784,6 +795,51 @@ class ExportablePolicyMixin:
             f=str(model_path),
             input_names=list(input_sample.keys()),
             **export_kwargs,
+        )
+
+    def _openvino_convert_step(
+        self,
+        *,
+        extra_model_args: "OpenVINOExportParameters",
+        input_sample: dict[str, torch.Tensor],
+        arg_name: str,
+        input_shapes: list[openvino.Shape],
+        extra_export_kwargs: dict,
+    ) -> Any:  # noqa: ANN401
+        """Convert ``self.model`` to an in-memory OpenVINO model.
+
+        Assumes ``self.model`` is already eval-mode and export-ready (see
+        ``_export_ready_model``); the caller is responsible for that.
+
+        Args:
+            extra_model_args: Resolved OpenVINO export parameters (``via_onnx``, etc).
+            input_sample: Input tensors for tracing.
+            arg_name: Name of the forward method's first positional argument.
+            input_shapes: OpenVINO shapes matching ``input_sample``.
+            extra_export_kwargs: Additional keyword arguments for ``openvino.convert_model``.
+
+        Returns:
+            The converted OpenVINO model.
+        """
+        if extra_model_args.via_onnx:
+            with tempfile.NamedTemporaryFile(suffix=".onnx") as tmp:
+                self._onnx_core_export_step(
+                    model_path=Path(tmp.name),
+                    input_sample=input_sample,
+                    arg_name=arg_name,
+                    **extra_export_kwargs,
+                )
+                with _quiet_loggers(_ONNX_PROBE_NOISE_LOGGERS, level=logging.ERROR):
+                    return openvino.convert_model(
+                        tmp.name,
+                        example_input={arg_name: input_sample},
+                        input=input_shapes,
+                    )
+        return openvino.convert_model(
+            self.model,
+            example_input={arg_name: input_sample},
+            input=input_shapes,
+            **extra_export_kwargs,
         )
 
     def _get_default_export_input_sample(self) -> dict[str, torch.Tensor] | None:
@@ -881,3 +937,22 @@ def _postprocess_openvino_model(ov_model: openvino.Model, output_names: list[str
     if output_names is not None and len(ov_model.outputs) >= len(output_names):
         for i, name in enumerate(output_names):
             ov_model.outputs[i].tensor.set_names({name})
+
+
+def _set_openvino_input_names(ov_model: openvino.Model, input_names: list[str]) -> None:
+    """Collapse each OpenVINO input tensor to one canonical name.
+
+    OpenVINO may attach multiple aliases to a single input tensor during
+    conversion. Runtime input routing expects one deterministic key, so policies
+    can opt in to replacing that alias set with a single configured name.
+    """
+    if not input_names:
+        return
+
+    remaining_ports = list(ov_model.inputs)
+    for name in input_names:
+        for index, port in enumerate(remaining_ports):
+            if name in port.get_names():
+                port.tensor.set_names({name})
+                remaining_ports.pop(index)
+                break

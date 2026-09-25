@@ -220,18 +220,10 @@ export const CamerasList = () => {
     });
 
     return (
-        <Flex direction='column' gap='size-100'>
-            {/* TODO:  */}
-            <View isHidden>
-                <Flex justifyContent={'space-between'} alignItems={'end'}>
-                    <span>Step 2: setup cameras</span>
-                    <Button>Next</Button>
-                </Flex>
-                <Divider size='S' marginY='size-200' />
-            </View>
+        <Flex direction='column' gap='size-200' height={'100%'}>
             <AddResourceButton to={paths.project.cameras.new({ project_id })}>Configure new camera</AddResourceButton>
 
-            <Flex direction='column' gap='size-100'>
+            <Flex direction='column' gap='size-200'>
                 {projectCameras.map((camera) => {
                     const cameraFingerprint = fingerprintKey(camera.fingerprint);
                     const hardwareCamera = cameraFingerprint
@@ -258,6 +250,14 @@ export const CamerasList = () => {
     );
 };
 
+const CamerasFallback = () => {
+    return (
+        <Grid width='100%' height='100%'>
+            <Loading mode='inline' />
+        </Grid>
+    );
+};
+
 export const Layout = () => {
     return (
         <Grid
@@ -268,7 +268,9 @@ export const Layout = () => {
             minHeight={0}
         >
             <View gridArea='camera' backgroundColor={'gray-100'} padding='size-400'>
-                <CamerasList />
+                <Suspense fallback={<CamerasFallback />}>
+                    <CamerasList />
+                </Suspense>
             </View>
             <View
                 gridArea='controls'
@@ -278,13 +280,7 @@ export const Layout = () => {
                 minWidth={0}
                 overflow='auto'
             >
-                <Suspense
-                    fallback={
-                        <Grid width='100%' height='100%'>
-                            <Loading mode='inline' />
-                        </Grid>
-                    }
-                >
+                <Suspense fallback={<CamerasFallback />}>
                     <Outlet />
                 </Suspense>
             </View>

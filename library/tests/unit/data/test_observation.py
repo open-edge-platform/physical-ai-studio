@@ -9,7 +9,14 @@ import torch
 from lightning_utilities.core.apply_func import apply_to_collection
 
 from physicalai.data.lerobot import FormatConverter
-from physicalai.data.observation import IMAGES, Observation
+from physicalai.data.observation import (
+    IMAGES,
+    PREV_CHUNK_LEFT_OVER,
+    RTC_EXECUTION_HORIZON,
+    RTC_INFERENCE_DELAY,
+    RTC_MAX_GUIDANCE_WEIGHT,
+    Observation,
+)
 
 
 class TestObservationCreation:
@@ -503,6 +510,76 @@ class TestObservationWithOptionalFields:
         assert obs.next_success is True
         assert obs.info["key"] == "value"
         assert obs.extra["custom"] == 123
+
+    def test_observation_with_prev_chunk_left_over(self):
+        """Test observation carries the RTC prev_chunk_left_over field."""
+        prev_chunk = torch.randn(1, 50, 32)
+        obs = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            prev_chunk_left_over=prev_chunk,
+        )
+
+        assert obs.prev_chunk_left_over is not None
+        assert torch.equal(obs.prev_chunk_left_over, prev_chunk)
+
+    def test_prev_chunk_left_over_roundtrip(self):
+        """Test prev_chunk_left_over survives to_dict → from_dict roundtrip."""
+        prev_chunk = torch.randn(1, 50, 32)
+        original = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            prev_chunk_left_over=prev_chunk,
+        )
+
+        restored = Observation.from_dict(original.to_dict())
+
+        assert restored.prev_chunk_left_over is not None
+        assert torch.equal(restored.prev_chunk_left_over, prev_chunk)
+
+    def test_observation_with_rtc_scheduling_fields(self):
+        """Test observation carries the RTC scheduling fields."""
+        obs = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            inference_delay=torch.tensor(4),
+            max_guidance_weight=torch.tensor(5.0),
+            execution_horizon=torch.tensor(10),
+        )
+
+        assert torch.equal(obs.inference_delay, torch.tensor(4))
+        assert torch.equal(obs.max_guidance_weight, torch.tensor(5.0))
+        assert torch.equal(obs.execution_horizon, torch.tensor(10))
+
+    def test_rtc_scheduling_fields_roundtrip(self):
+        """Test RTC scheduling fields survive to_dict → from_dict roundtrip."""
+        original = Observation(
+            action=torch.tensor([1.0, 2.0]),
+            inference_delay=torch.tensor(4),
+            max_guidance_weight=torch.tensor(5.0),
+            execution_horizon=torch.tensor(10),
+        )
+
+        data = original.to_dict()
+
+        assert torch.equal(data[RTC_INFERENCE_DELAY], original.inference_delay)
+        assert torch.equal(data[RTC_MAX_GUIDANCE_WEIGHT], original.max_guidance_weight)
+        assert torch.equal(data[RTC_EXECUTION_HORIZON], original.execution_horizon)
+
+        restored = Observation.from_dict(data)
+
+        assert torch.equal(restored.inference_delay, original.inference_delay)
+        assert torch.equal(restored.max_guidance_weight, original.max_guidance_weight)
+        assert torch.equal(restored.execution_horizon, original.execution_horizon)
+
+    def test_rtc_field_constants_match_dataclass_fields(self):
+        """Test RTC constants resolve to field names retained by ``keys()``."""
+        keys = Observation.keys()
+
+        for constant in (
+            PREV_CHUNK_LEFT_OVER,
+            RTC_INFERENCE_DELAY,
+            RTC_MAX_GUIDANCE_WEIGHT,
+            RTC_EXECUTION_HORIZON,
+        ):
+            assert constant in keys
 
 
 class TestObservationDeviceTransfer:

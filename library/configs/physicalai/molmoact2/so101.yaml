@@ -1,0 +1,82 @@
+# MolmoAct2 SO101 Training Configuration
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/molmoact2/so101.yaml
+model:
+  class_path: physicalai.policies.MolmoAct2
+  init_args:
+    # Initialize from the released SO100/SO101 checkpoint. norm_tag is deliberately
+    # omitted so setup("fit") adopts this dataset's feature contract and quantiles.
+    pretrained_name_or_path: allenai/MolmoAct2-SO100_101
+
+    # Use one observation to predict and execute the full 30-step action chunk.
+    n_obs_steps: 1
+    chunk_size: 30
+    n_action_steps: 30
+
+    # Start each generated action trajectory from fresh Gaussian noise.
+    use_random_input_noise: true
+
+    # Add low-rank adapters to the VLM and action expert while freezing base weights.
+    lora_enabled: true
+
+    # Recompute intermediate activations during backward passes to save GPU memory.
+    gradient_checkpointing: true
+
+    # Convert dataset samples and quantiles into the checkpoint's legacy SO101
+    # coordinate frame, without importing or retaining checkpoint normalization stats.
+    adapt_to_so101: true
+    convert_pretrained_so101_stats: false
+    preserve_pretrained_normalization_in_training: false
+
+    # Text inserted into the model prompt to describe the embodiment and action space.
+    setup_type: "single so100/so101 robotic arm in molmoact2"
+    control_mode: "absolute joint pose"
+
+    # Optimization hyperparameters.
+    optimizer_lr: 1e-5
+    optimizer_vit_lr: 5e-6
+    optimizer_connector_lr: 5e-6
+    optimizer_action_expert_lr: 5e-5
+    optimizer_betas: [0.9, 0.95]
+    optimizer_eps: 1e-6
+    optimizer_weight_decay: 0.0
+    optimizer_grad_clip_norm: 1.0
+    scheduler_warmup_steps: 200
+    scheduler_decay_steps: 24000
+    scheduler_decay_lr: 1e-6
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    # Convert the SO101 LeRobot dataset into PhysicalAI Observation/Action objects.
+    repo_id: Daankrol/pick-and-place-multi-obj
+    train_batch_size: 16
+    val_batch_size: 16
+    # Hold out 10% of episodes reproducibly for validation-loss evaluation.
+    val_split: 0.1
+    val_split_seed: 42
+    data_format: physicalai
+    # Worker processes decode and prepare samples in parallel.
+    num_workers: 8
+
+trainer:
+  max_epochs: 8
+  accelerator: gpu
+  devices: 1
+  # Mixed bfloat16 reduces memory use while retaining float32-like range.
+  precision: bf16-mixed
+  log_every_n_steps: 20
+  # Validate every 2000 optimizer steps, including across epoch boundaries.
+  val_check_interval: 2000
+  check_val_every_n_epoch: null
+  callbacks:
+    - class_path: lightning.pytorch.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/loss
+        mode: min
+        save_top_k: 2
+        save_last: true
+        save_weights_only: true
+        filename: "molmoact2-{epoch:03d}-{step:06d}"
+        auto_insert_metric_name: false

@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 import torch
 
+type NormalizationValue = float | list[float] | list[list[float]] | list[list[list[float]]] | None
+
 
 @dataclass
 class Observation:
@@ -57,6 +59,15 @@ class Observation:
     state: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | np.ndarray | None = None
     images: dict[str, torch.Tensor | np.ndarray] | torch.Tensor | np.ndarray | None = None
 
+    # Inference-only Fields
+    # Real-Time Chunking (RTC) inputs: the unconsumed tail of the previously predicted
+    # action chunk plus the scheduling parameters that steer guided denoising. Set by the
+    # runtime at inference time and absent during training.
+    prev_chunk_left_over: torch.Tensor | np.ndarray | None = None
+    inference_delay: torch.Tensor | np.ndarray | None = None
+    max_guidance_weight: torch.Tensor | np.ndarray | None = None
+    execution_horizon: torch.Tensor | np.ndarray | None = None
+
     # Optional RL & Metadata Fields
     next_reward: torch.Tensor | np.ndarray | None = None
     next_success: bool | None = None
@@ -75,6 +86,11 @@ class Observation:
         TASK = "task"
         STATE = "state"
         IMAGES = "images"
+
+        PREV_CHUNK_LEFT_OVER = "prev_chunk_left_over"
+        RTC_INFERENCE_DELAY = "inference_delay"
+        RTC_MAX_GUIDANCE_WEIGHT = "max_guidance_weight"
+        RTC_EXECUTION_HORIZON = "execution_horizon"
 
         NEXT_REWARD = "next_reward"
         NEXT_SUCCESS = "next_success"
@@ -473,14 +489,27 @@ class Feature:
 
 @dataclass(frozen=True)
 class NormalizationParameters:
-    """Parameters for normalizing a tensor."""
+    """Statistics and optional selection mask for feature normalization.
 
-    mean: list[float] | float | None = None
-    std: list[float] | float | None = None
-    min: list[float] | float | None = None
-    max: list[float] | float | None = None
-    q01: list[float] | float | None = None
-    q99: list[float] | float | None = None
+    Each statistic may be a scalar or a sequence matching the feature's
+    normalized dimensions.
+    """
+
+    #: Arithmetic mean used by mean/std normalization.
+    mean: NormalizationValue = None
+    #: Standard deviation used by mean/std normalization.
+    std: NormalizationValue = None
+    #: Lower bound used by min/max normalization.
+    min: NormalizationValue = None
+    #: Upper bound used by min/max normalization.
+    max: NormalizationValue = None
+    #: First-percentile bound used by quantile normalization.
+    q01: NormalizationValue = None
+    #: Ninety-ninth-percentile bound used by quantile normalization.
+    q99: NormalizationValue = None
+    #: Optional per-dimension selector: ``True`` dimensions are normalized and
+    #: ``False`` dimensions pass through unchanged for all statistical modes.
+    mask: list[bool] | None = None
 
 
 # Module-level constants for convenient dict access
@@ -504,6 +533,10 @@ INDEX = Observation.FieldName.INDEX.value
 INFO = Observation.FieldName.INFO.value
 NEXT_REWARD = Observation.FieldName.NEXT_REWARD.value
 NEXT_SUCCESS = Observation.FieldName.NEXT_SUCCESS.value
+PREV_CHUNK_LEFT_OVER = Observation.FieldName.PREV_CHUNK_LEFT_OVER.value
+RTC_EXECUTION_HORIZON = Observation.FieldName.RTC_EXECUTION_HORIZON.value
+RTC_INFERENCE_DELAY = Observation.FieldName.RTC_INFERENCE_DELAY.value
+RTC_MAX_GUIDANCE_WEIGHT = Observation.FieldName.RTC_MAX_GUIDANCE_WEIGHT.value
 STATE = Observation.FieldName.STATE.value
 TASK = Observation.FieldName.TASK.value
 TASK_INDEX = Observation.FieldName.TASK_INDEX.value

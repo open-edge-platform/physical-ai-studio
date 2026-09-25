@@ -62,7 +62,7 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
     return (
         <Form onSubmit={save} width={'size-6000'} validationBehavior='native'>
             <Dialog>
-                <Heading>Create dataset</Heading>
+                <Heading>Create new dataset</Heading>
                 <Divider />
                 <Content>
                     <Picker
@@ -108,7 +108,7 @@ export const NewDatasetForm = ({ project_id, onDone }: NewDatasetFormProps) => {
 export const NewDatasetLink = ({ project_id }: { project_id: string }) => {
     return (
         <DialogTrigger>
-            <Button variant='accent'>New Dataset</Button>
+            <Button variant='accent'>Create new dataset</Button>
             {(close) => <NewDatasetForm project_id={project_id} onDone={close} />}
         </DialogTrigger>
     );

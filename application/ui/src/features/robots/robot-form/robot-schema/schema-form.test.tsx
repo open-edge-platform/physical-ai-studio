@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
@@ -628,7 +628,8 @@ describe('SchemaForm', () => {
         expect(screen.queryByRole('textbox', { name: 'Cameras' })).not.toBeInTheDocument();
     });
 
-    it('renders connection pickers from referenced nested object schemas', () => {
+    it('renders connection pickers from referenced nested object schemas with per-section advanced controls', async () => {
+        const user = userEvent.setup();
         render(
             <RobotFormProvider>
                 <SchemaForm schema={bimanualRebotSchema} />
@@ -638,12 +639,25 @@ describe('SchemaForm', () => {
 
         expect(screen.getByRole('heading', { name: 'Left Arm Config' })).toBeVisible();
         expect(screen.getByRole('heading', { name: 'Right Arm Config' })).toBeVisible();
-        expect(screen.queryByRole('switch', { name: 'Show advanced options' })).not.toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: 'Advanced options' })).toHaveLength(2);
         expect(screen.queryAllByRole('textbox', { name: 'Can Adapter' })).toHaveLength(0);
         expect(screen.getAllByRole('button', { name: /Select robot/ })).toHaveLength(2);
+
+        const leftArmSection = screen.getByRole('heading', { name: 'Left Arm Config' }).parentElement;
+        expect(leftArmSection).not.toBeNull();
+        if (leftArmSection === null) {
+            throw new Error('Expected left arm section container to be present.');
+        }
+        const leftArmAdvancedButtons = within(leftArmSection).getAllByRole('button', { name: 'Advanced options' });
+
+        await user.click(leftArmAdvancedButtons[leftArmAdvancedButtons.length - 1]);
+
+        expect(screen.getAllByRole('textbox', { name: 'Can Adapter' })).toHaveLength(1);
+        expect(leftArmAdvancedButtons[leftArmAdvancedButtons.length - 1]).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getAllByRole('button', { name: 'Advanced options' })).toHaveLength(2);
     });
 
-    it('hides a section when all of its fields are advanced configuration fields', () => {
+    it('keeps a section visible and gates advanced-only fields behind section control', async () => {
         const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
             type: 'object',
             properties: {
@@ -670,6 +684,7 @@ describe('SchemaForm', () => {
                 },
             ],
         };
+        const user = userEvent.setup();
 
         render(
             <RobotFormProvider>
@@ -677,7 +692,16 @@ describe('SchemaForm', () => {
             </RobotFormProvider>
         );
 
-        expect(screen.queryByRole('heading', { name: 'Calibration' })).not.toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Calibration' })).toBeVisible();
+        const advancedButton = screen.getByRole('button', { name: 'Advanced options' });
+        expect(advancedButton).toBeVisible();
+        expect(advancedButton).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByRole('spinbutton', { name: 'Offset' })).not.toBeInTheDocument();
+
+        await user.click(advancedButton);
+
+        expect(advancedButton).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByRole('spinbutton', { name: 'Offset' })).toBeVisible();
     });
 
     it('renders defaulted fields unless they are advanced configuration fields', () => {
@@ -840,6 +864,7 @@ describe('SchemaForm', () => {
             </RobotFormProvider>
         );
 
+        expect(screen.getByRole('button', { name: 'Advanced options' })).toBeVisible();
         expect(screen.queryByRole('button', { name: 'Upload calibration JSON' })).not.toBeInTheDocument();
     });
 
@@ -981,7 +1006,7 @@ describe('SchemaForm', () => {
         expect(screen.queryByText('Field-level help text')).not.toBeInTheDocument();
     });
 
-    it('keeps advanced configuration fields hidden when the toggle is hidden', () => {
+    it('hides advanced configuration fields until show advanced is pressed in the current scope', async () => {
         const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
             type: 'object',
             properties: {
@@ -994,6 +1019,7 @@ describe('SchemaForm', () => {
                 },
             },
         };
+        const user = userEvent.setup();
 
         render(
             <RobotFormProvider>
@@ -1002,8 +1028,86 @@ describe('SchemaForm', () => {
         );
 
         expect(screen.getByRole('textbox', { name: 'Connection String' })).toBeVisible();
-        expect(screen.queryByRole('switch', { name: 'Show advanced options' })).not.toBeInTheDocument();
+        const advancedButton = screen.getByRole('button', { name: 'Advanced options' });
+        expect(advancedButton).toBeVisible();
+        expect(advancedButton).toHaveAttribute('aria-expanded', 'false');
         expect(screen.queryByRole('switch', { name: 'Use ROS' })).not.toBeInTheDocument();
+
+        await user.click(advancedButton);
+
+        expect(advancedButton).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByRole('switch', { name: 'Use ROS' })).toBeVisible();
+    });
+
+    it('keeps nested section advanced visibility independent from parent section state', async () => {
+        const schema: Parameters<typeof SchemaForm>[0]['schema'] = {
+            type: 'object',
+            properties: {
+                connection_string: { type: 'string', title: 'Connection String' },
+                parent_advanced: {
+                    type: 'string',
+                    title: 'Parent Advanced',
+                    'x-physicalai-ui': { advanced_configuration: true },
+                },
+                child_advanced: {
+                    type: 'string',
+                    title: 'Child Advanced',
+                    'x-physicalai-ui': { advanced_configuration: true },
+                },
+            },
+            'x-physicalai-ui': [
+                {
+                    kind: 'section',
+                    id: 'parent',
+                    title: 'Parent',
+                    items: [
+                        { kind: 'field', name: 'connection_string' },
+                        { kind: 'field', name: 'parent_advanced' },
+                        {
+                            kind: 'section',
+                            id: 'child',
+                            title: 'Child',
+                            items: [{ kind: 'field', name: 'child_advanced' }],
+                        },
+                    ],
+                },
+            ],
+        };
+        const user = userEvent.setup();
+
+        render(
+            <RobotFormProvider>
+                <SchemaForm schema={schema} />
+            </RobotFormProvider>
+        );
+
+        expect(screen.getByRole('heading', { name: 'Parent' })).toBeVisible();
+        expect(screen.getByRole('heading', { name: 'Child' })).toBeVisible();
+        expect(screen.getAllByRole('button', { name: 'Advanced options' })).toHaveLength(2);
+        expect(screen.queryByRole('textbox', { name: 'Parent Advanced' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('textbox', { name: 'Child Advanced' })).not.toBeInTheDocument();
+
+        const parentSection = screen.getByRole('heading', { name: 'Parent' }).parentElement;
+        expect(parentSection).not.toBeNull();
+        if (parentSection === null) {
+            throw new Error('Expected parent section container to be present.');
+        }
+        const parentAdvancedButtons = within(parentSection).getAllByRole('button', { name: 'Advanced options' });
+
+        await user.click(parentAdvancedButtons[parentAdvancedButtons.length - 1]);
+
+        expect(screen.getByRole('textbox', { name: 'Parent Advanced' })).toBeVisible();
+        expect(screen.queryByRole('textbox', { name: 'Child Advanced' })).not.toBeInTheDocument();
+
+        const childSection = screen.getByRole('heading', { name: 'Child' }).parentElement;
+        expect(childSection).not.toBeNull();
+        if (childSection === null) {
+            throw new Error('Expected child section container to be present.');
+        }
+
+        await user.click(within(childSection).getByRole('button', { name: 'Advanced options' }));
+
+        expect(screen.getByRole('textbox', { name: 'Child Advanced' })).toBeVisible();
     });
 
     it('keeps advanced configuration field defaults in the payload', () => {

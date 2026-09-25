@@ -54,7 +54,7 @@ export const featureFlags = {
         return resolveFlag('ipcam', typeof process !== 'undefined' ? process.env.PUBLIC_ENABLE_IP_CAM : undefined);
     },
     get plugins(): boolean {
-        return resolveFlag('plugins', typeof process !== 'undefined' ? process.env.PUBLIC_ENABLE_PLUGINS : undefined);
+        return resolveFlag('plugins', typeof process !== 'undefined' ? process.env.PUBLIC_ENABLE_PLUGINS : 'true');
     },
 };
 

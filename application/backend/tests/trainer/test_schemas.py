@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from trainer.schemas import DatasetTransfer, SubmitJobRequest
 from training import TrainingJobSpec
@@ -29,6 +29,12 @@ def test_unsupported_policy_rejected(policy: str) -> None:
         SubmitJobRequest(spec=TrainingJobSpec(policy=policy))
 
 
+@pytest.mark.parametrize("policy", ["act", "molmoact2", "pi05", "rldx1", "smolvla", "xr0"])
+def test_selectable_policies_accepted(policy: str) -> None:
+    """Every policy the UI can select must pass trainer submission validation."""
+    assert SubmitJobRequest(spec=TrainingJobSpec(policy=policy)).spec.policy == policy
+
+
 def test_unknown_spec_field_rejected() -> None:
     """A stray field is a client/server mismatch, not something to ignore."""
     with pytest.raises(ValidationError):
@@ -39,3 +45,15 @@ def test_protocol_1_request_rejected() -> None:
     """A protocol-1 body (untyped payload + policy) is no longer accepted."""
     with pytest.raises(ValidationError):
         SubmitJobRequest.model_validate({"payload": {"max_steps": 100}, "policy": "act"})
+
+
+def test_hf_token_accepted_but_excluded_from_dump() -> None:
+    """The token must never be written to the job store's persisted JSON."""
+    request = SubmitJobRequest(spec=TrainingJobSpec(policy="act"), hf_token=SecretStr("hf-secret"))
+
+    assert request.hf_token is not None
+    assert request.hf_token.get_secret_value() == "hf-secret"
+    # `spec.run_options.hf_token` is a distinct field of the same name; only the
+    # top-level `SubmitJobRequest.hf_token` is checked here.
+    assert "hf_token" not in request.model_dump()
+    assert "hf-secret" not in request.model_dump_json()

@@ -49,6 +49,7 @@ class ExportParameters:
     exporter_kwargs: dict = field(default_factory=dict)
     preprocessors_specs: list = field(default_factory=list)
     postprocessors_specs: list = field(default_factory=list)
+    callbacks_specs: list = field(default_factory=list)
 
 
 @dataclass
@@ -63,6 +64,8 @@ class OpenVINOExportParameters(ExportParameters):
     """Parameters specific to OpenVINO export."""
 
     export_tokenizer: bool = False
+    tokenizer_truncation: bool = False
+    inputs: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=lambda: ["action"])
     compress_to_fp16: bool = False
     via_onnx: bool = False

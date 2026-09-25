@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import torch
-from physicalai.config import import_class
+from physicalai.config import import_dotted_path
 from physicalai.inference.adapters.base import RuntimeAdapter
 from physicalai.inference.adapters.registry import adapter_registry
 from physicalai.inference.manifest import Manifest
@@ -84,7 +84,7 @@ class TorchAdapter(RuntimeAdapter):
             raise KeyError(msg)
 
         try:
-            policy_class = import_class(policy_class_path)
+            policy_class = import_dotted_path(policy_class_path)
             load_from_checkpoint = getattr(policy_class, "load_from_checkpoint", None)
             if not callable(load_from_checkpoint):
                 msg = f"Imported class '{policy_class_path}' does not define callable load_from_checkpoint()."
@@ -181,18 +181,31 @@ class TorchAdapter(RuntimeAdapter):
         """
         if isinstance(torch_outputs, torch.Tensor):
             # Single output
-            return {self._output_names[0]: torch_outputs.detach().cpu().numpy()}
+            return {self._output_names[0]: self._tensor_to_numpy(torch_outputs)}
         if isinstance(torch_outputs, dict):
             # Dict output
-            return {k: v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v for k, v in torch_outputs.items()}
+            return {k: self._tensor_to_numpy(v) if isinstance(v, torch.Tensor) else v for k, v in torch_outputs.items()}
         if isinstance(torch_outputs, (list, tuple)):
             # Multiple outputs as list/tuple
             outputs_iter = zip(self._output_names, torch_outputs, strict=True)
-            return {name: out.detach().cpu().numpy() for name, out in outputs_iter}
+            return {name: self._tensor_to_numpy(out) for name, out in outputs_iter}
 
         # Unexpected output type
         msg = f"Unexpected output type: {type(torch_outputs)}"
         raise TypeError(msg)
+
+    @staticmethod
+    def _tensor_to_numpy(tensor: torch.Tensor) -> np.ndarray:
+        """Convert a tensor to numpy, upcasting dtypes numpy cannot represent.
+
+        Returns:
+            NumPy array converted from the input tensor.
+        """
+        tensor = tensor.detach().cpu()
+        # NumPy has no bfloat16 dtype; upcast to float32 before conversion.
+        if tensor.dtype == torch.bfloat16:
+            tensor = tensor.to(torch.float32)
+        return tensor.numpy()
 
     @property
     def input_names(self) -> list[str]:

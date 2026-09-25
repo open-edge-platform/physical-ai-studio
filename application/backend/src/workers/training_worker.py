@@ -14,17 +14,15 @@ from loguru import logger
 
 from core.logging.utils import job_logging_ctx
 from db import get_async_db_session_ctx
-from repositories.job_provisioning_repo import JobProvisioningRepository
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
 from schemas.job import TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
+from schemas.model import DORA_PROPERTY, LORA_PROPERTY, SNAPFLOW_PROPERTY
 from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
-from services.remote_server_service import RemoteServerService
 from services.remote_trainer_service import RemoteTrainerService
 from services.snapshot_service import SnapshotService
-from services.ssh.recovery import recover_ssh_jobs
 from services.training_backends import (
     TrainingCanceledError,
     TrainingContext,
@@ -139,7 +137,11 @@ class TrainingWorker(BaseProcessWorker):
                 name=payload.model_name,
                 snapshot_id=snapshot_id,
                 policy=payload.policy,
-                properties={},
+                properties={
+                    LORA_PROPERTY: payload.lora_enabled,
+                    DORA_PROPERTY: payload.lora_use_dora,
+                    SNAPFLOW_PROPERTY: payload.snapflow_enabled,
+                },
                 train_job_id=job.id,
                 parent_model_id=payload.base_model_id,
                 version=base_model.version + 1 if base_model else 1,
@@ -150,14 +152,7 @@ class TrainingWorker(BaseProcessWorker):
     async def setup(self) -> None:
         await super().setup()
         with logger.contextualize(worker=self.__class__.__name__):
-            # SSH recovery must run before the generic orphan abort: it confirms
-            # or fails each SSH job's container explicitly, so the generic pass
-            # only ever needs to catch a job this one somehow failed to reach.
-            # Every job id it rendered a verdict for is excluded from the
-            # generic pass, which otherwise judges solely on `remote_job_id`
-            # and could re-fail a job SSH recovery just confirmed healthy.
-            handled_job_ids = await self._recover_ssh_jobs()
-            await self._abort_orphan_jobs(exclude_job_ids=handled_job_ids)
+            await self._abort_orphan_jobs()
 
     async def teardown(self) -> None:
         await super().teardown()
@@ -170,30 +165,6 @@ class TrainingWorker(BaseProcessWorker):
             await TrainingService.abort_orphan_jobs(
                 JobService(session, RemoteTrainerService(session)), exclude_job_ids=exclude_job_ids
             )
-
-    @staticmethod
-    async def _recover_ssh_jobs() -> frozenset[UUID]:
-        """Reattach or fail every SSH-provisioned job left non-terminal by a restart.
-
-        Returns:
-            Every job id SSH recovery rendered a verdict for, so the caller can
-            exclude them from the generic orphan abort that follows.
-        """
-        async with get_async_db_session_ctx() as session:
-            provisioning_repo = JobProvisioningRepository(session)
-            remote_server_service = RemoteServerService(session)
-            job_service = JobService(session, RemoteTrainerService(session), remote_server_service)
-            report = await recover_ssh_jobs(job_service, provisioning_repo, remote_server_service)
-        logger.info(
-            "SSH job recovery: {} confirmed, {} pending retry, {} failed, {} stale row(s) cleaned, "
-            "{} orphan container(s) removed",
-            report.confirmed,
-            report.transient,
-            report.failed,
-            report.stale_rows_cleaned,
-            report.orphans_removed,
-        )
-        return report.handled_job_ids
 
     @staticmethod
     async def _update_training_progress(
@@ -224,7 +195,7 @@ class TrainingWorker(BaseProcessWorker):
                 update={
                     "status": JobStatus.RUNNING,
                     "message": "Training started",
-                    "start_time": datetime.datetime.now(tz=datetime.UTC),
+                    "start_time": job.start_time or datetime.datetime.now(tz=datetime.UTC),
                 },
             )
         dispatcher = TrainingTrackingDispatcher(
@@ -254,7 +225,7 @@ class TrainingWorker(BaseProcessWorker):
                 should_cancel_job=lambda: bool(self.job_interrupt_flags.get(str(job.id), False)),
             )
 
-            backend = await get_training_backend(payload, job.id)
+            backend = await get_training_backend(payload)
             await backend.train(context)
             # The local backend stops cooperatively without raising; treat a
             # completed-but-interrupted run as a cancellation, not a success.

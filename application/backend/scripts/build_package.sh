@@ -31,5 +31,5 @@ if [[ -n "${VERSION_OVERRIDE:-}" ]]; then
     sed -i 's/^version = .*/version = "'"${VERSION_OVERRIDE}"'"/' pyproject.toml
 fi
 
-uv run --with build==1.5.0 --with twine==6.2.0 python -m build --wheel
-uv run --with twine==6.2.0 python -m twine check dist/*
+uv run --with build==1.5.0 --with twine==7.0.0 python -m build --wheel
+uv run --with twine==7.0.0 python -m twine check dist/*

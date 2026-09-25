@@ -4,7 +4,6 @@
 import {
     SchemaLocalTrainJobPayloadOutput,
     SchemaRemoteTrainJobPayloadOutput,
-    SchemaSshTrainJobPayloadOutput,
     SchemaTrainJob,
 } from '../../api/openapi-spec';
 
@@ -21,6 +20,14 @@ const basePayload = {
     val_split: 0.1,
     precision: 'bf16-mixed' as const,
     compile_model: false,
+    num_cameras: 0,
+    lora_enabled: false,
+    lora_rank: 8,
+    lora_dropout: 0.0,
+    lora_use_dora: false,
+    snapflow_enabled: false,
+    snapflow_distill_epochs: 3,
+    augment_images: false,
 };
 
 type BaseKeys = keyof typeof basePayload;
@@ -40,9 +47,6 @@ export function getMockedTrainJobPayload(
 export function getMockedTrainJobPayload(
     overrides: VariantOverrides<SchemaRemoteTrainJobPayloadOutput>
 ): SchemaRemoteTrainJobPayloadOutput;
-export function getMockedTrainJobPayload(
-    overrides: VariantOverrides<SchemaSshTrainJobPayloadOutput>
-): SchemaSshTrainJobPayloadOutput;
 export function getMockedTrainJobPayload(overrides: Partial<TrainJobPayload> = {}): TrainJobPayload {
     return {
         ...basePayload,

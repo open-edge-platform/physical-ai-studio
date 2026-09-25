@@ -1,6 +1,6 @@
 [project]
 name = "physicalai-studio"
-version = "0.1.0"
+version = "0.2.0"
 description = "Physical AI Studio"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -13,7 +13,7 @@ dependencies = [
   "physicalai[robots, capture, transport]",
   "eclipse-zenoh==1.9.0",
   "msgpack==1.2.1",
-  "physicalai-train[pi0,smolvla,rldx1]",
+  "physicalai-train[pi05,smolvla,rldx1]",
   "lerobot[dataset,feetech]==0.6.0",
   "torchcodec==0.11.1",
   "numpy",
@@ -36,9 +36,9 @@ dependencies = [
   "sse-starlette>=2.0.0",
   "huggingface-hub>=0.27",
   "psutil~=7.2",
-  "physicalai-studio-plugin",
+  "physicalai-studio-plugin>=0.2.0",
   "asyncssh~=2.24",
-  "packaging>=24.0",
+  "sigstore>=4.0,<5",
 ]
 
 [project.scripts]
@@ -123,8 +123,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "8e4021703ef43387a835c6647b993cecc069ca85" }
-physicalai-studio-plugin = { path = "../plugin", editable = true }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", tag = "v0.2.0" }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
 # be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
@@ -145,20 +144,20 @@ triton-xpu = { index = "pytorch-xpu" }
 
 [dependency-groups]
 dev = [
-  "ruff~=0.11.2",
-  "pyrefly>=0.18.0",
+  "ruff==0.11.13",
+  "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
 ]
 lint = [
-  "ruff~=0.11.2",
-  "mypy~=1.17",
-  "pyrefly>=0.18.0",
+  "ruff==0.11.13",
+  "mypy==1.20.2",
+  "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
 ]
 all = [
-  "ruff~=0.11.2",
-  "mypy~=1.17",
-  "pyrefly>=0.18.0",
+  "ruff==0.11.13",
+  "mypy==1.20.2",
+  "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
 ]
 
@@ -166,7 +165,9 @@ all = [
 package = true
 default-groups = ["all"]
 exclude-newer = "7 days"
-exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false }
+# FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
+# FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
+exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false, lightning = false, openvino = false, openvino-tokenizers = false}
 # The pytorch-xpu index is non-explicit (explicit = false) because
 # transitive deps like triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale
@@ -183,6 +184,8 @@ override-dependencies = [
     "pytest>=9.0.3",
     # lerobot==0.5.1 caps diffusers at <0.36.0, 0.38.0 contains CVE-2026-44827 fix
     "diffusers>=0.38.0",
+    # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
+    "setuptools>=83.0.0",
 ]
 conflicts = [
     [

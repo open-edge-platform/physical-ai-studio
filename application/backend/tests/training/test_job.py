@@ -16,6 +16,8 @@ import gc
 import os
 import weakref
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,7 +25,17 @@ from physicalai.export import ExportablePolicyMixin, ExportBackend
 from pydantic import SecretStr, ValidationError
 
 from training import RunOptions, TrainingJobSpec
-from training.job import CHECKPOINT_NAME, EXPORTS_DIRNAME, PRETRAINED_BASE_CHECKPOINTS, build_policy, run_training_job
+from training.job import (
+    CHECKPOINT_NAME,
+    EXPORTS_DIRNAME,
+    PEFT_POLICIES,
+    PRETRAINED_BASE_CHECKPOINTS,
+    SNAPFLOW_CHECKPOINT_NAME,
+    _load_policy_from_checkpoint,
+    build_policy,
+    resolve_checkpoint,
+    run_training_job,
+)
 
 JOB = "training.job"
 
@@ -37,6 +49,7 @@ class TestTrainingJobSpec:
         assert (spec.policy_source, spec.max_epochs, spec.batch_size) == ("physicalai", 5, 8)
         assert (spec.num_workers, spec.val_split, spec.precision) == ("auto", 0.1, "bf16-mixed")
         assert (spec.compile_model, spec.auto_scale_batch_size) == (False, False)
+        assert spec.augment_images is False
         assert (spec.device_type, spec.device_index) == (None, None)
 
     def test_unknown_field_is_rejected(self) -> None:
@@ -61,9 +74,55 @@ class TestTrainingJobSpec:
 
     def test_spec_round_trips_through_json(self) -> None:
         """Remote submission sends the spec as JSON; it must survive the trip."""
-        spec = TrainingJobSpec(policy="pi0", max_epochs=5, num_workers=4, device_type="xpu", device_index=1)
+        spec = TrainingJobSpec(policy="pi05", max_epochs=5, num_workers=4, device_type="xpu", device_index=1)
 
         assert TrainingJobSpec.model_validate_json(spec.model_dump_json()) == spec
+
+    def test_lora_disabled_by_default(self) -> None:
+        spec = TrainingJobSpec(policy="act")
+
+        assert spec.lora_enabled is False
+        assert (spec.lora_rank, spec.lora_alpha, spec.lora_dropout, spec.lora_use_dora) == (32, None, 0.05, False)
+
+    @pytest.mark.parametrize("policy_name", sorted(PEFT_POLICIES))
+    def test_lora_is_accepted_for_peft_capable_policies(self, policy_name: str) -> None:
+        spec = TrainingJobSpec(policy=policy_name, lora_enabled=True, lora_rank=16, lora_use_dora=True)
+
+        assert (spec.lora_enabled, spec.lora_rank, spec.lora_use_dora) == (True, 16, True)
+
+    def test_lora_is_rejected_for_a_policy_without_peft_support(self) -> None:
+        with pytest.raises(ValidationError):
+            TrainingJobSpec(policy="act", lora_enabled=True)
+
+    def test_lora_is_rejected_for_a_lerobot_sourced_policy(self) -> None:
+        with pytest.raises(ValidationError):
+            TrainingJobSpec(policy="pi05", policy_source="lerobot", lora_enabled=True)
+
+    def test_flow_matching_is_the_default(self) -> None:
+        assert TrainingJobSpec(policy="pi05").snapflow_start_epoch is None
+
+    @pytest.mark.parametrize("policy", ["pi05", "smolvla"])
+    def test_flow_matching_policies_accept_a_distillation_boundary(self, policy: str) -> None:
+        spec = TrainingJobSpec(policy=policy, max_epochs=8, snapflow_start_epoch=5)
+
+        assert spec.snapflow_start_epoch == 5
+
+    @pytest.mark.parametrize("policy", ["act"])
+    def test_policies_without_a_flow_matching_sampler_cannot_be_distilled(self, policy: str) -> None:
+        """Only the SnapFlowPolicyMixin policies implement enable_snapflow()."""
+        with pytest.raises(ValidationError, match="not supported for policy"):
+            TrainingJobSpec(policy=policy, max_epochs=8, snapflow_start_epoch=5)
+
+    @pytest.mark.parametrize("start_epoch", [5, 6])
+    def test_boundary_must_leave_an_epoch_to_distill(self, start_epoch: int) -> None:
+        """A boundary at or past the budget would train a teacher and distil nothing."""
+        with pytest.raises(ValidationError, match="must be below max_epochs"):
+            TrainingJobSpec(policy="pi05", max_epochs=5, snapflow_start_epoch=start_epoch)
+
+    def test_boundary_must_leave_an_epoch_to_train_the_teacher(self) -> None:
+        """Distilling from step zero distils an untrained policy."""
+        with pytest.raises(ValidationError):
+            TrainingJobSpec(policy="pi05", max_epochs=5, snapflow_start_epoch=0)
 
 
 class TestBuildPolicy:
@@ -82,11 +141,63 @@ class TestBuildPolicy:
 
         assert get_policy.call_args.kwargs["pretrained_name_or_path"] == PRETRAINED_BASE_CHECKPOINTS[policy_name]
 
+    def test_camera_layout_is_passed_to_a_policy_that_reads_a_fixed_order(self) -> None:
+        """SmolVLA takes the dataset's cameras in the slots the mapping names."""
+        spec = TrainingJobSpec(
+            policy="smolvla",
+            image_key_reorder_map={"observation.images.top": 0, "observation.images.wrist": 1},
+            num_cameras=3,
+        )
+
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(spec)
+
+        assert get_policy.call_args.kwargs["image_key_reorder_map"] == spec.image_key_reorder_map
+        assert get_policy.call_args.kwargs["num_cameras"] == 3
+
+    def test_camera_layout_is_dropped_for_a_policy_without_camera_slots(self) -> None:
+        """ACT's constructor has no such parameters; passing them would be a TypeError."""
+        spec = TrainingJobSpec(policy="act", image_key_reorder_map={"observation.images.top": 0}, num_cameras=2)
+
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(spec)
+
+        assert "image_key_reorder_map" not in get_policy.call_args.kwargs
+        assert "num_cameras" not in get_policy.call_args.kwargs
+
+    def test_no_camera_layout_is_passed_when_none_is_asked_for(self) -> None:
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(TrainingJobSpec(policy="smolvla"))
+
+        assert "image_key_reorder_map" not in get_policy.call_args.kwargs
+
     def test_lerobot_policies_are_left_to_lerobots_own_defaults(self) -> None:
         with patch("physicalai.policies.get_policy") as get_policy:
             build_policy(TrainingJobSpec(policy="smolvla", policy_source="lerobot"))
 
         assert "pretrained_name_or_path" not in get_policy.call_args.kwargs
+
+    def test_lora_disabled_run_gets_no_lora_kwargs(self) -> None:
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(TrainingJobSpec(policy="pi05"))
+
+        for key in ("lora_enabled", "lora_rank", "lora_alpha", "lora_dropout", "lora_use_dora"):
+            assert key not in get_policy.call_args.kwargs
+
+    def test_lora_enabled_run_passes_lora_kwargs(self) -> None:
+        """Learning-rate scaling for LoRA/DoRA is the library's job (PeftConfigMixin.lora_lr_scale),
+        not the backend's; the backend only forwards the hyperparameters it owns."""
+        with patch("physicalai.policies.get_policy") as get_policy:
+            build_policy(
+                TrainingJobSpec(
+                    policy="pi05", lora_enabled=True, lora_rank=16, lora_alpha=32, lora_dropout=0.1, lora_use_dora=True
+                )
+            )
+
+        kwargs = get_policy.call_args.kwargs
+        assert (kwargs["lora_enabled"], kwargs["lora_rank"], kwargs["lora_alpha"]) == (True, 16, 32)
+        assert (kwargs["lora_dropout"], kwargs["lora_use_dora"]) == (0.1, True)
+        assert "optimizer_lr" not in kwargs
 
     def test_resume_loads_the_checkpoint_instead_of_a_new_policy(self, tmp_path: Path) -> None:
         checkpoint = tmp_path / CHECKPOINT_NAME
@@ -97,15 +208,6 @@ class TestBuildPolicy:
 
         assert policy is policy_class.load_from_checkpoint.return_value
         policy_class.load_from_checkpoint.assert_called_once_with(str(checkpoint))
-
-    def test_pi0_is_resumed_weights_only(self, tmp_path: Path) -> None:
-        """Pi0 checkpoints hold objects Lightning will not unpickle by default."""
-        policy_class = MagicMock()
-
-        with patch("physicalai.policies.get_physicalai_policy_class", return_value=policy_class):
-            build_policy(TrainingJobSpec(policy="pi0"), resume_from=tmp_path / CHECKPOINT_NAME)
-
-        assert policy_class.load_from_checkpoint.call_args.kwargs == {"weights_only": True}
 
     def test_lerobot_policies_are_resumed_through_the_wrapper(self, tmp_path: Path) -> None:
         checkpoint = tmp_path / CHECKPOINT_NAME
@@ -143,6 +245,8 @@ def _run(
     should_stop: bool = False,
     report: MagicMock | None = None,
     write_checkpoint: bool = True,
+    reach_snapflow_phase: bool = False,
+    write_distilled_checkpoint: bool = True,
 ) -> MagicMock:
     """Run a job with the datamodule and Lightning trainer mocked out.
 
@@ -153,6 +257,12 @@ def _run(
     exercise the fallback (``write_checkpoint=False``) still end up with a
     real checkpoint on disk once the runner calls it.
 
+    ``reach_snapflow_phase`` simulates the other side effect a real fit would
+    have on a distillation run: ``SnapFlowPhaseCallback`` flips itself to
+    activated at the boundary and the prefixed phase-2 checkpoint appears
+    beside phase 1's. ``write_distilled_checkpoint`` suppresses the latter, for
+    the case where distillation ran but the monitored metric never logged.
+
     Returns:
         The patched ``Trainer`` class, so tests can assert how it was configured.
     """
@@ -160,7 +270,14 @@ def _run(
 
     def fake_fit(*_args: object, **_kwargs: object) -> None:
         if write_checkpoint:
-            (cache_dir / CHECKPOINT_NAME).write_text("checkpoint")
+            (cache_dir / CHECKPOINT_NAME).write_text("flow-matching")
+        if not reach_snapflow_phase:
+            return
+        for callback in trainer_class.call_args.kwargs["callbacks"]:
+            if type(callback).__name__ == "SnapFlowPhaseCallback":
+                callback._activated = True
+        if write_distilled_checkpoint:
+            (cache_dir / SNAPFLOW_CHECKPOINT_NAME).write_text("distilled")
 
     def fake_save_checkpoint(path: str | Path, *_args: object, **_kwargs: object) -> None:
         Path(path).write_text("checkpoint")
@@ -184,13 +301,50 @@ def _run(
 
 
 class TestRunTrainingJob:
-    def test_run_options_export_huggingface_token(self, tmp_path: Path, monkeypatch) -> None:
+    def test_hf_token_is_set_during_the_run_and_cleared_after(self, tmp_path: Path, monkeypatch) -> None:
+        """The token is scoped to this run: visible while training, gone once it returns."""
         monkeypatch.delenv("HF_TOKEN", raising=False)
         spec = TrainingJobSpec(policy="act", run_options=RunOptions(hf_token=SecretStr("hf-secret")))
+        seen_during_fit = {}
+
+        def fake_fit(*_args: object, **_kwargs: object) -> None:
+            seen_during_fit["HF_TOKEN"] = os.environ.get("HF_TOKEN")
+            (tmp_path / "cache" / "job" / CHECKPOINT_NAME).write_text("checkpoint")
+
+        with (
+            patch("physicalai.data.LeRobotDataModule"),
+            patch(f"{JOB}.build_policy", return_value=MagicMock()),
+            patch("physicalai.train.trainer.Trainer") as trainer_class,
+        ):
+            trainer_class.return_value.fit.side_effect = fake_fit
+            run_training_job(
+                spec,
+                dataset_root=tmp_path / "snapshot",
+                output_dir=tmp_path / "model",
+                cache_dir=tmp_path / "cache" / "job",
+                report=MagicMock(),
+                should_stop=lambda: False,
+            )
+
+        assert seen_during_fit["HF_TOKEN"] == "hf-secret"
+        assert "HF_TOKEN" not in os.environ
+
+    def test_hf_token_restores_a_prior_process_environment_value(self, tmp_path: Path, monkeypatch) -> None:
+        """A token set on the trainer's own process (not per-job) is restored, not clobbered."""
+        monkeypatch.setenv("HF_TOKEN", "operator-set-token")
+        spec = TrainingJobSpec(policy="act", run_options=RunOptions(hf_token=SecretStr("job-secret")))
 
         _run(spec, tmp_path)
 
-        assert os.environ["HF_TOKEN"] == "hf-secret"
+        assert os.environ["HF_TOKEN"] == "operator-set-token"
+
+    def test_no_hf_token_leaves_environment_untouched(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.delenv("HF_TOKEN", raising=False)
+        spec = TrainingJobSpec(policy="act")
+
+        _run(spec, tmp_path)
+
+        assert "HF_TOKEN" not in os.environ
 
     def test_trainer_is_configured_from_the_spec(self, tmp_path: Path) -> None:
         spec = TrainingJobSpec(
@@ -239,6 +393,35 @@ class TestRunTrainingJob:
         kwargs = datamodule.call_args.kwargs
         assert kwargs["root"] == str(tmp_path / "snapshot")
         assert (kwargs["train_batch_size"], kwargs["num_workers"], kwargs["val_split"]) == (16, 2, 0.25)
+
+    @pytest.mark.parametrize("augment_images", [True, False])
+    def test_image_augmentation_is_opt_in(self, tmp_path: Path, augment_images: bool) -> None:
+        """The GUI checkbox is the only thing standing between off and the default pipeline."""
+        from physicalai.transforms import DefaultImageAugmentations
+
+        spec = TrainingJobSpec(policy="act", augment_images=augment_images)
+        cache_dir = tmp_path / "cache" / "job"
+
+        with (
+            patch("physicalai.data.LeRobotDataModule") as datamodule,
+            patch(f"{JOB}.build_policy"),
+            patch("physicalai.train.trainer.Trainer") as trainer_class,
+        ):
+            trainer_class.return_value.fit.side_effect = lambda *a, **k: (cache_dir / CHECKPOINT_NAME).write_text("x")
+            run_training_job(
+                spec,
+                dataset_root=tmp_path / "snapshot",
+                output_dir=tmp_path / "model",
+                cache_dir=cache_dir,
+                report=MagicMock(),
+                should_stop=lambda: False,
+            )
+
+        transforms = datamodule.call_args.kwargs["image_transforms"]
+        if augment_images:
+            assert isinstance(transforms, DefaultImageAugmentations)
+        else:
+            assert transforms is None
 
     def test_completed_run_publishes_the_cache_as_the_model_directory(self, tmp_path: Path) -> None:
         """The final checkpoint comes solely from the ModelCheckpoint callback, not an explicit save."""
@@ -308,6 +491,28 @@ class TestRunTrainingJob:
         ]
         assert (99, "Exporting to torch format", {}) in [call.args for call in report.call_args_list]
 
+    def test_only_the_requested_export_backends_are_produced(self, tmp_path: Path) -> None:
+        policy = _ExportablePolicy([ExportBackend.TORCH, ExportBackend.OPENVINO])
+
+        _run(TrainingJobSpec(policy="act", export_backends=["openvino"]), tmp_path, policy=policy)
+
+        assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
+
+    def test_a_requested_backend_the_policy_cannot_produce_is_skipped(self, tmp_path: Path) -> None:
+        """Which formats a policy can trace is the policy's to say, not the caller's."""
+        policy = _ExportablePolicy([ExportBackend.TORCH])
+
+        _run(TrainingJobSpec(policy="smolvla", export_backends=["torch", "onnx"]), tmp_path, policy=policy)
+
+        assert [backend for _, backend in policy.exported] == [ExportBackend.TORCH]
+
+    def test_requesting_no_supported_backend_exports_nothing(self, tmp_path: Path) -> None:
+        policy = _ExportablePolicy([ExportBackend.TORCH])
+
+        _run(TrainingJobSpec(policy="act", export_backends=["onnx"]), tmp_path, policy=policy)
+
+        assert policy.exported == []
+
     def test_a_failing_export_backend_does_not_fail_the_job(self, tmp_path: Path) -> None:
         """Weights are already saved by then; one bad backend must not lose them."""
         policy = _ExportablePolicy(
@@ -317,6 +522,17 @@ class TestRunTrainingJob:
 
         _run(TrainingJobSpec(policy="act"), tmp_path, policy=policy)
 
+        assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
+
+    @pytest.mark.parametrize("policy_name", ["act", "smolvla", "pi05"])
+    def test_compiled_policy_exports_without_reloading(self, policy_name: str, tmp_path: Path) -> None:
+        """Compiled policies are traced directly by the library; no checkpoint reload is needed."""
+        policy = _ExportablePolicy([ExportBackend.OPENVINO])
+
+        with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
+            _run(TrainingJobSpec(policy=policy_name, compile_model=True), tmp_path, policy=policy)
+
+        reload.assert_not_called()
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
     def test_trainer_and_datamodule_are_released_before_export(self, tmp_path: Path) -> None:
@@ -366,3 +582,113 @@ class TestRunTrainingJob:
         assert trainer_ref() is None, "trainer is still reachable; the reference cycle was not broken"
         assert datamodule_ref() is None, "datamodule is still reachable; the reference cycle was not broken"
         assert policy._trainer is None
+
+
+SNAPFLOW_SPEC = TrainingJobSpec(policy="pi05", max_epochs=8, snapflow_start_epoch=5)
+
+
+class TestSnapFlowDistillation:
+    """A distillation run keeps two checkpoints, and export/resolve pick the distilled one."""
+
+    @staticmethod
+    def _snapflow_callback(trainer_class: MagicMock) -> Any | None:
+        callbacks = trainer_class.call_args.kwargs["callbacks"]
+        return next((c for c in callbacks if type(c).__name__ == "SnapFlowPhaseCallback"), None)
+
+    def test_a_flow_matching_run_gets_no_phase_callback(self, tmp_path: Path) -> None:
+        trainer_class = _run(TrainingJobSpec(policy="pi05"), tmp_path)
+
+        assert self._snapflow_callback(trainer_class) is None
+
+    def test_the_phase_callback_fires_at_the_boundary_the_spec_asks_for(self, tmp_path: Path) -> None:
+        trainer_class = _run(SNAPFLOW_SPEC, tmp_path, reach_snapflow_phase=True)
+
+        callback = self._snapflow_callback(trainer_class)
+        assert callback is not None
+        assert (callback.start_epoch, callback.start_step) == (5, None)
+        # Phase-2 checkpoints must land beside phase 1's rather than replace
+        # them; the prefix is what SNAPFLOW_CHECKPOINT_NAME relies on.
+        assert callback.checkpoint_prefix == "snapflow-"
+
+    def test_both_checkpoints_are_kept_side_by_side(self, tmp_path: Path) -> None:
+        """Neither file is renamed or deleted: a distilled model still ships its teacher."""
+        _run(SNAPFLOW_SPEC, tmp_path, reach_snapflow_phase=True)
+
+        assert (tmp_path / "model" / CHECKPOINT_NAME).read_text() == "flow-matching"
+        assert (tmp_path / "model" / SNAPFLOW_CHECKPOINT_NAME).read_text() == "distilled"
+
+    def test_a_distillation_phase_that_saved_nothing_falls_back_to_the_live_weights(self, tmp_path: Path) -> None:
+        """The run did distil, so it must not ship with no distilled checkpoint at all."""
+        trainer_class = _run(
+            SNAPFLOW_SPEC,
+            tmp_path,
+            reach_snapflow_phase=True,
+            write_distilled_checkpoint=False,
+        )
+
+        trainer_class.return_value.save_checkpoint.assert_called_once_with(
+            tmp_path / "cache" / "job" / SNAPFLOW_CHECKPOINT_NAME
+        )
+        assert (tmp_path / "model" / CHECKPOINT_NAME).read_text() == "flow-matching"
+        assert (tmp_path / "model" / SNAPFLOW_CHECKPOINT_NAME).is_file()
+
+    def test_a_run_that_never_reached_the_boundary_ships_only_the_flow_matching_checkpoint(
+        self, tmp_path: Path
+    ) -> None:
+        """No distillation happened (e.g. max_epochs was lowered on a resume), so nothing is fabricated."""
+        _run(SNAPFLOW_SPEC, tmp_path, reach_snapflow_phase=False)
+
+        assert (tmp_path / "model" / CHECKPOINT_NAME).read_text() == "flow-matching"
+        assert not (tmp_path / "model" / SNAPFLOW_CHECKPOINT_NAME).exists()
+
+    def test_exports_reload_from_the_distilled_checkpoint(self, tmp_path: Path) -> None:
+        """The live end-of-fit policy is the final epoch, not necessarily the best
+        distilled one on disk; export must reload to match what resolve_checkpoint
+        (and therefore resume/download) would pick."""
+        policy = _ExportablePolicy([ExportBackend.OPENVINO])
+
+        with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
+            _run(SNAPFLOW_SPEC, tmp_path, policy=policy, reach_snapflow_phase=True)
+
+        reload.assert_called_once()
+        assert reload.call_args.args[1] == tmp_path / "model" / SNAPFLOW_CHECKPOINT_NAME
+
+    def test_a_flow_matching_run_exports_the_live_policy_without_reloading(self, tmp_path: Path) -> None:
+        policy = _ExportablePolicy([ExportBackend.OPENVINO])
+
+        with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
+            _run(TrainingJobSpec(policy="pi05"), tmp_path, policy=policy)
+
+        reload.assert_not_called()
+        assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
+
+
+class TestResolveCheckpoint:
+    def test_prefers_the_distilled_checkpoint_when_present(self, tmp_path: Path) -> None:
+        (tmp_path / CHECKPOINT_NAME).write_text("flow-matching")
+        (tmp_path / SNAPFLOW_CHECKPOINT_NAME).write_text("distilled")
+
+        assert resolve_checkpoint(tmp_path) == tmp_path / SNAPFLOW_CHECKPOINT_NAME
+
+    def test_falls_back_to_the_ordinary_checkpoint(self, tmp_path: Path) -> None:
+        (tmp_path / CHECKPOINT_NAME).write_text("flow-matching")
+
+        assert resolve_checkpoint(tmp_path) == tmp_path / CHECKPOINT_NAME
+
+
+class TestLoadPolicyFromCheckpoint:
+    def test_pi05_normalizes_max_autotune_to_default(self, tmp_path: Path) -> None:
+        forward_fn = MagicMock()
+        policy = MagicMock()
+        policy.config = SimpleNamespace(compile_mode="max-autotune")
+        policy.forward = forward_fn
+
+        spec = TrainingJobSpec(policy="pi05", compile_model=True)
+        with (
+            patch("physicalai.policies.get_physicalai_policy_class") as get_cls,
+            patch("torch.compile") as mock_compile,
+        ):
+            get_cls.return_value.load_from_checkpoint.return_value = policy
+            _load_policy_from_checkpoint(spec, tmp_path / "checkpoint.ckpt")
+
+        mock_compile.assert_called_once_with(forward_fn, mode="default")

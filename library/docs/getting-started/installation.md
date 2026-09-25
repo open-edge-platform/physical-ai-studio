@@ -56,8 +56,8 @@ pip install physicalai-train
 To install with specific backend support:
 
 ```bash
-# With PI0 policy support
-pip install physicalai-train[pi0]
+# With Pi0.5 policy support
+pip install physicalai-train[pi05]
 
 # With SmolVLA policy support
 pip install physicalai-train[smolvla]
@@ -80,8 +80,10 @@ uv venv
 source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
 
-# Install with all development dependencies
-uv sync --all-extras
+# Install with all development dependencies (choose one matching your hardware):
+uv sync --extra cpu --extra all     # CPU
+# uv sync --extra cu128 --extra all # NVIDIA GPU (CUDA)
+# uv sync --extra xpu --extra all   # Intel GPU (XPU)
 ```
 
 ## Verify Installation

@@ -51,6 +51,132 @@ COPY --link application/backend/scripts/hatch_build.py \
 COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/dist
 
 # ===========================================================================
+# Stage 3b: LGPL FFmpeg + PyAV builder
+#
+# Builds an LGPL-licensed FFmpeg (no --enable-gpl / --enable-nonfree) with
+# Intel oneVPL/QSV + VAAPI hardware acceleration and permissively licensed
+# software encoders (libvpx, libopenh264, libsvtav1), then compiles a PyAV
+# wheel against it. The stock Debian `ffmpeg` package is GPL-licensed and the
+# PyPI `av` wheel bundles its own FFmpeg, so both are replaced by these
+# artifacts in the runtime stages. Built in parallel with the other stages.
+# ===========================================================================
+FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS ffmpeg-builder
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Pinned source revisions for reproducible builds.
+ARG LIBVPL_REF=778a66d6c6537f08eabb91955dbbf1bce3812894
+ARG FFMPEG_REF=9dd0fe0225c2c3406ca49430a74c8660b1713889
+ARG OPENH264_REF=e3f5b10438e2bacc155cf54578222bd4236c9f06
+ARG SVTAV1_REF=349f4eb9c369f68d463029d1cd37551c90b7de51
+# Must match the `av` version resolved in application/backend/uv.lock.
+ARG PYAV_VERSION=15.1.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        build-essential \
+        cmake \
+        meson \
+        ninja-build \
+        pkg-config \
+        yasm \
+        nasm \
+        libdrm-dev \
+        libva-dev \
+        libnuma-dev \
+        libvpx-dev \
+        libdav1d-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python packaging tools for building the PyAV wheel.
+RUN python -m pip install --no-cache-dir \
+        "pip==25.*" \
+        "setuptools==75.*" \
+        "wheel==0.45.*" \
+        "Cython==3.0.*"
+
+ENV VPL_INSTALL_DIR=/opt/vpl
+ENV FFMPEG_INSTALL_DIR=/opt/ffmpeg-vpl
+WORKDIR /tmp
+
+# oneVPL dispatcher + headers (enables the *_qsv codecs in FFmpeg).
+RUN git init libvpl \
+    && git -C libvpl remote add origin https://github.com/intel/libvpl.git \
+    && git -C libvpl fetch --depth 1 origin "${LIBVPL_REF}" \
+    && git -C libvpl checkout FETCH_HEAD \
+    && cmake -B libvpl/build -S /tmp/libvpl \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${VPL_INSTALL_DIR}" \
+    && cmake --build libvpl/build -j"$(nproc)" \
+    && cmake --install libvpl/build
+
+# Make the custom libvpl and FFmpeg visible to later build steps.
+ENV PKG_CONFIG_PATH="/opt/vpl/lib/pkgconfig:/opt/vpl/lib64/pkgconfig:/opt/ffmpeg-vpl/lib/pkgconfig:/opt/ffmpeg-vpl/lib/x86_64-linux-gnu/pkgconfig:/usr/local/lib/pkgconfig" \
+    LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib" \
+    PATH="/opt/ffmpeg-vpl/bin:${PATH}"
+
+# Software fallback encoder: OpenH264 (BSD, Cisco).
+RUN git init openh264 \
+    && git -C openh264 remote add origin https://github.com/cisco/openh264.git \
+    && git -C openh264 fetch --depth 1 origin "${OPENH264_REF}" \
+    && git -C openh264 checkout FETCH_HEAD \
+    && make -C openh264 -j"$(nproc)" \
+    && make -C openh264 install \
+    && ldconfig
+
+# Software fallback encoder: SVT-AV1 (BSD).
+RUN git init svtav1 \
+    && git -C svtav1 remote add origin https://gitlab.com/AOMediaCodec/SVT-AV1.git \
+    && git -C svtav1 fetch --depth 1 origin "${SVTAV1_REF}" \
+    && git -C svtav1 checkout FETCH_HEAD \
+    && cmake -B svtav1/build -S /tmp/svtav1 -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build svtav1/build -j"$(nproc)" \
+    && cmake --install svtav1/build \
+    && ldconfig
+
+# FFmpeg — LGPL build: no --enable-gpl and no --enable-nonfree. Every enabled
+# external library (libvpl/MIT, libvpx/BSD, libopenh264/BSD, libsvtav1/BSD,
+# libdav1d/BSD, vaapi/MIT) is LGPL-compatible. libdav1d is the software AV1
+# decoder — FFmpeg's built-in av1 decoder is hwaccel-only and cannot decode
+# AV1 in software, which the training data loader requires.
+RUN git init ffmpeg \
+    && git -C ffmpeg remote add origin https://github.com/FFmpeg/FFmpeg.git \
+    && git -C ffmpeg fetch --depth 1 origin "${FFMPEG_REF}" \
+    && git -C ffmpeg checkout FETCH_HEAD
+
+WORKDIR /tmp/ffmpeg
+RUN ./configure \
+        --prefix="${FFMPEG_INSTALL_DIR}" \
+        --extra-cflags="-I${VPL_INSTALL_DIR}/include" \
+        --extra-ldflags="-L${VPL_INSTALL_DIR}/lib -L${VPL_INSTALL_DIR}/lib64" \
+        --extra-libs="-lpthread -lm" \
+        --enable-libvpl \
+        --enable-vaapi \
+        --enable-shared \
+        --disable-static \
+        --enable-libsvtav1 \
+        --enable-libopenh264 \
+        --enable-libvpx \
+        --enable-libdav1d \
+    && make -j"$(nproc)" \
+    && make install \
+    && ldconfig
+
+# Fail the build early if QSV encoders or the software AV1 decoder are missing.
+RUN ffmpeg -version \
+    && ffmpeg -hide_banner -encoders | grep qsv \
+    && ffmpeg -hide_banner -h encoder=h264_qsv > /dev/null \
+    && ffmpeg -hide_banner -decoders | grep libdav1d
+
+# Compile the PyAV wheel from source against the custom FFmpeg.
+WORKDIR /build
+RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
+
+# ===========================================================================
 # Stage 4: Python builder base
 #
 # Contains build-time-only packages (g++, build-essential, etc.)
@@ -58,7 +184,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/dist
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
@@ -95,12 +221,6 @@ COPY --link --from=libs ./pyproject.toml /app/library/pyproject.toml
 COPY --link application/backend/pyproject.toml application/backend/uv.lock \
     /app/application/backend/
 
-# Local plugin dependency manifest (required by backend's tool.uv.sources path).
-# Keep source out of builder-base so source-only changes do not invalidate
-# the shared hardware-independent sync layer.
-COPY --link --from=plugin ./pyproject.toml \
-    /app/application/plugin/pyproject.toml
-
 WORKDIR /app/application/backend
 
 # Install hardware-independent dependencies (FastAPI, SQLAlchemy, etc.)
@@ -109,8 +229,10 @@ WORKDIR /app/application/backend
 # project AND the physicalai-train path dependency).  This avoids
 # invoking hatchling, which would require library source files.
 # The local packages are installed at runtime via app-source + uv run.
+# --no-install-package av: the PyPI `av` wheel bundles its own FFmpeg; it is
+# replaced by the LGPL wheel from ffmpeg-builder in the runtime stages.
 RUN --mount=type=cache,id=uv-base,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable --no-install-local
+    uv sync --frozen --no-dev --no-editable --no-install-local --no-install-package av
 
 # FIXME: Remove this block after upgrading lerobot to >=0.5.2.
 # lerobot==0.5.1 declares wandb <0.25.0 as an unconditional runtime dependency, which
@@ -126,8 +248,7 @@ FROM builder-base AS builder-cpu
 
 RUN --mount=type=cache,id=uv-cpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    --mount=type=bind,from=plugin,target=/app/application/plugin \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra cpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -136,6 +257,12 @@ RUN uv pip uninstall --python .venv/bin/python \
     pytest-json-report pytest-metadata \
     pytest-rerunfailures \
     expecttest hypothesis sortedcontainers kgb parameterized
+
+FROM builder-cpu AS builder-cpu-redistributable
+RUN set -eu; \
+    CLEANUP_ROOT="$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    find "$CLEANUP_ROOT" -type d \( -path "*/triton/backends/nvidia" -o -path "*/triton/backends/amd" \) \
+        -exec rm -rf {} + 2>/dev/null || true
 
 # ===========================================================================
 # Stage 4b: XPU builder
@@ -144,8 +271,7 @@ FROM builder-base AS builder-xpu
 
 RUN --mount=type=cache,id=uv-xpu,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    --mount=type=bind,from=plugin,target=/app/application/plugin \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra xpu
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra xpu
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -155,15 +281,10 @@ RUN uv pip uninstall --python .venv/bin/python \
     pytest-rerunfailures \
     expecttest hypothesis sortedcontainers kgb parameterized
 
-# Remove redundant for XPU container image Triton GPU backends (NVIDIA and AMD)
-# that also contains non-redistributable files
-# Based on: https://docs.nvidia.com/cuda/eula/index.html
+FROM builder-xpu AS builder-xpu-redistributable
 RUN set -eu; \
     CLEANUP_ROOT="$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
-    [ -n "$CLEANUP_ROOT" ] && [ -d "$CLEANUP_ROOT" ]; \
-    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/nvidia" \
-        -exec rm -rf {} + 2>/dev/null || true; \
-    find "$CLEANUP_ROOT" -type d -path "*/triton/backends/amd" \
+    find "$CLEANUP_ROOT" -type d \( -path "*/triton/backends/nvidia" -o -path "*/triton/backends/amd" \) \
         -exec rm -rf {} + 2>/dev/null || true
 
 # ===========================================================================
@@ -173,8 +294,7 @@ FROM builder-base AS builder-cuda
 
 RUN --mount=type=cache,id=uv-cuda,target=/root/.cache/uv \
     --mount=type=bind,from=libs,target=/app/library \
-    --mount=type=bind,from=plugin,target=/app/application/plugin \
-    uv sync --frozen --no-dev --no-editable --no-install-project --extra cuda
+    uv sync --frozen --no-dev --no-editable --no-install-project --no-install-package av --extra cuda
 
 # Remove test-only packages that executorch ships as unconditional runtime dependencies.
 RUN uv pip uninstall --python .venv/bin/python \
@@ -183,6 +303,37 @@ RUN uv pip uninstall --python .venv/bin/python \
     pytest-json-report pytest-metadata \
     pytest-rerunfailures \
     expecttest hypothesis sortedcontainers kgb parameterized
+
+# cuobjdump/nvdisasm are CUDA disassembly/debug tools bundled by Triton's
+# nvidia backend. NVIDIA's EULA does not permit redistributing them, and
+# unlike ptxas they are not needed to JIT-compile or run Triton kernels.
+RUN find .venv -type f \( \
+        -path "*/triton/backends/nvidia/bin/cuobjdump" -o \
+        -path "*/triton/backends/nvidia/bin/nvdisasm" \) \
+    -delete
+
+FROM builder-cuda AS builder-cuda-redistributable
+RUN set -eu; \
+    CLEANUP_ROOT="$(.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"; \
+    find "$CLEANUP_ROOT" -type d \( \
+        -path "*/triton/backends/amd" -o \
+        -path "*/nvidia/cuda_cupti/include" -o \
+        -path "*/nvidia/cudnn/include" \) \
+        -exec rm -rf {} + 2>/dev/null || true; \
+    find "$CLEANUP_ROOT" -type f \( \
+        -path "*/triton/backends/nvidia/bin/ptxas" -o \
+        -path "*/triton/backends/nvidia/bin/ptxas-blackwell" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libcheckpoint.so" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libcupti_static.a" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libnvperf_host.so" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libnvperf_host_static.a" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libnvperf_target.so" -o \
+        -path "*/triton/backends/nvidia/lib/cupti/libpcsamplingutil.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libcheckpoint.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libnvperf_host.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libnvperf_target.so" -o \
+        -path "*/nvidia/cuda_cupti/lib/libpcsamplingutil.so" \) \
+        -delete 2>/dev/null || true
 
 # ===========================================================================
 # Stage 4d: Robot assets builder
@@ -194,8 +345,7 @@ FROM builder-base AS robot-assets
 
 COPY --link --from=app-source /app/application/backend/src /app/application/backend/src
 
-RUN --mount=type=bind,from=plugin,target=/app/application/plugin \
-    PYTHONPATH=/app/application/backend/src:/app/application/plugin/src \
+RUN PYTHONPATH=/app/application/backend/src \
     /app/application/backend/.venv/bin/python -c \
     "from robots.catalog.sync_robot_assets import sync_robot_assets; sync_robot_assets()"
 
@@ -206,7 +356,7 @@ RUN --mount=type=bind,from=plugin,target=/app/application/plugin \
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -220,14 +370,22 @@ RUN groupadd --gid "${APP_GID}" appuser \
     && useradd --uid "${APP_UID}" --gid "${APP_GID}" --create-home appuser
 
 # Common runtime system dependencies (OpenCV, USB access, video decoding)
-# Includes runtime toolchain/linker deps required by torch.compile (Inductor/Triton)
+# Includes runtime toolchain/linker deps required by torch.compile (Inductor/Triton).
+# The GPL `ffmpeg` package is intentionally omitted; the LGPL FFmpeg binary and
+# shared libraries from ffmpeg-builder are added below. libva*/libvpx/libnuma
+# are the runtime counterparts of the -dev packages used to build them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        ffmpeg \
         git \
         libgl1 \
         libglib2.0-0 \
         libusb-1.0-0 \
+        libvpl2 \
+        libva2 \
+        libva-drm2 \
+        libvpx9 \
+        libnuma1 \
+        libdav1d7 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -259,6 +417,23 @@ ENV PATH="/app/application/backend/.venv/bin:$PATH" \
     AUTO_MIGRATE_STORAGE_DIR="true" \
     PYTHONPATH="/app/application/backend/src:/app/application/backend"
 
+# Custom LGPL FFmpeg + oneVPL shared libraries and the LGPL FFmpeg CLI binary.
+COPY --link --from=ffmpeg-builder /opt/vpl /opt/vpl
+COPY --link --from=ffmpeg-builder /opt/ffmpeg-vpl /opt/ffmpeg-vpl
+RUN --mount=type=bind,from=ffmpeg-builder,source=/usr/local,target=/tmp/ffmpeg-builder-usr-local,ro \
+    for libdir in /tmp/ffmpeg-builder-usr-local/lib /tmp/ffmpeg-builder-usr-local/lib/x86_64-linux-gnu; do \
+        [ -d "$libdir" ] || continue; \
+        for lib in "$libdir"/libSvtAv1Enc.so* "$libdir"/libopenh264.so*; do \
+            [ -e "$lib" ] || continue; \
+            cp -a "$lib" /usr/local/lib/; \
+        done; \
+    done; \
+    ldconfig -n /usr/local/lib \
+    && ldconfig
+
+ENV LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/lib" \
+    PATH="/opt/ffmpeg-vpl/bin:/app/application/backend/.venv/bin:$PATH"
+
 EXPOSE 8000
 
 # ===========================================================================
@@ -281,6 +456,13 @@ COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
 COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
+
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
 
 WORKDIR /app/application/backend
 USER appuser
@@ -310,7 +492,6 @@ RUN echo "deb [arch=amd64 trusted=yes] https://ppa.launchpadcontent.net/kobuk-te
         clinfo \
         intel-media-va-driver-non-free \
         libmfx-gen1 \
-        libvpl2 \
         libvpl-tools \
         libva-glx2 \
         va-driver-all \
@@ -337,6 +518,13 @@ COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
+
 WORKDIR /app/application/backend
 USER appuser
 CMD ["./run.sh"]
@@ -354,44 +542,18 @@ FROM runtime-base AS runtime-cuda
 # Debian 13's sqv GPG verifier cannot validate the NVIDIA signing key.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN echo "deb [arch=amd64 trusted=yes] https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64 /" \
-        > /etc/apt/sources.list.d/nvidia-cuda.list \
-    && apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg gpgv \
+    && curl -fsSL \
+        https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/cuda-keyring_1.1-1_all.deb \
+        -o /tmp/cuda-keyring.deb \
+    && dpkg -i /tmp/cuda-keyring.deb \
+    && rm -f /tmp/cuda-keyring.deb \
+    && apt-get update -o APT::Key::GPGVCommand=/usr/bin/gpgv && apt-get install -y --no-install-recommends \
         cuda-cudart-12-8=12.8.90-1 \
         libcublas-12-8=12.8.4.1-1 \
         libcudnn9-cuda-12=9.19.0.56-1 \
     && rm -rf /var/lib/apt/lists/*
-
 SHELL ["/bin/sh", "-c"]
-
-# ---------------------------------------------------------------------------
-# EULA compliance cleanup — remove non-redistributable CUDA system components.
-# Keeps only the runtime shared libraries needed for inference.
-# Based on: https://docs.nvidia.com/cuda/eula/index.html
-# ---------------------------------------------------------------------------
-RUN set -eux; \
-    # Remove development tools (compilers, debuggers, profilers)
-    apt-get remove -y --allow-remove-essential \
-        cuda-compiler-12-8 cuda-cudart-dev-12-8 cuda-nvcc-12-8 \
-        cuda-gdb-12-8 cuda-nsight-12-8 cuda-nsight-compute-12-8 \
-        cuda-nsight-systems-12-8 || true; \
-    # Remove headers and static libraries
-    find /usr/local/cuda* /usr/lib/x86_64-linux-gnu/ \
-        \( -path '*/include' -o -path '*/headers' \) -type d \
-        -exec rm -rf {} + 2>/dev/null || true; \
-    # Keep system static archives (e.g. libc_nonshared.a) required by
-    # torch.compile/Triton runtime linking; remove only CUDA static libs.
-    find /usr/local/cuda* \
-        -name '*.a' -delete 2>/dev/null || true; \
-    # Remove documentation and samples
-    rm -rf /usr/local/cuda*/doc /usr/local/cuda*/samples \
-           /usr/local/cuda*/extras/demo_suite; \
-    # Remove CUPTI profiling libraries (non-redistributable)
-    rm -rf /usr/local/cuda*/extras/CUPTI; \
-    # Remove cuSolver multi-GPU component (requires separate license)
-    find /usr/lib/x86_64-linux-gnu/ -name 'libcusolverMg*' -delete 2>/dev/null || true; \
-    # Clean up
-    apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 FROM runtime-cuda AS physical-ai-studio-cuda
 
@@ -411,6 +573,79 @@ COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
     /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
 RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
 
+# Replace PyAV with the wheel built against the custom LGPL FFmpeg.
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
+
+WORKDIR /app/application/backend
+USER appuser
+CMD ["./run.sh"]
+
+FROM runtime-base AS physical-ai-studio-cpu-redistributable
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
+      org.opencontainers.image.revision="${GIT_SHA}"
+ARG APP_UID=1000
+ARG APP_GID=1000
+COPY --link --from=builder-cpu-redistributable --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/.venv /app/application/backend/.venv
+COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
+WORKDIR /app/application/backend
+USER appuser
+CMD ["./run.sh"]
+
+FROM runtime-xpu AS physical-ai-studio-xpu-redistributable
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
+      org.opencontainers.image.revision="${GIT_SHA}"
+ARG APP_UID=1000
+ARG APP_GID=1000
+COPY --link --from=builder-xpu-redistributable --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/.venv /app/application/backend/.venv
+COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
+WORKDIR /app/application/backend
+USER appuser
+CMD ["./run.sh"]
+
+FROM runtime-cuda AS physical-ai-studio-cuda-redistributable
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
+      org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
+      org.opencontainers.image.revision="${GIT_SHA}"
+ARG APP_UID=1000
+ARG APP_GID=1000
+COPY --link --from=builder-cuda-redistributable --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/.venv /app/application/backend/.venv
+COPY --link --from=app-source --chown=${APP_UID}:${APP_GID} /app /app
+COPY --link --from=robot-assets --chown=${APP_UID}:${APP_GID} \
+    /app/application/backend/src/static/robot-assets /app/application/backend/src/static/robot-assets
+RUN uv pip install --python /app/application/backend/.venv/bin/python --no-deps /app/application/backend
+RUN --mount=type=bind,from=ffmpeg-builder,source=/dist,target=/dist,ro \
+    uv pip install --python /app/application/backend/.venv/bin/python \
+        --no-deps --force-reinstall /dist/av-*.whl \
+    && /app/application/backend/.venv/bin/python -c \
+        "import av; print('PyAV', av.__version__, av.library_versions)"
 WORKDIR /app/application/backend
 USER appuser
 CMD ["./run.sh"]

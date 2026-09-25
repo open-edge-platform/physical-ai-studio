@@ -4,10 +4,10 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from huggingface_hub import HfApi
 from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
-from physicalai.policies import ACT, Pi0, Pi05, SmolVLA
+from physicalai.policies import ACT, XR0, MolmoAct2, Pi05, Rldx1, SmolVLA
 from pydantic import BaseModel
 
-from settings import get_settings
+from services.training_backends.local import resolve_hf_token
 
 router = APIRouter(prefix="/api/policies", tags=["Policies"])
 
@@ -15,9 +15,11 @@ _AccessStatus = Literal["granted", "missing_token", "denied", "unavailable", "no
 
 _POLICY_CLASSES = {
     "act": ACT,
-    "pi0": Pi0,
     "pi05": Pi05,
+    "rldx1": Rldx1,
     "smolvla": SmolVLA,
+    "molmoact2": MolmoAct2,
+    "xr0": XR0,
 }
 
 _HUGGINGFACE_REQUIREMENTS = {
@@ -26,11 +28,17 @@ _HUGGINGFACE_REQUIREMENTS = {
     # download. When adding/changing a policy, inspect its `from_pretrained`,
     # `hf_hub_download`, and `Auto*from_pretrained` calls and list every default
     # repository that Studio training needs here.
+    "molmoact2": (("allenai/MolmoAct2", False),),
     "pi05": (
         ("lerobot/pi05_base", True),
         ("google/paligemma-3b-pt-224", True),
     ),
     "smolvla": (("lerobot/smolvla_base", False),),
+    "rldx1": (("RLWRLD/RLDX-1-PT", False),),
+    "xr0": (
+        ("XiaomiRobotics/Xiaomi-Robotics-0-Pretrain", False),
+        ("Qwen/Qwen3-VL-4B-Instruct", False),
+    ),
 }
 
 
@@ -69,7 +77,7 @@ async def check_huggingface_access(policy: str) -> HuggingFaceAccessResponse:
     requirements = _HUGGINGFACE_REQUIREMENTS.get(policy, ())
     if not requirements:
         return HuggingFaceAccessResponse(requirements=[])
-    token = get_settings().huggingface.hf_token
+    token = resolve_hf_token()
     token_value = token.get_secret_value() if token is not None else ""
     if not token_value:
         return HuggingFaceAccessResponse(

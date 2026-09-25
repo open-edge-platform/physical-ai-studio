@@ -83,12 +83,12 @@ def _dispatch(method_name: str) -> Callable[[ArgumentParser, Namespace], int]:
 
         # Capture the raw (pre-instantiation) model init_args so they can be
         # replayed as overrides on top of the checkpoint's saved hyperparameters
-        # when warm-starting. instantiate_classes() below consumes cfg in place
+        # when warm-starting. instantiate() below consumes cfg in place
         # for some jsonargparse versions, so this must run first.
         weights_from = getattr(cfg, "weights_from", None)
         model_init_args = _model_init_args(cfg) if weights_from else {}
 
-        cfg_init = cast("Namespace", parser.instantiate_classes(cfg))
+        cfg_init = cast("Namespace", parser.instantiate(cfg))
         model = cfg_init.model
         if weights_from:
             model = type(model).load_from_checkpoint(weights_from, map_location="cpu", **model_init_args)

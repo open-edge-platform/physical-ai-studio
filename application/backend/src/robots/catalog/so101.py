@@ -16,10 +16,10 @@ from physicalai_studio_plugin import (
     robot_field_ui,
     robot_payload_ui,
 )
+from physicalai_studio_plugin.schemas import SerialPortInfo
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from exceptions import RobotIdentifyError
-from schemas import SerialPortInfo
 from schemas.robot_type import BaseRobot
 
 SO101Types = Literal["SO101_Follower", "SO101_Leader"]
@@ -45,7 +45,7 @@ class SO101RobotPayload(BaseModel):
             "Provide SO101 calibration values. Studio uses these values as-is: it does not overwrite "
             "calibration on the control board and it skips the guided manual calibration flow."
         ),
-        json_schema_extra=robot_field_ui(
+        json_schema_extra=robot_field_ui(  # type: ignore[call-overload]
             {
                 "advanced_configuration": True,
                 "info": {
@@ -64,7 +64,7 @@ class SO101RobotPayload(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={  # pyrefly: ignore[bad-argument-type]
             "example": {"connection_string": "", "serial_number": "SO101-2024-001", "calibration": None},
-            **robot_payload_ui(
+            **robot_payload_ui(  # type: ignore[dict-item]
                 [
                     {
                         "kind": "connection",

@@ -330,7 +330,8 @@ def run_rollout_loop(  # noqa: PLR0914
 
         # Record frame for video (happens DURING the loop, not after)
         if video_recorder is not None:
-            frame = _collect_frame(observation, frame_key)
+            video_frame_key = video_recorder.frame_key if video_recorder.frame_key is not None else frame_key
+            frame = _collect_frame(observation, video_frame_key)
             if frame is not None:
                 video_recorder.record_frame(frame)
 
@@ -340,7 +341,11 @@ def run_rollout_loop(  # noqa: PLR0914
             # InferenceModel doesn't have eval() but doesn't need it
             if hasattr(policy, "eval") and callable(policy.eval):
                 policy.eval()
-            action = policy.select_action(observation)  # shape: (B, action_dim)
+            # Move the observation onto the policy device (no-op for exported
+            # InferenceModel policies, which expose no `device`).
+            policy_device = getattr(policy, "device", None)
+            policy_observation = observation.to(policy_device) if policy_device is not None else observation
+            action = policy.select_action(policy_observation)  # shape: (B, action_dim)
 
         # For non-vectorized envs (batch_size=1), squeeze the batch dimension
         # LiberoGym and similar envs expect action shape (action_dim,) not (1, action_dim)

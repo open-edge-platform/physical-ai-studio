@@ -20,8 +20,37 @@ submitted against a remote trainer registered in the Studio UI/API.
 Then:
 
 1. The service queues the job and trains, exports, and zips the model.
-2. The backend polls progress, downloads the archive, and imports it as a model.
-3. The service deletes the uploaded dataset once the job finishes.
+2. The backend follows progress over SSE, with `GET /jobs/{id}` as a fallback,
+   then downloads the archive and imports it as a model.
+3. The service deletes the uploaded dataset after training. After Studio
+   downloads and extracts a completed model, it also asks the trainer to
+   delete that job's retained artifacts.
+
+If the connection drops after submission, training continues on the trainer.
+Studio keeps the job ID, retries with backoff, and retrieves a completed model
+when contact returns. The reconnect timeouts in Studio are warning thresholds,
+not reasons to fail a job. If a trainer is permanently unreachable, **Stop**
+the job and wait for the worker to acknowledge cancellation before **Delete**
+becomes available. These actions remove Studio's local tracking; remote
+cancellation and artifact cleanup cannot be guaranteed while offline. The
+[SSH training targets guide](explanation/ssh-remote-trainer.md) covers managed
+tunnels and restart behavior.
+
+> [!IMPORTANT]
+> A Hugging Face token is resolved once by the Studio backend (Settings page,
+> or a legacy `HF_TOKEN` in the Studio backend's own environment) and sent
+> per-job in the `POST /jobs` body (`hf_token`), cached in memory only for
+> that job (see `trainer.store.JobStore.stash_secret`/`take_secret`), and never
+> written to disk. This service's own `HF_TOKEN` environment variable (see
+> [Optional Hugging Face token](#optional-hugging-face-token) below) is only a
+> *fallback* used when the studio sends none for a job - it is left untouched
+> and used as-is whenever the studio doesn't send one, but is never itself
+> forwarded to the studio, and is overridden for the duration of any job the
+> studio *does* send a token for. **SSH-provisioned trainer containers never
+> receive any environment variables at launch at all** (see
+> `services.ssh.docker_ops.build_run_argv`), so that fallback does not exist
+> for them - the Studio Settings page is the *only* place a token can come
+> from for an SSH-provisioned job.
 
 ## Install
 
@@ -47,11 +76,14 @@ directory.
 > [!WARNING]
 > The trainer has no built-in authentication. Anyone who can reach its port can submit or cancel jobs and download model artifacts. Keep it on a private network that only the Physical AI Studio backend IP address can reach—never expose it to the internet.
 
-> The backend honors `HTTP_PROXY` and `HTTPS_PROXY`. A configured proxy receives all trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
+> [!WARNING]
+> Studio still accepts a plain `http://` URL when you register a direct remote trainer (the docker-compose loopback binding above is fine over `http://`, since the traffic never leaves the host). If you point Studio at a trainer on a different host, use `https://`: the Hugging Face token is sent in the `POST /jobs` body on every submission (see the [!IMPORTANT] note above), and `http://` to a remote host puts it on the wire unencrypted. The Studio UI warns when you enter a non-loopback `http://` URL, but does not block it.
+
+> The backend honors `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. SSH connections use `HTTPS_PROXY`, falling back to `HTTP_PROXY`, as an HTTP CONNECT proxy. A configured proxy receives trainer traffic, including model artifact downloads; anyone who controls these variables controls where artifacts go. Run the backend only on a trusted, non-shared, non-multi-tenant host where other users cannot set them.
 
 | Variable                     | Required | Description                                  |
 | ---------------------------- | -------- | -------------------------------------------- |
-| `HF_TOKEN`                   | yes, if training a policy that downloads gated/private model weights | **Read** access to any gated/private model weights selected for training. |
+| `HF_TOKEN`                   | no       | Fallback used only when the studio sends no token for a job (see the [!IMPORTANT] note above); has no effect for SSH-provisioned trainers. |
 | `TRAINER_STORAGE_DIR`        | no       | Working directory for jobs and artifacts.    |
 | `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
 | `TRAINER_MAX_UNCOMPRESSED_BYTES` | no   | Cap on an uploaded dataset's uncompressed size. |
@@ -175,11 +207,12 @@ before work is accepted:
 
 ### Run a container manually
 
-Use manual startup only for administrator validation or the existing static
-remote-trainer workflow. SSH-provisioned jobs will create a job-scoped
-container, loopback port, and SSH tunnel automatically when that feature is
-enabled. Do not expose the trainer port publicly: the service has no built-in
-authentication.
+Use manual startup only for administrator validation or a direct-URL training
+target. An SSH training target instead uses one persistent managed container,
+trainer-scoped data volume, fixed loopback port, and standing SSH tunnel for
+its jobs. Studio starts the container when the target is saved; the container
+is not tied to any one job or SSH session. Do not expose the trainer port
+publicly: the service has no built-in authentication.
 
 [`application/docker/docker-compose.trainer.yaml`](../../docker/docker-compose.trainer.yaml)
 wraps the `docker run` invocations below in a Docker Compose file with `cuda`
@@ -222,7 +255,13 @@ PyTorch data loaders can exhaust Docker's default 64 MB `/dev/shm` allocation
 during larger training jobs. On a trusted single-tenant host, prefer the host's
 shared-memory pool with `--ipc=host` (or `ipc: host` in Docker Compose). If you
 need an isolated limit instead, set an explicit shared-memory size such as
-`--shm-size=16g` (or `shm_size: 16g` in Docker Compose).
+`--shm-size=32g` (or `shm_size: 32g` in Docker Compose). Managed SSH trainers
+use an isolated 32 GiB `/dev/shm` by default; tune **Trainer shared memory
+(GiB)** in Studio's Managed SSH Training settings (or `ssh.trainer_shm_size_gb`
+via `PATCH /api/settings`). Changing this setting does not resize an existing
+container. Stop the container and save the training target to recreate it
+with the same data volume; an interrupted running job
+will fail on restart, and queued jobs can then proceed.
 
 #### CUDA
 
@@ -277,6 +316,12 @@ Do not use `--privileged` or mount the Docker socket for either image.
 
 #### Optional Hugging Face token
 
+Only relevant for a manually-run/direct-URL trainer (see [Run a container
+manually](#run-a-container-manually)): SSH-provisioned trainer containers
+never receive this or any other environment variable at launch, so setting it
+there has no effect - use the Studio Settings page instead (see the
+[!IMPORTANT] note under [How it fits together](#how-it-fits-together)).
+
 Set `HF_TOKEN` only when you train a policy that downloads gated/private
 model weights. Place a read-only token in a host file with restrictive
 permissions and pass it as an environment file:
@@ -319,10 +364,14 @@ docker volume rm physicalai-trainer-data
 | ------ | --------------------- | ------------------------------------- |
 | POST   | `/jobs`               | Enqueue a training job.               |
 | PUT    | `/jobs/{id}/dataset`  | Upload the dataset ZIP.               |
+| HEAD   | `/jobs/{id}/dataset`  | Get the staged upload offset.         |
 | GET    | `/jobs/{id}`          | Current job state.                    |
 | GET    | `/jobs/{id}/events`   | SSE stream of state changes.          |
+| GET    | `/jobs/{id}/metrics`  | SSE stream of training metrics.       |
 | GET    | `/jobs/{id}/artifact` | Download the model archive.           |
 | POST   | `/jobs/{id}/cancel`   | Cancel a queued or running job.       |
+| DELETE | `/jobs/{id}`          | Remove a terminal job and artifacts.  |
+| GET    | `/devices`            | Trainer compute devices.              |
 | GET    | `/health`             | Liveness and image/protocol metadata. |
 
 ## Security

@@ -8,6 +8,7 @@ import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
 import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
+import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
 import { durationBetween } from '../shared/duration';
 import { ModelRow } from './model-row';
@@ -45,6 +46,9 @@ const model: SchemaModel = {
     version: 1,
     created_at: '2026-07-14T12:00:00Z',
     available_backends: [],
+    lora_enabled: false,
+    lora_use_dora: false,
+    snapflow_enabled: false,
 };
 
 const trainingJob: SchemaTrainJob = {
@@ -57,19 +61,7 @@ const trainingJob: SchemaTrainJob = {
     end_time: '2026-07-14T10:30:00Z',
     created_at: '2026-07-14T09:00:00Z',
     type: 'training',
-    payload: {
-        project_id: 'project-1',
-        dataset_id: 'dataset-1',
-        policy: 'act',
-        model_name: 'pick-and-place',
-        batch_size: 8,
-        num_workers: 'auto',
-        auto_scale_batch_size: false,
-        val_split: 0.1,
-        precision: 'bf16-mixed',
-        compile_model: false,
-        training_target: 'local',
-    },
+    payload: getMockedTrainJobPayload(),
 };
 
 const modelDetailResponse = {
@@ -148,6 +140,25 @@ describe('ModelRow', () => {
         expect(screen.getByText('—')).toBeInTheDocument();
     });
 
+    it('does not render a LoRA badge when lora_enabled is false', () => {
+        renderModelRow();
+
+        expect(screen.queryByText('LoRA')).not.toBeInTheDocument();
+        expect(screen.queryByText('DoRA')).not.toBeInTheDocument();
+    });
+
+    it('renders a LoRA badge when lora_enabled is true', () => {
+        renderModelRow({ modelOverride: { lora_enabled: true, lora_use_dora: false } });
+
+        expect(screen.getByText('LoRA')).toBeInTheDocument();
+    });
+
+    it('renders a DoRA badge when lora_use_dora is true', () => {
+        renderModelRow({ modelOverride: { lora_enabled: true, lora_use_dora: true } });
+
+        expect(screen.getByText('DoRA')).toBeInTheDocument();
+    });
+
     it('renders the v{n} suffix only when version > 1', () => {
         renderModelRow({ modelOverride: { version: 1 } });
 
@@ -198,21 +209,22 @@ describe('ModelRow', () => {
         expect(screen.getByTestId('trainer-cell')).toHaveTextContent('Local');
     });
 
-    it('shows SSH in the Trainer column for an ssh job', () => {
-        renderModelRow({
-            trainingJobOverride: {
-                ...trainingJob,
-                payload: { ...trainingJob.payload, training_target: 'ssh', remote_server_id: 'server-1' },
-            },
-        });
-
-        expect(screen.getByTestId('trainer-cell')).toHaveTextContent('SSH');
-    });
-
     it('shows "-" in the Trainer column when there is no trainingJob at all', () => {
         renderModelRow();
 
         expect(screen.getByTestId('trainer-cell')).toHaveTextContent('-');
+    });
+
+    it('badges a model whose checkpoint was distilled with SnapFlow', () => {
+        renderModelRow({ modelOverride: { snapflow_enabled: true } });
+
+        expect(screen.getByText('SnapFlow')).toBeInTheDocument();
+    });
+
+    it('leaves an ordinary flow-matching model unbadged', () => {
+        renderModelRow({ modelOverride: { snapflow_enabled: false } });
+
+        expect(screen.queryByText('SnapFlow')).not.toBeInTheDocument();
     });
 
     it('does not render the detail panel initially', () => {
@@ -229,7 +241,8 @@ describe('ModelRow', () => {
 
         expect(await screen.findByRole('tab', { name: 'Model formats' })).toBeInTheDocument();
         expect(screen.getByRole('tab', { name: 'Model Metrics' })).toBeInTheDocument();
-        expect(screen.getByRole('tab', { name: 'Training Datasets' })).toBeInTheDocument();
+        // TODO: Remove the comment once training datasets are supported
+        /*expect(screen.getByRole('tab', { name: 'Training Datasets' })).toBeInTheDocument();*/
         expect(screen.getByRole('tab', { name: 'Training Details' })).toBeInTheDocument();
     });
 

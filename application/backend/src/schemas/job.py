@@ -3,11 +3,26 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_serializer, field_validator, model_validator
 
 from schemas.base_job import BaseJob, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload
 from schemas.hardware import DeviceType
+from training.job import PEFT_POLICIES, SNAPFLOW_POLICIES
+
+
+class ExportBackend(StrEnum):
+    """Export formats a policy can produce.
+
+    Mirrors ``physicalai.export.backends.ExportBackend``; kept local so the
+    schemas package stays free of a runtime ``physicalai`` import (see
+    test_export_backend_matches_library for the parity check).
+    """
+
+    ONNX = "onnx"
+    OPENVINO = "openvino"
+    TORCH = "torch"
+    EXECUTORCH = "executorch"
 
 
 class TrainingPrecision(StrEnum):
@@ -27,7 +42,6 @@ class TrainingTarget(StrEnum):
 
     LOCAL = "local"
     REMOTE = "remote"
-    SSH = "ssh"
 
 
 class JobList(BaseModel):
@@ -69,18 +83,16 @@ class TrainingDevice(BaseModel):
 
 
 _DEFAULT_MAX_EPOCHS = 5
+_DEFAULT_SNAPFLOW_DISTILL_EPOCHS = 3
 
 
 class TrainJobPayloadBase(BaseModel):
     """Fields shared by every training execution target.
 
-    Concrete payloads are `LocalTrainJobPayload`, `RemoteTrainJobPayload`, and
-    `SshTrainJobPayload` below: each adds only the fields meaningful for its
+    Concrete payloads are `LocalTrainJobPayload` and `RemoteTrainJobPayload`
+    below: each adds only the fields meaningful for its
     target and forbids the rest (`extra="forbid"`), so a payload can never
-    express two targets at once and target-specific fields don't need a
-    manual mutual-exclusion validator. Adding a target (e.g. a future
-    AWS-provisioned trainer) means adding one subclass here and one entry in
-    the `TrainJobPayload` union, not another branch in a validator.
+    express two targets at once.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -102,6 +114,22 @@ class TrainJobPayloadBase(BaseModel):
         description="Number of training steps (legacy; ignored when max_epochs is provided)",
     )
     batch_size: int = Field(default=8, ge=1, le=256, description="Training batch size")
+
+    @field_validator("image_key_reorder_map")
+    @classmethod
+    def strip_observation_prefix(cls, value: dict[str, int]) -> dict[str, int]:
+        """Accept a dataset feature key where a camera name is expected.
+
+        A dataset stores its cameras as ``observation.images.<name>`` while the
+        policy reads them as ``images.<name>`` and prefixes ``images.`` onto
+        whatever mapping it is handed. Stripping the dataset's ``observation.``
+        here means either spelling resolves to the same key instead of failing
+        minutes into a run with a mapping that matches nothing.
+
+        Returns:
+            The mapping keyed the way the policy reads its images.
+        """
+        return {key.removeprefix("observation."): slot for key, slot in value.items()}
 
     @model_validator(mode="after")
     def resolve_training_limit(self) -> "TrainJobPayloadBase":
@@ -140,6 +168,161 @@ class TrainJobPayloadBase(BaseModel):
         description="Training precision ('32-true', 'bf16-mixed')",
     )
     compile_model: bool = Field(default=False, description="Enable torch.compile for supported policies")
+    image_key_reorder_map: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Camera name -> camera slot index, for a policy pretrained on a fixed camera order (SmolVLA). "
+            "Keys are bare camera names ('gripper'), not dataset feature keys: the policy sees its images "
+            "as 'images.<name>'. A LeRobot 'observation.' prefix is accepted and stripped. Empty keeps the "
+            "dataset's own camera order. When set it must cover every camera the dataset has, since the "
+            "policy matches it against the batch's image keys."
+        ),
+    )
+    num_cameras: int = Field(
+        default=0,
+        ge=0,
+        le=8,
+        description=(
+            "Camera slots the policy reads. Slots not filled by 'image_key_reorder_map' are trained on "
+            "masked empty images. 0 keeps only the dataset's cameras."
+        ),
+    )
+    export_backends: list[ExportBackend] | None = Field(
+        default=None,
+        description=(
+            "Export formats to produce after training. Null exports every format the policy supports; "
+            "formats the policy does not support are ignored."
+        ),
+    )
+    augment_images: bool = Field(
+        default=False,
+        description="Apply the default image augmentation pipeline to training images",
+    )
+    lora_enabled: bool = Field(
+        default=False,
+        description=(
+            "Fine-tune with LoRA/DoRA instead of full fine-tuning: freezes the base model and trains "
+            f"small low-rank adapters, using much less memory. Only available for {sorted(PEFT_POLICIES)}."
+        ),
+    )
+    lora_rank: int = Field(
+        default=32,
+        ge=1,
+        le=256,
+        description="LoRA rank (dimension of the low-rank decomposition). Ignored unless lora_enabled.",
+    )
+    lora_alpha: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "LoRA scaling numerator (scaling = lora_alpha / lora_rank). None defaults to lora_rank "
+            "(scaling = 1.0). Ignored unless lora_enabled."
+        ),
+    )
+    lora_dropout: float = Field(
+        default=0.05,
+        ge=0.0,
+        lt=1.0,
+        description="Dropout probability applied to LoRA adapter inputs. Ignored unless lora_enabled.",
+    )
+    lora_use_dora: bool = Field(
+        default=False,
+        description=(
+            "Use DoRA (Weight-Decomposed Low-Rank Adaptation) instead of plain LoRA; typically improves "
+            "quality at low ranks at the cost of slightly more compute/memory. Ignored unless lora_enabled."
+        ),
+    )
+    snapflow_enabled: bool = Field(
+        default=False,
+        description=(
+            "Enable SnapFlow self-distillation, producing a policy that generates an action chunk "
+            "in a single denoising step. This results in much faster inference but can reduce accuracy. "
+            f"Only available for flow-matching policies (e.g. {sorted(SNAPFLOW_POLICIES)})."
+        ),
+    )
+    snapflow_distill_epochs: int = Field(
+        default=_DEFAULT_SNAPFLOW_DISTILL_EPOCHS,
+        ge=1,
+        le=10_000,
+        description=(
+            "How many additional epochs to spend distilling, appended after the "
+            "max_epochs teacher run. Ignored when snapflow_enabled is false."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_lora(self) -> "TrainJobPayloadBase":
+        """Reject a LoRA request the policy cannot honour, and DoRA requested without LoRA."""
+        if self.lora_use_dora and not self.lora_enabled:
+            msg = "lora_use_dora requires lora_enabled; DoRA is a variant of LoRA, not a standalone mode."
+            raise ValueError(msg)
+        if not self.lora_enabled:
+            return self
+        if self.policy.lower() not in PEFT_POLICIES:
+            msg = (
+                f"LoRA/DoRA fine-tuning is not available for policy {self.policy!r}; "
+                f"it requires one of {sorted(PEFT_POLICIES)}."
+            )
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def validate_snapflow(self) -> "TrainJobPayloadBase":
+        """Reject a distillation request the policy cannot honour.
+
+        Runs after ``resolve_training_limit``, so ``max_epochs`` is resolved.
+
+        Returns:
+            The validated payload.
+
+        Raises:
+            ValueError: If the policy has no SnapFlow implementation.
+        """
+        if not self.snapflow_enabled:
+            return self
+
+        if self.policy.lower() not in SNAPFLOW_POLICIES:
+            msg = (
+                f"SnapFlow distillation is not available for policy {self.policy!r}; "
+                f"it requires a flow-matching policy ({sorted(SNAPFLOW_POLICIES)})."
+            )
+            raise ValueError(msg)
+        return self
+
+    @property
+    def snapflow_start_epoch(self) -> int | None:
+        """Epoch at which distillation begins, or None when it is disabled.
+
+        Zero-based, matching ``SnapFlowPhaseCallback(start_epoch=...)``: with
+        ``max_epochs=8`` and ``snapflow_distill_epochs=3``, epochs 0-7 train
+        with flow matching and epochs 8-10 distill (11 epochs total).
+        ``snapflow_distill_epochs`` is additive on top of ``max_epochs``, not
+        carved out of it, so raising the teacher budget never shortens
+        distillation (and vice versa).
+
+        Returns:
+            The phase boundary, or None for an ordinary flow-matching run.
+        """
+        if not self.snapflow_enabled:
+            return None
+        return self.max_epochs or _DEFAULT_MAX_EPOCHS
+
+    @property
+    def total_epochs(self) -> int:
+        """Total training epochs, including the SnapFlow distillation phase.
+
+        This is what should be handed to the trainer's epoch budget: the
+        teacher phase always runs the full ``max_epochs``, and distillation
+        (when enabled) extends the run rather than eating into it.
+
+        Returns:
+            ``max_epochs`` when SnapFlow is disabled, otherwise
+            ``max_epochs + snapflow_distill_epochs``.
+        """
+        max_epochs = self.max_epochs or _DEFAULT_MAX_EPOCHS
+        if not self.snapflow_enabled:
+            return max_epochs
+        return max_epochs + self.snapflow_distill_epochs
 
     # Set by the worker for every target (not just remote ones): a snapshot is
     # taken up front so a job's model has stable provenance, and a remote/SSH
@@ -199,28 +382,15 @@ class RemoteTrainJobPayload(TrainJobPayloadBase):
     )
 
 
-class SshTrainJobPayload(TrainJobPayloadBase):
-    """Trains on an SSH-provisioned remote server.
-
-    `base_model_id` resume is rejected by `SshTrainingTargetHandler.prepare`
-    for the same reason as `RemoteTrainJobPayload`.
-    """
-
-    training_target: Literal[TrainingTarget.SSH] = TrainingTarget.SSH
-    remote_server_id: UUID = Field(..., description="Configured SSH-provisioned remote server selected for an SSH run")
-
-
 TrainJobPayload = Annotated[
-    LocalTrainJobPayload | RemoteTrainJobPayload | SshTrainJobPayload,
+    LocalTrainJobPayload | RemoteTrainJobPayload,
     Field(discriminator="training_target"),
 ]
 
 # Used to (de)serialize a persisted/request payload dict into the right
 # variant, since `TrainJobPayload` is a type alias (not a class) and has no
 # `model_validate`/`model_dump` of its own.
-TrainJobPayloadAdapter: TypeAdapter[LocalTrainJobPayload | RemoteTrainJobPayload | SshTrainJobPayload] = TypeAdapter(
-    TrainJobPayload
-)
+TrainJobPayloadAdapter: TypeAdapter[LocalTrainJobPayload | RemoteTrainJobPayload] = TypeAdapter(TrainJobPayload)
 
 
 class TrainJob(BaseJob):
@@ -233,7 +403,7 @@ class DatasetImportJob(BaseJob):
     payload: DatasetImportJobPayload
 
 
-JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | SshTrainJobPayload | DatasetImportJobPayload
+JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | DatasetImportJobPayload
 
 Job = Annotated[
     TrainJob | DatasetImportJob,

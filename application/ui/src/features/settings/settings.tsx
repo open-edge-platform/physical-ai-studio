@@ -4,8 +4,9 @@ import { Item, Loading, TabList, TabPanels, Tabs } from '@geti-ui/ui';
 import { useMatch } from 'react-router';
 
 import { paths } from '../../router';
-import { Compute } from './compute';
 import { GeneralSettings } from './general/general-settings';
+import { HotkeysSettings } from './hotkeys/hotkeys-settings';
+import { TrainingTargets } from './training-targets';
 
 type TabItem = {
     key: string;
@@ -35,10 +36,20 @@ export const SettingsView = () => {
             ),
         },
         {
-            key: 'compute',
-            name: 'Compute',
-            href: paths.settings.compute.pattern,
-            content: <Compute />,
+            key: 'training-targets',
+            name: 'Training Targets',
+            href: paths.settings.trainingTargets.pattern,
+            content: <TrainingTargets />,
+        },
+        {
+            key: 'hotkeys',
+            name: 'Hotkeys',
+            href: paths.settings.hotkeys.pattern,
+            content: (
+                <Suspense fallback={<Loading />}>
+                    <HotkeysSettings />
+                </Suspense>
+            ),
         },
         /*{
             key: 'storage',

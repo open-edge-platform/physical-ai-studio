@@ -64,7 +64,8 @@ def _with_connection_status(robot_model: type) -> type:
 
 
 _connection_state_models = [_with_connection_status(model) for model in _registry.get_robot_types()]
-RobotWithConnectionState: Any = Annotated[_build_union(_connection_state_models), Field(discriminator="type")]
+_connection_state_union = _build_union(_connection_state_models)
+RobotWithConnectionState: Any = Annotated[_connection_state_union, Field(discriminator="type")]
 RobotWithConnectionStateAdapter: TypeAdapter[Any] = TypeAdapter(RobotWithConnectionState)
 
 

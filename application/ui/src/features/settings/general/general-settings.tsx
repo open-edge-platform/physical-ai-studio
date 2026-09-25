@@ -2,6 +2,7 @@ import { Heading, Text, View } from '@geti-ui/ui';
 
 import { $api } from '../../../api/client';
 import { HuggingFaceSettingsForm } from './huggingface-settings-form';
+import { SshSettingsForm } from './ssh-settings-form';
 import { TrainerSettingsForm } from './trainer-settings-form';
 
 export const GeneralSettings = () => {
@@ -13,6 +14,7 @@ export const GeneralSettings = () => {
             <Text>Configure trainer and Hugging Face defaults.</Text>
             <HuggingFaceSettingsForm huggingface={settings.huggingface} />
             <TrainerSettingsForm trainer={settings.trainer} />
+            <SshSettingsForm ssh={settings.ssh} />
         </View>
     );
 };

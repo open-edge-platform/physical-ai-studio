@@ -52,10 +52,10 @@ phase boundary and rebuilds the optimizer over the now-trainable parameters. No
 checkpoint handoff, no second command.
 
 A complete worked config ships at
-[`configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml`](../../../configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml):
+[`configs/physicalai/pi05/so101/snapflow.yaml`](../../../configs/physicalai/pi05/so101/snapflow.yaml):
 
 ```bash
-physicalai fit --config configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml
+physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml
 ```
 
 The parts that matter:
@@ -67,7 +67,6 @@ model:
     pretrained_name_or_path: lerobot/pi05_base
     # Phase 1 is plain flow matching — the callback turns SnapFlow on later.
     train_expert_only: false
-    scheduler_decay_steps: null # cosine horizon = real step budget
     scheduler_warmup_steps: 100
 
 trainer:
@@ -213,15 +212,15 @@ Exactly one of the two must be set:
 
 ```bash
 # Smoke-test the wiring without training anything
-physicalai fit --config configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml \
+physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml \
     --trainer.fast_dev_run 1
 
 # Smaller GPU
-physicalai fit --config configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml \
+physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml \
     --data.train_batch_size 8 --trainer.accumulate_grad_batches 2
 
 # Longer total budget
-physicalai fit --config configs/physicalai/pi05_finetune_and_snapflow_distillation.yaml \
+physicalai fit --config configs/physicalai/pi05/so101/snapflow.yaml \
     --trainer.max_epochs 20
 ```
 
@@ -247,18 +246,18 @@ job). Note that `--fit.ckpt_path` is a full Lightning resume, so this does
 
 ```bash
 # Phase 1 — standard flow-matching training
-physicalai fit --config configs/physicalai/pi05.yaml
+physicalai fit --config configs/physicalai/pi05/aloha/default.yaml
 
 # Phase 2 — SnapFlow distillation, VLM frozen, weights-only warm start from phase 1
 physicalai fit \
-    --config configs/physicalai/pi05_snapflow_distillation.yaml \
+    --config configs/physicalai/pi05/aloha/snapflow.yaml \
     --weights_from ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
 ```
 
 Substitute `pi05` with `smolvla` for the SmolVLA policy. Phase-2 templates:
 
-- `configs/physicalai/pi05_snapflow_distillation.yaml`
-- `configs/physicalai/smolvla_snapflow_distillation.yaml`
+- `configs/physicalai/pi05/aloha/snapflow.yaml`
+- `configs/physicalai/smolvla/pusht/snapflow.yaml`
 
 Both set `snapflow_enabled: true`, `train_expert_only: true`, and the paper
 defaults (`snapflow_alpha: 0.5`, `snapflow_lambda: 0.1`,
@@ -353,9 +352,8 @@ total_steps     = max_epochs * steps_per_epoch
 warmup          = 0.05 * total_steps
 ```
 
-Set `scheduler_decay_steps: null` so the cosine horizon follows
-`Trainer.estimated_stepping_batches` and the LR lands on `scheduler_decay_lr`
-exactly at the end of the run.
+The cosine horizon always follows `Trainer.estimated_stepping_batches`, so the
+LR lands on `scheduler_decay_lr` exactly at the end of the run.
 
 Hold out a validation split (`data.init_args.val_split`) on small datasets.
 Without it there is no way to distinguish convergence from memorisation.

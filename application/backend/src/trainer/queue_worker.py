@@ -57,9 +57,11 @@ class QueueManager:
         self._cancel_requested.add(job_id)
         state = self.store.get(job_id)
         # A job not yet dispatched (queued, or still awaiting its dataset) is
-        # canceled directly since no worker will observe the flag.
+        # canceled directly since no worker will observe the flag, and its
+        # cached HF token (if any) will never be consumed by `_run_job`.
         if state is not None and state.status in {TrainerJobStatus.QUEUED, TrainerJobStatus.AWAITING_DATASET}:
             self.store.update(job_id, status=TrainerJobStatus.CANCELED, message="Canceled before start")
+            self.store.discard_secret(job_id)
 
     async def _dispatch_loop(self) -> None:
         while not self._stopped.is_set():
@@ -83,6 +85,11 @@ class QueueManager:
             if request is None:
                 self.store.update(job_id, status=TrainerJobStatus.FAILED, message="Missing job request")
                 return
+
+            # The HF token was never persisted with the request (see
+            # `trainer.schemas.SubmitJobRequest.hf_token`); re-attach the
+            # in-memory copy stashed at submission time before training runs.
+            request.spec.run_options.hf_token = self.store.take_secret(job_id)
 
             def _report(progress: int, message: str | None, extra_info: dict | None) -> None:
                 self.store.update(job_id, progress=progress, message=message, extra_info=extra_info)

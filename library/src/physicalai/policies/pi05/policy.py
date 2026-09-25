@@ -18,8 +18,9 @@ from physicalai.inference.data import InferenceFeature, InferenceFeatureDtype, I
 from physicalai.inference.manifest import ComponentSpec
 from safetensors.torch import load_file
 
+from physicalai.data.constants import RTC_EXECUTION_HORIZON, RTC_INFERENCE_DELAY, RTC_MAX_GUIDANCE_WEIGHT
 from physicalai.data.dataset import Dataset
-from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, FeatureType
+from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
     ExportParameters,
@@ -28,7 +29,7 @@ from physicalai.export.backends import (
     TorchExportParameters,
 )
 from physicalai.policies.base import Policy
-from physicalai.policies.mixins import SnapFlowPolicyMixin
+from physicalai.policies.mixins import RTCPolicyMixin, SnapFlowPolicyMixin
 from physicalai.policies.mixins.peft import PeftPolicyMixin
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
@@ -48,7 +49,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
+class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy):
     """Pi05 Policy - Physical Intelligence's flow matching VLA model.
 
     Lightning wrapper for training and inference with Pi05 model.
@@ -80,7 +81,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         tokenizer_max_length: Maximum tokenizer length. Default: 200.
         gradient_checkpointing: Enable gradient checkpointing. Default: True.
         compile_model: Whether to use torch.compile. Default: False.
-        compile_mode: Torch compile mode. Default: "max-autotune".
+        compile_mode: Torch compile mode. Default: "default".
         freeze_vision_encoder: Freeze vision encoder. Default: False.
         train_expert_only: Train only action expert. Default: False.
         normalization_mode: Normalization method for state/action features — ``"QUANTILES"``
@@ -92,8 +93,8 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         optimizer_weight_decay: Weight decay coefficient. Default: 0.01.
         optimizer_grad_clip_norm: Maximum gradient norm for clipping. Default: 1.0.
         scheduler_warmup_steps: Number of linear warmup steps. Default: 1000.
-        scheduler_decay_steps: Cosine decay horizon in steps. ``None`` auto-scales
-            to total training steps. Default: 30000.
+        scheduler_decay_steps: Explicit cosine decay horizon in steps. When ``None``,
+            the horizon follows the trainer's total step budget. Default: None.
         scheduler_decay_lr: Final learning rate after cosine decay. Default: 2.5e-6.
         dataset_stats: Dataset stats for eager initialization. Default: None.
 
@@ -146,7 +147,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         # Optimization
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
-        compile_mode: str = "max-autotune",
+        compile_mode: str = "default",
         # Finetuning
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = False,
@@ -158,6 +159,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         lora_target_modules: str | tuple[str, ...] | None = None,
         lora_adapter_dtype: Literal["float32", "auto"] = "float32",
         lora_use_dora: bool = False,
+        lora_lr_scale: float = 10.0,
         # Normalization
         normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
         # Optimizer
@@ -168,7 +170,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         optimizer_grad_clip_norm: float = 1.0,
         # Scheduler
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = 30_000,
+        scheduler_decay_steps: int | None = None,
         scheduler_decay_lr: float = 2.5e-6,
         # Eager initialization
         dataset_stats: dict[str, dict[str, list[float] | str | tuple]] | None = None,
@@ -197,6 +199,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
                 lora_target_modules=lora_target_modules,
                 lora_adapter_dtype=lora_adapter_dtype,
                 lora_use_dora=lora_use_dora,
+                lora_lr_scale=lora_lr_scale,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
                 optimizer_eps=optimizer_eps,
@@ -247,6 +250,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
                 lora_target_modules=lora_target_modules,
                 lora_adapter_dtype=lora_adapter_dtype,
                 lora_use_dora=lora_use_dora,
+                lora_lr_scale=lora_lr_scale,
                 normalization_mode=normalization_mode,
                 optimizer_lr=optimizer_lr,
                 optimizer_betas=optimizer_betas,
@@ -363,6 +367,9 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
 
         self._dataset_stats = dataset_stats
 
+        # Apply any RTC state requested before the model was built.
+        self._sync_rtc_to_model()
+
     def _from_hf(  # noqa: PLR6301, PLR0913, PLR0912, PLR0915, C901
         self,
         pretrained_name_or_path: str | Path,
@@ -378,7 +385,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         snapflow_num_inference_steps: int | None = None,
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
-        compile_mode: str | None = "max-autotune",
+        compile_mode: str | None = "default",
         freeze_vision_encoder: bool = False,
         train_expert_only: bool = False,
         lora_enabled: bool = False,
@@ -388,13 +395,14 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         lora_target_modules: str | tuple[str, ...] | None = None,
         lora_adapter_dtype: Literal["float32", "auto"] = "float32",
         lora_use_dora: bool = False,
+        lora_lr_scale: float = 10.0,
         optimizer_lr: float = 2.5e-5,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
         optimizer_eps: float = 1e-8,
         optimizer_weight_decay: float = 0.01,
         optimizer_grad_clip_norm: float = 1.0,
         scheduler_warmup_steps: int = 1_000,
-        scheduler_decay_steps: int | None = 30_000,
+        scheduler_decay_steps: int | None = None,
         scheduler_decay_lr: float = 2.5e-6,
         **kwargs: Any,  # noqa: ANN401
     ) -> tuple[Pi05Config, dict[str, dict[str, list[float] | str | tuple]], Path]:
@@ -433,13 +441,14 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             lora_target_modules: Override LoRA target modules (regex or suffix tuple).
             lora_adapter_dtype: Override precision for newly created LoRA parameters.
             lora_use_dora: Override whether to use DoRA instead of plain LoRA.
+            lora_lr_scale: Override the LoRA/DoRA learning-rate multiplier.
             optimizer_lr: Override learning rate.
             optimizer_betas: Override Adam beta coefficients.
             optimizer_eps: Override optimizer epsilon.
             optimizer_weight_decay: Override weight decay.
             optimizer_grad_clip_norm: Override gradient clip norm.
             scheduler_warmup_steps: Override warmup steps.
-            scheduler_decay_steps: Override decay steps. ``None`` means auto.
+            scheduler_decay_steps: Override decay steps. ``None`` follows the trainer budget.
             scheduler_decay_lr: Override final decay learning rate.
             **kwargs: Extra arguments forwarded to ``huggingface_hub.hf_hub_download``.
 
@@ -528,6 +537,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             hf_config["lora_target_modules"] = lora_target_modules
         hf_config["lora_adapter_dtype"] = lora_adapter_dtype
         hf_config["lora_use_dora"] = lora_use_dora
+        hf_config["lora_lr_scale"] = lora_lr_scale
         hf_config["optimizer_lr"] = optimizer_lr
         hf_config["optimizer_betas"] = optimizer_betas
         hf_config["optimizer_eps"] = optimizer_eps
@@ -667,13 +677,15 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             Action chunk tensor after post-processing.
 
         Raises:
-            ValueError: If the model is not initialized.
+            ValueError: If the model is not initialized, or if RTC is enabled and
+                the batch carries out-of-range RTC control values.
         """
         if self.model is None or self._preprocessor is None or self._postprocessor is None:
             msg = "Model is not initialized"
             raise ValueError(msg)
 
         processed_batch = self._preprocessor(batch.to(self.device).to_dict())
+        self._validate_rtc_inputs(processed_batch)
         actions = self.model.predict_action_chunk(processed_batch)
 
         return self._postprocessor({ACTION: actions})[ACTION]
@@ -712,39 +724,53 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure optimizer and scheduler.
 
-        When ``scheduler_decay_steps`` is ``None``, the cosine decay horizon
-        is automatically set to the total training steps
-        (``self.trainer.estimated_stepping_batches``), so the LR reaches
-        ``scheduler_decay_lr`` exactly at the end of training.
+        The cosine decay horizon defaults to the total training step budget
+        (``self.trainer.estimated_stepping_batches``, derived from ``max_steps``
+        or ``max_epochs``), so the LR reaches ``scheduler_decay_lr`` exactly at
+        the end of training. Set ``scheduler_decay_steps`` to override it.
+
+        When LoRA/DoRA is enabled, ``optimizer_lr`` and ``scheduler_decay_lr`` are scaled
+        by ``self.config.lora_lr_scale`` (see ``PeftConfigMixin``), since adapter training
+        tolerates a much higher learning rate than full fine-tuning.
 
         Returns:
             Dict with optimizer and lr_scheduler config.
         """
         params = [p for p in self.parameters() if p.requires_grad]
 
+        peak_lr = self.config.optimizer_lr
+        decay_lr = self.config.scheduler_decay_lr
+        if self.config.lora_enabled:
+            lr_multiplier = self.config.lora_lr_scale
+            peak_lr *= lr_multiplier
+            decay_lr *= lr_multiplier
+            logger.info(
+                "LoRA/DoRA enabled: scaling optimizer_lr %.3g -> %.3g and scheduler_decay_lr %.3g -> %.3g (x%.3g)",
+                self.config.optimizer_lr,
+                peak_lr,
+                self.config.scheduler_decay_lr,
+                decay_lr,
+                lr_multiplier,
+            )
+
         optimizer = torch.optim.AdamW(
             params,
-            lr=self.config.optimizer_lr,
+            lr=peak_lr,
             weight_decay=self.config.optimizer_weight_decay,
             betas=self.config.optimizer_betas,
             eps=self.config.optimizer_eps,
         )
 
-        num_training_steps = self.trainer.estimated_stepping_batches
-
         num_decay_steps = self.config.scheduler_decay_steps
         if num_decay_steps is None:
-            num_decay_steps = num_training_steps
-            msg = f"scheduler_decay_steps=None, using total training steps: {num_decay_steps}"
-            logger.info(msg)
+            num_decay_steps = int(self.trainer.estimated_stepping_batches)
 
         scheduler = cosine_decay_with_warmup_scheduler(
             optimizer,
-            peak_lr=self.config.optimizer_lr,
-            decay_lr=self.config.scheduler_decay_lr,
+            peak_lr=peak_lr,
+            decay_lr=decay_lr,
             num_warmup_steps=self.config.scheduler_warmup_steps,
             num_decay_steps=num_decay_steps,
-            num_training_steps=num_training_steps,
         )
 
         return {
@@ -793,7 +819,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
         Returns:
             A list of feature descriptors matching the model's expected input format,
             covering the robot state, image observations, language task, and any
-            real-time chunking control tensors when ``enable_rtc`` is set on the model.
+            real-time chunking control tensors when :attr:`rtc_enabled` is ``True``.
             Returns ``None`` if the underlying model or dataset stats have not been
             initialized yet.
         """
@@ -842,31 +868,32 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             ),
         )
 
-        if self.model.enable_rtc:
+        if self.rtc_enabled:
+            action_shape = cast("tuple", self._dataset_stats[ACTION]["shape"])
             schema.extend(
                 [
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
-                        shape=(self.config.chunk_size, self.config.max_action_dim),
-                        name="prev_chunk_left_over",
+                        shape=(self.config.chunk_size, *action_shape),
+                        name=PREV_CHUNK_LEFT_OVER,
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
                         shape=(),
-                        name="inference_delay",
+                        name=RTC_INFERENCE_DELAY,
                         dtype=InferenceFeatureDtype.INT64,
                     ),
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
                         shape=(),
-                        name="max_guidance_weight",
+                        name=RTC_MAX_GUIDANCE_WEIGHT,
                         dtype=InferenceFeatureDtype.FLOAT32,
                     ),
                     InferenceFeature(
                         ftype=InferenceFeatureType.COMMON,
                         shape=(),
-                        name="execution_horizon",
+                        name=RTC_EXECUTION_HORIZON,
                         dtype=InferenceFeatureDtype.INT64,
                     ),
                 ],
@@ -915,10 +942,14 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, ExportablePolicyMixin, Policy):
             )
             raise ValueError(msg)
 
+        normalize_stats: dict[str, Any] = {STATE: self._dataset_stats[f"observation.{STATE}"]}
+        if self.rtc_enabled:
+            normalize_stats[PREV_CHUNK_LEFT_OVER] = self._dataset_stats[ACTION]
+
         base_preproc_specs = [
             ComponentSpec(
                 type="normalize",
-                stats={STATE: self._dataset_stats[f"observation.{STATE}"]},
+                stats=normalize_stats,
                 mode=self.config.normalization_mode.lower(),
             ),
             ComponentSpec(

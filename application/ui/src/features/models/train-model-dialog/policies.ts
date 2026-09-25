@@ -9,7 +9,9 @@ export const formatBytes = (bytes: number): string => {
 /**
  * Available training policies with hardware requirements.
  *
- * `minVRAM` is the estimated minimum VRAM (in bytes) required to train with batch_size=1.
+ * `minVRAM` is the peak VRAM measured over one training step at batch_size=1.
+ * Optimizer state drives the peak, so it tracks the trainable parameter count
+ * and barely moves with batch size: Pi0.5 needs ~38 GB at both batch 1 and 8.
  */
 export const MODELS: ReadonlyArray<{
     id: string;
@@ -20,19 +22,39 @@ export const MODELS: ReadonlyArray<{
     {
         id: 'act',
         name: 'ACT',
-        description: 'Action Chunking with Transformers, lightweight and fast to train',
+        description: 'Action Chunking with Transformers, lightweight and fast to train (BSD 3-Clause license)',
         minVRAM: 2 * GB,
     },
     {
         id: 'smolvla',
         name: 'SmolVLA',
-        description: 'Small Vision-Language-Action model based on SmolVLM2-500M',
-        minVRAM: 8 * GB,
+        description: 'Small Vision-Language-Action model based on SmolVLM2-500M (Apache 2.0 license)',
+        minVRAM: 3 * GB,
+    },
+    {
+        id: 'molmoact2',
+        name: 'MolmoAct2',
+        description: 'Vision-Language-Action model with flow-matching action generation (Apache 2.0 license)',
+        minVRAM: 80 * GB,
     },
     {
         id: 'pi05',
         name: 'Pi0.5',
-        description: 'Enhanced Pi0 with discrete state encoding and longer context',
-        minVRAM: 16 * GB,
+        description: 'Flow-matching VLA with discrete state encoding and longer context (Gemma license)',
+        minVRAM: 40 * GB,
+    },
+    {
+        id: 'rldx1',
+        name: 'RLDX-1',
+        description: 'General-purpose robot foundation model for dexterous manipulation (RLWRLD Model License v1.0)',
+        minVRAM: 40 * GB,
+    },
+    {
+        id: 'xr0',
+        name: 'XR0',
+        description:
+            'Vision-Language-Action model with a Qwen3-VL backbone and flow-matching action expert ' +
+            '(Apache 2.0 license)',
+        minVRAM: 60 * GB,
     },
 ];

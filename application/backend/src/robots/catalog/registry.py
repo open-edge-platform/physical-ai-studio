@@ -128,8 +128,8 @@ class RobotCatalogRegistry(RobotCatalogRegistryProtocol):
         return models
 
     def make_robot_type(self) -> Any:
-        models = self.get_robot_types()
-        return Annotated[_build_union(models), Field(discriminator="type")]
+        union = _build_union(self.get_robot_types())
+        return Annotated[union, Field(discriminator="type")]
 
     def _load_external_plugins(self) -> None:
         try:

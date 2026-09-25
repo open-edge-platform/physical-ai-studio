@@ -369,7 +369,7 @@ class SnapFlowModelMixin:
             of samples routed through the consistency-distillation branch). CD
             samples do not regress onto the dataset action, so callers should
             treat ``cd_idx`` as exempt from action-padding masking (see
-            :func:`physicalai.policies.base.in_episode_bound`).
+            :func:`physicalai.policies.utils.in_episode_bound`).
         """
         bsize = actions.shape[0]
         device = actions.device

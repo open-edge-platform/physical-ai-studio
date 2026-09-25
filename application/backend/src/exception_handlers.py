@@ -36,7 +36,10 @@ def handle_base_exception(request: Request, exception: Exception) -> Response:
     else:
         raise exception
 
-    response = jsonable_encoder({"error_code": error_code, "message": message, "http_status": http_status})
+    response_data = {"error_code": error_code, "message": message, "http_status": http_status}
+    if isinstance(exception, BaseException):
+        response_data.update(exception.details)
+    response = jsonable_encoder(response_data)
     headers: dict[str, str] | None = None
     # 204 skipped as No Content needs to be revalidated
     if http_status not in [200, 201, 202, 203, 205, 206, 207, 208, 226] and request.method == "GET":
@@ -87,7 +90,8 @@ async def validation_exception_handler(_request: Request, exception: Exception) 
         # with a message explaining what the problem with the parameter is.
         loc, msg = pydantic_error["loc"], pydantic_error["msg"]
         filtered_loc = loc[1:] if loc[0] in ("body", "query", "path") else loc
-        field_string = ".".join(str(filtered_loc))  # nested fields with dot-notation
+        # Report nested fields as dot-separated path segments.
+        field_string = ".".join(str(segment) for segment in filtered_loc)
         reformatted_message[field_string].append(msg)
 
     headers = {"Cache-Control": "no-cache"}  # always revalidate

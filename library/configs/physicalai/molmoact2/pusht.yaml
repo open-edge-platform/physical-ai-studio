@@ -1,0 +1,78 @@
+# MolmoAct2 PushT Training Configuration
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/molmoact2/pusht.yaml
+model:
+  class_path: physicalai.policies.MolmoAct2
+  init_args:
+    # Initialize weights, tokenizer, and image processor from the released base checkpoint.
+    pretrained_name_or_path: allenai/MolmoAct2
+
+    # Use one observation to predict and execute a 10-step action chunk.
+    n_obs_steps: 1
+    chunk_size: 10
+    n_action_steps: 10
+
+    # Start each generated action trajectory from fresh Gaussian noise.
+    use_random_input_noise: true
+
+    # Add low-rank adapters to the VLM and action expert while freezing base weights.
+    lora_enabled: true
+    gradient_checkpointing: false
+
+    # PushT uses the base embodiment frame and dataset-owned normalization.
+    adapt_to_so101: false
+    convert_pretrained_so101_stats: false
+    preserve_pretrained_normalization_in_training: false
+
+    # Text inserted into the model prompt to describe the embodiment and action space.
+    setup_type: "single 2D point-mass pusher robot in the PushT block-pushing simulation"
+    control_mode: "absolute planar end-effector position"
+
+    # Optimization rates.
+    optimizer_lr: 1e-5
+    optimizer_vit_lr: 5e-6
+    optimizer_connector_lr: 5e-6
+    optimizer_action_expert_lr: 5e-5
+    optimizer_betas: [0.9, 0.95]
+    optimizer_eps: 1e-6
+    optimizer_weight_decay: 0.0
+    optimizer_grad_clip_norm: 1.0
+
+    scheduler_warmup_steps: 200
+    scheduler_decay_steps: 24000
+    scheduler_decay_lr: 1e-6
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    # Convert LeRobot samples into PhysicalAI Observation/Action objects.
+    repo_id: lerobot/pusht
+    train_batch_size: 8
+    data_format: physicalai
+    val_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+      init_args:
+        task_description: "Push the T-shaped block onto the T-shaped target."
+    num_rollouts_val: 10
+    # Worker processes decode and prepare samples in parallel.
+    num_workers: 0
+
+trainer:
+  max_epochs: 8
+  accelerator: gpu
+  devices: 1
+  # Mixed bfloat16 reduces memory use while retaining float32-like range.
+  precision: bf16-mixed
+  log_every_n_steps: 20
+  # Run gym rollouts every 2000 optimizer steps, including across epoch boundaries.
+  val_check_interval: 2000
+  check_val_every_n_epoch: null
+  callbacks:
+    - class_path: physicalai.train.RolloutVideoRecorderCallback
+      init_args:
+        output_dir: val_videos_pushT
+        fps: 10
+        record_mode: all
+        frame_key: top
+        caption: "Push the T-shaped block onto the T-shaped target."

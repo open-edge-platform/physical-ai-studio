@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Remote (direct-URL) training target: offloads to a configured remote trainer."""
+"""Remote training target: offloads to a configured direct or managed trainer."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from services.remote_trainer_service import RemoteTrainerService
 
 
 class RemoteTrainingTargetHandler:
-    """Validates and keys jobs that offload to a directly-configured remote trainer."""
+    """Validates and keys jobs that offload to a configured remote trainer."""
 
     def __init__(self, remote_trainer_service: RemoteTrainerService) -> None:
         self.remote_trainer_service = remote_trainer_service

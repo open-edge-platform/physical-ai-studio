@@ -5,8 +5,9 @@
 
 This module provides dataclass configurations for the SmolVLA flow matching
 vision-language-action model.
-For CLI usage, use the YAML config in `configs/physicalai/smolvla.yaml`:
-    physicalai fit --config configs/physicalai/smolvla.yaml
+For CLI usage, use the YAML config in
+`configs/physicalai/smolvla/pusht/default.yaml`:
+    physicalai fit --config configs/physicalai/smolvla/pusht/default.yaml
 The YAML config is set up for minimum hardware (~8GB VRAM) with clear
 comments on how to adjust for different GPU sizes.
 Example (API):
@@ -18,6 +19,7 @@ Example (API):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from physicalai.config import Config
 
@@ -29,6 +31,7 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
     """Configuration for SmolVLA flow matching model.
 
     Attributes:
+        dtype: Model precision type, either "bfloat16" or "float32". Defaults to "bfloat16".
         n_obs_steps: Number of observation steps to use. Defaults to 1.
         chunk_size: Size of action chunks for prediction. Defaults to 50.
         n_action_steps: Number of action steps to execute per model invocation. Defaults to 50.
@@ -55,7 +58,8 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
         optimizer_weight_decay: Weight decay coefficient for regularization. Defaults to 1e-10.
         optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping. Defaults to 10.
         scheduler_warmup_steps: Number of warmup steps for learning rate scheduler. Defaults to 1000.
-        scheduler_decay_steps: Number of decay steps for learning rate scheduler. Defaults to 30000.
+        scheduler_decay_steps: Explicit cosine decay horizon in steps. When ``None``, the horizon
+            follows the trainer's total step budget (``max_steps``/``max_epochs``). Defaults to None.
         scheduler_decay_lr: Final learning rate after decay. Defaults to 2.5e-6.
         vlm_model_name: Name or path of the VLM backbone model to use.
             Defaults to "HuggingFaceTB/SmolVLM2-500M-Video-Instruct".
@@ -77,6 +81,8 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
     See :class:`~physicalai.policies.mixins.SnapFlowConfigMixin` for the
     inherited ``snapflow_*`` attributes.
     """
+
+    dtype: Literal["bfloat16", "float32"] = "bfloat16"
 
     n_obs_steps: int = 1
     chunk_size: int = 50
@@ -110,7 +116,7 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
     optimizer_grad_clip_norm: float = 10
 
     scheduler_warmup_steps: int = 1_000
-    scheduler_decay_steps: int = 30_000
+    scheduler_decay_steps: int | None = None
     scheduler_decay_lr: float = 2.5e-6
 
     vlm_model_name: str = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
@@ -156,3 +162,7 @@ class SmolVLAConfig(SnapFlowConfigMixin, Config):
             raise ValueError(msg)
 
         self._validate_snapflow()
+
+        if self.dtype not in {"bfloat16", "float32"}:
+            msg = f"Invalid dtype: {self.dtype}"
+            raise ValueError(msg)

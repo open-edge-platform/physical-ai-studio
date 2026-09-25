@@ -47,7 +47,7 @@ class TrainerClientSettings(BaseModel):
 
     request_timeout_s: float = Field(default=30.0)
     download_read_timeout_s: float = Field(default=120.0)
-    stream_reconnect_max_s: float = Field(default=900.0)
+    stream_reconnect_max_s: float = Field(default=900.0)  # Warning threshold; never fail a job for lost connectivity.
     stream_reconnect_backoff_max_s: float = Field(default=30.0)
 
 
@@ -65,15 +65,136 @@ class HuggingFaceSettings(BaseModel):
         return value
 
 
-_USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface")
+# Shared defaults for user-editable SSH settings and the flat `Settings.ssh_*`
+# fields read by the services.
+_DEFAULT_SSH_CONNECT_TIMEOUT_S = 10.0
+_DEFAULT_SSH_COMMAND_TIMEOUT_S = 15.0
+_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S = 30.0
+_DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S = 1800.0
+_DEFAULT_SSH_TRAINER_SHM_SIZE_GB = 32
+
+
+class SshProvisioningSettings(BaseModel):
+    """User-editable connection, image-pull, and shared-memory settings for SSH trainers.
+
+    SSH config, known-hosts paths, and the image registry remain environment-only.
+    Managed SSH access requires a loopback-bound Studio backend because the
+    settings API has no authentication model.
+    """
+
+    connect_timeout_s: float = Field(default=_DEFAULT_SSH_CONNECT_TIMEOUT_S, gt=0)
+    command_timeout_s: float = Field(default=_DEFAULT_SSH_COMMAND_TIMEOUT_S, gt=0)
+    preflight_timeout_s: float = Field(default=_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S, gt=0)
+    image_pull_timeout_s: float = Field(default=_DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S, gt=0)
+    trainer_shm_size_gb: int = Field(default=_DEFAULT_SSH_TRAINER_SHM_SIZE_GB, ge=1)
+
+    @classmethod
+    def from_settings(cls, settings: "Settings") -> "SshProvisioningSettings":
+        """Project the flat `Settings.ssh_*` fields into the grouped view."""
+        return cls(**{group_key: getattr(settings, flat_key) for group_key, flat_key in _SSH_FIELD_MAP.items()})
+
+
+# Maps the grouped, UI-facing field names onto the flat `Settings` field names
+# the services read. The flat fields keep their aliases as the settings-file
+# storage keys, but - unlike the rest of `Settings` - are no longer readable
+# from the process environment or a `.env` file; see `_EnvExclusionSource`.
+_SSH_FIELD_MAP: dict[str, str] = {
+    "connect_timeout_s": "ssh_connect_timeout_s",
+    "command_timeout_s": "ssh_command_timeout_s",
+    "preflight_timeout_s": "ssh_preflight_timeout_s",
+    "image_pull_timeout_s": "ssh_image_pull_timeout_s",
+    "trainer_shm_size_gb": "ssh_trainer_shm_size_gb",
+}
+
+
+class HotkeySettings(BaseModel):
+    """User-configurable keyboard shortcut bindings.
+
+    Opaque action_id -> serialized key combo map (e.g. {"recording.discard_episode":
+    "Shift+ArrowLeft"}). The frontend hotkey registry owns action ids and default
+    combos; only overrides are stored here, so a stale id from a renamed/removed
+    frontend action is simply ignored rather than validated.
+    """
+
+    bindings: dict[str, str] = Field(default_factory=dict)
+
+
+_USER_CONFIG_GROUPS: tuple[str, ...] = ("trainer", "huggingface", "hotkeys")
+
+
+def _storage_key(field_name: str) -> str:
+    """Return the key a top-level setting is stored under in the settings file.
+
+    Settings sources resolve a top-level field by its validation alias, not its
+    Python name, so an override has to be written under the alias - which is
+    also the setting's documented environment variable name - to be picked up.
+    """
+    field_info = Settings.model_fields[field_name]
+    return field_info.alias or field_name
+
+
+def _ssh_storage_keys() -> tuple[str, ...]:
+    """Return the storage-file keys for the flat `Settings.ssh_*` fields.
+
+    Unlike `_USER_CONFIG_GROUPS`, `SshProvisioningSettings` fields live
+    directly on `Settings` (see `_SSH_FIELD_MAP`) rather than in a nested
+    model, so they are stored under their alias instead of a group name.
+    """
+    return tuple(_storage_key(field_name) for field_name in _SSH_FIELD_MAP.values())
+
+
+def ssh_patch_to_flat(values: dict[str, Any] | None) -> dict[str, Any]:
+    """Translate a partial `SshProvisioningSettings` patch into stored overrides.
+
+    A `None` patch clears every SSH override, restoring each field's built-in
+    default. `_EnvExclusionSource` deliberately excludes these settings from
+    the environment/`.env` sources, so there is no environment value to fall
+    back to - only the field default (or an explicit `Settings(...)` init
+    kwarg, e.g. in tests).
+
+    Args:
+        values: Fields supplied by the caller, keyed by grouped field name, or
+            `None` to clear the whole group.
+
+    Returns:
+        The equivalent settings-file keys mapped to their values. Unknown keys
+        are dropped rather than written through.
+    """
+    if values is None:
+        return dict.fromkeys(_ssh_storage_keys())
+    return {_storage_key(_SSH_FIELD_MAP[key]): value for key, value in values.items() if key in _SSH_FIELD_MAP}
 
 
 class UserConfigSettingsSource(JsonConfigSettingsSource):
-    """JSON settings source restricted to user-configurable groups."""
+    """JSON settings source restricted to user-configurable settings."""
 
     def __call__(self) -> dict[str, Any]:
         data: dict[str, Any] = super().__call__()
-        return {key: value for key, value in data.items() if key in _USER_CONFIG_GROUPS}
+        allowed = (*_USER_CONFIG_GROUPS, *_ssh_storage_keys())
+        return {key: value for key, value in data.items() if key in allowed}
+
+
+class _EnvExclusionSource(PydanticBaseSettingsSource):
+    """Exclude user-editable SSH settings from environment and `.env` sources.
+
+    Those settings are exclusively user-editable through the settings page
+    and persisted to the settings JSON file (see `UserConfigSettingsSource`). Blocking them here
+    means a value saved through the settings API can never be silently
+    overridden by a stale environment variable or `.env` file on the next
+    restart, and there is exactly one place - the settings file - an operator
+    or the UI needs to look to know the effective value.
+    """
+
+    def __init__(self, wrapped: PydanticBaseSettingsSource) -> None:
+        self._wrapped = wrapped
+
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
+        return self._wrapped.get_field_value(field, field_name)
+
+    def __call__(self) -> dict[str, Any]:
+        data: dict[str, Any] = self._wrapped()
+        excluded = _ssh_storage_keys()
+        return {key: value for key, value in data.items() if key not in excluded}
 
 
 class Settings(BaseSettings):
@@ -83,7 +204,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Physical AI Studio"
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     summary: str = "Physical AI Studio server"
     description: str = (
         "Physical AI Studio is a framework to train robots. It allows the user to create datasets, "
@@ -158,14 +279,16 @@ class Settings(BaseSettings):
     trainer: TrainerClientSettings = TrainerClientSettings()
     # User-configurable Hugging Face credentials.
     huggingface: HuggingFaceSettings = HuggingFaceSettings()
+    # User-configurable keyboard shortcut bindings.
+    hotkeys: HotkeySettings = HotkeySettings()
 
-    # SSH-provisioned remote training
-    # Master switch. Off by default: the feature has no authentication model,
-    # so it must never be on for a deployment that is not a single-user
-    # localhost workstation. See `core.security.ssh_network_exposure`, which
-    # additionally fails this closed at startup if the backend is bound to a
-    # non-loopback address regardless of this setting.
-    ssh_remote_trainer_enabled: bool = Field(default=False, alias="SSH_REMOTE_TRAINER_ENABLED")
+    # Managed SSH trainers require a loopback-bound backend; see
+    # `core.security.ssh_network_exposure`. The UI warns that SSH access has
+    # no authentication model.
+    #
+    # The knobs below are user-editable exclusively through the settings page
+    # / `PATCH /api/settings` (see `SshProvisioningSettings`) - never through
+    # the environment or a `.env` file; see `_EnvExclusionSource`.
     # Path to the user's SSH client config. asyncssh parses it to resolve a saved
     # `ssh_host_alias` into a hostname, port, user, and identity; Studio never
     # reads key material out of it.
@@ -174,62 +297,29 @@ class Settings(BaseSettings):
     # asyncssh, which fails closed on an unknown or changed key.
     ssh_known_hosts_path: Path = Field(default=Path("~/.ssh/known_hosts"), alias="SSH_KNOWN_HOSTS_PATH")
     # Overall budget for one SSH connect + auth. Bounds a save request.
-    ssh_connect_timeout_s: float = Field(default=10.0, alias="SSH_CONNECT_TIMEOUT_S")
-    # Per-command budget for the cheap Tier 1 probes (docker version, nvidia-smi).
-    ssh_command_timeout_s: float = Field(default=15.0, alias="SSH_COMMAND_TIMEOUT_S")
+    ssh_connect_timeout_s: float = Field(default=_DEFAULT_SSH_CONNECT_TIMEOUT_S, alias="SSH_CONNECT_TIMEOUT_S")
+    # Per-command budget for SSH checks such as docker version and accelerator detection.
+    ssh_command_timeout_s: float = Field(default=_DEFAULT_SSH_COMMAND_TIMEOUT_S, alias="SSH_COMMAND_TIMEOUT_S")
     # Budget for `docker pull` of the (multi-gigabyte) trainer image.
-    ssh_image_pull_timeout_s: float = Field(default=1800.0, alias="SSH_IMAGE_PULL_TIMEOUT_S")
-    # Overall budget for a full Tier 1 preflight, so a save can never hang.
-    ssh_preflight_timeout_s: float = Field(default=30.0, alias="SSH_PREFLIGHT_TIMEOUT_S")
-    # Minimum time between preflight/status SSH connections to one server. Shared
-    # by the status endpoint and the GPU-busy re-check so UI polling cannot
-    # disrupt a running job or pile up connections.
+    ssh_image_pull_timeout_s: float = Field(default=_DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S, alias="SSH_IMAGE_PULL_TIMEOUT_S")
+    # Budget for verifying a newly added SSH host alias.
+    ssh_preflight_timeout_s: float = Field(default=_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S, alias="SSH_PREFLIGHT_TIMEOUT_S")
+    # Minimum time between SSH connections to one host.
     ssh_preflight_throttle_s: float = Field(default=5.0, alias="SSH_PREFLIGHT_THROTTLE_S")
-    # Concurrent SSH connections allowed per server, across preflight and status.
+    # Maximum concurrent SSH connections to one host.
     ssh_max_connections_per_server: int = Field(default=2, alias="SSH_MAX_CONNECTIONS_PER_SERVER")
     # SSH keepalive interval, so a dead tunnel is detected rather than hanging.
     ssh_keepalive_interval_s: float = Field(default=15.0, alias="SSH_KEEPALIVE_INTERVAL_S")
     ssh_keepalive_count_max: int = Field(default=3, alias="SSH_KEEPALIVE_COUNT_MAX")
-    # Free disk a server must have at save time for the image plus a nominal job.
-    # The actual dataset size is re-checked at provisioning time.
-    ssh_min_free_disk_bytes: int = Field(
-        default=50 * 1024 * 1024 * 1024,
-        alias="SSH_MIN_FREE_DISK_BYTES",
-    )
     # Maximum characters of streamed remote command output forwarded per line and
     # per message. Remote output is environment-influenced, not trusted text.
     ssh_output_max_line_chars: int = Field(default=512, alias="SSH_OUTPUT_MAX_LINE_CHARS")
     ssh_output_max_total_chars: int = Field(default=4096, alias="SSH_OUTPUT_MAX_TOTAL_CHARS")
-    # Container registry hosting the trainer images resolved for SSH jobs.
+    # Container registry hosting managed SSH trainer images.
     trainer_image_registry: str = Field(
         default="ghcr.io/open-edge-platform",
         alias="TRAINER_IMAGE_REGISTRY",
     )
-
-    # --- SSH provisioning: GPU-busy wait ------------------------------------
-    # Backoff between GPU-busy re-checks while a job waits `pending`.
-    ssh_gpu_wait_initial_backoff_s: float = Field(default=5.0, alias="SSH_GPU_WAIT_INITIAL_BACKOFF_S")
-    ssh_gpu_wait_max_backoff_s: float = Field(default=60.0, alias="SSH_GPU_WAIT_MAX_BACKOFF_S")
-    # A job waiting this long for a busy GPU fails rather than waiting forever.
-    ssh_gpu_wait_giveup_s: float = Field(default=1800.0, alias="SSH_GPU_WAIT_GIVEUP_S")
-
-    # --- SSH provisioning: container lifecycle ------------------------------
-    # `docker stop`'s grace period before SIGKILL, bounding teardown latency.
-    ssh_container_stop_timeout_s: int = Field(default=30, alias="SSH_CONTAINER_STOP_TIMEOUT_S")
-    # Budget for the container to report healthy after launch, before the job
-    # fails rather than uploading a dataset to a trainer that never came up.
-    ssh_readiness_timeout_s: float = Field(default=120.0, alias="SSH_READINESS_TIMEOUT_S")
-    ssh_readiness_poll_interval_s: float = Field(default=2.0, alias="SSH_READINESS_POLL_INTERVAL_S")
-
-    # --- SSH provisioning: tunnel reconnect ---------------------------------
-    # Total time budget to reconnect a dropped tunnel and resume against the
-    # still-running container before the job fails.
-    ssh_tunnel_reconnect_budget_s: float = Field(default=300.0, alias="SSH_TUNNEL_RECONNECT_BUDGET_S")
-    ssh_tunnel_reconnect_backoff_max_s: float = Field(default=15.0, alias="SSH_TUNNEL_RECONNECT_BACKOFF_MAX_S")
-
-    # --- SSH provisioning: image signature verification ---------------------
-    # Pinned to the Studio release workflow so `cosign verify` cannot be
-    # satisfied by a signature from an unrelated identity/issuer.
     cosign_certificate_identity_regexp: str = Field(
         default=r"https://github\.com/open-edge-platform/physical-ai-studio/\.github/workflows/.+",
         alias="COSIGN_CERTIFICATE_IDENTITY_REGEXP",
@@ -238,18 +328,20 @@ class Settings(BaseSettings):
         default="https://token.actions.githubusercontent.com",
         alias="COSIGN_OIDC_ISSUER",
     )
-    # Fails closed by default: a remote trainer host without `cosign` installed
-    # blocks the job rather than launching an unverified image. Set to `false`
-    # only for hosts where installing `cosign` is not viable; a failed
-    # `cosign verify` (as opposed to `cosign` being absent) still always blocks,
-    # since that indicates a signature mismatch rather than missing tooling.
-    ssh_require_cosign_verification: bool = Field(default=True, alias="SSH_REQUIRE_COSIGN_VERIFICATION")
 
-    # --- SSH provisioning: library-version policy ---------------------------
-    # Minimum `physicalai-train` version a trainer image must report. A job
-    # policy (e.g. a specific model family) can require newer; see
-    # `services.ssh.docker_ops.check_library_version`.
-    ssh_min_library_version: str = Field(default="0.1.0", alias="SSH_MIN_LIBRARY_VERSION")
+    # --- Managed trainer container lifecycle --------------------------------
+    # Dataloader workers exchange batches through /dev/shm; Docker's 64 MiB default is too small.
+    ssh_trainer_shm_size_gb: int = Field(
+        default=_DEFAULT_SSH_TRAINER_SHM_SIZE_GB, ge=1, alias="SSH_TRAINER_SHM_SIZE_GB"
+    )
+    # `docker stop`'s grace period before SIGKILL, bounding teardown latency.
+    ssh_container_stop_timeout_s: int = Field(default=30, alias="SSH_CONTAINER_STOP_TIMEOUT_S")
+
+    # --- SSH tunnel reconnect -----------------------------------------------
+    # Warn after this much time reconnecting a dropped tunnel; keep retrying
+    # so completed remote jobs can still be retrieved when the VPN returns.
+    ssh_tunnel_reconnect_budget_s: float = Field(default=300.0, alias="SSH_TUNNEL_RECONNECT_BUDGET_S")
+    ssh_tunnel_reconnect_backoff_max_s: float = Field(default=15.0, alias="SSH_TUNNEL_RECONNECT_BACKOFF_MAX_S")
 
     @field_validator("ssh_config_path", "ssh_known_hosts_path", mode="before")
     @classmethod
@@ -292,6 +384,11 @@ class Settings(BaseSettings):
         """Get synchronous database URL"""
         return f"sqlite:///{self.data_dir / self.database_file}"
 
+    @property
+    def ssh(self) -> SshProvisioningSettings:
+        """Read-only view of user-editable SSH settings stored in the settings file."""
+        return SshProvisioningSettings.from_settings(self)
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -301,12 +398,18 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Resolve init kwargs, user JSON, environment, then .env."""
+        """Resolve init kwargs, user JSON, environment, then .env.
+
+        `env_settings` and `dotenv_settings` are wrapped in `_EnvExclusionSource`
+        so user-editable SSH settings can only come from an explicit
+        `Settings(...)` kwarg (used by tests) or the user settings file -
+        never from the process environment or `.env`.
+        """
         return (
             init_settings,
             UserConfigSettingsSource(settings_cls, json_file=get_settings_file_path()),
-            env_settings,
-            dotenv_settings,
+            _EnvExclusionSource(env_settings),
+            _EnvExclusionSource(dotenv_settings),
             file_secret_settings,
         )
 
@@ -315,7 +418,8 @@ def write_user_settings(data: dict[str, Any]) -> None:
     """Atomically persist allowed user-configurable settings."""
     path = get_settings_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    filtered = {key: value for key, value in data.items() if key in _USER_CONFIG_GROUPS and value is not None}
+    allowed = (*_USER_CONFIG_GROUPS, *_ssh_storage_keys())
+    filtered = {key: value for key, value in data.items() if key in allowed and value is not None}
     fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix="settings.", suffix=".json.tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
@@ -363,6 +467,16 @@ def merge_user_settings(patch: dict[str, Any]) -> None:
             current.pop(group, None)
         elif isinstance(value, dict):
             current.setdefault(group, {}).update(value)
+    for key in _ssh_storage_keys():
+        if key not in patch:
+            continue
+        value = patch[key]
+        if value is None:
+            # An explicit null clears the override so the setting falls back to
+            # its environment variable, or to the built-in default.
+            current.pop(key, None)
+        else:
+            current[key] = value
     write_user_settings(current)
 
 

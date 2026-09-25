@@ -21,6 +21,8 @@ import { notify } from '../../../components/notification/notification.component'
 import { Table } from '../../../components/table/table';
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
+import { PeftBadge } from '../shared/peft-badge';
+import { SnapflowBadge } from '../shared/snapflow-badge';
 import { SingleBadge, SplitBadge } from '../shared/split-badge';
 import { getTrainerLabel } from '../shared/trainer';
 import { SchemaTrainJob } from '../train-model-dialog/train-model-dialog';
@@ -28,18 +30,47 @@ import { JobRowContent } from './job-row-content';
 
 import classes from './job-table.module.css';
 
+/** Small pill naming the remote trainer a job runs on. Hidden entirely for local jobs. */
+const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
+    const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+
+    if (payload.training_target !== 'remote') {
+        return null;
+    }
+
+    const remoteTrainer = remoteTrainers.find((trainer) => trainer.id === payload.remote_trainer_id);
+    const label = remoteTrainer?.name ?? payload.remote_trainer_url ?? 'unknown';
+    const text = `Remote · ${label}`;
+
+    return <SingleBadge color='var(--spectrum-global-color-purple-600)' text={text} title={text} preserveCase />;
+};
+
 const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
+    const disconnected =
+        job.payload.training_target === 'remote' && job.message === 'Trainer unreachable; waiting to reconnect';
     if (job.status === 'running') {
         return (
             <Flex direction={'column'} gap={'size-50'}>
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
-                    <SplitBadge first={job.status} second={job.message} />
+                    {disconnected ? (
+                        <SingleBadge color='var(--spectrum-global-color-orange-600)' text='Connection lost' />
+                    ) : (
+                        <SplitBadge first={job.status} second={job.message} />
+                    )}
+                    <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
+                    <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
+                    <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time ? (
                     <Text UNSAFE_className={classes.rowInfo}>
-                        Started: {new Date(job.start_time).toLocaleString()} | Elapsed:{' '}
-                        <ElapsedDuration date={job.start_time} />
+                        Started: {new Date(job.start_time).toLocaleString()}
+                        {!disconnected && (
+                            <>
+                                {' | Elapsed: '}
+                                <ElapsedDuration date={job.start_time} />
+                            </>
+                        )}
                     </Text>
                 ) : (
                     <></>
@@ -53,6 +84,9 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
                     <SingleBadge color={color} text={job.status} />
+                    <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
+                    <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
+                    <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time && job.end_time && (
                     <Text UNSAFE_className={classes.rowInfo}>
@@ -150,6 +184,7 @@ export const TrainingRow = ({
             after={
                 trainJob.status === 'running' && (
                     <ProgressBar
+                        aria-label={`Training progress for ${trainJob.payload.model_name}`}
                         size='S'
                         UNSAFE_className={classes.progressBar}
                         width={'100%'}

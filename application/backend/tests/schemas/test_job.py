@@ -3,12 +3,12 @@
 
 """Tests for the `TrainJobPayload` discriminated union.
 
-Local training, the direct-URL remote trainer registry, and SSH-provisioned
-servers are mutually exclusive targets, each modeled as its own payload class
-(`LocalTrainJobPayload`, `RemoteTrainJobPayload`, `SshTrainJobPayload`). A
-payload can never express two targets at once: a target's fields simply don't
-exist on another target's class, and `extra="forbid"` rejects any attempt to
-pass them in anyway.
+Local training and the direct-URL remote trainer registry (which also covers
+an SSH-tunneled trainer) are mutually exclusive targets, each modeled as its
+own payload class (`LocalTrainJobPayload`, `RemoteTrainJobPayload`). A payload
+can never express two targets at once: a target's fields simply don't exist
+on another target's class, and `extra="forbid"` rejects any attempt to pass
+them in anyway.
 """
 
 from uuid import uuid4
@@ -16,7 +16,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingTarget
 
 
 def _base_kwargs() -> dict:
@@ -39,7 +39,6 @@ class TestLocalTarget:
             {"remote_trainer_id": uuid4()},
             {"remote_trainer_url": "https://trainer.test"},
             {"remote_trainer_name": "trainer"},
-            {"remote_server_id": uuid4()},
         ],
     )
     def test_local_job_rejects_any_remote_field(self, extra: dict) -> None:
@@ -60,38 +59,136 @@ class TestRemoteTarget:
         )
         assert payload.training_target is TrainingTarget.REMOTE
 
-    def test_remote_job_rejects_remote_server_id(self) -> None:
-        with pytest.raises(ValidationError):
-            RemoteTrainJobPayload.model_validate(
-                {**_base_kwargs(), "remote_trainer_id": uuid4(), "remote_server_id": uuid4()}
-            )
 
+class TestCameraMapping:
+    """The mapping is keyed the way the policy reads its images, not the dataset."""
 
-class TestSshTarget:
-    def test_ssh_job_requires_remote_server_id(self) -> None:
-        with pytest.raises(ValidationError):
-            SshTrainJobPayload(**_base_kwargs())
-
-    def test_ssh_job_accepts_remote_server_id(self) -> None:
-        payload = SshTrainJobPayload(
+    def test_a_dataset_feature_key_is_reduced_to_what_the_policy_matches(self) -> None:
+        """A policy sees `images.<name>` and prefixes `images.` onto the mapping it gets."""
+        payload = LocalTrainJobPayload(
             **_base_kwargs(),
-            remote_server_id=uuid4(),
+            image_key_reorder_map={"observation.images.gripper": 1, "observation.images.overhead": 0},
         )
-        assert payload.training_target is TrainingTarget.SSH
-        assert payload.remote_server_id is not None
+
+        assert payload.image_key_reorder_map == {"images.gripper": 1, "images.overhead": 0}
+
+    def test_a_bare_camera_name_is_left_alone(self) -> None:
+        payload = LocalTrainJobPayload(**_base_kwargs(), image_key_reorder_map={"gripper": 1, "overhead": 0})
+
+        assert payload.image_key_reorder_map == {"gripper": 1, "overhead": 0}
+
+
+class TestLoraFields:
+    def test_lora_disabled_by_default(self) -> None:
+        payload = LocalTrainJobPayload(**_base_kwargs())
+
+        assert payload.lora_enabled is False
+        assert (payload.lora_rank, payload.lora_alpha, payload.lora_dropout, payload.lora_use_dora) == (
+            32,
+            None,
+            0.05,
+            False,
+        )
+
+    def test_lora_is_accepted_for_a_peft_capable_policy(self) -> None:
+        payload = LocalTrainJobPayload(**{**_base_kwargs(), "policy": "pi05"}, lora_enabled=True, lora_use_dora=True)
+
+        assert (payload.lora_enabled, payload.lora_use_dora) == (True, True)
+
+    def test_lora_is_rejected_for_a_policy_without_peft_support(self) -> None:
+        with pytest.raises(ValidationError):
+            LocalTrainJobPayload(**_base_kwargs(), lora_enabled=True)
 
     @pytest.mark.parametrize(
         "extra",
         [
-            {"remote_trainer_id": uuid4()},
-            {"remote_trainer_url": "https://trainer.test"},
-            {"remote_trainer_name": "trainer"},
+            {"lora_rank": 0},
+            {"lora_rank": 257},
+            {"lora_alpha": 0},
+            {"lora_dropout": 1.0},
+            {"lora_dropout": -0.1},
         ],
     )
-    def test_ssh_job_rejects_direct_url_fields(self, extra: dict) -> None:
+    def test_lora_out_of_range_values_are_rejected(self, extra: dict) -> None:
         with pytest.raises(ValidationError):
-            SshTrainJobPayload(
-                **_base_kwargs(),
-                remote_server_id=uuid4(),
-                **extra,
-            )
+            LocalTrainJobPayload(**{**_base_kwargs(), "policy": "pi05"}, lora_enabled=True, **extra)
+
+
+class TestSnapFlowDistillation:
+    """The payload expresses the distillation budget; the runner needs a boundary.
+
+    Distillation epochs are additive on top of ``max_epochs`` (the teacher
+    phase always runs the full budget, then distillation extends the run),
+    so `snapflow_start_epoch` is always just `max_epochs`.
+    """
+
+    def test_training_is_flow_matching_by_default(self) -> None:
+        payload = LocalTrainJobPayload(**_base_kwargs())
+
+        assert payload.snapflow_enabled is False
+        assert payload.snapflow_start_epoch is None
+
+    @pytest.mark.parametrize("policy", ["pi05", "smolvla", "Pi05", "SmolVLA"])
+    def test_flow_matching_policies_can_be_distilled(self, policy: str) -> None:
+        payload = LocalTrainJobPayload(
+            **{**_base_kwargs(), "policy": policy},
+            max_epochs=8,
+            snapflow_enabled=True,
+            snapflow_distill_epochs=3,
+        )
+
+        assert payload.snapflow_start_epoch == 8
+        assert payload.total_epochs == 11
+
+    @pytest.mark.parametrize("policy", ["act"])
+    def test_other_policies_are_rejected_rather_than_silently_trained_without_it(self, policy: str) -> None:
+        with pytest.raises(ValidationError, match="not available for policy"):
+            LocalTrainJobPayload(**{**_base_kwargs(), "policy": policy}, snapflow_enabled=True)
+
+    def test_the_distillation_budget_is_not_bounded_by_max_epochs(self) -> None:
+        """Distillation is additive, so it may exceed max_epochs without error."""
+        payload = LocalTrainJobPayload(
+            **{**_base_kwargs(), "policy": "pi05"},
+            max_epochs=3,
+            snapflow_enabled=True,
+            snapflow_distill_epochs=3,
+        )
+
+        assert payload.snapflow_start_epoch == 3
+        assert payload.total_epochs == 6
+
+    def test_the_boundary_is_measured_against_the_default_epoch_count_when_unset(self) -> None:
+        """`max_epochs` is filled in by `resolve_training_limit`, which runs first."""
+        payload = LocalTrainJobPayload(
+            **{**_base_kwargs(), "policy": "pi05"},
+            snapflow_enabled=True,
+            snapflow_distill_epochs=2,
+        )
+
+        assert payload.snapflow_start_epoch == payload.max_epochs
+        assert payload.total_epochs == payload.max_epochs + 2
+
+    def test_a_distillation_budget_on_an_unsupported_policy_is_fine_while_disabled(self) -> None:
+        """The field carries a default, so it must not gate an ordinary ACT run."""
+        payload = LocalTrainJobPayload(**_base_kwargs(), snapflow_distill_epochs=99)
+
+        assert payload.snapflow_start_epoch is None
+
+    def test_every_target_can_distil(self) -> None:
+        remote = RemoteTrainJobPayload(
+            **{**_base_kwargs(), "policy": "pi05"},
+            remote_trainer_id=uuid4(),
+            snapflow_enabled=True,
+        )
+
+        assert remote.snapflow_start_epoch == 5
+
+
+class TestTrainingOptions:
+    """Options shared by every target, so they are asserted once on the local one."""
+
+    def test_image_augmentation_is_off_unless_asked_for(self) -> None:
+        assert LocalTrainJobPayload(**_base_kwargs()).augment_images is False
+
+    def test_image_augmentation_can_be_enabled(self) -> None:
+        assert LocalTrainJobPayload(**_base_kwargs(), augment_images=True).augment_images is True

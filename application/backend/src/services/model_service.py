@@ -84,6 +84,8 @@ class ModelService:
 
         payload = training_job.payload
         device_type = str(payload.device.type) if payload.device is not None else None
+        lora_enabled = payload.lora_enabled
+        snapflow_distill_epochs = payload.snapflow_distill_epochs if payload.snapflow_enabled else None
 
         return TrainingSummary(
             max_epochs=payload.max_epochs,
@@ -91,8 +93,16 @@ class ModelService:
             batch_size=payload.batch_size,
             precision=str(payload.precision),
             compile_model=payload.compile_model,
+            augment_images=payload.augment_images,
             val_split=payload.val_split,
             auto_scale_batch_size=payload.auto_scale_batch_size,
             num_workers=payload.num_workers,
             device_type=device_type,
+            lora_enabled=lora_enabled,
+            lora_rank=payload.lora_rank if lora_enabled else None,
+            lora_alpha=payload.lora_alpha if lora_enabled else None,
+            lora_dropout=payload.lora_dropout if lora_enabled else None,
+            lora_use_dora=payload.lora_use_dora if lora_enabled else None,
+            snapflow_enabled=payload.snapflow_enabled,
+            snapflow_distill_epochs=snapflow_distill_epochs,
         )

@@ -7,6 +7,7 @@ import asyncio
 import multiprocessing as mp
 import queue
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
@@ -17,13 +18,7 @@ import pytest
 import core.scheduler  # noqa: F401
 from schemas.base_job import JobStatus, JobType
 from schemas.dataset import Snapshot
-from schemas.job import (
-    LocalTrainJobPayload,
-    RemoteTrainJobPayload,
-    SshTrainJobPayload,
-    TrainingPrecision,
-    TrainJobPayload,
-)
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingPrecision, TrainJobPayload
 from schemas.model import Model
 
 if TYPE_CHECKING:
@@ -39,12 +34,16 @@ MODULE = "workers.training_worker"
 
 
 def _make_payload(
-    *, compile_model: bool = True, precision: TrainingPrecision = TrainingPrecision.BF16_MIXED
+    *,
+    compile_model: bool = True,
+    precision: TrainingPrecision = TrainingPrecision.BF16_MIXED,
+    lora_enabled: bool = False,
+    lora_use_dora: bool = False,
 ) -> TrainJobPayload:
     return LocalTrainJobPayload(
         project_id=uuid4(),
         dataset_id=uuid4(),
-        policy="act",
+        policy="pi05" if lora_enabled else "act",
         model_name="test-model",
         max_epochs=5,
         batch_size=8,
@@ -52,6 +51,8 @@ def _make_payload(
         auto_scale_batch_size=False,
         compile_model=compile_model,
         precision=precision,
+        lora_enabled=lora_enabled,
+        lora_use_dora=lora_use_dora,
     )
 
 
@@ -62,16 +63,6 @@ def _make_remote_payload(*, remote_trainer_id: UUID | None = None) -> RemoteTrai
         policy="act",
         model_name="test-model",
         remote_trainer_id=remote_trainer_id or uuid4(),
-    )
-
-
-def _make_ssh_payload(*, remote_server_id: UUID | None = None) -> SshTrainJobPayload:
-    return SshTrainJobPayload(
-        project_id=uuid4(),
-        dataset_id=uuid4(),
-        policy="act",
-        model_name="test-model",
-        remote_server_id=remote_server_id or uuid4(),
     )
 
 
@@ -104,6 +95,7 @@ def _make_job(payload: TrainJobPayload) -> MagicMock:
     job.id = uuid4()
     job.type = JobType.TRAINING
     job.status = JobStatus.PENDING
+    job.start_time = None
     job.message = "Job created"
     job.payload = payload.model_dump()
     return job
@@ -203,8 +195,36 @@ class TestTraining:
 
             backend.train.assert_awaited_once()
             job_service.update_job.assert_called_once()
+            assert isinstance(job_service.update_job.call_args.kwargs["update"]["start_time"], datetime)
             failed_call = job_service.update_job_status.call_args_list[0]
             assert failed_call.kwargs["status"] == JobStatus.FAILED
+
+    @pytest.mark.anyio
+    async def test_remote_reattach_preserves_original_start_time(self, worker, tmp_path):
+        """Reattaching after a restart must not restart the elapsed-time clock."""
+        from services.training_backends import TrainingCanceledError
+
+        payload = _make_remote_payload().model_copy(update={"remote_job_id": uuid4()})
+        job = _make_job(payload)
+        started = datetime(2026, 9, 23, 14, 0, tzinfo=UTC)
+        job.start_time = started
+        backend = MagicMock()
+        backend.train = AsyncMock(side_effect=TrainingCanceledError("stopped"))
+        dispatcher = MagicMock()
+        dispatcher.is_alive.return_value = False
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.get_training_backend", AsyncMock(return_value=backend)),
+            patch(f"{MODULE}.TrainingTrackingDispatcher", return_value=dispatcher),
+            patch(f"{MODULE}.JobService") as job_service_type,
+        ):
+            job_service = job_service_type.return_value
+            job_service.update_job_status = AsyncMock(return_value=job)
+            job_service.update_job = AsyncMock(return_value=job)
+            await worker._train_model(job, _make_model(tmp_path), None, payload)
+
+        assert job_service.update_job.call_args.kwargs["update"]["start_time"] == started
 
     @pytest.mark.anyio
     async def test_cancellation_raised_by_backend_marks_canceled(self, worker, tmp_path):
@@ -469,6 +489,45 @@ class TestTraining:
             assert args[1].remote_job_id == remote_job_id
             assert args[1].snapshot_id == snapshot_id
 
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        ("lora_enabled", "lora_use_dora"),
+        [(False, False), (True, False), (True, True)],
+    )
+    async def test_run_training_job_carries_lora_flags_into_model_properties(
+        self, worker, tmp_path, lora_enabled, lora_use_dora
+    ):
+        """The model's `properties` are the only place LoRA/DoRA provenance survives."""
+        payload = _make_payload(lora_enabled=lora_enabled, lora_use_dora=lora_use_dora)
+        job = _make_job(payload)
+        dataset = MagicMock()
+        snapshot = _make_snapshot(tmp_path)
+
+        captured = {}
+
+        async def _capture(_job, model, _snapshot, _payload, base_model):
+            captured["model"] = model
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.DatasetService") as MockDatasetService,
+            patch(f"{MODULE}.SnapshotService") as MockSnapshotService,
+            patch.object(worker, "_train_model", side_effect=_capture),
+        ):
+            MockDatasetService.return_value.get_dataset_by_id = AsyncMock(return_value=dataset)
+            MockSnapshotService.generate_snapshot_folder_name = MagicMock(return_value="snap")
+            MockSnapshotService.return_value.create_snapshot_for_dataset = AsyncMock(return_value=snapshot)
+
+            await worker._run_training_job(job, payload)
+
+        assert captured["model"].properties == {
+            "lora_enabled": lora_enabled,
+            "lora_use_dora": lora_use_dora,
+            "snapflow_enabled": False,
+        }
+        assert captured["model"].lora_enabled is lora_enabled
+        assert captured["model"].lora_use_dora is lora_use_dora
+
 
 class TestTargetKey:
     """`_target_key` must give every remote kind its own key namespace."""
@@ -485,74 +544,27 @@ class TestTargetKey:
         payload = _make_remote_payload()
         assert TrainingWorker._target_key(payload) == f"remote:{payload.remote_trainer_id}"
 
-    def test_ssh_target_key_uses_remote_server_id(self) -> None:
-        from workers.training_worker import TrainingWorker
-
-        payload = _make_ssh_payload()
-        assert TrainingWorker._target_key(payload) == f"ssh:{payload.remote_server_id}"
-
-    def test_ssh_and_remote_targets_never_collide_on_none(self) -> None:
-        """Two well-formed jobs on different servers never collapse onto one key."""
-        from workers.training_worker import TrainingWorker
-
-        first = _make_ssh_payload()
-        second = _make_ssh_payload()
-
-        first_key = TrainingWorker._target_key(first)
-        second_key = TrainingWorker._target_key(second)
-
-        assert first_key != second_key
-        assert "None" not in first_key
-        assert "None" not in second_key
-
 
 class TestSetupRecovery:
-    """`setup()` must recover SSH jobs before the generic orphan abort runs."""
+    """Worker startup reconciles remote jobs through the shared reattach path."""
 
     @pytest.mark.anyio
-    async def test_setup_runs_ssh_recovery_before_generic_orphan_abort(self, worker) -> None:
+    async def test_setup_runs_generic_orphan_abort(self, worker) -> None:
         from workers.training_worker import TrainingWorker
 
         calls: list[str] = []
-        handled_job_id = uuid4()
-
-        async def fake_recover_ssh_jobs() -> frozenset[UUID]:
-            calls.append("recover_ssh_jobs")
-            return frozenset({handled_job_id})
 
         async def fake_abort_orphan_jobs(*, exclude_job_ids: frozenset[UUID] | None = None) -> None:
             calls.append("abort_orphan_jobs")
-            assert exclude_job_ids == frozenset({handled_job_id})
+            assert exclude_job_ids is None
 
         with (
-            patch.object(TrainingWorker, "_recover_ssh_jobs", staticmethod(fake_recover_ssh_jobs)),
             patch.object(TrainingWorker, "_abort_orphan_jobs", staticmethod(fake_abort_orphan_jobs)),
             patch(f"{MODULE}.BaseProcessWorker.setup", new=AsyncMock()),
         ):
             await worker.setup()
 
-        assert calls == ["recover_ssh_jobs", "abort_orphan_jobs"]
-
-    @pytest.mark.anyio
-    async def test_recover_ssh_jobs_wires_recovery_dependencies(self, worker) -> None:
-        """`_recover_ssh_jobs` builds the repo/service trio and logs the report."""
-        from services.ssh.recovery import SshRecoveryReport
-
-        report = SshRecoveryReport(confirmed=1, transient=2, failed=3, stale_rows_cleaned=4, orphans_removed=5)
-
-        with (
-            patch(f"{MODULE}.JobProvisioningRepository") as MockProvisioningRepo,
-            patch(f"{MODULE}.RemoteServerService") as MockRemoteServerService,
-            patch(f"{MODULE}.JobService") as MockJobService,
-            patch(f"{MODULE}.recover_ssh_jobs", AsyncMock(return_value=report)) as mock_recover,
-        ):
-            await worker._recover_ssh_jobs()
-
-            mock_recover.assert_awaited_once_with(
-                MockJobService.return_value,
-                MockProvisioningRepo.return_value,
-                MockRemoteServerService.return_value,
-            )
+        assert calls == ["abort_orphan_jobs"]
 
 
 class TestTrainingScheduling:
@@ -597,3 +609,54 @@ class TestTrainingScheduling:
             await asyncio.gather(*worker._active_training_tasks.values())
 
         assert run_job.await_count == 2
+
+
+class TestSnapFlowProvenance:
+    """The models list badges a distilled checkpoint from `Model.properties`.
+
+    A model row is only persisted for a run that finished without being
+    canceled, and the distillation boundary is validated to fall inside the
+    epoch budget, so a completed SnapFlow job always produced a distilled
+    checkpoint and the request is a sound source for the flag.
+    """
+
+    @staticmethod
+    async def _built_model(worker, tmp_path, payload: TrainJobPayload) -> Model:
+        job = _make_job(payload)
+        train = AsyncMock()
+
+        with (
+            patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+            patch(f"{MODULE}.DatasetService") as MockDatasetService,
+            patch(f"{MODULE}.SnapshotService") as MockSnapshotService,
+            patch.object(type(worker), "_train_model", train),
+        ):
+            MockDatasetService.return_value.get_dataset_by_id = AsyncMock()
+            snapshot_service = MockSnapshotService.return_value
+            snapshot_service.create_snapshot_for_dataset = AsyncMock(return_value=_make_snapshot(tmp_path))
+            await worker._run_training_job(job, payload)
+
+        assert train.await_args is not None
+        return train.await_args.args[1]
+
+    @pytest.mark.anyio
+    async def test_a_flow_matching_run_is_not_marked_distilled(self, worker, tmp_path):
+        model = await self._built_model(worker, tmp_path, _make_payload())
+
+        assert model.snapflow_enabled is False
+
+    @pytest.mark.anyio
+    async def test_a_distillation_run_is_marked_on_the_model(self, worker, tmp_path):
+        payload = LocalTrainJobPayload(
+            project_id=uuid4(),
+            dataset_id=uuid4(),
+            policy="pi05",
+            model_name="test-model",
+            max_epochs=8,
+            snapflow_enabled=True,
+            snapflow_distill_epochs=3,
+        )
+
+        model = await self._built_model(worker, tmp_path, payload)
+
+        assert model.snapflow_enabled is True

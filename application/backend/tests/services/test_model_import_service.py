@@ -200,3 +200,35 @@ async def test_import_model_directory_cleans_up_on_failure(tmp_path, project_id,
         )
 
     assert not settings.models_dir.exists() or not any(settings.models_dir.iterdir())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("policy_name", ["act", "smolvla", "pi05", "rldx1", "molmoact2", "xr0"])
+async def test_import_model_directory_accepts_supported_policies(
+    tmp_path, project_id, dataset_id, settings, dataset, job, policy_name
+):
+    """Archives exported for any selectable policy must import."""
+    source_dir = _create_model_directory(tmp_path, _base_files(policy=policy_name, artifact=f"{policy_name}.pt"))
+
+    with _mock_services(settings, dataset, job) as service:
+        model = await service.import_model_directory(
+            source_dir=source_dir,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            model_name="imported",
+        )
+
+    assert model.policy == policy_name
+
+
+@pytest.mark.anyio
+async def test_import_model_directory_rejects_unknown_policy(tmp_path, project_id, dataset_id, settings, dataset, job):
+    source_dir = _create_model_directory(tmp_path, _base_files(policy="unknown", artifact="unknown.pt"))
+
+    with _mock_services(settings, dataset, job) as service, pytest.raises(InvalidArchiveError, match="unsupported"):
+        await service.import_model_directory(
+            source_dir=source_dir,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            model_name="imported",
+        )

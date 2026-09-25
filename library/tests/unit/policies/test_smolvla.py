@@ -51,7 +51,7 @@ class TestSmolVLAConfig:
         assert config.optimizer_weight_decay == 1e-10
         assert config.optimizer_grad_clip_norm == 10
         assert config.scheduler_warmup_steps == 1_000
-        assert config.scheduler_decay_steps == 30_000
+        assert config.scheduler_decay_steps is None
         assert config.scheduler_decay_lr == 2.5e-6
 
     def test_expert_config_values(self) -> None:
@@ -558,6 +558,85 @@ class TestAttentionModes:
         config = SmolVLAConfig()
         assert config.prefix_length == -1
 
+
+class TestMixedPrecisionDtypeCasting:
+    """`to_bfloat16_for_selected_params` casts most weights to bfloat16 while a batch's
+    raw tensors (state, actions) stay float32, so every projection that consumes them
+    must cast its input to its own weight dtype rather than assume float32 throughout.
+    """
+
+    def test_to_bfloat16_for_selected_params_keeps_expert_norm_in_float32(self) -> None:
+        """`lm_expert.norm` must stay float32, mirroring the VLM's own `text_model.norm`."""
+        from physicalai.policies.smolvla.model import VLAFlowMatching
+
+        class _FakeExpert(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.norm = torch.nn.LayerNorm(4)
+
+        class _FakeVlmWithExpert(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.lm_expert = _FakeExpert()
+
+        fake = torch.nn.Module()
+        fake.vlm_with_expert = _FakeVlmWithExpert()
+        fake.state_proj = torch.nn.Linear(4, 4)
+
+        VLAFlowMatching.to_bfloat16_for_selected_params(fake, "bfloat16")
+
+        assert fake.vlm_with_expert.lm_expert.norm.weight.dtype == torch.float32
+        assert fake.state_proj.weight.dtype == torch.bfloat16
+
+    def test_embed_prefix_casts_state_to_state_proj_dtype(self) -> None:
+        """`state` arrives as float32 from the batch; `state_proj`'s weight may be bfloat16."""
+        from physicalai.policies.smolvla.model import VLAFlowMatching
+
+        hidden_size = 8
+        stub = SimpleNamespace(
+            add_image_special_tokens=False,
+            vlm_with_expert=SimpleNamespace(
+                embed_image=lambda imgs: torch.zeros(imgs.shape[0], 1, hidden_size, dtype=torch.bfloat16),
+                embed_language_tokens=lambda tokens: torch.zeros(*tokens.shape, hidden_size, dtype=torch.bfloat16),
+            ),
+            state_proj=torch.nn.Linear(4, hidden_size).to(dtype=torch.bfloat16),
+            prefix_length=-1,
+        )
+
+        images = torch.zeros(1, 1, 1, 3, 8, 8)
+        img_masks = torch.ones(1, 1, dtype=torch.bool)
+        lang_tokens = torch.zeros(1, 2, dtype=torch.long)
+        lang_masks = torch.ones(1, 2, dtype=torch.bool)
+        state = torch.zeros(1, 4, dtype=torch.float32)
+
+        embs, _, _ = VLAFlowMatching.embed_prefix(stub, images, img_masks, lang_tokens, lang_masks, state=state)
+
+        assert embs.dtype == torch.bfloat16
+
+    def test_embed_suffix_casts_noisy_actions_to_action_in_proj_dtype(self) -> None:
+        """`noisy_actions` arrives as float32; `action_in_proj`'s weight may be bfloat16."""
+        from physicalai.policies.smolvla.model import VLAFlowMatching
+
+        expert_hidden_size = 8
+        action_in_proj = torch.nn.Linear(4, expert_hidden_size).to(dtype=torch.bfloat16)
+        stub = SimpleNamespace(
+            action_in_proj=action_in_proj,
+            action_time_mlp_in=torch.nn.Linear(expert_hidden_size * 2, expert_hidden_size).to(dtype=torch.bfloat16),
+            action_time_mlp_out=torch.nn.Linear(expert_hidden_size, expert_hidden_size).to(dtype=torch.bfloat16),
+            vlm_with_expert=SimpleNamespace(expert_hidden_size=expert_hidden_size),
+            _min_period=4e-3,
+            _max_period=4.0,
+            _chunk_size=2,
+            _snapflow_enabled=False,
+        )
+
+        noisy_actions = torch.zeros(1, 2, 4, dtype=torch.float32)
+        timestep = torch.zeros(1, dtype=torch.float32)
+
+        embs, _, _ = VLAFlowMatching.embed_suffix(stub, noisy_actions, timestep)
+
+        assert embs.dtype == torch.bfloat16
+
     def test_custom_prefix_length(self) -> None:
         """Test custom prefix length."""
         config = SmolVLAConfig(prefix_length=32)
@@ -595,6 +674,7 @@ class TestSampleInput:
                 self._dataset_stats = stats
                 self.model = _ModelStub()
                 self.config = SmolVLAConfig()
+                self.rtc_enabled = False
 
         stub = _Stub(dataset_stats)
         # inputs_schema is consumed by the base sample_input property.
@@ -657,6 +737,83 @@ class TestSampleInput:
 
 
 # ============================================================================ #
+# Real-Time Chunking                                                           #
+# ============================================================================ #
+
+
+class TestRtc:
+    """Tests for SmolVLA's Real-Time Chunking export schema and toggle."""
+
+    @staticmethod
+    def _call_sample_input_rtc(chunk_size: int = 50, action_dim: int = 7) -> dict:
+        """Invoke the SmolVLA.sample_input property with RTC enabled on a minimal stub."""
+        from physicalai.policies.smolvla import SmolVLA, SmolVLAConfig
+
+        class _ModelStub:
+            def __init__(self) -> None:
+                self._model = torch.nn.Linear(1, 1)
+
+        class _Stub:
+            def __init__(self) -> None:
+                self._dataset_stats = {
+                    "observation.state": {"name": "state", "shape": (10,), "type": "STATE"},
+                    "observation.image": {"name": "image", "shape": (3, 512, 512), "type": "VISUAL"},
+                    "action": {"name": "action", "shape": (action_dim,), "type": "ACTION"},
+                }
+                self.model = _ModelStub()
+                self.config = SmolVLAConfig(chunk_size=chunk_size, n_action_steps=chunk_size)
+                self.rtc_enabled = True
+
+        stub = _Stub()
+        stub.inputs_schema = SmolVLA.inputs_schema.fget(stub)  # type: ignore[attr-defined]
+        return SmolVLA.sample_input.fget(stub)  # type: ignore[attr-defined]
+
+    def test_contains_rtc_keys(self) -> None:
+        """RTC sample input contains the four RTC-specific keys alongside the standard ones."""
+        from physicalai.data.observation import IMAGES, STATE
+
+        sample_input = self._call_sample_input_rtc()
+        assert "prev_chunk_left_over" in sample_input
+        assert "inference_delay" in sample_input
+        assert "max_guidance_weight" in sample_input
+        assert "execution_horizon" in sample_input
+        assert STATE in sample_input
+        assert IMAGES in sample_input
+
+    def test_rtc_input_shapes_and_dtypes(self) -> None:
+        """RTC inputs are traced with the shapes and dtypes the runtime feeds."""
+        chunk_size, action_dim = 20, 6
+        sample_input = self._call_sample_input_rtc(chunk_size=chunk_size, action_dim=action_dim)
+        assert sample_input["prev_chunk_left_over"].shape == (1, chunk_size, action_dim)
+        assert sample_input["prev_chunk_left_over"].dtype == torch.float32
+        assert sample_input["inference_delay"].dtype == torch.long
+        assert sample_input["max_guidance_weight"].dtype == torch.float32
+        assert sample_input["execution_horizon"].dtype == torch.long
+
+    def test_rtc_toggle_syncs_to_model(self) -> None:
+        """Toggling rtc_enabled before the model exists is applied once it is built."""
+        from physicalai.policies.mixins import RTCPolicyMixin
+        from physicalai.policies.smolvla.model import SmolVLAModel
+
+        class _Policy(RTCPolicyMixin):
+            def __init__(self) -> None:
+                self.model: SmolVLAModel | None = None
+
+        policy = _Policy()
+        policy.rtc_enabled = True
+        assert policy.rtc_enabled is True
+
+        model = SmolVLAModel.__new__(SmolVLAModel)
+        torch.nn.Module.__init__(model)
+        policy.model = model
+        assert model.enable_rtc is False
+
+        policy._sync_rtc_to_model()  # noqa: SLF001
+        assert model.enable_rtc is True
+        assert policy.rtc_enabled is True
+
+
+# ============================================================================ #
 # Action Padding Mask                                                          #
 # ============================================================================ #
 
@@ -708,7 +865,7 @@ class TestActionPaddingMask:
             _preprocess_batch=lambda b: b,
             _prepare_state=lambda b: None,
             _prepare_action=lambda b: None,
-            _model=SimpleNamespace(forward=lambda *_a, **_kw: losses.clone()),
+            _model=SimpleNamespace(forward=lambda *_a, **_kw: (losses.clone(), None)),
             _dataset_stats={ACTION: {"shape": (action_dim,)}},
         )
         loss, _ = SmolVLAModel.compute_loss(stub, batch)
@@ -791,7 +948,7 @@ class TestActionPaddingMask:
             _preprocess_batch=lambda b: b,
             _prepare_state=lambda b: None,
             _prepare_action=lambda b: None,
-            _model=SimpleNamespace(forward=lambda *_a, **_kw: source * 2.0),
+            _model=SimpleNamespace(forward=lambda *_a, **_kw: (source * 2.0, None)),
             _dataset_stats={ACTION: {"shape": (2,)}},
         )
         batch: dict = {
@@ -808,6 +965,44 @@ class TestActionPaddingMask:
         assert source.grad is not None
         assert torch.all(source.grad[0, :2] != 0), "valid steps must receive gradient"
         assert torch.all(source.grad[0, 2:] == 0), "padded steps must receive zero gradient"
+
+    def test_snapflow_distillation_steps_ignore_the_pad_mask(self) -> None:
+        """Consistency-distillation samples stay fully weighted, matching Pi05.
+
+        The SnapFlow branch regresses the one-step student onto a self-generated
+        two-step teacher, so it never reads the dataset action. Padded steps carry
+        no bad supervision there, and masking them would silently drop valid
+        distillation signal from the tail of every chunk.
+        """
+        from types import SimpleNamespace
+
+        from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
+        from physicalai.data.observation import ACTION, EXTRA, IMAGES
+        from physicalai.policies.smolvla.model import SmolVLAModel
+
+        # All four rows routed through the CD branch (mirrors alpha=0 in the
+        # inner model); the last two are also flagged as padded.
+        losses = torch.tensor([[[1.0, 1.0], [1.0, 1.0], [99.0, 99.0], [99.0, 99.0]]])
+        cd_idx = torch.tensor([0])
+
+        stub = SimpleNamespace(
+            _preprocess_batch=lambda b: b,
+            _prepare_state=lambda b: None,
+            _prepare_action=lambda b: None,
+            _model=SimpleNamespace(forward=lambda *_a, **_kw: (losses.clone(), cd_idx)),
+            _dataset_stats={ACTION: {"shape": (2,)}},
+        )
+        batch: dict = {
+            IMAGES: None,
+            IMAGE_MASKS: None,
+            TOKENIZED_PROMPT: None,
+            TOKENIZED_PROMPT_MASK: None,
+            EXTRA + ".action_is_pad": torch.tensor([[False, False, True, True]]),
+        }
+
+        loss, _ = SmolVLAModel.compute_loss(stub, batch)
+
+        assert float(loss) == pytest.approx(50.0), "distillation steps must not be masked"
 
     @staticmethod
     def _compute_val_loss(

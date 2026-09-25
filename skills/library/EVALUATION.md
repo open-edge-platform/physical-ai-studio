@@ -20,9 +20,9 @@ Expected behavior:
 - Creates `library/src/physicalai/policies/mynet/{config.py,model.py,policy.py}` mirroring `policies/act/`.
 - Registers `Mynet`, `MynetConfig`, `MynetModel` in `policies/__init__.py` and the `get_policy(...)` dispatch.
 - Verifies `from physicalai.policies import Mynet, get_policy` and `get_policy("mynet")` work without CLI involvement.
-- Adds `library/configs/physicalai/mynet.yaml` wiring `model`, `data`, and `trainer`.
+- Adds `library/configs/physicalai/mynet/pusht/default.yaml` wiring `model`, `data`, and `trainer`.
 - Adds at least one test under `library/tests/unit/policies/`.
-- Runs `uv run --no-sync pytest tests/unit/policies -k mynet` and `physicalai fit --config configs/physicalai/mynet.yaml --trainer.fast_dev_run=true`.
+- Runs `uv run --no-sync pytest tests/unit/policies -k mynet` and `physicalai fit --config configs/physicalai/mynet/pusht/default.yaml --trainer.fast_dev_run=true`.
 
 ### Scenario 2: Extend an existing policy for export
 
@@ -43,7 +43,7 @@ Expected behavior:
 
 - Creates a first-party package under `policies/` rather than editing `policies/lerobot/`.
 - Keeps LeRobot adapter code behind a factory/helper; avoids mixing LeRobot internals with Lightning `Policy` semantics.
-- Validates direct Python construction and `physicalai fit --config configs/physicalai/<name>.yaml --trainer.fast_dev_run=true` both pass.
+- Validates direct Python construction and `physicalai fit --config configs/physicalai/<policy>/<embodiment>/<config>.yaml --trainer.fast_dev_run=true` both pass.
 
 ## `physicalai-train-training-a-policy`
 
@@ -64,7 +64,7 @@ Expected behavior:
 Expected behavior:
 
 - Finds the latest `.ckpt` under `experiments/` matching the experiment name.
-- Shows `Trainer(...).fit(model=policy, datamodule=datamodule, ckpt_path=<path>)` and `physicalai fit --config configs/physicalai/act.yaml --ckpt_path <path>`.
+- Shows `Trainer(...).fit(model=policy, datamodule=datamodule, ckpt_path=<path>)` and `physicalai fit --config configs/physicalai/act/pusht/default.yaml --ckpt_path <path>`.
 - Preserves logger version / experiment name so metrics continue in the same run.
 
 ### Scenario 6: Tune a hyperparameter safely

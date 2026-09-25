@@ -22,7 +22,6 @@ from services import (
     ProjectCameraService,
     ProjectService,
     ProjectThumbnailService,
-    RemoteServerService,
     RemoteTrainerService,
     RobotService,
 )
@@ -108,20 +107,12 @@ def get_robot_catalog_service() -> RobotCatalogService:
 RobotCatalogServiceDep = Annotated[RobotCatalogService, Depends(get_robot_catalog_service)]
 
 
-def get_remote_server_service(session: AsyncSessionDep) -> RemoteServerService:
-    """Provide a request-scoped service for SSH-provisioned training servers."""
-    return RemoteServerService(session)
-
-
-RemoteServerServiceDep = Annotated[RemoteServerService, Depends(get_remote_server_service)]
-
-
 def require_ssh_feature_active() -> SshFeatureAvailability:
-    """Dependency that fails a route closed when the SSH feature is off or network-exposed.
+    """Dependency that fails a route closed when the SSH feature is network-exposed.
 
     Raises:
-        SshFeatureDisabledError: The feature is disabled by configuration, or
-            fails closed because the backend is bound to a non-loopback address.
+        SshFeatureDisabledError: The feature fails closed because the backend
+            is bound to a non-loopback address.
     """
     availability = get_ssh_feature_availability()
     if not availability.active:
@@ -248,7 +239,7 @@ ModelDownloadServiceDep = Annotated[ModelDownloadService, Depends(get_model_down
 
 def get_job_service(session: AsyncSessionDep) -> JobService:
     """Provides a JobService instance for managing jobs."""
-    return JobService(session, RemoteTrainerService(session), RemoteServerService(session))
+    return JobService(session, RemoteTrainerService(session))
 
 
 JobServiceDep = Annotated[JobService, Depends(get_job_service)]
@@ -325,13 +316,6 @@ def get_environment_id(environment_id: str) -> UUID:
     if not is_valid_uuid(environment_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid environment ID")
     return UUID(environment_id)
-
-
-def get_remote_server_id(remote_server_id: str) -> UUID:
-    """Initialize and validate a remote server ID."""
-    if not is_valid_uuid(remote_server_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid remote server ID")
-    return UUID(remote_server_id)
 
 
 def get_scheduler(request: HTTPConnection) -> Scheduler:
