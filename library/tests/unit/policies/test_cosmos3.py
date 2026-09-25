@@ -913,3 +913,35 @@ class TestJointPosRepresentation:
         assert float(flipped[0, -1]) == pytest.approx(1.0)
         # Non-gripper channels are untouched.
         np.testing.assert_allclose(flipped[0, :-1].numpy(), action[0, :-1].numpy())
+
+    def test_predict_action_chunk_droid_inverts_gripper(self) -> None:
+        """predict_action_chunk inverts the predicted gripper back to dataset convention for DROID."""
+        from unittest.mock import patch
+
+        config = Cosmos3Config(embodiment="droid_lerobot", chunk_size=4)
+        pipe = MagicMock()
+        # Mock predicted action chunk with gripper=0.2 in model space
+        mock_actions = torch.zeros(1, 5, 64)
+        mock_actions[0, :, 7] = 0.2
+        pipe.return_value = MagicMock(action=mock_actions)
+        pipe.transformer = MagicMock()
+        pipe.transformer.device = torch.device("cpu")
+        pipe.transformer.dtype = torch.float32
+        pipe.transformer.config.action_dim = 64
+        pipe.transformer.parameters.return_value = []
+        pipe.transformer.named_parameters.return_value = []
+        pipe.vae = MagicMock()
+        pipe.scheduler = None
+
+        with patch("physicalai.policies.cosmos3.model.init_domain_action_head"):
+            model = Cosmos3Model(config, pipeline=pipe)
+        batch = {
+            IMAGES: {
+                "wrist_image_left": torch.zeros(3, 224, 224),
+                "exterior_image_1_left": torch.zeros(3, 224, 224),
+                "exterior_image_2_left": torch.zeros(3, 224, 224),
+            },
+        }
+        pred = model.predict_action_chunk(batch)
+        # Final channel (gripper) should be 1 - 0.2 = 0.8
+        assert float(pred[0, 0, 7]) == pytest.approx(0.8)

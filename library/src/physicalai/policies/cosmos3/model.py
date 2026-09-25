@@ -736,7 +736,10 @@ class Cosmos3Model(Model):
             # Invert the normalization affine back into the model action space.
             native_chunk = self._denormalize_action(action_chunk)
 
-            # Identity/joint_pos: the denormalized chunk is already in the raw dataset space.
+            # Invert the gripper back into the dataset/environment convention if flipped.
+            if embodiment_gripper_flipped(self.config.embodiment):
+                native_chunk = flip_gripper_last_channel(native_chunk)
+
             out_action = native_chunk
 
             preds.append(out_action)
