@@ -238,7 +238,7 @@ jobs:
           artifact-name: "trivy-scan-diff-${{ matrix.image }}"
           ignore_unfixed: true
 
-  dast-scan:
+  studio-dast-scan:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -320,7 +320,7 @@ jobs:
               exit 1
           fi
 
-          echo "CONTAINER_NAME=${CONTAINER_NAME}" >> $GITHUB_ENV
+          echo "CONTAINER_NAME=${CONTAINER_NAME}" >> "$GITHUB_ENV"
 
       - name: Run ZAP API Scan
         uses: zaproxy/action-api-scan@5158fe4d9d8fcc75ea204db81317cce7f9e5453d # v0.10.0
@@ -384,6 +384,161 @@ jobs:
           path: dast-scan-logs/
 
       - name: Stop and Cleanup Container
+        if: always()
+        run: |
+          if [ -n "${CONTAINER_NAME}" ]; then
+            echo "Stopping container ${CONTAINER_NAME}..."
+            docker stop "${CONTAINER_NAME}" || true
+          fi
+
+  trainer-dast-scan:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        ai-device: [xpu]
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            centralus.data.mcr.microsoft.com:443
+            files.pythonhosted.org:443
+            ghcr.io:443
+            ghcr1production.blob.core.windows.net:443
+            github.com:443
+            mirror.gcr.io:443
+            pkg-containers.githubusercontent.com:443
+            production.cloudfront.docker.com:443
+            pypi.org:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            releases.astral.sh:443
+
+      - name: Runner cleanup
+        uses: open-edge-platform/geti-ci/actions/cleanup-runner@6f29a1ff715a9770e024317f30db57bdc0e16418 # cleanup-runner/v0.1.0
+        with:
+          type: "initial"
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull trainer container image
+        env:
+          DEVICE: ${{ matrix.ai-device }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          IMAGE_NAME="ghcr.io/${OWNER}/physicalai-trainer-${DEVICE}:main"
+          echo "Pulling image: $IMAGE_NAME"
+          docker pull "$IMAGE_NAME"
+
+      - name: Run trainer container image
+        env:
+          DEVICE: ${{ matrix.ai-device }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          CONTAINER_NAME="physicalai-trainer-${DEVICE}"
+          IMAGE_NAME="ghcr.io/${OWNER}/physicalai-trainer-${DEVICE}:main"
+
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            -p 8001:8001 \
+            "$IMAGE_NAME"
+
+          TEST_URL="http://localhost:8001/health"
+          echo "Waiting for trainer container to be ready..."
+          HEALTH_OK=false
+          for i in {1..12}; do
+              if curl -sf "$TEST_URL" > /dev/null 2>&1; then
+                  echo "Trainer health check passed"
+                  HEALTH_OK=true
+                  break
+              fi
+              echo "Attempt $i/12 - waiting 5 seconds..."
+              sleep 5
+          done
+
+          if [[ "$HEALTH_OK" != "true" ]]; then
+              echo "Trainer health check failed after 60 seconds"
+              exit 1
+          fi
+
+          echo "CONTAINER_NAME=${CONTAINER_NAME}" >> "$GITHUB_ENV"
+
+      - name: Run ZAP API Scan
+        uses: zaproxy/action-api-scan@5158fe4d9d8fcc75ea204db81317cce7f9e5453d # v0.10.0
+        with:
+          target: "http://localhost:8001/openapi.json"
+          format: "openapi"
+          allow_issue_writing: false
+          fail_action: false
+          artifact_name: zapapi-trainer
+
+      - name: Run Schemathesis Scan
+        uses: schemathesis/action@806cace2053cbbac93188e1281ff7da415643160 # v3
+        continue-on-error: true
+        with:
+          schema: "http://localhost:8001/openapi.json"
+          args: >-
+            --include-path-regex '^/(health|devices|storage)$'
+            --continue-on-failure
+            --report-dir schemathesis-trainer-report
+            --report junit
+            --report-junit-path schemathesis-trainer-report/junit.xml
+
+      - name: Upload Schemathesis report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: schemathesis-trainer-report
+          path: schemathesis-trainer-report/junit.xml
+
+      - name: Re-check trainer health after testing
+        if: always()
+        run: |
+          echo "Running post-scan trainer health check..."
+          if curl -sf "http://localhost:8001/health" > /dev/null 2>&1; then
+              echo "Post-scan trainer health check passed"
+          else
+              echo "Post-scan trainer health check failed"
+              echo "=== Container logs ==="
+              docker logs "$CONTAINER_NAME" || true
+              exit 1
+          fi
+
+      - name: Save trainer container logs to file
+        if: always()
+        run: |
+          mkdir -p trainer-dast-scan-logs
+          if [ -n "$CONTAINER_NAME" ]; then
+            echo "Saving logs for container $CONTAINER_NAME"
+            docker logs "$CONTAINER_NAME" > trainer-dast-scan-logs/container-$CONTAINER_NAME.log 2>&1 || true
+          else
+            echo "CONTAINER_NAME not set" > trainer-dast-scan-logs/container-lookup.log
+          fi
+
+      - name: Upload trainer container logs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: trainer-container-logs
+          path: trainer-dast-scan-logs/
+
+      - name: Stop and clean up trainer container
         if: always()
         run: |
           if [ -n "${CONTAINER_NAME}" ]; then
