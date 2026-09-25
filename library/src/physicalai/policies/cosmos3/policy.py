@@ -286,6 +286,15 @@ class Cosmos3(Policy):
         batch_dict = batch.to(self.device).to_dict() if isinstance(batch, Observation) else batch
         return self.model.predict_action_chunk(batch_dict)
 
+    def reset(self) -> None:
+        """Reset the policy state for a new episode.
+
+        Clears the action chunking queue and resets pipeline episode conditioning state.
+        """
+        super().reset()
+        if self.model is not None and hasattr(self.model, "pipe") and self.model.pipe is not None:
+            self.model.pipe.current_state = None
+
     def configure_optimizers(self) -> dict[str, Any]:
         """Configure AdamW optimizer with distinct base and head parameter learning rates.
 

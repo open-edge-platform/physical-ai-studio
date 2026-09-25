@@ -195,6 +195,28 @@ class TestCosmos3Policy:
             gradient_clip_algorithm="value",
         )
 
+    def test_reset_clears_action_queue_and_pipeline_state(self) -> None:
+        """Test reset clears action queue and resets pipeline current_state."""
+        policy = Cosmos3(embodiment="pusht")
+        # Add dummy action to queue
+        policy._action_queue.append(torch.tensor([1.0, 2.0]))
+        assert len(policy._action_queue) == 1
+
+        # Test reset before model is initialized
+        policy.reset()
+        assert len(policy._action_queue) == 0
+
+        # Test reset with model and pipeline initialized
+        mock_pipe = MagicMock()
+        mock_pipe.current_state = torch.tensor([0.5, 0.5])
+        policy.model = MagicMock()
+        policy.model.pipe = mock_pipe
+        policy._action_queue.append(torch.tensor([3.0, 4.0]))
+
+        policy.reset()
+        assert len(policy._action_queue) == 0
+        assert mock_pipe.current_state is None
+
 
 # ============================================================================ #
 # Mocked Model & Pipeline Tests                                                #
@@ -410,13 +432,16 @@ class TestMockedCosmos3Model:
         from unittest.mock import patch
 
         pipe = self._create_mock_pipeline()
-        with patch(
-            "physicalai.policies.cosmos3.model.PolicyPipelineWithState.from_pretrained",
-            return_value=pipe,
-        ) as mock_from_pretrained, patch(
-            "physicalai.policies.cosmos3.model._has_pretrained_action_head",
-            return_value=True,
-        ) as mock_has_head:
+        with (
+            patch(
+                "physicalai.policies.cosmos3.model.PolicyPipelineWithState.from_pretrained",
+                return_value=pipe,
+            ) as mock_from_pretrained,
+            patch(
+                "physicalai.policies.cosmos3.model._has_pretrained_action_head",
+                return_value=True,
+            ) as mock_has_head,
+        ):
             config = Cosmos3Config(
                 embodiment="pusht",
                 pretrained_model_name_or_path="nvidia/Cosmos3-Edge",
