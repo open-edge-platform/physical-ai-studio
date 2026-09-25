@@ -327,6 +327,31 @@ class Cosmos3(Policy):
             "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
         }
 
+    def configure_gradient_clipping(
+        self,
+        optimizer: torch.optim.Optimizer,
+        gradient_clip_val: float | None = None,
+        gradient_clip_algorithm: str | None = None,
+    ) -> None:
+        """Configure gradient clipping from policy config.
+
+        Overrides Lightning's gradient clipping to respect the policy's
+        `optimizer_grad_clip_norm` setting when not explicitly overridden.
+
+        Args:
+            optimizer: The optimizer being used.
+            gradient_clip_val: Optional override from trainer.
+            gradient_clip_algorithm: Optional algorithm override ("norm" or "value").
+        """
+        clip_val = gradient_clip_val if gradient_clip_val is not None else self.config.optimizer_grad_clip_norm
+
+        if clip_val and clip_val > 0:
+            self.clip_gradients(
+                optimizer,
+                gradient_clip_val=clip_val,
+                gradient_clip_algorithm=gradient_clip_algorithm or "norm",
+            )
+
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         """Filter checkpoint state dict to save only trainable parameters and normalizer buffers.
 

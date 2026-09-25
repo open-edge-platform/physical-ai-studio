@@ -172,6 +172,29 @@ class TestCosmos3Policy:
         assert isinstance(policy, Cosmos3)
         assert policy.model is None
 
+    def test_configure_gradient_clipping(self) -> None:
+        """Test configure_gradient_clipping invokes clip_gradients with config norm."""
+        policy = Cosmos3(embodiment="pusht", optimizer_grad_clip_norm=0.75)
+        mock_opt = MagicMock()
+        policy.clip_gradients = MagicMock()
+
+        # Default falls back to policy config
+        policy.configure_gradient_clipping(mock_opt)
+        policy.clip_gradients.assert_called_once_with(
+            mock_opt,
+            gradient_clip_val=0.75,
+            gradient_clip_algorithm="norm",
+        )
+
+        # Explicit override takes precedence
+        policy.clip_gradients.reset_mock()
+        policy.configure_gradient_clipping(mock_opt, gradient_clip_val=2.0, gradient_clip_algorithm="value")
+        policy.clip_gradients.assert_called_once_with(
+            mock_opt,
+            gradient_clip_val=2.0,
+            gradient_clip_algorithm="value",
+        )
+
 
 # ============================================================================ #
 # Mocked Model & Pipeline Tests                                                #
