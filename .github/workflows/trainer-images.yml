@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'false' }}
+  PUBLIC_ENABLE_COMPILE_MODEL: ${{ vars.PUBLIC_ENABLE_COMPILE_MODEL || 'true' }}
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
   TRAINER_API_PROTOCOL_VERSION: "1"
 
@@ -92,6 +92,7 @@ jobs:
             ghcr.io:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
+            gitlab.com:443
             keyserver.ubuntu.com:443
             pkg-containers.githubusercontent.com:443
             ppa.launchpadcontent.net:443
@@ -213,6 +214,7 @@ jobs:
             files.pythonhosted.org:443
             fulcio.sigstore.dev:443
             ghcr.io:443
+            gitlab.com:443
             ghcr1production.blob.core.windows.net:443
             github.com:443
             keyserver.ubuntu.com:443

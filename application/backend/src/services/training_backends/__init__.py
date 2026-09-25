@@ -9,8 +9,6 @@ service. The active backend is selected per job from its persisted execution
 target.
 """
 
-from uuid import UUID
-
 from schemas.job import RemoteTrainJobPayload, TrainJobPayload
 from services.training_backends.base import (
     ProgressReporter,
@@ -21,35 +19,8 @@ from services.training_backends.base import (
 )
 
 
-async def get_training_backend(payload: TrainJobPayload, job_id: UUID) -> TrainingBackend:
-    """Return the backend selected by a job's persisted execution target.
-
-    ``job_id`` is only used by the SSH target, to key its provisioning record;
-    the local and direct-URL remote targets ignore it.
-    """
-    from schemas.job import TrainingTarget
-
-    if payload.training_target is TrainingTarget.SSH:
-        from core.security import get_ssh_feature_availability
-        from db import get_async_db_session_ctx
-        from exceptions import SshFeatureDisabledError
-        from services.remote_server_service import RemoteServerService
-        from services.training_backends.ssh import SshTrainingBackend
-
-        # Defense in depth: submission already rejects an SSH job while the
-        # feature is inactive, but a job persisted while it was active must
-        # not silently start if the feature became network-exposed before it
-        # was picked up (e.g. across a restart with a changed bind address).
-        availability = get_ssh_feature_availability()
-        if not availability.active:
-            raise SshFeatureDisabledError(availability.reason)
-
-        if payload.remote_server_id is None:
-            raise ValueError("SSH training job is missing its selected remote server")
-        async with get_async_db_session_ctx() as session:
-            server = await RemoteServerService(session).get_remote_server(payload.remote_server_id)
-        return SshTrainingBackend(job_id, server)
-
+async def get_training_backend(payload: TrainJobPayload) -> TrainingBackend:
+    """Return the backend selected by a job's persisted execution target."""
     if isinstance(payload, RemoteTrainJobPayload):
         from services.training_backends.remote import RemoteTrainingBackend
 

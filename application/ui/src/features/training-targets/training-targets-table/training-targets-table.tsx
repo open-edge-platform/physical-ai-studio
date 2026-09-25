@@ -15,20 +15,12 @@ import {
 } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
-import { SchemaPreflightResult, SchemaRemoteServer, SchemaRemoteTrainer } from '../../../api/openapi-spec';
+import { SchemaRemoteTrainer } from '../../../api/openapi-spec';
 import { Table, TableColumn } from '../../../components/table/table';
-import {
-    remoteServerComputeDetail,
-    remoteServerStatusLabel,
-    remoteServerStatusVariant,
-} from '../remote-server-status-utils';
+import { connectionModeLabel } from '../remote-trainer-connection-utils';
 import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
-import { RemoteServerDetail } from './remote-server-detail/remote-server-detail';
 import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
 import { TrainingTargetRow, trainingTargetRowId } from './training-target-row';
-import { useIsRemoteServerCheckRunning } from './use-is-remote-server-check-running';
-import { useRemoteServerCheckMutation } from './use-remote-server-check-mutation';
-import { useRemoteServersStatus } from './use-remote-servers-status';
 import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 
 import classes from './training-targets-table.module.css';
@@ -94,11 +86,11 @@ type StatusVariant = 'positive' | 'notice' | 'negative' | 'neutral' | 'yellow';
 type TargetRowContentProps = {
     name: string;
     connectionLabel: string;
+    connectionModeText: string;
     statusVariant: StatusVariant;
     statusLabel: string;
     deviceTypes: string[];
     computeDetail: string;
-    kindBadge: 'SSH' | 'Direct URL';
     isChecking: boolean;
     onCheck?: () => void;
     onEdit: () => void;
@@ -114,11 +106,11 @@ type TargetRowContentProps = {
 const targetRowCells = ({
     name,
     connectionLabel,
+    connectionModeText,
     statusVariant,
     statusLabel,
     deviceTypes: types,
     computeDetail,
-    kindBadge,
     isChecking,
     onCheck,
     onEdit,
@@ -129,7 +121,7 @@ const targetRowCells = ({
     <TooltipTrigger key='connection' delay={300}>
         <ActionButton isQuiet UNSAFE_className={classes.kindBadgeTrigger} aria-label={connectionLabel}>
             <Badge variant='neutral' UNSAFE_className={classes.kindBadge}>
-                {kindBadge}
+                {connectionModeText}
             </Badge>
         </ActionButton>
         <Tooltip>{connectionLabel}</Tooltip>
@@ -192,91 +184,15 @@ const DirectUrlTargetRow = ({
             {targetRowCells({
                 name: trainer.name,
                 connectionLabel: trainer.url,
+                connectionModeText: connectionModeLabel(trainer.connection_mode),
                 statusVariant: healthVariant(displayHealth, isChecking),
                 statusLabel: healthLabel(displayHealth, isChecking),
                 deviceTypes: types,
                 computeDetail:
                     displayHealth?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported'),
-                kindBadge: 'Direct URL',
                 isChecking,
                 onCheck: () => {
                     void health?.checkHealth();
-                    onExpand();
-                },
-                onEdit,
-                onDelete,
-            })}
-        </Table.ExpandableRow>
-    );
-};
-
-type SshTargetRowProps = {
-    server: SchemaRemoteServer;
-    isExpanded: boolean;
-    onExpandedChange: (isExpanded: boolean) => void;
-    onExpand: () => void;
-    onEdit: () => void;
-    onDelete: () => void;
-};
-
-/**
- * Reconstructs the last persisted Tier 2 result from the server record itself
- * (`last_check_checks`/`last_check_at`), so a row that mounts fresh - e.g. after
- * navigating back to the training-targets page, or after verifying from the
- * post-save dialog's own mutation instance - still shows the server's real
- * verification state instead of "Not verified yet" just because *this*
- * component's local check mutation has never fired.
- */
-const persistedTier2Result = (server: SchemaRemoteServer): SchemaPreflightResult | undefined => {
-    if (server.last_check_checks === undefined || server.last_check_checks.length === 0) return undefined;
-
-    return {
-        remote_server_id: server.id,
-        checks: server.last_check_checks,
-        checked_at: server.last_check_at ?? new Date(0).toISOString(),
-    };
-};
-
-const SshTargetRow = ({ server, isExpanded, onExpandedChange, onExpand, onEdit, onDelete }: SshTargetRowProps) => {
-    const entry = useRemoteServersStatus([server.id]).get(server.id);
-    const isChecking = entry?.isChecking ?? false;
-    const checkMutation = useRemoteServerCheckMutation();
-    const tier2Result = checkMutation.data ?? persistedTier2Result(server);
-    const tier2CheckedAt = checkMutation.data?.checked_at ?? server.last_check_at ?? undefined;
-    // Reflects any in-flight Tier 2 check for this server, including one
-    // fired from the post-save dialog's own (now-unmounted) mutation
-    // instance - not just this row's local `checkMutation.isPending`.
-    const isRunningTier2 = useIsRemoteServerCheckRunning(server.id) || checkMutation.isPending;
-
-    return (
-        <Table.ExpandableRow
-            id={`training-target-row-${server.id}`}
-            label={server.name}
-            isExpanded={isExpanded}
-            onExpandedChange={onExpandedChange}
-            detail={
-                <RemoteServerDetail
-                    remoteServer={server}
-                    status={entry?.status}
-                    isChecking={isChecking}
-                    tier2Result={tier2Result}
-                    tier2CheckedAt={tier2CheckedAt}
-                    isRunningTier2={isRunningTier2}
-                    onTestConnection={() => checkMutation.mutate({ params: { path: { remote_server_id: server.id } } })}
-                />
-            }
-        >
-            {targetRowCells({
-                name: server.name,
-                connectionLabel: `ssh ${server.ssh_host_alias}`,
-                statusVariant: remoteServerStatusVariant(entry?.status, isChecking),
-                statusLabel: remoteServerStatusLabel(entry?.status, isChecking),
-                deviceTypes: [server.device_type.toUpperCase()],
-                computeDetail: isChecking ? 'Checking…' : (remoteServerComputeDetail(entry?.status) ?? 'Not reported'),
-                kindBadge: 'SSH',
-                isChecking,
-                onCheck: () => {
-                    void entry?.checkStatus();
                     onExpand();
                 },
                 onEdit,
@@ -305,24 +221,10 @@ export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargets
                 const id = trainingTargetRowId(row);
                 const isExpanded = expandedId === id;
 
-                if (row.kind === 'direct-url') {
-                    return (
-                        <DirectUrlTargetRow
-                            key={id}
-                            trainer={row.trainer}
-                            isExpanded={isExpanded}
-                            onExpandedChange={() => toggleExpanded(id)}
-                            onExpand={() => setExpandedId(id)}
-                            onEdit={() => onEdit(row)}
-                            onDelete={() => onDelete(row)}
-                        />
-                    );
-                }
-
                 return (
-                    <SshTargetRow
+                    <DirectUrlTargetRow
                         key={id}
-                        server={row.server}
+                        trainer={row.trainer}
                         isExpanded={isExpanded}
                         onExpandedChange={() => toggleExpanded(id)}
                         onExpand={() => setExpandedId(id)}

@@ -1,6 +1,7 @@
 import { Badge, Grid, Heading, StatusLight, Text, View } from '@geti-ui/ui';
 
 import { SchemaRemoteTrainer, SchemaRemoteTrainerHealth } from '../../../../api/openapi-spec';
+import { connectionModeLabel, sshHostDisplay } from '../../remote-trainer-connection-utils';
 import {
     capabilityDetail,
     CheckState,
@@ -77,6 +78,7 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
     const storageState = getStorageState(health, isChecking);
     const lastChecked = health ? new Date(health.checked_at).toLocaleString() : 'Not checked';
     const devicesReported = (health?.devices?.length ?? 0) > 0;
+    const sshHost = sshHostDisplay(remoteTrainer);
 
     return (
         <View backgroundColor={'gray-75'} padding={'size-300'} borderColor={'gray-300'} borderWidth={'thin'}>
@@ -120,11 +122,17 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
                         <dt>Connection type</dt>
                         <dd>
                             <Badge variant='neutral' UNSAFE_className={classes.connectionTypeBadge}>
-                                Direct trainer URL
+                                {connectionModeLabel(remoteTrainer.connection_mode)}
                             </Badge>
                         </dd>
                         <dt>Trainer URL</dt>
                         <dd className={classes.definitionListMono}>{remoteTrainer.url}</dd>
+                        {sshHost !== undefined && (
+                            <>
+                                <dt>SSH host</dt>
+                                <dd className={classes.definitionListMono}>{sshHost}</dd>
+                            </>
+                        )}
                         <dt>Device type</dt>
                         <dd className={classes.definitionListMono}>{types.join(', ') || 'Not reported'}</dd>
                         <dt>Available storage</dt>

@@ -14,9 +14,6 @@ interface SetupStepProps {
     targetId: Key | null;
     onTargetIdChange: (value: Key | null) => void;
     remoteUnavailable: boolean;
-    sshUnavailable: boolean;
-    sshUnverified: boolean;
-    sshStatusMessage: string;
     selectedPolicy: string;
     onSelectedPolicyChange: (policy: string) => void;
     isPolicyDisabled: boolean;
@@ -31,9 +28,6 @@ export const SetupStep = ({
     targetId,
     onTargetIdChange,
     remoteUnavailable,
-    sshUnavailable,
-    sshUnverified,
-    sshStatusMessage,
     selectedPolicy,
     onSelectedPolicyChange,
     isPolicyDisabled,
@@ -44,20 +38,6 @@ export const SetupStep = ({
             <InlineAlert variant='warning'>
                 Can&apos;t reach the remote trainer, so training can&apos;t start. Make sure it&apos;s running, then try
                 again.
-            </InlineAlert>
-        )}
-
-        {sshUnavailable && (
-            <InlineAlert variant='warning'>
-                This remote server isn&apos;t ready for training (status: {sshStatusMessage}). Verify the server before
-                submitting a job.
-            </InlineAlert>
-        )}
-
-        {sshUnverified && (
-            <InlineAlert variant='info'>
-                This remote server hasn&apos;t been verified yet. Submitting will pull and verify the trainer image
-                first, which can take a few minutes.
             </InlineAlert>
         )}
 

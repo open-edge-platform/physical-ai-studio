@@ -1,88 +1,65 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Docker image resolution, verification, GPU-busy waiting, and container lifecycle.
+"""Docker image resolution and container lifecycle for SSH-tunneled trainers.
 
 Everything here runs a command over an already-connected
 :class:`~services.ssh.transport.SshTransport`. No function opens or closes a
-connection: :mod:`services.ssh.provisioning` owns connection lifetime.
+connection.
 
 Image resolution never pulls a layer: ``docker buildx imagetools inspect``
 reads the registry manifest and image-config labels (including the
 `physicalai-train` version) over the registry API, so a version-policy
 rejection never costs a multi-gigabyte transfer.
-
-``verify_image_signature`` is the one exception to "everything here runs over
-SSH": it runs on this backend's own host using the `sigstore` PyPI package
-rather than a `cosign` binary. See `services.ssh.sigstore_verify`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from loguru import logger
-from packaging.version import InvalidVersion, Version
 
 from exceptions import (
-    GpuBusyTimeoutError,
-    RemoteDiskSpaceError,
     TrainerContainerLaunchError,
     TrainerImagePullError,
     TrainerImageResolutionError,
     TrainerImageVerificationError,
-    TrainerLibraryVersionError,
 )
 from schemas.hardware import DeviceType
 from services.ssh import sigstore_verify
-from services.ssh.preflight import (  # noqa: F401 - resolve_render_group_gid re-exported for provisioning.py
+from services.ssh.trainer_image import (
     PROTOCOL_LABEL,
     image_present_locally,
     protocol_tag,
     pull_in_progress,
-    resolve_render_group_gid,
     trainer_image_ref,
 )
 from services.ssh.transport import SshTransport
 from settings import Settings
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-
     from services.ssh.transport import CommandResult
 
 # Label carrying the `physicalai-train` version baked into the image, read
 # from the registry manifest before any pull.
 LIBRARY_VERSION_LABEL: Final = "org.open-edge-platform.physicalai.trainer.library-version"
 
-# Management labels. `MANAGED_LABEL` alone never proves ownership: the orphan
-# sweep also requires `INSTANCE_LABEL` to match this installation's own
-# backend_instance_id (see `core.backend_instance`).
+# Management labels identify containers owned by this installation and trainer.
+# Cleanup checks the managed, instance, and trainer identifiers together.
 MANAGED_LABEL: Final = "org.open-edge-platform.physicalai.managed"
 JOB_LABEL: Final = "org.open-edge-platform.physicalai.job-id"
 SERVER_LABEL: Final = "org.open-edge-platform.physicalai.server-id"
 INSTANCE_LABEL: Final = "org.open-edge-platform.physicalai.backend-instance-id"
-# Recorded so a reattach can detect drift between the persisted row and the
-# container actually running, without a second registry round trip.
+# Records the image digest used to start the container.
 IMAGE_DIGEST_LABEL: Final = "org.open-edge-platform.physicalai.image-digest"
-
-_CONTAINER_NAME_PREFIX: Final = "physicalai-trainer-"
 
 # Named volume backing the trainer's writable storage directory. Disk-backed,
 # unlike the `/tmp` tmpfs, so datasets/artifacts consume disk rather than RAM.
 _DATA_VOLUME_NAME_PREFIX: Final = "physicalai-trainer-data-"
-
-# Fraction of device memory in use above which an accelerator counts as busy
-# for the pre-launch `wait_for_gpu_free` check.
-_GPU_BUSY_MEMORY_FRACTION: Final = 0.3
-
-_DF_AVAILABLE_COLUMN: Final = 3
-_DF_MIN_COLUMNS: Final = 5
 
 # Fixed non-root uid/gid the trainer image runs as (Dockerfile.trainer's
 # `TRAINER_UID`/`TRAINER_GID` build args, both default to 10001). Used for both
@@ -101,7 +78,7 @@ class ResolvedImage:
     Attributes:
         tag_reference: The `protocol-<N>` tag reference that was resolved.
         digest_reference: `<repository>@<digest>` - the reference every
-            subsequent pull/run/verify call uses. Never the mutable tag.
+            subsequent pull/run call uses. Never the mutable tag.
         digest: The resolved manifest digest, e.g. `sha256:...`.
         library_version: The `physicalai-train` version reported by the
             registry manifest's label, or ``None`` if the image carries none.
@@ -113,67 +90,16 @@ class ResolvedImage:
     library_version: str | None
 
 
-@dataclass(frozen=True, slots=True)
-class LibraryVersionCheck:
-    """Outcome of comparing a resolved image's library version against policy."""
-
-    reported_version: str | None
-    minimum_version: str
-    warning: str | None = None
-
-
-class ManagedContainer:
-    """One container carrying Studio's management labels, as reported by `docker ps`."""
-
-    __slots__ = ("container_id", "job_id", "labels", "name")
-
-    def __init__(self, container_id: str, name: str, labels: dict[str, str]) -> None:
-        self.container_id = container_id
-        self.name = name
-        self.labels = labels
-        self.job_id = labels.get(JOB_LABEL)
-
-
-class ManagedVolume:
-    """One data volume carrying Studio's management labels, as reported by `docker volume ls`."""
-
-    __slots__ = ("job_id", "name")
-
-    def __init__(self, name: str, job_id: str | None) -> None:
-        self.name = name
-        self.job_id = job_id
-
-
-def container_name(job_id: str) -> str:
-    """Return the deterministic container name for one job.
-
-    Deterministic so a reattach after a studio restart can find the container
-    by name without having persisted anything beyond the job id itself.
-    """
-    return f"{_CONTAINER_NAME_PREFIX}{job_id}"
-
-
-def data_volume_name(job_id: str) -> str:
-    """Return the deterministic data-volume name for one job.
-
-    Deterministic for the same reason `container_name` is: teardown and the
-    orphan sweep can find the volume by name without persisting anything beyond
-    the job id itself. Job ids are UUIDs, so names never collide between
-    installations, but the sweep still requires the volume's management labels
-    to match this installation (see `list_managed_volumes`).
-    """
-    return f"{_DATA_VOLUME_NAME_PREFIX}{job_id}"
+def data_volume_name(trainer_id: str) -> str:
+    """Return a trainer's deterministic data-volume name."""
+    return f"{_DATA_VOLUME_NAME_PREFIX}{trainer_id}"
 
 
 def management_labels(*, job_id: str, server_id: str, backend_instance_id: str, image_digest: str) -> dict[str, str]:
     """Return the labels every Studio-launched trainer container carries.
 
-    `INSTANCE_LABEL` is the ownership marker the orphan sweep requires in
-    addition to `MANAGED_LABEL`: a remote server can be shared by more than one
-    Studio installation, and sweeping must never touch a container it merely
-    recognizes the shape of. `IMAGE_DIGEST_LABEL` lets a reattach detect that a
-    running container disagrees with the digest persisted for its job, without
-    a second registry call.
+    Port cleanup checks `MANAGED_LABEL`, `INSTANCE_LABEL`, and `SERVER_LABEL`
+    before removing a container. `IMAGE_DIGEST_LABEL` records its image digest.
     """
     return {
         MANAGED_LABEL: "true",
@@ -197,7 +123,7 @@ class ContainerInspectionError(Exception):
 
     Raised instead of folding into `inspect_container`'s ``None`` return, so a
     caller never mistakes an operational failure for the container
-    legitimately not existing (see `services.ssh.provisioning.ReattachFailureReason`).
+    legitimately not existing.
     """
 
     def __init__(self, name_or_id: str, detail: str | None = None) -> None:
@@ -271,9 +197,8 @@ async def resolve_protocol_image(
 ) -> ResolvedImage:
     """Resolve the device-specific `protocol-<N>` tag to an immutable digest.
 
-    There is deliberately no fallback tag (unlike Tier 1's advisory preflight
-    check, which may warn and fall back to `latest`): a job that cannot verify
-    the exact protocol it will run against must fail rather than guess.
+    There is deliberately no fallback tag: a launch that cannot verify the
+    exact protocol it will run against must fail rather than guess.
 
     Reads the manifest digest and the image config's labels (including
     `LIBRARY_VERSION_LABEL` and `PROTOCOL_LABEL`) via `docker buildx imagetools
@@ -281,8 +206,8 @@ async def resolve_protocol_image(
     and pulls no layer.
 
     Args:
-        transport: An open transport to the remote server.
-        device_type: The server's configured accelerator.
+        transport: An open transport to the SSH host.
+        device_type: The detected accelerator.
         protocol_version: Studio's own compiled-in trainer protocol version.
         settings: Application settings (registry location).
 
@@ -342,249 +267,15 @@ async def resolve_protocol_image(
 
 
 async def verify_image_signature(image: ResolvedImage, settings: Settings) -> None:
-    """Verify the resolved image's signature, pinned to Studio's release identity.
-
-    Delegates to `services.ssh.sigstore_verify` (the `sigstore` PyPI package,
-    not the `cosign` binary), so verification runs entirely in this backend
-    process by fetching the image's Sigstore-bundle referrer over HTTPS.
-
-    Always fails closed: an unreachable registry/Sigstore infrastructure, an
-    unsigned image, and a failed signature check all block the job the same
-    way - there is no escape hatch, since `sigstore` is always available here.
-
-    Args:
-        image: The digest-resolved image to verify.
-        settings: Application settings (pinned certificate identity/issuer).
-
-    Raises:
-        TrainerImageVerificationError: Verification failed, or the
-            registry/Sigstore infrastructure could not be reached.
-    """
+    """Authenticate the exact digest before any pull or launch; fail closed."""
     try:
         await sigstore_verify.verify_signature(
             image.digest_reference,
             identity_regexp=settings.cosign_certificate_identity_regexp,
             oidc_issuer=settings.cosign_oidc_issuer,
         )
-    except sigstore_verify.SignatureUnavailableError as error:
-        raise TrainerImageVerificationError(image.digest_reference, f"verification unavailable: {error}") from error
-    except sigstore_verify.SignatureVerificationError as error:
+    except (sigstore_verify.SignatureUnavailableError, sigstore_verify.SignatureVerificationError) as error:
         raise TrainerImageVerificationError(image.digest_reference, str(error)) from error
-
-
-def check_library_version(
-    image: ResolvedImage,
-    *,
-    minimum_version: str,
-    policy_name: str = "default",
-) -> LibraryVersionCheck:
-    """Range-check a resolved image's library version against a minimum policy.
-
-    Older than the minimum is a non-fatal warning (the job proceeds); equal or
-    newer is silent; failing to meet a required minimum is fatal, raised
-    before any pull. A non-default policy also fails closed when the image
-    carries no version label at all, since it can't satisfy a required
-    minimum it declines to report.
-
-    Args:
-        image: The digest-resolved image, carrying the registry label.
-        minimum_version: The minimum `physicalai-train` version this policy
-            requires.
-        policy_name: Name surfaced in the failure message (e.g. a model
-            family), for a policy stricter than Studio's own default minimum.
-
-    Returns:
-        The check outcome. `.warning` is set when the image is older than
-        `minimum_version` but the policy is Studio's own non-strict default.
-
-    Raises:
-        TrainerLibraryVersionError: The image's version does not meet
-            `minimum_version` and `policy_name` names a required minimum, or
-            `policy_name` is non-default and the image carries no version
-            label at all.
-        ValueError: `minimum_version` is not a valid PEP 440 version.
-    """
-    reported = image.library_version
-    if reported is None:
-        if policy_name != "default":
-            raise TrainerLibraryVersionError(policy_name, minimum_version, "unknown (no version label)")
-        return LibraryVersionCheck(reported_version=None, minimum_version=minimum_version)
-
-    try:
-        minimum_parsed = Version(minimum_version)
-    except InvalidVersion:
-        raise ValueError(f"minimum_version '{minimum_version}' is not a valid PEP 440 version") from None
-
-    try:
-        reported_parsed = Version(reported)
-    except InvalidVersion:
-        return LibraryVersionCheck(
-            reported_version=None,
-            minimum_version=minimum_version,
-            warning=f"Could not parse trainer library version '{reported}'; proceeding without a version check.",
-        )
-
-    if reported_parsed >= minimum_parsed:
-        return LibraryVersionCheck(reported_version=reported, minimum_version=minimum_version)
-
-    if policy_name != "default":
-        raise TrainerLibraryVersionError(policy_name, minimum_version, reported)
-
-    return LibraryVersionCheck(
-        reported_version=reported,
-        minimum_version=minimum_version,
-        warning=f"Trainer image reports physicalai-train version '{reported}', older than '{minimum_version}'.",
-    )
-
-
-def _first_number_pair(stdout: str) -> tuple[float, float] | None:
-    numbers = [float(match) for match in re.findall(r"\d+(?:\.\d+)?", stdout)]
-    if len(numbers) < 2 or numbers[1] <= 0:
-        return None
-    return numbers[0], numbers[1]
-
-
-async def _cuda_gpu_busy(transport: SshTransport) -> bool | None:
-    """Return whether the CUDA GPU is busy, or ``None`` if occupancy is unknown.
-
-    Uses a memory-utilization heuristic rather than compute-process presence:
-    a GPU carrying an unrelated process holding only a sliver of memory must
-    not block a job that would fit comfortably alongside it. Queries GPU index
-    0 explicitly (``-i 0``) - the device the trainer container actually uses -
-    mirroring `_xpu_gpu_busy`'s ``-d 0``.
-    """
-    result = await transport.run_command(
-        ["nvidia-smi", "-i", "0", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"]
-    )
-    if not result.ok:
-        return None
-    pair = _first_number_pair(result.stdout)
-    if pair is None:
-        return None
-    used, total = pair
-    return (used / total) >= _GPU_BUSY_MEMORY_FRACTION
-
-
-async def _xpu_gpu_busy(transport: SshTransport) -> bool | None:
-    """Return whether the XPU is busy by a memory-utilization heuristic, or ``None``.
-
-    Queries device index 0 explicitly (``-d 0``) - the device the trainer
-    container actually uses.
-    """
-    result = await transport.run_command(["xpu-smi", "stats", "-d", "0"])
-    if not result.ok:
-        return None
-    pair = _first_number_pair(result.stdout)
-    if pair is None:
-        return None
-    used, total = pair
-    return (used / total) >= _GPU_BUSY_MEMORY_FRACTION
-
-
-async def is_gpu_busy(transport: SshTransport, device_type: DeviceType) -> bool | None:
-    """Return whether the remote accelerator is currently busy.
-
-    Returns ``None`` when occupancy could not be determined - callers should
-    treat that as "not known to be busy" rather than blocking on a monitoring
-    tool that happens to be absent.
-    """
-    if device_type is DeviceType.CUDA:
-        return await _cuda_gpu_busy(transport)
-    return await _xpu_gpu_busy(transport)
-
-
-async def wait_for_gpu_free(
-    open_transport: Callable[[], SshTransport],
-    device_type: DeviceType,
-    settings: Settings,
-    server_name: str,
-    *,
-    on_wait: Callable[[float], Awaitable[None]] | None = None,
-    clock: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], Awaitable[None]] | None = None,
-) -> None:
-    """Wait until the remote GPU reports free, with exponential backoff.
-
-    Opens a fresh transport for each probe rather than holding one connection
-    for the whole wait, so a long wait does not hold a scarce per-server
-    connection slot the whole time.
-
-    Args:
-        open_transport: Returns a new, unconnected transport for one probe.
-        device_type: The server's configured accelerator.
-        settings: Application settings (backoff bounds, give-up timeout).
-        server_name: Used only in the raised error message.
-        on_wait: Awaited once per non-final wait, with the elapsed seconds so
-            far - the caller uses this to report a `waiting` phase state.
-        clock: Injected for deterministic tests.
-        sleep: Injected for deterministic tests; defaults to `asyncio.sleep`.
-
-    Raises:
-        GpuBusyTimeoutError: The GPU stayed busy past
-            `settings.ssh_gpu_wait_giveup_s`.
-    """
-    if sleep is None:
-        import asyncio
-
-        sleep = asyncio.sleep
-
-    started = clock()
-    backoff = settings.ssh_gpu_wait_initial_backoff_s
-    while True:
-        transport = open_transport()
-        try:
-            await transport.connect()
-            busy = await is_gpu_busy(transport, device_type)
-        finally:
-            await transport.close()
-
-        if not busy:
-            return
-
-        elapsed = clock() - started
-        if elapsed >= settings.ssh_gpu_wait_giveup_s:
-            raise GpuBusyTimeoutError(server_name, elapsed)
-
-        if on_wait is not None:
-            await on_wait(elapsed)
-
-        await sleep(min(backoff, settings.ssh_gpu_wait_giveup_s - elapsed))
-        backoff = min(backoff * 2, settings.ssh_gpu_wait_max_backoff_s)
-
-
-def _parse_free_bytes(stdout: str) -> int | None:
-    """Parse available bytes out of `df -B1 -P` output."""
-    for line in stdout.splitlines()[1:]:
-        columns = line.split()
-        if len(columns) < _DF_MIN_COLUMNS:
-            continue
-        try:
-            return int(columns[_DF_AVAILABLE_COLUMN])
-        except ValueError:
-            continue
-    return None
-
-
-async def check_disk_for_job(transport: SshTransport, required_bytes: int, server_name: str) -> None:
-    """Re-check free disk against this job's actual snapshot size.
-
-    A server's save-time preflight only checks a nominal minimum; a specific
-    job's dataset can exceed it, so provisioning re-checks against the real
-    size before pulling or launching anything.
-
-    Raises:
-        RemoteDiskSpaceError: Free space is below `required_bytes`.
-    """
-    result = await transport.run_command(["df", "-B1", "-P", "/var/lib/docker"])
-    if not result.ok:
-        result = await transport.run_command(["df", "-B1", "-P", "/"])
-
-    free_bytes = _parse_free_bytes(result.stdout) if result.ok else None
-    if free_bytes is None:
-        # Unable to measure: fail closed rather than silently skipping the check.
-        raise RemoteDiskSpaceError(server_name, free_bytes=0, required_bytes=required_bytes)
-    if free_bytes < required_bytes:
-        raise RemoteDiskSpaceError(server_name, free_bytes=free_bytes, required_bytes=required_bytes)
 
 
 def _device_run_args(device_type: DeviceType, render_gid: str | None = None) -> list[str]:
@@ -612,6 +303,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
     remote_container_port: int,
     stop_timeout_s: int,
     render_gid: str | None = None,
+    shm_size_gb: int = 32,
 ) -> list[str]:
     """Build the least-privilege `docker run` command for one trainer container.
 
@@ -623,12 +315,13 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
     * Non-root, every capability dropped, no `--privileged`, and only the
       device nodes the configured accelerator needs are passed through.
     * `--read-only` root filesystem, a bounded `--tmpfs` for `/tmp` scratch,
-      and a job-scoped data volume mounted at the trainer's storage directory
-      for datasets and model artifacts.
+      and a trainer-scoped data volume for datasets and model artifacts.
+    * A private, sized `/dev/shm` for PyTorch DataLoader multiprocessing.
 
-    `render_gid`, from `resolve_render_group_gid`, is required for a working
-    XPU container: without it the fixed non-root user cannot open the render
-    node and `torch.xpu.is_available()` reports zero devices. Ignored for CUDA.
+    `render_gid`, from `services.ssh.trainer_image.resolve_render_group_gid`,
+    is required for a working XPU container: without it the fixed non-root
+    user cannot open the render node and `torch.xpu.is_available()` reports
+    zero devices. Ignored for CUDA.
 
     The `/tmp` tmpfs carries explicit `uid=`/`gid=` mount options matching
     `--user`, since an unqualified `--tmpfs` mounts root-owned. The data
@@ -654,6 +347,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
         "--security-opt",
         "no-new-privileges",
         "--read-only",
+        f"--shm-size={shm_size_gb}g",
         "--tmpfs",
         f"/tmp:size=2g,{tmpfs_owner}",  # noqa: S108  # nosec B108 - a `docker run` mount spec, not a local temp-file access
         "--mount",
@@ -666,14 +360,14 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
 async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Settings) -> None:
     """Pull the resolved image by digest, skipping a no-op re-pull.
 
-    Tier 2's "Pull & verify image" check may already have pulled this same
-    image by tag, so this checks the local image store first (Docker records
-    the pulled digest as a `RepoDigest` regardless of which reference was
-    used) before asking the daemon to re-fetch anything.
+    Checks the local image store first (Docker records the pulled digest as a
+    `RepoDigest` regardless of which reference was used) before asking the
+    daemon to re-fetch anything.
 
-    If Tier 2's tag pull is still in flight (detached via `nohup`), this waits
-    for it with `pull_in_progress` rather than starting a second, concurrent
-    pull of identical content, then re-checks the image store.
+    If a background pull of the same tag is still in flight (started by a
+    concurrent launch of another trainer on the same host), this waits for it
+    with `pull_in_progress` rather than starting a second, concurrent pull of
+    identical content, then re-checks the image store.
 
     Uses `settings.ssh_image_pull_timeout_s` rather than the default command
     timeout, which is sized for cheap probes and far too short for a
@@ -681,8 +375,8 @@ async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Se
 
     Once the digest is confirmed present, prunes any other locally cached
     image of the same repository via `prune_stale_images` (best effort,
-    never raised), so a long-lived server only accumulates the image each job
-    actually needed.
+    never raised), so a long-lived server only accumulates the image each
+    trainer actually needed.
 
     Raises:
         TrainerImagePullError: The pull failed, or did not finish within
@@ -704,26 +398,26 @@ async def pull_image(transport: SshTransport, image: ResolvedImage, settings: Se
 
 # Substrings of a `docker rmi` failure that mean "already handled, not an
 # error": the image is still referenced by a running/stopped container, or it
-# is already gone (a concurrent prune on the same remote server won the race).
+# is already gone (a concurrent prune on the same SSH host won the race).
 _TOLERATED_RMI_FAILURES: Final = ("image is being used", "no such image")
 
 
 async def prune_stale_images(transport: SshTransport, image: ResolvedImage) -> list[str]:
     """Remove other locally cached images of `image`'s repository, freeing disk.
 
-    A remote server otherwise keeps every distinct digest it has ever pulled
+    An SSH host otherwise keeps every distinct digest it has ever pulled
     for a `physicalai-trainer-<device>` repository, filling its disk from
     accumulated image history. Called after `pull_image` confirms
     `image.digest_reference` is present, so reclaiming here never costs a
-    re-pull of the image a job just verified it needs.
+    re-pull of the image a launch just verified it needs.
 
     Never touches `image.digest_reference` itself. Tolerates - without
     raising - a `docker rmi` refused because a container still references
     that image, and a failing listing command: reclaiming disk is
-    best-effort bookkeeping, never something a job's launch should fail over.
+    best-effort bookkeeping, never something a launch should fail over.
 
     Args:
-        transport: An open transport to the remote server.
+        transport: An open transport to the SSH host.
         image: The resolved image just confirmed present; its repository
             (everything before the ``@``) is what gets swept, and its digest
             is the one entry that is always kept.
@@ -768,7 +462,7 @@ _PULL_POLL_INTERVAL_S: Final = 5.0
 
 
 async def _await_background_pull(transport: SshTransport, image_ref: str, settings: Settings) -> None:
-    """Wait for a Tier 2 background pull of `image_ref` to finish, best effort.
+    """Wait for a background pull of `image_ref` to finish, best effort.
 
     Bounded by `settings.ssh_image_pull_timeout_s`. Gives up silently rather
     than raising when the budget elapses - the caller re-checks the image
@@ -794,18 +488,42 @@ async def launch_container(transport: SshTransport, argv: list[str], server_name
     return container_id
 
 
-async def resolve_published_port(transport: SshTransport, name: str, remote_container_port: int) -> int | None:
-    """Return the host port Docker assigned for `remote_container_port`, or ``None``."""
-    result = await transport.run_command(["docker", "port", name, str(remote_container_port)])
+async def remove_stale_containers_on_port(
+    transport: SshTransport, port: int, backend_instance_id: str, trainer_id: str
+) -> list[str]:
+    """Remove only this trainer's old containers already bound to `port`.
+
+    A persistent SSH trainer always launches on a fixed, user-chosen loopback
+    port, so a leftover container from an earlier attempt for the same
+    trainer (a crash, a retried save, a deleted-then-recreated trainer)
+    refuses `docker run` a second bind of that port. Only ever removes a
+    container carrying this installation's own `MANAGED_LABEL` +
+    `INSTANCE_LABEL` + `SERVER_LABEL`; another trainer or an unmanaged
+    container holding the port is left alone, and `docker run` reports the
+    collision instead of interrupting its job.
+
+    Returns:
+        The ids of any containers actually removed.
+    """
+    result = await transport.run_command(["docker", "ps", "-a", "--filter", f"publish={port}", "--format", "{{.ID}}"])
     if not result.ok:
-        return None
-    # `docker port` prints e.g. "127.0.0.1:54321".
-    line = result.first_line()
-    _, _, port_text = line.rpartition(":")
-    try:
-        return int(port_text)
-    except ValueError:
-        return None
+        return []
+    removed: list[str] = []
+    for container_id in (line.strip() for line in result.stdout.splitlines() if line.strip()):
+        inspection = await inspect_container(transport, container_id)
+        if inspection is None:
+            continue
+        labels = inspection.labels
+        owned = (
+            labels.get(MANAGED_LABEL) == "true"
+            and labels.get(INSTANCE_LABEL) == backend_instance_id
+            and labels.get(SERVER_LABEL) == trainer_id
+        )
+        if not owned:
+            continue
+        await transport.run_command(["docker", "rm", "-f", container_id])
+        removed.append(container_id)
+    return removed
 
 
 async def stop_and_remove_container(transport: SshTransport, name_or_id: str, stop_timeout_s: int) -> None:
@@ -821,10 +539,10 @@ async def stop_and_remove_container(transport: SshTransport, name_or_id: str, st
 
 
 async def create_data_volume(transport: SshTransport, name: str, labels: dict[str, str], server_name: str) -> None:
-    """Create the job's data volume with management labels, tolerating an existing one.
+    """Create the trainer's data volume with management labels, tolerating an existing one.
 
     Created explicitly rather than letting `docker run --mount` auto-create it,
-    so the volume carries the management labels the orphan sweep relies on to
+    so the volume carries the management labels this module relies on to
     attribute it to this installation. `docker run` then mounts the already
     labeled volume.
 
@@ -843,88 +561,3 @@ async def remove_volume(transport: SshTransport, name: str) -> None:
     result = await transport.run_command(["docker", "volume", "rm", name])
     if not result.ok and "no such volume" not in (result.stderr or "").lower():
         logger.warning("docker volume rm reported a failure for volume '{}': {}", name, result.stderr)
-
-
-def _parse_label_map(raw_labels: str) -> dict[str, str]:
-    """Parse a Docker `Labels` string (`k1=v1,k2=v2`) into a mapping."""
-    labels: dict[str, str] = {}
-    for entry in raw_labels.split(","):
-        key, sep, value = entry.partition("=")
-        if sep:
-            labels[key] = value
-    return labels
-
-
-def _parse_managed_container_line(line: str) -> ManagedContainer | None:
-    parsed = _parse_json(line)
-    if not isinstance(parsed, dict):
-        return None
-    container_id = parsed.get("ID")
-    name = parsed.get("Names")
-    raw_labels = parsed.get("Labels", "")
-    if not isinstance(container_id, str) or not isinstance(name, str) or not isinstance(raw_labels, str):
-        return None
-    return ManagedContainer(container_id=container_id, name=name, labels=_parse_label_map(raw_labels))
-
-
-def _parse_managed_volume_line(line: str) -> ManagedVolume | None:
-    parsed = _parse_json(line)
-    if not isinstance(parsed, dict):
-        return None
-    name = parsed.get("Name")
-    raw_labels = parsed.get("Labels", "")
-    if not isinstance(name, str) or not isinstance(raw_labels, str):
-        return None
-    return ManagedVolume(name=name, job_id=_parse_label_map(raw_labels).get(JOB_LABEL))
-
-
-async def list_managed_containers(transport: SshTransport, backend_instance_id: str) -> list[ManagedContainer]:
-    """List containers this installation provably owns, running or stopped.
-
-    Filters on both `MANAGED_LABEL` and `INSTANCE_LABEL`: a remote server can be
-    shared by another Studio installation, whose containers must never be
-    listed (and therefore never swept) by this one.
-    """
-    result = await transport.run_command(
-        [
-            "docker",
-            "ps",
-            "--all",
-            "--filter",
-            f"label={MANAGED_LABEL}=true",
-            "--filter",
-            f"label={INSTANCE_LABEL}={backend_instance_id}",
-            "--format",
-            "{{json .}}",
-        ]
-    )
-    if not result.ok:
-        return []
-    containers = (_parse_managed_container_line(line) for line in result.stdout.splitlines() if line.strip())
-    return [container for container in containers if container is not None]
-
-
-async def list_managed_volumes(transport: SshTransport, backend_instance_id: str) -> list[ManagedVolume]:
-    """List data volumes this installation provably owns.
-
-    Filters on both `MANAGED_LABEL` and `INSTANCE_LABEL`, exactly like
-    `list_managed_containers`, so a volume left by a different Studio
-    installation on a shared host is never swept by this one.
-    """
-    result = await transport.run_command(
-        [
-            "docker",
-            "volume",
-            "ls",
-            "--filter",
-            f"label={MANAGED_LABEL}=true",
-            "--filter",
-            f"label={INSTANCE_LABEL}={backend_instance_id}",
-            "--format",
-            "{{json .}}",
-        ]
-    )
-    if not result.ok:
-        return []
-    volumes = (_parse_managed_volume_line(line) for line in result.stdout.splitlines() if line.strip())
-    return [volume for volume in volumes if volume is not None]

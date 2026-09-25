@@ -191,7 +191,23 @@ async def test_start_all_restores_configured_tunnels_best_effort() -> None:
     with patch(f"{MODULE}.sync_tunnel", new=AsyncMock()) as sync:
         await tunnel_manager.start_all([trainer])
 
-    sync.assert_awaited_once_with(trainer)
+    sync.assert_awaited_once_with(trainer, retry_on_failure=True)
+
+
+@pytest.mark.anyio
+async def test_start_all_keeps_offline_tunnel_for_reconnect() -> None:
+    trainer = _trainer()
+    tunnel = AsyncMock()
+    tunnel.local_port = 8001
+
+    with (
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=_active_availability()),
+        patch(f"{MODULE}.SshTunnel", return_value=tunnel),
+    ):
+        await tunnel_manager.start_all([trainer])
+
+    tunnel.open.assert_awaited_once_with(retry_on_failure=True)
+    assert tunnel_manager._tunnels[trainer.id] is tunnel
 
 
 @pytest.mark.anyio
@@ -205,7 +221,10 @@ async def test_start_all_continues_when_a_trainer_tunnel_fails() -> None:
     ) as sync:
         await tunnel_manager.start_all([first, second])
 
-    assert sync.await_args_list == [((first,),), ((second,),)]
+    assert sync.await_args_list == [
+        ((first,), {"retry_on_failure": True}),
+        ((second,), {"retry_on_failure": True}),
+    ]
 
 
 @pytest.mark.anyio

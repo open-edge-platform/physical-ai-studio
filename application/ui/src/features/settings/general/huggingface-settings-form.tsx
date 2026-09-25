@@ -51,8 +51,8 @@ export const HuggingFaceSettingsForm = ({ huggingface }: HuggingFaceSettingsForm
 
     const description =
         'Token used to authenticate downloads of pretrained training assets. Sent with every job - ' +
-        'local, direct-URL, and SSH-provisioned remote training - so this is the one place to configure ' +
-        'it; an SSH-provisioned trainer container never receives its own HF_TOKEN environment variable.';
+        'local and remote training (including managed SSH trainers). Studio sends it with each job; ' +
+        'managed trainer containers do not receive an HF_TOKEN environment variable.';
 
     return (
         <SettingsSection

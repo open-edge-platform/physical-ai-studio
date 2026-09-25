@@ -279,8 +279,8 @@ def test_submit_training_job_for_missing_project_returns_404(migrated_db: None) 
     assert response.status_code == 404, response.text
 
 
-def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
-    """POST /api/jobs/{id}:interrupt flips a running job to CANCELED.
+def test_interrupt_job_waits_for_worker_before_deletion(migrated_db: None) -> None:
+    """Stop signals the worker; Delete waits until the worker confirms cancellation.
 
     Overrides `get_scheduler` with a minimal stand-in instead of running the
     real `Scheduler` (which needs the FastAPI lifespan to populate
@@ -328,4 +328,17 @@ def test_interrupt_job_marks_job_canceled(migrated_db: None) -> None:
 
     response = client.get(f"/api/jobs/{job_id}")
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == JobStatus.CANCELED
+    assert response.json()["status"] == JobStatus.RUNNING
+    response = client.delete(f"/api/jobs/{job_id}")
+    assert response.status_code == 409, response.text
+
+    async def _worker_finishes_stop() -> None:
+        from db import get_async_db_session_ctx
+        from services.job_service import JobService
+
+        async with get_async_db_session_ctx() as session:
+            await JobService(session).update_job_status(UUID(job_id), status=JobStatus.CANCELED)
+
+    asyncio.run(_worker_finishes_stop())
+    response = client.delete(f"/api/jobs/{job_id}")
+    assert response.status_code == 200, response.text

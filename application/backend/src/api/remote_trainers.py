@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/remote-trainers", tags=["Remote trainers"])
 async def list_remote_trainers(
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
 ) -> list[RemoteTrainer]:
-    """Return the globally configured direct trainer endpoints."""
+    """Return configured remote trainers."""
     return await remote_trainer_service.list_remote_trainers()
 
 
@@ -24,7 +24,7 @@ async def create_remote_trainer(
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
     accepted_host_key_fingerprint: Annotated[str | None, Header()] = None,
 ) -> RemoteTrainer:
-    """Persist a direct trainer endpoint."""
+    """Persist a remote trainer endpoint."""
     return await remote_trainer_service.create_remote_trainer(config, accepted_host_key_fingerprint)
 
 
@@ -44,7 +44,7 @@ async def update_remote_trainer(
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
     accepted_host_key_fingerprint: Annotated[str | None, Header()] = None,
 ) -> RemoteTrainer:
-    """Update a configured direct trainer endpoint."""
+    """Update a configured remote trainer endpoint."""
     return await remote_trainer_service.update_remote_trainer(remote_trainer_id, update, accepted_host_key_fingerprint)
 
 
@@ -53,5 +53,5 @@ async def delete_remote_trainer(
     remote_trainer_id: UUID,
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
 ) -> None:
-    """Delete a configured endpoint without changing submitted jobs."""
+    """Delete a trainer with no queued or running managed SSH jobs."""
     await remote_trainer_service.delete_remote_trainer(remote_trainer_id)

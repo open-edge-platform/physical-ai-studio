@@ -8,7 +8,7 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 from schemas.hardware import DeviceInfo, StorageInfo
 from schemas.remote_server import SSH_HOST_ALIAS_PATTERN
 
-HealthStatus = Literal["healthy", "degraded", "unreachable"]
+HealthStatus = Literal["healthy", "degraded", "unreachable", "starting"]
 
 
 class RemoteTrainerConnectionMode(StrEnum):
@@ -34,16 +34,11 @@ class ManualSshConnection(BaseModel):
 
 
 class RemoteTrainerCreate(BaseModel):
-    """Configuration for a direct remote trainer endpoint.
+    """Configuration for a direct or managed SSH remote trainer.
 
-    ``ssh_host_alias`` is optional and, like `RemoteServerCreate`, names a
-    ``Host`` entry in the user's own ``~/.ssh/config`` rather than storing any
-    key, password, or passphrase - Studio never persists SSH credentials for a
-    direct trainer any more than it does for an SSH-provisioned one. When set,
-    Studio keeps a standing SSH local-forward tunnel open for this trainer
-    (``ssh_local_port`` on the studio host -> ``ssh_remote_port`` on the SSH
-    host's own loopback interface), so ``url`` should point at that local
-    port (typically ``http://127.0.0.1:<ssh_local_port>``).
+    SSH aliases refer to ``Host`` entries in the user's ``~/.ssh/config``.
+    Studio starts the managed container and forwards its host loopback port
+    through a standing tunnel; the local URL is derived from ``ssh_local_port``.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -104,7 +99,7 @@ class RemoteTrainerCreate(BaseModel):
 
 
 class RemoteTrainerUpdate(BaseModel):
-    """Mutable fields for a direct remote trainer endpoint.
+    """Mutable fields for a remote trainer endpoint.
 
     Cross-field tunnel consistency is only enforced on create: an update that
     only touches ``name`` must not be rejected for fields it never mentions.
@@ -120,7 +115,7 @@ class RemoteTrainerUpdate(BaseModel):
 
 
 class RemoteTrainer(RemoteTrainerCreate):
-    """Persisted direct remote trainer endpoint."""
+    """Persisted remote trainer endpoint."""
 
     id: UUID
     url: AnyHttpUrl  # pyrefly: ignore[bad-override-mutable-attribute]

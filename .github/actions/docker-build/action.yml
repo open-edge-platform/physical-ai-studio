@@ -34,9 +34,12 @@ inputs:
     required: false
     default: "true"
   enable-compile-model:
-    description: "Use the image target containing CUDA compiler files"
+    description: >
+      Use the image target containing CUDA compiler files (true) instead of
+      the redistributable target (false). Callers building RC/release images
+      must pass "false" explicitly for CUDA license compliance.
     required: false
-    default: "false"
+    default: "true"
 
 outputs:
   digest:

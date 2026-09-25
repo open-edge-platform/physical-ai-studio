@@ -438,7 +438,7 @@ async def test_nonzero_exit_status_is_not_ok(settings: Settings) -> None:
 
 
 async def test_process_error_becomes_a_result_not_an_exception(settings: Settings) -> None:
-    # One failing probe must never abort a whole preflight tier.
+    # A failed remote command returns a result for the caller to handle.
     connection = MagicMock()
     connection.run = AsyncMock(side_effect=_process_error(exit_status=2, stderr="denied"))
     transport = _connected_transport(settings, connection)

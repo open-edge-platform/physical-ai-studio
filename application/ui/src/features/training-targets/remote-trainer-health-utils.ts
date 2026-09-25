@@ -9,12 +9,14 @@ export type CheckState = 'positive' | 'yellow' | 'negative' | 'neutral';
  */
 export const healthLabel = (health?: SchemaRemoteTrainerHealth, isChecking = false) => {
     if (health === undefined) return isChecking ? 'Checking…' : 'Not checked';
+    if (health.status === 'starting') return 'Starting…';
     if (health.reason_code === 'check_failed') return 'Check failed';
     return health.status === 'healthy' ? 'Healthy' : health.status === 'degraded' ? 'Degraded' : 'Unreachable';
 };
 
 export const healthVariant = (health?: SchemaRemoteTrainerHealth, _isChecking = false) => {
     if (health === undefined) return 'neutral' as const;
+    if (health.status === 'starting') return 'neutral' as const;
     return health.status === 'healthy'
         ? ('positive' as const)
         : health.status === 'degraded'
@@ -24,6 +26,9 @@ export const healthVariant = (health?: SchemaRemoteTrainerHealth, _isChecking = 
 
 export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
     if (health === undefined) return 'Connection status has not been checked.';
+    if (health.status === 'starting') {
+        return health.reason_code ?? 'The trainer container is still starting.';
+    }
     if (health.status === 'healthy') return 'The trainer health endpoint and device report are available.';
     switch (health.reason_code) {
         case 'timeout':
@@ -36,6 +41,12 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
             return 'The trainer health endpoint did not report a healthy status.';
         case 'check_failed':
             return 'Studio could not complete the health check. Try again.';
+        case 'docker_unavailable':
+            return 'Studio-managed training requires Docker to be installed and running on the SSH host.';
+        case 'accelerator_unavailable':
+            return 'Studio-managed training requires a working CUDA or XPU driver on the SSH host.';
+        case 'container_accelerator_unavailable':
+            return 'Studio started the trainer, but its container cannot access a CUDA or XPU device.';
         default:
             return 'The trainer returned an invalid device report.';
     }
@@ -55,12 +66,14 @@ export const formatStorage = (storage: SchemaRemoteTrainerHealth['storage']) =>
     storage ? `${formatBytes(storage.free_bytes)} free of ${formatBytes(storage.total_bytes)}` : undefined;
 
 export const getCapabilityState = (health: SchemaRemoteTrainerHealth | undefined, isChecking: boolean): CheckState => {
-    if (isChecking || health === undefined || health.status === 'unreachable') return 'neutral';
+    if (isChecking || health === undefined || health.status === 'unreachable' || health.status === 'starting')
+        return 'neutral';
     return (health.devices?.length ?? 0) > 0 ? 'positive' : 'yellow';
 };
 
 export const getStorageState = (health: SchemaRemoteTrainerHealth | undefined, isChecking: boolean): CheckState => {
-    if (isChecking || health === undefined || health.status === 'unreachable') return 'neutral';
+    if (isChecking || health === undefined || health.status === 'unreachable' || health.status === 'starting')
+        return 'neutral';
     return health.storage ? 'positive' : 'yellow';
 };
 
@@ -70,12 +83,13 @@ export const trainerHealthDetail = (
     deviceReportIsInvalid: boolean
 ) => {
     if (isChecking) return 'connection check in progress';
+    if (health?.status === 'starting') return healthDescription(health);
     if (health?.status === 'healthy' || deviceReportIsInvalid) {
         return health?.latency_ms != null
             ? `responded in ${health.latency_ms} ms and is ready for training requests`
             : 'ready for training requests';
     }
-    if (health?.status === 'degraded') return 'responded with a degraded status';
+    if (health?.status === 'degraded') return healthDescription(health);
     return healthDescription(health);
 };
 
@@ -84,12 +98,14 @@ export const capabilityDetail = (health: SchemaRemoteTrainerHealth | undefined, 
     if (devices.length > 0) {
         return devices.map((device) => `${device.type.toUpperCase()} · ${device.name}`).join(', ');
     }
+    if (health?.status === 'starting') return 'awaiting device report';
     return health === undefined || isChecking ? 'awaiting device report' : 'no compute device reported';
 };
 
-export const storageDetail = (health: SchemaRemoteTrainerHealth | undefined, isChecking: boolean) =>
-    formatStorage(health?.storage) ??
-    (health === undefined || isChecking ? 'awaiting storage report' : 'no storage reported');
+export const storageDetail = (health: SchemaRemoteTrainerHealth | undefined, isChecking: boolean) => {
+    const isAwaiting = health === undefined || isChecking || health.status === 'starting';
+    return formatStorage(health?.storage) ?? (isAwaiting ? 'awaiting storage report' : 'no storage reported');
+};
 
 export const getDisplayHealth = (
     remoteTrainerId: string,

@@ -167,6 +167,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           use-cache: "false" # Disable cache for RC builds (security and reproducibility)
+          # RC/release images must always be the redistributable target for CUDA license compliance.
+          enable-compile-model: "false"
 
       - name: Sign Docker image
         uses: open-edge-platform/geti-ci/actions/sign-image@3690cbcc173cf90e0e0999b4822c3f8ebab9c137 # sign-image/v0.1.2

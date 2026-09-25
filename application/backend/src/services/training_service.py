@@ -9,7 +9,7 @@ from loguru import logger
 
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import RemoteTrainJobPayload, SshTrainJobPayload, TrainingTarget
+from schemas.job import RemoteTrainJobPayload, TrainingTarget
 from services.event_processor import EventType
 from services.job_service import JobService
 from workers.base import BaseThreadWorker
@@ -76,8 +76,8 @@ class TrainingService:
         """
         Reconcile RUNNING training jobs left behind by a previous process.
 
-        Called on training-worker setup and teardown. A remote or SSH-provisioned
-        trainer keeps running independently of the studio, so a RUNNING job that
+        Called on training-worker setup and teardown. Remote trainers run
+        independently of Studio, so a RUNNING job that
         already recorded its ``remote_job_id`` is requeued (back to PENDING) to
         reattach and mirror progress on the next pickup -- this is what lets a run
         survive the studio restarting (e.g. the laptop was closed overnight). Any
@@ -85,14 +85,7 @@ class TrainingService:
 
         Args:
             job_service: Used to list and update RUNNING training jobs.
-            exclude_job_ids: Job ids to skip entirely, because another
-                recovery pass (e.g. `services.ssh.recovery.recover_ssh_jobs`)
-                already rendered an explicit verdict for them. Without this,
-                an SSH job that pass just confirmed healthy but that hasn't
-                yet persisted its own ``remote_job_id`` (a crash between
-                provisioning and the trainer job being submitted) would be
-                re-judged here using only ``remote_job_id`` and incorrectly
-                failed.
+            exclude_job_ids: Job ids already handled by another recovery pass.
         """
         excluded = frozenset(exclude_job_ids) if exclude_job_ids is not None else frozenset()
         query = {"status": JobStatus.RUNNING, "type": JobType.TRAINING}
@@ -122,18 +115,18 @@ class TrainingService:
 
     # Targets whose trainer keeps running independently of the studio process,
     # and so can be reattached to after a restart via their remote_job_id.
-    _REATTACHABLE_TARGETS = (TrainingTarget.REMOTE, TrainingTarget.SSH)
+    _REATTACHABLE_TARGETS = (TrainingTarget.REMOTE,)
 
     @staticmethod
     def _reattachable_remote_job_id(job: object) -> UUID | None:
         """Return the persisted remote job id for a training job, if any.
 
-        Only `RemoteTrainJobPayload` and `SshTrainJobPayload` carry a
-        reattachable `remote_job_id`; class identity already encodes the
-        target, so no separate read of `training_target` is needed here.
+        Only `RemoteTrainJobPayload` carries a reattachable `remote_job_id`;
+        class identity already encodes the target, so no separate read of
+        `training_target` is needed here.
         """
         payload = getattr(job, "payload", None)
-        if isinstance(payload, RemoteTrainJobPayload | SshTrainJobPayload):
+        if isinstance(payload, RemoteTrainJobPayload):
             return payload.remote_job_id
         if isinstance(payload, dict):
             remote_job_id = payload.get("remote_job_id")

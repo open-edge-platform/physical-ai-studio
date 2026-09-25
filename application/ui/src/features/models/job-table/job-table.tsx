@@ -30,20 +30,9 @@ import { JobRowContent } from './job-row-content';
 
 import classes from './job-table.module.css';
 
-/** Small pill naming the remote trainer or SSH server a job runs on. Hidden entirely for local jobs. */
+/** Small pill naming the remote trainer a job runs on. Hidden entirely for local jobs. */
 const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
-    const { data: remoteServers = [] } = $api.useQuery('get', '/api/remote-servers');
-
-    if (payload.training_target === 'ssh') {
-        const remoteServer = remoteServers.find((server) => server.id === payload.remote_server_id);
-        // The server may have been deleted since this job ran; fall back to the
-        // name pinned onto the payload at submission time (see
-        // `SshTrainingTargetHandler.prepare`) so a deleted target doesn't just
-        // read as "unknown" forever.
-        const text = `SSH · ${remoteServer?.name ?? payload.remote_server_name ?? 'unknown'}`;
-        return <SingleBadge color='var(--spectrum-global-color-purple-600)' text={text} title={text} preserveCase />;
-    }
 
     if (payload.training_target !== 'remote') {
         return null;
@@ -57,20 +46,31 @@ const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload']
 };
 
 const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
+    const disconnected =
+        job.payload.training_target === 'remote' && job.message === 'Trainer unreachable; waiting to reconnect';
     if (job.status === 'running') {
         return (
             <Flex direction={'column'} gap={'size-50'}>
                 <Flex gap={'size-100'} alignItems={'center'} wrap>
                     <Text UNSAFE_style={{ fontWeight: 500 }}>{job.payload.model_name}</Text>
-                    <SplitBadge first={job.status} second={job.message} />
+                    {disconnected ? (
+                        <SingleBadge color='var(--spectrum-global-color-orange-600)' text='Connection lost' />
+                    ) : (
+                        <SplitBadge first={job.status} second={job.message} />
+                    )}
                     <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
                     <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
                     <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time ? (
                     <Text UNSAFE_className={classes.rowInfo}>
-                        Started: {new Date(job.start_time).toLocaleString()} | Elapsed:{' '}
-                        <ElapsedDuration date={job.start_time} />
+                        Started: {new Date(job.start_time).toLocaleString()}
+                        {!disconnected && (
+                            <>
+                                {' | Elapsed: '}
+                                <ElapsedDuration date={job.start_time} />
+                            </>
+                        )}
                     </Text>
                 ) : (
                     <></>

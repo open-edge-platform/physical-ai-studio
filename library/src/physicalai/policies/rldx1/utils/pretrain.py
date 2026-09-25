@@ -21,6 +21,9 @@ from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
+from physicalai.data.observation import Feature, FeatureType
+from physicalai.policies.rldx1.constants import DEFAULT_INPUT_FEATURE_SHAPES_BY_MODEL_ID
+
 logger = logging.getLogger(__name__)
 
 # Only these files are pulled from a remote checkpoint repo (lib.security rule 8:
@@ -123,3 +126,13 @@ def extract_camera_names(
         return []
 
     return list(video_config.get("modality_keys", []))
+
+
+def get_default_input_features_for_model_id(model_id: str | None) -> dict[str, Feature] | None:
+    """Return built-in visual feature defaults for known pretrained model IDs."""
+    if model_id is None:
+        return None
+    specs = DEFAULT_INPUT_FEATURE_SHAPES_BY_MODEL_ID.get(model_id)
+    if specs is None:
+        return None
+    return {name: Feature(ftype=FeatureType.VISUAL, shape=shape, name=name) for name, shape in specs.items()}

@@ -19,6 +19,7 @@ describe('RemoteTrainerForm', () => {
 
         renderForm();
         await user.click(screen.getByRole('tab', { name: /ssh tunnel/i }));
+        await user.click(screen.getByRole('tab', { name: /connection details/i }));
 
         expect(screen.getByText('Connect through SSH when the trainer is not directly reachable.')).toBeInTheDocument();
         expect(screen.getByRole('tab', { name: /connection details/i })).toHaveAttribute('aria-selected', 'true');
@@ -59,6 +60,7 @@ describe('RemoteTrainerForm', () => {
 
         await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'managed-trainer');
         await user.click(screen.getByRole('tab', { name: /ssh tunnel/i }));
+        await user.click(screen.getByRole('tab', { name: /connection details/i }));
         await user.type(screen.getByRole('textbox', { name: /^Host/ }), 'gpu.example.test');
         await user.clear(screen.getByRole('textbox', { name: /^Port/ }));
         await user.type(screen.getByRole('textbox', { name: /^Port/ }), '2222');
@@ -114,6 +116,23 @@ describe('RemoteTrainerForm', () => {
         expect(screen.getByRole('textbox', { name: /key path/i })).toHaveValue('~/.ssh/trainer');
     });
 
+    it('does not offer SSH actions for an existing SSH trainer when the feature is unavailable', async () => {
+        renderForm({
+            sshAvailable: false,
+            remoteTrainer: getMockedRemoteTrainer({
+                connection_mode: 'ssh',
+                ssh_host_alias: 'gpu-box',
+                ssh_remote_port: 8001,
+                ssh_local_port: 8001,
+            }),
+        });
+
+        expect(screen.getByRole('tab', { name: 'SSH tunnel' })).toHaveAttribute('aria-disabled', 'true');
+        expect(screen.getByText('SSH is unavailable in this environment.')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /add ssh connection/i })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+    });
+
     it('creates a remote trainer with an SSH tunnel picked from the SSH config', async () => {
         const user = userEvent.setup();
         let created: Record<string, unknown> | undefined;
@@ -156,6 +175,7 @@ describe('RemoteTrainerForm', () => {
 
         renderForm();
         await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'managed-trainer');
+        await user.click(screen.getByRole('tab', { name: 'Trainer URL' }));
         await user.type(screen.getByRole('textbox', { name: /trainer url/i }), 'http://trainer.example.test/api');
 
         expect(

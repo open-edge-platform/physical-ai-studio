@@ -10,11 +10,6 @@ import { TrainingTargetsPage } from './training-targets-page';
 const REMOTE_TRAINERS_PATH = '/api/remote-trainers';
 const REMOTE_TRAINER_PATH = '/api/remote-trainers/{remote_trainer_id}';
 const REMOTE_TRAINER_HEALTH_PATH = '/api/remote-trainers/{remote_trainer_id}/health';
-const REMOTE_SERVERS_PATH = '/api/remote-servers';
-const REMOTE_SERVER_PATH = '/api/remote-servers/{remote_server_id}';
-const REMOTE_SERVER_ALIASES_PATH = '/api/remote-servers/aliases';
-const REMOTE_SERVER_STATUS_PATH = '/api/remote-servers/{remote_server_id}/status';
-const DEVICE_TYPE_DETECTION_PATH = '/api/remote-servers/aliases/{alias}/device-type';
 
 const remoteTrainer = {
     id: 'b8b28d4f-e78f-48ad-afb8-03d060178a3c',
@@ -36,37 +31,11 @@ const healthyTrainer = {
     reason_code: null,
 };
 
-const remoteServer = {
-    id: 'f1a2b3c4-d5e6-47a8-99b0-1234567890ab',
-    name: 'lambda-a100',
-    ssh_host_alias: 'gpu-01',
-    device_type: 'cuda' as const,
-    last_check_status: 'unknown' as const,
-};
-
-const aliasOption = { alias: 'gpu-01', hostname: 'gpu-01.lab.internal', port: 22, user: 'ubuntu' };
-
-const healthyServerStatus = {
-    remote_server_id: remoteServer.id,
-    status: 'healthy' as const,
-    device_type: 'cuda',
-    checks: [],
-    checked_at: '2026-08-07T12:00:00Z',
-    waiting_for_gpu: false,
-};
-
 describe('TrainingTargetsPage', () => {
     beforeEach(() => {
         server.use(
             http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)),
-            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json([])),
-            http.get(REMOTE_SERVER_ALIASES_PATH, () => HttpResponse.json([aliasOption])),
-            http.get(REMOTE_SERVER_STATUS_PATH, () => HttpResponse.json(healthyServerStatus)),
-            // No CUDA/XPU signal by default, so these tests keep exercising the
-            // manual "Device type" pick rather than depending on autodetection.
-            http.get(DEVICE_TYPE_DETECTION_PATH, () =>
-                HttpResponse.json({ device_type: null, method: null, reason_code: 'no_signal' })
-            )
+            http.get('/api/remote-servers/feature-status', () => HttpResponse.json({ network_exposed: false }))
         );
     });
 
@@ -80,107 +49,66 @@ describe('TrainingTargetsPage', () => {
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
     });
 
-    it('shows configured SSH servers alongside direct-URL trainers', async () => {
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
-            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json([remoteServer]))
-        );
-
-        render(<TrainingTargetsPage />);
-
-        expect(await screen.findByText('managed-trainer')).toBeInTheDocument();
-        expect(await screen.findByText('lambda-a100')).toBeInTheDocument();
-    });
-
-    it('shows an empty state when no training targets are configured', async () => {
+    it('opens the remote trainer form without a target type switch', async () => {
+        const user = userEvent.setup();
         server.use(http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])));
 
         render(<TrainingTargetsPage />);
 
-        expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
-    });
-
-    it('degrades gracefully when SSH-provisioned targets are unavailable in this environment', async () => {
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
-            http.get(REMOTE_SERVERS_PATH, () =>
-                // The backend's fail-closed 503 isn't a documented response for this
-                // endpoint, so openapi-msw can't type its body; the runtime shape
-                // (`error_code`/`message`/`http_status`) is what the app actually
-                // returns and is all `isSshFeatureUnavailableError` cares about.
-                HttpResponse.json(
-                    {
-                        error_code: 'ssh_feature_unavailable',
-                        message: 'The SSH remote-trainer feature is not available.',
-                        http_status: 503,
-                    } as never,
-                    { status: 503 }
-                )
-            )
-        );
-
-        render(<TrainingTargetsPage />);
-
-        // The page renders instead of crashing to the nearest error boundary,
-        // still showing the direct-URL trainer that loaded successfully.
-        expect(await screen.findByText('managed-trainer')).toBeInTheDocument();
-        expect(
-            await screen.findByText(/SSH-provisioned training targets are not available in this environment/i)
-        ).toBeInTheDocument();
-    });
-
-    it('surfaces an unexpected remote-servers failure instead of silently showing an empty SSH list', async () => {
-        const user = userEvent.setup();
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([remoteTrainer])),
-            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json({ detail: [] } as never, { status: 500 }))
-        );
-
-        render(<TrainingTargetsPage />);
-
-        // The direct-URL trainer still renders, but the page says the SSH list
-        // may be incomplete rather than quietly showing none configured.
-        expect(await screen.findByText('managed-trainer')).toBeInTheDocument();
-        expect(await screen.findByText(/Couldn.t load SSH-provisioned training targets/i)).toBeInTheDocument();
-        expect(
-            screen.queryByText(/SSH-provisioned training targets are not available in this environment/i)
-        ).not.toBeInTheDocument();
-
-        // An unverifiable SSH list also means the create dialog can't safely
-        // offer the SSH target type, same as the feature-disabled case.
         await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        const dialog = await screen.findByRole('dialog');
+        const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
         expect(within(dialog).queryByText('Target type')).not.toBeInTheDocument();
+        expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toBeInTheDocument();
     });
 
-    it('hides the SSH target-type toggle in the create dialog when SSH is unavailable', async () => {
+    it('disables SSH and defaults to a direct URL when SSH is unavailable', async () => {
+        const user = userEvent.setup();
+        let created: Record<string, unknown> | undefined;
+        let aliasRequests = 0;
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
+            http.get('/api/remote-servers/feature-status', () => HttpResponse.json({ network_exposed: true })),
+            http.get('/api/remote-servers/aliases', () => {
+                aliasRequests++;
+                return HttpResponse.json([], { status: 503 });
+            }),
+            http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
+                created = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json(remoteTrainer, { status: 201 });
+            })
+        );
+
+        render(<TrainingTargetsPage />);
+
+        expect(await screen.findByText(/SSH training targets are unavailable/i)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /new training target/i }));
+        const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
+        expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toHaveAttribute('aria-disabled', 'true');
+        expect(within(dialog).getByRole('tab', { name: 'Trainer URL' })).toHaveAttribute('aria-selected', 'true');
+        expect(within(dialog).queryByRole('button', { name: /add ssh connection/i })).not.toBeInTheDocument();
+        await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'direct-trainer');
+        await user.type(within(dialog).getByRole('textbox', { name: /trainer url/i }), 'https://trainer.example.test');
+        await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
+        await waitFor(() => expect(created).toBeDefined());
+        expect(created).toMatchObject({ connection_mode: 'direct', ssh_connection: null });
+        expect(aliasRequests).toBe(0);
+    });
+
+    it('fails closed when SSH availability cannot be checked', async () => {
         const user = userEvent.setup();
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
-            http.get(REMOTE_SERVERS_PATH, () =>
-                HttpResponse.json(
-                    {
-                        error_code: 'ssh_feature_unavailable',
-                        message: 'The SSH remote-trainer feature is not available.',
-                        http_status: 503,
-                    } as never,
-                    { status: 503 }
-                )
+            http.get('/api/remote-servers/feature-status', () =>
+                HttpResponse.json({ network_exposed: true }, { status: 503 })
             )
         );
 
         render(<TrainingTargetsPage />);
 
         await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        const dialog = await screen.findByRole('dialog');
-
-        // No choice to make when SSH isn't available in this environment, so
-        // the toggle and its explanatory hint are omitted entirely, and the
-        // form goes straight to the direct-URL trainer fields.
-        expect(within(dialog).queryByText('Target type')).not.toBeInTheDocument();
-        expect(within(dialog).queryByRole('button', { name: 'SSH provisioned' })).not.toBeInTheDocument();
-        expect(within(dialog).getByRole('textbox', { name: /trainer url/i })).toBeInTheDocument();
-        expect(within(dialog).getByRole('button', { name: 'Add trainer' })).toBeInTheDocument();
+        const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
+        expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toHaveAttribute('aria-disabled', 'true');
+        expect(within(dialog).getByRole('tab', { name: 'Trainer URL' })).toHaveAttribute('aria-selected', 'true');
     });
 
     it('creates a configured remote trainer URL', async () => {
@@ -206,44 +134,15 @@ describe('TrainingTargetsPage', () => {
 
         render(<TrainingTargetsPage />);
 
-        expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
         await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        let dialog = await screen.findByRole('dialog');
+        const dialog = await screen.findByRole('dialog');
         await user.type(within(dialog).getByLabelText(/name/i), remoteTrainer.name);
-        await user.click(within(dialog).getByRole('button', { name: 'Direct trainer URL' }));
-        // Switching the type switch swaps in `RemoteTrainerForm`, a distinct
-        // dialog element, so the earlier `dialog` handle is now stale.
-        dialog = await screen.findByRole('dialog');
+        await user.click(within(dialog).getByRole('tab', { name: 'Trainer URL' }));
         await user.type(within(dialog).getByRole('textbox', { name: /trainer url/i }), remoteTrainer.url);
         await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
 
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    });
-
-    it('edits a configured remote trainer', async () => {
-        const user = userEvent.setup();
-        let trainer = remoteTrainer;
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([trainer])),
-            http.patch(REMOTE_TRAINER_PATH, async ({ request }) => {
-                const update = (await request.json()) as Partial<typeof remoteTrainer>;
-                trainer = { ...trainer, ...update };
-                return HttpResponse.json(trainer);
-            })
-        );
-
-        render(<TrainingTargetsPage />);
-
-        await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
-        await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
-        const dialog = await screen.findByRole('dialog');
-        const nameInput = dialog.querySelectorAll('input')[0];
-        await user.clear(nameInput);
-        await user.type(nameInput, 'renamed-trainer');
-        await user.click(screen.getByRole('button', { name: 'Save changes' }));
-
-        expect(await screen.findByRole('button', { name: /show details for renamed-trainer/i })).toBeInTheDocument();
     });
 
     it('deletes a configured remote trainer', async () => {
@@ -264,128 +163,5 @@ describe('TrainingTargetsPage', () => {
         await user.click(await screen.findByRole('button', { name: 'Delete' }));
 
         expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
-        expect(screen.queryByText(remoteTrainer.name)).not.toBeInTheDocument();
-    });
-
-    it('auto-detects the device type once an SSH host is picked', async () => {
-        const user = userEvent.setup();
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
-            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json([])),
-            http.get(DEVICE_TYPE_DETECTION_PATH, () =>
-                HttpResponse.json({ device_type: 'xpu', method: 'xpu-smi', reason_code: null })
-            )
-        );
-
-        render(<TrainingTargetsPage />);
-
-        await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        const dialog = await screen.findByRole('dialog');
-        await user.click(within(dialog).getByRole('button', { name: /ssh host/i }));
-        await user.click(await screen.findByRole('option', { name: aliasOption.alias }));
-
-        // Detection fills the field without the user touching it.
-        const deviceTypeButton = await within(dialog).findByRole('button', { name: /device type/i });
-        expect(deviceTypeButton).toHaveTextContent('XPU');
-    });
-
-    it('creates an SSH server training target and prompts to verify the image', async () => {
-        const user = userEvent.setup();
-        let servers: (typeof remoteServer)[] = [];
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
-            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json(servers)),
-            http.post(REMOTE_SERVERS_PATH, async ({ request }) => {
-                const body = (await request.json()) as Pick<
-                    typeof remoteServer,
-                    'name' | 'ssh_host_alias' | 'device_type'
-                >;
-                servers = [{ ...body, id: remoteServer.id, last_check_status: 'unknown' }];
-                return HttpResponse.json(servers[0], { status: 201 });
-            })
-        );
-
-        render(<TrainingTargetsPage />);
-
-        expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
-        await user.click(await screen.findByRole('button', { name: /new training target/i }));
-
-        const dialog = await screen.findByRole('dialog');
-        await user.type(within(dialog).getByLabelText(/name/i), remoteServer.name);
-        await user.click(within(dialog).getByRole('button', { name: /ssh host/i }));
-        await user.click(await screen.findByRole('option', { name: aliasOption.alias }));
-        await user.click(within(dialog).getByRole('button', { name: /device type/i }));
-        await user.click(await screen.findByRole('option', { name: 'CUDA' }));
-        await user.click(within(dialog).getByRole('button', { name: 'Verify & save' }));
-
-        // Rather than closing outright, a freshly created server prompts the
-        // user to pull & verify the trainer image right away.
-        expect(await screen.findByRole('heading', { name: /pull.*verify trainer image/i })).toBeInTheDocument();
-        await user.click(screen.getByRole('button', { name: 'Skip for now' }));
-
-        expect(await screen.findByRole('button', { name: /show details for lambda-a100/i })).toBeInTheDocument();
-        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    });
-
-    it('runs pull & verify from the post-save prompt when accepted', async () => {
-        const user = userEvent.setup();
-        let servers: (typeof remoteServer)[] = [];
-        const checkResult = {
-            remote_server_id: remoteServer.id,
-            tiers_run: [2 as const],
-            checks: [],
-            checked_at: '2026-08-07T12:05:00Z',
-        };
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
-            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json(servers)),
-            http.post(REMOTE_SERVERS_PATH, async ({ request }) => {
-                const body = (await request.json()) as Pick<
-                    typeof remoteServer,
-                    'name' | 'ssh_host_alias' | 'device_type'
-                >;
-                servers = [{ ...body, id: remoteServer.id, last_check_status: 'unknown' }];
-                return HttpResponse.json(servers[0], { status: 201 });
-            }),
-            http.post('/api/remote-servers/{remote_server_id}/check', () => HttpResponse.json(checkResult))
-        );
-
-        render(<TrainingTargetsPage />);
-
-        await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        const dialog = await screen.findByRole('dialog');
-        await user.type(within(dialog).getByLabelText(/name/i), remoteServer.name);
-        await user.click(within(dialog).getByRole('button', { name: /ssh host/i }));
-        await user.click(await screen.findByRole('option', { name: aliasOption.alias }));
-        await user.click(within(dialog).getByRole('button', { name: /device type/i }));
-        await user.click(await screen.findByRole('option', { name: 'CUDA' }));
-        await user.click(within(dialog).getByRole('button', { name: 'Verify & save' }));
-
-        await user.click(await screen.findByRole('button', { name: 'Pull & verify image' }));
-
-        expect(await screen.findByRole('button', { name: /show details for lambda-a100/i })).toBeInTheDocument();
-        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    });
-
-    it('deletes a configured SSH server', async () => {
-        const user = userEvent.setup();
-        let servers: (typeof remoteServer)[] = [remoteServer];
-        server.use(
-            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])),
-            http.get(REMOTE_SERVERS_PATH, () => HttpResponse.json(servers)),
-            http.delete(REMOTE_SERVER_PATH, () => {
-                servers = [];
-                return new HttpResponse(null, { status: 204 });
-            })
-        );
-
-        render(<TrainingTargetsPage />);
-
-        await user.click(await screen.findByRole('button', { name: `More actions ${remoteServer.name}` }));
-        await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
-        await user.click(await screen.findByRole('button', { name: 'Delete' }));
-
-        expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
-        expect(screen.queryByText(remoteServer.name)).not.toBeInTheDocument();
     });
 });
