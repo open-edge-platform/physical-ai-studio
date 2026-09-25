@@ -39,7 +39,8 @@ PhysicalAI Library is a Python SDK for training, evaluating, and deploying Visio
 | **ACT**     | Action Chunking with Transformers                           | [Zhao et al. 2023](https://arxiv.org/abs/2304.13705)              |
 | **SmolVLA** | Lightweight vision-language-action model                    | [Cadene et al. 2024](https://huggingface.co/lerobot/smolvla_base) |
 | **Pi0.5**   | Vision-Language-Action Model with Open-World Generalization | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)             |
-| **RLDX-1**  | RLWRLD multi-embodiment flow-matching VLA                   | [RLDX-1](https://huggingface.co/RLWRLD/RLDX-1-PT)                 |
+| **RLDX-1**  | RLWRLD multi-embodiment flow-matching VLA                   | [RLWRLD RLDX-1](https://huggingface.co/RLWRLD/RLDX-1-PT)          |
+| [**Cosmos3**](docs/explanation/policy/cosmos3.md) | World Action Model policy                  | [NVIDIA et al. 2026](https://arxiv.org/abs/2606.02800)             |
 
 # Installation
 

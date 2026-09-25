@@ -81,6 +81,7 @@ Both `Policy` and `InferenceModel` satisfy this protocol, enabling:
 | **Pi0.5**   | Physical Intelligence flow-matching VLA | Native implementation |
 | **RLDX-1**  | RLWRLD multi-embodiment VLA             | Native implementation |
 | **SmolVLA** | Small Vision-Language-Action            | Native + LeRobot      |
+| **Cosmos3** | World Action Model policy               | [cosmos3.md](./cosmos3.md) |
 
 LeRobot wrappers are documented separately in [`lerobot.md`](./lerobot.md).
 

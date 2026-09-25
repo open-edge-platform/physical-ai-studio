@@ -1,0 +1,67 @@
+# =============================================================================
+# NVIDIA Cosmos 3 Policy Training Configuration - PushT
+# Post-training with rectified flow matching (PEFT LoRA default)
+# =============================================================================
+#
+# Default configuration fine-tunes Cosmos3-Edge with LoRA rank 32 on attention
+# and a freshly initialized domain action head for PushT (identity action space).
+#
+# Supported accelerators: CUDA (gpu), Intel XPU (xpu), CPU.
+#
+# Usage:
+#   physicalai fit --config configs/physicalai/cosmos3/pusht/default.yaml
+#
+# Intel XPU example:
+#   physicalai fit --config configs/physicalai/cosmos3/pusht/default.yaml \
+#       --trainer.accelerator xpu \
+#       --trainer.strategy xpu_single
+#
+# Full fine-tuning example:
+#   physicalai fit --config configs/physicalai/cosmos3/pusht/default.yaml \
+#       --model.mode full \
+#       --model.head_lr_mult 10.0
+# =============================================================================
+
+model:
+  class_path: physicalai.policies.Cosmos3
+  init_args:
+    pretrained_model_name_or_path: "nvidia/Cosmos3-Edge"
+    mode: "peft"
+    paradigm: "policy"
+    lora_rank: 32
+    lora_alpha: 32
+    lora_dropout: 0.05
+    lora_use_dora: false
+    head_lr_mult: 2.0
+    action_weight: 10.0
+    chunk_size: 32
+    n_action_steps: 32
+    resolution_tier: 256
+    fps: 10
+    gradient_checkpointing: true
+    embodiment: "pusht"
+    prompt: ""
+    dtype: "bfloat16"
+    optimizer_lr: 1.0e-4
+    optimizer_grad_clip_norm: 1.0
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: "lerobot/pusht"
+    train_batch_size: 1
+    data_format: "physicalai"
+    video_backend: "pyav"
+    val_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+      init_args:
+        obs_type: "pixels_agent_pos"
+
+trainer:
+  max_epochs: 10
+  accumulate_grad_batches: 8
+  gradient_clip_val: 1.0
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  log_every_n_steps: 10

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch
 from lightning_utilities import module_available
 
 from physicalai.data.dataset import Dataset
@@ -19,12 +20,81 @@ if TYPE_CHECKING:
     from pathlib import Path
     from typing import Any
 
+    from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
+
     from physicalai.data import Observation
 
 if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 else:
     LeRobotDataset = None
+
+# Number of dimensions of a single image feature (height, width, channel).
+_IMAGE_NDIM = 3
+
+
+def _concat_columns(item: dict, columns: list[str], target_key: str, drop_prefix: str) -> dict:
+    """Return a copy of `item` with `columns` concatenated (last dim) into a single `target_key` tensor.
+
+    All keys starting with `drop_prefix` (the original split sub-columns) are removed, so downstream
+    conversion sees exactly one combined column instead of a dict of sub-columns.
+
+    Raises:
+        KeyError: If any requested column is missing from `item`.
+    """
+    missing = [col for col in columns if col not in item]
+    if missing:
+        msg = f"Cannot combine into '{target_key}': missing column(s) {missing}. Available keys: {sorted(item)}"
+        raise KeyError(msg)
+    tensors = [torch.as_tensor(item[col]) for col in columns]
+    max_dim = max(t.dim() for t in tensors)
+    expanded = []
+    for t in tensors:
+        while t.dim() < max_dim:
+            t = t.unsqueeze(-1)
+        expanded.append(t)
+    combined = torch.cat(expanded, dim=-1)
+    result = {key: value for key, value in item.items() if not key.startswith(drop_prefix)}
+    result[target_key] = combined
+    return result
+
+
+def _combined_feature(
+    columns: list[str],
+    dataset_meta: LeRobotDatasetMetadata,
+    ftype: FeatureType,
+    name: str,
+) -> Feature:
+    """Return a single `Feature` describing the concatenation of `columns`.
+
+    Per-column normalization stats are concatenated in the same order as `columns`; ``q01``/``q99``
+    are only kept when present on every column. The combined shape is the sum of the (1-D) column widths.
+    """
+    stat_keys = ("mean", "std", "min", "max", "q01", "q99")
+    accum: dict[str, list[float]] = {key: [] for key in stat_keys}
+    present: dict[str, bool] = dict.fromkeys(stat_keys, True)
+    total = 0
+    for col in columns:
+        stats = dataset_meta.stats[col]
+        total += int(dataset_meta.features[col]["shape"][0])
+        for stat in stat_keys:
+            if stat in stats:
+                accum[stat].extend(stats[stat].tolist())
+            else:
+                present[stat] = False
+    return Feature(
+        ftype=ftype,
+        normalization_data=NormalizationParameters(
+            mean=accum["mean"] if present["mean"] else None,
+            std=accum["std"] if present["std"] else None,
+            min=accum["min"] if present["min"] else None,
+            max=accum["max"] if present["max"] else None,
+            q01=accum["q01"] if present["q01"] else None,
+            q99=accum["q99"] if present["q99"] else None,
+        ),
+        shape=(total,),
+        name=name,
+    )
 
 
 class _LeRobotDatasetAdapter(Dataset):
@@ -42,6 +112,9 @@ class _LeRobotDatasetAdapter(Dataset):
         The `LeRobotDataModule` handles the creation and management of this adapter automatically.
     """
 
+    _state_columns: list[str] | None = None
+    _action_columns: list[str] | None = None
+
     def __init__(
         self,
         *,
@@ -56,6 +129,8 @@ class _LeRobotDatasetAdapter(Dataset):
         download_videos: bool = True,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
+        state_columns: list[str] | None = None,
+        action_columns: list[str] | None = None,
     ) -> None:
         """Initialize a _LeRobotDatasetAdapter.
 
@@ -84,6 +159,14 @@ class _LeRobotDatasetAdapter(Dataset):
                 Defaults to `None`.
             batch_encoding_size (int, optional): Number of samples per encoded batch.
                 Defaults to `1`.
+            state_columns (list[str] | None, optional): Ordered LeRobot sub-column keys to concatenate
+                into a single ``observation.state`` tensor (e.g. DROID's
+                ``["observation.state.joint_positions", "observation.state.gripper_position"]``). All
+                ``observation.state.*`` sub-columns are dropped once combined. Defaults to `None` (no combining).
+            action_columns (list[str] | None, optional): Ordered LeRobot sub-column keys to concatenate
+                into a single ``action`` tensor (e.g. DROID's
+                ``["action.joint_position", "action.gripper_position"]``). All ``action.*`` sub-columns are
+                dropped once combined. Defaults to `None` (no combining).
 
         Raises:
             ImportError: If `lerobot` is not installed.
@@ -93,6 +176,9 @@ class _LeRobotDatasetAdapter(Dataset):
         if LeRobotDataset is None:
             msg = "LeRobotDataset is not available. Install lerobot with: uv pip install lerobot."
             raise ImportError(msg)
+
+        self._state_columns = state_columns
+        self._action_columns = action_columns
 
         # All arguments are passed
         self._lerobot_dataset = LeRobotDataset(
@@ -126,10 +212,25 @@ class _LeRobotDatasetAdapter(Dataset):
         Returns:
             Observation: The item from the dataset.
         """
-        return FormatConverter.to_observation(self._lerobot_dataset[idx])
+        item = self._lerobot_dataset[idx]
+        item = self._combine_split_columns(item)
+        return FormatConverter.to_observation(item)
+
+    def _combine_split_columns(self, item: dict) -> dict:
+        """Return `item` with any configured split state/action sub-columns concatenated into one column."""
+        if self._state_columns:
+            item = _concat_columns(item, self._state_columns, "observation.state", "observation.state.")
+        if self._action_columns:
+            item = _concat_columns(item, self._action_columns, "action", "action.")
+        return item
 
     @staticmethod
-    def from_lerobot(lerobot_dataset: LeRobotDataset) -> _LeRobotDatasetAdapter:
+    def from_lerobot(
+        lerobot_dataset: LeRobotDataset,
+        *,
+        state_columns: list[str] | None = None,
+        action_columns: list[str] | None = None,
+    ) -> _LeRobotDatasetAdapter:
         """Creates an instance of LeRobotActionDataset from an existing LeRobotDataset instance.
 
         This static method is useful when you already have a `LeRobotDataset` object
@@ -137,6 +238,10 @@ class _LeRobotDatasetAdapter(Dataset):
 
         Args:
             lerobot_dataset (LeRobotDataset): The existing LeRobotDataset instance to be wrapped.
+            state_columns (list[str] | None, optional): Ordered LeRobot sub-column keys to concatenate
+                into a single ``observation.state`` tensor. Defaults to `None` (no combining).
+            action_columns (list[str] | None, optional): Ordered LeRobot sub-column keys to concatenate
+                into a single ``action`` tensor. Defaults to `None` (no combining).
 
         Returns:
             _LeRobotDatasetAdapter: A new adapter instance that uses the provided dataset.
@@ -144,6 +249,8 @@ class _LeRobotDatasetAdapter(Dataset):
         instance = _LeRobotDatasetAdapter.__new__(_LeRobotDatasetAdapter)
         # Bypassing __init__ to set the internal dataset
         instance._lerobot_dataset = lerobot_dataset  # noqa: SLF001
+        instance._state_columns = state_columns  # noqa: SLF001
+        instance._action_columns = action_columns  # noqa: SLF001
         return instance
 
     @property
@@ -157,9 +264,12 @@ class _LeRobotDatasetAdapter(Dataset):
         dataset_features = self._lerobot_dataset.features
         raw_obs_features = {key: ft for key, ft in dataset_features.items() if key.startswith("observation")}
         dataset_meta = self._lerobot_dataset.meta
+        state_columns = set(self._state_columns or [])
 
         observation_features = {}
         for k in raw_obs_features:
+            if k in state_columns:
+                continue  # folded into the combined "state" feature below
             if k in dataset_meta.features:
                 feature_name = k[len("observation.") :]  # Remove "observation." prefix, filtering was done above
                 feature_type = FeatureType.STATE
@@ -170,7 +280,14 @@ class _LeRobotDatasetAdapter(Dataset):
                     # for ported datasets.
                     if "images." in feature_name:
                         feature_name = feature_name[len("images.") :]
-                    if dataset_meta.features[k]["names"][2] in {"channel", "channels"}:  # (h, w, c) -> (c, h, w)
+                    elif feature_name.startswith("image."):
+                        # Some datasets (e.g. nvidia DROID) use a singular "observation.image.<cam>" prefix.
+                        feature_name = feature_name[len("image.") :]
+                    names = dataset_meta.features[k].get("names")
+                    if names is not None and len(names) >= _IMAGE_NDIM and names[2] in {"channel", "channels"}:
+                        feature_shape = (feature_shape[2], feature_shape[0], feature_shape[1])  # (h, w, c) -> (c, h, w)
+                    elif names is None and len(feature_shape) == _IMAGE_NDIM and feature_shape[2] in {1, 3, 4}:
+                        # v3.0 video features carry names=None; infer channel-last layout from the shape.
                         feature_shape = (feature_shape[2], feature_shape[0], feature_shape[1])
                 elif k == "observation.environment_state":
                     feature_type = FeatureType.ENV
@@ -189,6 +306,14 @@ class _LeRobotDatasetAdapter(Dataset):
                     shape=feature_shape,
                     name=feature_name,
                 )
+
+        if self._state_columns:
+            observation_features["state"] = _combined_feature(
+                self._state_columns,
+                dataset_meta,
+                FeatureType.STATE,
+                "state",
+            )
         return observation_features
 
     @property
@@ -197,9 +322,12 @@ class _LeRobotDatasetAdapter(Dataset):
         dataset_features = self._lerobot_dataset.features
         raw_act_features = {key: ft for key, ft in dataset_features.items() if key.startswith("action")}
         dataset_meta = self._lerobot_dataset.meta
+        action_columns = set(self._action_columns or [])
 
         action_features = {}
         for k in raw_act_features:
+            if k in action_columns:
+                continue  # folded into the combined "action" feature below
             if k in dataset_meta.features:
                 stats = dataset_meta.stats[k]
                 action_features[k] = Feature(
@@ -216,6 +344,13 @@ class _LeRobotDatasetAdapter(Dataset):
                     name=k,
                 )
 
+        if self._action_columns:
+            action_features["action"] = _combined_feature(
+                self._action_columns,
+                dataset_meta,
+                FeatureType.ACTION,
+                "action",
+            )
         return action_features
 
     @property
