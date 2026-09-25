@@ -1,0 +1,25 @@
+{
+  "name": "physical-ai-studio-readme-demos",
+  "private": true,
+  "description": "Source files for the animated demos on the Physical AI Studio README.",
+  "scripts": {
+    "preview": "remotion studio src/index.ts",
+    "render:api": "remotion render src/index.ts ApiDemo out/api-demo.mp4 --codec h264 --crf 18 --log=error && ./scripts/to-gif.sh out/api-demo.mp4 ../../assets/readme/api-demo.gif",
+    "render:cli": "remotion render src/index.ts CliDemo out/cli-demo.mp4 --codec h264 --crf 18 --log=error && ./scripts/to-gif.sh out/cli-demo.mp4 ../../assets/readme/cli-demo.gif",
+    "render:gui": "remotion render src/index.ts GuiDemo --public-dir=public out/gui-demo.mp4 --codec h264 --crf 18 --log=error && GIF_FPS=8 GIF_WIDTH=900 ./scripts/to-gif.sh out/gui-demo.mp4 ../../assets/readme/gui-demo.gif",
+    "render:install": "remotion render src/index.ts InstallDemo out/install-demo.mp4 --codec h264 --crf 18 --log=error && ./scripts/to-gif.sh out/install-demo.mp4 ../../assets/readme/install-demo.gif",
+    "render:build": "remotion still src/index.ts BuildGallery ../../assets/readme/build.png --log=error",
+    "render:docs": "remotion still src/index.ts DocumentationGallery ../../assets/readme/documentation.png --log=error",
+    "render:policies": "remotion still src/index.ts PolicyGallery ../../assets/readme/policies.png --log=error",
+    "render": "npm run render:api && npm run render:cli && npm run render:gui && npm run render:install && npm run render:policies && npm run render:build && npm run render:docs"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.528",
+    "@types/react": "^19.3.0",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "remotion": "^4.0.528",
+    "typescript": "^7.0.2"
+  }
+}
