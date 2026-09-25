@@ -93,6 +93,7 @@ class StudioActionSource:
         return StateData(
             connected=True,
             follower_source=self._follower_source,
+            has_leader=self._leader_reads_enabled,
             model_loaded=self._model_loaded,
             task=self._task,
             dataset_loaded=None if recording is None else recording.dataset_loaded,

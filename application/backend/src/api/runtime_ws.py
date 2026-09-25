@@ -160,7 +160,9 @@ async def _devices_from_handshake(
     if handshake.get("leader_id") is not None:
         leader_id = get_robot_id(handshake["leader_id"])
         leader = await robot_service.get_robot_by_id(project_id, leader_id)
-        _ensure_robot_available(leader)
+
+        if isinstance(leader, UnavailableRobot):
+            leader = None
 
     raw_camera_ids = handshake.get("camera_ids") or []
     if not isinstance(raw_camera_ids, list):
