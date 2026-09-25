@@ -64,6 +64,7 @@ graph LR
 | **SmolVLA** | Lightweight vision-language-action model                        | [Cadene et al. 2025](https://arxiv.org/abs/2506.01844)   |
 | **Pi0.5**   | Vision-Language-Action model with open-world generalization     | [Black et al. 2025](https://arxiv.org/pdf/2504.16054)    |
 | **RLDX-1**  | Flow-matching VLA with a Qwen3-VL backbone and MSAT action head | [RLWRLD RLDX-1](https://huggingface.co/RLWRLD/RLDX-1-PT) |
+| [**Cosmos3**](explanation/policy/cosmos3.md) | World Action Model policy                        | [NVIDIA et al. 2026](https://arxiv.org/abs/2606.02800)   |
 
 Additional policies (Pi0, Pi0-FAST, GR00T, X-VLA) are also available
 through the LeRobot wrapper via `get_policy(..., source="lerobot")`.

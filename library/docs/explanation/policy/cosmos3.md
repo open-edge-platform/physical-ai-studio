@@ -1,8 +1,8 @@
-# NVIDIA Cosmos 3 Policy
+# NVIDIA Cosmos3 Policy
 
 ## Overview
 
-PhysicalAI integrates the NVIDIA Cosmos 3 WAM policy for physical robot control. Cosmos 3 uses rectified flow matching
+PhysicalAI integrates the NVIDIA Cosmos3 World Action Model policy ([NVIDIA et al. 2026](https://arxiv.org/abs/2606.02800)) for physical robot control. Cosmos3 uses rectified flow matching
 over continuous action spaces conditioned on visual observations (single-view or
 multi-view composites) and proprioceptive states.
 
@@ -17,13 +17,13 @@ All implementations provide:
 
 ## Architecture
 
-Cosmos 3 is split into a self-contained module under `library/src/physicalai/policies/cosmos3/`:
+Cosmos3 is split into a self-contained module under `library/src/physicalai/policies/cosmos3/`:
 
 ```text
 library/src/physicalai/policies/cosmos3/
 ├── config.py           # Cosmos3Config (typed dataclass extending Config)
 ├── flow_matching.py    # Rectified flow matching objective & loss
-├── model.py            # Cosmos3Model (Cosmos 3 DiT + VAE + Action Heads)
+├── model.py            # Cosmos3Model (Cosmos3 DiT + VAE + Action Heads)
 ├── normalization.py    # Embodiment normalization (none, minmax, quantile)
 ├── pipeline.py         # PolicyPipelineWithState & XPU driver checks
 ├── policy.py           # Cosmos3 LightningModule wrapper
