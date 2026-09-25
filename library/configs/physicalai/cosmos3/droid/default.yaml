@@ -14,14 +14,15 @@
 # Supported accelerators: CUDA (gpu), Intel XPU (xpu), CPU.
 #
 # Usage:
-#   physicalai fit --config configs/physicalai/cosmos3_droid.yaml
+#   physicalai fit --config configs/physicalai/cosmos3/droid/default.yaml
 #
 # Intel XPU example:
-#   physicalai fit --config configs/physicalai/cosmos3_droid.yaml \
-#       --trainer.accelerator xpu
+#   physicalai fit --config configs/physicalai/cosmos3/droid/default.yaml \
+#       --trainer.accelerator xpu \
+#       --trainer.strategy xpu_single
 #
 # Full fine-tuning example:
-#   physicalai fit --config configs/physicalai/cosmos3_droid.yaml \
+#   physicalai fit --config configs/physicalai/cosmos3/droid/default.yaml \
 #       --model.mode full \
 #       --model.head_lr_mult 10.0
 # =============================================================================
@@ -54,9 +55,6 @@ data:
     repo_id: "nvidia/Cosmos3-DROID"
     root: null
     train_batch_size: 1
-    # Restrict to 1 episode for fast iterations during development
-    episodes:
-      - 0
     # Concatenate arm joints (7D) and gripper (1D) into canonical 8D state and action tensors
     state_columns:
       - "observation.state.joint_positions"
@@ -71,7 +69,7 @@ trainer:
   max_epochs: 10
   accumulate_grad_batches: 8
   gradient_clip_val: 1.0
-  accelerator: xpu
-  strategy: xpu_single
+  accelerator: gpu
   devices: 1
   precision: bf16-mixed
+  log_every_n_steps: 10

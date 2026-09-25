@@ -73,14 +73,14 @@ trainer.fit(model=policy, datamodule=datamodule)
 
 ### CLI
 
-Configs are available under `library/configs/physicalai/`:
+Configs are available under `library/configs/physicalai/cosmos3/`:
 
 ```bash
 # Push-T (planar 2D)
-physicalai fit --config configs/physicalai/cosmos3_pusht.yaml
+physicalai fit --config configs/physicalai/cosmos3/pusht/default.yaml
 
 # DROID (8D joint pos with split-column combining)
-physicalai fit --config configs/physicalai/cosmos3_droid.yaml
+physicalai fit --config configs/physicalai/cosmos3/droid/default.yaml
 ```
 
 ## Note on Export

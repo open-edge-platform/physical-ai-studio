@@ -7,7 +7,7 @@ This module provides dataclass configuration for the NVIDIA Cosmos 3
 diffusion/flow-matching world model policy.
 
 Example (CLI):
-    physicalai fit --config configs/physicalai/cosmos3.yaml
+    physicalai fit --config configs/physicalai/cosmos3/pusht/default.yaml
 
 Example (API):
     >>> from physicalai.policies.cosmos3 import Cosmos3Config
