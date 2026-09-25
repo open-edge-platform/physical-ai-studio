@@ -29,8 +29,8 @@ export const installStages: Stage[] = [
 ];
 
 export const installLines: CodeLine[] = [
-  {text: '# Python API and CLI', start: 40, stage: 0},
-  {text: 'pip install physicalai-train', start: 52, stage: 0},
+  {text: '# Python API and CLI (CPU)', start: 40, stage: 0},
+  {text: "pip install 'physicalai-train[cpu]'", start: 52, stage: 0},
   {text: '', start: 0},
   {text: '# Studio UI with Docker', start: 112, stage: 1},
   {text: 'git clone https://github.com/open-edge-platform/physical-ai-studio.git', start: 124, stage: 1},

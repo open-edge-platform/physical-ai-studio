@@ -20,7 +20,7 @@ export const RemotionRoot = () => {
         defaultProps={{
           eyebrow: 'PYTHON API',
           title: 'From dataset to deployable policy',
-          command: 'pip install physicalai-train',
+          command: "pip install 'physicalai-train[cpu]'",
           filename: 'train_benchmark_export_deploy.py',
           language: 'python' as const,
           lines: apiLines,
@@ -55,7 +55,7 @@ export const RemotionRoot = () => {
         defaultProps={{
           eyebrow: 'INSTALL',
           title: 'Choose your starting point',
-          command: 'Python 3.12+',
+          command: 'Python 3.12–3.14',
           filename: 'terminal',
           language: 'bash' as const,
           lines: installLines,

@@ -48,7 +48,11 @@ results = benchmark.evaluate(policy)
 policy.export("./exports/act", backend="openvino")
 
 runtime_policy = InferenceModel("./exports/act")
-action = runtime_policy.select_action(observation)
+
+# Call this from your robot's control loop with an observation matching the
+# input features used to train the policy.
+def get_action(observation):
+    return runtime_policy.select_action(observation)
 ```
 
 </details>
@@ -96,7 +100,9 @@ Replace `robot.yaml` with the Runtime configuration for your robot and exported 
 
 ## Policies
 
-Use one API across native Physical AI Studio policies.
+Use one API across native Physical AI Studio policies. VLA policies require optional model dependencies. To install all policies shown on CPU, run
+`pip install 'physicalai-train[cpu,policies]'`; to install a single VLA policy, use its extra (for example,
+`physicalai-train[cpu,pi05]`).
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
@@ -122,7 +128,7 @@ xr0 = XR0()
 
 ## Install
 
-Start with the library, or run the full Studio application with Docker.
+Start with the library, or run the full Studio application with Docker. The library supports Python 3.12–3.14.
 
 <!-- markdownlint-disable MD033 -->
 <p align="center">
@@ -134,8 +140,9 @@ Start with the library, or run the full Studio application with Docker.
 <summary>Copy the commands</summary>
 
 ```bash
-# Python API and CLI
-pip install physicalai-train
+# Python API and CLI (CPU)
+pip install 'physicalai-train[cpu]'
+# Use cu128 for NVIDIA GPUs or xpu for Intel GPUs.
 
 # Studio UI with Docker
 git clone https://github.com/open-edge-platform/physical-ai-studio.git
