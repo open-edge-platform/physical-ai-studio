@@ -53,9 +53,8 @@ export const apiLines: CodeLine[] = [
   {text: 'policy.export("./exports/act", backend="openvino")', start: 266, stage: 2},
   {text: '', start: 0},
   {text: 'runtime_policy = InferenceModel("./exports/act")', start: 356, stage: 3},
-  {text: '# Called from your robot loop with a matching observation', start: 376, stage: 3},
-  {text: 'def get_action(observation):', start: 394, stage: 3},
-  {text: '    return runtime_policy.select_action(observation)', start: 412, stage: 3},
+  {text: '# Pseudocode: get a matching observation from your robot loop', start: 376, stage: 3},
+  {text: 'action = runtime_policy.select_action(observation)', start: 394, stage: 3},
 ];
 
 export const cliLines: CodeLine[] = [

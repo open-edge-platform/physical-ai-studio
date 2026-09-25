@@ -49,10 +49,8 @@ policy.export("./exports/act", backend="openvino")
 
 runtime_policy = InferenceModel("./exports/act")
 
-# Call this from your robot's control loop with an observation matching the
-# input features used to train the policy.
-def get_action(observation):
-    return runtime_policy.select_action(observation)
+# Pseudocode: get a matching observation from your robot's control loop.
+action = runtime_policy.select_action(observation)
 ```
 
 </details>
