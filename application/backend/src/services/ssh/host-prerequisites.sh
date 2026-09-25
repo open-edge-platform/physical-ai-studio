@@ -96,6 +96,7 @@ if [[ $mode == --install ]]; then
   fi
   # Check as root: an SSH user without Docker group access must not hide active workloads.
   if command -v docker >/dev/null; then
+    "${privileged[@]}" systemctl enable --now docker || { echo 'DOCKER_RESTART_FAILED' >&2; exit 1; }
     containers=$("${privileged[@]}" docker ps -q 2>/dev/null) || {
       echo 'DOCKER_UNAVAILABLE: cannot inspect running containers before installation' >&2; exit 1;
     }

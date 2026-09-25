@@ -218,6 +218,53 @@ async def test_install_reports_failure_without_starting_container() -> None:
         start.assert_not_awaited()
 
 
+async def test_install_reserves_trainer_before_active_job_query_completes() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="gpu",
+        url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH,
+        ssh_host_alias="gpu-box",
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    checking = asyncio.Event()
+    release = asyncio.Event()
+    finish_install = asyncio.Event()
+
+    async def check_jobs(_trainer_id):
+        checking.set()
+        await release.wait()
+
+    async def install_host(_transport):
+        await finish_install.wait()
+        return "installation_failed"
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=False)),
+        patch.object(RemoteTrainerService, "_require_no_active_jobs", side_effect=check_jobs),
+        patch(f"{MODULE}.host_installer.install", new=AsyncMock(side_effect=install_host)),
+        patch.object(remote_trainer_service_module, "_setup_lock", asyncio.Lock()),
+        patch(f"{MODULE}.SshTransport") as transport,
+    ):
+        transport.return_value.__aenter__ = AsyncMock(return_value=transport.return_value)
+        transport.return_value.__aexit__ = AsyncMock(return_value=False)
+        service = RemoteTrainerService(_session())
+        first = asyncio.create_task(service.install_remote_trainer(trainer.id))
+        await checking.wait()
+        second = asyncio.create_task(service.install_remote_trainer(trainer.id))
+        await asyncio.sleep(0)
+        assert not second.done()
+        release.set()
+        await first
+        with pytest.raises(ResourceInUseError):
+            await second
+        finish_install.set()
+        await remote_trainer_service_module._background_installs[trainer.id]
+        transport.assert_called_once()
+
+
 async def test_install_reports_ssh_connection_failure_in_health() -> None:
     trainer = RemoteTrainer(
         id=uuid4(),

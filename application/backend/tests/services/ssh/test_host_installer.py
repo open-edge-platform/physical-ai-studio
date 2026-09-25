@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from services.ssh.host_installer import install
-from services.ssh.transport import CommandResult
+from services.ssh.transport import CommandFailure, CommandResult
 
 
 def test_intel_reboot_is_reported_before_render_group_relogin() -> None:
@@ -15,6 +15,7 @@ def test_intel_reboot_is_reported_before_render_group_relogin() -> None:
     assert source.index('"${privileged[@]}" clinfo -l') < source.index(
         "RELOGIN_REQUIRED: reconnect the SSH user to activate render group access"
     )
+    assert source.index("systemctl enable --now docker") < source.index("docker ps -q")
 
 
 async def test_install_does_not_upload_when_private_temp_directory_fails() -> None:
@@ -49,3 +50,24 @@ async def test_install_reports_only_known_outcomes_and_cleans_up(code: int, outp
     assert await install(transport) == expected
     transport.upload_file.assert_awaited_once()
     assert transport.run_command.await_count == 4
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        (CommandFailure.TIMEOUT, "installation_timeout"),
+        (CommandFailure.CHANNEL_REFUSED, "installation_failed"),
+        (CommandFailure.SIGNALED, "installation_failed"),
+    ],
+)
+async def test_install_distinguishes_timeout_from_other_command_failures(
+    failure: CommandFailure, expected: str
+) -> None:
+    transport = AsyncMock()
+    transport.run_command.side_effect = [
+        CommandResult(argv=("mktemp",), command="mktemp", exit_status=0, stdout="/tmp/physicalai-installer.ABC123xy\n"),
+        CommandResult(argv=("bash",), command="bash", exit_status=124, failure=failure),
+        CommandResult(argv=("rm",), command="rm", exit_status=0),
+        CommandResult(argv=("rmdir",), command="rmdir", exit_status=0),
+    ]
+    assert await install(transport) == expected

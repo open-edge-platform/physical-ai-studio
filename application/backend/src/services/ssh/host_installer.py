@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from services.ssh.transport import SshTransport
+from services.ssh.transport import CommandFailure, SshTransport
 
 _SCRIPT = Path(__file__).with_name("host-prerequisites.sh")
 _INSTALL_TIMEOUT_S = 1800
@@ -62,7 +62,7 @@ async def install(transport: SshTransport) -> str:
             marker = line.split(":", 1)[0]
             if marker in _ERROR_MARKERS:
                 return marker.lower()
-        return "installation_timeout" if result.failure else "installation_failed"
+        return "installation_timeout" if result.failure is CommandFailure.TIMEOUT else "installation_failed"
     finally:
         await transport.run_command(["rm", "-f", script, log])
         await transport.run_command(["rmdir", directory])

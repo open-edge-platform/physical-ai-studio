@@ -9,7 +9,7 @@ from exceptions import DuplicateJobException, ResourceInUseError, ResourceNotFou
 from repositories import JobRepository
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import JobPayload, TrainJob, TrainJobPayload
+from schemas.job import JobPayload, RemoteTrainJobPayload, TrainJob, TrainJobPayload
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets import get_training_target_handler
 
@@ -45,21 +45,23 @@ class JobService:
 
     async def submit_train_job(self, payload: TrainJobPayload) -> Job:
         """Validate and persist a training job with its execution target pinned."""
-        handler = get_training_target_handler(payload, self.session, self.remote_trainer_service)
-        payload = await handler.prepare(payload)
+        trainer_id = payload.remote_trainer_id if isinstance(payload, RemoteTrainJobPayload) else None
+        async with RemoteTrainerService.allow_job_submission(trainer_id):
+            handler = get_training_target_handler(payload, self.session, self.remote_trainer_service)
+            payload = await handler.prepare(payload)
 
-        if await self.repo.is_job_duplicate(project_id=payload.project_id, payload=payload):
-            raise DuplicateJobException
+            if await self.repo.is_job_duplicate(project_id=payload.project_id, payload=payload):
+                raise DuplicateJobException
 
-        try:
-            job = TrainJob(
-                project_id=payload.project_id,
-                payload=payload,
-                message="Training job submitted",
-            )
-            return await self.repo.save(job)
-        except IntegrityError:
-            raise ResourceNotFoundError(resource_type=ResourceType.PROJECT, resource_id=payload.project_id)
+            try:
+                job = TrainJob(
+                    project_id=payload.project_id,
+                    payload=payload,
+                    message="Training job submitted",
+                )
+                return await self.repo.save(job)
+            except IntegrityError:
+                raise ResourceNotFoundError(resource_type=ResourceType.PROJECT, resource_id=payload.project_id)
 
     async def get_pending_train_job(self) -> Job | None:
         return await self.repo.get_pending_job_by_type(JobType.TRAINING)
