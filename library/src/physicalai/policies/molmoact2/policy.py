@@ -26,6 +26,7 @@ from physicalai.data.observation import (
 from physicalai.policies.base import Policy
 from physicalai.policies.mixins.peft import PeftPolicyMixin, is_lora_injected
 from physicalai.policies.utils.features import get_feature_by_type
+from physicalai.utils import deprecate
 
 from .config import MolmoAct2Config
 from .export import MolmoAct2ExportMixin
@@ -110,7 +111,7 @@ def _normalization_to_checkpoint(
 class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Policy):
     """MolmoAct2 policy wrapper for loading pretrained checkpoints and configs."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(  # noqa: PLR0913, PLR0915
         self,
         # Input and output features
         input_features: list[Feature] | None = None,
@@ -127,6 +128,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         control_mode: str | None = None,
         adapt_to_so101: bool | None = None,
         calibration: dict[str, Any] | str | Path | None = None,
+        convert_pretrained_so101_stats: bool | None = None,
         preserve_pretrained_normalization_in_training: bool = False,
         # weight management
         compile_model: bool = False,
@@ -176,6 +178,7 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
                 required when the checkpoint's statistics are used (zero-shot, or
                 ``preserve_pretrained_normalization_in_training=True``) and optional when fine-tuning
                 with dataset statistics. Without it the scale is 1.
+            convert_pretrained_so101_stats: Deprecated and ignored. Kept so older checkpoints still load.
             preserve_pretrained_normalization_in_training: Whether ``setup("fit")`` keeps state and action
                 normalization from an initialized pretrained policy when adopting the training
                 dataset's feature contract. This does not affect explicit ``set_features`` calls.
@@ -214,6 +217,9 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         if lora_enabled and train_action_head_only:
             msg = "lora_enabled is incompatible with train_action_head_only."
             raise ValueError(msg)
+
+        if convert_pretrained_so101_stats is not None:
+            deprecate("convert_pretrained_so101_stats", "it is ignored; pass `calibration` instead.")
 
         resolved_adapt_to_so101 = norm_tag == "so100_so101_molmoact2" if adapt_to_so101 is None else adapt_to_so101
 
@@ -400,6 +406,8 @@ class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Pol
         )
 
     def _restore_policy_config(self, config_data: Mapping[str, object]) -> None:
+        # Older checkpoints store the removed ``convert_pretrained_so101_stats`` field.
+        config_data = {key: value for key, value in config_data.items() if key != "convert_pretrained_so101_stats"}
         config = MolmoAct2Config.from_dict(config_data)
         if self.model is not None:
             if self._require_config() != config:
