@@ -52,7 +52,7 @@ data:
   class_path: physicalai.data.lerobot.LeRobotDataModule
   init_args:
     repo_id: "nvidia/Cosmos3-DROID"
-    root: "/home/ugenc/.cache/huggingface/hub/datasets--nvidia--Cosmos3-DROID/snapshots/5c11a20accb11497270a5247a7f1e66ad04c956c/success"
+    root: null
     train_batch_size: 1
     # Restrict to 1 episode for fast iterations during development
     episodes:
