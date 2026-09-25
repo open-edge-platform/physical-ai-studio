@@ -12,6 +12,7 @@ head vs. base groups for differential learning rates.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -147,6 +148,9 @@ def load_finetuned(
 
     Returns:
         Head checkpoint dictionary containing metadata and normalization bounds.
+
+    Raises:
+        ValueError: If embodiment is invalid or resolves outside adapter directory.
     """
     adapter_path = Path(adapter)
     tf = pipe.transformer
@@ -162,7 +166,17 @@ def load_finetuned(
             if callable(load_lora_adapter_fn):
                 load_lora_adapter_fn(load_file(str(lora_safetensors)), prefix=None)
 
-    head_path = Path(head) if head is not None else adapter_path / f"{embodiment}_head.pt"
+    if head is not None:
+        head_path = Path(head)
+    else:
+        if not re.fullmatch(r"^[a-zA-Z0-9_-]{1,64}$", embodiment):
+            msg = f"Invalid embodiment filename component: {embodiment!r}"
+            raise ValueError(msg)
+        head_path = (adapter_path / f"{embodiment}_head.pt").resolve()
+        if not head_path.is_relative_to(adapter_path.resolve()):
+            msg = f"Head path escapes adapter directory: {head_path}"
+            raise ValueError(msg)
+
     ckpt: dict[str, Any] = torch.load(head_path, map_location="cpu", weights_only=True)
     tf.load_state_dict(ckpt["head"], strict=False)
     return ckpt
