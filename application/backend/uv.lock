@@ -2852,8 +2852,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.2.0"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?tag=v0.2.0#39a5bb542b2c6a0e92e749a0fea91d3c4dcbc490" }
+version = "0.2.1.dev4+g0ad4548"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=0ad4548e1455a9b6a79aa870ae2529f411739433#0ad4548e1455a9b6a79aa870ae2529f411739433" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2999,7 +2999,7 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
     { name = "packaging", specifier = ">=24.0" },
-    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?tag=v0.2.0" },
+    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=0ad4548e1455a9b6a79aa870ae2529f411739433" },
     { name = "physicalai-studio-plugin", specifier = ">=0.2.0" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
@@ -3131,7 +3131,7 @@ requires-dist = [
     { name = "peft", specifier = ">=0.20.0,<1.0.0" },
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?tag=v0.2.0" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=0ad4548e1455a9b6a79aa870ae2529f411739433" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["molmoact2"], marker = "extra == 'policies'" },
