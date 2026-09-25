@@ -28,6 +28,7 @@ from physicalai.export.backends import ExportParameters, OpenVINOExportParameter
 from physicalai.policies.utils.features import get_feature_by_type
 
 from .constants import SO101_JOINT_OFFSETS, SO101_JOINT_SIGNS
+from .so101 import so101_degrees_per_runtime_unit
 
 if TYPE_CHECKING:
     from .config import MolmoAct2Config
@@ -48,6 +49,31 @@ def _normalization_stats(
     if normalization.mask is not None:
         stats["mask"] = normalization.mask
     return stats
+
+
+def _so101_joint_frame_spec(component_type: str, feature: str, config: MolmoAct2Config) -> ComponentSpec:
+    """Build a Runtime joint-frame component for the SO-101 checkpoint frame.
+
+    ``scales`` is only written with a calibration, so uncalibrated manifests stay
+    loadable by Runtime versions without joint-frame scale support.
+
+    Returns:
+        A ``joint_frame_preprocess`` or ``joint_frame_postprocess`` component spec.
+    """
+    if config.calibration is None:
+        return ComponentSpec(
+            type=component_type,
+            feature=feature,
+            signs=list(SO101_JOINT_SIGNS),
+            offsets=list(SO101_JOINT_OFFSETS),
+        )
+    return ComponentSpec(
+        type=component_type,
+        feature=feature,
+        signs=list(SO101_JOINT_SIGNS),
+        offsets=list(SO101_JOINT_OFFSETS),
+        scales=list(so101_degrees_per_runtime_unit(config.calibration)),
+    )
 
 
 class MolmoAct2ExportMixin(ExportablePolicyMixin):
@@ -272,12 +298,7 @@ class MolmoAct2ExportMixin(ExportablePolicyMixin):
         if config.adapt_to_so101:
             preprocessors.insert(
                 0,
-                ComponentSpec(
-                    type="joint_frame_preprocess",
-                    feature=STATE,
-                    signs=list(SO101_JOINT_SIGNS),
-                    offsets=list(SO101_JOINT_OFFSETS),
-                ),
+                _so101_joint_frame_spec("joint_frame_preprocess", STATE, config),
             )
         torch_postprocessors = []
         openvino_postprocessors = [
@@ -290,12 +311,7 @@ class MolmoAct2ExportMixin(ExportablePolicyMixin):
         ]
         if config.adapt_to_so101:
             openvino_postprocessors.append(
-                ComponentSpec(
-                    type="joint_frame_postprocess",
-                    feature=ACTION,
-                    signs=list(SO101_JOINT_SIGNS),
-                    offsets=list(SO101_JOINT_OFFSETS),
-                ),
+                _so101_joint_frame_spec("joint_frame_postprocess", ACTION, config),
             )
         if self.chunk_size != self.n_action_steps:
             chunk_trimmer = ComponentSpec(
