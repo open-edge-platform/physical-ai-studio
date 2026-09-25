@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from fastapi.exceptions import HTTPException
 from fastapi.responses import Response
-from physicalai.config import to_yaml
+from physicalai.config import Config
 
 from api.dependencies import RobotClientFactoryDep, get_environment_id, get_environment_service, get_project_id
 from runtime.config_builder import RUNTIME_FPS, build_runtime_config, runtime_config_change_me
@@ -76,7 +76,7 @@ async def get_runtime_config(
     unresolved = runtime_config_change_me(document)
     comments = "".join(f"# CHANGE_ME: replace machine-specific device path {path}\n" for path in unresolved)
     return Response(
-        content=comments + to_yaml(document),
+        content=comments + Config.from_dict(document).to_yaml(),
         media_type="application/yaml",
         headers={"Content-Disposition": 'attachment; filename="runtime.yaml"'},
     )

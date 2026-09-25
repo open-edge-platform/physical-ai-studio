@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
-from physicalai.config import to_yaml
+from physicalai.config import Config
 from physicalai.export.backends import ExportBackend
 from sse_starlette import EventSourceResponse
 from starlette import status
@@ -89,7 +89,7 @@ async def _runtime_recipe_texts(
 
     unresolved = runtime_config_change_me(document)
     comments = "".join(f"# CHANGE_ME: replace machine-specific device path {path}\n" for path in unresolved)
-    return comments + to_yaml(document), runtime_export_readme(document, unresolved=unresolved)
+    return comments + Config.from_dict(document).to_yaml(), runtime_export_readme(document, unresolved=unresolved)
 
 
 @router.get("/{model_id}")
