@@ -59,6 +59,22 @@ def get_launch_failure(remote_trainer_id: UUID) -> str | None:
     return _launch_failure.get(remote_trainer_id)
 
 
+def set_install_phase(remote_trainer_id: UUID, phase: str | None) -> None:
+    """Report or clear the phase of an explicitly requested host installation."""
+    if phase is None:
+        _launch_phase.pop(remote_trainer_id, None)
+    else:
+        _launch_phase[remote_trainer_id] = phase
+
+
+def set_install_failure(remote_trainer_id: UUID, reason: str | None) -> None:
+    """Expose a safe installation result through the existing trainer health endpoint."""
+    if reason is None:
+        _launch_failure.pop(remote_trainer_id, None)
+    else:
+        _launch_failure[remote_trainer_id] = reason
+
+
 def is_within_startup_grace_period(remote_trainer_id: UUID) -> bool:
     """True while a launch is running, or recently began and hasn't been confirmed reachable yet."""
     if remote_trainer_id in _launch_phase:
@@ -116,9 +132,12 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
             backend_instance_id = get_backend_instance_id()
             _launch_phase[remote_trainer.id] = "Detecting accelerator…"
             cuda = await transport.run_command(["nvidia-smi", "-L"])
-            xpu = await transport.run_command(["xpu-smi", "discovery"])
+            xpu = await transport.run_command(["clinfo", "-l"])
 
-            device = DeviceType.CUDA if cuda.ok else DeviceType.XPU if xpu.ok else None
+            intel_gpu = xpu.ok and any(
+                "Device #" in line and "Intel" in line and "CPU" not in line for line in xpu.stdout.splitlines()
+            )
+            device = DeviceType.CUDA if cuda.ok else DeviceType.XPU if intel_gpu else None
             if device is None:
                 _launch_failure[remote_trainer.id] = "accelerator_unavailable"
                 raise ValueError("No supported CUDA or XPU accelerator found on SSH trainer")

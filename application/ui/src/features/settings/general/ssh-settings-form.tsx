@@ -34,6 +34,7 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
                 command_timeout_s: commandTimeoutS,
                 preflight_timeout_s: preflightTimeoutS,
                 image_pull_timeout_s: imagePullTimeoutS,
+                trainer_shm_size_gb: ssh.trainer_shm_size_gb,
             },
         };
         patchMutation.mutate(

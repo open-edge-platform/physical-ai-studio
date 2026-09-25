@@ -43,6 +43,8 @@ const TARGET_MENU_ACTION_ITEMS = {
     CHECK_STATUS: 'check_status',
     EDIT: 'Edit',
     DELETE: 'Delete',
+    INSTALL: 'install_prerequisites',
+    REBOOT: 'reboot_after_install',
 };
 
 type TargetMenuActionsProps = {
@@ -50,10 +52,27 @@ type TargetMenuActionsProps = {
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onInstall?: () => void;
+    onReboot?: () => void;
     isChecking: boolean;
 };
 
-const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }: TargetMenuActionsProps) => {
+const TargetMenuActions = ({
+    targetName,
+    onCheck,
+    onEdit,
+    onDelete,
+    onInstall,
+    onReboot,
+    isChecking,
+}: TargetMenuActionsProps) => {
+    const items = [
+        { key: TARGET_MENU_ACTION_ITEMS.EDIT, label: 'Edit' },
+        { key: TARGET_MENU_ACTION_ITEMS.DELETE, label: 'Delete' },
+        { key: TARGET_MENU_ACTION_ITEMS.CHECK_STATUS, label: 'Check status' },
+        ...(onInstall ? [{ key: TARGET_MENU_ACTION_ITEMS.INSTALL, label: 'Install prerequisites' }] : []),
+        ...(onReboot ? [{ key: TARGET_MENU_ACTION_ITEMS.REBOOT, label: 'Reboot to finish setup' }] : []),
+    ];
     const handleAction = (action: Key) => {
         if (action === TARGET_MENU_ACTION_ITEMS.CHECK_STATUS) {
             onCheck?.();
@@ -61,6 +80,10 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }
             onEdit();
         } else if (action === TARGET_MENU_ACTION_ITEMS.DELETE) {
             onDelete();
+        } else if (action === TARGET_MENU_ACTION_ITEMS.INSTALL) {
+            onInstall?.();
+        } else if (action === TARGET_MENU_ACTION_ITEMS.REBOOT) {
+            onReboot?.();
         }
     };
 
@@ -70,12 +93,11 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }
                 <MoreMenu />
             </ActionButton>
             <Menu
+                items={items}
                 onAction={handleAction}
                 disabledKeys={isChecking || onCheck === undefined ? [TARGET_MENU_ACTION_ITEMS.CHECK_STATUS] : undefined}
             >
-                <Item key={TARGET_MENU_ACTION_ITEMS.EDIT}>Edit</Item>
-                <Item key={TARGET_MENU_ACTION_ITEMS.DELETE}>Delete</Item>
-                <Item key={TARGET_MENU_ACTION_ITEMS.CHECK_STATUS}>Check status</Item>
+                {(item) => <Item key={item.key}>{item.label}</Item>}
             </Menu>
         </MenuTrigger>
     );
@@ -95,6 +117,8 @@ type TargetRowContentProps = {
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onInstall?: () => void;
+    onReboot?: () => void;
 };
 
 /**
@@ -115,6 +139,8 @@ const targetRowCells = ({
     onCheck,
     onEdit,
     onDelete,
+    onInstall,
+    onReboot,
 }: TargetRowContentProps) => [
     <Text key='name'>{name}</Text>,
 
@@ -146,6 +172,8 @@ const targetRowCells = ({
             onCheck={onCheck}
             onEdit={onEdit}
             onDelete={onDelete}
+            onInstall={onInstall}
+            onReboot={onReboot}
             isChecking={isChecking}
         />
     </div>,
@@ -158,6 +186,7 @@ type DirectUrlTargetRowProps = {
     onExpand: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onSetup?: (reboot: boolean) => void;
 };
 
 const DirectUrlTargetRow = ({
@@ -167,11 +196,17 @@ const DirectUrlTargetRow = ({
     onExpand,
     onEdit,
     onDelete,
+    onSetup,
 }: DirectUrlTargetRowProps) => {
     const health = useRemoteTrainersHealth([trainer.id]).get(trainer.id);
     const displayHealth = getDisplayHealth(trainer.id, health?.health, health?.hasError ?? false);
     const isChecking = health?.isChecking ?? false;
     const types = deviceTypes(displayHealth);
+    const awaitingReboot = [
+        'reboot_required',
+        'reboot_blocked_active_containers',
+        'nvidia_driver_unavailable',
+    ].includes(displayHealth?.reason_code ?? '');
 
     return (
         <Table.ExpandableRow
@@ -197,6 +232,15 @@ const DirectUrlTargetRow = ({
                 },
                 onEdit,
                 onDelete,
+                onInstall:
+                    trainer.connection_mode === 'ssh' &&
+                    displayHealth?.status !== 'starting' &&
+                    !awaitingReboot &&
+                    onSetup
+                        ? () => onSetup(false)
+                        : undefined,
+                onReboot:
+                    trainer.connection_mode === 'ssh' && awaitingReboot && onSetup ? () => onSetup(true) : undefined,
             })}
         </Table.ExpandableRow>
     );
@@ -206,9 +250,10 @@ type TrainingTargetsTableProps = {
     rows: TrainingTargetRow[];
     onEdit: (row: TrainingTargetRow) => void;
     onDelete: (row: TrainingTargetRow) => void;
+    onSetup?: (row: TrainingTargetRow, reboot: boolean) => void;
 };
 
-export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargetsTableProps) => {
+export const TrainingTargetsTable = ({ rows, onEdit, onDelete, onSetup }: TrainingTargetsTableProps) => {
     const [expandedId, setExpandedId] = useState<string | undefined>(
         rows[0] ? trainingTargetRowId(rows[0]) : undefined
     );
@@ -230,6 +275,7 @@ export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargets
                         onExpand={() => setExpandedId(id)}
                         onEdit={() => onEdit(row)}
                         onDelete={() => onDelete(row)}
+                        onSetup={onSetup ? (reboot) => onSetup(row, reboot) : undefined}
                     />
                 );
             })}

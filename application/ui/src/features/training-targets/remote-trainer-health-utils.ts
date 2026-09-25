@@ -47,6 +47,72 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
             return 'Studio-managed training requires a working CUDA or XPU driver on the SSH host.';
         case 'container_accelerator_unavailable':
             return 'Studio started the trainer, but its container cannot access a CUDA or XPU device.';
+        case 'reboot_required':
+            return 'GPU prerequisites were installed. Confirm a host reboot to finish setup.';
+        case 'relogin_required':
+            return 'Reconnect SSH to activate Docker or GPU access, then retry installation.';
+        case 'active_containers':
+            return 'Host setup cannot modify Docker while containers are running.';
+        case 'reboot_blocked_active_containers':
+            return 'Stop running containers on the host before confirming the reboot again.';
+        case 'sudo_required':
+            return 'Host installation requires non-interactive sudo for the SSH user.';
+        case 'nvidia_driver_install_failed':
+            return 'NVIDIA driver branch 580 could not be installed. Check Ubuntu apt sources.';
+        case 'nvidia_toolkit_install_failed':
+            return 'NVIDIA Container Toolkit installation failed. Check the pinned package repository.';
+        case 'nvidia_toolkit_repo_failed':
+            return 'Could not configure the signed NVIDIA Container Toolkit repository.';
+        case 'intel_install_failed':
+            return 'Intel GPU dependency installation failed. Check the pinned package repository.';
+        case 'intel_download_failed':
+            return 'Could not download the pinned Intel GPU packages.';
+        case 'intel_checksum_failed':
+            return 'An Intel GPU package failed checksum verification; installation was stopped.';
+        case 'docker_install_failed':
+            return 'Docker installation failed: the pinned package is unavailable or apt failed.';
+        case 'gpu_ambiguous':
+            return 'Exactly one NVIDIA or Intel GPU vendor must be present on the SSH host.';
+        case 'unsupported_gpu':
+            return 'Intel GPU installation is not supported on Amazon Linux 2023.';
+        case 'unsupported_os':
+            return 'Host installation supports Ubuntu 24.04 or Amazon Linux 2023 only.';
+        case 'reboot_failed':
+            return 'The host did not reboot or reconnect. Check it manually before retrying.';
+        case 'apt_update_failed':
+            return 'Ubuntu package update failed. Run sudo apt-get update on the SSH host to diagnose it.';
+        case 'package_manager_broken':
+            return 'The SSH host has incomplete dpkg transactions. Repair them before installing prerequisites.';
+        case 'installation_timeout':
+            return 'Host installation timed out. Check the host before retrying.';
+        case 'installation_failed':
+            return 'Host installation failed. Check Studio backend logs for details.';
+        case 'transfer_failed':
+            return 'Could not transfer the installation script to the SSH host.';
+        case 'ssh_install_connection_failed':
+            return 'The SSH connection or script transfer failed. Check host access, then retry.';
+        case 'ssh_install_auth_failed':
+            return 'The SSH host rejected authentication. Check your SSH key or agent.';
+        case 'ssh_install_host_key_failed':
+            return 'The SSH host key could not be verified. Check known_hosts before retrying.';
+        case 'nvidia_driver_unavailable':
+            return 'NVIDIA driver is installed but not working; reboot or diagnose the host.';
+        case 'nvidia_runtime_config_failed':
+            return 'Could not configure the NVIDIA Docker runtime.';
+        case 'docker_restart_failed':
+            return 'Docker could not start or restart after configuring the GPU runtime.';
+        case 'docker_user_access_missing':
+            return 'Could not grant the SSH user access to Docker.';
+        case 'al2023_prerequisites_missing':
+            return 'Use an Amazon Linux 2023 ECS GPU AMI with Docker and NVIDIA drivers.';
+        case 'nvidia_container_runtime_unavailable':
+            return 'The NVIDIA Docker runtime is not available.';
+        case 'intel_compute_runtime_unavailable':
+            return 'The Intel GPU compute runtime is not available.';
+        case 'intel_render_device_unavailable':
+            return 'The SSH user cannot access the Intel GPU render device.';
+        case 'intel_kernel_unavailable':
+            return 'No Intel GPU render device is present. Check the Ubuntu HWE kernel and GPU firmware.';
         default:
             return 'The trainer returned an invalid device report.';
     }

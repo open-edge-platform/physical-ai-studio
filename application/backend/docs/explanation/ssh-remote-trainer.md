@@ -45,12 +45,31 @@ before retrying. Studio then records the accepted key and rejects changed or
 revoked keys. It never silently accepts an unknown key.
 
 Saving the target opens the tunnel before reporting success and starts the
-managed container in the background. A first image pull can take time; check
-the target's health in the UI before starting a job. Image signatures are
+managed container in the background. If Docker or GPU prerequisites are missing,
+use **Install prerequisites** from the SSH target's action menu. This transfers
+a bundled script over verified SSH, runs it only on request, and reports progress
+or specific failures in target health. It supports Ubuntu 24.04 with NVIDIA or
+Intel GPUs and Amazon Linux 2023 ECS GPU hosts with NVIDIA; mixed-vendor hosts
+are rejected. Intel hosts must already have a kernel and firmware exposing a
+GPU render device; Studio does not replace the host kernel automatically.
+Installation never stops running containers. Newly installed GPU packages can
+require a separately confirmed host reboot; Studio checks for
+active jobs and running containers before rebooting, then reconnects and
+verifies the host before launching the trainer. Re-run installation after
+repairing a failed step; it skips prerequisites that already work. Missing
+Intel packages come from checksum-verified upstream releases; NVIDIA Container
+Toolkit packages use its signed vendor repository. Missing
+prerequisites require non-interactive sudo (`sudo -n true`) for the SSH user;
+Ubuntu hosts with incomplete `dpkg` transactions must be repaired by an
+administrator first. Reboot confirmation also requires non-interactive sudo.
+Already-ready hosts do not need sudo for the installation check. Docker group
+membership is root-equivalent. A first image pull can take time; check the target's health in
+the UI before starting a job. Image signatures are
 verified by Studio before launch. Restarting Studio restores standing tunnels
 for configured targets; an SSH host that is temporarily offline at startup is
 retried in the background. A container that stopped independently may still
-need to be started again by saving the target.
+need to be started again by saving the target. Installation is never retried
+automatically on Studio restart.
 
 Settings > General > SSH-provisioned training exposes four timeouts:
 `connect_timeout_s`, `command_timeout_s`, `preflight_timeout_s`, and
