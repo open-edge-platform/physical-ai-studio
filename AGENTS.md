@@ -32,6 +32,13 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 - Studio owns the export side of the export/load contract. Runtime consumes exported artifacts with `InferenceModel(...)`.
 - Keep customer-facing instructions stable and avoid exposing internal scaffolding unless the user is contributing to the repo.
 
+## Shared Policy Components
+
+- Reuse `physicalai.policies.components` before writing policy-specific building blocks.
+- For image encoders, use `FeatureExtractor` instead of a custom backbone wrapper. It takes a timm model name or any `nn.Module` (e.g. a torchvision model), selects layers by module name, and handles pooling (`none`, `avg`, `max`, `cls`) and multi-layer aggregation (`none`, `concat`, `mean`) for both conv and ViT backbones.
+- `forward` expects `(B, C, H, W)` images in `[0, 1]` and normalizes internally; use `encode_image` for PIL images, numpy arrays or unbatched tensors.
+- See `library/docs/explanation/policy/feature_extractor.md` for examples.
+
 ## Contribution Notes
 
 - Use Conventional Commits for PR titles and commits.

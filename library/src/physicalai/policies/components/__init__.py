@@ -3,6 +3,7 @@
 
 """Shared neural network components for policy modules."""
 
+from physicalai.policies.components.feature_extractor import FeatureExtractor
 from physicalai.policies.components.nn import (
     CategorySpecificLinear,
     CategorySpecificMLP,
@@ -15,6 +16,7 @@ from physicalai.policies.components.nn import (
 __all__ = [
     "CategorySpecificLinear",
     "CategorySpecificMLP",
+    "FeatureExtractor",
     "MultiEmbodimentActionEncoder",
     "SinusoidalPositionalEncoding",
     "TimestepEncoder",

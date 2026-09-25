@@ -216,5 +216,6 @@ Policies compose functionality through mixins:
 ## See Also
 
 - [Base Policy](base.md) - Detailed base class documentation
+- [Feature Extractor](feature_extractor.md) - Shared image encoder for timm, torchvision and custom backbones
 - [Export Design](../export/README.md) - Model export system
 - [Data Module](../data/README.md) - Dataset integration
