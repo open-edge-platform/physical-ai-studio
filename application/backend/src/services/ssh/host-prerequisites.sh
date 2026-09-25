@@ -30,7 +30,7 @@ update_apt() {
   fi
 }
 case "$ID:$VERSION_ID" in
-  ubuntu:24.04|amzn:2023) ;;
+  ubuntu:24.04|ubuntu:26.04|amzn:2023) ;;
   *) echo "UNSUPPORTED_OS: $ID $VERSION_ID" >&2; exit 2 ;;
 esac
 
@@ -109,8 +109,10 @@ if [[ $mode == --install ]]; then
   if [[ $ID == ubuntu ]]; then
     update_apt || { echo 'APT_UPDATE_FAILED: Ubuntu package source could not be refreshed' >&2; exit 1; }
     if ! command -v docker >/dev/null; then
-      "${privileged[@]}" apt-get install -y docker.io=29.1.3-0ubuntu3~24.04.2 || {
-        echo 'DOCKER_INSTALL_FAILED: pinned package unavailable or package manager failed' >&2; exit 1;
+      docker_package=docker.io
+      if [[ $VERSION_ID == 24.04 ]]; then docker_package=docker.io=29.1.3-0ubuntu3~24.04.2; fi
+      "${privileged[@]}" apt-get install -y "$docker_package" || {
+        echo 'DOCKER_INSTALL_FAILED: Docker package unavailable or package manager failed' >&2; exit 1;
       }
     fi
     "${privileged[@]}" systemctl enable --now docker || { echo 'DOCKER_RESTART_FAILED' >&2; exit 1; }
@@ -176,7 +178,14 @@ if [[ $mode == --install ]]; then
       fi
     else
       installed_intel=0
-      if ! installed intel-opencl-icd || ! installed libze-intel-gpu1; then
+      if [[ $VERSION_ID == 26.04 ]]; then
+        if ! installed intel-opencl-icd || ! installed libze-intel-gpu1 || ! installed libze1; then
+          "${privileged[@]}" apt-get install -y intel-opencl-icd libze-intel-gpu1 libze1 || {
+            echo 'INTEL_INSTALL_FAILED: Ubuntu Intel GPU packages unavailable' >&2; exit 1;
+          }
+          installed_intel=1
+        fi
+      elif ! installed intel-opencl-icd || ! installed libze-intel-gpu1; then
         "${privileged[@]}" apt-get install -y ca-certificates curl ocl-icd-libopencl1 || {
           echo 'INTEL_INSTALL_FAILED: missing system dependencies' >&2; exit 1;
         }
@@ -261,6 +270,10 @@ if (( nvidia )); then
   fi
   echo 'READY:nvidia'
 else
+  if [[ $VERSION_ID == 26.04 ]] && ! installed libze1; then
+    echo 'INTEL_COMPUTE_RUNTIME_UNAVAILABLE: Level Zero loader is missing' >&2
+    exit 1
+  fi
   if ! command -v clinfo >/dev/null || ! clinfo -l 2>/dev/null | grep -E 'Device #[0-9]+:.*Intel' | grep -qv CPU; then
     echo 'INTEL_COMPUTE_RUNTIME_UNAVAILABLE' >&2
     exit 1

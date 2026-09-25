@@ -40,6 +40,9 @@ describe('remote-trainer-health-utils starting status', () => {
         expect(
             healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'package_manager_broken' })
         ).toContain('incomplete dpkg transactions');
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'unsupported_os' })).toContain(
+            'Ubuntu 26.04'
+        );
     });
 
     it('explains missing Docker for a Studio-managed trainer', () => {

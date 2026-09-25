@@ -9,6 +9,14 @@ from services.ssh.host_installer import install
 from services.ssh.transport import CommandFailure, CommandResult
 
 
+def test_ubuntu_26_uses_its_own_docker_and_intel_packages() -> None:
+    source = (Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh").read_text()
+    assert "ubuntu:24.04|ubuntu:26.04|amzn:2023" in source
+    assert "if [[ $VERSION_ID == 24.04 ]]; then docker_package=docker.io=29.1.3-0ubuntu3~24.04.2; fi" in source
+    assert "if [[ $VERSION_ID == 26.04 ]]; then\n        if ! installed intel-opencl-icd" in source
+    assert "apt-get install -y intel-opencl-icd libze-intel-gpu1 libze1" in source
+
+
 def test_intel_reboot_is_reported_before_render_group_relogin() -> None:
     script = Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh"
     source = script.read_text()

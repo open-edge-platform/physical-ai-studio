@@ -48,17 +48,19 @@ Saving the target opens the tunnel before reporting success and starts the
 managed container in the background. If Docker or GPU prerequisites are missing,
 use **Install prerequisites** from the SSH target's action menu. This transfers
 a bundled script over verified SSH, runs it only on request, and reports progress
-or specific failures in target health. It supports Ubuntu 24.04 with NVIDIA or
-Intel GPUs and Amazon Linux 2023 ECS GPU hosts with NVIDIA; mixed-vendor hosts
-are rejected. Intel hosts must already have a kernel and firmware exposing a
-GPU render device; Studio does not replace the host kernel automatically.
+or specific failures in target health. It supports Ubuntu 24.04 and 26.04 with
+NVIDIA or Intel GPUs and Amazon Linux 2023 ECS GPU hosts with NVIDIA;
+mixed-vendor hosts are rejected. On Ubuntu 26.04, Docker and Intel GPU packages
+come from the Ubuntu repositories; Ubuntu 24.04 retains the pinned Docker and
+checksum-verified upstream Intel packages. Intel hosts must already have a
+kernel and firmware exposing a GPU render device; Studio does not replace the
+host kernel automatically.
 Installation never stops running containers. Newly installed GPU packages can
 require a separately confirmed host reboot; Studio checks for
 active jobs and running containers before rebooting, then reconnects and
 verifies the host before launching the trainer. Re-run installation after
-repairing a failed step; it skips prerequisites that already work. Missing
-Intel packages come from checksum-verified upstream releases; NVIDIA Container
-Toolkit packages use its signed vendor repository. Missing
+repairing a failed step; it skips prerequisites that already work. NVIDIA
+Container Toolkit packages use its signed vendor repository. Missing
 prerequisites require non-interactive sudo (`sudo -n true`) for the SSH user;
 Ubuntu hosts with incomplete `dpkg` transactions must be repaired by an
 administrator first. Reboot confirmation also requires non-interactive sudo.

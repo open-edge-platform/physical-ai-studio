@@ -64,19 +64,19 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
         case 'nvidia_toolkit_repo_failed':
             return 'Could not configure the signed NVIDIA Container Toolkit repository.';
         case 'intel_install_failed':
-            return 'Intel GPU dependency installation failed. Check the pinned package repository.';
+            return 'Intel GPU dependency installation failed. Check the host package sources.';
         case 'intel_download_failed':
             return 'Could not download the pinned Intel GPU packages.';
         case 'intel_checksum_failed':
             return 'An Intel GPU package failed checksum verification; installation was stopped.';
         case 'docker_install_failed':
-            return 'Docker installation failed: the pinned package is unavailable or apt failed.';
+            return 'Docker installation failed: the package is unavailable or apt failed.';
         case 'gpu_ambiguous':
             return 'Exactly one NVIDIA or Intel GPU vendor must be present on the SSH host.';
         case 'unsupported_gpu':
             return 'Intel GPU installation is not supported on Amazon Linux 2023.';
         case 'unsupported_os':
-            return 'Host installation supports Ubuntu 24.04 or Amazon Linux 2023 only.';
+            return 'Host installation supports Ubuntu 24.04, Ubuntu 26.04, or Amazon Linux 2023 only.';
         case 'reboot_failed':
             return 'The host did not reboot or reconnect. Check it manually before retrying.';
         case 'apt_update_failed':

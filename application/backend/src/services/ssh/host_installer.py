@@ -38,10 +38,11 @@ _ERROR_MARKERS = {
 
 async def install(transport: SshTransport) -> str:
     """Install host dependencies, returning ``ready``, ``reboot_required`` or a safe failure marker."""
-    temporary = await transport.run_command(["mktemp", "-d", "/tmp/physicalai-installer.XXXXXXXX"])  # noqa: S108 - mktemp creates the private directory.
+    # Remote mktemp creates a private directory; the returned path is checked before use.
+    temporary = await transport.run_command(["mktemp", "-d", "/tmp/physicalai-installer.XXXXXXXX"])  # noqa: S108 # nosec B108
     directory = temporary.first_line()
     if not temporary.ok or not re.fullmatch(
-        r"/tmp/physicalai-installer\.[A-Za-z0-9]{8}",  # noqa: S108 - private remote mktemp path.
+        r"/tmp/physicalai-installer\.[A-Za-z0-9]{8}",  # noqa: S108 # nosec B108
         directory,
     ):
         return "transfer_failed"
