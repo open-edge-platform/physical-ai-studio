@@ -33,16 +33,17 @@ model:
     pretrained_model_name_or_path: "nvidia/Cosmos3-Edge"
     mode: "peft"
     paradigm: "policy"
-    rank: 32
-    alpha_scale: 1.0
-    dora: false
+    lora_rank: 32
+    lora_alpha: 32
+    lora_dropout: 0.05
+    lora_use_dora: false
     head_lr_mult: 2.0
     action_weight: 10.0
     chunk_size: 32
     n_action_steps: 32
     resolution_tier: 256
     fps: 15
-    grad_checkpoint: true
+    gradient_checkpointing: true
     embodiment: "droid_lerobot"
     prompt: ""
     dtype: "bfloat16"

@@ -79,37 +79,55 @@ def configure_trainable(
     tf: nn.Module,
     mode: str,
     *,
-    rank: int = 32,
-    alpha_scale: float = 1.0,
-    dora: bool = False,
+    lora_rank: int = 32,
+    lora_alpha: int | None = None,
+    lora_dropout: float = 0.05,
+    lora_use_dora: bool = False,
+    rank: int | None = None,
+    alpha_scale: float | None = None,
+    dora: bool | None = None,
 ) -> None:
     """Freeze the transformer backbone and enable trainable weights for the chosen mode.
 
     Args:
         tf: Cosmos3 transformer model.
         mode: Training mode ("peft" or "full").
-        rank: LoRA/DoRA rank.
-        alpha_scale: Scaling factor for LoRA alpha.
-        dora: Whether to use Weight-Decomposed Low-Rank Adaptation (DoRA).
+        lora_rank: LoRA/DoRA rank.
+        lora_alpha: LoRA scaling numerator. If None, defaults to lora_rank.
+        lora_dropout: Dropout probability applied to LoRA adapter inputs.
+        lora_use_dora: Whether to use Weight-Decomposed Low-Rank Adaptation (DoRA).
+        rank: Deprecated alias for lora_rank.
+        alpha_scale: Deprecated alias for scaling factor (lora_alpha = round(alpha_scale * rank)).
+        dora: Deprecated alias for lora_use_dora.
     """
-    tf.requires_grad_(requires_grad=False)
+    tf.requires_grad_(False)  # ruff: ignore[boolean-positional-value-in-call]
     if mode == "full":
         for name, param in tf.named_parameters():
             if any(key in name for key in GEN_TOWER_KEYS + HEAD_KEYS):
-                param.requires_grad_(requires_grad=True)
+                param.requires_grad = True
     else:
+        resolved_rank = rank if rank is not None else lora_rank
+        if lora_alpha is not None:
+            resolved_alpha = lora_alpha
+        elif alpha_scale is not None:
+            resolved_alpha = round(alpha_scale * resolved_rank)
+        else:
+            resolved_alpha = resolved_rank
+        resolved_dora = dora if dora is not None else lora_use_dora
+
         lora_cfg = LoraConfig(
-            r=rank,
-            lora_alpha=round(alpha_scale * rank),
+            r=resolved_rank,
+            lora_alpha=resolved_alpha,
+            lora_dropout=lora_dropout,
             target_modules=LORA_TARGETS,
-            use_dora=dora,
+            use_dora=resolved_dora,
         )
         add_adapter_fn = getattr(tf, "add_adapter", None)
         if callable(add_adapter_fn):
             add_adapter_fn(lora_cfg)
         for name, param in tf.named_parameters():
             if any(key in name for key in HEAD_KEYS):
-                param.requires_grad_(requires_grad=True)
+                param.requires_grad = True
 
 
 def split_trainable_params(tf: nn.Module) -> tuple[list[torch.nn.Parameter], list[torch.nn.Parameter]]:

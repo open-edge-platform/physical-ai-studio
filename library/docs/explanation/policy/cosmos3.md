@@ -62,7 +62,7 @@ policy = Cosmos3(
     embodiment="pusht",
     pretrained_model_name_or_path="nvidia/Cosmos3-Edge",
     mode="peft",
-    rank=32,
+    lora_rank=32,
     dtype="bfloat16",
 )
 

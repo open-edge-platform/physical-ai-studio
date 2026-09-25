@@ -41,13 +41,16 @@ class Cosmos3Config(Config):
         mode: Training mode. "peft" trains LoRA/DoRA on attention projections and
             a domain action head; "full" fine-tunes the generation tower and vision
             projections. Defaults to "peft".
+        lora_enabled: Whether LoRA/DoRA fine-tuning is enabled. True implies mode="peft",
+            False implies mode="full". Defaults to True.
         paradigm: Denoising objective. Options: "policy" (state + frame -> actions + video),
             "fd" (frame + actions -> video), "id" (video -> actions), or "joint" (random mix).
             Defaults to "policy".
-        rank: LoRA/DoRA rank for PEFT mode. Defaults to 32.
-        alpha_scale: LoRA alpha scaling factor (lora_alpha = round(alpha_scale * rank)).
-            Defaults to 1.0.
-        dora: Whether to use Weight-Decomposed Low-Rank Adaptation (DoRA). Defaults to False.
+        lora_rank: LoRA/DoRA rank (dimension of the low-rank decomposition). Defaults to 32.
+        lora_alpha: LoRA scaling numerator (scaling = lora_alpha / lora_rank). Defaults to
+            None, which resolves to lora_rank (i.e. scaling of 1.0).
+        lora_dropout: Dropout probability applied to LoRA adapter inputs. Defaults to 0.05.
+        lora_use_dora: Whether to use Weight-Decomposed Low-Rank Adaptation (DoRA). Defaults to False.
         head_lr_mult: Multiplier on optimizer_lr for the domain action head.
             Defaults to 2.0 for "peft" and 10.0 for "full".
         action_weight: Weight of the action loss vs video loss in flow matching. Defaults to 10.0.
@@ -56,7 +59,7 @@ class Cosmos3Config(Config):
         resolution_tier: Short-side resolution in pixels for video conditioning.
             Must be one of (256, 480, 720). Defaults to 256.
         fps: Frames per second for conditioning and generation. Defaults to 10.
-        grad_checkpoint: Enable gradient checkpointing for memory optimization. Defaults to True.
+        gradient_checkpointing: Enable gradient checkpointing for memory optimization. Defaults to True.
         action_space: Optional override of the embodiment's action space ("identity" or
             "joint_pos"). When None, resolved automatically from the embodiment
             (droid_lerobot -> joint_pos, others -> identity). Defaults to None.
@@ -80,23 +83,30 @@ class Cosmos3Config(Config):
         optimizer_eps: Epsilon parameter for optimizer numerical stability. Defaults to 1e-8.
         optimizer_weight_decay: Weight decay coefficient for AdamW optimizer. Defaults to 0.01.
         optimizer_grad_clip_norm: Maximum gradient norm for gradient clipping. Defaults to 1.0.
+        rank: Deprecated alias for `lora_rank`.
+        alpha_scale: Deprecated alias for scaling factor (resolves lora_alpha = round(alpha_scale * lora_rank)).
+        dora: Deprecated alias for `lora_use_dora`.
+        grad_checkpoint: Deprecated alias for `gradient_checkpointing`.
+        pretrained_name_or_path: Alias for `pretrained_model_name_or_path`.
     """
 
     embodiment: str
     pretrained_model_name_or_path: str = "nvidia/Cosmos3-Edge"
     revision: str | None = None
     mode: Literal["peft", "full"] = "peft"
+    lora_enabled: bool = True
     paradigm: Literal["policy", "fd", "id", "joint"] = "policy"
-    rank: int = 32
-    alpha_scale: float = 1.0
-    dora: bool = False
+    lora_rank: int = 32
+    lora_alpha: int | None = None
+    lora_dropout: float = 0.05
+    lora_use_dora: bool = False
     head_lr_mult: float = 2.0
     action_weight: float = 10.0
     chunk_size: int = 32
     n_action_steps: int | None = None
     resolution_tier: int = 256
     fps: int = 10
-    grad_checkpoint: bool = True
+    gradient_checkpointing: bool = True
     action_space: str | None = None
     view_point: str | None = None
     normalizer_stats_path: str | None = None
@@ -113,8 +123,56 @@ class Cosmos3Config(Config):
     optimizer_weight_decay: float = 0.01
     optimizer_grad_clip_norm: float = 1.0
 
-    def __post_init__(self) -> None:
-        """Validate configuration parameters.
+    # Backwards-compatibility aliases
+    rank: int | None = None
+    alpha_scale: float | None = None
+    dora: bool | None = None
+    grad_checkpoint: bool | None = None
+    pretrained_name_or_path: str | None = None
+
+    def _set_frozen(self, name: str, value: object) -> None:
+        object.__setattr__(self, name, value)  # ruff: ignore[unnecessary-dunder-call]
+
+    def _resolve_aliases(self) -> None:
+        """Resolve legacy hyperparameter aliases."""
+        if self.pretrained_name_or_path is not None:
+            self._set_frozen("pretrained_model_name_or_path", self.pretrained_name_or_path)
+
+        if self.rank is not None:
+            self._set_frozen("lora_rank", self.rank)
+
+        if self.alpha_scale is not None and self.lora_alpha is None:
+            self._set_frozen("lora_alpha", round(self.alpha_scale * self.lora_rank))
+
+        if self.lora_alpha is None:
+            self._set_frozen("lora_alpha", self.lora_rank)
+
+        if self.dora is not None:
+            self._set_frozen("lora_use_dora", self.dora)
+
+        if self.grad_checkpoint is not None:
+            self._set_frozen("gradient_checkpointing", self.grad_checkpoint)
+
+        self._set_frozen("rank", self.lora_rank)
+        self._set_frozen(
+            "alpha_scale",
+            float(self.lora_alpha / self.lora_rank) if self.lora_rank > 0 else 1.0,
+        )
+        self._set_frozen("dora", self.lora_use_dora)
+        self._set_frozen("grad_checkpoint", self.gradient_checkpointing)
+
+    def _sync_mode_and_lora(self) -> None:
+        """Synchronize training mode and lora_enabled flag."""
+        if self.mode == "full":
+            self._set_frozen("lora_enabled", value=False)
+        elif not self.lora_enabled:
+            self._set_frozen("mode", "full")
+        else:
+            self._set_frozen("lora_enabled", value=True)
+            self._set_frozen("mode", "peft")
+
+    def _validate(self) -> None:
+        """Validate parameter ranges and types.
 
         Raises:
             ValueError: If any configuration parameter has an invalid value.
@@ -127,8 +185,20 @@ class Cosmos3Config(Config):
             msg = f"Invalid paradigm: {self.paradigm}. Must be 'policy', 'fd', 'id', or 'joint'."
             raise ValueError(msg)
 
+        if self.lora_rank <= 0:
+            msg = f"lora_rank must be positive, got {self.lora_rank}."
+            raise ValueError(msg)
+
+        if self.lora_alpha is not None and self.lora_alpha <= 0:
+            msg = f"lora_alpha must be positive, got {self.lora_alpha}."
+            raise ValueError(msg)
+
+        if not 0.0 <= self.lora_dropout < 1.0:
+            msg = f"lora_dropout must be in [0.0, 1.0), got {self.lora_dropout}."
+            raise ValueError(msg)
+
         if self.n_action_steps is None:
-            object.__setattr__(self, "n_action_steps", self.chunk_size)
+            self._set_frozen("n_action_steps", self.chunk_size)
         elif self.n_action_steps > self.chunk_size:
             msg = f"n_action_steps ({self.n_action_steps}) cannot exceed chunk_size ({self.chunk_size})."
             raise ValueError(msg)
@@ -141,6 +211,11 @@ class Cosmos3Config(Config):
             msg = f"Invalid dtype: {self.dtype}. Must be 'bfloat16', 'float32', or 'float16'."
             raise ValueError(msg)
 
-        # Set appropriate default head_lr_mult if user left it as default but switched to full mode
         if self.mode == "full" and abs(self.head_lr_mult - _DEFAULT_PEFT_HEAD_MULT) < _EPS:
-            object.__setattr__(self, "head_lr_mult", _DEFAULT_FULL_HEAD_MULT)
+            self._set_frozen("head_lr_mult", _DEFAULT_FULL_HEAD_MULT)
+
+    def __post_init__(self) -> None:
+        """Validate configuration parameters."""
+        self._resolve_aliases()
+        self._validate()
+        self._sync_mode_and_lora()

@@ -111,9 +111,8 @@ def state_action_mrope_ids(
     """
     config = pipe.transformer.config
     effective_fps = action_fps if getattr(config, "enable_fps_modulation", False) else None
-    temporal_compression = (
-        getattr(pipe, "vae_scale_factor_temporal", None)
-        or getattr(pipe.vae.config, "scale_factor_temporal", 4)
+    temporal_compression = getattr(pipe, "vae_scale_factor_temporal", None) or getattr(
+        pipe.vae.config, "scale_factor_temporal", 4
     )
     ids, _ = get_3d_mrope_ids_vae_tokens(
         grid_t=action_len,

@@ -36,27 +36,82 @@ class TestCosmos3Config:
         assert config.pretrained_model_name_or_path == "nvidia/Cosmos3-Edge"
         assert config.revision is None
         assert config.mode == "peft"
+        assert config.lora_enabled is True
         assert config.paradigm == "policy"
+        assert config.lora_rank == 32
+        assert config.lora_alpha == 32
+        assert config.lora_dropout == 0.05
+        assert config.lora_use_dora is False
+        assert config.gradient_checkpointing is True
+        # Legacy aliases
         assert config.rank == 32
         assert config.alpha_scale == 1.0
         assert not config.dora
+        assert config.grad_checkpoint is True
         assert config.head_lr_mult == 2.0
         assert config.action_weight == 10.0
         assert config.chunk_size == 32
         assert config.n_action_steps == 32
         assert config.resolution_tier == 256
         assert config.fps == 10
-        assert config.grad_checkpoint is True
         assert config.embodiment == "pusht"
         assert config.action_space is None
         assert config.view_point is None
         assert config.dtype == "bfloat16"
         assert config.optimizer_lr == 1e-4
 
+    def test_peft_parameter_naming_and_aliases(self) -> None:
+        """Test standard LoRA/DoRA parameter naming and backward compatibility aliases."""
+        # Canonical names
+        config = Cosmos3Config(
+            embodiment="pusht",
+            lora_rank=64,
+            lora_alpha=128,
+            lora_dropout=0.1,
+            lora_use_dora=True,
+            gradient_checkpointing=False,
+        )
+        assert config.lora_rank == 64
+        assert config.lora_alpha == 128
+        assert config.lora_dropout == 0.1
+        assert config.lora_use_dora is True
+        assert config.gradient_checkpointing is False
+        assert config.rank == 64
+        assert config.alpha_scale == 2.0
+        assert config.dora is True
+        assert config.grad_checkpoint is False
+
+        # Legacy aliases
+        config_legacy = Cosmos3Config(
+            embodiment="pusht",
+            rank=16,
+            alpha_scale=0.5,
+            dora=True,
+            grad_checkpoint=False,
+            pretrained_name_or_path="custom/path",
+        )
+        assert config_legacy.lora_rank == 16
+        assert config_legacy.lora_alpha == 8
+        assert config_legacy.lora_use_dora is True
+        assert config_legacy.gradient_checkpointing is False
+        assert config_legacy.pretrained_model_name_or_path == "custom/path"
+
+    def test_peft_parameter_validations(self) -> None:
+        """Test validations for LoRA parameters."""
+        with pytest.raises(ValueError, match="lora_rank must be positive"):
+            Cosmos3Config(embodiment="pusht", lora_rank=0)
+
+        with pytest.raises(ValueError, match="lora_alpha must be positive"):
+            Cosmos3Config(embodiment="pusht", lora_alpha=-1)
+
+        with pytest.raises(ValueError, match="lora_dropout"):
+            Cosmos3Config(embodiment="pusht", lora_dropout=1.0)
+
     def test_full_mode_defaults(self) -> None:
         """Test mode='full' default head_lr_mult is 10.0."""
         config = Cosmos3Config(embodiment="pusht", mode="full")
         assert config.mode == "full"
+        assert config.lora_enabled is False
         assert config.head_lr_mult == 10.0
 
     def test_custom_config(self) -> None:
@@ -139,11 +194,27 @@ class TestCosmos3Policy:
 
     def test_hyperparameters_saved(self) -> None:
         """Test hyperparameters and config dictionary are saved."""
-        policy = Cosmos3(embodiment="pusht", chunk_size=16, n_action_steps=16, mode="peft")
+        policy = Cosmos3(
+            embodiment="pusht",
+            chunk_size=16,
+            n_action_steps=16,
+            mode="peft",
+            lora_rank=64,
+            lora_alpha=64,
+            lora_dropout=0.1,
+            lora_use_dora=True,
+            gradient_checkpointing=False,
+        )
         assert policy.hparams.chunk_size == 16
         assert policy.hparams.mode == "peft"
+        assert policy.config.lora_rank == 64
+        assert policy.config.lora_alpha == 64
+        assert policy.config.lora_dropout == 0.1
+        assert policy.config.lora_use_dora is True
+        assert policy.config.gradient_checkpointing is False
         assert "config" in policy.hparams
         assert policy.hparams["config"]["chunk_size"] == 16
+        assert policy.hparams["config"]["lora_rank"] == 64
 
     def test_from_config(self) -> None:
         """Test instantiation via from_config classmethod."""

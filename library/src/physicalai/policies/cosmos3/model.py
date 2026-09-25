@@ -286,13 +286,14 @@ class Cosmos3Model(Model):
         self.action_dim = getattr(self.transformer.config, "action_dim", 64)
 
         # Model surgery: freeze backbone and configure trainable layers
-        self.vae.requires_grad_(requires_grad=False)
+        self.vae.requires_grad_(False)  # ruff: ignore[boolean-positional-value-in-call]
         configure_trainable(
             self.transformer,
             mode=config.mode,
-            rank=config.rank,
-            alpha_scale=config.alpha_scale,
-            dora=config.dora,
+            lora_rank=config.lora_rank,
+            lora_alpha=config.lora_alpha,
+            lora_dropout=config.lora_dropout,
+            lora_use_dora=config.lora_use_dora,
         )
         if not _has_pretrained_action_head(
             config.pretrained_model_name_or_path,
@@ -307,7 +308,7 @@ class Cosmos3Model(Model):
                 config.embodiment,
             )
 
-        if config.grad_checkpoint:
+        if config.gradient_checkpointing:
             self.transformer.enable_gradient_checkpointing()
 
         # Input preprocessor for view composition and viewpoint metadata

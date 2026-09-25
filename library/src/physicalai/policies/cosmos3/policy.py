@@ -44,10 +44,13 @@ class Cosmos3(Policy):
         revision: Pinned git commit SHA for model and checkpoint downloads (lib.security rule 9).
             Defaults to None.
         mode: Training mode ("peft" or "full"). Default: "peft".
+        lora_enabled: Whether LoRA/DoRA fine-tuning is enabled. True implies mode="peft",
+            False implies mode="full". Default: None (inferred from mode).
         paradigm: Denoising objective ("policy", "fd", "id", or "joint"). Default: "policy".
-        rank: LoRA/DoRA rank for PEFT mode. Default: 32.
-        alpha_scale: LoRA alpha scaling factor. Default: 1.0.
-        dora: Whether to use DoRA instead of plain LoRA. Default: False.
+        lora_rank: LoRA/DoRA rank for PEFT mode. Default: 32.
+        lora_alpha: LoRA scaling numerator (scaling = lora_alpha / lora_rank). Default: None (resolves to lora_rank).
+        lora_dropout: Dropout probability applied to LoRA adapter inputs. Default: 0.05.
+        lora_use_dora: Whether to use DoRA instead of plain LoRA. Default: False.
         head_lr_mult: Multiplier on optimizer_lr for the domain action head.
             Default: 2.0 for peft, 10.0 for full.
         action_weight: Weight of action loss vs video loss. Default: 10.0.
@@ -55,7 +58,7 @@ class Cosmos3(Policy):
         n_action_steps: Number of action steps to execute per invocation. Default: 32.
         resolution_tier: Video conditioning short-side px (256, 480, 720). Default: 256.
         fps: Video and action frame rate. Default: 10.
-        grad_checkpoint: Enable gradient checkpointing. Default: True.
+        gradient_checkpointing: Enable gradient checkpointing. Default: True.
         action_space: Optional override of the embodiment's action space ("identity" or
             "joint_pos"). When None, resolved from the embodiment. Default: None.
         prompt: Task instruction string. Default: "".
@@ -70,6 +73,11 @@ class Cosmos3(Policy):
         optimizer_grad_clip_norm: Max gradient norm for clipping. Default: 1.0.
         dataset_stats: Dataset normalization statistics for eager initialization.
         pipeline: Pre-initialized PolicyPipelineWithState instance (optional).
+        rank: Deprecated alias for `lora_rank`.
+        alpha_scale: Deprecated alias for scaling factor (resolves lora_alpha = round(alpha_scale * lora_rank)).
+        dora: Deprecated alias for `lora_use_dora`.
+        grad_checkpoint: Deprecated alias for `gradient_checkpointing`.
+        pretrained_name_or_path: Alias for `pretrained_model_name_or_path`.
     """
 
     def __init__(  # ruff: ignore[too-many-arguments]
@@ -79,17 +87,19 @@ class Cosmos3(Policy):
         revision: str | None = None,
         embodiment: str,
         mode: Literal["peft", "full"] = "peft",
+        lora_enabled: bool | None = None,
         paradigm: Literal["policy", "fd", "id", "joint"] = "policy",
-        rank: int = 32,
-        alpha_scale: float = 1.0,
-        dora: bool = False,
+        lora_rank: int = 32,
+        lora_alpha: int | None = None,
+        lora_dropout: float = 0.05,
+        lora_use_dora: bool = False,
         head_lr_mult: float | None = None,
         action_weight: float = 10.0,
         chunk_size: int = 32,
         n_action_steps: int | None = None,
         resolution_tier: int = 256,
         fps: int = 10,
-        grad_checkpoint: bool = True,
+        gradient_checkpointing: bool = True,
         action_space: str | None = None,
         view_point: str | None = None,
         normalizer_stats_path: str | None = None,
@@ -105,26 +115,49 @@ class Cosmos3(Policy):
         optimizer_grad_clip_norm: float = 1.0,
         dataset_stats: dict[str, Any] | None = None,
         pipeline: PolicyPipelineWithState | None = None,
+        rank: int | None = None,
+        alpha_scale: float | None = None,
+        dora: bool | None = None,
+        grad_checkpoint: bool | None = None,
+        pretrained_name_or_path: str | None = None,
     ) -> None:
         """Initialize Cosmos3 Policy."""
-        resolved_head_lr_mult = head_lr_mult if head_lr_mult is not None else (10.0 if mode == "full" else 2.0)
+        effective_pretrained = (
+            pretrained_name_or_path if pretrained_name_or_path is not None else pretrained_model_name_or_path
+        )
+        effective_mode = mode
+        effective_lora_enabled = True if lora_enabled is None else lora_enabled
+        if lora_enabled is False:
+            effective_mode = "full"
+        elif mode == "full" and lora_enabled is None:
+            effective_lora_enabled = False
+
+        effective_rank = rank if rank is not None else lora_rank
+        effective_dora = dora if dora is not None else lora_use_dora
+        effective_grad_chk = grad_checkpoint if grad_checkpoint is not None else gradient_checkpointing
+
+        resolved_head_lr_mult = (
+            head_lr_mult if head_lr_mult is not None else (10.0 if effective_mode == "full" else 2.0)
+        )
 
         self.config = Cosmos3Config(
-            pretrained_model_name_or_path=pretrained_model_name_or_path,
+            pretrained_model_name_or_path=effective_pretrained,
             revision=revision,
             embodiment=embodiment,
-            mode=mode,
+            mode=effective_mode,
+            lora_enabled=effective_lora_enabled,
             paradigm=paradigm,
-            rank=rank,
-            alpha_scale=alpha_scale,
-            dora=dora,
+            lora_rank=effective_rank,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+            lora_use_dora=effective_dora,
             head_lr_mult=resolved_head_lr_mult,
             action_weight=action_weight,
             chunk_size=chunk_size,
             n_action_steps=n_action_steps,
             resolution_tier=resolution_tier,
             fps=fps,
-            grad_checkpoint=grad_checkpoint,
+            gradient_checkpointing=effective_grad_chk,
             action_space=action_space,
             view_point=view_point,
             normalizer_stats_path=normalizer_stats_path,
@@ -138,6 +171,7 @@ class Cosmos3(Policy):
             optimizer_eps=optimizer_eps,
             optimizer_weight_decay=optimizer_weight_decay,
             optimizer_grad_clip_norm=optimizer_grad_clip_norm,
+            alpha_scale=alpha_scale,
         )
 
         super().__init__(n_action_steps=self.config.n_action_steps)
@@ -481,4 +515,37 @@ class Cosmos3(Policy):
         Returns:
             Initialized Cosmos3 policy instance.
         """
-        return cls(**config.to_dict(), **kwargs)
+        init_kwargs: dict[str, object] = {
+            "pretrained_model_name_or_path": config.pretrained_model_name_or_path,
+            "revision": config.revision,
+            "embodiment": config.embodiment,
+            "mode": config.mode,
+            "lora_enabled": config.lora_enabled,
+            "paradigm": config.paradigm,
+            "lora_rank": config.lora_rank,
+            "lora_alpha": config.lora_alpha,
+            "lora_dropout": config.lora_dropout,
+            "lora_use_dora": config.lora_use_dora,
+            "head_lr_mult": config.head_lr_mult,
+            "action_weight": config.action_weight,
+            "chunk_size": config.chunk_size,
+            "n_action_steps": config.n_action_steps,
+            "resolution_tier": config.resolution_tier,
+            "fps": config.fps,
+            "gradient_checkpointing": config.gradient_checkpointing,
+            "action_space": config.action_space,
+            "view_point": config.view_point,
+            "normalizer_stats_path": config.normalizer_stats_path,
+            "prompt": config.prompt,
+            "guidance_scale": config.guidance_scale,
+            "flow_shift": config.flow_shift,
+            "num_inference_steps": config.num_inference_steps,
+            "dtype": config.dtype,
+            "optimizer_lr": config.optimizer_lr,
+            "optimizer_betas": config.optimizer_betas,
+            "optimizer_eps": config.optimizer_eps,
+            "optimizer_weight_decay": config.optimizer_weight_decay,
+            "optimizer_grad_clip_norm": config.optimizer_grad_clip_norm,
+        }
+        init_kwargs.update(kwargs)
+        return cls(**init_kwargs)
