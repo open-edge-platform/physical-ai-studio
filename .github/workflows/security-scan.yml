@@ -397,6 +397,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+    strategy:
       matrix:
         ai-device: [xpu]
     steps:
@@ -479,10 +480,35 @@ jobs:
 
           echo "CONTAINER_NAME=${CONTAINER_NAME}" >> "$GITHUB_ENV"
 
+      - name: Create read-only trainer OpenAPI document
+        run: |
+          curl --fail --silent --show-error \
+            "http://localhost:8001/openapi.json" \
+            --output trainer-openapi.json
+          python3 - <<'PY'
+          import json
+
+          allowed_paths = {"/health", "/devices", "/storage"}
+          with open("trainer-openapi.json") as source:
+              schema = json.load(source)
+
+          schema["paths"] = {
+              path: definition
+              for path, definition in schema.get("paths", {}).items()
+              if path in allowed_paths
+          }
+          if set(schema["paths"]) != allowed_paths:
+              raise SystemExit("Trainer OpenAPI document is missing an expected read-only path")
+
+          schema["servers"] = [{"url": "http://localhost:8001"}]
+          with open("trainer-read-only-openapi.json", "w") as destination:
+              json.dump(schema, destination)
+          PY
+
       - name: Run ZAP API Scan
         uses: zaproxy/action-api-scan@5158fe4d9d8fcc75ea204db81317cce7f9e5453d # v0.10.0
         with:
-          target: "http://localhost:8001/openapi.json"
+          target: "/zap/wrk/trainer-read-only-openapi.json"
           format: "openapi"
           allow_issue_writing: false
           fail_action: false
