@@ -25,8 +25,8 @@ from physicalai.data.observation import (
 )
 from physicalai.policies.base import Policy
 from physicalai.policies.mixins.peft import PeftPolicyMixin, is_lora_injected
+from physicalai.policies.utils.deprecation import deprecate
 from physicalai.policies.utils.features import get_feature_by_type
-from physicalai.utils import deprecate
 
 from .config import MolmoAct2Config
 from .export import MolmoAct2ExportMixin

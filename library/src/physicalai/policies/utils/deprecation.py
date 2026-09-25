@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Shared utilities."""
+"""Shared deprecation warnings for legacy public APIs."""
 
 from __future__ import annotations
 
