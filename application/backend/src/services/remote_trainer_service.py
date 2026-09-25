@@ -1,4 +1,6 @@
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from time import perf_counter
 from uuid import UUID, uuid4
@@ -13,11 +15,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.security import get_ssh_feature_availability
 from db.schema import JobDB
 from exceptions import (
+    InvalidResourceError,
     ResourceAlreadyExistsError,
     ResourceInUseError,
     ResourceNotFoundError,
     ResourceType,
+    SshAgentRequiredError,
+    SshAuthenticationError,
+    SshConnectionError,
     SshFeatureDisabledError,
+    SshHostKeyMismatchError,
+    SshHostKeyUnknownError,
 )
 from repositories.remote_trainer_repo import RemoteTrainerRepository
 from schemas.base_job import JobStatus, JobType
@@ -31,7 +39,8 @@ from schemas.remote_trainer import (
     RemoteTrainerUpdate,
 )
 from services import remote_trainer_tunnel_manager
-from services.ssh import persistent_trainer
+from services.ssh import host_installer, persistent_trainer
+from services.ssh.transport import SshTransport
 
 _HEALTH_CHECK_TIMEOUT_S = 5.0
 
@@ -46,6 +55,10 @@ _inflight_checks: dict[UUID, asyncio.Task[RemoteTrainerHealth]] = {}
 # Background trainer-container launches (see `_start_persistent_trainer_in_background`),
 # kept referenced so asyncio never garbage-collects a task mid-flight.
 _background_launches: dict[UUID, asyncio.Task[None]] = {}
+# ponytail: installation/reboot state is process-local; persist jobs if setup must survive Studio restarts.
+_background_installs: dict[UUID, asyncio.Task[None]] = {}
+# ponytail: one process-wide lock serializes brief setup/job submissions; use per-trainer locks if contention matters.
+_setup_lock = asyncio.Lock()
 
 
 # Fields whose column is nullable, so an explicit null in an update means "clear it"
@@ -236,6 +249,18 @@ class RemoteTrainerService:
             raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
 
     @staticmethod
+    @asynccontextmanager
+    async def allow_job_submission(remote_trainer_id: UUID | None) -> AsyncIterator[None]:
+        """Keep setup checks and job persistence atomic for managed trainers."""
+        if remote_trainer_id is None:
+            yield
+            return
+        async with _setup_lock:
+            if remote_trainer_id in _background_installs:
+                raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
+            yield
+
+    @staticmethod
     async def _cancel_launch(remote_trainer_id: UUID) -> None:
         task = _background_launches.pop(remote_trainer_id, None)
         if task is not None:
@@ -303,6 +328,115 @@ class RemoteTrainerService:
         self._start_persistent_trainer_in_background(saved, accepted_host_key_fingerprint)
         return saved
 
+    async def install_remote_trainer(self, remote_trainer_id: UUID) -> None:
+        """Start a user-requested prerequisite installation; report progress via health."""
+        trainer = await self.get_remote_trainer(remote_trainer_id)
+        if trainer.connection_mode is not RemoteTrainerConnectionMode.SSH:
+            raise InvalidResourceError("remote_trainer", "Prerequisite installation requires an SSH trainer")
+        self._require_ssh_feature_if_tunneled(trainer.connection_mode)
+
+        async def _install() -> None:
+            try:
+                async with SshTransport(persistent_trainer._ssh_target(trainer)) as transport:
+                    outcome = await host_installer.install(transport)
+                if outcome == "ready":
+                    await persistent_trainer.start(trainer)
+                else:
+                    persistent_trainer.set_install_failure(remote_trainer_id, outcome)
+            except (SshHostKeyMismatchError, SshHostKeyUnknownError):
+                persistent_trainer.set_install_failure(remote_trainer_id, "ssh_install_host_key_failed")
+                logger.exception("SSH host key validation failed for trainer '{}'", trainer.name)
+            except (SshAuthenticationError, SshAgentRequiredError):
+                persistent_trainer.set_install_failure(remote_trainer_id, "ssh_install_auth_failed")
+                logger.exception("SSH authentication failed for trainer '{}'", trainer.name)
+            except SshConnectionError:
+                persistent_trainer.set_install_failure(remote_trainer_id, "ssh_install_connection_failed")
+                logger.exception("SSH connection or transfer failed for trainer '{}'", trainer.name)
+            except Exception:
+                persistent_trainer.set_install_failure(remote_trainer_id, "installation_failed")
+                logger.exception("Failed to install prerequisites for SSH trainer '{}'", trainer.name)
+            finally:
+                persistent_trainer.set_install_phase(remote_trainer_id, None)
+                if _background_installs.get(remote_trainer_id) is asyncio.current_task():
+                    _background_installs.pop(remote_trainer_id, None)
+
+        async with _setup_lock:
+            if remote_trainer_id in _background_installs:
+                raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
+            await self._require_no_active_jobs(remote_trainer_id)
+            await self._cancel_launch(remote_trainer_id)
+            persistent_trainer.set_install_failure(remote_trainer_id, None)
+            persistent_trainer.set_install_phase(remote_trainer_id, "Installing host prerequisites…")
+            _background_installs[remote_trainer_id] = asyncio.create_task(_install())
+
+    async def reboot_installed_host(self, remote_trainer_id: UUID) -> None:  # noqa: PLR0915 - safety checks stay together.
+        """Reboot only after driver installation explicitly requested it and the user confirms."""
+        trainer = await self.get_remote_trainer(remote_trainer_id)
+        self._require_ssh_feature_if_tunneled(trainer.connection_mode)
+
+        async def _reboot() -> None:  # noqa: PLR0912 - reboot safety checks stay in one workflow.
+            try:
+                target = persistent_trainer._ssh_target(trainer)
+                async with SshTransport(target) as transport:
+                    containers = await transport.run_command(["docker", "ps", "-q"])
+                    if not containers.ok:
+                        persistent_trainer.set_install_failure(remote_trainer_id, "docker_unavailable")
+                        return
+                    if containers.stdout.strip():
+                        persistent_trainer.set_install_failure(remote_trainer_id, "reboot_blocked_active_containers")
+                        return
+                    before = await transport.run_command(["cat", "/proc/sys/kernel/random/boot_id"])
+                    if not before.ok:
+                        raise RuntimeError("Could not read remote boot ID")
+                    try:
+                        reboot = await transport.run_command(["sudo", "-n", "reboot"])
+                        if not reboot.ok:
+                            persistent_trainer.set_install_failure(remote_trainer_id, "reboot_failed")
+                            return
+                    except SshConnectionError:
+                        # A successful reboot often drops the SSH channel before it reports an exit status.
+                        pass
+                for _ in range(300):
+                    await asyncio.sleep(2)
+                    try:
+                        async with SshTransport(target) as transport:
+                            after = await transport.run_command(["cat", "/proc/sys/kernel/random/boot_id"])
+                            if not after.ok or after.first_line() == before.first_line():
+                                continue
+                            persistent_trainer.set_install_phase(
+                                remote_trainer_id, "Verifying installed prerequisites…"
+                            )
+                            outcome = await host_installer.install(transport)
+                            break
+                    except SshConnectionError:
+                        pass  # The host is expected to be offline while rebooting.
+                else:
+                    persistent_trainer.set_install_failure(remote_trainer_id, "reboot_failed")
+                    return
+                if outcome == "ready":
+                    await persistent_trainer.start(trainer)
+                else:
+                    persistent_trainer.set_install_failure(remote_trainer_id, outcome)
+            except Exception:
+                persistent_trainer.set_install_failure(remote_trainer_id, "reboot_failed")
+                logger.exception("Could not reboot SSH trainer '{}' after installation", trainer.name)
+            finally:
+                persistent_trainer.set_install_phase(remote_trainer_id, None)
+                if _background_installs.get(remote_trainer_id) is asyncio.current_task():
+                    _background_installs.pop(remote_trainer_id, None)
+
+        async with _setup_lock:
+            if (
+                trainer.connection_mode is not RemoteTrainerConnectionMode.SSH
+                or persistent_trainer.get_launch_failure(remote_trainer_id)
+                not in {"reboot_required", "reboot_blocked_active_containers", "nvidia_driver_unavailable"}
+                or remote_trainer_id in _background_installs
+            ):
+                raise InvalidResourceError("remote_trainer", "No rebootable host setup state is available")
+            await self._require_no_active_jobs(remote_trainer_id)
+            persistent_trainer.set_install_phase(remote_trainer_id, "Waiting for SSH host to reboot…")
+            _background_installs[remote_trainer_id] = asyncio.create_task(_reboot())
+
     async def update_remote_trainer(
         self,
         remote_trainer_id: UUID,
@@ -313,6 +447,8 @@ class RemoteTrainerService:
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
+        if remote_trainer_id in _background_installs:
+            raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
         try:
             # exclude_unset (not exclude_none) so an explicit null clears an existing
             # tunnel field instead of being dropped as "not provided".
@@ -376,6 +512,8 @@ class RemoteTrainerService:
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
+        if remote_trainer_id in _background_installs:
+            raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
         if remote_trainer.connection_mode is RemoteTrainerConnectionMode.SSH:
             await self._require_no_active_jobs(remote_trainer_id)
         await self._cancel_launch(remote_trainer_id)

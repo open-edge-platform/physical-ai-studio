@@ -111,6 +111,28 @@ describe('TrainingTargetsPage', () => {
         expect(within(dialog).getByRole('tab', { name: 'Trainer URL' })).toHaveAttribute('aria-selected', 'true');
     });
 
+    it.each(['healthy', 'reboot_required'])('hides SSH setup actions when SSH is disabled (%s)', async (reason) => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () =>
+                HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'gpu' }])
+            ),
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
+                HttpResponse.json({
+                    ...healthyTrainer,
+                    status: reason === 'healthy' ? 'healthy' : 'degraded',
+                    reason_code: reason === 'healthy' ? null : reason,
+                })
+            ),
+            http.get('/api/remote-servers/feature-status', () => HttpResponse.json({ network_exposed: true }))
+        );
+        render(<TrainingTargetsPage />);
+
+        await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+        expect(screen.queryByRole('menuitem', { name: 'Install prerequisites' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('menuitem', { name: 'Reboot to finish setup' })).not.toBeInTheDocument();
+    });
+
     it('creates a configured remote trainer URL', async () => {
         const user = userEvent.setup();
         let trainers: (typeof remoteTrainer)[] = [];
@@ -144,6 +166,62 @@ describe('TrainingTargetsPage', () => {
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     });
+
+    it('requires confirmation before installing SSH host prerequisites', async () => {
+        const user = userEvent.setup();
+        let installs = 0;
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () =>
+                HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'gpu' }])
+            ),
+            http.post('/api/remote-trainers/{remote_trainer_id}/install-prerequisites', () => {
+                installs++;
+                return new HttpResponse(null, { status: 202 });
+            })
+        );
+        render(<TrainingTargetsPage />);
+
+        await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Install prerequisites' }));
+        expect(installs).toBe(0);
+        await user.click(
+            within(await screen.findByRole('alertdialog', { name: 'Install host prerequisites' })).getByRole('button', {
+                name: 'Install',
+            })
+        );
+        await waitFor(() => expect(installs).toBe(1));
+    });
+
+    it.each(['reboot_required', 'nvidia_driver_unavailable'])(
+        'offers a separate reboot confirmation for %s',
+        async (reason) => {
+            const user = userEvent.setup();
+            let reboots = 0;
+            server.use(
+                http.get(REMOTE_TRAINERS_PATH, () =>
+                    HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'gpu' }])
+                ),
+                http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
+                    HttpResponse.json({ ...healthyTrainer, status: 'degraded', reason_code: reason })
+                ),
+                http.post('/api/remote-trainers/{remote_trainer_id}/reboot-after-install', () => {
+                    reboots++;
+                    return new HttpResponse(null, { status: 202 });
+                })
+            );
+            render(<TrainingTargetsPage />);
+
+            await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+            await user.click(await screen.findByRole('menuitem', { name: 'Reboot to finish setup' }));
+            expect(reboots).toBe(0);
+            await user.click(
+                within(await screen.findByRole('alertdialog', { name: 'Reboot SSH host' })).getByRole('button', {
+                    name: 'Reboot host',
+                })
+            );
+            await waitFor(() => expect(reboots).toBe(1));
+        }
+    );
 
     it('deletes a configured remote trainer', async () => {
         const user = userEvent.setup();

@@ -14,11 +14,14 @@ from exceptions import (
     ResourceInUseError,
     ResourceNotFoundError,
     SshAuthenticationError,
+    SshConnectionError,
     SshFeatureDisabledError,
     SshHostKeyConfirmationRequiredError,
 )
 from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode, RemoteTrainerCreate, RemoteTrainerUpdate
 from services import RemoteTrainerService
+from services import remote_trainer_service as remote_trainer_service_module
+from services.ssh import persistent_trainer
 
 MODULE = "services.remote_trainer_service"
 
@@ -184,6 +187,176 @@ async def test_create_rejects_ssh_tunnel_config_when_feature_inactive() -> None:
 
 
 @pytest.mark.anyio
+async def test_install_reports_failure_without_starting_container() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="gpu",
+        url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH,
+        ssh_host_alias="gpu-box",
+        ssh_remote_port=8001,
+        ssh_local_port=8001,
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    transport = MagicMock()
+    transport.__aenter__ = AsyncMock(return_value=transport)
+    transport.__aexit__ = AsyncMock(return_value=False)
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.SshTransport", return_value=transport),
+        patch(f"{MODULE}.host_installer.install", new=AsyncMock(return_value="nvidia_driver_install_failed")),
+        patch(f"{MODULE}.persistent_trainer.start", new_callable=AsyncMock) as start,
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=False)),
+        patch.object(RemoteTrainerService, "_require_no_active_jobs", new_callable=AsyncMock),
+    ):
+        service = RemoteTrainerService(_session())
+        await service.install_remote_trainer(trainer.id)
+        assert persistent_trainer.get_launch_phase(trainer.id) == "Installing host prerequisites…"
+        await remote_trainer_service_module._background_installs[trainer.id]
+        assert persistent_trainer.get_launch_failure(trainer.id) == "nvidia_driver_install_failed"
+        start.assert_not_awaited()
+
+
+async def test_install_reserves_trainer_before_active_job_query_completes() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="gpu",
+        url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH,
+        ssh_host_alias="gpu-box",
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    checking = asyncio.Event()
+    release = asyncio.Event()
+    finish_install = asyncio.Event()
+
+    async def check_jobs(_trainer_id):
+        checking.set()
+        await release.wait()
+
+    async def install_host(_transport):
+        await finish_install.wait()
+        return "installation_failed"
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=False)),
+        patch.object(RemoteTrainerService, "_require_no_active_jobs", side_effect=check_jobs),
+        patch(f"{MODULE}.host_installer.install", new=AsyncMock(side_effect=install_host)),
+        patch.object(remote_trainer_service_module, "_setup_lock", asyncio.Lock()),
+        patch(f"{MODULE}.SshTransport") as transport,
+    ):
+        transport.return_value.__aenter__ = AsyncMock(return_value=transport.return_value)
+        transport.return_value.__aexit__ = AsyncMock(return_value=False)
+        service = RemoteTrainerService(_session())
+        first = asyncio.create_task(service.install_remote_trainer(trainer.id))
+        await checking.wait()
+        second = asyncio.create_task(service.install_remote_trainer(trainer.id))
+        await asyncio.sleep(0)
+        assert not second.done()
+        release.set()
+        await first
+        with pytest.raises(ResourceInUseError):
+            await second
+        finish_install.set()
+        await remote_trainer_service_module._background_installs[trainer.id]
+        transport.assert_called_once()
+
+
+async def test_install_reports_ssh_connection_failure_in_health() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="gpu",
+        url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH,
+        ssh_host_alias="gpu-box",
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    transport = MagicMock()
+    transport.__aenter__ = AsyncMock(side_effect=SshConnectionError("gpu-box"))
+    transport.__aexit__ = AsyncMock(return_value=False)
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.SshTransport", return_value=transport),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=False)),
+        patch.object(RemoteTrainerService, "_require_no_active_jobs", new_callable=AsyncMock),
+    ):
+        await RemoteTrainerService(_session()).install_remote_trainer(trainer.id)
+        await remote_trainer_service_module._background_installs[trainer.id]
+    assert persistent_trainer.get_launch_failure(trainer.id) == "ssh_install_connection_failed"
+
+
+@pytest.mark.parametrize("reason", ["reboot_required", "nvidia_driver_unavailable"])
+async def test_reboot_refuses_host_with_running_containers(reason: str) -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="gpu",
+        url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH,
+        ssh_host_alias="gpu-box",
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    transport = MagicMock()
+    transport.__aenter__ = AsyncMock(return_value=transport)
+    transport.__aexit__ = AsyncMock(return_value=False)
+    transport.run_command = AsyncMock(return_value=MagicMock(ok=True, stdout="running-container\n"))
+    persistent_trainer.set_install_failure(trainer.id, reason)
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.SshTransport", return_value=transport),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=False)),
+        patch.object(RemoteTrainerService, "_require_no_active_jobs", new_callable=AsyncMock),
+    ):
+        await RemoteTrainerService(_session()).reboot_installed_host(trainer.id)
+        await remote_trainer_service_module._background_installs[trainer.id]
+    transport.run_command.assert_awaited_once_with(["docker", "ps", "-q"])
+    assert persistent_trainer.get_launch_failure(trainer.id) == "reboot_blocked_active_containers"
+
+
+async def test_confirmed_reboot_waits_for_new_boot_before_launch() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="gpu",
+        url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH,
+        ssh_host_alias="gpu-box",
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    before = MagicMock()
+    before.__aenter__ = AsyncMock(return_value=before)
+    before.__aexit__ = AsyncMock(return_value=False)
+    before.run_command = AsyncMock(
+        side_effect=[
+            MagicMock(ok=True, stdout=""),
+            MagicMock(ok=True, first_line=lambda: "old-boot"),
+            MagicMock(ok=True),
+        ]
+    )
+    after = MagicMock()
+    after.__aenter__ = AsyncMock(return_value=after)
+    after.__aexit__ = AsyncMock(return_value=False)
+    after.run_command = AsyncMock(return_value=MagicMock(ok=True, first_line=lambda: "new-boot"))
+    persistent_trainer.set_install_failure(trainer.id, "reboot_required")
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.SshTransport", side_effect=[before, after]),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=False)),
+        patch.object(RemoteTrainerService, "_require_no_active_jobs", new_callable=AsyncMock),
+        patch(f"{MODULE}.asyncio.sleep", new_callable=AsyncMock),
+        patch(f"{MODULE}.host_installer.install", new=AsyncMock(return_value="ready")),
+        patch(f"{MODULE}.persistent_trainer.start", new_callable=AsyncMock) as start,
+    ):
+        await RemoteTrainerService(_session()).reboot_installed_host(trainer.id)
+        await remote_trainer_service_module._background_installs[trainer.id]
+    before.run_command.assert_any_await(["sudo", "-n", "reboot"])
+    start.assert_awaited_once_with(trainer)
+
+
 async def test_create_syncs_the_tunnel_manager_on_success() -> None:
     session = _session()
     remote_trainer = _remote_trainer()

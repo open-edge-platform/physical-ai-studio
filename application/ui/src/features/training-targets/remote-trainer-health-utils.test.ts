@@ -30,6 +30,21 @@ describe('remote-trainer-health-utils starting status', () => {
         );
     });
 
+    it('explains an installation failure and the required reboot', () => {
+        expect(
+            healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'intel_install_failed' })
+        ).toContain('Intel GPU dependency installation failed');
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'reboot_required' })).toContain(
+            'Confirm a host reboot'
+        );
+        expect(
+            healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'package_manager_broken' })
+        ).toContain('incomplete dpkg transactions');
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'unsupported_os' })).toContain(
+            'Ubuntu 26.04'
+        );
+    });
+
     it('explains missing Docker for a Studio-managed trainer', () => {
         expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'docker_unavailable' })).toBe(
             'Studio-managed training requires Docker to be installed and running on the SSH host.'
