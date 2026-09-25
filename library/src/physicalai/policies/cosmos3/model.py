@@ -58,12 +58,17 @@ _ACTION_VIEWPOINT_TEMPLATES.setdefault(
 )
 
 
-def _has_pretrained_action_head(pretrained_path: str, embodiment: str) -> bool:
+def _has_pretrained_action_head(
+    pretrained_path: str,
+    embodiment: str,
+    revision: str | None = None,
+) -> bool:
     """Check whether a model path or repository carries an already trained action head.
 
     Args:
         pretrained_path: Path to local directory or Hugging Face model repository ID.
         embodiment: Embodiment identifier.
+        revision: Optional git commit SHA for Hugging Face repository lookup.
 
     Returns:
         True if the checkpoint already contains action head weights or policy metadata.
@@ -73,7 +78,7 @@ def _has_pretrained_action_head(pretrained_path: str, embodiment: str) -> bool:
         return (path_obj / f"{embodiment}_head.pt").is_file() or (path_obj / "checkpoint.json").is_file()
 
     try:
-        return file_exists(repo_id=pretrained_path, filename="checkpoint.json")
+        return file_exists(repo_id=pretrained_path, filename="checkpoint.json", revision=revision)
     except Exception:  # ruff: ignore[blind-except]
         return False
 
@@ -257,6 +262,7 @@ class Cosmos3Model(Model):
             logger.info("Loading Cosmos3 pipeline from %s", config.pretrained_model_name_or_path)
             self.pipe = PolicyPipelineWithState.from_pretrained(
                 config.pretrained_model_name_or_path,
+                revision=config.revision,
                 torch_dtype=self.torch_dtype,
                 enable_safety_checker=False,
             )
@@ -288,7 +294,11 @@ class Cosmos3Model(Model):
             alpha_scale=config.alpha_scale,
             dora=config.dora,
         )
-        if not _has_pretrained_action_head(config.pretrained_model_name_or_path, config.embodiment):
+        if not _has_pretrained_action_head(
+            config.pretrained_model_name_or_path,
+            config.embodiment,
+            revision=config.revision,
+        ):
             init_domain_action_head(self.transformer, self.domain_id_val)
         else:
             logger.info(
@@ -475,7 +485,7 @@ class Cosmos3Model(Model):
             )
         return self._pack_cache[key]
 
-    def compute_loss(
+    def compute_loss(  # ruff: ignore[too-many-locals]
         self,
         batch: dict[str, Any],
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor | float]]:
@@ -655,7 +665,7 @@ class Cosmos3Model(Model):
         )
 
     @torch.no_grad()
-    def predict_action_chunk(
+    def predict_action_chunk(  # ruff: ignore[too-many-locals]
         self,
         batch: dict[str, Any],
     ) -> torch.Tensor:

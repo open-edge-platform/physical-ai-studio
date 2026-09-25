@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
@@ -34,6 +34,7 @@ class TestCosmos3Config:
         """Test default configuration values."""
         config = Cosmos3Config(embodiment="pusht")
         assert config.pretrained_model_name_or_path == "nvidia/Cosmos3-Edge"
+        assert config.revision is None
         assert config.mode == "peft"
         assert config.paradigm == "policy"
         assert config.rank == 32
@@ -68,6 +69,7 @@ class TestCosmos3Config:
             chunk_size=16,
             n_action_steps=16,
             view_point="concat_view",
+            revision="abc1234",
         )
         assert config.mode == "full"
         assert config.paradigm == "joint"
@@ -76,6 +78,7 @@ class TestCosmos3Config:
         assert config.n_action_steps == 16
         assert config.embodiment == "droid_lerobot"
         assert config.view_point == "concat_view"
+        assert config.revision == "abc1234"
 
     def test_n_action_steps_validation(self) -> None:
         """Test n_action_steps cannot exceed chunk_size."""
@@ -369,6 +372,39 @@ class TestMockedCosmos3Model:
         json_dir.mkdir()
         (json_dir / "checkpoint.json").touch()
         assert _has_pretrained_action_head(str(json_dir), "any_domain")
+
+        # 4. Remote repository checks file_exists with revision
+        with patch("physicalai.policies.cosmos3.model.file_exists", return_value=True) as mock_file_exists:
+            assert _has_pretrained_action_head("nvidia/cosmos3-repo", "droid_lerobot", revision="sha_123")
+            mock_file_exists.assert_called_once_with(
+                repo_id="nvidia/cosmos3-repo",
+                filename="checkpoint.json",
+                revision="sha_123",
+            )
+
+    def test_model_from_pretrained_passes_revision(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test Cosmos3Model passes revision to PolicyPipelineWithState.from_pretrained."""
+        from unittest.mock import patch
+
+        pipe = self._create_mock_pipeline()
+        with patch(
+            "physicalai.policies.cosmos3.model.PolicyPipelineWithState.from_pretrained",
+            return_value=pipe,
+        ) as mock_from_pretrained, patch(
+            "physicalai.policies.cosmos3.model._has_pretrained_action_head",
+            return_value=True,
+        ) as mock_has_head:
+            config = Cosmos3Config(
+                embodiment="pusht",
+                pretrained_model_name_or_path="nvidia/Cosmos3-Edge",
+                revision="pin_sha_abc",
+            )
+            Cosmos3Model(config)
+
+            assert mock_from_pretrained.called
+            assert mock_from_pretrained.call_args.kwargs.get("revision") == "pin_sha_abc"
+            assert mock_has_head.called
+            assert mock_has_head.call_args.kwargs.get("revision") == "pin_sha_abc"
 
     def test_compute_loss_multi_camera_viewpoint(self) -> None:
         """Test compute_loss with multi-camera DROID input composes views and passes concat_view."""

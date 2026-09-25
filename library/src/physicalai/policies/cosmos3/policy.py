@@ -41,6 +41,8 @@ class Cosmos3(Policy):
     Args:
         embodiment: Required embodiment identifier ("pusht", "droid_lerobot", or "aloha").
         pretrained_model_name_or_path: Hugging Face model repo ID or local checkpoint path.
+        revision: Pinned git commit SHA for model and checkpoint downloads (lib.security rule 9).
+            Defaults to None.
         mode: Training mode ("peft" or "full"). Default: "peft".
         paradigm: Denoising objective ("policy", "fd", "id", or "joint"). Default: "policy".
         rank: LoRA/DoRA rank for PEFT mode. Default: 32.
@@ -74,6 +76,7 @@ class Cosmos3(Policy):
         self,
         pretrained_model_name_or_path: str = "nvidia/Cosmos3-Edge",
         *,
+        revision: str | None = None,
         embodiment: str,
         mode: Literal["peft", "full"] = "peft",
         paradigm: Literal["policy", "fd", "id", "joint"] = "policy",
@@ -108,6 +111,7 @@ class Cosmos3(Policy):
 
         self.config = Cosmos3Config(
             pretrained_model_name_or_path=pretrained_model_name_or_path,
+            revision=revision,
             embodiment=embodiment,
             mode=mode,
             paradigm=paradigm,
