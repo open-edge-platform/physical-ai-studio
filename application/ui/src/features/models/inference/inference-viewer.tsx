@@ -15,16 +15,12 @@ import {
 } from '@geti-ui/ui';
 import { Back, DownloadIcon, Pause, Play } from '@geti-ui/ui/icons';
 
-import { SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { paths } from '../../../router';
 import { useProjectId } from '../../projects/use-project';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
 import { runtimeExportUrl } from '../runtime-export';
-
-const environmentHasLeader = (environment: SchemaEnvironmentWithRelations): boolean =>
-    environment.robots?.[0]?.tele_operator.type === 'robot';
 
 interface InferenceViewerProps {
     tasks: string[];
@@ -47,7 +43,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
         inferenceDevice,
     } = useRuntimeSession();
 
-    const canTeleoperate = environmentHasLeader(environment);
+    const canTeleoperate = state.has_leader;
     const isTeleoperating = state.follower_source === 'teleop';
 
     const exportUrl =
@@ -92,16 +88,16 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                             <Item key={index}>{taskText}</Item>
                         ))}
                     </ComboBox>
-                    {canTeleoperate && (
-                        <Switch
-                            isEmphasized
-                            isSelected={isTeleoperating}
-                            isDisabled={setFollowerSource.isPending || startTask.isPending || stopTask.isPending}
-                            onChange={(enabled) => setFollowerSource.mutate(enabled ? 'teleop' : 'hold')}
-                        >
-                            Teleoperate
-                        </Switch>
-                    )}
+                    <Switch
+                        isEmphasized
+                        isSelected={isTeleoperating}
+                        isDisabled={
+                            !canTeleoperate || setFollowerSource.isPending || startTask.isPending || stopTask.isPending
+                        }
+                        onChange={(enabled) => setFollowerSource.mutate(enabled ? 'teleop' : 'hold')}
+                    >
+                        Teleoperate
+                    </Switch>
                     <ButtonGroup>
                         {exportUrl !== undefined && (
                             <Button

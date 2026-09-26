@@ -48,6 +48,7 @@ export const isRecoverableRobotControlError = (errorCode: unknown): errorCode is
 interface RobotControlState {
     connected: boolean;
     follower_source: FollowerSource;
+    has_leader: boolean;
 }
 
 // Compose from a typed project path so this does not depend on regenerating OpenAPI.
@@ -67,6 +68,7 @@ export const useJointState = (
     const [state, setState] = useState<RobotControlState>({
         connected: false,
         follower_source: 'hold',
+        has_leader: false,
     });
     const [error, setError] = useState<string | null>(null);
     const [errorCode, setErrorCode] = useState<string | null>(null);

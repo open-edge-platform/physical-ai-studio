@@ -4,7 +4,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
+import { SchemaModel } from '../../../api/openapi-spec';
 import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
 import { render } from '../../../test-utils/render';
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
@@ -55,15 +55,6 @@ const environmentWithLeader = getMockedEnvironment({
     ],
 });
 
-const environmentWithoutLeader = getMockedEnvironment({
-    robots: [
-        {
-            robot: followerRobot,
-            tele_operator: { type: 'none' },
-        },
-    ],
-});
-
 const mutation = () => ({
     mutate: vi.fn(),
     isPending: false,
@@ -71,11 +62,11 @@ const mutation = () => ({
 
 const mockSession = ({
     followerSource = 'hold',
-    environment = environmentWithLeader,
+    hasLeader = true,
     readyForInference = true,
 }: {
     followerSource?: 'hold' | 'teleop' | 'policy';
-    environment?: SchemaEnvironmentWithRelations;
+    hasLeader?: boolean;
     readyForInference?: boolean;
 } = {}) => {
     const startTask = mutation();
@@ -88,6 +79,7 @@ const mockSession = ({
         state: {
             connected: true,
             follower_source: followerSource,
+            has_leader: hasLeader,
             model_loaded: true,
             task: null,
             dataset_loaded: false,
@@ -97,7 +89,7 @@ const mockSession = ({
         startTask,
         stopTask,
         setFollowerSource,
-        environment,
+        environment: environmentWithLeader,
         observation: createRef<Record<string, number> | undefined>(),
         inferenceDevice: { backend: 'pytorch', device: 'cpu' },
     } as unknown as ReturnType<typeof useRuntimeSession>);
@@ -116,7 +108,7 @@ describe('InferenceViewer', () => {
         vi.clearAllMocks();
     });
 
-    it('shows a teleoperate toggle when the environment has a leader robot', async () => {
+    it('enables the teleoperate toggle when the session has a leader robot', async () => {
         mockSession();
 
         renderViewer();
@@ -125,13 +117,13 @@ describe('InferenceViewer', () => {
         expect(screen.getByRole('button', { name: /play/i })).toBeInTheDocument();
     });
 
-    it('hides the teleoperate toggle when the environment has no leader robot', async () => {
-        mockSession({ environment: environmentWithoutLeader });
+    it('disables the teleoperate toggle when the session has no leader robot', async () => {
+        mockSession({ hasLeader: false });
 
         renderViewer();
 
         expect(await screen.findByRole('button', { name: /play/i })).toBeInTheDocument();
-        expect(screen.queryByRole('switch', { name: 'Teleoperate' })).not.toBeInTheDocument();
+        expect(screen.getByRole('switch', { name: 'Teleoperate' })).toBeDisabled();
     });
 
     it('selects the toggle while teleoperating', async () => {
