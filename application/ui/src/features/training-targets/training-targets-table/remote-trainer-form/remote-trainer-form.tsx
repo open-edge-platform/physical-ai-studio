@@ -4,6 +4,7 @@ import {
     ActionButton,
     Button,
     ButtonGroup,
+    Checkbox,
     Content,
     Dialog,
     DialogTrigger,
@@ -73,6 +74,7 @@ export const RemoteTrainerForm = ({
     const [sshIdentityFile, setSshIdentityFile] = useState(remoteTrainer?.ssh_connection?.identity_file ?? '');
     const [sshRemotePort, setSshRemotePort] = useState<number | undefined>(remoteTrainer?.ssh_remote_port ?? 8001);
     const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(remoteTrainer?.ssh_local_port ?? 8001);
+    const [installPrerequisites, setInstallPrerequisites] = useState(false);
     const isEditing = remoteTrainer !== undefined;
     const { aliases } = useSshHostAliases(sshAvailable);
     const { save, reset, isPending, error } = useRemoteTrainerFormMutation(remoteTrainer);
@@ -124,6 +126,7 @@ export const RemoteTrainerForm = ({
     const submit = (acceptedHostKeyFingerprint?: string) => {
         save(values, {
             onSuccess: close,
+            installPrerequisites: !isEditing && isSsh && installPrerequisites,
             acceptedHostKeyFingerprint,
             onHostKeyConfirmationRequired: requestConfirmation,
         });
@@ -318,6 +321,23 @@ export const RemoteTrainerForm = ({
                                                     />
                                                 )}
                                             </DialogTrigger>
+                                        </Flex>
+                                    )}
+                                    {!isEditing && (
+                                        <Flex alignItems='center' gap='size-50'>
+                                            <Checkbox
+                                                isSelected={installPrerequisites}
+                                                onChange={setInstallPrerequisites}
+                                            >
+                                                Set up Docker and GPU support
+                                            </Checkbox>
+                                            <InfoHelp title='SSH host setup'>
+                                                On Ubuntu 24.04 or 26.04, Studio checks the selected SSH host and
+                                                installs missing Docker and NVIDIA or Intel GPU packages before pulling
+                                                the trainer image. Missing prerequisites require passwordless sudo. A
+                                                reboot needs separate confirmation; SSH re-login may also be needed.
+                                                Docker access grants root-equivalent privileges.
+                                            </InfoHelp>
                                         </Flex>
                                     )}
                                 </Flex>

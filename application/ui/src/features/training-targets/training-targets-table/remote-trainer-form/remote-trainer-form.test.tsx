@@ -32,6 +32,7 @@ describe('RemoteTrainerForm', () => {
         const user = userEvent.setup();
         const fingerprint = 'SHA256:first-seen-host-key';
         let created: Record<string, unknown> | undefined;
+        let requestedInstallation = false;
         let requestedConfirmation: { fingerprint: string; onConfirm: () => void } | undefined;
 
         server.use(
@@ -47,6 +48,7 @@ describe('RemoteTrainerForm', () => {
                         { status: 428 }
                     );
                 }
+                requestedInstallation = new URL(request.url).searchParams.get('install_prerequisites') === 'true';
                 created = (await request.json()) as Record<string, unknown>;
                 return HttpResponse.json(getMockedRemoteTrainer({ id: 'trainer-1' }), { status: 201 });
             })
@@ -67,6 +69,12 @@ describe('RemoteTrainerForm', () => {
         await user.clear(screen.getByRole('textbox', { name: /^User/ }));
         await user.type(screen.getByRole('textbox', { name: /^User/ }), 'trainer');
         await user.type(screen.getByRole('textbox', { name: /key path/i }), '~/.ssh/trainer');
+        const infoButtons = screen.getAllByRole('button', { name: /Information$/ });
+        await user.click(infoButtons[infoButtons.length - 1]);
+        expect(await screen.findByRole('heading', { name: 'SSH host setup' })).toBeVisible();
+        expect(screen.getByText(/missing prerequisites require passwordless sudo/i)).toBeVisible();
+        await user.keyboard('{Escape}');
+        await user.click(screen.getByRole('checkbox', { name: 'Set up Docker and GPU support' }));
 
         expect(screen.getByRole('button', { name: 'Add trainer' })).toBeEnabled();
         await user.click(screen.getByRole('button', { name: 'Add trainer' }));
@@ -75,6 +83,7 @@ describe('RemoteTrainerForm', () => {
         requestedConfirmation?.onConfirm();
 
         await waitFor(() => expect(created).toBeDefined());
+        expect(requestedInstallation).toBe(true);
         expect(created).toMatchObject({
             connection_mode: 'ssh',
             url: null,
@@ -106,6 +115,7 @@ describe('RemoteTrainerForm', () => {
 
         renderForm({ remoteTrainer: manualTrainer });
 
+        expect(screen.queryByRole('checkbox', { name: /Set up Docker and GPU support/i })).not.toBeInTheDocument();
         expect(await screen.findByRole('tab', { name: /connection details/i })).toHaveAttribute(
             'aria-selected',
             'true'
@@ -176,6 +186,7 @@ describe('RemoteTrainerForm', () => {
         renderForm();
         await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'managed-trainer');
         await user.click(screen.getByRole('tab', { name: 'Trainer URL' }));
+        expect(screen.queryByRole('checkbox', { name: /Set up Docker and GPU support/i })).not.toBeInTheDocument();
         await user.type(screen.getByRole('textbox', { name: /trainer url/i }), 'http://trainer.example.test/api');
 
         expect(

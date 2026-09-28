@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from core.security.ssh_network_exposure import SshFeatureAvailability
 from exceptions import (
+    InvalidResourceError,
     ResourceAlreadyExistsError,
     ResourceInUseError,
     ResourceNotFoundError,
@@ -184,6 +185,58 @@ async def test_create_rejects_ssh_tunnel_config_when_feature_inactive() -> None:
         )
 
     repository.save.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_create_with_install_waits_for_prerequisites_before_starting_container() -> None:
+    config = RemoteTrainerCreate(name="gpu", connection_mode="ssh", ssh_host_alias="gpu-box")
+    repository = MagicMock()
+    saved: list[RemoteTrainer] = []
+
+    async def save(trainer: RemoteTrainer) -> RemoteTrainer:
+        saved.append(trainer)
+        return trainer
+
+    repository.save = AsyncMock(side_effect=save)
+    repository.get_by_id = AsyncMock(side_effect=lambda _trainer_id: saved[0])
+    repository.list_ordered = AsyncMock(return_value=[])
+    transport = MagicMock()
+    transport.__aenter__ = AsyncMock(return_value=transport)
+    transport.__aexit__ = AsyncMock(return_value=False)
+    install_started = asyncio.Event()
+    finish_install = asyncio.Event()
+
+    async def install(_transport: object) -> str:
+        install_started.set()
+        await finish_install.wait()
+        return "ready"
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager.sync_tunnel", new_callable=AsyncMock) as sync_tunnel,
+        patch(f"{MODULE}.SshTransport", return_value=transport),
+        patch(f"{MODULE}.host_installer.install", side_effect=install),
+        patch(f"{MODULE}.persistent_trainer.start", new_callable=AsyncMock) as start,
+        patch.object(RemoteTrainerService, "_start_persistent_trainer_in_background") as launch,
+        patch.object(RemoteTrainerService, "_require_no_active_jobs", new_callable=AsyncMock),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=False)),
+    ):
+        trainer = await RemoteTrainerService(_session()).create_remote_trainer(config, install_prerequisites=True)
+        sync_tunnel.assert_awaited_once()
+        await install_started.wait()
+        launch.assert_not_called()
+        start.assert_not_awaited()
+        finish_install.set()
+        await remote_trainer_service_module._background_installs[trainer.id]
+        start.assert_awaited_once_with(trainer)
+
+
+@pytest.mark.anyio
+async def test_create_with_install_rejects_direct_url() -> None:
+    with pytest.raises(InvalidResourceError):
+        await RemoteTrainerService(_session()).create_remote_trainer(
+            RemoteTrainerCreate(name="direct", url="https://trainer.test"), install_prerequisites=True
+        )
 
 
 @pytest.mark.anyio

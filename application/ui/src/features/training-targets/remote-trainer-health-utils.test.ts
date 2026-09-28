@@ -12,8 +12,9 @@ const startingHealth: SchemaRemoteTrainerHealth = {
 };
 
 describe('remote-trainer-health-utils starting status', () => {
-    it("labels a launching trainer 'Starting…' rather than 'Unreachable'", () => {
-        expect(healthLabel(startingHealth)).toBe('Starting…');
+    it('shows the current startup phase instead of a generic status', () => {
+        expect(healthLabel(startingHealth)).toBe('Starting: Pulling trainer image…');
+        expect(healthLabel({ ...startingHealth, reason_code: null })).toBe('Starting…');
     });
 
     it('uses a neutral (not negative) status light while starting', () => {
@@ -40,8 +41,8 @@ describe('remote-trainer-health-utils starting status', () => {
         expect(
             healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'package_manager_broken' })
         ).toContain('incomplete dpkg transactions');
-        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'unsupported_os' })).toContain(
-            'Ubuntu 26.04'
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'unsupported_os' })).toBe(
+            'Host installation supports Ubuntu 24.04 or Ubuntu 26.04 only.'
         );
     });
 

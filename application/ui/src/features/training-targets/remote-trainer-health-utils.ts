@@ -9,7 +9,7 @@ export type CheckState = 'positive' | 'yellow' | 'negative' | 'neutral';
  */
 export const healthLabel = (health?: SchemaRemoteTrainerHealth, isChecking = false) => {
     if (health === undefined) return isChecking ? 'Checking…' : 'Not checked';
-    if (health.status === 'starting') return 'Starting…';
+    if (health.status === 'starting') return health.reason_code ? `Starting: ${health.reason_code}` : 'Starting…';
     if (health.reason_code === 'check_failed') return 'Check failed';
     return health.status === 'healthy' ? 'Healthy' : health.status === 'degraded' ? 'Degraded' : 'Unreachable';
 };
@@ -73,10 +73,8 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
             return 'Docker installation failed: the package is unavailable or apt failed.';
         case 'gpu_ambiguous':
             return 'Exactly one NVIDIA or Intel GPU vendor must be present on the SSH host.';
-        case 'unsupported_gpu':
-            return 'Intel GPU installation is not supported on Amazon Linux 2023.';
         case 'unsupported_os':
-            return 'Host installation supports Ubuntu 24.04, Ubuntu 26.04, or Amazon Linux 2023 only.';
+            return 'Host installation supports Ubuntu 24.04 or Ubuntu 26.04 only.';
         case 'reboot_failed':
             return 'The host did not reboot or reconnect. Check it manually before retrying.';
         case 'apt_update_failed':
@@ -103,8 +101,6 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
             return 'Docker could not start or restart after configuring the GPU runtime.';
         case 'docker_user_access_missing':
             return 'Could not grant the SSH user access to Docker.';
-        case 'al2023_prerequisites_missing':
-            return 'Use an Amazon Linux 2023 ECS GPU AMI with Docker and NVIDIA drivers.';
         case 'nvidia_container_runtime_unavailable':
             return 'The NVIDIA Docker runtime is not available.';
         case 'intel_compute_runtime_unavailable':

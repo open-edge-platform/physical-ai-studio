@@ -44,14 +44,16 @@ in the UI. The first request returns the presented fingerprint; confirm it
 before retrying. Studio then records the accepted key and rejects changed or
 revoked keys. It never silently accepts an unknown key.
 
-Saving the target opens the tunnel before reporting success and starts the
-managed container in the background. If Docker or GPU prerequisites are missing,
-use **Install prerequisites** from the SSH target's action menu. This transfers
-a bundled script over verified SSH, runs it only on request, and reports progress
-or specific failures in target health. It supports Ubuntu 24.04 and 26.04 with
-NVIDIA or Intel GPUs and Amazon Linux 2023 ECS GPU hosts with NVIDIA;
-mixed-vendor hosts are rejected. On Ubuntu 26.04, Docker and Intel GPU packages
-come from the Ubuntu repositories; Ubuntu 24.04 retains the pinned Docker and
+Saving the target opens the tunnel before reporting success. By default Studio
+starts the managed container in the background. For a new SSH target, check
+**Set up Docker and GPU support** in the form to install
+Docker and GPU prerequisites before pulling the trainer image. Installation
+transfers a bundled script over verified SSH, runs it only on request, and
+reports progress or specific failures in target health. To retry setup for an
+existing SSH target, use `POST /api/remote-trainers/{remote_trainer_id}/install-prerequisites`. It
+supports Ubuntu 24.04 and 26.04 with NVIDIA or Intel GPUs; mixed-vendor hosts
+are rejected. On Ubuntu 26.04, Docker and Intel GPU packages come from the
+Ubuntu repositories; Ubuntu 24.04 retains the pinned Docker and
 checksum-verified upstream Intel packages. Intel hosts must already have a
 kernel and firmware exposing a GPU render device; Studio does not replace the
 host kernel automatically.

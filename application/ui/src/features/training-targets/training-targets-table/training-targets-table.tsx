@@ -43,7 +43,6 @@ const TARGET_MENU_ACTION_ITEMS = {
     CHECK_STATUS: 'check_status',
     EDIT: 'Edit',
     DELETE: 'Delete',
-    INSTALL: 'install_prerequisites',
     REBOOT: 'reboot_after_install',
 };
 
@@ -52,25 +51,15 @@ type TargetMenuActionsProps = {
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
-    onInstall?: () => void;
     onReboot?: () => void;
     isChecking: boolean;
 };
 
-const TargetMenuActions = ({
-    targetName,
-    onCheck,
-    onEdit,
-    onDelete,
-    onInstall,
-    onReboot,
-    isChecking,
-}: TargetMenuActionsProps) => {
+const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, onReboot, isChecking }: TargetMenuActionsProps) => {
     const items = [
         { key: TARGET_MENU_ACTION_ITEMS.EDIT, label: 'Edit' },
         { key: TARGET_MENU_ACTION_ITEMS.DELETE, label: 'Delete' },
         { key: TARGET_MENU_ACTION_ITEMS.CHECK_STATUS, label: 'Check status' },
-        ...(onInstall ? [{ key: TARGET_MENU_ACTION_ITEMS.INSTALL, label: 'Install prerequisites' }] : []),
         ...(onReboot ? [{ key: TARGET_MENU_ACTION_ITEMS.REBOOT, label: 'Reboot to finish setup' }] : []),
     ];
     const handleAction = (action: Key) => {
@@ -80,8 +69,6 @@ const TargetMenuActions = ({
             onEdit();
         } else if (action === TARGET_MENU_ACTION_ITEMS.DELETE) {
             onDelete();
-        } else if (action === TARGET_MENU_ACTION_ITEMS.INSTALL) {
-            onInstall?.();
         } else if (action === TARGET_MENU_ACTION_ITEMS.REBOOT) {
             onReboot?.();
         }
@@ -111,13 +98,13 @@ type TargetRowContentProps = {
     connectionModeText: string;
     statusVariant: StatusVariant;
     statusLabel: string;
+    isStarting: boolean;
     deviceTypes: string[];
     computeDetail: string;
     isChecking: boolean;
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
-    onInstall?: () => void;
     onReboot?: () => void;
 };
 
@@ -133,13 +120,13 @@ const targetRowCells = ({
     connectionModeText,
     statusVariant,
     statusLabel,
+    isStarting,
     deviceTypes: types,
     computeDetail,
     isChecking,
     onCheck,
     onEdit,
     onDelete,
-    onInstall,
     onReboot,
 }: TargetRowContentProps) => [
     <Text key='name'>{name}</Text>,
@@ -153,7 +140,11 @@ const targetRowCells = ({
         <Tooltip>{connectionLabel}</Tooltip>
     </TooltipTrigger>,
 
-    <StatusLight key='status' variant={statusVariant} UNSAFE_className={classes.healthStatus}>
+    <StatusLight
+        key='status'
+        variant={statusVariant}
+        UNSAFE_className={`${classes.healthStatus} ${isStarting ? classes.starting : ''}`}
+    >
         {statusLabel}
     </StatusLight>,
 
@@ -172,7 +163,6 @@ const targetRowCells = ({
             onCheck={onCheck}
             onEdit={onEdit}
             onDelete={onDelete}
-            onInstall={onInstall}
             onReboot={onReboot}
             isChecking={isChecking}
         />
@@ -222,6 +212,7 @@ const DirectUrlTargetRow = ({
                 connectionModeText: connectionModeLabel(trainer.connection_mode),
                 statusVariant: healthVariant(displayHealth, isChecking),
                 statusLabel: healthLabel(displayHealth, isChecking),
+                isStarting: displayHealth?.status === 'starting',
                 deviceTypes: types,
                 computeDetail:
                     displayHealth?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported'),
@@ -232,13 +223,6 @@ const DirectUrlTargetRow = ({
                 },
                 onEdit,
                 onDelete,
-                onInstall:
-                    trainer.connection_mode === 'ssh' &&
-                    displayHealth?.status !== 'starting' &&
-                    !awaitingReboot &&
-                    onSetup
-                        ? () => onSetup(false)
-                        : undefined,
                 onReboot:
                     trainer.connection_mode === 'ssh' && awaitingReboot && onSetup ? () => onSetup(true) : undefined,
             })}

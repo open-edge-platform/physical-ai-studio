@@ -30,7 +30,7 @@ update_apt() {
   fi
 }
 case "$ID:$VERSION_ID" in
-  ubuntu:24.04|ubuntu:26.04|amzn:2023) ;;
+  ubuntu:24.04|ubuntu:26.04) ;;
   *) echo "UNSUPPORTED_OS: $ID $VERSION_ID" >&2; exit 2 ;;
 esac
 
@@ -48,10 +48,6 @@ done
 
 if (( nvidia + intel != 1 )); then
   echo 'GPU_AMBIGUOUS: expected exactly one NVIDIA or Intel display controller' >&2
-  exit 2
-fi
-if (( intel )) && [[ $ID == amzn ]]; then
-  echo 'UNSUPPORTED_GPU: Intel on Amazon Linux 2023' >&2
   exit 2
 fi
 # ponytail: leave kernel changes to the host admin; add an HWE upgrade path after clean-host testing.
@@ -230,11 +226,6 @@ if [[ $mode == --install ]]; then
         exit 11
       fi
     fi
-  elif ! command -v docker >/dev/null || ! nvidia-smi -L >/dev/null 2>&1; then
-    echo 'AL2023_PREREQUISITES_MISSING: use the ECS GPU AMI with Docker and NVIDIA drivers' >&2
-    exit 1
-  else
-    "${privileged[@]}" systemctl enable --now docker || { echo 'DOCKER_RESTART_FAILED' >&2; exit 1; }
   fi
   # Docker group access is root-equivalent; this only happens on explicit installation.
   if ! docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then

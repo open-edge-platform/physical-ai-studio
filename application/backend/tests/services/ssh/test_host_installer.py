@@ -11,7 +11,8 @@ from services.ssh.transport import CommandFailure, CommandResult
 
 def test_ubuntu_26_uses_its_own_docker_and_intel_packages() -> None:
     source = (Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh").read_text()
-    assert "ubuntu:24.04|ubuntu:26.04|amzn:2023" in source
+    assert "ubuntu:24.04|ubuntu:26.04) ;;" in source
+    assert "amzn:2023" not in source
     assert "if [[ $VERSION_ID == 24.04 ]]; then docker_package=docker.io=29.1.3-0ubuntu3~24.04.2; fi" in source
     assert "if [[ $VERSION_ID == 26.04 ]]; then\n        if ! installed intel-opencl-icd" in source
     assert "apt-get install -y intel-opencl-icd libze-intel-gpu1 libze1" in source

@@ -306,9 +306,14 @@ class RemoteTrainerService:
         task.add_done_callback(_clear)
 
     async def create_remote_trainer(
-        self, config: RemoteTrainerCreate, accepted_host_key_fingerprint: str | None = None
+        self,
+        config: RemoteTrainerCreate,
+        accepted_host_key_fingerprint: str | None = None,
+        install_prerequisites: bool = False,
     ) -> RemoteTrainer:
-        """Persist a trainer endpoint, requiring SSH availability for managed trainers."""
+        """Persist a trainer endpoint, optionally installing prerequisites before launching it."""
+        if install_prerequisites and config.connection_mode is not RemoteTrainerConnectionMode.SSH:
+            raise InvalidResourceError("remote_trainer", "Prerequisite installation requires an SSH trainer")
         self._require_ssh_feature_if_tunneled(config.connection_mode)
         remote_trainer = RemoteTrainer(id=uuid4(), **config.model_dump())
         await self._ensure_unique_ssh_remote_port(remote_trainer)
@@ -325,7 +330,10 @@ class RemoteTrainerService:
         except Exception:
             await self.repo.delete_by_id(saved.id)
             raise
-        self._start_persistent_trainer_in_background(saved, accepted_host_key_fingerprint)
+        if install_prerequisites:
+            await self.install_remote_trainer(saved.id)
+        else:
+            self._start_persistent_trainer_in_background(saved, accepted_host_key_fingerprint)
         return saved
 
     async def install_remote_trainer(self, remote_trainer_id: UUID) -> None:
