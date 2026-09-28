@@ -18,6 +18,21 @@ def test_ubuntu_26_uses_its_own_docker_and_intel_packages() -> None:
     assert "apt-get install -y intel-opencl-icd libze-intel-gpu1 libze1" in source
 
 
+def test_docker_access_distinguishes_daemon_failure_from_relogin() -> None:
+    source = (Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh").read_text()
+    assert "TRAINER_SSH_USER" not in source
+    access_check = source.split("# A new Docker group membership needs a fresh SSH session", 1)[1]
+    assert access_check.index('"${privileged[@]}" docker version') < access_check.index("! id -nG | grep -qw docker")
+    assert "DOCKER_UNAVAILABLE: Docker is not responding on the SSH host" in access_check
+
+
+def test_installer_rechecks_running_containers_before_docker_restart() -> None:
+    source = (Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh").read_text()
+    configure = source.index('"${privileged[@]}" nvidia-ctk runtime configure')
+    restart = source.index('"${privileged[@]}" systemctl restart docker')
+    assert configure < source.rindex('"${privileged[@]}" docker ps -q', 0, restart) < restart
+
+
 def test_intel_reboot_is_reported_before_render_group_relogin() -> None:
     script = Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh"
     source = script.read_text()

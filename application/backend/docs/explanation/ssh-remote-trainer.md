@@ -57,11 +57,14 @@ Ubuntu repositories; Ubuntu 24.04 retains the pinned Docker and
 checksum-verified upstream Intel packages. Intel hosts must already have a
 kernel and firmware exposing a GPU render device; Studio does not replace the
 host kernel automatically.
-Installation never stops running containers. Newly installed GPU packages can
-require a separately confirmed host reboot; Studio checks for
-active jobs and running containers before rebooting, then reconnects and
-verifies the host before launching the trainer. Re-run installation after
-repairing a failed step; it skips prerequisites that already work. NVIDIA
+Installation checks for running containers before configuring Docker and again
+before restarting it. Keep the host idle during setup: a container started by
+another process after those checks can still be interrupted by the restart.
+Newly installed GPU packages can require a separately confirmed host reboot;
+Studio checks for active jobs and running containers before rebooting, then
+reconnects and verifies the host before launching the trainer. Re-run
+installation after repairing a failed step; it skips prerequisites that already
+work. NVIDIA
 Container Toolkit packages use its signed vendor repository. Missing
 prerequisites require non-interactive sudo (`sudo -n true`) for the SSH user;
 Ubuntu hosts with incomplete `dpkg` transactions must be repaired by an

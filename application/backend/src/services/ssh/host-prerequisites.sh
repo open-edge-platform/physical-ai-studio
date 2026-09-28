@@ -50,7 +50,7 @@ if (( nvidia + intel != 1 )); then
   echo 'GPU_AMBIGUOUS: expected exactly one NVIDIA or Intel display controller' >&2
   exit 2
 fi
-# ponytail: leave kernel changes to the host admin; add an HWE upgrade path after clean-host testing.
+# Leave kernel changes to the host admin; add an HWE upgrade path after clean-host testing.
 if (( intel )); then
   render_device_found=0
   for render in /dev/dri/renderD*; do
@@ -85,10 +85,6 @@ if [[ $mode == --install ]]; then
       echo 'PACKAGE_MANAGER_BROKEN: repair incomplete dpkg transactions before installing prerequisites' >&2
       exit 1
     fi
-  fi
-  if [[ -n ${TRAINER_SSH_USER:-} ]] && ! id -nG "$TRAINER_SSH_USER" | grep -qw docker; then
-    "${privileged[@]}" usermod -aG docker "$TRAINER_SSH_USER" || { echo 'DOCKER_USER_ACCESS_MISSING' >&2; exit 1; }
-    if bash "$0" --check; then exit 0; fi
   fi
   # Check as root: an SSH user without Docker group access must not hide active workloads.
   if command -v docker >/dev/null; then
@@ -170,6 +166,14 @@ if [[ $mode == --install ]]; then
         "${privileged[@]}" nvidia-ctk runtime configure --runtime=docker || {
           echo 'NVIDIA_RUNTIME_CONFIG_FAILED' >&2; exit 1;
         }
+        # Packages may take time to install; check again immediately before restarting Docker.
+        containers=$("${privileged[@]}" docker ps -q 2>/dev/null) || {
+          echo 'DOCKER_UNAVAILABLE: cannot inspect running containers before restarting Docker' >&2; exit 1;
+        }
+        if [[ -n $containers ]]; then
+          echo 'ACTIVE_CONTAINERS: stop running containers before configuring Docker' >&2
+          exit 1
+        fi
         "${privileged[@]}" systemctl restart docker || { echo 'DOCKER_RESTART_FAILED' >&2; exit 1; }
       fi
     else
@@ -227,20 +231,24 @@ if [[ $mode == --install ]]; then
       fi
     fi
   fi
-  # Docker group access is root-equivalent; this only happens on explicit installation.
+  # A new Docker group membership needs a fresh SSH session; a daemon failure does not.
   if ! docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
-    if (( EUID != 0 )) && ! id -nG "$(id -un)" | grep -qw docker; then
-      "${privileged[@]}" usermod -aG docker "$(id -un)" || { echo 'DOCKER_USER_ACCESS_MISSING' >&2; exit 1; }
+    if ! "${privileged[@]}" docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
+      echo 'DOCKER_UNAVAILABLE: Docker is not responding on the SSH host' >&2
+      exit 1
     fi
-    echo 'RELOGIN_REQUIRED: reconnect the SSH user to activate Docker access' >&2
-    exit 11
+    if (( EUID != 0 )) && ! id -nG | grep -qw docker; then
+      if ! id -nG "$(id -un)" | grep -qw docker; then
+        "${privileged[@]}" usermod -aG docker "$(id -un)" || { echo 'DOCKER_USER_ACCESS_MISSING' >&2; exit 1; }
+      fi
+      echo 'RELOGIN_REQUIRED: reconnect the SSH user to activate Docker access' >&2
+      exit 11
+    fi
+    echo 'DOCKER_UNAVAILABLE: Docker is not responding on the SSH host' >&2
+    exit 1
   fi
 fi
 
-if [[ -n ${TRAINER_SSH_USER:-} ]] && ! id -nG "$TRAINER_SSH_USER" | grep -qw docker; then
-  echo 'DOCKER_USER_ACCESS_MISSING: SSH account lacks Docker access' >&2
-  exit 1
-fi
 if ! command -v docker >/dev/null; then
   echo 'DOCKER_MISSING' >&2
   exit 1
