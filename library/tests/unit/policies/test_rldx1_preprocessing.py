@@ -478,6 +478,29 @@ def test_tokenize_vlm_batch_matches_vendored(vlm_processor) -> None:  # noqa: AN
 OBSERVATION_STATE = "observation.state"
 
 
+def test_preprocessor_excludes_end_of_episode_action_padding() -> None:
+    """Exclude repeated episode-end actions from the training action mask."""
+    from physicalai.policies.rldx1.preprocessor import Rldx1Preprocessor
+
+    preprocessor = Rldx1Preprocessor(
+        max_state_dim=1,
+        max_action_dim=1,
+        action_horizon=4,
+        stats=None,
+    )
+    batch = {
+        STATE: torch.tensor([[0.0]]),
+        ACTION: torch.tensor([[[1.0], [2.0], [2.0], [2.0]]]),
+        "extra.action_is_pad": torch.tensor([[False, False, True, True]]),
+    }
+
+    # Isolate action preprocessing without loading the image/text processor.
+    result = preprocessor._normalize_pad_state_action(batch, has_action=True)  # noqa: SLF001
+
+    expected_mask = torch.tensor([[[1.0], [1.0], [0.0], [0.0]]])
+    torch.testing.assert_close(result[ACTION_MASK], expected_mask)
+
+
 def _make_obs_batch(*, batch_size: int, with_action: bool, seed: int) -> dict[str, object]:
     """Build a flat observation batch (2 camera views) for the preprocessor."""
     rng = np.random.default_rng(seed)
