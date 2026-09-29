@@ -25,10 +25,10 @@ repos:
     hooks:
       # Run the linter with fixes (uses [tool.ruff] from pyproject.toml)
       - id: ruff
-        args: ["--config=pyproject.toml", "--fix"]
+        args: ["--config=pyproject.toml", "--force-exclude", "--fix"]
       # Run the formatter (uses [tool.ruff] from pyproject.toml)
       - id: ruff-format
-        args: ["--config=pyproject.toml"]
+        args: ["--config=pyproject.toml", "--force-exclude"]
 
   # ========================================================================== #
   # PYTHON TYPE CHECKING                                                       #
