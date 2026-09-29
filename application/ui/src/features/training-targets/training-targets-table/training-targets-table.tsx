@@ -44,6 +44,7 @@ const TARGET_MENU_ACTION_ITEMS = {
     EDIT: 'Edit',
     DELETE: 'Delete',
     REBOOT: 'reboot_after_install',
+    INSTALL: 'install_prerequisites',
 };
 
 type TargetMenuActionsProps = {
@@ -52,15 +53,27 @@ type TargetMenuActionsProps = {
     onEdit: () => void;
     onDelete: () => void;
     onReboot?: () => void;
+    onInstall?: () => void;
     isChecking: boolean;
+    isStarting: boolean;
 };
 
-const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, onReboot, isChecking }: TargetMenuActionsProps) => {
+const TargetMenuActions = ({
+    targetName,
+    onCheck,
+    onEdit,
+    onDelete,
+    onReboot,
+    onInstall,
+    isChecking,
+    isStarting,
+}: TargetMenuActionsProps) => {
     const items = [
         { key: TARGET_MENU_ACTION_ITEMS.EDIT, label: 'Edit' },
         { key: TARGET_MENU_ACTION_ITEMS.DELETE, label: 'Delete' },
         { key: TARGET_MENU_ACTION_ITEMS.CHECK_STATUS, label: 'Check status' },
         ...(onReboot ? [{ key: TARGET_MENU_ACTION_ITEMS.REBOOT, label: 'Reboot to finish setup' }] : []),
+        ...(onInstall ? [{ key: TARGET_MENU_ACTION_ITEMS.INSTALL, label: 'Install prerequisites' }] : []),
     ];
     const handleAction = (action: Key) => {
         if (action === TARGET_MENU_ACTION_ITEMS.CHECK_STATUS) {
@@ -71,6 +84,8 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, onReboot, is
             onDelete();
         } else if (action === TARGET_MENU_ACTION_ITEMS.REBOOT) {
             onReboot?.();
+        } else if (action === TARGET_MENU_ACTION_ITEMS.INSTALL) {
+            onInstall?.();
         }
     };
 
@@ -82,7 +97,10 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, onReboot, is
             <Menu
                 items={items}
                 onAction={handleAction}
-                disabledKeys={isChecking || onCheck === undefined ? [TARGET_MENU_ACTION_ITEMS.CHECK_STATUS] : undefined}
+                disabledKeys={[
+                    ...(isChecking || onCheck === undefined ? [TARGET_MENU_ACTION_ITEMS.CHECK_STATUS] : []),
+                    ...(isStarting ? [TARGET_MENU_ACTION_ITEMS.INSTALL] : []),
+                ]}
             >
                 {(item) => <Item key={item.key}>{item.label}</Item>}
             </Menu>
@@ -106,6 +124,7 @@ type TargetRowContentProps = {
     onEdit: () => void;
     onDelete: () => void;
     onReboot?: () => void;
+    onInstall?: () => void;
 };
 
 /**
@@ -128,6 +147,7 @@ const targetRowCells = ({
     onEdit,
     onDelete,
     onReboot,
+    onInstall,
 }: TargetRowContentProps) => [
     <Text key='name'>{name}</Text>,
 
@@ -164,7 +184,9 @@ const targetRowCells = ({
             onEdit={onEdit}
             onDelete={onDelete}
             onReboot={onReboot}
+            onInstall={onInstall}
             isChecking={isChecking}
+            isStarting={isStarting}
         />
     </div>,
 ];
@@ -225,6 +247,7 @@ const DirectUrlTargetRow = ({
                 onDelete,
                 onReboot:
                     trainer.connection_mode === 'ssh' && awaitingReboot && onSetup ? () => onSetup(true) : undefined,
+                onInstall: trainer.connection_mode === 'ssh' && onSetup ? () => onSetup(false) : undefined,
             })}
         </Table.ExpandableRow>
     );

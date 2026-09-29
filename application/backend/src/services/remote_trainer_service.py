@@ -256,7 +256,14 @@ class RemoteTrainerService:
             yield
             return
         async with _setup_lock:
-            if remote_trainer_id in _background_installs:
+            if remote_trainer_id in _background_installs or persistent_trainer.get_launch_failure(
+                remote_trainer_id
+            ) in {
+                "reboot_required",
+                "relogin_required",
+                "reboot_blocked_active_containers",
+                "nvidia_driver_unavailable",
+            }:
                 raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
             yield
 
@@ -386,7 +393,9 @@ class RemoteTrainerService:
             try:
                 target = persistent_trainer._ssh_target(trainer)
                 async with SshTransport(target) as transport:
-                    containers = await transport.run_command(["docker", "ps", "-q"])
+                    containers = await transport.run_command(
+                        ["sh", "-c", 'if [ "$(id -u)" -eq 0 ]; then docker ps -q; else sudo -n docker ps -q; fi']
+                    )
                     if not containers.ok:
                         persistent_trainer.set_install_failure(remote_trainer_id, "docker_unavailable")
                         return

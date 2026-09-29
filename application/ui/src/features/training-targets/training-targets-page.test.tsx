@@ -183,18 +183,38 @@ describe('TrainingTargetsPage', () => {
         expect(screen.queryByLabelText('Trainer setup in progress')).not.toBeInTheDocument();
     });
 
-    it('does not offer installation in the SSH target action menu', async () => {
+    it('offers installation for an existing SSH target and disables confirmation while submitting', async () => {
         const user = userEvent.setup();
+        let installs = 0;
+        let finishRequest: () => void = () => {};
+        const requestPending = new Promise<void>((resolve) => {
+            finishRequest = resolve;
+        });
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () =>
                 HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'gpu' }])
-            )
+            ),
+            http.post('/api/remote-trainers/{remote_trainer_id}/install-prerequisites', async () => {
+                installs++;
+                await requestPending;
+                return new HttpResponse(null, { status: 202 });
+            })
         );
         render(<TrainingTargetsPage />);
 
         await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
-        expect(screen.queryByRole('menuitem', { name: 'Install prerequisites' })).not.toBeInTheDocument();
-        expect(screen.getByRole('menuitem', { name: 'Check status' })).toBeInTheDocument();
+        await user.click(await screen.findByRole('menuitem', { name: 'Install prerequisites' }));
+        expect(installs).toBe(0);
+        const installButton = within(
+            await screen.findByRole('alertdialog', { name: 'Install host prerequisites' })
+        ).getByRole('button', { name: 'Install' });
+        await user.click(installButton);
+        await waitFor(() => expect(installs).toBe(1));
+        expect(installButton).toBeDisabled();
+        finishRequest();
+        await waitFor(() =>
+            expect(screen.queryByRole('alertdialog', { name: 'Install host prerequisites' })).not.toBeInTheDocument()
+        );
     });
 
     it.each(['reboot_required', 'nvidia_driver_unavailable'])(

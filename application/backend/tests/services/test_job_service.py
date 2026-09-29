@@ -11,6 +11,7 @@ from schemas.job import RemoteTrainJobPayload, TrainJob
 from services import remote_trainer_service as remote_trainer_service_module
 from services.job_service import JobService
 from services.remote_trainer_service import RemoteTrainerService
+from services.ssh import persistent_trainer
 
 
 def _job(*, status: JobStatus = JobStatus.PENDING) -> TrainJob:
@@ -98,6 +99,23 @@ async def test_remote_submission_rejects_trainer_being_installed() -> None:
         remote_trainer_service_module._background_installs.pop(trainer_id)
         running.cancel()
         await asyncio.gather(running, return_exceptions=True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("reason", ["reboot_required", "relogin_required", "reboot_blocked_active_containers"])
+async def test_remote_submission_rejects_unfinished_setup(reason: str) -> None:
+    trainer_id = uuid4()
+    payload = RemoteTrainJobPayload(
+        project_id=uuid4(), dataset_id=uuid4(), policy="act", model_name="model", remote_trainer_id=trainer_id
+    )
+    persistent_trainer.set_install_failure(trainer_id, reason)
+    try:
+        with patch("services.job_service.JobRepository") as repository_type:
+            with pytest.raises(ResourceInUseError):
+                await JobService(MagicMock(spec=AsyncSession)).submit_train_job(payload)
+            repository_type.return_value.save.assert_not_called()
+    finally:
+        persistent_trainer.set_install_failure(trainer_id, None)
 
 
 def test_job_service_uses_injected_session() -> None:

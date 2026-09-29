@@ -366,7 +366,9 @@ async def test_reboot_refuses_host_with_running_containers(reason: str) -> None:
     ):
         await RemoteTrainerService(_session()).reboot_installed_host(trainer.id)
         await remote_trainer_service_module._background_installs[trainer.id]
-    transport.run_command.assert_awaited_once_with(["docker", "ps", "-q"])
+    transport.run_command.assert_awaited_once_with(
+        ["sh", "-c", 'if [ "$(id -u)" -eq 0 ]; then docker ps -q; else sudo -n docker ps -q; fi']
+    )
     assert persistent_trainer.get_launch_failure(trainer.id) == "reboot_blocked_active_containers"
 
 
@@ -406,6 +408,9 @@ async def test_confirmed_reboot_waits_for_new_boot_before_launch() -> None:
     ):
         await RemoteTrainerService(_session()).reboot_installed_host(trainer.id)
         await remote_trainer_service_module._background_installs[trainer.id]
+    before.run_command.assert_any_await(
+        ["sh", "-c", 'if [ "$(id -u)" -eq 0 ]; then docker ps -q; else sudo -n docker ps -q; fi']
+    )
     before.run_command.assert_any_await(["sudo", "-n", "reboot"])
     start.assert_awaited_once_with(trainer)
 
