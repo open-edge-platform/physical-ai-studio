@@ -6,6 +6,7 @@ Policy evaluation and benchmarking infrastructure.
 
 - **[Overview](overview.md)** - Architecture and components
 - **[VLA Evaluation Harness](vla-evaluation-harness.md)** - External benchmark model-server integration
+- **[Pi0.5 SnapFlow on LIBERO](snapflow-libero.md)** - Distilled checkpoint success and inference latency
 
 ## Components
 

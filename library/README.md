@@ -124,7 +124,9 @@ physicalai fit \
 
 # Benchmark
 
-Evaluate trained policies on standardized simulation environments.
+Evaluate trained policies on standardized simulation environments. See the
+[Pi0.5 SnapFlow LIBERO report](docs/explanation/benchmark/snapflow-libero.md)
+for success and per-chunk latency measured against the 10-step teacher.
 
 ## API
 
