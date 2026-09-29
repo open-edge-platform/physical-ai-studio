@@ -18,7 +18,7 @@ repos:
   # PYTHON LINTING & FORMATTING                                                #
   # ========================================================================== #
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: "v0.11.11"
+    rev: "v0.16.7"
     hooks:
       # Run the linter with fixes (uses [tool.ruff] from pyproject.toml)
       - id: ruff

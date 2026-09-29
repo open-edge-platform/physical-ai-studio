@@ -362,5 +362,5 @@ class PaliGemmaForConditionalGenerationWithPiGemma(PaliGemmaForConditionalGenera
 
     @property
     def language_model(self) -> PiGemmaModel:
-        """Return the language model component."""
+        """The language model component."""
         return self.model.language_model

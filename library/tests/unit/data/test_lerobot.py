@@ -3,6 +3,9 @@
 
 """Test for lerobot dataset using a mock to avoid ffmpeg/network dependencies."""
 
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 import torch
@@ -208,3 +211,19 @@ class TestLeRobotActionDatasetFeatures:
 
         for k in obs_features:
             assert not k.startswith("observation."), "Keys should not have 'observation.' prefix"
+
+
+def test_import_does_not_load_lerobot_policy_factory():
+    """Importing physicalai.data.lerobot must not eagerly import lerobot.policies.factory.
+
+    The factory imports every LeRobot policy (e.g. GR00T -> Qwen3-VL processors), which is
+    slow and noisy. Runs in a fresh interpreter since the test session may already have it loaded.
+    """
+    code = (
+        "import sys\n"
+        "import physicalai.data.lerobot\n"
+        "assert 'lerobot.policies.factory' not in sys.modules, 'lerobot.policies.factory was imported'\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+

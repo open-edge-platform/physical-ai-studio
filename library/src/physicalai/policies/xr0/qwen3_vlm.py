@@ -144,7 +144,7 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
             ) -> torch.Tensor:
                 return export_vision_attn_forward(
                     attn,
-                    shim._export_vision_seqlens,  # noqa: SLF001
+                    shim._export_vision_seqlens,
                     hidden_states,
                     cast("tuple[torch.Tensor, torch.Tensor]", position_embeddings),
                 )
@@ -190,7 +190,7 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
             # ``grid_thw.tolist()``; a freshly built *constant* grid tensor keeps
             # any residual tower shape ops concrete.
             grid_const = torch.tensor(
-                shim._export_grid_list,  # noqa: SLF001
+                shim._export_grid_list,
                 dtype=torch.long,
                 device=pixel_values.device,
             )
@@ -201,10 +201,10 @@ class XR0Qwen3VL(Qwen3VLForConditionalGeneration):
             vision_output = visual(
                 pixel_values.type(visual.dtype),
                 grid_thw=grid_const,
-                position_ids=shim._export_vision_position_ids,  # noqa: SLF001
-                interp_indices=shim._export_vision_interp_indices,  # noqa: SLF001
-                interp_weights=shim._export_vision_interp_weights,  # noqa: SLF001
-                cu_seqlens=shim._export_vision_cu_seqlens,  # noqa: SLF001
+                position_ids=shim._export_vision_position_ids,
+                interp_indices=shim._export_vision_interp_indices,
+                interp_weights=shim._export_vision_interp_weights,
+                cu_seqlens=shim._export_vision_cu_seqlens,
                 return_dict=True,
             )
             image_embeds = vision_output.pooler_output.to(inputs_embeds.device, inputs_embeds.dtype)
