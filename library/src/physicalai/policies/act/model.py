@@ -187,7 +187,7 @@ class ACT(Model):
 
     @property
     def config(self) -> ACTConfig:
-        """Get the ACT model configuration.
+        """The ACT model configuration.
 
         Returns:
             ACTConfig: The configuration of the ACT model.
@@ -356,7 +356,7 @@ class ACT(Model):
 
     @property
     def reward_delta_indices(self) -> None:
-        """Return reward indices.
+        """Reward indices.
 
         Currently returns `None` as rewards are not implemented.
 
@@ -367,7 +367,7 @@ class ACT(Model):
 
     @property
     def action_delta_indices(self) -> list[int]:
-        """Get indices of actions relative to the current timestep.
+        """Indices of actions relative to the current timestep.
 
         Returns:
             list[int]: A list of relative action indices.
@@ -376,7 +376,7 @@ class ACT(Model):
 
     @property
     def observation_delta_indices(self) -> None:
-        """Get indices of observations relative to the current timestep.
+        """Indices of observations relative to the current timestep.
 
         Returns:
             list[int]: A list of relative observation indices.
@@ -1280,7 +1280,7 @@ def _get_activation_fn(activation: str) -> Callable:
             - "gelu": Returns F.gelu function
             - "glu": Returns F.glu function
     Returns:
-        Callable: The corresponding PyTorch activation function.
+        The corresponding PyTorch activation function.
 
     Raises:
         RuntimeError: If the activation function name is not supported.

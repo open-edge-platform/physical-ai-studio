@@ -147,12 +147,12 @@ class ExecuTorchAdapter(RuntimeAdapter):
 
     @property
     def input_names(self) -> list[str]:
-        """Get model input names."""
+        """Model input names."""
         return self._input_names
 
     @property
     def output_names(self) -> list[str]:
-        """Get model output names."""
+        """Model output names."""
         return self._output_names
 
     def default_device(self) -> str:  # noqa: PLR6301

@@ -1,14 +1,14 @@
 """Database migration management"""
 
-from loguru import logger
-from sqlalchemy import text
-
-from alembic import command
 from alembic.config import Config
 from alembic.runtime import migration
 from alembic.script import ScriptDirectory
 from alembic.script.revision import ResolutionError
 from alembic.util.exc import CommandError
+from loguru import logger
+from sqlalchemy import text
+
+from alembic import command
 from db import sync_engine
 from settings import Settings
 

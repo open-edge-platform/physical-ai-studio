@@ -440,7 +440,6 @@ def make_smolvla_preprocessors(
     Args:
         max_state_dim: Maximum state dimension.
         max_action_dim: Maximum action dimension.
-        env_action_dim: Actual environment action dimension.
         stats: Dataset statistics as nested dicts.
         image_resolution: Target image resolution.
         image_key_reorder_map: Optional mapping from source image keys to policy camera indices.

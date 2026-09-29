@@ -223,7 +223,7 @@ def test_a_second_load_supersedes_the_first(tmp_path, monkeypatch: pytest.Monkey
 
 def test_camera_mismatch_is_caught_at_load(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     model = FakeInferenceModel(input_names=[STATE, f"{IMAGES}.wrist"])
-    with pytest.raises(ModelCameraMismatchError, match="images.wrist") as mismatch:
+    with pytest.raises(ModelCameraMismatchError, match=r"images\.wrist") as mismatch:
         check_camera_keys(model, ["front"])
     assert "images.front" in mismatch.value.message
 

@@ -697,7 +697,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
 
     @property
     def lerobot_policy(self) -> PreTrainedPolicy:
-        """Get the initialized LeRobot policy.
+        """The initialized LeRobot policy.
 
         Returns:
             The initialized LeRobot policy.

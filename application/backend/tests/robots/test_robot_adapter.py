@@ -209,7 +209,7 @@ class TestReadForces:
 
 class TestSetForces:
     def test_noops_if_force_method_missing(self):
-        adapter, robot = _make_adapter()
+        adapter, _robot = _make_adapter()
         forces = {"shoulder_pan.eff": 1.0}
         result = adapter.set_forces(forces)
 

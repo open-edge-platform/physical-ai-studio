@@ -209,7 +209,7 @@ class TorchAdapter(RuntimeAdapter):
 
     @property
     def input_names(self) -> list[str]:
-        """Get model input names.
+        """Model input names.
 
         Returns:
             List of input tensor names
@@ -224,7 +224,7 @@ class TorchAdapter(RuntimeAdapter):
 
     @property
     def output_names(self) -> list[str]:
-        """Get model output names.
+        """Model output names.
 
         Returns:
             List of output tensor names

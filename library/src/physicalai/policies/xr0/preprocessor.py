@@ -342,7 +342,7 @@ class XR0Preprocessor(torch.nn.Module):
 
     @property
     def tokenizer(self) -> Any:  # noqa: ANN401
-        """Return the Qwen3-VL tokenizer (used for the OpenVINO tokenizer export).
+        """The Qwen3-VL tokenizer (used for the OpenVINO tokenizer export).
 
         Returns:
             The processor's underlying HuggingFace tokenizer.

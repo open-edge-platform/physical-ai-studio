@@ -293,11 +293,7 @@ extend-exclude = [
 [tool.ruff.lint]
 # Existing violations of rules introduced after the previous pre-commit Ruff version.
 ignore = [
-    "incorrect-section-order",
-    "property-docstring-starts-with-verb",
-    "docstring-extraneous-parameter",
     "too-many-statements-in-try-clause",
-    "used-dummy-variable",
     "non-empty-init-module",
     "noqa-comments",
 ]
