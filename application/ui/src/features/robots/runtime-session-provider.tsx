@@ -14,9 +14,10 @@ import { FollowerSource, runtimeSocketUrl } from './use-joint-state';
 
 type InferenceDevice = Pick<SchemaInferenceDeviceInfo, 'backend' | 'device'>;
 
-interface RuntimeSessionState {
+export interface RuntimeSessionState {
     connected: boolean;
     follower_source: FollowerSource;
+    has_leader: boolean;
     model_loaded: boolean;
     task: string | null;
     dataset_loaded: boolean;
@@ -27,6 +28,7 @@ interface RuntimeSessionState {
 const createRuntimeSessionState = (): RuntimeSessionState => ({
     connected: false,
     follower_source: 'hold',
+    has_leader: false,
     model_loaded: false,
     task: null,
     dataset_loaded: false,
@@ -151,6 +153,7 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
                 setState({
                     connected: next.connected ?? false,
                     follower_source: next.follower_source ?? 'hold',
+                    has_leader: next.has_leader ?? false,
                     model_loaded: next.model_loaded ?? false,
                     task: next.task ?? null,
                     dataset_loaded: next.dataset_loaded ?? false,

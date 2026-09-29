@@ -10,8 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from physicalai.data.observation import Feature, FeatureType
-from physicalai.policies.molmoact2.constants import SO101_JOINT_OFFSETS, SO101_JOINT_SIGNS
-from physicalai.policies.utils import JointFrameTransform
+from physicalai.policies.molmoact2.so101 import make_so101_joint_transform
 from physicalai.policies.utils.features import get_feature_by_type
 
 from .image import MolmoAct2ImageProcessor
@@ -30,6 +29,7 @@ from .tokenizers import MolmoAct2Tokenizers
 
 if TYPE_CHECKING:
     from physicalai.policies import MolmoAct2Config
+    from physicalai.policies.utils import JointFrameTransform
 
 
 def _check_missing_tokens(required_tokens: dict[str, int | None]) -> None:
@@ -54,7 +54,7 @@ def _check_missing_action_feature(action_feature: Feature | None) -> None:
 def _make_joint_transform(config: MolmoAct2Config) -> JointFrameTransform | None:
     if not config.adapt_to_so101:
         return None
-    return JointFrameTransform(signs=SO101_JOINT_SIGNS, offsets=SO101_JOINT_OFFSETS)
+    return make_so101_joint_transform(config.calibration)
 
 
 def make_molmoact2_preprocessors(config: MolmoAct2Config) -> tuple[MolmoAct2Preprocessor, MolmoAct2Postprocessor]:

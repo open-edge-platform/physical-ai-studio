@@ -23,6 +23,7 @@ def test_lifecycle_start_emits_connected_state_once() -> None:
         "data": {
             "connected": True,
             "follower_source": "hold",
+            "has_leader": False,
             "model_loaded": None,
             "task": None,
             "dataset_loaded": None,
@@ -84,6 +85,7 @@ def test_state_and_error_events_keep_the_websocket_contract() -> None:
         "data": {
             "connected": True,
             "follower_source": "teleop",
+            "has_leader": False,
             "model_loaded": None,
             "task": None,
             "dataset_loaded": None,

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
@@ -15,15 +16,8 @@ from typing import Any, Literal
 from huggingface_hub import snapshot_download
 
 from physicalai.data.observation import Feature, FeatureType, NormalizationParameters
-from physicalai.policies.utils import JointFrameTransform
-from physicalai.policies.utils.features import get_feature_by_type
 
 from .config import MolmoAct2Config
-from .constants import (
-    SO101_DEGREES_PER_NORMALIZED_UNIT,
-    SO101_JOINT_OFFSETS,
-    SO101_JOINT_SIGNS,
-)
 from .pretrained_utils import (
     ACTION_EXPERT_CONFIG_MAP,
     ADAPTER_CONFIG_MAP,
@@ -33,29 +27,7 @@ from .pretrained_utils import (
     copy_component,
 )
 
-
-def _pretrained_normalization_to_so101_runtime(
-    features: list[Feature],
-    feature_type: FeatureType,
-) -> list[Feature]:
-    feature = get_feature_by_type(features, feature_type)
-    if feature is None or feature.normalization_data is None:
-        return list(features)
-    if not feature.shape:
-        msg = f"Cannot convert pretrained {feature_type.value} normalization without a concrete feature shape."
-        raise ValueError(msg)
-    normalization = JointFrameTransform(
-        signs=SO101_JOINT_SIGNS,
-        offsets=SO101_JOINT_OFFSETS,
-    ).forward_normalization_from_scaled_input(
-        feature.normalization_data,
-        dimension=feature.shape[-1],
-        scales=SO101_DEGREES_PER_NORMALIZED_UNIT,
-    )
-    return [
-        replace(candidate, normalization_data=normalization) if candidate is feature else candidate
-        for candidate in features
-    ]
+logger = logging.getLogger(__name__)
 
 
 class MolmoAct2FromHFMixin:
@@ -70,7 +42,7 @@ class MolmoAct2FromHFMixin:
     setup_type: str | None
     control_mode: str | None
     adapt_to_so101: bool
-    convert_pretrained_so101_stats: bool
+    calibration: dict[str, Any] | None
     tokenizer_json_path: str | Path | None
     use_random_input_noise: bool
     lora_enabled: bool
@@ -338,14 +310,11 @@ class MolmoAct2FromHFMixin:
                 config.image_default_input_size,
                 normalize_gripper=normalize_gripper,
             )
-            if self.convert_pretrained_so101_stats:
-                tag_input_features = _pretrained_normalization_to_so101_runtime(
-                    tag_input_features,
-                    FeatureType.STATE,
-                )
-                tag_output_features = _pretrained_normalization_to_so101_runtime(
-                    tag_output_features,
-                    FeatureType.ACTION,
+            # Tag statistics stay in the checkpoint frame; the SO-101 joint transform maps runtime values into it.
+            if self.adapt_to_so101 and self.calibration is None:
+                logger.warning(
+                    "adapt_to_so101 is enabled without an SO-101 calibration; runtime joint units are treated as "
+                    "the checkpoint's degrees. Pass `calibration` for zero-shot deployment.",
                 )
             input_features = self.input_features if self.input_features is not None else tag_input_features
             output_features = self.output_features if self.output_features is not None else tag_output_features
@@ -376,7 +345,7 @@ class MolmoAct2FromHFMixin:
             setup_type=setup_type,
             control_mode=control_mode,
             adapt_to_so101=self.adapt_to_so101,
-            convert_pretrained_so101_stats=self.convert_pretrained_so101_stats,
+            calibration=self.calibration,
             normalization_mode=normalization_mode,
             tokenizer_config=tokenizer_config,
             tokenizer_name_or_path=tokenizer_name_or_path,

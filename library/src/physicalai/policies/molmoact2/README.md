@@ -165,6 +165,21 @@ legacy-frame mode automatically. Pass `adapt_to_so101=False` explicitly to
 select native-frame training. The resolved mode and frame-aligned statistics
 are saved in Lightning checkpoints and OpenVINO manifests.
 
+With `adapt_to_so101=True`, the same joint transform as in
+[Zero-Shot SO-101](#zero-shot-so-101) is applied to dataset states, action
+targets and their statistics. Passing the recording arm's `calibration` puts
+them in the checkpoint's true degree units:
+
+- It is **required** with `preserve_pretrained_normalization_in_training=True`,
+  because the checkpoint's statistics are in degrees. Training raises a
+  `ValueError` without it.
+- It is optional otherwise. Dataset statistics absorb the unit scale, and only the
+  signs and offsets matter.
+
+LeRobot's `MolmoAct2StateFrameTransformStep` transforms only the observation
+state. PhysicalAI transforms states, action targets and statistics together,
+so the model trains and predicts in one consistent frame.
+
 Checkpoints trained with older versions that transformed samples without also
 transforming dataset statistics should be retrained. Their normalized action
 targets may have been clamped, so changing only the exported manifest cannot
@@ -283,50 +298,67 @@ referenced by the restored config.
 
 ## Zero-Shot SO-101
 
-The released SO-100/101 checkpoint uses an older joint calibration convention.
-Set `adapt_to_so101=True` to transform observations and actions between that
-checkpoint frame and the current robot frame.
+The released `allenai/MolmoAct2-SO100_101` checkpoint was trained on an older
+LeRobot joint convention. Its body joints are in **degrees**, `shoulder_lift` is
+flipped, and `shoulder_lift`/`elbow_flex` are offset by 90°. The PhysicalAI SO-101
+driver instead reports each body joint in **normalized units** `[-100, 100]` over
+its calibrated tick range. The gripper is `[0, 100]` in both conventions.
 
-The released checkpoint's normalization statistics also use LeRobot degrees,
-whereas the PhysicalAI SO101 driver reports body joints in `[-100, 100]` and
-the gripper in `[0, 100]`. `adapt_to_so101` corrects the historical joint signs
-and offsets, but it does not by itself correct this unit-scale difference. For
-zero-shot deployment through PhysicalAI Runtime, also set
-`convert_pretrained_so101_stats=True`.
+With `adapt_to_so101=True` and the arm's `calibration`, MolmoAct2 maps runtime
+joints into the checkpoint frame before normalization, and maps actions back
+after denormalization. The checkpoint's normalization statistics are used
+unchanged:
 
-This flag exists only to bridge the published `allenai/MolmoAct2-SO100_101`
-statistics to PhysicalAI's normalized SO101 units. It converts the pretrained
-state and action statistics once when `norm_stats.json` is loaded. The same
-corrected feature statistics are then used by the Torch processors and embedded
-in the OpenVINO manifest for Runtime; Runtime does not load or negotiate robot
-calibration.
+```text
+Runtime state (normalized units)
+    │  checkpoint = sign * scale * runtime + offset
+    ▼
+Checkpoint frame (legacy degrees)
+    │  normalize with the checkpoint's statistics
+    ▼
+MolmoAct2 pretrained weights
+    │  denormalize with the same statistics
+    ▼
+Checkpoint frame (legacy degrees)
+    │  runtime = sign * (checkpoint - offset) / scale
+    ▼
+Runtime action (normalized units)
+```
 
-The conversion expects this SO101 calibration profile:
+- `sign = [1, -1, 1, 1, 1, 1]`, `offset = [0, 90, 90, 0, 0, 0]`: the LeRobot
+  backward-compatibility transform.
+- `scale` is the number of degrees in one runtime unit, computed per body joint
+  from the calibration as `(range_max - range_min) / 200 * 360 / 4095`. The
+  gripper scale is 1.
 
-| Joint         | `range_min` | `range_max` |
-| ------------- | ----------: | ----------: |
-| shoulder_pan  |         746 |        3412 |
-| shoulder_lift |         885 |        3198 |
-| elbow_flex    |         907 |        3103 |
-| wrist_flex    |         771 |        3073 |
-| wrist_roll    |         143 |        3972 |
-| gripper       |        2045 |        3492 |
+LeRobot degrees are `(ticks - mid) * 360 / 4095` and PhysicalAI units are
+`(ticks - mid) * 200 / (range_max - range_min)`, so `scale * runtime` equals
+LeRobot degrees exactly. Zero-shot inference therefore matches LeRobot's
+`MolmoAct2StateFrameTransformStep`/`MolmoAct2ActionFrameTransformStep` pipeline
+for the same arm, from servo ticks in to servo ticks out.
 
-The body-joint conversion depends on each range width. Do not use this flag if
-the deployed arm has different body-joint ranges. Models trained or fine-tuned
-with PhysicalAI-normalized SO101 state/action statistics already use Runtime's
-native units and must leave `convert_pretrained_so101_stats=False`.
+The scales come from one arm's calibration and are embedded in the Torch
+processors and the OpenVINO manifest (`joint_frame_preprocess` /
+`joint_frame_postprocess`). Re-export for an arm with different ranges.
+
+`calibration` is required for zero-shot use. `set_features(...,
+copy_state_normalization=True)` or `copy_action_normalization=True` raises a
+`ValueError` with `adapt_to_so101=True` and no calibration. Using the tag
+features directly without a calibration logs a warning, and runtime units are
+then treated as degrees.
 
 ```python
 import torch
 
 from physicalai.policies import MolmoAct2
 
+calibration_so101 = "SO101 Follower-calibration.json"
+
 policy = MolmoAct2(
     pretrained_name_or_path="allenai/MolmoAct2-SO100_101",
     norm_tag="so100_so101_molmoact2",
     adapt_to_so101=True,
-    convert_pretrained_so101_stats=True,
+    calibration=calibration_so101,
 )
 
 policy.set_features(
@@ -349,6 +381,56 @@ normalization already present on that replacement feature.
 
 Start the SO-101 from an extended pose near the task workspace. Starting from a
 rest pose can cause the policy to remain there.
+
+`calibration` accepts a dictionary or a path to the arm's calibration JSON, for
+example:
+
+```json
+{
+  "shoulder_pan": {
+    "id": 1,
+    "drive_mode": 0,
+    "homing_offset": -457,
+    "range_min": 701,
+    "range_max": 3381
+  },
+  "shoulder_lift": {
+    "id": 2,
+    "drive_mode": 0,
+    "homing_offset": 260,
+    "range_min": 882,
+    "range_max": 3244
+  },
+  "elbow_flex": {
+    "id": 3,
+    "drive_mode": 0,
+    "homing_offset": 642,
+    "range_min": 888,
+    "range_max": 3088
+  },
+  "wrist_flex": {
+    "id": 4,
+    "drive_mode": 0,
+    "homing_offset": 1056,
+    "range_min": 778,
+    "range_max": 3092
+  },
+  "wrist_roll": {
+    "id": 5,
+    "drive_mode": 0,
+    "homing_offset": -56,
+    "range_min": 28,
+    "range_max": 4065
+  },
+  "gripper": {
+    "id": 6,
+    "drive_mode": 0,
+    "homing_offset": -807,
+    "range_min": 2031,
+    "range_max": 3538
+  }
+}
+```
 
 ## Repository and Normalization Tags
 

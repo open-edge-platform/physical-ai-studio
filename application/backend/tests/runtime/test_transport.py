@@ -306,6 +306,7 @@ def test_ready_state_can_be_recovered_from_metadata_when_publication_is_dropped(
             "data": {
                 "connected": True,
                 "follower_source": "hold",
+                "has_leader": False,
                 "model_loaded": None,
                 "task": None,
                 "dataset_loaded": None,

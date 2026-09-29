@@ -29,6 +29,7 @@ from torchvision.ops.misc import FrozenBatchNorm2d
 from physicalai.data import Feature, FeatureType
 from physicalai.data.observation import ACTION, EXTRA, IMAGES, STATE, Observation
 from physicalai.policies.base import Model
+from physicalai.policies.utils import in_episode_bound, reduce_losses
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform, NormalizationType
 
 from .config import ACTConfig
@@ -238,9 +239,10 @@ class ACT(Model):
 
         actions_hat, (mu_hat, log_sigma_x2_hat) = self._model(batch)
 
-        l1_loss = (
-            F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch[EXTRA + ".action_is_pad"].unsqueeze(-1)
-        ).mean()
+        l1_loss = reduce_losses(
+            F.l1_loss(batch[ACTION], actions_hat, reduction="none"),
+            in_episode_bound(batch),
+        )
 
         # Detached tensors, not `.item()` floats: see Model.compute_loss docstring.
         loss_dict: dict[str, torch.Tensor | float] = {"l1_loss": l1_loss.detach()}
@@ -282,9 +284,10 @@ class ACT(Model):
         finally:
             self._model.eval()
 
-        l1_loss = (
-            F.l1_loss(batch[ACTION], actions_hat, reduction="none") * ~batch[EXTRA + ".action_is_pad"].unsqueeze(-1)
-        ).mean()
+        l1_loss = reduce_losses(
+            F.l1_loss(batch[ACTION], actions_hat, reduction="none"),
+            in_episode_bound(batch),
+        )
 
         loss_dict: dict[str, float] = {"l1_loss": l1_loss.item()}
         if self._config.use_vae:
