@@ -187,6 +187,8 @@ jobs:
           # not support EGL_EXT_platform_device, which MuJoCo's EGL backend needs for
           # headless device rendering on the GPU runner.
           __EGL_VENDOR_LIBRARY_FILENAMES: /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+          # Avoid reusing potentially partial dataset downloads across self-hosted jobs.
+          HF_LEROBOT_HOME: ${{ runner.temp }}/lerobot_test
         run: |
           uv run --no-sync pytest tests/integration -m "not slow"
 
