@@ -418,6 +418,11 @@ class Cosmos3Preprocessor(nn.Module):
     Handles multi-camera view composition (T-shape mosaic, horizontal side-by-side)
     and viewpoint assignment based on the embodiment.
 
+    Note:
+        Composition is embodiment-driven rather than dataset-inferred because Cosmos3
+        requires a single unified video canvas with specific spatial layouts and prompt
+        tokens expected by pretrained weights.
+
     Responsibilities:
         - Inspect input batch / Observation.images dictionary and embodiment.
         - If the embodiment uses a T-shape layout (e.g. droid_lerobot):
@@ -426,8 +431,8 @@ class Cosmos3Preprocessor(nn.Module):
           apply horizontal concatenation (compose_horizontal_views) and set view_point="concat_view".
         - Otherwise:
           pass primary image through and assign corresponding viewpoint label.
-        - Return standardized observation dictionary with processed image tensor
-          and view_point metadata.
+        - Return standardized observation dictionary with processed image tensor,
+          canonical "view_point", and compatibility alias "viewpoint".
 
     Args:
         embodiment: Embodiment identifier. Defaults to "pusht".
@@ -454,7 +459,7 @@ class Cosmos3Preprocessor(nn.Module):
             batch: Input Observation or dictionary.
 
         Returns:
-            Standardized dictionary with IMAGES and view_point metadata.
+            Standardized dictionary with IMAGES, canonical "view_point", and "viewpoint" alias.
 
         Raises:
             KeyError: If no image tensor can be located in the batch.
@@ -516,6 +521,7 @@ class Cosmos3Preprocessor(nn.Module):
 
         result[IMAGES] = composed_img
         result["image"] = composed_img
+        # "view_point" is canonical for diffusers/model conditioning; "viewpoint" is an alias for downstream callers.
         result["view_point"] = final_viewpoint
         result["viewpoint"] = final_viewpoint
 

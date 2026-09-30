@@ -42,6 +42,10 @@ The policy is configured using an `embodiment` identifier:
 | `droid_lerobot` | `joint_pos` | 8 | `none` | Inverted (`1 - g`) | DROID 7 arm joints + 1 gripper position |
 | `aloha` | `identity` | 14 | `minmax` | Standard | Dual-arm Aloha joint positions |
 
+### Camera Composition & Viewpoints
+
+Unlike VLM policies that accept arbitrary tokenized camera streams via dataset feature contracts, Cosmos3 is a single-canvas video diffusion model. Multi-camera observations are stitched into specific geometric mosaics (e.g., T-shape for DROID) and paired with discrete viewpoint prompt tags (`view_point`, with compatibility alias `viewpoint`) expected by pretrained embodiment checkpoints.
+
 ## Quickstart
 
 ### Python API
