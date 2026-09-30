@@ -63,7 +63,8 @@ class Cosmos3(Policy):
         gradient_checkpointing: Enable gradient checkpointing. Default: True.
         action_space: Optional override of the embodiment's action space ("identity" or
             "joint_pos"). When None, resolved from the embodiment. Default: None.
-        prompt: Task instruction string. Default: "".
+        prompt_format: How the per-task instruction is turned into the conditioning prompt
+            ("task_description", "augmented_text", or "augmented_json"). Default: "task_description".
         guidance_scale: Classifier-free guidance scale. Default: 3.0.
         flow_shift: Flow shift for UniPC scheduler. Default: 8.0.
         num_inference_steps: Denoising steps during inference. Default: 4.
@@ -105,7 +106,7 @@ class Cosmos3(Policy):
         action_space: str | None = None,
         view_point: str | None = None,
         normalizer_stats_path: str | None = None,
-        prompt: str = "",
+        prompt_format: Literal["task_description", "augmented_text", "augmented_json"] = "task_description",
         guidance_scale: float = 3.0,
         flow_shift: float = 8.0,
         num_inference_steps: int = 4,
@@ -163,7 +164,7 @@ class Cosmos3(Policy):
             action_space=action_space,
             view_point=view_point,
             normalizer_stats_path=normalizer_stats_path,
-            prompt=prompt,
+            prompt_format=prompt_format,
             guidance_scale=guidance_scale,
             flow_shift=flow_shift,
             num_inference_steps=num_inference_steps,
@@ -464,7 +465,7 @@ class Cosmos3(Policy):
         head_weights["norm_scale"] = self.model.norm_scale.detach().cpu().contiguous()
 
         metadata = {
-            "prompt": str(self.config.prompt),
+            "prompt_format": str(self.config.prompt_format),
             "paradigm": str(self.config.paradigm),
             "embodiment": str(self.config.embodiment),
         }
@@ -545,7 +546,7 @@ class Cosmos3(Policy):
             "action_space": config.action_space,
             "view_point": config.view_point,
             "normalizer_stats_path": config.normalizer_stats_path,
-            "prompt": config.prompt,
+            "prompt_format": config.prompt_format,
             "guidance_scale": config.guidance_scale,
             "flow_shift": config.flow_shift,
             "num_inference_steps": config.num_inference_steps,

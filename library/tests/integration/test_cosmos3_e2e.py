@@ -117,6 +117,38 @@ class TestCosmos3E2E:
         assert isinstance(chunk, torch.Tensor)
 
     @staticmethod
+    @pytest.mark.parametrize("prompt_format", ["task_description", "augmented_text", "augmented_json"])
+    def test_cosmos3_prompt_format_per_task_e2e(
+        prompt_format: str,
+        pusht_datamodule: LeRobotDataModule,
+    ) -> None:
+        """Each prompt_format syncs to the pipeline and the real task string drives the prompt.
+
+        Args:
+            prompt_format: The conditioning format under test.
+            pusht_datamodule: Datamodule fixture.
+        """
+        pipe = _create_mock_cosmos3_pipeline()
+        pipe.return_value = MagicMock(action=[torch.full((5, 64), 0.5)])
+        policy = Cosmos3(
+            embodiment="pusht",
+            chunk_size=4,
+            n_action_steps=4,
+            prompt_format=prompt_format,
+            pipeline=pipe,
+        )
+        assert policy.model is not None
+        assert policy.model.pipe.prompt_format == prompt_format
+
+        pusht_datamodule.setup("fit")
+        batch = next(iter(pusht_datamodule.train_dataloader()))
+        policy.predict_action_chunk(batch)
+
+        # The real LeRobot pusht batch carries its own task string; it must reach the pipeline call
+        # (per-task conditioning), not a removed global prompt.
+        assert isinstance(pipe.call_args.kwargs["prompt"], str)
+
+    @staticmethod
     def test_cosmos3_select_action_chunking_and_reset_e2e(pusht_datamodule: LeRobotDataModule) -> None:
         """Test action queue chunking and episode reset behavior.
 

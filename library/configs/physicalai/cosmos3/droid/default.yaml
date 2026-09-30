@@ -45,7 +45,10 @@ model:
     fps: 15
     gradient_checkpointing: true
     embodiment: "droid_lerobot"
-    prompt: ""
+    # Conditioning is per-task (the dataset's task string). "task_description" (default) sends
+    # the raw task text. For prompt parity with the released Cosmos3-*-Policy-DROID checkpoints
+    # set prompt_format: "augmented_json" (and resolution_tier: 480).
+    prompt_format: "task_description"
     dtype: "bfloat16"
     optimizer_lr: 1.0e-4
     optimizer_grad_clip_norm: 1.0

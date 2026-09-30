@@ -14,13 +14,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
+from diffusers import Cosmos3OmniPipeline
 from diffusers.utils.outputs import BaseOutput
 
 from physicalai.config import Config
-from physicalai.data.observation import ACTION, IMAGES, STATE, Observation
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies import Cosmos3, Cosmos3Config, Cosmos3Model, get_physicalai_policy_class, get_policy
 from physicalai.policies.cosmos3 import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 from physicalai.policies.cosmos3.flow_matching import _unpack_transformer_output, flow_matching_step
+from physicalai.policies.cosmos3.pipeline import PolicyPipelineWithState
 
 # ============================================================================ #
 # Configuration Tests                                                          #
@@ -59,6 +61,7 @@ class TestCosmos3Config:
         assert config.embodiment == "pusht"
         assert config.action_space is None
         assert config.view_point is None
+        assert config.prompt_format == "task_description"
         assert config.dtype == "bfloat16"
         assert config.optimizer_lr == 1e-4
 
@@ -161,6 +164,22 @@ class TestCosmos3Config:
         """Test invalid dtype raises ValueError."""
         with pytest.raises(ValueError, match="Invalid dtype"):
             Cosmos3Config(embodiment="pusht", dtype="int8")  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("prompt_format", ["task_description", "augmented_text", "augmented_json"])
+    def test_valid_prompt_format(self, prompt_format: str) -> None:
+        """Test each supported prompt_format is accepted."""
+        config = Cosmos3Config(embodiment="pusht", prompt_format=prompt_format)  # type: ignore[arg-type]
+        assert config.prompt_format == prompt_format
+
+    def test_invalid_prompt_format(self) -> None:
+        """Test invalid prompt_format raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid prompt_format"):
+            Cosmos3Config(embodiment="pusht", prompt_format="freeform")  # type: ignore[arg-type]
+
+    def test_no_global_prompt_field(self) -> None:
+        """The removed global ``prompt`` field must not resurface on the config."""
+        config = Cosmos3Config(embodiment="pusht")
+        assert not hasattr(config, "prompt")
 
     def test_serialization(self) -> None:
         """Test to_dict and from_dict round-trip."""
@@ -444,6 +463,54 @@ class TestMockedCosmos3Model:
         assert "loss_vision" in loss_dict
         assert "loss_action" in loss_dict
 
+    def test_compute_loss_uses_per_task_prompt(self) -> None:
+        """compute_loss conditions the pack on each sample's task text and syncs prompt_format."""
+        config = Cosmos3Config(embodiment="pusht", chunk_size=4, prompt_format="augmented_json")
+        pipe = self._create_mock_pipeline()
+
+        pipe._prepare_action_video_conditioning.return_value = (
+            torch.zeros(1, 3, 5, 224, 224),
+            torch.tensor([1, 3, 224, 224]),
+            224,
+            224,
+        )
+        pipe._remove_action_video_padding_from_latent.return_value = torch.zeros(1, 16, 2, 14, 14)
+        pipe._encode_video.return_value = torch.zeros(1, 16, 2, 14, 14)
+
+        model = Cosmos3Model(config, pipeline=pipe)
+        model._get_or_build_pack = MagicMock(return_value={})
+
+        # The config's prompt_format must be forwarded to the pipeline's routing attribute.
+        assert model.pipe.prompt_format == "augmented_json"
+
+        batch = {
+            IMAGES: torch.zeros(1, 3, 224, 224),
+            ACTION: torch.zeros(1, 4, 2),
+            STATE: torch.zeros(1, 2),
+            TASK: ["pick the cube"],
+        }
+        with patch("physicalai.policies.cosmos3.model.flow_matching_step") as mock_step:
+            mock_step.return_value = (torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.05))
+            model.compute_loss(batch)
+
+        # _get_or_build_pack(paradigm, prompt, ...): prompt is the second positional arg.
+        assert model._get_or_build_pack.call_args.args[1] == "pick the cube"
+
+    def test_predict_uses_per_task_prompt(self) -> None:
+        """predict conditions the pipeline call on the sample's task text."""
+        config = Cosmos3Config(embodiment="pusht", chunk_size=4)
+        pipe = self._create_mock_pipeline()
+        pipe.return_value = MagicMock(action=torch.zeros(1, 5, 64))
+
+        model = Cosmos3Model(config, pipeline=pipe)
+        batch = {
+            IMAGES: torch.zeros(1, 3, 224, 224),
+            TASK: ["wipe the table"],
+        }
+        model.predict_action_chunk(batch)
+
+        assert pipe.call_args.kwargs["prompt"] == "wipe the table"
+
     def test_on_save_checkpoint_filtering(self) -> None:
         """Test policy on_save_checkpoint removes frozen parameters and keeps trainable ones."""
         pipe = self._create_mock_pipeline()
@@ -610,6 +677,77 @@ class TestMockedCosmos3Model:
         call_kwargs = pipe.call_args.kwargs
         action_cond = call_kwargs["action"]
         assert action_cond.view_point == "top_down_2d_view"
+
+
+# ============================================================================ #
+# Prompt Conditioning Tests                                                    #
+# ============================================================================ #
+
+
+class TestResolveTaskText:
+    """Tests for the per-sample task-text resolver."""
+
+    def test_list_indexes_by_sample(self) -> None:
+        from physicalai.policies.cosmos3.model import _resolve_task_text
+
+        tasks = ["pick the cube", "wipe the table"]
+        assert _resolve_task_text(tasks, 0) == "pick the cube"
+        assert _resolve_task_text(tasks, 1) == "wipe the table"
+
+    def test_scalar_string_applies_to_all(self) -> None:
+        from physicalai.policies.cosmos3.model import _resolve_task_text
+
+        assert _resolve_task_text("stack blocks", 3) == "stack blocks"
+
+    def test_missing_or_empty_yields_empty(self) -> None:
+        from physicalai.policies.cosmos3.model import _resolve_task_text
+
+        assert _resolve_task_text(None, 0) == ""
+        assert _resolve_task_text([], 0) == ""
+        assert _resolve_task_text([123], 0) == ""
+
+    def test_out_of_range_index_falls_back_to_first(self) -> None:
+        from physicalai.policies.cosmos3.model import _resolve_task_text
+
+        assert _resolve_task_text(["only one"], 5) == "only one"
+
+
+class TestPromptFormatRouting:
+    """Tests for PolicyPipelineWithState.tokenize_prompt format routing."""
+
+    @staticmethod
+    def _pipe(prompt_format: str) -> PolicyPipelineWithState:
+        pipe = PolicyPipelineWithState.__new__(PolicyPipelineWithState)
+        pipe.prompt_format = prompt_format
+        return pipe
+
+    def test_augmented_json_forwards_action_mode(self) -> None:
+        """augmented_json keeps action_mode so the base builds the JSON caption."""
+        pipe = self._pipe("augmented_json")
+        with patch.object(Cosmos3OmniPipeline, "tokenize_prompt", return_value=([], [])) as mock_super:
+            pipe.tokenize_prompt("go", None, action_mode="policy", action_view_point="concat_view")
+        kw = mock_super.call_args.kwargs
+        assert kw["action_mode"] == "policy"
+
+    def test_augmented_text_drops_action_mode_keeps_templates(self) -> None:
+        """augmented_text uses flat templates with no JSON caption."""
+        pipe = self._pipe("augmented_text")
+        with patch.object(Cosmos3OmniPipeline, "tokenize_prompt", return_value=([], [])) as mock_super:
+            pipe.tokenize_prompt("go", None, action_mode="policy")
+        kw = mock_super.call_args.kwargs
+        assert kw["action_mode"] is None
+        assert kw["add_duration_template"] is True
+        assert kw["add_resolution_template"] is True
+
+    def test_task_description_drops_action_mode_and_templates(self) -> None:
+        """task_description sends the raw task text with no augmentation."""
+        pipe = self._pipe("task_description")
+        with patch.object(Cosmos3OmniPipeline, "tokenize_prompt", return_value=([], [])) as mock_super:
+            pipe.tokenize_prompt("go", None, action_mode="policy")
+        kw = mock_super.call_args.kwargs
+        assert kw["action_mode"] is None
+        assert kw["add_duration_template"] is False
+        assert kw["add_resolution_template"] is False
 
 
 # ============================================================================ #

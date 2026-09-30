@@ -21,7 +21,7 @@ from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepSchedu
 from huggingface_hub import file_exists
 from PIL import Image
 
-from physicalai.data.observation import ACTION, IMAGES, STATE
+from physicalai.data.observation import ACTION, IMAGES, STATE, TASK
 from physicalai.policies.base import Model
 
 from .flow_matching import build_action_tokens, build_pack, flow_matching_step
@@ -197,6 +197,30 @@ def _format_images_sequence(images_tensor: torch.Tensor, target_len: int) -> tor
     raise ValueError(msg)
 
 
+def _resolve_task_text(task_field: object, index: int) -> str:
+    """Resolve the per-sample task instruction from a batch ``task`` field.
+
+    Cosmos3 conditions each sample on its own task string (no global prompt fallback).
+    A batched ``list``/``tuple`` yields the element at ``index``; a lone ``str`` applies to
+    every sample; anything else (including a missing field) yields an empty string.
+
+    Args:
+        task_field: The ``task`` value pulled from the (pre)processed batch.
+        index: Sample index within the batch.
+
+    Returns:
+        The task instruction string for this sample (``""`` when unavailable).
+    """
+    if isinstance(task_field, str):
+        return task_field
+    if isinstance(task_field, (list, tuple)):
+        if not task_field:
+            return ""
+        item = task_field[index] if index < len(task_field) else task_field[0]
+        return item if isinstance(item, str) else ""
+    return ""
+
+
 class Cosmos3Model(Model):
     """Cosmos 3 PyTorch Model wrapping diffusers Cosmos3OmniPipeline."""
 
@@ -258,8 +282,9 @@ class Cosmos3Model(Model):
         self.norm_method = embodiment_normalization(config.embodiment)
 
         self.pipe = self._load_pipeline(config, pipeline, device)
-
-        # Register submodules for PyTorch parameter tracking and device movement
+        # The pipeline routes prompt augmentation through this attribute (see
+        # PolicyPipelineWithState.tokenize_prompt); keep it in sync with the config.
+        self.pipe.prompt_format = config.prompt_format
         self.transformer = self.pipe.transformer
         self.vae = self.pipe.vae
 
@@ -523,6 +548,7 @@ class Cosmos3Model(Model):
         view_point = preprocessed.get("view_point")
         actions_tensor = preprocessed.get(ACTION)
         state_tensor = preprocessed.get(STATE)
+        task_field = preprocessed.get(TASK)
 
         # State arrives as a single combined ``[B, (T,) raw_dim]`` column (the datamodule owns
         # composing split dataset sub-columns into one state vector).
@@ -602,7 +628,7 @@ class Cosmos3Model(Model):
 
             pack = self._get_or_build_pack(
                 selected_paradigm,
-                self.config.prompt,
+                _resolve_task_text(task_field, b),
                 x0_vision,
                 self.config.chunk_size,
                 h,
@@ -702,6 +728,7 @@ class Cosmos3Model(Model):
         img_tensor = preprocessed[IMAGES]
         view_point = preprocessed.get("view_point")
         state_tensor = preprocessed.get(STATE)
+        task_field = preprocessed.get(TASK)
         # State arrives as a single combined column (the datamodule owns composing split
         # dataset sub-columns into one state vector).
         state_field = state_tensor
@@ -744,7 +771,7 @@ class Cosmos3Model(Model):
             )
 
             result = self.pipe(
-                prompt=self.config.prompt,
+                prompt=_resolve_task_text(task_field, b),
                 action=condition,
                 fps=self.config.fps,
                 num_inference_steps=self.config.num_inference_steps,

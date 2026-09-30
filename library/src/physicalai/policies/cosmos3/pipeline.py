@@ -142,6 +142,10 @@ class PolicyPipelineWithState(Cosmos3OmniPipeline):
 
     min_xpu_driver: str = DEFAULT_MIN_XPU_DRIVER
     current_state: torch.Tensor | None = None
+    # Selects how ``tokenize_prompt`` augments the per-task instruction. Defaults to the
+    # structured JSON caption for prompt parity with released Cosmos policy checkpoints; the
+    # Studio model overrides this from ``Cosmos3Config.prompt_format``.
+    prompt_format: str = "augmented_json"
 
     def __init__(
         self,
@@ -185,6 +189,59 @@ class PolicyPipelineWithState(Cosmos3OmniPipeline):
         dev = getattr(self, "_execution_device", None) or getattr(self, "device", None)
         if dev is not None and getattr(dev, "type", None) == "xpu":
             check_xpu_driver(device=dev, min_xpu_driver=self.min_xpu_driver)
+
+    def tokenize_prompt(
+        self,
+        prompt: str,
+        negative_prompt: str | None = None,
+        *,
+        num_frames: int = 189,
+        height: int = 720,
+        width: int = 1280,
+        fps: float = 24.0,
+        use_system_prompt: bool | None = None,
+        add_resolution_template: bool = True,
+        add_duration_template: bool = True,
+        action_mode: str | None = None,
+        action_view_point: str | None = None,
+    ) -> tuple[list[int], list[int]]:
+        """Route prompt augmentation through ``self.prompt_format``.
+
+        Decouples the prompt caption format from the ``action_mode`` the caller passes for
+        action-token slicing. The base pipeline ties JSON captioning to a non-None ``action_mode``,
+        but Studio must select a caption format independently of the policy action mode:
+
+        - ``augmented_json``: structured JSON caption (viewpoint + duration + fps + resolution +
+          aspect_ratio); ``action_mode`` is left untouched so the base builds the JSON prompt.
+        - ``augmented_text``: raw task text plus the flat duration/FPS and resolution templates.
+        - ``task_description``: raw task text only, with no template augmentation.
+
+        Returns:
+            ``(cond_input_ids, uncond_input_ids)`` — token-id lists for this sample.
+        """
+        fmt = getattr(self, "prompt_format", "augmented_json")
+        if fmt == "augmented_text":
+            action_mode = None
+            add_duration_template = True
+            add_resolution_template = True
+        elif fmt == "task_description":
+            action_mode = None
+            add_duration_template = False
+            add_resolution_template = False
+        # "augmented_json": leave action_mode and templates exactly as passed by the caller.
+        return super().tokenize_prompt(
+            prompt,
+            negative_prompt,
+            num_frames=num_frames,
+            height=height,
+            width=width,
+            fps=fps,
+            use_system_prompt=use_system_prompt,
+            add_resolution_template=add_resolution_template,
+            add_duration_template=add_duration_template,
+            action_mode=action_mode,
+            action_view_point=action_view_point,
+        )
 
     def to(self, *args: object, **kwargs: object) -> PolicyPipelineWithState:
         """Move pipeline components to target device, checking XPU driver compatibility if applicable.

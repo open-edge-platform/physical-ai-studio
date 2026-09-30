@@ -40,7 +40,9 @@ model:
     fps: 10
     gradient_checkpointing: true
     embodiment: "pusht"
-    prompt: ""
+    # Conditioning is per-task (the dataset's task string). "task_description" (default) sends the
+    # raw task text; "augmented_text"/"augmented_json" add the Cosmos metadata caption templates.
+    prompt_format: "task_description"
     dtype: "bfloat16"
     optimizer_lr: 1.0e-4
     optimizer_grad_clip_norm: 1.0

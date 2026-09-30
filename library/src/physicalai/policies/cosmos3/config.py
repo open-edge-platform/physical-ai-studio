@@ -73,7 +73,13 @@ class Cosmos3Config(Config):
             head (e.g. a released Cosmos policy) that expects quantile-normalized actions. When
             None, identity embodiments derive the affine from the dataset's raw-column stats,
             while joint_pos (DROID) keeps actions un-normalized. Defaults to None.
-        prompt: Task instruction conditioning string. Defaults to "".
+        prompt_format: How the per-task instruction is turned into the conditioning prompt.
+            "task_description" (default) sends the raw per-sample task text unchanged;
+            "augmented_text" additionally appends the flat duration/FPS and resolution template
+            sentences; "augmented_json" emits the structured JSON caption (viewpoint framing +
+            duration + fps + resolution + aspect_ratio) that the released NVIDIA Cosmos policy
+            checkpoints were trained on. Select "augmented_json" for prompt parity with those
+            checkpoints. Defaults to "task_description".
         guidance_scale: Classifier-free guidance scale for inference. Defaults to 3.0.
         flow_shift: Flow shift value for the UniPC multistep scheduler. Defaults to 8.0.
         num_inference_steps: Number of denoising steps during inference. Defaults to 4.
@@ -111,7 +117,7 @@ class Cosmos3Config(Config):
     action_space: str | None = None
     view_point: str | None = None
     normalizer_stats_path: str | None = None
-    prompt: str = ""
+    prompt_format: Literal["task_description", "augmented_text", "augmented_json"] = "task_description"
     guidance_scale: float = 3.0
     flow_shift: float = 8.0
     num_inference_steps: int = 4
@@ -210,6 +216,13 @@ class Cosmos3Config(Config):
 
         if self.dtype not in {"bfloat16", "float32", "float16"}:
             msg = f"Invalid dtype: {self.dtype}. Must be 'bfloat16', 'float32', or 'float16'."
+            raise ValueError(msg)
+
+        if self.prompt_format not in {"task_description", "augmented_text", "augmented_json"}:
+            msg = (
+                f"Invalid prompt_format: {self.prompt_format}. "
+                "Must be 'task_description', 'augmented_text', or 'augmented_json'."
+            )
             raise ValueError(msg)
 
         if self.mode == "full" and abs(self.head_lr_mult - _DEFAULT_PEFT_HEAD_MULT) < _EPS:
