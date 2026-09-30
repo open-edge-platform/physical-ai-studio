@@ -261,8 +261,8 @@ class InternalLeRobotDataset(DatasetClient):
 
     def start_recording_mutation(self, fps: int, features: dict, robot_type: str) -> RecordingMutation:
         """Start recording mutation."""
-        if shutil.which("ffmpeg") is None:
-            raise RuntimeError("FFmpeg is required to record episodes. Install ffmpeg and restart Studio.")
+        # Fail before copying the dataset if PyAV has no usable video encoder.
+        self._resolved_streaming_encoding_settings_write()
 
         settings = get_settings()
         cache_dir = settings.cache_dir / str(uuid4())

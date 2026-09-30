@@ -6,22 +6,51 @@ from lerobot.configs import RGBEncoderConfig
 
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
-from internal_datasets.lerobot.streaming_encoding_settings import StreamingEncodingSettings
+from internal_datasets.lerobot.streaming_encoding_settings import StreamingEncodingSettings, _resolve_vcodec
 
 
-def test_recording_requires_ffmpeg_before_creating_cache(tmp_path: Path) -> None:
+@pytest.fixture
+def fresh_vcodec_cache():
+    _resolve_vcodec.cache_clear()
+    yield
+    _resolve_vcodec.cache_clear()
+
+
+def test_recording_checks_video_encoder_before_creating_cache(tmp_path: Path, fresh_vcodec_cache) -> None:
     dataset = InternalLeRobotDataset.__new__(InternalLeRobotDataset)
     dataset.path = tmp_path / "dataset"
+    dataset._streaming_encoding_settings = StreamingEncodingSettings()
 
     with (
-        patch("internal_datasets.lerobot.lerobot_dataset.shutil.which", return_value=None),
+        patch.object(StreamingEncodingSettings, "_vcodec_candidates", return_value=["h264"]),
+        patch.object(StreamingEncodingSettings, "_is_vcodec_usable", return_value=False),
         patch("internal_datasets.lerobot.lerobot_dataset.get_settings") as settings_mock,
-        pytest.raises(RuntimeError, match="Install ffmpeg"),
+        pytest.raises(RuntimeError, match="No usable video encoder"),
     ):
         dataset.start_recording_mutation(fps=30, features={}, robot_type="so100")
 
     settings_mock.assert_not_called()
     assert not (tmp_path / "dataset").exists()
+
+
+def test_recording_does_not_require_ffmpeg_executable(tmp_path: Path, fresh_vcodec_cache) -> None:
+    dataset = InternalLeRobotDataset.__new__(InternalLeRobotDataset)
+    dataset.path = tmp_path / "dataset"
+    dataset._streaming_encoding_settings = StreamingEncodingSettings()
+
+    with (
+        patch("shutil.which", return_value=None),
+        patch.object(StreamingEncodingSettings, "_vcodec_candidates", return_value=["h264"]),
+        patch.object(StreamingEncodingSettings, "_is_vcodec_usable", return_value=True),
+        patch("internal_datasets.lerobot.lerobot_dataset.get_settings") as settings_mock,
+        patch("internal_datasets.lerobot.lerobot_dataset.InternalLeRobotDataset") as cache_dataset,
+        patch("internal_datasets.lerobot.lerobot_dataset.RecordingMutation") as mutation,
+    ):
+        settings_mock.return_value.cache_dir = tmp_path
+        result = dataset.start_recording_mutation(fps=30, features={}, robot_type="so100")
+
+    cache_dataset.return_value.create.assert_called_once()
+    assert result is mutation.return_value
 
 
 def test_streaming_settings_translate_to_lerobot_kwargs() -> None:
