@@ -18,6 +18,7 @@ import { formatBytes, MODELS } from './policies';
 import { SetupStep } from './setup-step';
 import { TrainingDeviceInfo } from './training-device-info';
 import { MIN_EPOCHS_FOR_SNAPFLOW, TrainingParameters } from './training-parameters';
+import { getEstimatedTrainingSteps, TRAINING_VAL_SPLIT } from './training-steps';
 import { TrainingSummaryNote } from './training-summary-note';
 import { useExportBackends } from './use-export-backends';
 import { useFeatureMapping } from './use-feature-mapping';
@@ -100,6 +101,12 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const { datasets, id: projectId } = useProject();
 
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
+    const { data: selectedDatasetEpisodes } = $api.useQuery(
+        'get',
+        '/api/dataset/{dataset_id}/episodes',
+        { params: { path: { dataset_id: selectedDataset?.toString() ?? '' } } },
+        { enabled: selectedDataset !== null }
+    );
     const [maxEpochs, setMaxEpochs] = useState<number>(defaultMaxEpochs);
     const [batchSize, setBatchSize] = useState<number>(8);
     const [numWorkers, setNumWorkers] = useState<Key | null>('auto');
@@ -124,6 +131,17 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // always runs the full max_epochs before distillation extends the run), so it
     // needs no clamp against max_epochs.
     const isSnapflowRequested = isSnapflowSupported && snapflowEnabled && maxEpochs >= MIN_EPOCHS_FOR_SNAPFLOW;
+    const trainingSteps = useMemo(
+        () =>
+            selectedDatasetEpisodes === undefined
+                ? undefined
+                : getEstimatedTrainingSteps(
+                      selectedDatasetEpisodes.map(({ length }) => length),
+                      batchSize,
+                      maxEpochs + (isSnapflowRequested ? snapflowDistillEpochs : 0)
+                  ),
+        [selectedDatasetEpisodes, batchSize, maxEpochs, isSnapflowRequested, snapflowDistillEpochs]
+    );
     const {
         health: remoteTrainerHealth,
         isChecking: isCheckingRemoteTrainer,
@@ -299,7 +317,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 snapflow_enabled: isSnapflowRequested,
                 snapflow_distill_epochs: snapflowDistillEpochs,
                 augment_images: augmentImages,
-                val_split: 0.1,
+                val_split: TRAINING_VAL_SPLIT,
                 ...extraPayload,
             } as const;
 
@@ -372,6 +390,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 maxEpochs={maxEpochs}
                                 onMaxEpochsChange={setMaxEpochs}
                                 batchSize={batchSize}
+                                trainingSteps={trainingSteps}
                                 onBatchSizeChange={setBatchSize}
                                 numWorkers={numWorkers}
                                 onNumWorkersChange={setNumWorkers}
