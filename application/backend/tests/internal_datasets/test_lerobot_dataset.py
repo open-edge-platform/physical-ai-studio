@@ -1,11 +1,27 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from lerobot.configs import RGBEncoderConfig
 
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.lerobot.streaming_encoding_settings import StreamingEncodingSettings
+
+
+def test_recording_requires_ffmpeg_before_creating_cache(tmp_path: Path) -> None:
+    dataset = InternalLeRobotDataset.__new__(InternalLeRobotDataset)
+    dataset.path = tmp_path / "dataset"
+
+    with (
+        patch("internal_datasets.lerobot.lerobot_dataset.shutil.which", return_value=None),
+        patch("internal_datasets.lerobot.lerobot_dataset.get_settings") as settings_mock,
+        pytest.raises(RuntimeError, match="Install ffmpeg"),
+    ):
+        dataset.start_recording_mutation(fps=30, features={}, robot_type="so100")
+
+    settings_mock.assert_not_called()
+    assert not (tmp_path / "dataset").exists()
 
 
 def test_streaming_settings_translate_to_lerobot_kwargs() -> None:

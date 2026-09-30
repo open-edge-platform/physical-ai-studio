@@ -36,6 +36,7 @@ After upload, provide a name and select the default task and environment.
 
 Before you start recording episodes, make sure that both the follower and leader arms are free to move.
 Once you start recording the follower arm will follow the same movements as the leader.
+Recording also requires `ffmpeg` on the Studio backend's `PATH`. Docker includes it; for a native installation, install it with your system package manager (for example, `sudo apt-get install ffmpeg` or `brew install ffmpeg`) and restart Studio.
 
 From your dataset page, start recording by clicking Add episode.
 Once your environment has finished loading you will see your camera feeds as well as a visualization of your follower robot.
