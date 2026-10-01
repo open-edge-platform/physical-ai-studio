@@ -82,6 +82,7 @@ describe('SshSettingsForm', () => {
 
         expect(await screen.findByText('Saved')).toBeInTheDocument();
         expect(patchedBody).toMatchObject({ ssh: { trainer_shm_size_gb: 48 } });
-        expect(screen.getByText(/applies only to new containers/i)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /Information$/ }));
+        expect(await screen.findByText(/applies only to new containers/i)).toBeVisible();
     });
 });
