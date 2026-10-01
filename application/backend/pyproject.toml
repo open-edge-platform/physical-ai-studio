@@ -15,8 +15,6 @@ dependencies = [
   "msgpack==1.2.1",
   "physicalai-train[pi05,smolvla,rldx1]",
   "lerobot[dataset,feetech]==0.6.0",
-  # 0.11.x is ABI-locked to torch 2.11; 0.12+ covers the whole torch 2.11-2.14 range.
-  "torchcodec>=0.12",
   "numpy",
   "websockets",
   'pyrealsense2-macosx; sys_platform == "darwin"',
@@ -67,19 +65,24 @@ path = "scripts/hatch_build.py"
 # torch build (see library conflicts), so it ships only with cpu/cuda.
 # torchvision hard-pins `torch==<matching version>`, so the two ranges stay aligned:
 # torch 2.11 <-> torchvision 0.26 ... torch 2.14 <-> torchvision 0.29.
+# torchcodec floor stays at 0.11 (pairs with torch 2.11) so published metadata satisfies
+# lerobot's torchcodec<0.12 cap; the lerobot override below lifts it to 0.12+ in the lock.
 cpu = [
     "torch>=2.11,<2.15",
     "torchvision>=0.26,<0.30",
+    "torchcodec>=0.11",
     "physicalai-train[executorch]",
 ]
 cuda = [
     "torch>=2.11,<2.15",
     "torchvision>=0.26,<0.30",
+    "torchcodec>=0.11",
     "physicalai-train[executorch]",
 ]
 xpu = [
     "torch>=2.11,<2.15",
     "torchvision>=0.26,<0.30",
+    "torchcodec>=0.11",
 ]
 
 tests = [
@@ -133,9 +136,12 @@ physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = 
 # be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
 # producing incompatible torch/torchao combinations at runtime.
 torchao = { index = "pypi" }
-# Same rationale as torchao: the XPU index mirrors `torchcodec` `+cpu` wheels that
-# unsafe-best-match prefers over PyPI's build even for non-XPU installs.
-torchcodec = { index = "pypi" }
+# PyPI's Linux torchcodec wheel is CUDA-built (needs libnvrtc), so route it per extra like torch.
+torchcodec = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu130", extra = "cuda" },
@@ -195,15 +201,18 @@ override-dependencies = [
     "setuptools>=83.0.0",
     # LeRobot 0.6.0 caps torch<2.12 / torchvision<0.27 / torchcodec<0.12, below the top of
     # our supported range. Scoped to lerobot on purpose: an unscoped override would replace
-    # this project's own torch/torchvision requirements too, dropping their
-    # [tool.uv.sources] index routing and resolving e.g. `--extra cpu` to a `+xpu` build.
+    # the hardware extras' own requirements too, dropping their [tool.uv.sources] routing
+    # and resolving e.g. `--extra cpu` to a `+xpu` build.
     { package = { name = "lerobot" }, dependencies = [
         "torch>=2.11,<2.15",
         "torchvision>=0.26,<0.30",
+        "torchcodec>=0.12; extra == 'dataset'",
     ] },
-    # torchcodec cannot go in the scoped override above: scoped overrides reject the
-    # explicit `pypi` index pinned for it in [tool.uv.sources].
-    "torchcodec>=0.12",
+    # Locked torch is 2.14, which only executorch 1.5.x runs on (see the library's executorch extra).
+    "executorch>=1.5.0,<1.6",
+    # Mirrors executorch 1.5's own torchao range. Needed only so the `pypi` source above
+    # applies: uv ignores sources for transitive deps unless they are overridden.
+    "torchao>=0.18.0,<0.19",
 ]
 conflicts = [
     [
