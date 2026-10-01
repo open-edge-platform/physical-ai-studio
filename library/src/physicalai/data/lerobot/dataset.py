@@ -49,10 +49,11 @@ def _concat_columns(item: dict, columns: list[str], target_key: str, drop_prefix
     tensors = [torch.as_tensor(item[col]) for col in columns]
     max_dim = max(t.dim() for t in tensors)
     expanded = []
-    for t in tensors:
-        while t.dim() < max_dim:
-            t = t.unsqueeze(-1)
-        expanded.append(t)
+    for tensor in tensors:
+        padded = tensor
+        while padded.dim() < max_dim:
+            padded = padded.unsqueeze(-1)
+        expanded.append(padded)
     combined = torch.cat(expanded, dim=-1)
     result = {key: value for key, value in item.items() if not key.startswith(drop_prefix)}
     result[target_key] = combined
