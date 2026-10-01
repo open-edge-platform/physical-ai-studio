@@ -5,6 +5,8 @@ import { HttpResponse } from 'msw';
 import { SchemaModel } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { getMockedTrainJob } from '../../../test-utils/mocks/mock-train-job';
+import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
 import { TrainModelDialog } from './train-model-dialog';
 
@@ -59,6 +61,7 @@ const mockProjectWithRemoteTrainer = () => {
             HttpResponse.json({ mode: 'local', remote_available: true, devices: [] })
         ),
         http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])),
+        http.get('/api/jobs', () => HttpResponse.json([])),
         http.get('/api/settings', () =>
             HttpResponse.json({
                 trainer: {
@@ -416,6 +419,226 @@ describe('TrainModelDialog', () => {
 
         const trainerOption = screen.getByRole('option', { name: new RegExp(remoteTrainer.name) });
         await waitFor(() => expect(within(trainerOption).getByText('Healthy')).toBeInTheDocument());
+    });
+
+    it('lets users pick a remote GPU and sends its index with the job', async () => {
+        const user = userEvent.setup();
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'Small GPU', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'Large GPU', memory: 24_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        await user.click(await screen.findByRole('button', { name: /CUDA 0 — Small GPU/i }));
+        expect(screen.queryByRole('option', { name: /Automatic/i })).not.toBeInTheDocument();
+        await user.click(await screen.findByRole('option', { name: /CUDA 1 — Large GPU/i }));
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
+    });
+
+    it('submits the first free remote GPU without an explicit GPU choice', async () => {
+        const user = userEvent.setup();
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json([
+                    getMockedTrainJob({
+                        payload: getMockedTrainJobPayload({
+                            training_target: 'remote',
+                            remote_trainer_id: remoteTrainerId,
+                            device: { type: 'cuda', index: 0 },
+                        }),
+                    }),
+                ])
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        expect(await screen.findByRole('button', { name: /CUDA 1 — GPU one/i })).toBeInTheDocument();
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
+    });
+
+    it.each([undefined, 0])(
+        'marks a running job’s GPU busy (device index %s) but keeps the other GPU selectable',
+        async (index) => {
+            const user = userEvent.setup();
+            mockProjectWithRemoteTrainer();
+            server.use(
+                http.get('/api/jobs', () =>
+                    HttpResponse.json([
+                        getMockedTrainJob({
+                            payload: getMockedTrainJobPayload({
+                                training_target: 'remote',
+                                remote_trainer_id: remoteTrainerId,
+                                ...(index === undefined ? {} : { device: { type: 'cuda' as const, index } }),
+                            }),
+                        }),
+                    ])
+                ),
+                http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                    HttpResponse.json({
+                        ...healthyRemoteTrainer,
+                        devices: [
+                            { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                            { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                            { type: 'cuda', index: 2, name: 'GPU two', memory: 24_000_000_000 },
+                        ],
+                    })
+                )
+            );
+
+            renderDialog();
+            await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+            const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+            await waitFor(() => expect(within(trainerOption).getByText('2/3 GPUs free')).toBeInTheDocument());
+            expect(trainerOption.querySelectorAll('[class*="StatusLight--"]')).toHaveLength(1);
+            expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(
+                'StatusLight--positive'
+            );
+            await user.click(trainerOption);
+            expect(
+                screen
+                    .getByRole('button', { name: new RegExp(remoteTrainer.name) })
+                    .querySelector('[class*="StatusLight--"]')?.className
+            ).toContain('StatusLight--positive');
+            expect(screen.getByText(/GPU one, .*VRAM/)).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: /CUDA 1 — GPU one/i }));
+            const busyGpu = screen.getByRole('option', { name: /CUDA 0 — GPU zero/i });
+            const freeGpu = screen.getByRole('option', { name: /CUDA 1 — GPU one/i });
+            expect(within(busyGpu).getByLabelText('GPU busy; new jobs will wait')).toBeInTheDocument();
+            expect(within(freeGpu).getByLabelText('GPU free')).toBeInTheDocument();
+            expect(screen.queryByText(/· Busy/)).not.toBeInTheDocument();
+            await user.click(busyGpu);
+            expect(screen.getByText(/GPU zero, .*VRAM/)).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: /CUDA 0 — GPU zero/i }));
+            await user.click(screen.getByRole('option', { name: /CUDA 1 — GPU one/i }));
+            expect(
+                within(screen.getByRole('button', { name: /CUDA 1 — GPU one/i })).getByRole('status', {
+                    name: 'GPU free',
+                })
+            ).toBeInTheDocument();
+            expect(screen.getByText(/GPU one, .*VRAM/)).toBeInTheDocument();
+        }
+    );
+
+    it.each([
+        { indices: [], status: '2/2 GPUs free', color: 'positive' },
+        { indices: [0, 1], status: '0/2 GPUs free', color: 'yellow' },
+    ])('shows an ordinary run-on indicator with busy GPU indices $indices', async ({ indices, status, color }) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json(
+                    indices.map((index) =>
+                        getMockedTrainJob({
+                            id: `job-${index}`,
+                            payload: getMockedTrainJobPayload({
+                                training_target: 'remote',
+                                remote_trainer_id: remoteTrainerId,
+                                device: { type: 'cuda', index },
+                            }),
+                        })
+                    )
+                )
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                    ],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText(status)).toBeInTheDocument());
+        expect(trainerOption.querySelectorAll('[class*="StatusLight--"]')).toHaveLength(1);
+        expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(`StatusLight--${color}`);
+        if (indices.length === 2) {
+            await user.click(trainerOption);
+            expect(screen.getByRole('button', { name: /CUDA 0 — GPU zero/i })).toBeInTheDocument();
+        }
+    });
+
+    it.each([
+        { busy: false, label: 'Healthy', color: 'positive' },
+        { busy: true, label: 'Training in progress', color: 'yellow' },
+    ])('keeps the ordinary status label for a single GPU (busy: $busy)', async ({ busy, label, color }) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json(
+                    busy
+                        ? [
+                              getMockedTrainJob({
+                                  payload: getMockedTrainJobPayload({
+                                      training_target: 'remote',
+                                      remote_trainer_id: remoteTrainerId,
+                                      device: { type: 'cuda', index: 0 },
+                                  }),
+                              }),
+                          ]
+                        : []
+                )
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [{ type: 'cuda', index: 0, name: 'Only GPU', memory: 24_000_000_000 }],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText(label)).toBeInTheDocument());
+        expect(trainerOption).not.toHaveTextContent('/1 GPUs free');
+        expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(`StatusLight--${color}`);
     });
 
     it('submits only one job when Train is double-clicked before the request resolves', async () => {

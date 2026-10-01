@@ -99,10 +99,11 @@ class RemoteTrainingBackend:
         # An explicitly supplied device is sent to the trainer; otherwise the
         # trainer selects its own device.
         self._device = device
-        # Prefix every log line from this backend with its trainer, so a job's
-        # log (and the shared "training" worker log) identify which remote
-        # server produced each line when several trainers run concurrently.
+        # Label every log line by trainer and selected GPU so parallel jobs on
+        # the same remote server remain distinguishable in the shared log.
         label = trainer_name or self._base_url
+        if device is not None:
+            label += f" · {device.type.upper()}{f' {device.index}' if device.index is not None else ''}"
 
         def _prefix_with_trainer(record: Record, label: str = label) -> None:
             record["message"] = f"[{label}] {record['message']}"
@@ -333,8 +334,8 @@ class RemoteTrainingBackend:
         """Submit the training job and return the remote job id.
 
         Sends the same spec a local run would execute, so both paths train from
-        one set of defaults. The trainer selects its own device, so the studio's
-        device choice is left out: it names hardware on this host.
+        one set of defaults. An explicit device names hardware on the trainer;
+        without one the trainer selects its own device.
 
         The Hugging Face token is sent as a separate, top-level ``hf_token``
         field rather than as part of ``spec.run_options``: the trainer never
@@ -350,6 +351,12 @@ class RemoteTrainingBackend:
             if self._device is not None
             else {"device_type": None, "device_index": None}
         )
+        if self._device is not None:
+            devices = await self.get_training_devices()
+            if not any(device.type == self._device.type and device.index == self._device.index for device in devices):
+                raise RemoteTrainingError(
+                    f"Selected {self._device.type} device {self._device.index} is no longer available on the trainer"
+                )
         spec = build_spec(context).model_copy(update=device_update)
         hf_token = resolve_hf_token()
 

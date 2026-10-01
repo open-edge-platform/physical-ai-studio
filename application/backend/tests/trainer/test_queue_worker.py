@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -33,6 +34,92 @@ def manager(db_path: Path):
         mgr = QueueManager()
     mgr._runner = MagicMock()
     return mgr
+
+
+def test_queue_skips_busy_gpu_and_reserves_legacy_auto_jobs(manager, sample_request: SubmitJobRequest) -> None:
+    def add_job(index: int | None) -> str:
+        spec = sample_request.spec.model_copy(
+            update={"device_type": "cuda" if index is not None else None, "device_index": index}
+        )
+        job_id = manager.store.create(sample_request.model_copy(update={"spec": spec}))
+        manager.store.mark_dataset_ready(job_id)
+        return job_id
+
+    first = add_job(0)
+    same_gpu = add_job(0)
+    other_gpu = add_job(1)
+    auto = add_job(None)
+    manager._active[first] = MagicMock()
+    manager._active_devices[first] = ("cuda", 0)
+    assert manager._next_runnable() == (other_gpu, ("cuda", 1))
+    manager.store.update(first, status=TrainerJobStatus.RUNNING)
+    manager._active[other_gpu] = MagicMock()
+    manager._active_devices[other_gpu] = ("cuda", 1)
+    assert manager._next_runnable() is None
+    manager._active.clear()
+    manager._active_devices.clear()
+    assert manager._next_runnable() == (same_gpu, ("cuda", 0))
+    manager.store.update(same_gpu, status=TrainerJobStatus.RUNNING)
+    manager.store.update(other_gpu, status=TrainerJobStatus.RUNNING)
+    assert manager._next_runnable() == (auto, None)
+
+
+def test_dispatch_starts_different_gpus_without_waiting_for_same_gpu(manager, sample_request: SubmitJobRequest) -> None:
+    manager._max_concurrent_jobs = 2
+    ids = []
+    for index in (0, 0, 1):
+        request = sample_request.model_copy(
+            update={"spec": sample_request.spec.model_copy(update={"device_type": "cuda", "device_index": index})}
+        )
+        job_id = manager.store.create(request)
+        manager.store.mark_dataset_ready(job_id)
+        ids.append(job_id)
+
+    async def check_dispatch() -> list[str]:
+        started = []
+        done = asyncio.Event()
+
+        async def fake_run(job_id: str) -> None:
+            started.append(job_id)
+            await done.wait()
+
+        manager._run_job = fake_run
+        loop = asyncio.create_task(manager._dispatch_loop())
+        try:
+            for _ in range(30):
+                if len(started) == 2:
+                    break
+                await asyncio.sleep(0.01)
+            return started
+        finally:
+            manager._stopped.set()
+            done.set()
+            loop.cancel()
+            await asyncio.gather(loop, *manager._active.values(), return_exceptions=True)
+
+    assert asyncio.run(check_dispatch()) == [ids[0], ids[2]]
+    assert manager.store.get(ids[1]).status == TrainerJobStatus.QUEUED
+
+
+def _fake_isolated_job(job_id, request, updates, stop) -> None:
+    updates.put(("progress", 40, str(os.getpid()), None))
+    updates.put(("completed", "/tmp/trained.zip"))
+
+
+def test_parallel_jobs_run_in_separate_processes(manager, sample_request: SubmitJobRequest, monkeypatch) -> None:
+    import trainer.queue_worker as queue_worker
+
+    manager._max_concurrent_jobs = 2
+    monkeypatch.setattr(queue_worker, "_train_in_process", _fake_isolated_job)
+    reported = []
+    archive = asyncio.run(
+        manager._run_isolated("job-1", sample_request, lambda *args: reported.append(args), lambda: False)
+    )
+
+    assert str(archive) == "/tmp/trained.zip"
+    assert len(reported) == 1
+    assert reported[0][0] == 40 and reported[0][2] is None
+    assert int(reported[0][1]) != os.getpid()
 
 
 def test_request_cancel_marks_queued_job_canceled(manager, sample_request: SubmitJobRequest) -> None:
