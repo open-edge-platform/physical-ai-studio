@@ -282,11 +282,13 @@ jobs:
       - name: Run RoboCasa integration test
         working-directory: library
         env:
-          # OSMesa (CPU software rendering) instead of EGL: the GPU runner's NVIDIA
-          # EGL/NVML stack is broken (EGL_BAD_DISPLAY / "Can't initialize NVML") and
-          # cannot be repaired from CI. OSMesa needs no GPU driver.
-          MUJOCO_GL: osmesa
-          PYOPENGL_PLATFORM: osmesa
+          # Use EGL rendering (the primary GPU renderer)
+          MUJOCO_GL: egl
+          PYOPENGL_PLATFORM: egl
+          # Force GLVND to dispatch EGL to the NVIDIA vendor driver
+          __EGL_VENDOR_LIBRARY_FILENAMES: /usr/share/glvnd/egl_vendor.d/10_nvidia.json
+          # Avoid reusing potentially partial dataset downloads across self-hosted jobs
+          HF_LEROBOT_HOME: ${{ runner.temp }}/lerobot_test_robocasa
         run: |
           source .venv-robocasa/bin/activate
           python -m pytest tests/integration/gyms/test_robocasa_e2e.py
