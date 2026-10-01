@@ -42,6 +42,14 @@ The policy is configured using an `embodiment` identifier:
 | `droid_lerobot` | `joint_pos` | 8 | `none` | Inverted (`1 - g`) | DROID 7 arm joints + 1 gripper position |
 | `aloha` | `identity` | 14 | `minmax` | Standard | Dual-arm Aloha joint positions |
 
+### Dataset Columns
+
+Cosmos3 consumes the canonical combined `observation.state` and `action` columns,
+like the other policies in this repo. When a dataset stores an action's components
+in separate columns (e.g. DROID's 7 joints and 1 gripper), the datamodule combines
+them into a single column (8D `[joint(7), gripper(1)]`) *before* the policy sees it —
+concatenation happens at the datamodule level, not inside the policy.
+
 ### Camera Composition & Viewpoints
 
 Unlike VLM policies that accept arbitrary tokenized camera streams via dataset feature contracts, Cosmos3 is a single-canvas video diffusion model. Multi-camera observations are stitched into specific geometric mosaics (e.g., T-shape for DROID) and paired with discrete viewpoint prompt tags (`view_point`, with compatibility alias `viewpoint`) expected by pretrained embodiment checkpoints.
@@ -73,6 +81,30 @@ Both `Cosmos3-Edge-Policy-DROID` and `Cosmos3-Nano-Policy-DROID` share the same 
 | viewpoint | `concat_view` | auto for `droid_lerobot` ✅ |
 
 The Studio DROID default deliberately uses `task_description` + `resolution_tier: 256` for lighter fine-tuning; switch both to the parity values above only when you specifically need byte-comparable prompts against the released checkpoints.
+
+## Adding a new embodiment
+
+`embodiment` is intentionally typed as `str` (not a `Literal`) so new embodiments
+register through the mapping tables below rather than a closed enum. The built-ins
+are `pusht`, `droid_lerobot`, and `aloha`; an unregistered embodiment raises at
+model init listing the registered ones.
+
+To add one:
+
+1. Register a numeric domain id in `_EMBODIMENT_TO_DOMAIN_ID` and the raw action
+   width in `_EMBODIMENT_TO_RAW_ACTION_DIM` (`model.py`).
+2. Map an action space in `EMBODIMENT_ACTION_SPACE` (`representation.py`); unlisted
+   embodiments default to `identity`.
+3. Optionally set the action-normalization method in `EMBODIMENT_NORMALIZATION`
+   (default `minmax`) and gripper inversion in `EMBODIMENT_GRIPPER_FLIPPED`
+   (default off).
+4. Optionally set a default viewpoint tag in `DEFAULT_EMBODIMENT_VIEWPOINTS` and, for
+   multi-camera mosaics, add the embodiment to `T_SHAPE_EMBODIMENTS` or
+   `HORIZONTAL_EMBODIMENTS` (`preprocessor.py`).
+
+These cannot be inferred from dataset metadata: the domain id, action-space
+semantics, gripper convention, and viewpoint framing are contracts of the
+pretrained checkpoint, not properties of the recorded dataset.
 
 ## Quickstart
 
@@ -114,6 +146,35 @@ physicalai fit --config configs/physicalai/cosmos3/pusht/default.yaml
 # DROID (8D joint pos with split-column combining)
 physicalai fit --config configs/physicalai/cosmos3/droid/default.yaml
 ```
+
+## Advanced
+
+Expert/research knobs; keep the defaults unless you have a specific reason.
+
+### Paradigm
+
+Cosmos3 treats action learning as three tasks over a single video world model,
+selected by `paradigm`:
+
+- `policy` (default) — from a first frame (plus state), jointly rolls out the
+  future video and the action chunk. This is the mode used to drive a robot.
+- `fd` (forward dynamics) — from a first frame and a given action sequence, rolls
+  out the resulting future video (a predictive world model).
+- `id` (inverse dynamics) — infers the actions that connect the observed video
+  frames.
+- `joint` — trains on a random mix of the three.
+
+The three tasks share one backbone, so training video prediction (`fd`) and action
+inference (`id`) alongside `policy` grounds the action head in the same learned
+world dynamics it generates against. Use `policy` for control.
+
+| Knob | Default | When to change |
+| :--- | :--- | :--- |
+| `prompt_format` | `task_description` | Set `augmented_text` / `augmented_json` for prompt parity with released checkpoints (see [Prompt Conditioning](#prompt-conditioning)). |
+| `normalizer_stats_path` | `None` | Point at a cosmos-format action-normalizer stats JSON to run a pre-trained per-embodiment head that expects quantile-normalized actions. |
+| `action_space` | `None` (auto) | Override the embodiment's resolved action space (`identity` / `joint_pos`). |
+| `view_point` | `None` (auto) | Override the viewpoint prompt tag inferred from the embodiment and composition. |
+| `resolution_tier` / `fps` | `256` / `10` | Raise for checkpoint parity (e.g. `480` / `15` for DROID) at higher compute cost. |
 
 ## Note on Export
 
