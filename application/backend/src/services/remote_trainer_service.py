@@ -55,9 +55,9 @@ _inflight_checks: dict[UUID, asyncio.Task[RemoteTrainerHealth]] = {}
 # Background trainer-container launches (see `_start_persistent_trainer_in_background`),
 # kept referenced so asyncio never garbage-collects a task mid-flight.
 _background_launches: dict[UUID, asyncio.Task[None]] = {}
-# ponytail: installation/reboot state is process-local; persist jobs if setup must survive Studio restarts.
+# Installation/reboot state is process-local; persist jobs if setup must survive Studio restarts.
 _background_installs: dict[UUID, asyncio.Task[None]] = {}
-# ponytail: one process-wide lock serializes brief setup/job submissions; use per-trainer locks if contention matters.
+# One process-wide lock serializes brief setup/job submissions; use per-trainer locks if contention matters.
 _setup_lock = asyncio.Lock()
 
 
