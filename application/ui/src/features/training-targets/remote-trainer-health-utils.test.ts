@@ -12,8 +12,9 @@ const startingHealth: SchemaRemoteTrainerHealth = {
 };
 
 describe('remote-trainer-health-utils starting status', () => {
-    it("labels a launching trainer 'Starting…' rather than 'Unreachable'", () => {
-        expect(healthLabel(startingHealth)).toBe('Starting…');
+    it('shows the current startup phase instead of a generic status', () => {
+        expect(healthLabel(startingHealth)).toBe('Starting: Pulling trainer image…');
+        expect(healthLabel({ ...startingHealth, reason_code: null })).toBe('Starting…');
     });
 
     it('uses a neutral (not negative) status light while starting', () => {
@@ -27,6 +28,21 @@ describe('remote-trainer-health-utils starting status', () => {
     it('falls back to a generic starting message when no phase is reported', () => {
         expect(healthDescription({ ...startingHealth, reason_code: null })).toBe(
             'The trainer container is still starting.'
+        );
+    });
+
+    it('explains an installation failure and the required reboot', () => {
+        expect(
+            healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'intel_install_failed' })
+        ).toContain('Intel GPU dependency installation failed');
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'reboot_required' })).toContain(
+            'Confirm a host reboot'
+        );
+        expect(
+            healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'package_manager_broken' })
+        ).toContain('incomplete dpkg transactions');
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'unsupported_os' })).toBe(
+            'Host installation supports Ubuntu 24.04 or Ubuntu 26.04 only.'
         );
     });
 

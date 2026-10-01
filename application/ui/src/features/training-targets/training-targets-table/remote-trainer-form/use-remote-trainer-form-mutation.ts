@@ -16,10 +16,12 @@ export const useRemoteTrainerFormMutation = (remoteTrainer: SchemaRemoteTrainer 
         values: RemoteTrainerFormValues,
         {
             onSuccess,
+            installPrerequisites,
             acceptedHostKeyFingerprint,
             onHostKeyConfirmationRequired,
         }: {
             onSuccess: () => void;
+            installPrerequisites: boolean;
             acceptedHostKeyFingerprint?: string;
             onHostKeyConfirmationRequired: (fingerprint: string) => void;
         }
@@ -34,7 +36,10 @@ export const useRemoteTrainerFormMutation = (remoteTrainer: SchemaRemoteTrainer 
             }
         };
         if (remoteTrainer === undefined) {
-            createRemoteTrainer.mutate({ body: values, params: { header: headers } }, { onSuccess, onError });
+            createRemoteTrainer.mutate(
+                { body: values, params: { header: headers, query: { install_prerequisites: installPrerequisites } } },
+                { onSuccess, onError }
+            );
 
             return;
         }

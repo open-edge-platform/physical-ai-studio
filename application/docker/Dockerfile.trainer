@@ -453,4 +453,3 @@ ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
 COPY --from=builder-xpu-redistributable --chown=trainer:trainer /opt/venv /opt/venv
 RUN /opt/venv/bin/python -c "import av; print('PyAV', av.__version__, av.library_versions)"
 USER trainer
-

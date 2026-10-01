@@ -41,6 +41,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from time import perf_counter
 from types import TracebackType
 from typing import Final, Self
@@ -239,6 +240,16 @@ class SshTransport:
             gate.semaphore.release()
             raise
         self._gate = gate
+
+    async def upload_file(self, source: Path, destination: str) -> None:
+        """Transfer a bundled file over the verified SSH connection using SFTP."""
+        if self._connection is None:
+            raise RuntimeError("SshTransport.upload_file requires an open connection")
+        try:
+            async with await self._connection.start_sftp_client() as sftp:
+                await sftp.put(source, destination)
+        except (asyncssh.Error, OSError) as error:
+            raise SshConnectionError(self.alias, reason="file_transfer_failed") from error
 
     # ASYNC109: an explicit `timeout` is part of this method's contract - a caller
     # gets a CommandResult carrying a TIMEOUT failure rather than a raised

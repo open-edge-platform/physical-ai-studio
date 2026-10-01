@@ -43,6 +43,8 @@ const TARGET_MENU_ACTION_ITEMS = {
     CHECK_STATUS: 'check_status',
     EDIT: 'Edit',
     DELETE: 'Delete',
+    REBOOT: 'reboot_after_install',
+    INSTALL: 'install_prerequisites',
 };
 
 type TargetMenuActionsProps = {
@@ -50,10 +52,29 @@ type TargetMenuActionsProps = {
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onReboot?: () => void;
+    onInstall?: () => void;
     isChecking: boolean;
+    isStarting: boolean;
 };
 
-const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }: TargetMenuActionsProps) => {
+const TargetMenuActions = ({
+    targetName,
+    onCheck,
+    onEdit,
+    onDelete,
+    onReboot,
+    onInstall,
+    isChecking,
+    isStarting,
+}: TargetMenuActionsProps) => {
+    const items = [
+        { key: TARGET_MENU_ACTION_ITEMS.EDIT, label: 'Edit' },
+        { key: TARGET_MENU_ACTION_ITEMS.DELETE, label: 'Delete' },
+        { key: TARGET_MENU_ACTION_ITEMS.CHECK_STATUS, label: 'Check status' },
+        ...(onReboot ? [{ key: TARGET_MENU_ACTION_ITEMS.REBOOT, label: 'Reboot to finish setup' }] : []),
+        ...(onInstall ? [{ key: TARGET_MENU_ACTION_ITEMS.INSTALL, label: 'Install prerequisites' }] : []),
+    ];
     const handleAction = (action: Key) => {
         if (action === TARGET_MENU_ACTION_ITEMS.CHECK_STATUS) {
             onCheck?.();
@@ -61,6 +82,10 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }
             onEdit();
         } else if (action === TARGET_MENU_ACTION_ITEMS.DELETE) {
             onDelete();
+        } else if (action === TARGET_MENU_ACTION_ITEMS.REBOOT) {
+            onReboot?.();
+        } else if (action === TARGET_MENU_ACTION_ITEMS.INSTALL) {
+            onInstall?.();
         }
     };
 
@@ -70,12 +95,14 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }
                 <MoreMenu />
             </ActionButton>
             <Menu
+                items={items}
                 onAction={handleAction}
-                disabledKeys={isChecking || onCheck === undefined ? [TARGET_MENU_ACTION_ITEMS.CHECK_STATUS] : undefined}
+                disabledKeys={[
+                    ...(isChecking || onCheck === undefined ? [TARGET_MENU_ACTION_ITEMS.CHECK_STATUS] : []),
+                    ...(isStarting ? [TARGET_MENU_ACTION_ITEMS.INSTALL] : []),
+                ]}
             >
-                <Item key={TARGET_MENU_ACTION_ITEMS.EDIT}>Edit</Item>
-                <Item key={TARGET_MENU_ACTION_ITEMS.DELETE}>Delete</Item>
-                <Item key={TARGET_MENU_ACTION_ITEMS.CHECK_STATUS}>Check status</Item>
+                {(item) => <Item key={item.key}>{item.label}</Item>}
             </Menu>
         </MenuTrigger>
     );
@@ -89,12 +116,15 @@ type TargetRowContentProps = {
     connectionModeText: string;
     statusVariant: StatusVariant;
     statusLabel: string;
+    isStarting: boolean;
     deviceTypes: string[];
     computeDetail: string;
     isChecking: boolean;
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onReboot?: () => void;
+    onInstall?: () => void;
 };
 
 /**
@@ -109,12 +139,15 @@ const targetRowCells = ({
     connectionModeText,
     statusVariant,
     statusLabel,
+    isStarting,
     deviceTypes: types,
     computeDetail,
     isChecking,
     onCheck,
     onEdit,
     onDelete,
+    onReboot,
+    onInstall,
 }: TargetRowContentProps) => [
     <Text key='name'>{name}</Text>,
 
@@ -127,7 +160,11 @@ const targetRowCells = ({
         <Tooltip>{connectionLabel}</Tooltip>
     </TooltipTrigger>,
 
-    <StatusLight key='status' variant={statusVariant} UNSAFE_className={classes.healthStatus}>
+    <StatusLight
+        key='status'
+        variant={statusVariant}
+        UNSAFE_className={`${classes.healthStatus} ${isStarting ? classes.starting : ''}`}
+    >
         {statusLabel}
     </StatusLight>,
 
@@ -146,7 +183,10 @@ const targetRowCells = ({
             onCheck={onCheck}
             onEdit={onEdit}
             onDelete={onDelete}
+            onReboot={onReboot}
+            onInstall={onInstall}
             isChecking={isChecking}
+            isStarting={isStarting}
         />
     </div>,
 ];
@@ -158,6 +198,7 @@ type DirectUrlTargetRowProps = {
     onExpand: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onSetup?: (reboot: boolean) => void;
 };
 
 const DirectUrlTargetRow = ({
@@ -167,11 +208,17 @@ const DirectUrlTargetRow = ({
     onExpand,
     onEdit,
     onDelete,
+    onSetup,
 }: DirectUrlTargetRowProps) => {
     const health = useRemoteTrainersHealth([trainer.id]).get(trainer.id);
     const displayHealth = getDisplayHealth(trainer.id, health?.health, health?.hasError ?? false);
     const isChecking = health?.isChecking ?? false;
     const types = deviceTypes(displayHealth);
+    const awaitingReboot = [
+        'reboot_required',
+        'reboot_blocked_active_containers',
+        'nvidia_driver_unavailable',
+    ].includes(displayHealth?.reason_code ?? '');
 
     return (
         <Table.ExpandableRow
@@ -187,6 +234,7 @@ const DirectUrlTargetRow = ({
                 connectionModeText: connectionModeLabel(trainer.connection_mode),
                 statusVariant: healthVariant(displayHealth, isChecking),
                 statusLabel: healthLabel(displayHealth, isChecking),
+                isStarting: displayHealth?.status === 'starting',
                 deviceTypes: types,
                 computeDetail:
                     displayHealth?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported'),
@@ -197,6 +245,9 @@ const DirectUrlTargetRow = ({
                 },
                 onEdit,
                 onDelete,
+                onReboot:
+                    trainer.connection_mode === 'ssh' && awaitingReboot && onSetup ? () => onSetup(true) : undefined,
+                onInstall: trainer.connection_mode === 'ssh' && onSetup ? () => onSetup(false) : undefined,
             })}
         </Table.ExpandableRow>
     );
@@ -206,9 +257,10 @@ type TrainingTargetsTableProps = {
     rows: TrainingTargetRow[];
     onEdit: (row: TrainingTargetRow) => void;
     onDelete: (row: TrainingTargetRow) => void;
+    onSetup?: (row: TrainingTargetRow, reboot: boolean) => void;
 };
 
-export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargetsTableProps) => {
+export const TrainingTargetsTable = ({ rows, onEdit, onDelete, onSetup }: TrainingTargetsTableProps) => {
     const [expandedId, setExpandedId] = useState<string | undefined>(
         rows[0] ? trainingTargetRowId(rows[0]) : undefined
     );
@@ -230,6 +282,7 @@ export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargets
                         onExpand={() => setExpandedId(id)}
                         onEdit={() => onEdit(row)}
                         onDelete={() => onDelete(row)}
+                        onSetup={onSetup ? (reboot) => onSetup(row, reboot) : undefined}
                     />
                 );
             })}
