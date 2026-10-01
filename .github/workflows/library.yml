@@ -97,7 +97,7 @@ jobs:
         name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.10.4"
+          version: "0.12.17"
 
       # pyrefly-check hook uses `--no-sync`, so the dev group must already be synced.
       - name: Install dev tools
@@ -175,7 +175,7 @@ jobs:
       - name: Install dependencies
         working-directory: library
         run: |
-          uv sync --frozen --extra tests --extra libero --extra policies --extra cu128
+          uv sync --frozen --extra tests --extra libero --extra policies --extra cu130
 
       - name: Run python integration tests
         working-directory: library
@@ -236,7 +236,7 @@ jobs:
         run: |
           uv venv .venv-robocasa
           source .venv-robocasa/bin/activate
-          uv sync --active --frozen --extra tests --extra pi05 --extra smolvla --extra cu128
+          uv sync --active --frozen --extra tests --extra pi05 --extra smolvla --extra cu130
 
       - name: Install RoboCasa and robosuite
         working-directory: library
