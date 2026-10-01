@@ -208,22 +208,7 @@ jobs:
       - name: Install system dependencies for headless rendering
         run: |
           sudo apt-get update
-          # OSMesa = pure-CPU software GL. Works without a functioning NVIDIA
-          # driver/EGL stack, so it sidesteps the runner's broken EGL/NVML.
-          # libosmesa6 ships libOSMesa.so.8, which mujoco's osmesa backend loads
-          # via PyOpenGL. This is the ONLY hard dependency; we avoid libgl1-mesa-glx
-          # (removed on Ubuntu 24.04) so the install can't break across runner OSes.
-          sudo apt-get install -y libosmesa6 libosmesa6-dev
-
-      - name: GPU / EGL preflight diagnostics
-        continue-on-error: true
-        run: |
-          echo "== nvidia-smi (EGL path is broken on this runner; OSMesa bypasses it) =="
-          nvidia-smi || echo "nvidia-smi unavailable"
-          echo "== libOSMesa present? (required) =="
-          ldconfig -p | grep -i osmesa || echo "WARNING: libOSMesa NOT found"
-          echo "== EGL vendor ICDs (for reference) =="
-          ls -l /usr/share/glvnd/egl_vendor.d/ 2>/dev/null || true
+          sudo apt-get install -y libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev cmake ffmpeg xvfb gcc
 
       - *set-up-uv
 
@@ -243,28 +228,6 @@ jobs:
         run: |
           source .venv-robocasa/bin/activate
           bash scripts/benchmark/install_robocasa.sh
-
-      - name: OSMesa render self-test
-        continue-on-error: true
-        working-directory: library
-        env:
-          MUJOCO_GL: osmesa
-          PYOPENGL_PLATFORM: osmesa
-        run: |
-          source .venv-robocasa/bin/activate
-          python - <<'PY'
-          import mujoco
-          print("mujoco", mujoco.__version__)
-          m = mujoco.MjModel.from_xml_string(
-              "<mujoco><worldbody><light pos='0 0 2'/>"
-              "<geom type='box' size='.1 .1 .1' rgba='1 0 0 1'/></worldbody></mujoco>")
-          d = mujoco.MjData(m)
-          r = mujoco.Renderer(m, 64, 64)
-          mujoco.mj_forward(m, d)
-          r.update_scene(d)
-          img = r.render()
-          print("OSMesa RENDER OK", img.shape, "nonzero=", int((img > 0).sum()))
-          PY
 
       - name: Run RoboCasa unit gym tests
         working-directory: library
