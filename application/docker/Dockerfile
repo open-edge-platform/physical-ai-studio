@@ -534,11 +534,13 @@ CMD ["./run.sh"]
 # ===========================================================================
 FROM runtime-base AS runtime-cuda
 
-# NVIDIA CUDA 12.8 runtime libraries (matches cu128 PyTorch wheels).
+# NVIDIA CUDA 13 runtime libraries (match the cu130 PyTorch wheels).
+# Versions track the nvidia-* wheels pinned in application/backend/uv.lock.
 # Requires NVIDIA Container Toolkit on the host for GPU passthrough.
 #
-# Uses the debian12 repo on Debian 13 (trixie) because the debian13 repo
-# only has CUDA 13.1 packages (not 12.8). trusted=yes is required because
+# Uses the debian12 repo on Debian 13 (trixie) because the debian13 repo only
+# carries the newest CUDA 13 point releases, not the ones the wheels pin.
+# trusted=yes is required because
 # Debian 13's sqv GPG verifier cannot validate the NVIDIA signing key.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -549,9 +551,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && dpkg -i /tmp/cuda-keyring.deb \
     && rm -f /tmp/cuda-keyring.deb \
     && apt-get update -o APT::Key::GPGVCommand=/usr/bin/gpgv && apt-get install -y --no-install-recommends \
-        cuda-cudart-12-8=12.8.90-1 \
-        libcublas-12-8=12.8.4.1-1 \
-        libcudnn9-cuda-12=9.19.0.56-1 \
+        cuda-cudart-13-0=13.0.96-1 \
+        libcublas-13-0=13.1.1.3-1 \
+        libcudnn9-cuda-13=9.24.0.43-1 \
     && rm -rf /var/lib/apt/lists/*
 SHELL ["/bin/sh", "-c"]
 
