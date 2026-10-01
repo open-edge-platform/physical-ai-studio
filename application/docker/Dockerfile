@@ -186,7 +186,7 @@ RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
 # ===========================================================================
 FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS builder-base
 
-COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 
 # Build-time system dependencies (not shipped in final image)
@@ -359,7 +359,7 @@ RUN PYTHONPATH=/app/application/backend/src \
 FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
-COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /uvx /bin/
 
 # Non-root user — override at build time to match host UID/GID for
 # bind-mounted volumes (e.g. calibration data, HuggingFace cache).

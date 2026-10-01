@@ -27,7 +27,7 @@ Install into a dedicated `.venv-robocasa`:
 ```bash
 uv venv .venv-robocasa
 source .venv-robocasa/bin/activate
-uv sync --active --extra cu128          # or cpu / xpu — do NOT use --extra all or --extra libero
+uv sync --active --extra cu130          # or cpu / xpu — do NOT use --extra all or --extra libero
 
 bash library/scripts/benchmark/install_robocasa.sh
 
