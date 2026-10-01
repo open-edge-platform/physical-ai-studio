@@ -33,7 +33,8 @@ def manager(db_path: Path):
     with patch(f"{QUEUE}.get_settings", return_value=settings):
         mgr = QueueManager()
     mgr._runner = MagicMock()
-    return mgr
+    with patch(f"{QUEUE}.gpu_busy", return_value=False), patch(f"{QUEUE}.get_training_devices", return_value=[]):
+        yield mgr
 
 
 def test_queue_skips_busy_gpu_and_reserves_legacy_auto_jobs(manager, sample_request: SubmitJobRequest) -> None:
@@ -62,6 +63,19 @@ def test_queue_skips_busy_gpu_and_reserves_legacy_auto_jobs(manager, sample_requ
     manager.store.update(same_gpu, status=TrainerJobStatus.RUNNING)
     manager.store.update(other_gpu, status=TrainerJobStatus.RUNNING)
     assert manager._next_runnable() == (auto, None)
+
+
+def test_queue_waits_for_gpu_used_by_another_trainer(manager, sample_request: SubmitJobRequest, monkeypatch) -> None:
+    from trainer import queue_worker
+
+    spec = sample_request.spec.model_copy(update={"device_type": "cuda", "device_index": 0})
+    job_id = manager.store.create(sample_request.model_copy(update={"spec": spec}))
+    manager.store.mark_dataset_ready(job_id)
+    monkeypatch.setattr(queue_worker, "gpu_busy", lambda *_: True)
+    assert manager._next_runnable() is None
+    assert manager.store.get(job_id).status == TrainerJobStatus.QUEUED
+    monkeypatch.setattr(queue_worker, "gpu_busy", lambda *_: False)
+    assert manager._next_runnable() == (job_id, ("cuda", 0))
 
 
 def test_dispatch_starts_different_gpus_without_waiting_for_same_gpu(manager, sample_request: SubmitJobRequest) -> None:

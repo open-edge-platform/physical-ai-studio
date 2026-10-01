@@ -60,18 +60,19 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
     const { data: jobs = [] } = $api.useQuery('get', '/api/jobs');
     const gpuKey = (device: SchemaDeviceInfo) => `${device.type}:${device.index}`;
-    // ponytail: Tracks Studio jobs only; add trainer GPU telemetry if external workloads must be detected.
+    // Trainer memory telemetry also sees jobs from other Studio installations.
     const busyGpuKeysFor = (trainerId: string, devices: SchemaDeviceInfo[]) =>
-        new Set(
-            jobs.flatMap((job) =>
+        new Set([
+            ...devices.filter((device) => device.busy).map(gpuKey),
+            ...jobs.flatMap((job) =>
                 job.type === 'training' &&
                 job.status === 'running' &&
                 job.payload.training_target === 'remote' &&
                 job.payload.remote_trainer_id === trainerId
                     ? [`${job.payload.device?.type ?? devices[0]?.type}:${job.payload.device?.index ?? 0}`]
                     : []
-            )
-        );
+            ),
+        ]);
     // Continuing an existing model needs its checkpoint, which only this machine
     // has: the trainer protocol can receive a dataset but not a base checkpoint.
     // So a resumed run offers local training only.

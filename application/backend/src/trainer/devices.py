@@ -13,6 +13,24 @@ from __future__ import annotations
 from loguru import logger
 
 from trainer.schemas import DeviceInfo
+from trainer.settings import get_settings
+
+
+def gpu_busy(device_type: str, index: int) -> bool | None:
+    """Best-effort host-wide GPU memory check; None means telemetry unavailable."""
+    try:
+        import torch
+
+        backend = torch.cuda if device_type == "cuda" else torch.xpu if device_type == "xpu" else None
+        if backend is None:
+            return None
+        free, total = backend.mem_get_info(index)
+        # Ignore this trainer's cached allocations (single-job mode trains in-process).
+        # ponytail: Memory is a heuristic, not a reservation. Tune for desktop/driver overhead.
+        return total - free - backend.memory_reserved(index) >= get_settings().gpu_busy_memory_mb * 1024 * 1024
+    except Exception as exc:
+        logger.warning("Cannot read {} GPU {} memory: {}", device_type, index, exc)
+        return None
 
 
 def get_training_devices() -> list[DeviceInfo]:
@@ -35,6 +53,7 @@ def get_training_devices() -> list[DeviceInfo]:
                         name=xpu_props.name,
                         memory=xpu_props.total_memory,
                         index=device_idx,
+                        busy=gpu_busy("xpu", device_idx),
                     ),
                 )
     except Exception as exc:
@@ -50,6 +69,7 @@ def get_training_devices() -> list[DeviceInfo]:
                         name=cuda_props.name,
                         memory=cuda_props.total_memory,
                         index=device_idx,
+                        busy=gpu_busy("cuda", device_idx),
                     ),
                 )
     except Exception as exc:

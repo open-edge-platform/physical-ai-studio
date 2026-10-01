@@ -18,6 +18,7 @@ from typing import Any
 
 from loguru import logger
 
+from trainer.devices import get_training_devices, gpu_busy
 from trainer.runner import JobCanceledError, TrainerRunner
 from trainer.schemas import SubmitJobRequest, TrainerJobStatus
 from trainer.settings import get_settings
@@ -97,6 +98,11 @@ class QueueManager:
             if (device is None and self._active) or any(
                 active_device is None or active_device == device for active_device in self._active_devices.values()
             ):
+                continue
+            # Unknown telemetry is not treated as busy; older setups still work.
+            if device is not None and gpu_busy(*device):
+                continue
+            if device is None and any(gpu.busy for gpu in get_training_devices()):
                 continue
             return job_id, device
         return None

@@ -6,7 +6,10 @@ starts one persistent trainer container on the server and forwards its fixed
 loopback port through a standing SSH tunnel. The container and its data volume
 are shared across jobs on that target; they are not tied to a single job or SSH
 session. See [Physical AI Trainer](../remote-trainer.md) for the server-side
-service and image requirements.
+service and image requirements. A trainer reports GPUs with significant allocated
+memory as busy; Studio shows that state and the trainer waits before starting a
+job on one. This is best-effort telemetry, **not** a cross-container reservation:
+simultaneous starts can race, and missing telemetry does not block training.
 
 ## Availability and security
 

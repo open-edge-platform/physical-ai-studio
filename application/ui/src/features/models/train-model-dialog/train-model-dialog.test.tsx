@@ -496,6 +496,29 @@ describe('TrainModelDialog', () => {
         await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
     });
 
+    it('marks a GPU used by another trainer busy without any Studio jobs', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () => HttpResponse.json([])),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000, busy: true },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 8_000_000_000, busy: false },
+                    ],
+                })
+            )
+        );
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText('1/2 GPUs free')).toBeInTheDocument());
+        await user.click(trainerOption);
+        expect(await screen.findByRole('button', { name: /CUDA 1 — GPU one/i })).toBeInTheDocument();
+    });
+
     it.each([undefined, 0])(
         'marks a running job’s GPU busy (device index %s) but keeps the other GPU selectable',
         async (index) => {

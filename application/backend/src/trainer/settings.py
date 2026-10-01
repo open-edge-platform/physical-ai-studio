@@ -26,6 +26,7 @@ class TrainerSettings(BaseSettings):
     )
     # At most one job per GPU; this also caps jobs across different GPUs.
     max_concurrent_jobs: int = Field(default=8, ge=1, le=128, alias="TRAINER_MAX_CONCURRENT_JOBS")
+    gpu_busy_memory_mb: int = Field(default=512, ge=1, alias="TRAINER_GPU_BUSY_MEMORY_MB")
 
     # nosec B104 - trainer is intended to be reachable from other machines on a
     # trusted local network.
