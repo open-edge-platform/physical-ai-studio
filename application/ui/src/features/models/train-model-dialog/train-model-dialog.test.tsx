@@ -496,6 +496,51 @@ describe('TrainModelDialog', () => {
         await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
     });
 
+    it('refreshes the automatic GPU choice after the final health check', async () => {
+        const user = userEvent.setup();
+        let finalCheck = false;
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json([
+                    getMockedTrainJob({
+                        payload: getMockedTrainJobPayload({
+                            training_target: 'remote',
+                            remote_trainer_id: remoteTrainerId,
+                            device: { type: 'cuda', index: 1 },
+                        }),
+                    }),
+                ])
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000, busy: finalCheck },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 2, name: 'GPU two', memory: 8_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        expect(await screen.findByRole('button', { name: /CUDA 0 — GPU zero/i })).toBeInTheDocument();
+        await goToLastStep(user);
+        finalCheck = true;
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 2 }));
+    });
+
     it('marks a GPU used by another trainer busy without any Studio jobs', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();

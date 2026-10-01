@@ -293,6 +293,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         setIsSubmitting(true);
         setSubmitError(null);
         try {
+            let submissionDevice = selectedRemoteDevice;
             if (isRemoteTarget) {
                 // Final guard: the remote trainer may have gone offline since the last
                 // poll, so re-check availability right before submitting the job.
@@ -301,11 +302,15 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     setSubmitError("Can't reach the remote trainer right now. Make sure it's running, then try again.");
                     return;
                 }
-                const deviceKey = selectedGpuKey ?? (selectedRemoteDevice && gpuKey(selectedRemoteDevice));
-                if (
-                    deviceKey !== null &&
-                    !(latestHealth.devices ?? []).some((device) => gpuKey(device) === deviceKey)
-                ) {
+                const latestDevices = latestHealth.devices ?? [];
+                const latestBusyGpuKeys = busyGpuKeysFor(targetRawId(selectedTarget.id), latestDevices);
+                submissionDevice =
+                    selectedGpuKey === null
+                        ? (latestDevices.find((device) => !latestBusyGpuKeys.has(gpuKey(device))) ??
+                          latestDevices[0] ??
+                          null)
+                        : (latestDevices.find((device) => gpuKey(device) === selectedGpuKey) ?? null);
+                if (selectedGpuKey !== null && submissionDevice === null) {
                     setSubmitError('The selected GPU is no longer available on this trainer. Choose another GPU.');
                     return;
                 }
@@ -353,8 +358,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                       ...commonPayload,
                       training_target: 'remote',
                       remote_trainer_id: targetRawId(selectedTarget.id),
-                      ...(selectedRemoteDevice
-                          ? { device: { type: selectedRemoteDevice.type, index: selectedRemoteDevice.index } }
+                      ...(submissionDevice
+                          ? { device: { type: submissionDevice.type, index: submissionDevice.index } }
                           : {}),
                   }
                 : { ...commonPayload, training_target: 'local' };
