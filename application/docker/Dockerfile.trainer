@@ -271,6 +271,7 @@ ENV LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
     TRAINER_STORAGE_DIR=/var/lib/physicalai-trainer \
+    TMPDIR=/var/lib/physicalai-trainer \
     HF_HOME=/var/lib/physicalai-trainer/huggingface \
     TORCH_HOME=/var/lib/physicalai-trainer/torch \
     XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache \
@@ -453,4 +454,3 @@ ENV TRAINER_BUILD_REVISION="${GIT_SHA}" \
 COPY --from=builder-xpu-redistributable --chown=trainer:trainer /opt/venv /opt/venv
 RUN /opt/venv/bin/python -c "import av; print('PyAV', av.__version__, av.library_versions)"
 USER trainer
-
