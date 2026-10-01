@@ -49,17 +49,16 @@ const TrainerCell = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
             : getTrainerLabel(payload);
     const devices = health?.devices ?? [];
     const selected = payload.device;
-    const gpu =
-        devices.length > 1
-            ? devices.find(
-                  (device) => device.index === (selected?.index ?? 0) && (!selected || device.type === selected.type)
-              )
-            : undefined;
+    const gpu = devices.find(
+        (device) => device.index === (selected?.index ?? 0) && (!selected || device.type === selected.type)
+    );
+    const device = selected ?? (devices.length > 1 ? gpu : undefined);
+    const showDevice = remoteId && device && (devices.length > 1 || !gpu);
 
     return (
         <Flex direction='column' data-testid='trainer-cell'>
             <Text>{remoteId && trainer !== 'Remote' ? `Remote · ${trainer}` : trainer || '-'}</Text>
-            {gpu && <Text>{`${gpu.type.toUpperCase()} ${gpu.index} · ${gpu.name}`}</Text>}
+            {showDevice && <Text>{`${device.type.toUpperCase()} ${device.index}${gpu ? ` · ${gpu.name}` : ''}`}</Text>}
         </Flex>
     );
 };
