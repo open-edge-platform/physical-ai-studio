@@ -58,20 +58,32 @@ def _per_step_error() -> torch.Tensor:
     return step.expand(BATCH, CHUNK, ACTION_DIM).clone()
 
 
-def _act_loss(action_is_pad: torch.Tensor) -> float:
-    """Compute ``ACT.compute_loss`` with a per-step-varying prediction error."""
+def _act_loss(action_is_pad: torch.Tensor, *, validation: bool = False) -> float:
+    """Compute ACT loss with a per-step-varying prediction error."""
     actions = torch.zeros(BATCH, CHUNK, ACTION_DIM)
     actions_hat = _per_step_error()
     batch: dict[str, Any] = {
         ACTION: actions,
         EXTRA + ".action_is_pad": action_is_pad,
     }
+
+    class ModelStub:
+        def __call__(self, _batch: dict[str, Any]) -> tuple[torch.Tensor, tuple[None, None]]:
+            return actions_hat, (None, None)
+
+        def train(self) -> None:
+            pass
+
+        def eval(self) -> None:
+            pass
+
     stub = SimpleNamespace(
         _input_normalizer=lambda b: b,
-        _model=lambda _b: (actions_hat, (None, None)),
+        _model=ModelStub(),
         _config=SimpleNamespace(use_vae=False, kl_weight=0.0),
     )
-    loss, _ = ACT.compute_loss(stub, batch)
+    compute = ACT.compute_val_loss if validation else ACT.compute_loss
+    loss, _ = compute(stub, batch)
     return float(loss)
 
 
@@ -170,3 +182,14 @@ def test_fully_unpadded_batch_uses_the_full_error(policy_name: str) -> None:
     no_pad = _pad_mask(all_padded_from=None)
     expected = float(_per_step_error().mean())
     assert compute_loss(no_pad) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("stage", ["train", "val"])
+def test_act_padding_does_not_dilute_loss(stage: str) -> None:
+    """ACT loss should average valid steps only, like Pi0.5 and SmolVLA."""
+    no_pad = _pad_mask(all_padded_from=None)
+    tail_pad = _pad_mask(all_padded_from=CHUNK // 2)
+    validation = stage == "val"
+
+    assert _act_loss(no_pad, validation=validation) == pytest.approx(3.5)
+    assert _act_loss(tail_pad, validation=validation) == pytest.approx(2.0)

@@ -685,7 +685,6 @@ def make_rldx1_transforms(
 
     Args:
         stats: Dataset statistics for (de)normalization.
-        env_action_dim: Original environment action dimension for decoding.
         max_state_dim: Padded state dimension.
         max_action_dim: Padded action dimension.
         action_horizon: Number of action steps per chunk.

@@ -124,7 +124,7 @@ class RLDXActionModel(nn.Module):
         diffusion_model_cfg.setdefault("vl_dim", backbone_embedding_dim)
 
         # Strip unsupported triple-stream config keys before model construction.
-        for _key in (
+        for key in (
             "set_triple_stream_for_mq",
             "set_triple_stream_for_state",
             "state_dim",
@@ -134,7 +134,7 @@ class RLDXActionModel(nn.Module):
             "action_mlp_ratio",
             "mq_mlp_ratio",
         ):
-            diffusion_model_cfg.pop(_key, None)
+            diffusion_model_cfg.pop(key, None)
 
         # Inject physics config
         diffusion_model_cfg["use_physics"] = use_physics

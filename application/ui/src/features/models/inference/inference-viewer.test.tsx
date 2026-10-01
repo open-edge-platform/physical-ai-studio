@@ -2,7 +2,7 @@ import { createRef } from 'react';
 
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SchemaModel } from '../../../api/openapi-spec';
 import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
@@ -97,8 +97,8 @@ const mockSession = ({
     return { startTask, stopTask, setFollowerSource };
 };
 
-const renderViewer = () =>
-    render(<InferenceViewer tasks={['pick the cube']} />, {
+const renderViewer = (tasks: string[] = ['pick the cube']) =>
+    render(<InferenceViewer tasks={tasks} />, {
         route: `/projects/${PROJECT_ID}/models/model-1/inference/pytorch`,
         path: '/projects/:project_id/models/:model_id/inference/:backend',
     });
@@ -176,5 +176,90 @@ describe('InferenceViewer', () => {
 
         expect(setFollowerSource.mutate).toHaveBeenCalledWith('teleop');
         expect(stopTask.mutate).not.toHaveBeenCalled();
+    });
+});
+
+describe('InferenceViewer task prompt', () => {
+    const originalScreenWidth = window.screen.width;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        // React Spectrum renders the mobile combo box on narrow screens; jsdom reports width 0.
+        Object.defineProperty(window.screen, 'width', { value: 1920, configurable: true });
+    });
+
+    afterEach(() => {
+        Object.defineProperty(window.screen, 'width', { value: originalScreenWidth, configurable: true });
+    });
+
+    it('keeps the task after the prompt field loses focus', async () => {
+        const { startTask } = mockSession();
+        renderViewer();
+
+        const field = await screen.findByRole('combobox', { name: 'Task prompt' });
+        expect(field).toHaveValue('pick the cube');
+
+        await userEvent.click(field);
+        await userEvent.click(screen.getByRole('button', { name: /play/i }));
+
+        expect(field).toHaveValue('pick the cube');
+        expect(startTask.mutate).toHaveBeenCalledWith('pick the cube');
+    });
+
+    it('sends the task picked from the list and keeps showing it', async () => {
+        const { startTask } = mockSession();
+        renderViewer(['pick the cube', 'stack the blocks']);
+
+        const field = await screen.findByRole('combobox', { name: 'Task prompt' });
+        await userEvent.click(screen.getByRole('button', { name: /show suggestions/i }));
+        await userEvent.click(await screen.findByRole('option', { name: 'stack the blocks' }));
+        await userEvent.click(screen.getByRole('button', { name: /play/i }));
+
+        expect(field).toHaveValue('stack the blocks');
+        expect(startTask.mutate).toHaveBeenCalledWith('stack the blocks');
+    });
+
+    it('sends a custom prompt typed into the field', async () => {
+        const { startTask } = mockSession();
+        renderViewer();
+
+        const field = await screen.findByRole('combobox', { name: 'Task prompt' });
+        await userEvent.clear(field);
+        await userEvent.type(field, 'put the red cube in the box');
+        await userEvent.click(screen.getByRole('button', { name: /play/i }));
+
+        expect(field).toHaveValue('put the red cube in the box');
+        expect(startTask.mutate).toHaveBeenCalledWith('put the red cube in the box');
+    });
+
+    it('asks for confirmation when the prompt is cleared', async () => {
+        const { startTask } = mockSession();
+        renderViewer();
+
+        const field = await screen.findByRole('combobox', { name: 'Task prompt' });
+        await userEvent.clear(field);
+        await userEvent.keyboard('{Escape}');
+        await userEvent.tab();
+        await userEvent.click(screen.getByRole('button', { name: /play/i }));
+
+        expect(await screen.findByRole('alertdialog')).toHaveTextContent('Start without a task prompt?');
+        expect(startTask.mutate).not.toHaveBeenCalled();
+    });
+
+    it('asks for confirmation before starting with an empty prompt', async () => {
+        const { startTask } = mockSession();
+        renderViewer([]);
+
+        await userEvent.click(await screen.findByRole('button', { name: /play/i }));
+
+        expect(await screen.findByRole('alertdialog')).toHaveTextContent('Start without a task prompt?');
+        expect(startTask.mutate).not.toHaveBeenCalled();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(startTask.mutate).not.toHaveBeenCalled();
+
+        await userEvent.click(screen.getByRole('button', { name: /play/i }));
+        await userEvent.click(await screen.findByRole('button', { name: 'Start anyway' }));
+        expect(startTask.mutate).toHaveBeenCalledWith('');
     });
 });

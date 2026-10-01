@@ -726,7 +726,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
     @property
     def reward_delta_indices(self) -> None:
-        """Return reward indices.
+        """Reward indices.
 
         Currently returns `None` as rewards are not implemented.
 
@@ -737,7 +737,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
     @property
     def action_delta_indices(self) -> list[int]:
-        """Get indices of actions relative to the current timestep.
+        """Indices of actions relative to the current timestep.
 
         Returns:
             list[int]: A list of relative action indices.
@@ -746,7 +746,7 @@ class Pi05Model(PeftModelMixin, SnapFlowModelMixin, RTCModelMixin, Model):
 
     @property
     def observation_delta_indices(self) -> None:
-        """Get indices of observations relative to the current timestep.
+        """Indices of observations relative to the current timestep.
 
         Returns:
             None

@@ -103,7 +103,7 @@ multiprocessing.set_start_method("spawn", force=True)
 if __name__ == "__main__":
     policy = MolmoAct2(
         use_random_input_noise=True,
-      lora_enabled=True,
+        lora_enabled=True,
         gradient_checkpointing=True,
     )
 
@@ -362,10 +362,10 @@ policy = MolmoAct2(
 )
 
 policy.set_features(
-  input_features=input_features,
-  output_features=output_features,
-  copy_state_normalization=True,
-  copy_action_normalization=True,
+    input_features=input_features,
+    output_features=output_features,
+    copy_state_normalization=True,
+    copy_action_normalization=True,
 )
 
 policy = policy.to(dtype=torch.bfloat16).eval()

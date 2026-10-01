@@ -301,7 +301,12 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-ignore = []
+# Existing violations of rules introduced after the previous pre-commit Ruff version.
+ignore = [
+    "too-many-statements-in-try-clause",
+    "non-empty-init-module",
+    "noqa-comments",
+]
 
 
 # ============================================================================ #

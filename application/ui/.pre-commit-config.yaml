@@ -27,10 +27,10 @@ repos:
 
       - id: ui-eslint
         name: UI ESLint
-        entry: npm run lint --silent
+        entry: npm run lint --silent -- --cache --cache-location node_modules/.eslintcache
         language: system
         files: ^(src/.*\.(ts|tsx)|package(-lock)?\.json|tsconfig.*\.json|eslint(\.shared)?\.config\.js)$
-        pass_filenames: true
+        pass_filenames: false
 
       - id: ui-cyclic-deps-check
         name: UI ESLint cyclic imports
