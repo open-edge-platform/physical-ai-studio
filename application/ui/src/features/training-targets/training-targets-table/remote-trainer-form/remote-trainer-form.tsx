@@ -35,6 +35,9 @@ import { useSshHostAliases } from './use-ssh-host-aliases';
 
 import classes from './remote-trainer-form.module.css';
 
+const SSH_HOST_SETUP_URL =
+    'https://github.com/open-edge-platform/physical-ai-studio/blob/main/' +
+    'application/docs/07-remote-training.md#prepare-an-ssh-host';
 const AWS_STACK_TEMPLATE_URL = encodeURIComponent(
     'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/aws-cf-templates/remote-trainer.yaml'
 );
@@ -336,7 +339,14 @@ export const RemoteTrainerForm = ({
                                                 installs missing Docker and NVIDIA or Intel GPU packages before pulling
                                                 the trainer image. Missing prerequisites require passwordless sudo. A
                                                 reboot needs separate confirmation; SSH re-login may also be needed.
-                                                Docker access grants root-equivalent privileges.
+                                                Docker access grants root-equivalent privileges.{' '}
+                                                <Link
+                                                    href={SSH_HOST_SETUP_URL}
+                                                    target='_blank'
+                                                    rel='noopener noreferrer'
+                                                >
+                                                    How to prepare an SSH host
+                                                </Link>
                                             </InfoHelp>
                                         </Flex>
                                     )}

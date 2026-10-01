@@ -73,6 +73,10 @@ describe('RemoteTrainerForm', () => {
         await user.click(infoButtons[infoButtons.length - 1]);
         expect(await screen.findByRole('heading', { name: 'SSH host setup' })).toBeVisible();
         expect(screen.getByText(/missing prerequisites require passwordless sudo/i)).toBeVisible();
+        expect(screen.getByRole('link', { name: 'How to prepare an SSH host' })).toHaveAttribute(
+            'href',
+            expect.stringContaining('07-remote-training.md#prepare-an-ssh-host')
+        );
         await user.keyboard('{Escape}');
         await user.click(screen.getByRole('checkbox', { name: 'Set up Docker and GPU support' }));
 
