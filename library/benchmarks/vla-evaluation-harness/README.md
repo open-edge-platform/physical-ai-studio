@@ -50,7 +50,7 @@ Docker is required for the LIBERO and LIBERO-Plus environments. From
 backend extra appropriate for the machine:
 
 ```bash
-uv sync --extra cu128 --extra pi05
+uv sync --extra cu130 --extra pi05
 uv pip install vla-eval
 source .venv/bin/activate
 ```

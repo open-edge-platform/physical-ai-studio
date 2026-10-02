@@ -49,12 +49,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# PyTorch dependency groups
-cpu = ["torch", "torchvision"]
-cu128 = ["torch", "torchvision"]
+# PyTorch dependency groups.
+# torchvision hard-pins `torch==<matching version>`, so the two ranges must stay aligned:
+# torch 2.11 <-> torchvision 0.26 ... torch 2.14 <-> torchvision 0.29.
+# torchcodec floor stays at 0.11 (pairs with torch 2.11) so published metadata satisfies
+# lerobot's torchcodec<0.12 cap; the lerobot override below lifts it to 0.12+ in the lock.
+cpu = ["torch>=2.11,<2.15", "torchvision>=0.26,<0.30", "torchcodec>=0.11"]
+cu130 = ["torch>=2.11,<2.15", "torchvision>=0.26,<0.30", "torchcodec>=0.11"]
 xpu = [
-    "torch",
-    "torchvision",
+    "torch>=2.11,<2.15",
+    "torchvision>=0.26,<0.30",
+    "torchcodec>=0.11",
 ]
 # Testing dependencies
 tests = [
@@ -115,11 +120,15 @@ xr0 = [
     "Pillow>=10.0.0,<13.0.0",
 ]
 
-# ExecuTorch runtime for edge/mobile deployment
-executorch = ["executorch>=1.1.0"]
+# ExecuTorch runtime for edge/mobile deployment.
+# Its native module links libtorch, so each release only runs on one torch release
+# (1.2 <-> 2.11 ... 1.5 <-> 2.14), and 1.5.x omits torch from its metadata so resolvers
+# can't enforce that. Published installs get torch 2.11 (lerobot caps it), hence 1.2.x here;
+# the lock moves to 1.5.x alongside torch 2.14 via override-dependencies.
+executorch = ["executorch>=1.2.0,<1.3"]
 
 # ExecuTorch with OpenVINO delegate (requires nncf for export)
-executorch-openvino = ["executorch>=1.1.0", "physicalai-train[nncf]"]
+executorch-openvino = ["executorch>=1.2.0,<1.3", "physicalai-train[nncf]"]
 
 # All policy dependencies (foundation models and diffusion action heads)
 policies = [
@@ -133,7 +142,7 @@ policies = [
 
 # All optional dependencies except hardware (torch) variant.
 # Pair with a hardware extra: uv sync --extra cpu --extra all
-# or: uv sync --extra cu128 --extra all  /  uv sync --extra xpu --extra all
+# or: uv sync --extra cu130 --extra all  /  uv sync --extra xpu --extra all
 all = [
     "physicalai-train[tests]",
     "physicalai-train[libero]",
@@ -189,11 +198,24 @@ override-dependencies = [
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
+    # LeRobot 0.6.0 caps torch<2.12 / torchvision<0.27 / torchcodec<0.12, below the top of
+    # our supported range. Scoped to lerobot on purpose: an unscoped override would replace
+    # the hardware extras' own requirements too, dropping their [tool.uv.sources] routing.
+    { package = { name = "lerobot" }, dependencies = [
+        "torch>=2.11,<2.15",
+        "torchvision>=0.26,<0.30",
+        "torchcodec>=0.12; extra == 'dataset'",
+    ] },
+    # Locked torch is 2.14, which only executorch 1.5.x runs on (see the executorch extra).
+    "executorch>=1.5.0,<1.6",
+    # Mirrors executorch 1.5's own torchao range. Needed only so the `pypi` source below
+    # applies: uv ignores sources for transitive deps unless they are overridden.
+    "torchao>=0.18.0,<0.19",
 ]
 
 
 conflicts = [
-    [{ extra = "cpu" }, { extra = "cu128" }, { extra = "xpu" }],
+    [{ extra = "cpu" }, { extra = "cu130" }, { extra = "xpu" }],
     [{ extra = "executorch" }, { extra = "xpu" }],
     [{ extra = "executorch-openvino" }, { extra = "xpu" }],
 ]
@@ -208,9 +230,10 @@ name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+# CUDA 12.8 wheels stop at torch 2.11; CUDA 13.0 carries the whole 2.11-2.14 range.
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [[tool.uv.index]]
@@ -221,14 +244,23 @@ explicit = false
 # PyTorch sources configuration
 [tool.uv.sources]
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "0ad4548e1455a9b6a79aa870ae2529f411739433" }
+# PyPI's Linux torchcodec wheel is CUDA-built (needs libnvrtc), so route it per extra like torch.
+torchcodec = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cu130" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+# Same issue as torchcodec: the XPU index ships `torchao` `+xpu` builds that would
+# otherwise be picked for the cpu/cu130 executorch installs.
+torchao = { index = "pypi" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu130", extra = "cu130" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-cu130", extra = "cu130" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
 

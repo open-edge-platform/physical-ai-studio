@@ -186,7 +186,7 @@ RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
 # ===========================================================================
 FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS builder-base
 
-COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 
 # Build-time system dependencies (not shipped in final image)
@@ -359,7 +359,7 @@ RUN PYTHONPATH=/app/application/backend/src \
 FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
-COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
+COPY --from=docker.io/astral/uv:0.12.17@sha256:10787c682e4184e4f290de1171fd4703dc63de99221f10fe1c99002ce7fa9acc /uv /uvx /bin/
 
 # Non-root user — override at build time to match host UID/GID for
 # bind-mounted volumes (e.g. calibration data, HuggingFace cache).
@@ -534,11 +534,13 @@ CMD ["./run.sh"]
 # ===========================================================================
 FROM runtime-base AS runtime-cuda
 
-# NVIDIA CUDA 12.8 runtime libraries (matches cu128 PyTorch wheels).
+# NVIDIA CUDA 13 runtime libraries (match the cu130 PyTorch wheels).
+# Versions track the nvidia-* wheels pinned in application/backend/uv.lock.
 # Requires NVIDIA Container Toolkit on the host for GPU passthrough.
 #
-# Uses the debian12 repo on Debian 13 (trixie) because the debian13 repo
-# only has CUDA 13.1 packages (not 12.8). trusted=yes is required because
+# Uses the debian12 repo on Debian 13 (trixie) because the debian13 repo only
+# carries the newest CUDA 13 point releases, not the ones the wheels pin.
+# trusted=yes is required because
 # Debian 13's sqv GPG verifier cannot validate the NVIDIA signing key.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -549,9 +551,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && dpkg -i /tmp/cuda-keyring.deb \
     && rm -f /tmp/cuda-keyring.deb \
     && apt-get update -o APT::Key::GPGVCommand=/usr/bin/gpgv && apt-get install -y --no-install-recommends \
-        cuda-cudart-12-8=12.8.90-1 \
-        libcublas-12-8=12.8.4.1-1 \
-        libcudnn9-cuda-12=9.19.0.56-1 \
+        cuda-cudart-13-0=13.0.96-1 \
+        libcublas-13-0=13.1.1.3-1 \
+        libcudnn9-cuda-13=9.24.0.43-1 \
     && rm -rf /var/lib/apt/lists/*
 SHELL ["/bin/sh", "-c"]
 

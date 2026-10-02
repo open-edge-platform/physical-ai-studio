@@ -82,7 +82,7 @@ source .venv/bin/activate  # Linux/macOS
 
 # Install with all development dependencies (choose one matching your hardware):
 uv sync --extra cpu --extra all     # CPU
-# uv sync --extra cu128 --extra all # NVIDIA GPU (CUDA)
+# uv sync --extra cu130 --extra all # NVIDIA GPU (CUDA)
 # uv sync --extra xpu --extra all   # Intel GPU (XPU)
 ```
 
