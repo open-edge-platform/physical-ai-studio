@@ -86,7 +86,12 @@ export const EpisodeViewer = ({ episode, dataset, environment }: EpisodeViewerPr
                         <Text>{episode.tasks.join(', ')}</Text>
                     </Flex>
                     <Flex direction={'row'} flex gap={'size-100'}>
-                        <EpisodeDockView episode={episode} dataset={dataset} environment={environment} />
+                        <EpisodeDockView
+                            key={dataset.id}
+                            episode={episode}
+                            dataset={dataset}
+                            environment={environment}
+                        />
                     </Flex>
                     <EpisodeTimelineComponent />
                 </Flex>
