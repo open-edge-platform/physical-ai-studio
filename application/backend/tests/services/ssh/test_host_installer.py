@@ -117,6 +117,18 @@ async def test_install_reports_only_known_outcomes_and_cleans_up(code: int, outp
     assert transport.run_command.await_count == 4
 
 
+async def test_check_only_runs_bundled_script_without_installing() -> None:
+    transport = AsyncMock()
+    transport.run_command.side_effect = [
+        CommandResult(argv=("mktemp",), command="mktemp", exit_status=0, stdout="/tmp/physicalai-installer.ABC123xy\n"),
+        CommandResult(argv=("bash",), command="bash", exit_status=0, stdout="READY:intel"),
+        CommandResult(argv=("rm",), command="rm", exit_status=0),
+        CommandResult(argv=("rmdir",), command="rmdir", exit_status=0),
+    ]
+    assert await install(transport, check_only=True) == "ready"
+    assert transport.run_command.await_args_list[1].args[0][-1] == "--check"
+
+
 @pytest.mark.parametrize(
     ("failure", "expected"),
     [

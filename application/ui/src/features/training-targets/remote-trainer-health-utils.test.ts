@@ -49,7 +49,7 @@ describe('remote-trainer-health-utils starting status', () => {
 
     it('explains missing Docker for a Studio-managed trainer', () => {
         expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'docker_unavailable' })).toBe(
-            'Studio-managed training requires Docker to be installed and running on the SSH host.'
+            'Docker must be running and accessible to the SSH user. If Docker was just installed, log out of the SSH host and back in, then retry setup.'
         );
     });
 

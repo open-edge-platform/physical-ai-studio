@@ -73,7 +73,10 @@ prerequisites require non-interactive sudo (`sudo -n true`) for the SSH user;
 Ubuntu hosts with incomplete `dpkg` transactions must be repaired by an
 administrator first. Reboot confirmation also requires non-interactive sudo.
 Already-ready hosts do not need sudo for the installation check. Docker group
-membership is root-equivalent. A first image pull can take time; check the target's health in
+membership is root-equivalent. Setup adds the SSH user to the Docker group and
+reconnects Studio's SSH session before launching the trainer. Any terminal session
+already open on the host still needs a fresh login (log out and back in, or run
+`newgrp docker`) before `docker ps` works without sudo. A first image pull can take time; check the target's health in
 the UI before starting a job. Image signatures are
 verified by Studio before launch. Restarting Studio restores standing tunnels
 for configured targets; an SSH host that is temporarily offline at startup is
