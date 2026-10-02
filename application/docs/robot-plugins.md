@@ -179,12 +179,49 @@ robot supports discovery, identification, or online-status checks.
 - `probe`: optional discovery, identification, and online-status implementation.
 - `asset`: optional URDF, mesh, and joint-map information.
 - `adapter_options`: optional control and effort-forwarding behavior.
+- `zero_calibration`: optional zero-pose calibration Studio runs when the robot is added.
 
 The `type` value must not be casually renamed. It is stored in project data and
 must remain unique across all installed plugins.
 
 The full SDK reference is in
 [`openvinotoolkit/physicalai/packages/physicalai-studio-plugin/README.md`](https://github.com/openvinotoolkit/physicalai/blob/main/packages/physicalai-studio-plugin/README.md).
+
+## Offer Zero-Pose Calibration
+
+Some arms are calibrated by storing a zero pose on their motors rather than in a
+calibration file. Set `zero_calibration` on the definition to have Studio run a
+guided calibration when the robot is added:
+
+```python
+import asyncio
+
+from physicalai_studio_plugin import RobotZeroCalibration
+
+
+async def release(robot: MyRobot) -> None:
+    await asyncio.to_thread(robot.disable_torque)
+
+
+async def set_zero(robot: MyRobot) -> None:
+    await asyncio.to_thread(robot.set_zero_position)
+
+
+zero_calibration = RobotZeroCalibration(
+    instructions="Move the arm to its rest pose and close the gripper.",
+    release=release,
+    set_zero=set_zero,
+)
+```
+
+After **Begin Calibration**, Studio builds the driver with `robot_builder`,
+connects to it directly, and calls `release` so the arm can be moved by hand.
+It shows `instructions` (beside a live 3D view when the robot type has a
+`RobotAsset`), calls `set_zero` when the user
+confirms the pose, and checks that every joint reads within
+`zero_tolerance_deg` of zero before the robot can be saved. Users can skip the
+step for an arm that is already calibrated. Calibration needs exclusive access
+to the arm, so stop any session using it first.
 
 ## Using A Robot Plugin With The Physical AI Runtime
 
