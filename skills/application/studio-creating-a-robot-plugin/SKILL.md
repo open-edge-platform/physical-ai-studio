@@ -54,6 +54,7 @@ Read `application/docs/robot-plugins.md` and the [`physicalai-studio-plugin` SDK
    - Raise a clear error if a configured device cannot be resolved.
    - Add a structural `RobotProbe` only when discovery, visual identification, or online checks have meaningful implementations. Keep probe behavior separate from driver construction.
    - Add `RobotAsset` only when the plugin ships a valid URDF, mesh package map, and observation-key-to-joint mapping. An asset-less robot is still supported but has no 3D preview.
+   - Add `RobotZeroCalibration` only when the arm is calibrated by storing a zero pose on its motors. Provide plain-text `instructions`, a `set_zero` step, and a `release` step when the connected arm is not already movable by hand. Studio then offers a guided calibration when the robot is added.
    - Register each definition from the entry-point function:
 
    ```python
