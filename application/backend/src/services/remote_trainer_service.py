@@ -351,8 +351,7 @@ class RemoteTrainerService:
         if outcome == "relogin_required":
             # New SSH logins inherit group changes; the install session cannot.
             async with SshTransport(target) as transport:
-                if await host_installer.install(transport, check_only=True) == "ready":
-                    return "ready"
+                return await host_installer.install(transport, check_only=True)
         return outcome
 
     async def install_remote_trainer(self, remote_trainer_id: UUID) -> None:
