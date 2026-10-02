@@ -35,6 +35,9 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 ## Shared Policy Components
 
 - Reuse `physicalai.policies.components` before writing policy-specific building blocks. See `library/src/physicalai/policies/components/README.md`.
+- For image encoders, use `VisionEncoder` instead of a custom backbone wrapper. It takes a timm model name or any `nn.Module` (e.g. a torchvision model), selects layers by module name, and handles pooling (`none`, `avg`, `max`, `cls`) and multi-layer aggregation (`none`, `concat`, `mean`) for both conv and ViT backbones.
+- `forward` expects `(B, C, H, W)` images in `[0, 1]` and normalizes internally; use `encode_image` for PIL images, numpy arrays or unbatched tensors.
+- See `library/docs/explanation/policy/vision_encoder.md` for examples.
 - New action heads subclass `ActionHead` (one-shot) or `IterativeActionHead` (flow matching / diffusion) from `physicalai.policies.components.action_heads`. Heads take a `dict[str, Tensor]` context and return unreduced per-element losses.
 - Keep `denoise` and `step` graph-capturable: tensor ops only, no `.item()`, no Python-side randomness, fixed shapes.
 - Do not refactor existing policy heads onto these classes without keeping module attribute names unchanged and checking the policy's LoRA target regexes and Hugging Face key remapping; `state_dict` keys must not change.

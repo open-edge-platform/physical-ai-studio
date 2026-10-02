@@ -12,6 +12,7 @@ from .nn import (
     TimestepEncoder,
     swish,
 )
+from .vision_encoder import VisionEncoder
 
 __all__ = [
     "ActionHead",
@@ -22,5 +23,6 @@ __all__ = [
     "MultiEmbodimentActionEncoder",
     "SinusoidalPositionalEncoding",
     "TimestepEncoder",
+    "VisionEncoder",
     "swish",
 ]
