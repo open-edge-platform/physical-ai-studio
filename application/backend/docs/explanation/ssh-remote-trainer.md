@@ -93,6 +93,13 @@ save its target to recreate it with the same data volume. SSH config and
 `known_hosts` paths, the image registry, and signature policy are
 environment-only settings.
 
+Studio passes usable Docker daemon `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`
+settings to newly created SSH trainer containers. Explicit `docker run`
+variables take precedence over the SSH user's Docker client proxy settings
+for the corresponding protocols. Proxy changes require container recreation:
+after active jobs finish, stop the managed container on the SSH host and save
+the target. Saving a target with a running container reuses it unchanged.
+
 ## Connection loss and cleanup
 
 The remote trainer keeps running when Studio loses its VPN or SSH connection.

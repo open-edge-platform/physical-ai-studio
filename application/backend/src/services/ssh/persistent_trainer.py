@@ -10,7 +10,7 @@ from schemas.hardware import DeviceType
 from schemas.remote_trainer import RemoteTrainer
 from services.ssh import docker_ops
 from services.ssh.connection import AliasTarget, DirectTarget
-from services.ssh.docker_ops import verify_image_signature
+from services.ssh.docker_ops import resolve_daemon_proxy_env, verify_image_signature
 from services.ssh.trainer_image import DEFAULT_PROTOCOL_VERSION, resolve_render_group_gid
 from services.ssh.transport import SshTransport
 from settings import get_settings
@@ -165,6 +165,7 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
                 stop_timeout_s=settings.ssh_container_stop_timeout_s,
                 render_gid=(None if device is DeviceType.CUDA else await resolve_render_group_gid(transport)),
                 shm_size_gb=settings.ssh_trainer_shm_size_gb,
+                proxy_env=await resolve_daemon_proxy_env(transport),
             )
             # The tunnel needs a stable loopback port for the reusable trainer container.
             argv[argv.index("127.0.0.1::8001")] = f"127.0.0.1:{remote_port}:8001"

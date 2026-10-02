@@ -16,10 +16,13 @@ rejection never costs a multi-gigabyte transfer.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
+import socket
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
+from urllib.parse import urlsplit
 
 from loguru import logger
 
@@ -42,6 +45,8 @@ from services.ssh.transport import SshTransport
 from settings import Settings
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from services.ssh.transport import CommandResult
 
 # Label carrying the `physicalai-train` version baked into the image, read
@@ -69,6 +74,9 @@ _DATA_VOLUME_NAME_PREFIX: Final = "physicalai-trainer-data-"
 # storage subdirectories.
 _TRAINER_UID: Final = 10001
 _TRAINER_GID: Final = 10001
+
+# Docker's daemon proxy is used for image pulls, not container traffic.
+_DAEMON_PROXY_FORMAT: Final = "[{{json .HTTPProxy}},{{json .HTTPSProxy}},{{json .NoProxy}}]"
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +301,72 @@ def _device_run_args(device_type: DeviceType, render_gid: str | None = None) -> 
     return args
 
 
+def _usable_container_proxy(url: str) -> bool:
+    """Reject masked credentials and addresses that refer to the container itself."""
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not host
+            or "@" in parsed.netloc  # docker info masks credentials; never forward them.
+            or parsed.port == 0
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or any(char.isspace() for char in url)
+        ):
+            return False
+    except ValueError:
+        return False
+
+    host = host.rstrip(".").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return False
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        try:
+            # inet_aton also recognizes loopback shorthands such as 127.1.
+            address = ipaddress.IPv4Address(socket.inet_aton(host))
+        except OSError:
+            return True  # A DNS name may resolve differently inside the container.
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return not (address.is_loopback or address.is_unspecified)
+
+
+async def resolve_daemon_proxy_env(transport: SshTransport) -> dict[str, str]:
+    """Return usable daemon proxy variables for the trainer container.
+
+    Docker renders NO_PROXY in one JSON line. The SSH transport's default
+    512-character line cap can truncate it, so use a larger bounded cap here.
+    """
+    result = await transport.run_command(["docker", "info", "--format", _DAEMON_PROXY_FORMAT], output_limit=64 * 1024)
+    values = _parse_json(result.stdout) if result.ok else None
+    if not isinstance(values, list) or len(values) != 3 or not all(isinstance(value, str) for value in values):
+        logger.warning("Could not read Docker proxy settings; trainer container gets no daemon proxy")
+        return {}
+
+    http_proxy, https_proxy, no_proxy = values
+    env: dict[str, str] = {}
+    for name, raw_url in (("HTTP_PROXY", http_proxy), ("HTTPS_PROXY", https_proxy)):
+        if not raw_url:
+            continue
+        url = raw_url if "://" in raw_url else f"http://{raw_url}"
+        if not _usable_container_proxy(url):
+            logger.warning("Docker {} cannot be used inside the trainer container; skipping it", name)
+            continue
+        env[name] = env[name.lower()] = url
+
+    if env:
+        # Preserve host exclusions, and don't route the container's own loopback via the proxy.
+        exclusions = [entry.strip() for entry in no_proxy.split(",") if entry.strip()]
+        exclusions.extend(entry for entry in ("localhost", "127.0.0.1", "::1") if entry not in exclusions)
+        env["NO_PROXY"] = env["no_proxy"] = ",".join(exclusions)
+    return env
+
+
 def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security property
     *,
     image_digest_ref: str,
@@ -304,6 +378,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
     stop_timeout_s: int,
     render_gid: str | None = None,
     shm_size_gb: int = 32,
+    proxy_env: Mapping[str, str] | None = None,
 ) -> list[str]:
     """Build the least-privilege `docker run` command for one trainer container.
 
@@ -317,6 +392,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
     * `--read-only` root filesystem, a bounded `--tmpfs` for `/tmp` scratch,
       and a trainer-scoped data volume for datasets and model artifacts.
     * A private, sized `/dev/shm` for PyTorch DataLoader multiprocessing.
+    * Usable proxy environment from the SSH host's Docker daemon, when present.
 
     `render_gid`, from `services.ssh.trainer_image.resolve_render_group_gid`,
     is required for a working XPU container: without it the fixed non-root
@@ -348,6 +424,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
         "no-new-privileges",
         "--read-only",
         "--env=TMPDIR=/var/lib/physicalai-trainer",  # Lightning checkpoints exceed the /tmp tmpfs.
+        *(f"--env={name}={value}" for name, value in sorted((proxy_env or {}).items())),
         f"--shm-size={shm_size_gb}g",
         "--tmpfs",
         f"/tmp:size=2g,{tmpfs_owner}",  # noqa: S108  # nosec B108 - a `docker run` mount spec, not a local temp-file access
