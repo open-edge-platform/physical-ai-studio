@@ -11,10 +11,9 @@ interface EpisodeListProps {
     episodes: EpisodeSummary[];
     onSelect: (index: number) => void;
     currentEpisode: number | null;
-    sortOrder?: 'newest' | 'oldest';
 }
 
-export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder }: EpisodeListProps) => {
+export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListProps) => {
     const { dataset_id, selectedEpisodes, setSelectedEpisodes } = useDataset();
 
     const toggleSelection = (episodeIndex: number) => {
@@ -27,13 +26,7 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder }: E
         <View UNSAFE_className={classes.episodePreviewList}>
             <div className={classes.episodePreviewListInner}>
                 <VirtualizedListLayout
-                    items={
-                        sortOrder
-                            ? episodes.toSorted(
-                                  (a, b) => (a.episode_index - b.episode_index) * (sortOrder === 'newest' ? -1 : 1)
-                              )
-                            : episodes
-                    }
+                    items={episodes}
                     ariaLabel='Episode list'
                     containerHeight='100%'
                     layoutOptions={{ rowHeight: 190 }}
