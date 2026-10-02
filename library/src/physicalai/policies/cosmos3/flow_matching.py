@@ -259,11 +259,11 @@ def flow_matching_step(  # ruff: ignore[too-many-locals]
     loss_action = x0_vision.new_zeros(())
     if pack["train_video"] and preds_vision is not None:
         target_vision = (noise_v - x0_vision) * (1.0 - vision_keep)
-        pred_v = preds_vision[0] if isinstance(preds_vision, (list, tuple)) else preds_vision
+        pred_v: torch.Tensor = preds_vision[0] if isinstance(preds_vision, (list, tuple)) else preds_vision  # type: ignore[assignment]
         loss_vision = functional.mse_loss(pred_v.float(), target_vision)
     if pack["train_action"] and preds_action is not None:
         target_action = ((noise_a - x0_action) * (1.0 - action_keep))[:, :raw_dim]
-        pred_a = preds_action[0] if isinstance(preds_action, (list, tuple)) else preds_action
+        pred_a: torch.Tensor = preds_action[0] if isinstance(preds_action, (list, tuple)) else preds_action  # type: ignore[assignment]
         loss_action = functional.mse_loss(pred_a[:, :raw_dim].float(), target_action)
 
     loss = loss_vision + action_weight * loss_action

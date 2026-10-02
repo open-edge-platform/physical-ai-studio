@@ -224,12 +224,16 @@ def _resolve_task_text(task_field: object, index: int) -> str:
 class Cosmos3Model(Model):
     """Cosmos 3 PyTorch Model wrapping diffusers Cosmos3OmniPipeline."""
 
+    norm_offset: torch.Tensor
+    norm_scale: torch.Tensor
+    domain_id: torch.Tensor
+
     def __init__(
         self,
         config: Cosmos3Config,
         pipeline: PolicyPipelineWithState | None = None,
         dataset_stats: dict[str, Any] | None = None,
-        device: torch.device | str | None = None,
+        device: torch.device | None = None,
     ) -> None:
         """Initialize Cosmos3Model.
 
@@ -563,8 +567,8 @@ class Cosmos3Model(Model):
 
         # Determine paradigm for this step
         if self.config.paradigm == "joint":
-            # nosec B311 - non-cryptographic objective sampling
-            selected_paradigm = random.choice(("policy", "fd", "id"))  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+            # Non-cryptographic objective sampling across training paradigms
+            selected_paradigm = random.choice(("policy", "fd", "id"))  # noqa: S311  # nosec B311
         else:
             selected_paradigm = self.config.paradigm
 

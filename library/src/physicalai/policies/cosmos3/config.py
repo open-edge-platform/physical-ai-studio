@@ -161,9 +161,10 @@ class Cosmos3Config(Config):
             self._set_frozen("gradient_checkpointing", self.grad_checkpoint)
 
         self._set_frozen("rank", self.lora_rank)
+        alpha = self.lora_alpha if self.lora_alpha is not None else self.lora_rank
         self._set_frozen(
             "alpha_scale",
-            float(self.lora_alpha / self.lora_rank) if self.lora_rank > 0 else 1.0,
+            float(alpha / self.lora_rank) if self.lora_rank > 0 else 1.0,
         )
         self._set_frozen("dora", self.lora_use_dora)
         self._set_frozen("grad_checkpoint", self.gradient_checkpointing)

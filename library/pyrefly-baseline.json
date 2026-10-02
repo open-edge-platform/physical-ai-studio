@@ -71,6 +71,13 @@
       "severity": "error"
     },
     {
+      "column": 17,
+      "path": "src/physicalai/data/lerobot/dataset.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
       "column": 25,
       "path": "src/physicalai/data/lerobot/dataset.py",
       "name": "unsupported-operation",
@@ -323,41 +330,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "src/physicalai/gyms/libero.py",
-      "name": "missing-import",
-      "concise_description": "Cannot find module `libero.libero.benchmark`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "src/physicalai/gyms/libero.py",
-      "name": "missing-import",
-      "concise_description": "Cannot find module `libero.libero`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "src/physicalai/gyms/libero.py",
-      "name": "missing-import",
-      "concise_description": "Cannot find module `libero.libero`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "src/physicalai/gyms/libero.py",
-      "name": "missing-import",
-      "concise_description": "Cannot find module `libero.libero.envs`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "src/physicalai/gyms/libero.py",
-      "name": "missing-import",
-      "concise_description": "Cannot find module `robosuite.utils.transform_utils`",
-      "severity": "error"
-    },
-    {
       "column": 17,
       "path": "src/physicalai/gyms/libero.py",
       "name": "missing-attribute",
@@ -572,6 +544,335 @@
       "path": "src/physicalai/policies/act/policy.py",
       "name": "bad-override",
       "concise_description": "Class member `ACT.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "src/physicalai/policies/cosmos3/config.py",
+      "name": "unsupported-operation",
+      "concise_description": "`/` is not supported between `None` and `int`",
+      "severity": "error"
+    },
+    {
+      "column": 43,
+      "path": "src/physicalai/policies/cosmos3/flow_matching.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `object` has no attribute `float`",
+      "severity": "error"
+    },
+    {
+      "column": 43,
+      "path": "src/physicalai/policies/cosmos3/flow_matching.py",
+      "name": "bad-index",
+      "concise_description": "Cannot index into `object`",
+      "severity": "error"
+    },
+    {
+      "column": 59,
+      "path": "src/physicalai/policies/cosmos3/model.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `device | str | None` is not assignable to parameter `device` with type `device | None` in function `Cosmos3Model._load_pipeline`",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "src/physicalai/policies/cosmos3/model.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `torch.nn.modules.module.Module.to` called with arguments: (*tuple[object, ...], **dict[str, object])",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `Cosmos3OmniPipeline` has no attribute `transformer`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `Cosmos3OmniPipeline` has no attribute `vae`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "invalid-inheritance",
+      "concise_description": "Invalid base class: `diffusers.pipelines.cosmos.pipeline_cosmos3_omni.Cosmos3OmniPipeline | diffusers.utils.dummy_torch_and_transformers_objects.Cosmos3OmniPipeline`",
+      "severity": "error"
+    },
+    {
+      "column": 41,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `int | None` is not assignable to parameter `n_action_steps` with type `int` in function `physicalai.policies.base.policy.Policy.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `Cosmos3.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-override",
+      "concise_description": "Class member `Cosmos3.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `pretrained_model_name_or_path` with type `str` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `revision` with type `str | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `embodiment` with type `str` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `mode` with type `Literal['full', 'peft']` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `lora_enabled` with type `bool | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `paradigm` with type `Literal['fd', 'id', 'joint', 'policy']` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `lora_rank` with type `int` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `lora_alpha` with type `int | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `lora_dropout` with type `float` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `lora_use_dora` with type `bool` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `head_lr_mult` with type `float | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `action_weight` with type `float` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `chunk_size` with type `int` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `n_action_steps` with type `int | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `resolution_tier` with type `int` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `fps` with type `int` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `gradient_checkpointing` with type `bool` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `action_space` with type `str | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `view_point` with type `str | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `normalizer_stats_path` with type `str | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `prompt_format` with type `Literal['augmented_json', 'augmented_text', 'task_description']` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `guidance_scale` with type `float` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `flow_shift` with type `float` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `num_inference_steps` with type `int` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `dtype` with type `Literal['bfloat16', 'float16', 'float32']` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `optimizer_lr` with type `float` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `optimizer_betas` with type `tuple[float, float]` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `optimizer_eps` with type `float` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `optimizer_weight_decay` with type `float` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `optimizer_grad_clip_norm` with type `float` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `dataset_stats` with type `dict[str, Any] | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `rank` with type `int | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `alpha_scale` with type `float | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `dora` with type `bool | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `grad_checkpoint` with type `bool | None` in function `Cosmos3.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Unpacked keyword argument `object` is not assignable to parameter `pretrained_name_or_path` with type `str | None` in function `Cosmos3.__init__`",
       "severity": "error"
     },
     {

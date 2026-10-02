@@ -558,4 +558,4 @@ class Cosmos3(Policy):
             "optimizer_grad_clip_norm": config.optimizer_grad_clip_norm,
         }
         init_kwargs.update(kwargs)
-        return cls(**init_kwargs)
+        return cls(**init_kwargs)  # type: ignore[arg-type]

@@ -372,4 +372,3 @@ def test_import_does_not_load_lerobot_policy_factory():
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
-

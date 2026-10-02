@@ -56,7 +56,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-09-18T10:07:00.8707194Z"
+exclude-newer = "2026-09-25T00:42:02.160311808Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -66,7 +66,7 @@ markupsafe = false
 openvino = false
 lightning = false
 physicalai-rebot-b601-plugin = false
-pyrealsense2 = { timestamp = "2026-09-24T10:07:00.8707452Z", span = "P1D" }
+pyrealsense2 = { timestamp = "2026-10-01T00:42:02.160320001Z", span = "P1D" }
 physicalai-lerobot-plugin = false
 physicalai-studio-plugin = false
 physicalai-stararm-plugin = false
@@ -2860,6 +2860,7 @@ smolvla = [
 
 [package.metadata]
 requires-dist = [
+    { name = "diffusers", marker = "extra == 'cosmos3'", specifier = ">=0.40.0" },
     { name = "diffusers", marker = "extra == 'diffusion'", specifier = ">=0.38.0" },
     { name = "diffusers", marker = "extra == 'rldx1'", specifier = ">=0.38.0" },
     { name = "diffusers", marker = "extra == 'tests'", specifier = ">=0.38.0" },
@@ -2881,9 +2882,11 @@ requires-dist = [
     { name = "openvino", specifier = ">=2026.4" },
     { name = "openvino-tokenizers", specifier = ">=2026.4" },
     { name = "peft", specifier = ">=0.20.0,<1.0.0" },
+    { name = "peft", marker = "extra == 'cosmos3'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
     { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=0ad4548e1455a9b6a79aa870ae2529f411739433" },
+    { name = "physicalai-train", extras = ["cosmos3"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["molmoact2"], marker = "extra == 'policies'" },
@@ -2895,6 +2898,7 @@ requires-dist = [
     { name = "physicalai-train", extras = ["tests"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["xr0"], marker = "extra == 'policies'" },
     { name = "pillow" },
+    { name = "pillow", marker = "extra == 'cosmos3'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'pi05'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'rldx1'", specifier = ">=10.0.0,<13.0.0" },
     { name = "pillow", marker = "extra == 'xr0'", specifier = ">=10.0.0,<13.0.0" },
@@ -2903,6 +2907,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'tests'" },
     { name = "pytest-examples", marker = "extra == 'tests'", specifier = ">=0.0.13" },
     { name = "pytest-mock", marker = "extra == 'tests'" },
+    { name = "safetensors", marker = "extra == 'cosmos3'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'molmoact2'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'pi05'", specifier = ">=0.4.3,<1.0.0" },
     { name = "safetensors", marker = "extra == 'rldx1'", specifier = ">=0.4.3,<1.0.0" },
@@ -2917,6 +2922,7 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'cpu'", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "physicalai-train", extra = "cpu" } },
     { name = "torchvision", marker = "extra == 'cu128'", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "physicalai-train", extra = "cu128" } },
     { name = "torchvision", marker = "extra == 'xpu'", index = "https://download.pytorch.org/whl/xpu", conflict = { package = "physicalai-train", extra = "xpu" } },
+    { name = "transformers", marker = "extra == 'cosmos3'", specifier = ">=5.15.1" },
     { name = "transformers", marker = "extra == 'molmoact2'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'pi05'", specifier = ">=5.15.1,<5.16.0" },
     { name = "transformers", marker = "extra == 'rldx1'", specifier = ">=5.15.1,<5.16.0" },
@@ -2924,7 +2930,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'xr0'", specifier = ">=5.15.0,<=5.15.1" },
     { name = "wandb", marker = "extra == 'loggers'", specifier = ">=0.22" },
 ]
-provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi05", "smolvla", "molmoact2", "rldx1", "nncf", "xr0", "executorch", "executorch-openvino", "policies", "all"]
+provides-extras = ["cpu", "cu128", "xpu", "tests", "loggers", "libero", "diffusion", "pi05", "smolvla", "molmoact2", "rldx1", "cosmos3", "nncf", "xr0", "executorch", "executorch-openvino", "policies", "all"]
 
 [package.metadata.requires-dev]
 dev = [

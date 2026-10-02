@@ -36,18 +36,18 @@ library/src/physicalai/policies/cosmos3/
 
 The policy is configured using an `embodiment` identifier:
 
-| Embodiment | Action Space | Action Dim | Normalization | Gripper Convention | Description |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `pusht` | `identity` | 2 | `minmax` | Standard | Push-T 2D planar position control |
-| `droid_lerobot` | `joint_pos` | 8 | `none` | Inverted (`1 - g`) | DROID 7 arm joints + 1 gripper position |
-| `aloha` | `identity` | 14 | `minmax` | Standard | Dual-arm Aloha joint positions |
+| Embodiment      | Action Space | Action Dim | Normalization | Gripper Convention | Description                             |
+| :-------------- | :----------- | :--------- | :------------ | :----------------- | :-------------------------------------- |
+| `pusht`         | `identity`   | 2          | `minmax`      | Standard           | Push-T 2D planar position control       |
+| `droid_lerobot` | `joint_pos`  | 8          | `none`        | Inverted (`1 - g`) | DROID 7 arm joints + 1 gripper position |
+| `aloha`         | `identity`   | 14         | `minmax`      | Standard           | Dual-arm Aloha joint positions          |
 
 ### Dataset Columns
 
 Cosmos3 consumes the canonical combined `observation.state` and `action` columns,
 like the other policies in this repo. When a dataset stores an action's components
 in separate columns (e.g. DROID's 7 joints and 1 gripper), the datamodule combines
-them into a single column (8D `[joint(7), gripper(1)]`) *before* the policy sees it —
+them into a single column (8D `[joint(7), gripper(1)]`) _before_ the policy sees it —
 concatenation happens at the datamodule level, not inside the policy.
 
 ### Camera Composition & Viewpoints
@@ -60,11 +60,11 @@ Cosmos3 conditions on a **per-task** instruction: each sample's `task` string (p
 
 The `prompt_format` config knob controls how that per-task text is turned into the caption the transformer sees:
 
-| `prompt_format` | Caption sent to the model |
-| :--- | :--- |
-| `task_description` (default) | The raw per-task text, verbatim. |
-| `augmented_text` | The task text plus the flat duration/FPS and resolution template sentences. |
-| `augmented_json` | The structured JSON caption (viewpoint framing + duration + fps + resolution + aspect_ratio) that the released NVIDIA Cosmos policy checkpoints were trained on. |
+| `prompt_format`              | Caption sent to the model                                                                                                                                        |
+| :--------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task_description` (default) | The raw per-task text, verbatim.                                                                                                                                 |
+| `augmented_text`             | The task text plus the flat duration/FPS and resolution template sentences.                                                                                      |
+| `augmented_json`             | The structured JSON caption (viewpoint framing + duration + fps + resolution + aspect_ratio) that the released NVIDIA Cosmos policy checkpoints were trained on. |
 
 All augmentation logic lives in the `diffusers` `Cosmos3OmniPipeline`; Studio only selects the format. `task_description` keeps the prompt minimal and portable, which is the sensible default for training your own heads on this repo's datasets.
 
@@ -72,13 +72,13 @@ All augmentation logic lives in the `diffusers` `Cosmos3OmniPipeline`; Studio on
 
 Both `Cosmos3-Edge-Policy-DROID` and `Cosmos3-Nano-Policy-DROID` share the same DROID data/prompt recipe; they differ only in the base backbone (`nvidia/Cosmos3-Edge` vs `nvidia/Cosmos3-Nano`, the latter with `max_action_dim=64`), **not** in the prompt. To reproduce their conditioning set:
 
-| Setting | Value for parity | Studio `droid/default.yaml` default |
-| :--- | :--- | :--- |
-| `prompt_format` | `augmented_json` | `task_description` |
-| `resolution_tier` | `480` | `256` |
-| `fps` | `15` | `15` ✅ |
-| `chunk_size` | `32` (→ 33 frames incl. state token) | `32` ✅ |
-| viewpoint | `concat_view` | auto for `droid_lerobot` ✅ |
+| Setting           | Value for parity                     | Studio `droid/default.yaml` default |
+| :---------------- | :----------------------------------- | :---------------------------------- |
+| `prompt_format`   | `augmented_json`                     | `task_description`                  |
+| `resolution_tier` | `480`                                | `256`                               |
+| `fps`             | `15`                                 | `15` ✅                             |
+| `chunk_size`      | `32` (→ 33 frames incl. state token) | `32` ✅                             |
+| viewpoint         | `concat_view`                        | auto for `droid_lerobot` ✅         |
 
 The Studio DROID default deliberately uses `task_description` + `resolution_tier: 256` for lighter fine-tuning; switch both to the parity values above only when you specifically need byte-comparable prompts against the released checkpoints.
 
@@ -168,13 +168,13 @@ The three tasks share one backbone, so training video prediction (`fd`) and acti
 inference (`id`) alongside `policy` grounds the action head in the same learned
 world dynamics it generates against. Use `policy` for control.
 
-| Knob | Default | When to change |
-| :--- | :--- | :--- |
-| `prompt_format` | `task_description` | Set `augmented_text` / `augmented_json` for prompt parity with released checkpoints (see [Prompt Conditioning](#prompt-conditioning)). |
-| `normalizer_stats_path` | `None` | Point at a cosmos-format action-normalizer stats JSON to run a pre-trained per-embodiment head that expects quantile-normalized actions. |
-| `action_space` | `None` (auto) | Override the embodiment's resolved action space (`identity` / `joint_pos`). |
-| `view_point` | `None` (auto) | Override the viewpoint prompt tag inferred from the embodiment and composition. |
-| `resolution_tier` / `fps` | `256` / `10` | Raise for checkpoint parity (e.g. `480` / `15` for DROID) at higher compute cost. |
+| Knob                      | Default            | When to change                                                                                                                           |
+| :------------------------ | :----------------- | :--------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt_format`           | `task_description` | Set `augmented_text` / `augmented_json` for prompt parity with released checkpoints (see [Prompt Conditioning](#prompt-conditioning)).   |
+| `normalizer_stats_path`   | `None`             | Point at a cosmos-format action-normalizer stats JSON to run a pre-trained per-embodiment head that expects quantile-normalized actions. |
+| `action_space`            | `None` (auto)      | Override the embodiment's resolved action space (`identity` / `joint_pos`).                                                              |
+| `view_point`              | `None` (auto)      | Override the viewpoint prompt tag inferred from the embodiment and composition.                                                          |
+| `resolution_tier` / `fps` | `256` / `10`       | Raise for checkpoint parity (e.g. `480` / `15` for DROID) at higher compute cost.                                                        |
 
 ## Note on Export
 

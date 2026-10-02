@@ -316,7 +316,7 @@ class PolicyPipelineWithState(Cosmos3OmniPipeline):
             seg["action_mrope_ids"] = state_action_mrope_ids(
                 self,
                 int(seg["action_len"]),
-                int(kwargs["mrope_offset"]),  # type: ignore[arg-type]
+                int(kwargs["mrope_offset"]),  # type: ignore[arg-type,call-overload]
                 float(kwargs["action_fps"]),  # type: ignore[arg-type]
                 kwargs["device"],  # type: ignore[arg-type]
             )
