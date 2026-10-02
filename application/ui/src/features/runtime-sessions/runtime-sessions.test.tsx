@@ -34,9 +34,6 @@ const session = (overrides: Partial<SchemaRuntimeSessionInfo> = {}): SchemaRunti
     follower_name: 'left arm',
     leader_name: 'left leader',
     started_at: new Date(Date.now() - 90_000).toISOString(),
-    idle_timeout_s: 45,
-    attached: true,
-    idle_deadline: null,
     camera_keys: ['wrist'],
     activity: baseState,
     error: null,
@@ -255,23 +252,6 @@ describe('RuntimeSessionsDialog', () => {
         expect(await screen.findByText('recording')).toBeInTheDocument();
     });
 
-    it('warns that nobody is watching an abandoned session', async () => {
-        server.use(
-            http.get(SESSIONS_PATH, () =>
-                HttpResponse.json([
-                    session({ attached: false, idle_deadline: new Date(Date.now() + 30_000).toISOString() }),
-                ])
-            )
-        );
-        const user = userEvent.setup();
-
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
-
-        await user.click(await screen.findByRole('button', { name: /details for left arm/i }));
-
-        expect(await screen.findByText(/nobody is watching this session/i)).toBeInTheDocument();
-    });
-
     it('labels expanded session details so the fields are readable', async () => {
         const user = userEvent.setup();
         server.use(http.get(SESSIONS_PATH, () => HttpResponse.json([session()])));
@@ -294,30 +274,6 @@ describe('RuntimeSessionsDialog', () => {
         expect(screen.getByText('41273')).toBeInTheDocument();
         expect(screen.getByText('Session ID')).toBeInTheDocument();
         expect(screen.getByText(`rt-${ROBOT_ID}`)).toBeInTheDocument();
-    });
-
-    it('lists a session that will not answer instead of hiding it', async () => {
-        server.use(
-            http.get(SESSIONS_PATH, () =>
-                HttpResponse.json([
-                    {
-                        session_name: `rt-${ROBOT_ID}`,
-                        follower_id: ROBOT_ID,
-                        status: 'unreachable',
-                        pid: 41402,
-                        camera_keys: [],
-                        activity: null,
-                        error: null,
-                    },
-                ])
-            )
-        );
-
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
-
-        // Falls back to the raw session name: there is no label to show.
-        expect(await screen.findByText(`rt-${ROBOT_ID}`)).toBeInTheDocument();
-        expect(screen.getByText('unreachable')).toBeInTheDocument();
     });
 
     it('stops a session after confirming', async () => {
@@ -402,11 +358,11 @@ describe('RuntimeSessionsDialog', () => {
             http.get(SESSIONS_PATH, () =>
                 HttpResponse.json([
                     session(),
-                    session({ session_name: 'rt-second', follower_name: 'right arm', follower_id: null }),
+                    session({ session_name: 'rt-second', follower_name: 'right arm', follower_id: 'second' }),
                 ])
             ),
             // Never settles, standing in for the seconds the backend spends
-            // waiting out SIGTERM before it escalates to SIGKILL.
+            // waiting for the worker to tear down.
             http.post(STOP_PATH, () => new Promise<never>(() => {}))
         );
 
@@ -454,7 +410,6 @@ describe('sessionStatusVariant', () => {
     });
 
     it('uses red for broken sessions', () => {
-        expect(sessionStatusVariant(session({ status: 'unreachable', activity: null }))).toBe('negative');
         expect(sessionStatusVariant(session({ status: 'error' }))).toBe('negative');
     });
 });

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
@@ -214,25 +212,6 @@ async def build_runtime_config(
     document = Config("physicalai.runtime.RobotRuntime", init_args).to_dict()
     validate_config(document)
     return cast("dict[str, Any]", document)
-
-
-def runtime_identity_digest(document: dict[str, Any]) -> str:
-    """Identify the hardware a session is driving, so a client cannot attach to a different rig.
-
-    Covers the robot recipe, the leader recipe and fps — everything that
-    physically determines what the arm does. Cameras are deliberately excluded:
-    they are read-only observation, a client that needs more can restart the
-    session, and including them would make every camera edit in the environment
-    form look like a rig change. See runtime-process-context.md#decisions.
-    """
-    init_args = document["init_args"]
-    identity = {
-        "robot": init_args["robot"],
-        "action_source": init_args.get("action_source"),
-        "fps": init_args["fps"],
-    }
-    canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def runtime_camera_keys(document: dict[str, Any]) -> list[str]:

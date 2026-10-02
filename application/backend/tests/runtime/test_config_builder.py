@@ -11,13 +11,11 @@ from physicalai.runtime import RobotRuntime
 from robots.robot_client_factory import RobotClientFactory
 from runtime.config_builder import (
     POLICY_REQUEST_THRESHOLD,
-    RUNTIME_FPS,
     build_runtime_config,
     policy_source_fragment,
     runtime_camera_keys,
     runtime_config_change_me,
     runtime_export_readme,
-    runtime_identity_digest,
 )
 from schemas import SerialPortInfo
 from schemas.project_camera import CameraAdapter
@@ -165,48 +163,6 @@ async def test_change_me_lists_unstable_ports_not_the_accelerator(mocker: Any) -
     for accelerator in ("CPU", "GPU", "gpu"):
         document["init_args"]["action_source"]["init_args"]["model"]["init_args"]["device"] = accelerator
         assert accelerator not in runtime_config_change_me(document)
-
-
-def _identity_document(
-    *,
-    fps: float = 30.0,
-    cameras: dict[str, object] | None = None,
-    leader: bool = False,
-) -> dict[str, Any]:
-    init_args: dict[str, Any] = {
-        "robot": {"class_path": "tests.runtime.fakes.FakeRobot", "init_args": {"name": "follower"}},
-        "cameras": cameras or {},
-        "fps": fps,
-    }
-    if leader:
-        init_args["action_source"] = {
-            "class_path": "physicalai.runtime.TeleopSource",
-            "init_args": {
-                "leader": {"class_path": "tests.runtime.fakes.FakeRobot", "init_args": {"name": "leader"}},
-            },
-        }
-    return {"class_path": "physicalai.runtime.RobotRuntime", "init_args": init_args}
-
-
-def test_identity_digest_ignores_cameras() -> None:
-    without_cameras = _identity_document()
-    with_cameras = _identity_document(cameras={"overhead camera": {"class_path": "unused"}})
-
-    assert runtime_identity_digest(without_cameras) == runtime_identity_digest(with_cameras)
-
-
-def test_identity_digest_changes_with_the_leader() -> None:
-    follower_only = _identity_document()
-    with_leader = _identity_document(leader=True)
-
-    assert runtime_identity_digest(follower_only) != runtime_identity_digest(with_leader)
-
-
-def test_identity_digest_changes_with_fps() -> None:
-    at_default = _identity_document(fps=RUNTIME_FPS)
-    at_half = _identity_document(fps=15.0)
-
-    assert runtime_identity_digest(at_default) != runtime_identity_digest(at_half)
 
 
 async def test_camera_keys_are_sorted_sanitized_names(mocker: Any) -> None:

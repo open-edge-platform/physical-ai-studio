@@ -2,10 +2,8 @@ import { $api } from '../../api/client';
 import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
 
 /**
- * Runtime sessions are detached processes the backend cannot push events about,
- * so both of these poll. The two intervals differ on purpose: the count is a
- * directory read and is mounted on every page, the list opens a transport
- * session per runtime session and is only mounted while someone is looking.
+ * Both of these poll. The count is mounted on every page, so it polls less
+ * often than the list, which is only mounted while someone is looking.
  */
 const COUNT_POLL_MS = 5_000;
 const LIST_POLL_MS = 2_000;
@@ -44,7 +42,6 @@ export type SessionStatusVariant = 'positive' | 'negative' | 'notice' | 'neutral
 export const sessionStatusVariant = (session: SchemaRuntimeSessionInfo): SessionStatusVariant => {
     switch (session.status) {
         case 'error':
-        case 'unreachable':
             return 'negative';
         case 'stopped':
             return 'neutral';
@@ -62,7 +59,7 @@ export const sessionStatusVariant = (session: SchemaRuntimeSessionInfo): Session
     }
 };
 
-/** What to call a session in the UI, falling back to its raw name for an orphan. */
+/** What to call a session in the UI, falling back to its raw name. */
 export const sessionLabel = (session: SchemaRuntimeSessionInfo): string =>
     session.follower_name ?? session.session_name;
 
@@ -71,14 +68,6 @@ export const sessionForRobot = (
     sessions: SchemaRuntimeSessionInfo[] | undefined,
     robotId: string
 ): SchemaRuntimeSessionInfo | undefined => sessions?.find((session) => session.session_name === `rt-${robotId}`);
-
-/** Seconds until an unattached session shuts itself down, or undefined when someone is watching. */
-export const idleSecondsRemaining = (session: SchemaRuntimeSessionInfo, now: number): number | undefined => {
-    if (session.attached !== false || !session.idle_deadline) {
-        return undefined;
-    }
-    return Math.max(0, Math.round((new Date(session.idle_deadline).getTime() - now) / 1000));
-};
 
 export const uptimeLabel = (session: SchemaRuntimeSessionInfo, now: number): string | undefined => {
     if (!session.started_at) {

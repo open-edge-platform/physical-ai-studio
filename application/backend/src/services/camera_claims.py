@@ -40,10 +40,8 @@ def _fingerprint_key(fingerprint: dict[str, Any]) -> str:
 class CameraClaimRegistry:
     """Pin camera settings for the life of an API process.
 
-    In-memory is acceptable here, unlike the robot guard. A camera claim
-    protects against a concurrent misconfiguration inside one API process. A
-    robot guard has to survive an API restart because a detached session keeps
-    driving the arm — which is why that one reads the on-disk lock file.
+    In-memory, like ``RuntimeSessionRegistry``: runtime sessions are child
+    processes of this API process and end with it.
     """
 
     def __init__(self) -> None:
@@ -54,8 +52,8 @@ class CameraClaimRegistry:
     def claim(self, claims: Sequence[CameraClaim]) -> int:
         """Pin every camera in ``claims``, or pin none of them.
 
-        Returns a generation for the holder so a stale waiter cannot unpin a
-        later reconnect that reused the same session name.
+        Returns a generation for the holder so a stale release cannot unpin a
+        later session that reused the same session name.
         """
         with self._lock:
             for incoming in claims:

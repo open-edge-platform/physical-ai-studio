@@ -211,6 +211,7 @@ describe('RobotsList runtime sessions', () => {
         status: 'running' as const,
         pid: 41273,
         follower_name: so101Robot.name,
+        started_at: new Date().toISOString(),
         camera_keys: [],
         activity: {
             connected: true,

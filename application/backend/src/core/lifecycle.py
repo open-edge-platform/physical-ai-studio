@@ -10,6 +10,7 @@ from loguru import logger
 from core.logging import setup_logging, setup_uvicorn_logging
 from core.security import get_ssh_feature_availability
 from db import get_async_db_session_ctx
+from runtime.registry import RuntimeSessionRegistry
 from schemas.remote_trainer import RemoteTrainerConnectionMode
 from services import remote_trainer_tunnel_manager
 from services.camera_claims import CameraClaimRegistry
@@ -102,6 +103,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app_scheduler.start_workers()
 
     app.state.scheduler = app_scheduler
+    # Runtime sessions are child processes of this API process, stopped with
+    # their websocket or, at the latest, on shutdown below.
+    app.state.runtime_session_registry = RuntimeSessionRegistry(stop_event=app_scheduler.mp_stop_event)
     app.state.event_processor = EventProcessor(app_scheduler.event_queue)
     logger.info("Application startup completed")
 
@@ -126,6 +130,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Ideally RobotHardwareManager would have a shutdown_all method too.
     # For now, we assume active workers unregistering will trigger releases.
 
+    # Before the scheduler sets the shared stop event: release the robots and
+    # finalize recordings while the sessions can still take their time.
+    await app.state.runtime_session_registry.stop_all()
     app_scheduler.shutdown()
     app.state.event_processor.shutdown()
     logger.info("Application shutdown completed")

@@ -6,9 +6,6 @@ from fastapi.websockets import WebSocketDisconnect
 from api.runtime_ws import _websocket_error_payload, handle_incoming, start_runtime_session
 from exceptions import RobotDeviceAlreadyOwnedError
 from runtime.contract import (
-    AckData,
-    AckEvent,
-    DisconnectCommand,
     LoadDatasetCommand,
     LoadModelCommand,
     SaveEpisodeCommand,
@@ -79,7 +76,7 @@ def test_handle_incoming_drops_malformed_follower_source_without_crashing() -> N
     ]
 
 
-def test_handle_incoming_does_not_disconnect_on_websocket_close() -> None:
+def test_handle_incoming_returns_on_websocket_close() -> None:
     session = MagicMock()
     websocket = FakeWebSocket([])
 
@@ -88,13 +85,19 @@ def test_handle_incoming_does_not_disconnect_on_websocket_close() -> None:
     session.apply.assert_not_called()
 
 
-def test_handle_incoming_applies_an_explicit_disconnect() -> None:
+def test_handle_incoming_returns_on_an_explicit_disconnect() -> None:
+    """Returning ends the websocket handler, which stops the session."""
     session = MagicMock()
-    websocket = FakeWebSocket([{"event": "disconnect"}])
+    websocket = FakeWebSocket(
+        [
+            {"event": "disconnect"},
+            {"event": "set_follower_source", "data": {"follower_source": "teleop"}},
+        ]
+    )
 
     asyncio.run(handle_incoming(websocket, session))
 
-    session.apply.assert_called_once_with(DisconnectCommand())
+    session.apply.assert_not_called()
 
 
 def test_handle_incoming_applies_load_model_and_start_task() -> None:
@@ -146,37 +149,21 @@ def test_handle_incoming_applies_load_dataset_and_start_recording() -> None:
     assert start.task == "pick"
 
 
-def test_handle_incoming_requests_save_episode_and_delivers_the_ack() -> None:
+def test_handle_incoming_forwards_save_episode_as_a_command() -> None:
+    """The worker answers with an ack on the event stream."""
     session = MagicMock()
-    session.request.return_value = AckEvent(data=AckData(request_id="req-9", ok=True))
     websocket = FakeWebSocket(
         [{"event": "save_episode", "request_id": "req-9", "data": {}}],
     )
 
     asyncio.run(handle_incoming(websocket, session))
 
-    command = session.request.call_args.args[0]
-    assert isinstance(command, SaveEpisodeCommand)
-    assert command.request_id == "req-9"
-    session.deliver.assert_called_once_with(session.request.return_value)
-    session.apply.assert_not_called()
+    session.apply.assert_called_once_with(SaveEpisodeCommand(request_id="req-9"))
 
 
-def test_start_runtime_session_keeps_process_failure_checks() -> None:
-    client = MagicMock()
-    owner = MagicMock()
+def test_start_runtime_session_starts_then_waits_for_readiness() -> None:
+    handle = MagicMock()
 
-    asyncio.run(start_runtime_session(client, owner))
+    asyncio.run(start_runtime_session(handle))
 
-    owner.connect.assert_called_once_with(replace=False)
-    client.wait_until_ready.assert_called_once_with(owner)
-
-
-def test_start_runtime_session_forwards_replace() -> None:
-    client = MagicMock()
-    owner = MagicMock()
-
-    asyncio.run(start_runtime_session(client, owner, replace=True))
-
-    owner.connect.assert_called_once_with(replace=True)
-    client.wait_until_ready.assert_called_once_with(owner)
+    assert handle.mock_calls == [call.start(), call.wait_until_ready()]

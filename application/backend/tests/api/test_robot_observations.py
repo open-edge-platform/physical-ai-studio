@@ -152,18 +152,11 @@ def test_stream_disconnects_the_shared_robot_on_close(client: TestClient, shared
 
 
 def test_stream_does_not_create_a_runtime_session(client: TestClient) -> None:
-    # Patch both the definition and the name bound in the owner: an in-process
-    # import of RuntimeProcessHost would otherwise miss the source-module patch.
+    # Patch the method on the class so every import binding sees it.
     with (
-        patch("runtime.transport.lock.SessionNameLock") as lock_cls,
-        patch("runtime.hosts.process_host.RuntimeProcessHost") as host_src,
-        patch("runtime.owner.RuntimeProcessHost") as host_bound,
-        patch("runtime.owner.RuntimeSessionOwner") as owner_cls,
+        patch("runtime.worker.RuntimeSessionWorker.start") as start,
         client.websocket_connect(_url()) as websocket,
     ):
         websocket.receive_json()
 
-    lock_cls.assert_not_called()
-    host_src.assert_not_called()
-    host_bound.assert_not_called()
-    owner_cls.assert_not_called()
+    start.assert_not_called()
