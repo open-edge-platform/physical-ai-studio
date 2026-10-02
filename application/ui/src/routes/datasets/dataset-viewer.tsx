@@ -93,10 +93,11 @@ export const DatasetViewer = () => {
             <Divider orientation='vertical' size='S' />
             <Flex direction='column'>
                 <Flex
-                    justifyContent='end'
+                    justifyContent='space-between'
                     alignItems='center'
                     gap='size-100'
-                    marginEnd='size-400'
+                    marginStart='size-250'
+                    marginEnd='size-250'
                     marginBottom='size-200'
                 >
                     {selectedEpisodes.length === 0 ? (
