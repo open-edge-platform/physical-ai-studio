@@ -42,7 +42,10 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
         case 'check_failed':
             return 'Studio could not complete the health check. Try again.';
         case 'docker_unavailable':
-            return 'Studio-managed training requires Docker to be installed and running on the SSH host.';
+            return (
+                'Docker must be running and accessible to the SSH user. ' +
+                'If Docker was just installed, log out of the SSH host and back in, then retry setup.'
+            );
         case 'accelerator_unavailable':
             return 'Studio-managed training requires a working CUDA or XPU driver on the SSH host.';
         case 'container_accelerator_unavailable':
@@ -50,7 +53,7 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
         case 'reboot_required':
             return 'GPU prerequisites were installed. Confirm a host reboot to finish setup.';
         case 'relogin_required':
-            return 'Reconnect SSH to activate Docker or GPU access, then retry installation.';
+            return 'Log out of the SSH host and back in to activate Docker or GPU group access, then retry setup.';
         case 'active_containers':
             return 'Host setup cannot modify Docker while containers are running.';
         case 'reboot_blocked_active_containers':

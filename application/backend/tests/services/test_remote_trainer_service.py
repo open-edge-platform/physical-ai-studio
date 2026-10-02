@@ -232,6 +232,31 @@ async def test_create_with_install_waits_for_prerequisites_before_starting_conta
 
 
 @pytest.mark.anyio
+async def test_install_reconnects_after_docker_group_change() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(), name="gpu", url="http://127.0.0.1:8001", connection_mode="ssh", ssh_host_alias="gpu-box"
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    transport = MagicMock()
+    transport.__aenter__ = AsyncMock(return_value=transport)
+    transport.__aexit__ = AsyncMock(return_value=False)
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.SshTransport", return_value=transport) as connect,
+        patch(f"{MODULE}.host_installer.install", new=AsyncMock(side_effect=["relogin_required", "ready"])) as install,
+        patch(f"{MODULE}.persistent_trainer.start", new_callable=AsyncMock) as start,
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=False)),
+        patch.object(RemoteTrainerService, "_require_no_active_jobs", new_callable=AsyncMock),
+    ):
+        await RemoteTrainerService(_session()).install_remote_trainer(trainer.id)
+        await remote_trainer_service_module._background_installs[trainer.id]
+        assert connect.call_count == 2
+        assert install.await_args_list[1].kwargs == {"check_only": True}
+        start.assert_awaited_once_with(trainer)
+
+
+@pytest.mark.anyio
 async def test_create_with_install_rejects_direct_url() -> None:
     with pytest.raises(InvalidResourceError):
         await RemoteTrainerService(_session()).create_remote_trainer(

@@ -343,6 +343,18 @@ class RemoteTrainerService:
             self._start_persistent_trainer_in_background(saved, accepted_host_key_fingerprint)
         return saved
 
+    @staticmethod
+    async def _install_ssh_prerequisites(trainer: RemoteTrainer) -> str:
+        target = persistent_trainer._ssh_target(trainer)
+        async with SshTransport(target) as transport:
+            outcome = await host_installer.install(transport)
+        if outcome == "relogin_required":
+            # New SSH logins inherit group changes; the install session cannot.
+            async with SshTransport(target) as transport:
+                if await host_installer.install(transport, check_only=True) == "ready":
+                    return "ready"
+        return outcome
+
     async def install_remote_trainer(self, remote_trainer_id: UUID) -> None:
         """Start a user-requested prerequisite installation; report progress via health."""
         trainer = await self.get_remote_trainer(remote_trainer_id)
@@ -352,8 +364,7 @@ class RemoteTrainerService:
 
         async def _install() -> None:
             try:
-                async with SshTransport(persistent_trainer._ssh_target(trainer)) as transport:
-                    outcome = await host_installer.install(transport)
+                outcome = await self._install_ssh_prerequisites(trainer)
                 if outcome == "ready":
                     await persistent_trainer.start(trainer)
                 else:
@@ -428,6 +439,8 @@ class RemoteTrainerService:
                 else:
                     persistent_trainer.set_install_failure(remote_trainer_id, "reboot_failed")
                     return
+                if outcome == "relogin_required":
+                    outcome = await self._install_ssh_prerequisites(trainer)
                 if outcome == "ready":
                     await persistent_trainer.start(trainer)
                 else:
