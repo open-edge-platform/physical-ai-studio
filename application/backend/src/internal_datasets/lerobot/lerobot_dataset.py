@@ -151,7 +151,12 @@ class InternalLeRobotDataset(DatasetClient):
             return None
 
         video_stat = video_path.stat()
-        thumbnail_png = self._build_thumbnail_png_bytes(
+
+        # Only cache thumbnails which are at most 320x240
+        build_thumbnail = (
+            self._cached_thumbnail_png_bytes if width <= 320 and height <= 240 else self._build_thumbnail_png_bytes
+        )
+        thumbnail_png = build_thumbnail(
             str(video_path),
             episode[f"videos/{video_key}/from_timestamp"],
             width,
@@ -401,6 +406,12 @@ class InternalLeRobotDataset(DatasetClient):
 
     @staticmethod
     @lru_cache(maxsize=128)
+    def _cached_thumbnail_png_bytes(
+        video_path: str, start: float, width: int, height: int, mtime_ns: int, size: int
+    ) -> bytes | None:
+        return InternalLeRobotDataset._build_thumbnail_png_bytes(video_path, start, width, height, mtime_ns, size)
+
+    @staticmethod
     def _build_thumbnail_png_bytes(
         video_path: str, start: float, width: int, height: int, _mtime_ns: int, _size: int
     ) -> bytes | None:

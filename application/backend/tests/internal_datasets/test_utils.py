@@ -52,6 +52,24 @@ def test_read_dataset_cache_refreshes_when_metadata_changes(tmp_path: Path) -> N
     _load_read_dataset.cache_clear()
 
 
+def test_read_dataset_cache_handles_five_datasets(tmp_path: Path) -> None:
+    datasets = [_make_dataset() for _ in range(5)]
+    paths = {dataset.id: tmp_path / str(dataset.id) for dataset in datasets}
+    for path in paths.values():
+        (path / "meta").mkdir(parents=True)
+        (path / "meta/info.json").touch()
+
+    _load_read_dataset.cache_clear()
+    with (
+        patch.object(Dataset, "path", property(lambda dataset: str(paths[dataset.id]))),
+        patch("internal_datasets.utils.InternalLeRobotDataset") as mocked_cls,
+    ):
+        for dataset in [*datasets, *datasets]:
+            get_internal_read_dataset(dataset)
+        assert mocked_cls.call_count == 5
+    _load_read_dataset.cache_clear()
+
+
 def test_get_internal_recording_dataset_uses_recording_mode() -> None:
     dataset = _make_dataset()
     with patch("internal_datasets.utils.InternalLeRobotDataset") as mocked_cls:

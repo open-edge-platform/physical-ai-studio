@@ -11,7 +11,7 @@ from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 
 def test_thumbnail_decodes_only_requested_video_and_caches_by_file_version(tmp_path: Path) -> None:
     video_path = tmp_path / "chunk.mp4"
-    writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter_fourcc(*"mp4v"), 2, (640, 480))
+    writer = cv2.VideoWriter(str(video_path), cv2.VideoWriter.fourcc(*"mp4v"), 2, (640, 480))
     assert writer.isOpened()
     for color in (0, 255):
         writer.write(np.full((480, 640, 3), color, dtype=np.uint8))
@@ -25,18 +25,21 @@ def test_thumbnail_decodes_only_requested_video_and_caches_by_file_version(tmp_p
     dataset.path = tmp_path
     dataset._dataset = SimpleNamespace(meta=meta)
     dataset._find_episode_metadata = MagicMock(return_value=episode)
-    dataset._build_thumbnail_png_bytes.cache_clear()
+    dataset._cached_thumbnail_png_bytes.cache_clear()
 
     first = dataset.get_episode_thumbnail_png(1, "observation.images.main", 64, 48)
     second = dataset.get_episode_thumbnail_png(1, "observation.images.main", 64, 48)
 
     assert first is not None and second == first
     decoded = cv2.imdecode(np.frombuffer(first[0], dtype=np.uint8), cv2.IMREAD_COLOR)
+    assert decoded is not None
     assert decoded.shape == (48, 64, 3)
     assert decoded.mean() > 230  # The second frame is at the episode's video offset.
-    assert dataset._build_thumbnail_png_bytes.cache_info().hits == 1
+    assert dataset._cached_thumbnail_png_bytes.cache_info().hits == 1
     stat = video_path.stat()
     os.utime(video_path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1))
     assert dataset.get_episode_thumbnail_png(1, "observation.images.main", 64, 48) == first
-    assert dataset._build_thumbnail_png_bytes.cache_info().misses == 2
-    dataset._build_thumbnail_png_bytes.cache_clear()
+    assert dataset._cached_thumbnail_png_bytes.cache_info().misses == 2
+    assert dataset.get_episode_thumbnail_png(1, "observation.images.main", 321, 241) is not None
+    assert dataset._cached_thumbnail_png_bytes.cache_info().misses == 2
+    dataset._cached_thumbnail_png_bytes.cache_clear()

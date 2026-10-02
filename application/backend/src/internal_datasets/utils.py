@@ -12,7 +12,7 @@ def get_internal_dataset(dataset: Dataset, mode: DatasetAccessMode = DatasetAcce
     return InternalLeRobotDataset(Path(dataset.path), access_mode=mode)
 
 
-@lru_cache(maxsize=2)
+@lru_cache(maxsize=8)
 def _load_read_dataset(path: str, _metadata_version: tuple[int, int] | None) -> DatasetClient:
     return InternalLeRobotDataset(Path(path), access_mode=DatasetAccessMode.READ_ONLY)
 
