@@ -114,12 +114,12 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
     name = _container_name(remote_trainer.id)
     _launch_started_at[remote_trainer.id] = datetime.now(UTC)
     _launch_failure.pop(remote_trainer.id, None)
-    _launch_phase[remote_trainer.id] = f"Connecting to '{target.name}'…"
+    _launch_phase[remote_trainer.id] = f"Connecting to '{target.name}'"
     try:
         async with SshTransport(
             target, settings, accepted_host_key_fingerprint=accepted_host_key_fingerprint
         ) as transport:
-            _launch_phase[remote_trainer.id] = "Checking Docker…"
+            _launch_phase[remote_trainer.id] = "Checking Docker"
             docker = await transport.run_command(["docker", "version", "--format", "{{.Server.Version}}"])
             if not docker.ok:
                 _launch_failure[remote_trainer.id] = "docker_unavailable"
@@ -130,7 +130,7 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
             if existing:
                 await docker_ops.stop_and_remove_container(transport, name, settings.ssh_container_stop_timeout_s)
             backend_instance_id = get_backend_instance_id()
-            _launch_phase[remote_trainer.id] = "Detecting accelerator…"
+            _launch_phase[remote_trainer.id] = "Detecting accelerator"
             cuda = await transport.run_command(["nvidia-smi", "-L"])
             xpu = await transport.run_command(["clinfo", "-l"])
 
@@ -141,11 +141,11 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
             if device is None:
                 _launch_failure[remote_trainer.id] = "accelerator_unavailable"
                 raise ValueError("No supported CUDA or XPU accelerator found on SSH trainer")
-            _launch_phase[remote_trainer.id] = "Resolving trainer image…"
+            _launch_phase[remote_trainer.id] = "Resolving trainer image"
             image = await docker_ops.resolve_protocol_image(transport, device, DEFAULT_PROTOCOL_VERSION, settings)
-            _launch_phase[remote_trainer.id] = "Verifying trainer image…"
+            _launch_phase[remote_trainer.id] = "Verifying trainer image"
             await verify_image_signature(image, settings)
-            _launch_phase[remote_trainer.id] = "Pulling trainer image…"
+            _launch_phase[remote_trainer.id] = "Pulling trainer image"
             await docker_ops.pull_image(transport, image, settings)
             labels = docker_ops.management_labels(
                 job_id=str(remote_trainer.id),
@@ -168,7 +168,7 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
             )
             # The tunnel needs a stable loopback port for the reusable trainer container.
             argv[argv.index("127.0.0.1::8001")] = f"127.0.0.1:{remote_port}:8001"
-            _launch_phase[remote_trainer.id] = "Starting trainer container…"
+            _launch_phase[remote_trainer.id] = "Starting trainer container"
             # A leftover container from a previous attempt for this trainer (crash,
             # retried save, deleted-then-recreated trainer) can still hold this
             # exact port; `docker run` refuses to bind it a second time. Only ever

@@ -173,13 +173,13 @@ describe('TrainingTargetsPage', () => {
                 HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'xpu' }])
             ),
             http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
-                HttpResponse.json({ ...healthyTrainer, status: 'starting', reason_code: 'Pulling trainer image…' })
+                HttpResponse.json({ ...healthyTrainer, status: 'starting', reason_code: 'Pulling trainer image' })
             )
         );
 
         render(<TrainingTargetsPage />);
 
-        expect(await screen.findAllByText('Starting: Pulling trainer image…')).not.toHaveLength(0);
+        expect(await screen.findAllByText('Starting: Pulling trainer image')).not.toHaveLength(0);
         expect(screen.queryByLabelText('Trainer setup in progress')).not.toBeInTheDocument();
     });
 

@@ -51,7 +51,7 @@ describe('TrainingTargetsTable', () => {
                 HttpResponse.json({
                     ...healthyTrainer,
                     status: 'starting',
-                    reason_code: 'Installing host prerequisites…',
+                    reason_code: 'Installing host prerequisites',
                 })
             )
         );
@@ -63,7 +63,7 @@ describe('TrainingTargetsTable', () => {
                 onSetup={vi.fn()}
             />
         );
-        expect(await screen.findAllByText('Starting: Installing host prerequisites…')).not.toHaveLength(0);
+        expect(await screen.findAllByText('Starting: Installing host prerequisites')).not.toHaveLength(0);
         await user.click(screen.getByRole('button', { name: `More actions ${remoteTrainer.name}` }));
         expect(screen.getByRole('menuitem', { name: 'Install prerequisites' })).toHaveAttribute(
             'aria-disabled',

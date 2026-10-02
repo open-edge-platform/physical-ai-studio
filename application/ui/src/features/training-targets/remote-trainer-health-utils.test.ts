@@ -8,13 +8,14 @@ const startingHealth: SchemaRemoteTrainerHealth = {
     latency_ms: null,
     devices: [],
     storage: null,
-    reason_code: 'Pulling trainer image…',
+    reason_code: 'Pulling trainer image',
 };
 
 describe('remote-trainer-health-utils starting status', () => {
     it('shows the current startup phase instead of a generic status', () => {
-        expect(healthLabel(startingHealth)).toBe('Starting: Pulling trainer image…');
-        expect(healthLabel({ ...startingHealth, reason_code: null })).toBe('Starting…');
+        expect(healthLabel(startingHealth)).toBe('Starting: Pulling trainer image');
+        expect(healthLabel({ ...startingHealth, reason_code: null })).toBe('Starting');
+        expect(healthLabel(undefined, true)).toBe('Checking');
     });
 
     it('uses a neutral (not negative) status light while starting', () => {
@@ -22,7 +23,7 @@ describe('remote-trainer-health-utils starting status', () => {
     });
 
     it('surfaces the in-progress launch phase as the description', () => {
-        expect(healthDescription(startingHealth)).toBe('Pulling trainer image…');
+        expect(healthDescription(startingHealth)).toBe('Pulling trainer image');
     });
 
     it('falls back to a generic starting message when no phase is reported', () => {

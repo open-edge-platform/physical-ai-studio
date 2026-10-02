@@ -15,6 +15,14 @@ installed() {
   [[ $(dpkg-query -W -f='${Status}' "$1" 2>/dev/null) == *' ok installed' ]]
 }
 
+proxy_environment() {
+  local value=${2//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//%/%%}
+  [[ $value != *$'\n'* && $value != *$'\r'* ]] || return 1
+  printf 'Environment="%s=%s"\n' "$1" "$value"
+}
+
 update_apt() {
   local source=${1:-}
   if [[ -z $source && -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
@@ -110,6 +118,30 @@ if [[ $mode == --install ]]; then
     "${privileged[@]}" systemctl enable --now docker || { echo 'DOCKER_RESTART_FAILED' >&2; exit 1; }
     if (( EUID != 0 )) && ! id -nG "$(id -un)" | grep -qw docker; then
       "${privileged[@]}" usermod -aG docker "$(id -un)" || { echo 'DOCKER_USER_ACCESS_MISSING' >&2; exit 1; }
+    fi
+    if ! docker buildx version >/dev/null 2>&1; then
+      # Ubuntu's docker.io does not necessarily ship Buildx; avoid replacing the daemon.
+      "${privileged[@]}" apt-get install -y ca-certificates curl || {
+        echo 'BUILDX_INSTALL_FAILED: missing download dependencies' >&2; exit 1;
+      }
+      case $(dpkg --print-architecture) in
+        amd64) buildx_sha=982ca20490b45ed1ec8d99795974d3d874a358f75938c9c237305010e6b7e548 ;;
+        arm64) buildx_sha=efa38cb7aa7db2dbb9ad049b00b0a9737f66f033626177b5a4e845184ad7ab29 ;;
+        *) echo 'BUILDX_INSTALL_FAILED: unsupported host architecture' >&2; exit 1 ;;
+      esac
+      buildx_dir=$(mktemp -d)
+      trap 'rm -rf "$buildx_dir"' EXIT
+      curl -fsSL --max-time 300 "https://github.com/docker/buildx/releases/download/v0.37.2/buildx-v0.37.2.linux-$(dpkg --print-architecture)" \
+        -o "$buildx_dir/docker-buildx" || { echo 'BUILDX_INSTALL_FAILED: download failed' >&2; exit 1; }
+      printf '%s  %s\n' "$buildx_sha" "$buildx_dir/docker-buildx" | sha256sum --strict --check || {
+        echo 'BUILDX_INSTALL_FAILED: checksum mismatch' >&2; exit 1;
+      }
+      mkdir -p "$HOME/.docker/cli-plugins"
+      install -m 755 "$buildx_dir/docker-buildx" "$HOME/.docker/cli-plugins/docker-buildx" || {
+        echo 'BUILDX_INSTALL_FAILED: could not install CLI plugin' >&2; exit 1;
+      }
+      rm -rf "$buildx_dir"
+      trap - EXIT
     fi
     if (( nvidia )); then
       if ! nvidia-smi -L >/dev/null 2>&1; then
@@ -231,6 +263,44 @@ if [[ $mode == --install ]]; then
       fi
     fi
   fi
+  # The SSH user's proxy does not apply to dockerd's registry requests.
+  https_proxy_value=${https_proxy:-${HTTPS_PROXY:-}}
+  if [[ -n $https_proxy_value && -z $("${privileged[@]}" docker info --format '{{if .HTTPSProxy}}configured{{end}}') ]]; then
+    case $https_proxy_value in
+      http://*|https://*) ;;
+      *) echo 'DOCKER_PROXY_CONFIG_FAILED: unsupported proxy URL' >&2; exit 1 ;;
+    esac
+    proxy_dir=$(mktemp -d)
+    trap 'rm -rf "$proxy_dir"' EXIT
+    {
+      printf '[Service]\n'
+      proxy_environment HTTPS_PROXY "$https_proxy_value"
+      if [[ -n ${http_proxy:-${HTTP_PROXY:-}} ]]; then
+        proxy_environment HTTP_PROXY "${http_proxy:-${HTTP_PROXY:-}}"
+      fi
+      if [[ -n ${no_proxy:-${NO_PROXY:-}} ]]; then
+        proxy_environment NO_PROXY "${no_proxy:-${NO_PROXY:-}}"
+      fi
+    } > "$proxy_dir/proxy.conf" || { echo 'DOCKER_PROXY_CONFIG_FAILED: invalid proxy value' >&2; exit 1; }
+    "${privileged[@]}" install -D -m 600 "$proxy_dir/proxy.conf" /etc/systemd/system/docker.service.d/physicalai-proxy.conf || {
+      echo 'DOCKER_PROXY_CONFIG_FAILED: could not write Docker proxy configuration' >&2; exit 1;
+    }
+    rm -rf "$proxy_dir"
+    trap - EXIT
+    "${privileged[@]}" systemctl daemon-reload || { echo 'DOCKER_PROXY_CONFIG_FAILED: daemon reload failed' >&2; exit 1; }
+    containers=$("${privileged[@]}" docker ps -q 2>/dev/null) || {
+      echo 'DOCKER_UNAVAILABLE: cannot inspect running containers before restarting Docker' >&2; exit 1;
+    }
+    if [[ -n $containers ]]; then
+      echo 'ACTIVE_CONTAINERS: stop running containers before configuring Docker proxy' >&2
+      exit 1
+    fi
+    "${privileged[@]}" systemctl restart docker || { echo 'DOCKER_RESTART_FAILED' >&2; exit 1; }
+    if [[ -z $("${privileged[@]}" docker info --format '{{if .HTTPSProxy}}configured{{end}}') ]]; then
+      echo 'DOCKER_PROXY_CONFIG_FAILED: Docker did not apply the proxy' >&2
+      exit 1
+    fi
+  fi
   # A new Docker group membership needs a fresh SSH session; a daemon failure does not.
   if ! docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
     if ! "${privileged[@]}" docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
@@ -255,6 +325,14 @@ if ! command -v docker >/dev/null; then
 fi
 if ! docker version --format '{{.Server.Version}}' >/dev/null 2>&1; then
   echo 'DOCKER_UNAVAILABLE: start Docker or grant this SSH user Docker access' >&2
+  exit 1
+fi
+if ! docker buildx version >/dev/null 2>&1; then
+  echo 'BUILDX_UNAVAILABLE: Docker Buildx CLI plugin is required' >&2
+  exit 1
+fi
+if [[ -n ${https_proxy:-${HTTPS_PROXY:-}} && -z $(docker info --format '{{if .HTTPSProxy}}configured{{end}}') ]]; then
+  echo 'DOCKER_PROXY_UNAVAILABLE: Docker daemon does not use the SSH host proxy' >&2
   exit 1
 fi
 if (( nvidia )); then

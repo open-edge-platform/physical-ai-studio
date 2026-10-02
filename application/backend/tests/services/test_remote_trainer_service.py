@@ -265,7 +265,7 @@ async def test_install_reports_failure_without_starting_container() -> None:
     ):
         service = RemoteTrainerService(_session())
         await service.install_remote_trainer(trainer.id)
-        assert persistent_trainer.get_launch_phase(trainer.id) == "Installing host prerequisites…"
+        assert persistent_trainer.get_launch_phase(trainer.id) == "Installing host prerequisites"
         await remote_trainer_service_module._background_installs[trainer.id]
         assert persistent_trainer.get_launch_failure(trainer.id) == "nvidia_driver_install_failed"
         start.assert_not_awaited()
