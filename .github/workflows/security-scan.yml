@@ -520,7 +520,7 @@ jobs:
         with:
           schema: "http://localhost:8001/openapi.json"
           args: >-
-            --include-path-regex '^/(health|devices|storage)$'
+            --include-path-regex "^/(health|devices|storage)$"
             --continue-on-failure
             --report-dir schemathesis-trainer-report
             --report junit
