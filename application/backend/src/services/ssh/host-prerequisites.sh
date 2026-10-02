@@ -18,9 +18,8 @@ installed() {
 proxy_environment() {
   local value=${2//\\/\\\\}
   value=${value//\"/\\\"}
-  value=${value//%/%%}
   [[ $value != *$'\n'* && $value != *$'\r'* ]] || return 1
-  printf 'Environment="%s=%s"\n' "$1" "$value"
+  printf '%s="%s"\n' "$1" "$value"
 }
 
 update_apt() {
@@ -273,7 +272,6 @@ if [[ $mode == --install ]]; then
     proxy_dir=$(mktemp -d)
     trap 'rm -rf "$proxy_dir"' EXIT
     {
-      printf '[Service]\n'
       proxy_environment HTTPS_PROXY "$https_proxy_value"
       if [[ -n ${http_proxy:-${HTTP_PROXY:-}} ]]; then
         proxy_environment HTTP_PROXY "${http_proxy:-${HTTP_PROXY:-}}"
@@ -281,8 +279,12 @@ if [[ $mode == --install ]]; then
       if [[ -n ${no_proxy:-${NO_PROXY:-}} ]]; then
         proxy_environment NO_PROXY "${no_proxy:-${NO_PROXY:-}}"
       fi
-    } > "$proxy_dir/proxy.conf" || { echo 'DOCKER_PROXY_CONFIG_FAILED: invalid proxy value' >&2; exit 1; }
-    "${privileged[@]}" install -D -m 600 "$proxy_dir/proxy.conf" /etc/systemd/system/docker.service.d/physicalai-proxy.conf || {
+    } > "$proxy_dir/docker-proxy.env" || { echo 'DOCKER_PROXY_CONFIG_FAILED: invalid proxy value' >&2; exit 1; }
+    "${privileged[@]}" install -D -m 600 "$proxy_dir/docker-proxy.env" /etc/systemd/system/docker.service.d/docker-proxy.env || {
+      echo 'DOCKER_PROXY_CONFIG_FAILED: could not write Docker proxy environment file' >&2; exit 1;
+    }
+    printf '[Service]\nEnvironmentFile=/etc/systemd/system/docker.service.d/docker-proxy.env\n' > "$proxy_dir/proxy.conf"
+    "${privileged[@]}" install -D -m 644 "$proxy_dir/proxy.conf" /etc/systemd/system/docker.service.d/physicalai-proxy.conf || {
       echo 'DOCKER_PROXY_CONFIG_FAILED: could not write Docker proxy configuration' >&2; exit 1;
     }
     rm -rf "$proxy_dir"

@@ -28,7 +28,7 @@ def test_buildx_is_installed_without_replacing_docker_and_required_for_readiness
     assert source.index("BUILDX_UNAVAILABLE") < source.index("READY:nvidia")
 
 
-def test_daemon_proxy_escapes_systemd_values_and_is_private() -> None:
+def test_daemon_proxy_escapes_environment_file_values_and_is_private() -> None:
     source = (Path(__file__).resolve().parents[3] / "src/services/ssh/host-prerequisites.sh").read_text()
     function = "proxy_environment() {" + source.split("proxy_environment() {", 1)[1].split("\n}", 1)[0] + "\n}"
     result = subprocess.run(
@@ -37,7 +37,7 @@ def test_daemon_proxy_escapes_systemd_values_and_is_private() -> None:
         text=True,
         check=True,
     )
-    assert result.stdout == 'Environment="HTTPS_PROXY=http://user:p%%25\\\\\\"@proxy:8080"\n'
+    assert result.stdout == 'HTTPS_PROXY="http://user:p%25\\\\\\"@proxy:8080"\n'
     injected = subprocess.run(
         ["bash", "-c", function + '\nproxy_environment HTTPS_PROXY "$1"', "_", "http://proxy\nEnvironment=EVIL"],
         capture_output=True,
@@ -45,10 +45,13 @@ def test_daemon_proxy_escapes_systemd_values_and_is_private() -> None:
         check=False,
     )
     assert injected.returncode != 0 and not injected.stdout
-    assert 'install -D -m 600 "$proxy_dir/proxy.conf"' in source
+    assert 'install -D -m 600 "$proxy_dir/docker-proxy.env"' in source
+    assert "EnvironmentFile=/etc/systemd/system/docker.service.d/docker-proxy.env" in source
+    assert 'install -D -m 644 "$proxy_dir/proxy.conf"' in source
     assert source.index("DOCKER_PROXY_UNAVAILABLE") < source.index("READY:nvidia")
-    assert source.index('"${privileged[@]}" docker ps -q', source.index("physicalai-proxy.conf")) < source.index(
-        '"${privileged[@]}" systemctl restart docker', source.index("physicalai-proxy.conf")
+    install = source.index('install -D -m 644 "$proxy_dir/proxy.conf"')
+    assert source.index('"${privileged[@]}" docker ps -q', install) < source.index(
+        '"${privileged[@]}" systemctl restart docker', install
     )
 
 
