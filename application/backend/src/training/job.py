@@ -306,10 +306,10 @@ def _camera_layout_kwargs(spec: TrainingJobSpec) -> dict[str, Any]:
 def _hf_token_env(token: SecretStr | None):
     """Scope ``HF_TOKEN`` to one training run, restoring whatever was there before.
 
-    ``os.environ`` is process-global and jobs can run concurrently in the same
-    process (see `trainer.queue_worker`), so a token set for one job must not
-    leak into another's environment or clobber a value an operator set on the
-    process itself. A no-op when ``token`` is ``None``.
+    ``os.environ`` is process-global; parallel trainer jobs run in separate
+    processes (see `trainer.queue_worker`) so their tokens cannot leak across
+    jobs. Restore an operator's existing value after each run. A no-op when
+    ``token`` is ``None``.
     """
     if token is None:
         yield

@@ -4,7 +4,7 @@ import { Button, ButtonGroup, Content, Dialog, Divider, Flex, Heading, Key, Text
 
 import { $api } from '../../../api/client';
 import { getApiErrorMessage } from '../../../api/errors';
-import { SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
+import { SchemaDeviceInfo, SchemaTrainJob as SchemaJob, SchemaModel } from '../../../api/openapi-spec';
 import { useProject } from '../../projects/use-project';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { getDisplayHealth, healthLabel, healthVariant } from '../../training-targets/remote-trainer-health-utils';
@@ -21,7 +21,7 @@ import { MIN_EPOCHS_FOR_SNAPFLOW, TrainingParameters } from './training-paramete
 import { TrainingSummaryNote } from './training-summary-note';
 import { useExportBackends } from './use-export-backends';
 import { useFeatureMapping } from './use-feature-mapping';
-import { pickBestDevice, useBestTrainingDevice } from './use-training-devices';
+import { useBestTrainingDevice } from './use-training-devices';
 import { getWizardSteps, WizardStep } from './wizard-steps';
 
 export type SchemaTrainJob = Omit<SchemaJob, 'payload'> & {
@@ -58,6 +58,21 @@ const targetRawId = (id: string): string => id.split(':', 2)[1] ?? id;
 export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: TrainModelDialogProps) => {
     const bestDevice = useBestTrainingDevice();
     const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+    const { data: jobs = [] } = $api.useQuery('get', '/api/jobs');
+    const gpuKey = (device: SchemaDeviceInfo) => `${device.type}:${device.index}`;
+    // Trainer memory telemetry also sees jobs from other Studio installations.
+    const busyGpuKeysFor = (trainerId: string, devices: SchemaDeviceInfo[]) =>
+        new Set([
+            ...devices.filter((device) => device.busy).map(gpuKey),
+            ...jobs.flatMap((job) =>
+                job.type === 'training' &&
+                job.status === 'running' &&
+                job.payload.training_target === 'remote' &&
+                job.payload.remote_trainer_id === trainerId
+                    ? [`${job.payload.device?.type ?? devices[0]?.type}:${job.payload.device?.index ?? 0}`]
+                    : []
+            ),
+        ]);
     // Continuing an existing model needs its checkpoint, which only this machine
     // has: the trainer protocol can receive a dataset but not a base checkpoint.
     // So a resumed run offers local training only.
@@ -81,12 +96,25 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                   const entry = remoteTrainerHealthById.get(remoteTrainer.id);
                   const displayHealth = getDisplayHealth(remoteTrainer.id, entry?.health, entry?.hasError ?? false);
                   const isChecking = entry?.isChecking ?? false;
+                  const devices = displayHealth?.devices ?? [];
+                  const busyKeys = busyGpuKeysFor(remoteTrainer.id, devices);
+                  const isTraining = busyKeys.size > 0;
+                  const freeCount = devices.filter((device) => !busyKeys.has(gpuKey(device))).length;
+                  const healthy = displayHealth?.status === 'healthy';
                   return {
                       id: `trainer:${remoteTrainer.id}`,
                       label: remoteTrainer.name,
                       kind: 'trainer' as const,
-                      statusVariant: healthVariant(displayHealth, isChecking),
-                      statusLabel: healthLabel(displayHealth, isChecking),
+                      statusVariant:
+                          healthy && isTraining && freeCount === 0
+                              ? 'yellow'
+                              : healthVariant(displayHealth, isChecking),
+                      statusLabel:
+                          healthy && devices.length > 1
+                              ? `${freeCount}/${devices.length} GPUs free`
+                              : isTraining && healthy
+                                ? 'Training in progress'
+                                : healthLabel(displayHealth, isChecking),
                   };
               })
             : []),
@@ -115,6 +143,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [snapflowDistillEpochs, setSnapflowDistillEpochs] = useState<number>(DEFAULT_SNAPFLOW_DISTILL_EPOCHS);
     const [augmentImages, setAugmentImages] = useState<boolean>(false);
     const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
+    const [selectedGpuKey, setSelectedGpuKey] = useState<Key | null>(null);
     const selectedTarget = trainingTargetOptions.find((option) => option.id === targetId) ?? null;
     const isRemoteTarget = selectedTarget?.kind === 'trainer';
     const isLoraSupported = supportsLora(selectedPolicy);
@@ -158,17 +187,16 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             (requirement) =>
                 requirement.required && (requirement.status === 'missing_token' || requirement.status === 'denied')
         ) === true;
-    const bestRemoteDevice = useMemo(() => pickBestDevice(remoteTrainerHealth?.devices ?? []), [remoteTrainerHealth]);
-    // The device actually driving this job: the local GPU when training locally,
-    // or the remote trainer's reported GPU once its health check resolves. Auto
-    // scale/precision defaults and the disabled state below should track
-    // whichever one is currently in play.
-    const activeDevice = useMemo(() => {
-        if (isRemoteTarget) {
-            return bestRemoteDevice;
-        }
-        return bestDevice;
-    }, [isRemoteTarget, bestRemoteDevice, bestDevice]);
+    const remoteDevices = remoteTrainerHealth?.devices ?? [];
+    const busyGpuKeys = busyGpuKeysFor(targetRawId(selectedTarget?.id ?? ''), remoteDevices);
+    const selectedRemoteDevice =
+        selectedGpuKey === null
+            ? (remoteDevices.find((device) => !busyGpuKeys.has(gpuKey(device))) ?? remoteDevices[0] ?? null)
+            : (remoteDevices.find((device) => gpuKey(device) === selectedGpuKey) ?? null);
+    const selectedGpuUnavailable = isRemoteTarget && selectedGpuKey !== null && selectedRemoteDevice === null;
+    const selectedGpuBusy = selectedRemoteDevice !== null && busyGpuKeys.has(gpuKey(selectedRemoteDevice));
+    // Default to the first free GPU, or the first GPU when all are occupied.
+    const activeDevice = isRemoteTarget ? selectedRemoteDevice : bestDevice;
 
     useEffect(() => {
         if (activeDevice?.type === 'cuda') {
@@ -204,7 +232,12 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     // Everything the job needs is picked on the setup step, so that is the only
     // step that can block progress; the later steps are free to be skipped through.
     const isSetupIncomplete =
-        !selectedDataset || !selectedPolicy || targetId === null || remoteUnavailable || policyAccessBlocksTraining;
+        !selectedDataset ||
+        !selectedPolicy ||
+        targetId === null ||
+        remoteUnavailable ||
+        selectedGpuUnavailable ||
+        policyAccessBlocksTraining;
 
     // A policy without a fixed camera order has no feature-mapping step at all,
     // and neither does retraining, so the steps -- and their numbering -- follow
@@ -260,12 +293,25 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         setIsSubmitting(true);
         setSubmitError(null);
         try {
+            let submissionDevice = selectedRemoteDevice;
             if (isRemoteTarget) {
                 // Final guard: the remote trainer may have gone offline since the last
                 // poll, so re-check availability right before submitting the job.
                 const latestHealth = await checkRemoteTrainerHealth();
                 if (latestHealth === null || latestHealth.status === 'unreachable') {
                     setSubmitError("Can't reach the remote trainer right now. Make sure it's running, then try again.");
+                    return;
+                }
+                const latestDevices = latestHealth.devices ?? [];
+                const latestBusyGpuKeys = busyGpuKeysFor(targetRawId(selectedTarget.id), latestDevices);
+                submissionDevice =
+                    selectedGpuKey === null
+                        ? (latestDevices.find((device) => !latestBusyGpuKeys.has(gpuKey(device))) ??
+                          latestDevices[0] ??
+                          null)
+                        : (latestDevices.find((device) => gpuKey(device) === selectedGpuKey) ?? null);
+                if (selectedGpuKey !== null && submissionDevice === null) {
+                    setSubmitError('The selected GPU is no longer available on this trainer. Choose another GPU.');
                     return;
                 }
             }
@@ -308,7 +354,14 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
             // member of the `SchemaJob['payload']` discriminated union - a computed
             // `training_target` value can't be narrowed to one member by TypeScript.
             const payload: SchemaJob['payload'] = isRemoteTarget
-                ? { ...commonPayload, training_target: 'remote', remote_trainer_id: targetRawId(selectedTarget.id) }
+                ? {
+                      ...commonPayload,
+                      training_target: 'remote',
+                      remote_trainer_id: targetRawId(selectedTarget.id),
+                      ...(submissionDevice
+                          ? { device: { type: submissionDevice.type, index: submissionDevice.index } }
+                          : {}),
+                  }
                 : { ...commonPayload, training_target: 'local' };
 
             const response = await trainMutation.mutateAsync({ body: payload });
@@ -329,6 +382,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                     <TrainingDeviceInfo
                         targetKind={selectedTarget?.kind ?? 'local'}
                         remoteHealth={remoteTrainerHealth ?? null}
+                        localDevice={bestDevice}
+                        remoteDevice={selectedRemoteDevice}
+                        isRemoteDeviceBusy={selectedGpuBusy}
                         isCheckingRemote={isCheckingRemoteTrainer}
                     />
                 </Flex>
@@ -354,7 +410,15 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onSelectedDatasetChange={setSelectedDataset}
                                 trainingTargetOptions={trainingTargetOptions}
                                 targetId={targetId}
-                                onTargetIdChange={setTargetId}
+                                onTargetIdChange={(value) => {
+                                    setTargetId(value);
+                                    setSelectedGpuKey(null);
+                                }}
+                                remoteDevices={isRemoteTarget ? remoteDevices : []}
+                                busyGpuKeys={busyGpuKeys}
+                                selectedGpuKey={selectedGpuKey}
+                                onSelectedGpuKeyChange={setSelectedGpuKey}
+                                selectedGpuUnavailable={selectedGpuUnavailable}
                                 remoteUnavailable={remoteUnavailable}
                                 selectedPolicy={selectedPolicy}
                                 onSelectedPolicyChange={setSelectedPolicy}

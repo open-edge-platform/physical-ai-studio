@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+
 import { Checkbox, Flex, View, VirtualizedListLayout } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 
@@ -11,10 +13,18 @@ interface EpisodeListProps {
     episodes: EpisodeSummary[];
     onSelect: (index: number) => void;
     currentEpisode: number | null;
+    sortOrder: 'newest' | 'oldest';
 }
 
-export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListProps) => {
+export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder }: EpisodeListProps) => {
     const { dataset_id, selectedEpisodes, setSelectedEpisodes } = useDataset();
+    const sortedEpisodes = useMemo(
+        () =>
+            [...episodes].sort((a, b) =>
+                sortOrder === 'newest' ? b.episode_index - a.episode_index : a.episode_index - b.episode_index
+            ),
+        [episodes, sortOrder]
+    );
 
     const toggleSelection = (episodeIndex: number) => {
         setSelectedEpisodes((list) =>
@@ -26,7 +36,7 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode }: EpisodeListP
         <View UNSAFE_className={classes.episodePreviewList}>
             <div className={classes.episodePreviewListInner}>
                 <VirtualizedListLayout
-                    items={episodes}
+                    items={sortedEpisodes}
                     ariaLabel='Episode list'
                     containerHeight='100%'
                     layoutOptions={{ rowHeight: 190 }}

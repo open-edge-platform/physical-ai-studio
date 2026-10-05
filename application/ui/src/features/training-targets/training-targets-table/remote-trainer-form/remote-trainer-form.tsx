@@ -4,6 +4,7 @@ import {
     ActionButton,
     Button,
     ButtonGroup,
+    Checkbox,
     Content,
     Dialog,
     DialogTrigger,
@@ -34,6 +35,9 @@ import { useSshHostAliases } from './use-ssh-host-aliases';
 
 import classes from './remote-trainer-form.module.css';
 
+const SSH_HOST_SETUP_URL =
+    'https://github.com/open-edge-platform/physical-ai-studio/blob/main/' +
+    'application/docs/07-remote-training.md#prepare-an-ssh-host';
 const AWS_STACK_TEMPLATE_URL = encodeURIComponent(
     'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/aws-cf-templates/remote-trainer.yaml'
 );
@@ -73,6 +77,7 @@ export const RemoteTrainerForm = ({
     const [sshIdentityFile, setSshIdentityFile] = useState(remoteTrainer?.ssh_connection?.identity_file ?? '');
     const [sshRemotePort, setSshRemotePort] = useState<number | undefined>(remoteTrainer?.ssh_remote_port ?? 8001);
     const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(remoteTrainer?.ssh_local_port ?? 8001);
+    const [installPrerequisites, setInstallPrerequisites] = useState(false);
     const isEditing = remoteTrainer !== undefined;
     const { aliases } = useSshHostAliases(sshAvailable);
     const { save, reset, isPending, error } = useRemoteTrainerFormMutation(remoteTrainer);
@@ -124,6 +129,7 @@ export const RemoteTrainerForm = ({
     const submit = (acceptedHostKeyFingerprint?: string) => {
         save(values, {
             onSuccess: close,
+            installPrerequisites: !isEditing && isSsh && installPrerequisites,
             acceptedHostKeyFingerprint,
             onHostKeyConfirmationRequired: requestConfirmation,
         });
@@ -318,6 +324,30 @@ export const RemoteTrainerForm = ({
                                                     />
                                                 )}
                                             </DialogTrigger>
+                                        </Flex>
+                                    )}
+                                    {!isEditing && (
+                                        <Flex alignItems='center' gap='size-50'>
+                                            <Checkbox
+                                                isSelected={installPrerequisites}
+                                                onChange={setInstallPrerequisites}
+                                            >
+                                                Set up Docker and GPU support
+                                            </Checkbox>
+                                            <InfoHelp title='SSH host setup'>
+                                                On Ubuntu 24.04 or 26.04, Studio checks the selected SSH host and
+                                                installs missing Docker and NVIDIA or Intel GPU packages before pulling
+                                                the trainer image. Missing prerequisites require passwordless sudo. A
+                                                reboot needs separate confirmation; SSH re-login may also be needed.
+                                                Docker access grants root-equivalent privileges.{' '}
+                                                <Link
+                                                    href={SSH_HOST_SETUP_URL}
+                                                    target='_blank'
+                                                    rel='noopener noreferrer'
+                                                >
+                                                    How to prepare an SSH host
+                                                </Link>
+                                            </InfoHelp>
                                         </Flex>
                                     )}
                                 </Flex>

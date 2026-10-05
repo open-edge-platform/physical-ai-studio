@@ -23,6 +23,7 @@ from pydantic import SecretStr
 
 from schemas.base_job import JobStatus
 from schemas.dataset import Snapshot
+from schemas.hardware import DeviceInfo
 from schemas.job import RemoteTrainJobPayload, TrainingDevice
 from schemas.model import Model
 from services.job_service import JobService
@@ -885,6 +886,28 @@ class TestHttpDatasetTransfer:
         assert body["spec"]["device_index"] is None
 
     @pytest.mark.anyio
+    async def test_explicit_remote_device_is_validated_before_submission(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+        device = TrainingDevice(type="cuda", index=1)
+        controller = _Controller(states=[])
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            backend._device = device
+            backend.get_training_devices = AsyncMock(return_value=[DeviceInfo(type="cuda", name="GPU 1", index=1)])
+            await backend.submit_job(context)
+            body = controller.posted_bodies[-1]
+            assert body["spec"]["device_type"] == "cuda"
+            assert body["spec"]["device_index"] == 1
+            backend.get_training_devices.return_value = []
+            with pytest.raises(RemoteTrainingError, match="no longer available"):
+                await backend.submit_job(context)
+        assert len(controller.posted_bodies) == 1
+
+    @pytest.mark.anyio
     async def test_http_persists_remote_job_id_after_upload(self, tmp_path):
         """The HTTP path records the remote job id so a restart can reattach.
 
@@ -1285,17 +1308,19 @@ class TestTrainerNameLogPrefix:
         sink_id = logger.add(lambda m: messages.append(m.record["message"]), level="DEBUG")
         return messages, sink_id
 
-    def test_prefixes_log_lines_with_the_pinned_trainer_name(self):
+    def test_prefixes_log_lines_with_the_pinned_trainer_and_gpu(self):
         from services.training_backends.remote import RemoteTrainingBackend
 
         messages, sink_id = self._capture()
         try:
-            backend = RemoteTrainingBackend("https://trainer.test", trainer_name="gpu-box-1")
+            backend = RemoteTrainingBackend(
+                "https://trainer.test", trainer_name="gpu-box-1", device=TrainingDevice(type="cuda", index=1)
+            )
             backend._log.info("hello")
         finally:
             logger.remove(sink_id)
 
-        assert messages == ["[gpu-box-1] hello"]
+        assert messages == ["[gpu-box-1 · CUDA 1] hello"]
 
     def test_falls_back_to_the_base_url_when_no_name_is_pinned(self):
         """Older persisted jobs (submitted before this field existed) have no pinned name."""
@@ -1311,20 +1336,24 @@ class TestTrainerNameLogPrefix:
         assert messages == ["[https://trainer.test] hello"]
 
     def test_two_concurrent_backends_prefix_independently(self):
-        """Two trainers logging interleaved must stay individually attributable."""
+        """Two GPUs on the same trainer logging interleaved stay attributable."""
         from services.training_backends.remote import RemoteTrainingBackend
 
         messages, sink_id = self._capture()
         try:
-            backend_a = RemoteTrainingBackend("https://trainer-a.test", trainer_name="trainer-a")
-            backend_b = RemoteTrainingBackend("https://trainer-b.test", trainer_name="trainer-b")
+            backend_a = RemoteTrainingBackend(
+                "https://trainer.test", trainer_name="trainer", device=TrainingDevice(type="cuda", index=0)
+            )
+            backend_b = RemoteTrainingBackend(
+                "https://trainer.test", trainer_name="trainer", device=TrainingDevice(type="cuda", index=1)
+            )
             backend_a._log.info("from a")
             backend_b._log.info("from b")
             backend_a._log.info("from a again")
         finally:
             logger.remove(sink_id)
 
-        assert messages == ["[trainer-a] from a", "[trainer-b] from b", "[trainer-a] from a again"]
+        assert messages == ["[trainer · CUDA 0] from a", "[trainer · CUDA 1] from b", "[trainer · CUDA 0] from a again"]
 
 
 class TestByteFormatting:

@@ -64,6 +64,7 @@ class DeviceInfo(BaseModel):
     name: str = Field(..., description="Human-readable device name")
     memory: int | None = Field(default=None, description="Total device memory in bytes (null for CPU)")
     index: int | None = Field(default=None, description="Device index among those of the same type (null for CPU)")
+    busy: bool | None = Field(default=None, description="GPU memory suggests another workload (null if unknown)")
 
 
 class HealthInfo(BaseSettings):

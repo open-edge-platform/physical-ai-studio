@@ -37,11 +37,38 @@ const healthyTrainer = {
     reason_code: null,
 };
 
-const directUrlRow = (trainer: typeof remoteTrainer): TrainingTargetRow => ({ kind: 'direct-url', trainer });
+const directUrlRow = (trainer: TrainingTargetRow['trainer']): TrainingTargetRow => ({ kind: 'direct-url', trainer });
 
 describe('TrainingTargetsTable', () => {
     beforeEach(() => {
         server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
+    });
+
+    it('disables installation while SSH host setup is in progress', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
+                HttpResponse.json({
+                    ...healthyTrainer,
+                    status: 'starting',
+                    reason_code: 'Installing host prerequisites',
+                })
+            )
+        );
+        render(
+            <TrainingTargetsTable
+                rows={[directUrlRow({ ...remoteTrainer, connection_mode: 'ssh' })]}
+                onEdit={vi.fn()}
+                onDelete={vi.fn()}
+                onSetup={vi.fn()}
+            />
+        );
+        expect(await screen.findAllByText('Starting: Installing host prerequisites')).not.toHaveLength(0);
+        await user.click(screen.getByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+        expect(screen.getByRole('menuitem', { name: 'Install prerequisites' })).toHaveAttribute(
+            'aria-disabled',
+            'true'
+        );
     });
 
     describe('direct-URL trainer rows', () => {
@@ -115,6 +142,7 @@ describe('TrainingTargetsTable', () => {
             render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={onEdit} onDelete={vi.fn()} />);
 
             await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+            expect(screen.queryByRole('menuitem', { name: 'Install prerequisites' })).not.toBeInTheDocument();
             await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
 
             expect(onEdit).toHaveBeenCalledWith(directUrlRow(remoteTrainer));

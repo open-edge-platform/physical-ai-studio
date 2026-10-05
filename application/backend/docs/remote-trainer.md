@@ -85,7 +85,8 @@ directory.
 | ---------------------------- | -------- | -------------------------------------------- |
 | `HF_TOKEN`                   | no       | Fallback used only when the studio sends no token for a job (see the [!IMPORTANT] note above); has no effect for SSH-provisioned trainers. |
 | `TRAINER_STORAGE_DIR`        | no       | Working directory for jobs and artifacts.    |
-| `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
+| `TRAINER_MAX_CONCURRENT_JOBS`| no       | Maximum parallel jobs on distinct GPUs (default 8). Same-GPU jobs queue. |
+| `TRAINER_GPU_BUSY_MEMORY_MB` | no | GPU memory usage that marks a device busy (default 512 MiB). Tune for driver/desktop overhead. |
 | `TRAINER_MAX_UNCOMPRESSED_BYTES` | no   | Cap on an uploaded dataset's uncompressed size. |
 | `TRAINER_MIN_FREE_BYTES`     | no       | Disk headroom kept free after extraction.    |
 | `TRAINER_PORT`               | no       | Listen port (default 8001).                  |

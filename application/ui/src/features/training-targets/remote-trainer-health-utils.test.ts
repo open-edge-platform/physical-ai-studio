@@ -8,12 +8,14 @@ const startingHealth: SchemaRemoteTrainerHealth = {
     latency_ms: null,
     devices: [],
     storage: null,
-    reason_code: 'Pulling trainer image…',
+    reason_code: 'Pulling trainer image',
 };
 
 describe('remote-trainer-health-utils starting status', () => {
-    it("labels a launching trainer 'Starting…' rather than 'Unreachable'", () => {
-        expect(healthLabel(startingHealth)).toBe('Starting…');
+    it('shows the current startup phase instead of a generic status', () => {
+        expect(healthLabel(startingHealth)).toBe('Starting: Pulling trainer image');
+        expect(healthLabel({ ...startingHealth, reason_code: null })).toBe('Starting');
+        expect(healthLabel(undefined, true)).toBe('Checking');
     });
 
     it('uses a neutral (not negative) status light while starting', () => {
@@ -21,7 +23,7 @@ describe('remote-trainer-health-utils starting status', () => {
     });
 
     it('surfaces the in-progress launch phase as the description', () => {
-        expect(healthDescription(startingHealth)).toBe('Pulling trainer image…');
+        expect(healthDescription(startingHealth)).toBe('Pulling trainer image');
     });
 
     it('falls back to a generic starting message when no phase is reported', () => {
@@ -30,9 +32,24 @@ describe('remote-trainer-health-utils starting status', () => {
         );
     });
 
+    it('explains an installation failure and the required reboot', () => {
+        expect(
+            healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'intel_install_failed' })
+        ).toContain('Intel GPU dependency installation failed');
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'reboot_required' })).toContain(
+            'Confirm a host reboot'
+        );
+        expect(
+            healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'package_manager_broken' })
+        ).toContain('incomplete dpkg transactions');
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'unsupported_os' })).toBe(
+            'Host installation supports Ubuntu 24.04 or Ubuntu 26.04 only.'
+        );
+    });
+
     it('explains missing Docker for a Studio-managed trainer', () => {
         expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'docker_unavailable' })).toBe(
-            'Studio-managed training requires Docker to be installed and running on the SSH host.'
+            'Docker must be running and accessible to the SSH user. If Docker was just installed, log out of the SSH host and back in, then retry setup.'
         );
     });
 

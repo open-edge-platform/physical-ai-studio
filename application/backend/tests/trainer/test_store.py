@@ -29,7 +29,7 @@ def test_create_starts_awaiting_dataset(db_path: Path, sample_request: SubmitJob
     assert state.status == TrainerJobStatus.AWAITING_DATASET
     assert state.progress == 0
     # Not dispatchable while awaiting its dataset.
-    assert store.next_queued() is None
+    assert store.queued() == []
 
 
 def test_mark_dataset_ready_queues_job(db_path: Path, sample_request: SubmitJobRequest) -> None:
@@ -41,7 +41,7 @@ def test_mark_dataset_ready_queues_job(db_path: Path, sample_request: SubmitJobR
 
     assert state is not None
     assert state.status == TrainerJobStatus.QUEUED
-    assert store.next_queued() == job_id
+    assert store.queued() == [job_id]
 
 
 def test_reset_orphans_fails_awaiting_dataset_jobs(db_path: Path, sample_request: SubmitJobRequest) -> None:
@@ -66,13 +66,14 @@ def test_get_request_round_trips(db_path: Path, sample_request: SubmitJobRequest
     assert restored.spec == sample_request.spec
 
 
-def test_next_queued_is_fifo(db_path: Path, sample_request: SubmitJobRequest) -> None:
+def test_queued_is_fifo(db_path: Path, sample_request: SubmitJobRequest) -> None:
     store = JobStore(db_path)
     first = store.create(sample_request)
-    store.create(sample_request)
+    second = store.create(sample_request)
     store.mark_dataset_ready(first)
+    store.mark_dataset_ready(second)
 
-    assert store.next_queued() == first
+    assert store.queued() == [first, second]
 
 
 def test_update_progress_and_status(db_path: Path, sample_request: SubmitJobRequest) -> None:
@@ -97,15 +98,6 @@ def test_progress_is_clamped(db_path: Path, sample_request: SubmitJobRequest) ->
 
     assert state is not None
     assert state.progress == 100
-
-
-def test_running_count_reflects_status(db_path: Path, sample_request: SubmitJobRequest) -> None:
-    store = JobStore(db_path)
-    job_id = store.create(sample_request)
-    assert store.running_count() == 0
-
-    store.update(job_id, status=TrainerJobStatus.RUNNING)
-    assert store.running_count() == 1
 
 
 def test_artifact_only_returned_when_set(db_path: Path, sample_request: SubmitJobRequest) -> None:

@@ -544,6 +544,23 @@ class TestTargetKey:
         payload = _make_remote_payload()
         assert TrainingWorker._target_key(payload) == f"remote:{payload.remote_trainer_id}"
 
+    def test_remote_target_key_reserves_selected_gpu(self) -> None:
+        from schemas.job import TrainingDevice
+        from workers.training_worker import TrainingWorker
+
+        payload = _make_remote_payload()
+        payload.device = TrainingDevice(type="cuda", index=1)
+        assert TrainingWorker._target_key(payload) == f"remote:{payload.remote_trainer_id}:cuda:1"
+
+    def test_remote_gpu_jobs_do_not_block_other_gpus_but_legacy_jobs_do(self) -> None:
+        from workers.training_worker import TrainingWorker
+
+        gpu0 = {"remote:trainer:cuda:0": None}
+        assert not TrainingWorker._target_is_busy("remote:trainer:cuda:1", gpu0)
+        assert TrainingWorker._target_is_busy("remote:trainer:cuda:0", gpu0)
+        assert TrainingWorker._target_is_busy("remote:trainer", gpu0)
+        assert TrainingWorker._target_is_busy("remote:trainer:cuda:1", {"remote:trainer": None})
+
 
 class TestSetupRecovery:
     """Worker startup reconciles remote jobs through the shared reattach path."""

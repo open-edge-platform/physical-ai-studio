@@ -19,9 +19,13 @@ def _torch_stub(*, cuda: list[tuple[str, int]] | None = None, xpu: list[tuple[st
     torch.xpu.is_available.return_value = bool(xpu)
     torch.xpu.device_count.return_value = len(xpu)
     torch.xpu.get_device_properties.side_effect = lambda i: SimpleNamespace(name=xpu[i][0], total_memory=xpu[i][1])
+    torch.xpu.mem_get_info.side_effect = lambda i: (xpu[i][1] - 1024 * 1024, xpu[i][1])
+    torch.xpu.memory_reserved.return_value = 0
     torch.cuda.is_available.return_value = bool(cuda)
     torch.cuda.device_count.return_value = len(cuda)
     torch.cuda.get_device_properties.side_effect = lambda i: SimpleNamespace(name=cuda[i][0], total_memory=cuda[i][1])
+    torch.cuda.mem_get_info.side_effect = lambda i: (cuda[i][1] - 1024 * 1024, cuda[i][1])
+    torch.cuda.memory_reserved.return_value = 0
     return torch
 
 
@@ -63,6 +67,18 @@ def test_get_training_devices_reports_xpu_and_cuda(monkeypatch) -> None:
     ]
 
 
+def test_gpu_busy_uses_host_memory_and_fails_open_when_unavailable(monkeypatch) -> None:
+    torch = _torch_stub(cuda=[("GPU", 8 * 1024**3)])
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    torch.cuda.mem_get_info.return_value = (7 * 1024**3, 8 * 1024**3)
+    torch.cuda.mem_get_info.side_effect = None
+    assert devices_module.gpu_busy("cuda", 0) is True
+    torch.cuda.memory_reserved.return_value = 1024**3
+    assert devices_module.gpu_busy("cuda", 0) is False
+    torch.cuda.mem_get_info.side_effect = RuntimeError("unavailable")
+    assert devices_module.gpu_busy("cuda", 0) is None
+
+
 def test_devices_endpoint_returns_device_list(monkeypatch) -> None:
     from fastapi.testclient import TestClient
 
@@ -80,4 +96,4 @@ def test_devices_endpoint_returns_device_list(monkeypatch) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body == [{"type": "cuda", "name": "NVIDIA A100", "memory": 42949672960, "index": 0}]
+    assert body == [{"type": "cuda", "name": "NVIDIA A100", "memory": 42949672960, "index": 0, "busy": None}]

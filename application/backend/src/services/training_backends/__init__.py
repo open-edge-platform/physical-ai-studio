@@ -26,7 +26,9 @@ async def get_training_backend(payload: TrainJobPayload) -> TrainingBackend:
 
         if payload.remote_trainer_url is None:
             raise ValueError("Remote training job is missing its pinned trainer URL")
-        return RemoteTrainingBackend(payload.remote_trainer_url, trainer_name=payload.remote_trainer_name)
+        return RemoteTrainingBackend(
+            payload.remote_trainer_url, trainer_name=payload.remote_trainer_name, device=payload.device
+        )
 
     from services.training_backends.local import LocalTrainingBackend
 

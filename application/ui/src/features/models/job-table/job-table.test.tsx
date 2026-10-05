@@ -73,6 +73,14 @@ describe('TrainingRow', () => {
     beforeEach(() => {
         server.use(
             http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    remote_trainer_id: remoteTrainer.id,
+                    status: 'healthy',
+                    checked_at: '2026-07-16T12:00:00Z',
+                    devices: [],
+                })
+            ),
             http.get('/api/dataset/{dataset_id}', () => HttpResponse.json(dataset)),
             http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.json(environment))
         );
@@ -142,6 +150,132 @@ describe('TrainingRow', () => {
         });
 
         await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
+    });
+
+    it.each([undefined, 1])(
+        'shows remote trainer and selected GPU when multiple GPUs exist (index %s)',
+        async (index) => {
+            server.use(
+                http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                    HttpResponse.json({
+                        remote_trainer_id: remoteTrainer.id,
+                        status: 'healthy',
+                        checked_at: '2026-07-16T12:00:00Z',
+                        devices: [
+                            { type: 'cuda', index: 0, name: 'Small GPU', memory: 8_000_000_000 },
+                            { type: 'cuda', index: 1, name: 'Large GPU', memory: 24_000_000_000 },
+                        ],
+                    })
+                )
+            );
+            renderTrainingRow({
+                payload: {
+                    ...localJob.payload,
+                    training_target: 'remote',
+                    remote_trainer_id: remoteTrainer.id,
+                    remote_trainer_name: remoteTrainer.name,
+                    ...(index === undefined ? {} : { device: { type: 'cuda', index } }),
+                },
+            });
+
+            const trainerCell = screen.getByTestId('trainer-cell');
+            await waitFor(() => expect(trainerCell).toHaveTextContent(`CUDA ${index ?? 0}`));
+            expect(trainerCell).toHaveTextContent(`Remote · ${remoteTrainer.name}`);
+            await waitFor(() => expect(trainerCell).toHaveTextContent(index === 1 ? 'Large GPU' : 'Small GPU'));
+            expect(
+                screen.queryByText(`Remote · ${remoteTrainer.name}`, { selector: '[title]' })
+            ).not.toBeInTheDocument();
+        }
+    );
+
+    it.each([
+        { scenario: 'offline', healthStatus: 'unreachable', devices: [] },
+        { scenario: 'health request fails', healthStatus: 'error', devices: [] },
+        {
+            scenario: 'single GPU changes',
+            healthStatus: 'healthy',
+            devices: [{ type: 'cuda', index: 0, name: 'Other GPU' }],
+        },
+        {
+            scenario: 'inventory changes',
+            healthStatus: 'healthy',
+            devices: [{ type: 'cuda', index: 2, name: 'New GPU' }],
+        },
+    ] as const)('keeps the selected GPU for a completed job when $scenario', async ({ healthStatus, devices }) => {
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                healthStatus === 'error'
+                    ? HttpResponse.error()
+                    : HttpResponse.json({
+                          remote_trainer_id: remoteTrainer.id,
+                          status: healthStatus,
+                          checked_at: '2026-07-16T12:00:00Z',
+                          devices: [...devices],
+                      })
+            )
+        );
+        renderTrainingRow({
+            status: 'completed',
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                device: { type: 'cuda', index: 1 },
+            },
+        });
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent('CUDA 1'));
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('Other GPU');
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('New GPU');
+    });
+
+    it('shows the remote trainer in the Trainer column for a failed job', async () => {
+        renderTrainingRow({
+            status: 'failed',
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_name: remoteTrainer.name,
+            },
+        });
+
+        expect(screen.getByTestId('trainer-cell')).toHaveTextContent(`Remote · ${remoteTrainer.name}`);
+        expect(screen.queryByText(`Remote · ${remoteTrainer.name}`, { selector: '[title]' })).not.toBeInTheDocument();
+    });
+
+    it('does not show an index for a single-GPU remote trainer', async () => {
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    remote_trainer_id: remoteTrainer.id,
+                    status: 'healthy',
+                    checked_at: '2026-07-16T12:00:00Z',
+                    devices: [{ type: 'cuda', index: 0, name: 'Only GPU' }],
+                })
+            )
+        );
+        renderTrainingRow({
+            payload: {
+                ...localJob.payload,
+                training_target: 'remote',
+                remote_trainer_id: remoteTrainer.id,
+                remote_trainer_name: remoteTrainer.name,
+            },
+        });
+
+        await waitFor(() => expect(screen.getByTestId('trainer-cell')).toHaveTextContent(remoteTrainer.name));
+        expect(screen.getByTestId('trainer-cell')).not.toHaveTextContent('CUDA 0');
+    });
+
+    it('falls back to the registered trainer name for older jobs', async () => {
+        renderTrainingRow({
+            payload: { ...localJob.payload, training_target: 'remote', remote_trainer_id: remoteTrainer.id },
+        });
+
+        await waitFor(() =>
+            expect(screen.getByTestId('trainer-cell')).toHaveTextContent(`Remote · ${remoteTrainer.name}`)
+        );
     });
 
     it('shows Local for a local job in the Trainer column', async () => {
