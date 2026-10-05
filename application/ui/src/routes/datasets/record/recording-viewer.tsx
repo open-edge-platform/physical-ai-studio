@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
 import {
     Button,
@@ -24,6 +24,41 @@ import { paths } from '../../../router';
 
 import classes from './recording-viewer.module.css';
 
+const RecordingTimer = () => {
+    const [seconds, setSeconds] = useState(0);
+
+    useEffect(() => {
+        const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60)
+        .toString()
+        .padStart(2, '0');
+    const remainingSeconds = (seconds % 60).toString().padStart(2, '0');
+
+    return (
+        <span className={classes.timer} aria-hidden='true'>
+            {hours > 0
+                ? hours.toString().padStart(2, '0') + ':' + minutes + ':' + remainingSeconds
+                : minutes + ':' + remainingSeconds}
+        </span>
+    );
+};
+
+const RecordingDot = () => <span className={classes.recordingDot} aria-hidden='true' />;
+
+const ToolbarRecordingStatus = () => (
+    <div className={classes.toolbarStatus} role='status' aria-live='polite'>
+        <RecordingDot />
+        <div className={classes.statusCopy}>
+            <strong>Recording episode</strong>
+        </div>
+        <RecordingTimer />
+    </div>
+);
+
 export const RecordingViewer = () => {
     const {
         dataset,
@@ -45,7 +80,11 @@ export const RecordingViewer = () => {
     const { data: settings } = $api.useSuspenseQuery('get', '/api/settings');
     const bindings = getEffectiveBindings(settings.hotkeys.bindings);
 
-    useHotkey(bindings['recording.start_episode'], () => startEpisode.mutate(task), !state.is_recording && task !== '');
+    useHotkey(
+        bindings['recording.start_episode'],
+        () => startEpisode.mutate(task),
+        !state.is_recording && !startEpisode.isPending && task !== ''
+    );
     useHotkey(
         bindings['recording.accept_episode'],
         () => saveEpisode.mutate(),
@@ -92,7 +131,7 @@ export const RecordingViewer = () => {
         <RobotModelsProvider>
             <Flex direction={'column'} height={'100%'} position={'relative'}>
                 <Form validationBehavior='native' onSubmit={onStart}>
-                    <Flex justifyContent={'start'} gap='size-100' height='size-800'>
+                    <Flex justifyContent={'start'} alignItems='center' gap='size-100' height='size-800'>
                         <ComboBox
                             isReadOnly={state.is_recording}
                             errorMessage={'A task is required in order to record.'}
@@ -105,6 +144,7 @@ export const RecordingViewer = () => {
                         >
                             <Item key={dataset.default_task}>{dataset.default_task}</Item>
                         </ComboBox>
+                        {state.is_recording && <ToolbarRecordingStatus />}
                         {state.is_recording ? (
                             <ButtonGroup>
                                 <Button
@@ -125,7 +165,7 @@ export const RecordingViewer = () => {
                                 </Button>
                             </ButtonGroup>
                         ) : (
-                            <Button type={'submit'}>
+                            <Button type={'submit'} isPending={startEpisode.isPending}>
                                 <Text>Start episode</Text>
                                 <Keyboard UNSAFE_className={classes.hotkey}>
                                     {formatKeyCombo(bindings['recording.start_episode'])}
