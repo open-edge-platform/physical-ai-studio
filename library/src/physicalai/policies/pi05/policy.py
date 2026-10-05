@@ -23,6 +23,7 @@ from physicalai.data.dataset import Dataset
 from physicalai.data.observation import ACTION, IMAGES, PREV_CHUNK_LEFT_OVER, STATE, TASK, FeatureType
 from physicalai.export import ExportablePolicyMixin, ExportBackend
 from physicalai.export.backends import (
+    ExecuTorchExportParameters,
     ExportParameters,
     ONNXExportParameters,
     OpenVINOExportParameters,
@@ -806,7 +807,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         Returns:
             list[str | ExportBackend]: A list of supported export backends.
         """
-        return [ExportBackend.TORCH, ExportBackend.OPENVINO]
+        return [ExportBackend.TORCH, ExportBackend.OPENVINO, ExportBackend.EXECUTORCH]
 
     # export() is provided by PeftPolicyMixin (merges LoRA adapters into a disposable
     # copy of self.model before delegating to ExportablePolicyMixin.export() via
@@ -1010,6 +1011,19 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         extra_args["torch"] = TorchExportParameters(
             preprocessors_specs=[ComponentSpec(type="to_float_tensor")],
             postprocessors_specs=torch_postproc_specs,
+        )
+        extra_args["executorch"] = ExecuTorchExportParameters(
+            preprocessors_specs=[
+                *base_preproc_specs,
+                ComponentSpec(
+                    type="hf_tokenizer",
+                    tokenizer_name="google/paligemma-3b-pt-224",
+                    revision="35e4f46485b4d07967e7e9935bc3786aad50687c",
+                    max_token_len=self.config.tokenizer_max_length,
+                ),
+            ],
+            postprocessors_specs=postproc_specs,
+            delegate="portable",
         )
 
         return extra_args
