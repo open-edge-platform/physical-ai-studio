@@ -87,6 +87,7 @@ class QueueManager:
 
     def _next_runnable(self) -> tuple[str, tuple[str, int] | None] | None:
         # Scan the small queue; index by device if queued job counts grow.
+        next_job = None
         for job_id in self.store.queued():
             request = self.store.get_request(job_id)
             # Legacy auto-selection may use any GPU: reserve the entire trainer.
@@ -95,17 +96,28 @@ class QueueManager:
                 if request and request.spec.device_type in {"cuda", "xpu"}
                 else None
             )
-            if (device is None and self._active) or any(
+            reserved = (device is None and bool(self._active)) or any(
                 active_device is None or active_device == device for active_device in self._active_devices.values()
-            ):
-                continue
+            )
             # Unknown telemetry is not treated as busy; older setups still work.
-            if device is not None and gpu_busy(*device):
-                continue
-            if device is None and any(gpu.busy for gpu in get_training_devices()):
-                continue
-            return job_id, device
-        return None
+            busy = reserved or (
+                gpu_busy(*device) if device is not None else any(gpu.busy for gpu in get_training_devices())
+            )
+            message = (
+                f"Waiting for {device[0].upper()} {device[1]} to become available"
+                if busy and device is not None
+                else "Waiting for a training slot to become available"
+                if busy and reserved
+                else "Waiting for a GPU to become available"
+                if busy
+                else "Queued"
+            )
+            state = self.store.get(job_id)
+            if state is not None and state.status == TrainerJobStatus.QUEUED and state.message != message:
+                self.store.update(job_id, message=message)
+            if not busy and next_job is None:
+                next_job = job_id, device
+        return next_job
 
     async def _dispatch_loop(self) -> None:
         while not self._stopped.is_set():
@@ -121,6 +133,9 @@ class QueueManager:
                 task = asyncio.create_task(self._run_job(job_id))
                 self._active[job_id] = task
                 self._active_devices[job_id] = device
+            # Keep queued-job reasons current even when all training slots are occupied.
+            if len(self._active) >= self._max_concurrent_jobs:
+                self._next_runnable()
             await asyncio.sleep(0.5)
 
     async def _run_job(self, job_id: str) -> None:
