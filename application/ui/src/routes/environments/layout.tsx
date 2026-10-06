@@ -1,11 +1,12 @@
 import { Suspense } from 'react';
 
-import { ActionButton, Flex, Grid, Heading, Item, Loading, Menu, MenuTrigger, minmax, View } from '@geti-ui/ui';
+import { ActionButton, Flex, Grid, Heading, Item, Loading, Menu, MenuTrigger, minmax, toast, View } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 import { clsx } from 'clsx';
 import { NavLink, Outlet, useParams } from 'react-router';
 
 import { $api } from '../../api/client';
+import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { SchemaEnvironmentOutput } from '../../api/openapi-spec';
 import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
 import { useProjectId } from '../../features/projects/use-project';
@@ -34,7 +35,19 @@ const MenuActions = ({ environment_id }: { environment_id: string }) => {
                 selectionMode='single'
                 onAction={(action) => {
                     if (action === 'delete') {
-                        deleteEnvironmentMutation.mutate({ params: { path: { project_id, environment_id } } });
+                        deleteEnvironmentMutation.mutate(
+                            { params: { path: { project_id, environment_id } } },
+                            {
+                                onError: (error) => {
+                                    const message = getApiErrorMessage(error) ?? 'Failed to delete environment.';
+                                    if (isResourceInUseError(error)) {
+                                        toast.info(message);
+                                    } else {
+                                        toast.negative(message);
+                                    }
+                                },
+                            }
+                        );
                     }
                 }}
             >

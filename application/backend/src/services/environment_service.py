@@ -1,8 +1,11 @@
 from uuid import UUID
 
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from exceptions import ResourceNotFoundError, ResourceType
+from db.schema import DatasetDB
+from exceptions import ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories.project_environment_repo import ProjectEnvironmentRepository
 from robots.catalog.registry import RobotCatalogRegistry
 from schemas.environment import Environment, EnvironmentWithRelations
@@ -51,4 +54,24 @@ class EnvironmentService:
         if environment is None:
             raise ResourceNotFoundError(ResourceType.ENVIRONMENT, str(environment_id))
 
-        await repo.delete_by_id(environment_id)
+        try:
+            await repo.delete_by_id(environment_id)
+        except IntegrityError as error:
+            await self.session.rollback()
+            dataset_names = (
+                await self.session.scalars(
+                    select(DatasetDB.name).where(
+                        DatasetDB.project_id == str(project_id), DatasetDB.environment_id == str(environment_id)
+                    )
+                )
+            ).all()
+            if dataset_names:
+                raise ResourceInUseError(
+                    ResourceType.ENVIRONMENT,
+                    environment_id,
+                    message=(
+                        f"Environment '{environment.name}' cannot be deleted because it is used by dataset(s): "
+                        f"{', '.join(dataset_names)}. Delete those datasets first."
+                    ),
+                ) from error
+            raise
