@@ -512,6 +512,7 @@ class RemoteTrainerService:
             raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
         async with _port_allocation_lock:
             for attempt in range(3):
+                auto_port = False
                 try:
                     # Keep explicit nulls for nullable tunnel fields.
                     data = update.model_dump(exclude_unset=True)

@@ -774,6 +774,7 @@ async def test_update_explicit_null_local_port_persists_replacement_and_url() ->
 
     assert updated.ssh_local_port not in {None, trainer.ssh_local_port}
     assert str(updated.url) == f"http://127.0.0.1:{updated.ssh_local_port}/"
+    assert repository.update.await_args is not None
     assert repository.update.await_args.args[1]["ssh_local_port"] == updated.ssh_local_port
     sync.assert_awaited_once_with(updated, None)
 
