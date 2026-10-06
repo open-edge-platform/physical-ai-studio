@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from lerobot.configs import RGBEncoderConfig
+from lerobot.configs.video import VALID_VIDEO_CODECS
 
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
@@ -51,6 +52,10 @@ def test_recording_does_not_require_ffmpeg_executable(tmp_path: Path, fresh_vcod
 
     cache_dataset.return_value.create.assert_called_once()
     assert result is mutation.return_value
+
+
+def test_auto_codec_candidates_are_accepted_by_lerobot() -> None:
+    assert set(StreamingEncodingSettings._vcodec_candidates()) <= VALID_VIDEO_CODECS
 
 
 def test_streaming_settings_translate_to_lerobot_kwargs() -> None:

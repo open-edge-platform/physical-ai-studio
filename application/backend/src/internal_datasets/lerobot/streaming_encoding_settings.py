@@ -35,13 +35,11 @@ class StreamingEncodingSettings(BaseModel):
         return [
             "h264_videotoolbox",  # macOS
             "hevc_videotoolbox",  # macOS
-            "av1_qsv",  # Intel QSV
             "h264_qsv",  # Intel QSV
             "h264_nvenc",  # NVIDIA NVENC
             "hevc_nvenc",  # NVIDIA NVENC
             "h264_vaapi",  # Intel/AMD VA-API
             "libsvtav1",  # SVT-AV1, open source SW AV1
-            "libx264",  # open source SW H.264
             "h264",  # Proprietary H.264
         ]
 
