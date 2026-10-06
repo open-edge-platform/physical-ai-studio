@@ -2853,8 +2853,8 @@ wheels = [
 
 [[package]]
 name = "physicalai"
-version = "0.2.1.dev13+g6a24c1a"
-source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=6a24c1af6855c660db01226d72639963c817f943#6a24c1af6855c660db01226d72639963c817f943" }
+version = "0.2.1.dev25+gab00dc7"
+source = { git = "https://github.com/openvinotoolkit/physicalai.git?rev=ab00dc71f64470940f67daadc0acd03ab0f8fd33#ab00dc71f64470940f67daadc0acd03ab0f8fd33" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "jsonargparse", extra = ["shtab", "signatures"] },
@@ -2998,7 +2998,7 @@ requires-dist = [
     { name = "numpy" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
-    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=6a24c1af6855c660db01226d72639963c817f943" },
+    { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=ab00dc71f64470940f67daadc0acd03ab0f8fd33" },
     { name = "physicalai-studio-plugin", specifier = ">=0.2.0" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
@@ -3130,7 +3130,7 @@ requires-dist = [
     { name = "peft", specifier = ">=0.20.0,<1.0.0" },
     { name = "peft", marker = "extra == 'molmoact2'", specifier = ">=0.13.0,<1.0.0" },
     { name = "peft", marker = "extra == 'rldx1'", specifier = ">=0.13.0,<1.0.0" },
-    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=6a24c1af6855c660db01226d72639963c817f943" },
+    { name = "physicalai", git = "https://github.com/openvinotoolkit/physicalai.git?rev=ab00dc71f64470940f67daadc0acd03ab0f8fd33" },
     { name = "physicalai-train", extras = ["diffusion"], marker = "extra == 'policies'" },
     { name = "physicalai-train", extras = ["libero"], marker = "extra == 'all'" },
     { name = "physicalai-train", extras = ["molmoact2"], marker = "extra == 'policies'" },
