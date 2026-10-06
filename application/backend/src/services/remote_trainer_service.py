@@ -1,4 +1,5 @@
 import asyncio
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -218,6 +219,18 @@ class RemoteTrainerService:
         except (httpx.HTTPError, ValidationError, ValueError):
             return None
 
+    async def _assign_local_port(self, config: RemoteTrainerCreate) -> RemoteTrainerCreate:
+        """Choose a stable, available loopback port before persisting the trainer URL."""
+        if config.connection_mode is not RemoteTrainerConnectionMode.SSH or config.ssh_local_port is not None:
+            return config
+        reserved = {trainer.ssh_local_port for trainer in await self.repo.list_ordered()}
+        while True:
+            with socket.socket() as listener:
+                listener.bind(("127.0.0.1", 0))
+                port = listener.getsockname()[1]
+            if port not in reserved:
+                return RemoteTrainerCreate.model_validate({**config.model_dump(), "ssh_local_port": port})
+
     async def _ensure_unique_ssh_remote_port(self, remote_trainer: RemoteTrainer) -> None:
         """Reject two managed containers that would bind the same host port."""
         if remote_trainer.connection_mode is not RemoteTrainerConnectionMode.SSH:
@@ -232,7 +245,8 @@ class RemoteTrainerService:
             ):
                 raise ResourceAlreadyExistsError(
                     "Remote trainer",
-                    f"SSH host already has a trainer using remote port {remote_trainer.ssh_remote_port}.",
+                    f"Remote port {remote_trainer.ssh_remote_port} is already used on this SSH host. "
+                    "Choose a different remote port.",
                 )
 
     async def _require_no_active_jobs(self, remote_trainer_id: UUID) -> None:
@@ -322,6 +336,7 @@ class RemoteTrainerService:
         if install_prerequisites and config.connection_mode is not RemoteTrainerConnectionMode.SSH:
             raise InvalidResourceError("remote_trainer", "Prerequisite installation requires an SSH trainer")
         self._require_ssh_feature_if_tunneled(config.connection_mode)
+        config = await self._assign_local_port(config)
         remote_trainer = RemoteTrainer(id=uuid4(), **config.model_dump())
         await self._ensure_unique_ssh_remote_port(remote_trainer)
         try:
@@ -481,12 +496,8 @@ class RemoteTrainerService:
             # tunnel field instead of being dropped as "not provided".
             data = update.model_dump(exclude_unset=True)
             data = {k: v for k, v in data.items() if v is not None or k in _NULLABLE_UPDATE_FIELDS}
-            validated = RemoteTrainerCreate.model_validate(
-                {
-                    **remote_trainer.model_dump(),
-                    **data,
-                }
-            )
+            validated = RemoteTrainerCreate.model_validate({**remote_trainer.model_dump(), **data})
+            validated = await self._assign_local_port(validated)
             should_normalize_connection = (
                 "connection_mode" in data
                 or "url" in data

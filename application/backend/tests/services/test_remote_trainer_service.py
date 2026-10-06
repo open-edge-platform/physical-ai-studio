@@ -1,4 +1,5 @@
 import asyncio
+import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -440,6 +441,34 @@ async def test_confirmed_reboot_waits_for_new_boot_before_launch() -> None:
     start.assert_awaited_once_with(trainer)
 
 
+async def test_create_assigns_an_available_local_port_and_persists_its_url() -> None:
+    repository = MagicMock()
+    repository.list_ordered = AsyncMock(return_value=[])
+    repository.save = AsyncMock(side_effect=lambda trainer: trainer)
+
+    with (
+        socket.socket() as occupied,
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager.sync_tunnel", new_callable=AsyncMock) as sync,
+        patch.object(RemoteTrainerService, "_start_persistent_trainer_in_background"),
+    ):
+        occupied.bind(("127.0.0.1", 0))
+        occupied_port = occupied.getsockname()[1]
+        first = await RemoteTrainerService(_session()).create_remote_trainer(
+            RemoteTrainerCreate(name="first", connection_mode="ssh", ssh_host_alias="gpu-one")
+        )
+        repository.list_ordered.return_value = [first]
+        second = await RemoteTrainerService(_session()).create_remote_trainer(
+            RemoteTrainerCreate(name="second", connection_mode="ssh", ssh_host_alias="gpu-two", ssh_local_port=None)
+        )
+
+    assert first.ssh_local_port not in {None, occupied_port}
+    assert second.ssh_local_port not in {None, first.ssh_local_port}
+    assert str(first.url) == f"http://127.0.0.1:{first.ssh_local_port}/"
+    assert str(second.url) == f"http://127.0.0.1:{second.ssh_local_port}/"
+    assert sync.await_count == 2
+
+
 async def test_create_syncs_the_tunnel_manager_on_success() -> None:
     session = _session()
     remote_trainer = _remote_trainer()
@@ -496,7 +525,7 @@ async def test_create_rejects_an_ssh_host_port_already_used_by_another_trainer()
 
     with (
         patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
-        pytest.raises(ResourceAlreadyExistsError, match="remote port 8001"),
+        pytest.raises(ResourceAlreadyExistsError, match=r"Remote port 8001.*Choose a different remote port"),
     ):
         await RemoteTrainerService(session).create_remote_trainer(
             RemoteTrainerCreate(
@@ -611,6 +640,34 @@ async def test_delete_rejects_ssh_trainer_with_running_or_queued_job() -> None:
 
 
 @pytest.mark.anyio
+async def test_update_direct_trainer_to_ssh_assigns_local_port() -> None:
+    session = _session()
+    session.execute.return_value = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = None
+    trainer = _remote_trainer()
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    repository.list_ordered = AsyncMock(return_value=[trainer])
+    repository.update = AsyncMock(
+        side_effect=lambda _trainer, data: RemoteTrainer.model_validate({**trainer.model_dump(), **data})
+    )
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager.sync_tunnel", new_callable=AsyncMock),
+        patch.object(RemoteTrainerService, "_start_persistent_trainer_in_background"),
+    ):
+        updated = await RemoteTrainerService(session).update_remote_trainer(
+            trainer.id,
+            RemoteTrainerUpdate(
+                connection_mode="ssh", ssh_host_alias="gpu-box", ssh_remote_port=8001, ssh_local_port=None
+            ),
+        )
+
+    assert updated.ssh_local_port is not None
+    assert str(updated.url) == f"http://127.0.0.1:{updated.ssh_local_port}/"
+
+
 async def test_update_ssh_port_restarts_container_but_keeps_its_volume() -> None:
     session = _session()
     session.execute.return_value = MagicMock()
@@ -687,6 +744,7 @@ async def test_update_ssh_connection_rejects_active_job() -> None:
         url="http://127.0.0.1:8001",
         connection_mode=RemoteTrainerConnectionMode.SSH,
         ssh_host_alias="gpu-box",
+        ssh_local_port=8001,
     )
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=trainer)

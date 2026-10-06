@@ -41,6 +41,11 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
             return 'The trainer health endpoint did not report a healthy status.';
         case 'check_failed':
             return 'Studio could not complete the health check. Try again.';
+        case 'remote_port_in_use':
+            return (
+                'The remote port is already in use on the SSH host. ' +
+                'Edit this trainer and choose another remote port.'
+            );
         case 'docker_unavailable':
             return (
                 'Docker must be running and accessible to the SSH user. ' +
