@@ -1,10 +1,10 @@
-from datetime import datetime
 from enum import StrEnum
 from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
+from schemas.base import UTCDatetime
 from schemas.hardware import DeviceInfo, StorageInfo
 from schemas.remote_server import SSH_HOST_ALIAS_PATTERN
 
@@ -119,8 +119,8 @@ class RemoteTrainer(RemoteTrainerCreate):
 
     id: UUID
     url: AnyHttpUrl  # pyrefly: ignore[bad-override-mutable-attribute]
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: UTCDatetime | None = None
+    updated_at: UTCDatetime | None = None
 
 
 class RemoteTrainerHealth(BaseModel):
@@ -128,7 +128,7 @@ class RemoteTrainerHealth(BaseModel):
 
     remote_trainer_id: UUID
     status: HealthStatus
-    checked_at: datetime
+    checked_at: UTCDatetime
     latency_ms: int | None = Field(default=None, ge=0)
     devices: list[DeviceInfo] = Field(default_factory=list)
     storage: StorageInfo | None = Field(

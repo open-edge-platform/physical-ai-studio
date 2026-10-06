@@ -1,9 +1,9 @@
-from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from schemas.base import UTCDatetime
 from schemas.project_camera import Camera
 from schemas.robot import ReadableRobot
 
@@ -63,8 +63,8 @@ class CameraEnvironmentConfiguration(BaseModel):
 class Environment(BaseModel):
     id: Annotated[UUID, Field(description="Unique identifier")]
 
-    created_at: datetime | None = Field(None)
-    updated_at: datetime | None = Field(None)
+    created_at: UTCDatetime | None = Field(None)
+    updated_at: UTCDatetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable environment name")
     robots: list[RobotEnvironmentConfiguration] = Field(
@@ -158,8 +158,8 @@ class EnvironmentWithRelations(BaseModel):
 
     id: Annotated[UUID, Field(description="Unique identifier")]
 
-    created_at: datetime | None = Field(None)
-    updated_at: datetime | None = Field(None)
+    created_at: UTCDatetime | None = Field(None)
+    updated_at: UTCDatetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable environment name")
     robots: list[RobotWithTeleoperator] = Field(

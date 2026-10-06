@@ -4,12 +4,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
 from api.dependencies import (
-    HTTPException,
     get_dataset_download_service,
     get_dataset_id,
     get_dataset_service,

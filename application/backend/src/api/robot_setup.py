@@ -1,6 +1,7 @@
 """WebSocket endpoint for the SO101 robot setup wizard."""
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket, status
 from loguru import logger
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Robot Setu
 
 @router.websocket("/setup/ws")
 async def robot_setup_websocket(
-    _project_id: Annotated[str, Depends(get_project_id)],
+    _project_id: Annotated[UUID, Depends(get_project_id)],
     robot_manager: RobotConnectionManagerDep,
     websocket: WebSocket,
     robot_type: str,

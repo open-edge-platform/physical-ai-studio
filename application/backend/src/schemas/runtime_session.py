@@ -12,13 +12,13 @@ can be the wrong shape.
 
 from __future__ import annotations
 
-from datetime import datetime  # noqa: TC003 — pydantic resolves annotations at build time
 from enum import StrEnum
 from uuid import UUID  # noqa: TC003 — pydantic resolves annotations at build time
 
 from pydantic import BaseModel, Field
 
 from runtime.contract import FollowerSource
+from schemas.base import UTCDatetime
 
 
 class RuntimeSessionStatus(StrEnum):
@@ -82,13 +82,13 @@ class RuntimeSessionInfo(BaseModel):
     follower_name: str | None = None
     leader_name: str | None = None
 
-    started_at: datetime | None = None
+    started_at: UTCDatetime | None = None
     idle_timeout_s: float | None = None
 
     attached: bool | None = None
     """Whether any client is subscribed. ``False`` means nobody is watching this arm."""
 
-    idle_deadline: datetime | None = None
+    idle_deadline: UTCDatetime | None = None
     """When an unattached session shuts itself down. Set only while ``attached`` is False."""
 
     camera_keys: list[str] = Field(default_factory=list)

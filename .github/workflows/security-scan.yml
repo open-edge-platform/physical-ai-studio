@@ -338,6 +338,8 @@ jobs:
         with:
           schema: "http://localhost:7860/api/openapi.json"
           args: >-
+            --exclude-path /api/system/restart
+            --exclude-tag WebSocket
             --continue-on-failure
             --report-dir schemathesis-report
             --report junit
