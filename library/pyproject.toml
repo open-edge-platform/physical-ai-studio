@@ -104,6 +104,15 @@ rldx1 = [
     "peft>=0.13.0,<1.0.0",
     "diffusers>=0.38.0",
 ]
+
+# NVIDIA Cosmos 3 foundation policy
+cosmos3 = [
+    "diffusers>=0.40.0",
+    "transformers>=5.15.1",
+    "peft>=0.13.0,<1.0.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
 # Neural Network Compression Framework (optional, for post-export quantization hooks)
 nncf = ["nncf>=3.0.0"]
 
@@ -129,6 +138,7 @@ policies = [
     "physicalai-train[molmoact2]",
     "physicalai-train[rldx1]",
     "physicalai-train[xr0]",
+    "physicalai-train[cosmos3]",
 ]
 
 # All optional dependencies except hardware (torch) variant.

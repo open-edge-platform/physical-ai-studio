@@ -71,6 +71,13 @@
       "severity": "error"
     },
     {
+      "column": 17,
+      "path": "src/physicalai/data/lerobot/dataset.py",
+      "name": "unsupported-operation",
+      "concise_description": "`None` is not subscriptable",
+      "severity": "error"
+    },
+    {
       "column": 25,
       "path": "src/physicalai/data/lerobot/dataset.py",
       "name": "unsupported-operation",
@@ -572,6 +579,55 @@
       "path": "src/physicalai/policies/act/policy.py",
       "name": "bad-override",
       "concise_description": "Class member `ACT.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "src/physicalai/policies/cosmos3/model.py",
+      "name": "no-matching-overload",
+      "concise_description": "No matching overload found for function `torch.nn.modules.module.Module.to` called with arguments: (*tuple[object, ...], **dict[str, object])",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `Cosmos3OmniPipeline` has no attribute `transformer`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "missing-attribute",
+      "concise_description": "Object of class `Cosmos3OmniPipeline` has no attribute `vae`",
+      "severity": "error"
+    },
+    {
+      "column": 31,
+      "path": "src/physicalai/policies/cosmos3/pipeline.py",
+      "name": "invalid-inheritance",
+      "concise_description": "Invalid base class: `diffusers.pipelines.cosmos.pipeline_cosmos3_omni.Cosmos3OmniPipeline | diffusers.utils.dummy_torch_and_transformers_objects.Cosmos3OmniPipeline`",
+      "severity": "error"
+    },
+    {
+      "column": 41,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-argument-type",
+      "concise_description": "Argument `int | None` is not assignable to parameter `n_action_steps` with type `int` in function `physicalai.policies.base.policy.Policy.__init__`",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-override-mutable-attribute",
+      "concise_description": "Class member `Cosmos3.model` overrides parent class `Policy` in an inconsistent manner",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "src/physicalai/policies/cosmos3/policy.py",
+      "name": "bad-override",
+      "concise_description": "Class member `Cosmos3.configure_optimizers` overrides parent class `Policy` in an inconsistent manner",
       "severity": "error"
     },
     {

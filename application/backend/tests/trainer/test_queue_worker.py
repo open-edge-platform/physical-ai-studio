@@ -74,8 +74,10 @@ def test_queue_waits_for_gpu_used_by_another_trainer(manager, sample_request: Su
     monkeypatch.setattr(queue_worker, "gpu_busy", lambda *_: True)
     assert manager._next_runnable() is None
     assert manager.store.get(job_id).status == TrainerJobStatus.QUEUED
+    assert manager.store.get(job_id).message == "Waiting for CUDA 0 to become available"
     monkeypatch.setattr(queue_worker, "gpu_busy", lambda *_: False)
     assert manager._next_runnable() == (job_id, ("cuda", 0))
+    assert manager.store.get(job_id).message == "Queued"
 
 
 def test_dispatch_starts_different_gpus_without_waiting_for_same_gpu(manager, sample_request: SubmitJobRequest) -> None:
@@ -113,6 +115,7 @@ def test_dispatch_starts_different_gpus_without_waiting_for_same_gpu(manager, sa
 
     assert asyncio.run(check_dispatch()) == [ids[0], ids[2]]
     assert manager.store.get(ids[1]).status == TrainerJobStatus.QUEUED
+    assert manager.store.get(ids[1]).message == "Waiting for CUDA 0 to become available"
 
 
 def _fake_isolated_job(job_id, request, updates, stop) -> None:
