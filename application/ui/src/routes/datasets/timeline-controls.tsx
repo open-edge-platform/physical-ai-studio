@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { ActionButton, Flex, Text } from '@geti-ui/ui';
-import { Play, StepBackward, Close as Stop } from '@geti-ui/ui/icons';
+import { Pause, Play, StepBackward } from '@geti-ui/ui/icons';
 
 import { Player } from '../../features/datasets/episodes/use-player';
 import { toMMSS } from '../../utils';
@@ -43,7 +43,7 @@ export const TimelineControls = ({
             </ActionButton>
             {isPlaying ? (
                 <ActionButton aria-label='Pause' isQuiet onPress={pause}>
-                    <Stop fill='white' />
+                    <Pause fill='white' />
                 </ActionButton>
             ) : (
                 <ActionButton aria-label='Play' isQuiet onPress={play}>

@@ -19,9 +19,7 @@
 }
 
 .statusCopy {
-    display: flex;
     flex: 1;
-    flex-direction: column;
     min-width: 0;
     font-size: var(--spectrum-global-dimension-font-size-75);
     font-weight: 500;
