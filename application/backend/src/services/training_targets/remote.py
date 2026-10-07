@@ -31,6 +31,8 @@ class RemoteTrainingTargetHandler:
         if payload.base_model_id is not None:
             raise RemoteResumeUnsupportedError
         remote_trainer = await self.remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
+        if remote_trainer.url is None:
+            raise ValueError(f"Training on {remote_trainer.connection_mode.value} trainers is not available yet")
         return payload.model_copy(
             update={"remote_trainer_url": str(remote_trainer.url), "remote_trainer_name": remote_trainer.name}
         )

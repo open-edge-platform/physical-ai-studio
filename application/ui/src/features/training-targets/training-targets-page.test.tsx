@@ -16,8 +16,7 @@ const remoteTrainer = {
     name: 'managed-trainer',
     connection_mode: 'direct' as const,
     url: 'https://trainer.example.test/api',
-    ssh_remote_port: null,
-    ssh_local_port: null,
+    connection: { connection_mode: 'direct' as const, url: 'https://trainer.example.test/api' },
     created_at: '2026-07-14T12:00:00Z',
 };
 
@@ -90,7 +89,7 @@ describe('TrainingTargetsPage', () => {
         await user.type(within(dialog).getByRole('textbox', { name: /trainer url/i }), 'https://trainer.example.test');
         await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
         await waitFor(() => expect(created).toBeDefined());
-        expect(created).toMatchObject({ connection_mode: 'direct', ssh_connection: null });
+        expect(created).toMatchObject({ connection: { connection_mode: 'direct' } });
         expect(aliasRequests).toBe(0);
     });
 
@@ -117,14 +116,14 @@ describe('TrainingTargetsPage', () => {
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json(trainers)),
             http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
-                const body = (await request.json()) as Pick<typeof remoteTrainer, 'name' | 'url'>;
+                const body = (await request.json()) as { name: string; connection: { url: string } };
                 trainers = [
                     {
-                        ...body,
                         id: remoteTrainer.id,
+                        name: body.name,
                         connection_mode: 'direct',
-                        ssh_remote_port: null,
-                        ssh_local_port: null,
+                        url: body.connection.url,
+                        connection: { connection_mode: 'direct', url: body.connection.url },
                         created_at: remoteTrainer.created_at,
                     },
                 ];

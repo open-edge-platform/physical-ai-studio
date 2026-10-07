@@ -12,10 +12,14 @@ from __future__ import annotations
 import os
 import sys
 import threading
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from trainer.batch import BatchSettings, install_sigterm_handler, run
-from trainer.batch.storage import JobStorage
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from trainer.batch.storage import JobStorage
 
 
 def _s3(settings: BatchSettings) -> JobStorage:
@@ -30,6 +34,7 @@ _PROVIDERS: dict[str, Callable[[BatchSettings], JobStorage]] = {
 
 
 def main() -> int:
+    """Select the storage provider from the environment and run one job."""
     provider = os.environ.get("PHYSICALAI_BATCH_PROVIDER", "aws").lower()
     try:
         make_storage = _PROVIDERS[provider]

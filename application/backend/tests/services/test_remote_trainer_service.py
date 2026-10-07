@@ -5,7 +5,6 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from core.security.ssh_network_exposure import SshFeatureAvailability
@@ -17,7 +16,14 @@ from exceptions import (
     SshFeatureDisabledError,
     SshHostKeyConfirmationRequiredError,
 )
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode, RemoteTrainerCreate, RemoteTrainerUpdate
+from schemas.remote_trainer import (
+    AwsBatchConnection,
+    DirectConnection,
+    RemoteTrainer,
+    RemoteTrainerCreate,
+    RemoteTrainerUpdate,
+    SshConnection,
+)
 from services import RemoteTrainerService
 
 MODULE = "services.remote_trainer_service"
@@ -27,19 +33,36 @@ def _session() -> AsyncMock:
     return AsyncMock()
 
 
-def _remote_trainer() -> RemoteTrainer:
-    return RemoteTrainer(id=uuid4(), name="trainer", url="https://trainer.test")
+def _direct(url: str = "https://trainer.test") -> DirectConnection:
+    return DirectConnection(url=url)
+
+
+def _ssh(alias: str = "gpu-box", remote_port: int = 8001, local_port: int = 8001) -> SshConnection:
+    return SshConnection(ssh_host_alias=alias, ssh_remote_port=remote_port, ssh_local_port=local_port)
+
+
+def _aws() -> AwsBatchConnection:
+    return AwsBatchConnection(
+        region="eu-west-1",
+        studio_role_arn="arn:aws:iam::123456789012:role/studio",
+        bucket="jobs-bucket",
+        targets={"g4dn.xlarge": {"queue": "arn:q", "job_definition": "arn:jd"}},
+    )
+
+
+def _remote_trainer(connection=None, name: str = "trainer") -> RemoteTrainer:
+    return RemoteTrainer(id=uuid4(), name=name, connection=connection or _direct())
 
 
 def test_remote_trainer_name_is_trimmed() -> None:
-    config = RemoteTrainerCreate(name="  trainer  ", url="https://trainer.test")
+    config = RemoteTrainerCreate(name="  trainer  ", connection=_direct())
 
     assert config.name == "trainer"
 
 
 def test_remote_trainer_rejects_whitespace_only_name() -> None:
     with pytest.raises(ValidationError):
-        RemoteTrainerCreate(name="   ", url="https://trainer.test")
+        RemoteTrainerCreate(name="   ", connection=_direct())
 
 
 @pytest.mark.anyio
@@ -56,21 +79,42 @@ async def test_list_remote_trainers_uses_stable_repository_order() -> None:
 
 
 @pytest.mark.anyio
-async def test_create_duplicate_remote_trainer_returns_conflict() -> None:
+async def test_create_duplicate_url_returns_conflict() -> None:
     session = _session()
     repository = MagicMock()
-    repository.save = AsyncMock(side_effect=IntegrityError("insert", {}, Exception("duplicate")))
+    repository.list_ordered = AsyncMock(return_value=[_remote_trainer()])
 
     with (
         patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
         pytest.raises(ResourceAlreadyExistsError) as error,
     ):
-        await RemoteTrainerService(session).create_remote_trainer(
-            RemoteTrainerCreate(name="trainer", url="https://trainer.test")
-        )
+        await RemoteTrainerService(session).create_remote_trainer(RemoteTrainerCreate(name="dup", connection=_direct()))
 
     assert error.value.http_status == 409
-    session.rollback.assert_awaited_once_with()
+    repository.save.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_create_aws_batch_trainer_skips_ssh_and_tunnel() -> None:
+    session = _session()
+    remote_trainer = _remote_trainer(_aws())
+    repository = MagicMock()
+    repository.save = AsyncMock(return_value=remote_trainer)
+    repository.list_ordered = AsyncMock(return_value=[])
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.get_ssh_feature_availability", return_value=SshFeatureAvailability(network_exposed=True)),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager.sync_tunnel", new_callable=AsyncMock) as sync_tunnel,
+        patch(f"{MODULE}.persistent_trainer.start", new_callable=AsyncMock) as start,
+    ):
+        saved = await RemoteTrainerService(session).create_remote_trainer(
+            RemoteTrainerCreate(name="batch", connection=_aws())
+        )
+
+    assert saved is remote_trainer
+    sync_tunnel.assert_awaited_once_with(remote_trainer, None)
+    start.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -85,25 +129,6 @@ async def test_update_ignores_explicit_null_fields() -> None:
         await RemoteTrainerService(session).update_remote_trainer(remote_trainer.id, RemoteTrainerUpdate(name=None))
 
     repository.update.assert_awaited_once_with(remote_trainer, {})
-
-
-@pytest.mark.anyio
-async def test_update_clears_explicit_null_tunnel_fields() -> None:
-    session = _session()
-    remote_trainer = _remote_trainer()
-    repository = MagicMock()
-    repository.get_by_id = AsyncMock(return_value=remote_trainer)
-    repository.update = AsyncMock(return_value=remote_trainer)
-
-    with patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository):
-        await RemoteTrainerService(session).update_remote_trainer(
-            remote_trainer.id,
-            RemoteTrainerUpdate(ssh_host_alias=None, ssh_remote_port=None, ssh_local_port=None),
-        )
-
-    repository.update.assert_awaited_once_with(
-        remote_trainer, {"ssh_host_alias": None, "ssh_remote_port": None, "ssh_local_port": None}
-    )
 
 
 @pytest.mark.anyio
@@ -129,20 +154,7 @@ async def test_update_restores_trainer_when_host_key_confirmation_is_required() 
         )
 
     assert repository.update.await_count == 2
-    repository.update.assert_any_await(
-        updated_trainer,
-        remote_trainer.model_dump(
-            include={
-                "name",
-                "connection_mode",
-                "url",
-                "ssh_host_alias",
-                "ssh_connection",
-                "ssh_remote_port",
-                "ssh_local_port",
-            }
-        ),
-    )
+    repository.update.assert_any_await(updated_trainer, remote_trainer.model_dump(include={"name", "connection"}))
 
 
 @pytest.mark.anyio
@@ -171,13 +183,7 @@ async def test_create_rejects_ssh_tunnel_config_when_feature_inactive() -> None:
         pytest.raises(SshFeatureDisabledError),
     ):
         await RemoteTrainerService(session).create_remote_trainer(
-            RemoteTrainerCreate(
-                name="trainer",
-                connection_mode=RemoteTrainerConnectionMode.SSH,
-                ssh_host_alias="training-box",
-                ssh_remote_port=8001,
-                ssh_local_port=8001,
-            )
+            RemoteTrainerCreate(name="trainer", connection=_ssh("training-box"))
         )
 
     repository.save.assert_not_called()
@@ -189,6 +195,7 @@ async def test_create_syncs_the_tunnel_manager_on_success() -> None:
     remote_trainer = _remote_trainer()
     repository = MagicMock()
     repository.save = AsyncMock(return_value=remote_trainer)
+    repository.list_ordered = AsyncMock(return_value=[])
 
     with (
         patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
@@ -196,7 +203,7 @@ async def test_create_syncs_the_tunnel_manager_on_success() -> None:
     ):
         tunnel_manager.sync_tunnel = AsyncMock()
         await RemoteTrainerService(session).create_remote_trainer(
-            RemoteTrainerCreate(name="trainer", url="https://trainer.test")
+            RemoteTrainerCreate(name="trainer", connection=_direct())
         )
 
     tunnel_manager.sync_tunnel.assert_awaited_once_with(remote_trainer, None)
@@ -208,6 +215,7 @@ async def test_create_deletes_trainer_when_tunnel_sync_fails() -> None:
     remote_trainer = _remote_trainer()
     repository = MagicMock()
     repository.save = AsyncMock(return_value=remote_trainer)
+    repository.list_ordered = AsyncMock(return_value=[])
     repository.delete_by_id = AsyncMock()
 
     with (
@@ -217,7 +225,7 @@ async def test_create_deletes_trainer_when_tunnel_sync_fails() -> None:
     ):
         tunnel_manager.sync_tunnel = AsyncMock(side_effect=SshAuthenticationError("trainer.test"))
         await RemoteTrainerService(session).create_remote_trainer(
-            RemoteTrainerCreate(name="trainer", url="https://trainer.test")
+            RemoteTrainerCreate(name="trainer", connection=_direct())
         )
 
     repository.delete_by_id.assert_awaited_once_with(remote_trainer.id)
@@ -226,15 +234,7 @@ async def test_create_deletes_trainer_when_tunnel_sync_fails() -> None:
 @pytest.mark.anyio
 async def test_create_rejects_an_ssh_host_port_already_used_by_another_trainer() -> None:
     session = _session()
-    existing = RemoteTrainer(
-        id=uuid4(),
-        name="existing",
-        url="http://127.0.0.1:9001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-        ssh_remote_port=8001,
-        ssh_local_port=9001,
-    )
+    existing = _remote_trainer(_ssh("gpu-box", 8001, 9001), name="existing")
     repository = MagicMock()
     repository.list_ordered = AsyncMock(return_value=[existing])
 
@@ -243,13 +243,7 @@ async def test_create_rejects_an_ssh_host_port_already_used_by_another_trainer()
         pytest.raises(ResourceAlreadyExistsError, match="remote port 8001"),
     ):
         await RemoteTrainerService(session).create_remote_trainer(
-            RemoteTrainerCreate(
-                name="conflict",
-                connection_mode=RemoteTrainerConnectionMode.SSH,
-                ssh_host_alias="gpu-box",
-                ssh_remote_port=8001,
-                ssh_local_port=9002,
-            )
+            RemoteTrainerCreate(name="conflict", connection=_ssh("gpu-box", 8001, 9002))
         )
 
     repository.save.assert_not_called()
@@ -262,15 +256,7 @@ async def test_create_does_not_block_on_persistent_trainer_launch_for_ssh_traine
     is awaited before the response returns.
     """
     session = _session()
-    remote_trainer = RemoteTrainer(
-        id=uuid4(),
-        name="ssh-trainer",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-        ssh_remote_port=8001,
-        ssh_local_port=8001,
-    )
+    remote_trainer = _remote_trainer(_ssh(), name="ssh-trainer")
     repository = MagicMock()
     repository.save = AsyncMock(return_value=remote_trainer)
     repository.list_ordered = AsyncMock(return_value=[])
@@ -291,11 +277,7 @@ async def test_create_does_not_block_on_persistent_trainer_launch_for_ssh_traine
 
         result = await asyncio.wait_for(
             RemoteTrainerService(session).create_remote_trainer(
-                RemoteTrainerCreate(
-                    name="ssh-trainer",
-                    connection_mode=RemoteTrainerConnectionMode.SSH,
-                    ssh_host_alias="gpu-box",
-                )
+                RemoteTrainerCreate(name="ssh-trainer", connection=_ssh())
             ),
             timeout=1,
         )
@@ -333,13 +315,7 @@ async def test_delete_rejects_ssh_trainer_with_running_or_queued_job() -> None:
     session = _session()
     session.execute.return_value = MagicMock()
     session.execute.return_value.scalar_one_or_none.return_value = "active-job"
-    trainer = RemoteTrainer(
-        id=uuid4(),
-        name="gpu",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-    )
+    trainer = _remote_trainer(_ssh(), name="gpu")
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=trainer)
 
@@ -359,14 +335,9 @@ async def test_update_ssh_port_restarts_container_but_keeps_its_volume() -> None
     session = _session()
     session.execute.return_value = MagicMock()
     session.execute.return_value.scalar_one_or_none.return_value = None
-    trainer = RemoteTrainer(
-        id=uuid4(),
-        name="gpu",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-    )
-    updated = trainer.model_copy(update={"ssh_remote_port": 8002})
+    trainer = _remote_trainer(_ssh(), name="gpu")
+    new_connection = _ssh(remote_port=8002)
+    updated = trainer.model_copy(update={"connection": new_connection})
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=trainer)
     repository.list_ordered = AsyncMock(return_value=[trainer])
@@ -378,7 +349,9 @@ async def test_update_ssh_port_restarts_container_but_keeps_its_volume() -> None
         patch(f"{MODULE}.persistent_trainer.stop", new_callable=AsyncMock) as stop,
         patch.object(RemoteTrainerService, "_start_persistent_trainer_in_background") as start,
     ):
-        await RemoteTrainerService(session).update_remote_trainer(trainer.id, RemoteTrainerUpdate(ssh_remote_port=8002))
+        await RemoteTrainerService(session).update_remote_trainer(
+            trainer.id, RemoteTrainerUpdate(connection=new_connection)
+        )
 
     stop.assert_awaited_once_with(trainer, remove_volume=False)
     start.assert_called_once_with(updated, None)
@@ -389,16 +362,11 @@ async def test_switching_ssh_trainer_to_direct_removes_old_container_and_volume(
     session = _session()
     session.execute.return_value = MagicMock()
     session.execute.return_value.scalar_one_or_none.return_value = None
-    trainer = RemoteTrainer(
-        id=uuid4(),
-        name="gpu",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-    )
-    updated = RemoteTrainer(id=trainer.id, name="gpu", url="https://trainer.test")
+    trainer = _remote_trainer(_ssh(), name="gpu")
+    updated = RemoteTrainer(id=trainer.id, name="gpu", connection=_direct())
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=trainer)
+    repository.list_ordered = AsyncMock(return_value=[trainer])
     repository.update = AsyncMock(return_value=updated)
 
     with (
@@ -406,16 +374,7 @@ async def test_switching_ssh_trainer_to_direct_removes_old_container_and_volume(
         patch(f"{MODULE}.remote_trainer_tunnel_manager.sync_tunnel", new_callable=AsyncMock),
         patch(f"{MODULE}.persistent_trainer.stop", new_callable=AsyncMock) as stop,
     ):
-        await RemoteTrainerService(session).update_remote_trainer(
-            trainer.id,
-            RemoteTrainerUpdate(
-                connection_mode=RemoteTrainerConnectionMode.DIRECT,
-                url="https://trainer.test",
-                ssh_host_alias=None,
-                ssh_remote_port=None,
-                ssh_local_port=None,
-            ),
-        )
+        await RemoteTrainerService(session).update_remote_trainer(trainer.id, RemoteTrainerUpdate(connection=_direct()))
 
     stop.assert_awaited_once_with(trainer, remove_volume=True)
 
@@ -425,13 +384,7 @@ async def test_update_ssh_connection_rejects_active_job() -> None:
     session = _session()
     session.execute.return_value = MagicMock()
     session.execute.return_value.scalar_one_or_none.return_value = "active-job"
-    trainer = RemoteTrainer(
-        id=uuid4(),
-        name="gpu",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-    )
+    trainer = _remote_trainer(_ssh(), name="gpu")
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=trainer)
 
@@ -439,7 +392,9 @@ async def test_update_ssh_connection_rejects_active_job() -> None:
         patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
         pytest.raises(ResourceInUseError),
     ):
-        await RemoteTrainerService(session).update_remote_trainer(trainer.id, RemoteTrainerUpdate(ssh_remote_port=8002))
+        await RemoteTrainerService(session).update_remote_trainer(
+            trainer.id, RemoteTrainerUpdate(connection=_ssh(remote_port=8002))
+        )
 
     repository.update.assert_not_called()
 
@@ -449,13 +404,7 @@ async def test_delete_cancels_an_inflight_launch_before_stopping_container() -> 
     session = _session()
     session.execute.return_value = MagicMock()
     session.execute.return_value.scalar_one_or_none.return_value = None
-    trainer = RemoteTrainer(
-        id=uuid4(),
-        name="gpu",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-    )
+    trainer = _remote_trainer(_ssh(), name="gpu")
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=trainer)
     repository.delete_by_id = AsyncMock()

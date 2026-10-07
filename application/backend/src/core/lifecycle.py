@@ -10,7 +10,7 @@ from loguru import logger
 from core.logging import setup_logging, setup_uvicorn_logging
 from core.security import get_ssh_feature_availability
 from db import get_async_db_session_ctx
-from schemas.remote_trainer import RemoteTrainerConnectionMode
+from schemas.remote_trainer import SshConnection
 from services import remote_trainer_tunnel_manager
 from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
@@ -59,7 +59,7 @@ async def _start_remote_trainer_tunnels() -> None:
         await remote_trainer_tunnel_manager.start_all(remote_trainers)
         if get_ssh_feature_availability().active:
             for trainer in remote_trainers:
-                if trainer.connection_mode is RemoteTrainerConnectionMode.SSH:
+                if isinstance(trainer.connection, SshConnection):
                     RemoteTrainerService._start_persistent_trainer_in_background(trainer, None)
     except Exception:
         logger.exception("Failed to start configured remote-trainer SSH tunnels")

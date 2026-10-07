@@ -67,5 +67,5 @@ class StatusReporter:
         )
         try:
             self._storage.put_status(payload)
-        except Exception:  # noqa: BLE001 - a failed status write must never abort training
+        except Exception:
             logger.opt(exception=True).warning("Failed to write status.json")
