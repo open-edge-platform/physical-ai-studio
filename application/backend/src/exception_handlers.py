@@ -202,7 +202,7 @@ def _register_openapi_validation_status_override(app: FastAPI) -> None:
     def custom_openapi() -> dict:
         return _rewrite_validation_error_status_code(original_openapi())
 
-    app.openapi = custom_openapi
+    app.openapi = custom_openapi  # type: ignore[method-assign]  # standard FastAPI override pattern
 
 
 def register_application_exception_handlers(app: FastAPI) -> None:
