@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from physicalai.capture import Frame
@@ -81,6 +82,7 @@ class FakeRobot:
         connect_delay: float = 0.0,
         disconnect_error: str | None = None,
         name: str = "fake_robot",
+        disconnect_marker: str | None = None,
     ) -> None:
         if observations is None:
             observations = [
@@ -96,6 +98,8 @@ class FakeRobot:
         self._connect_delay = connect_delay
         self._disconnect_error = disconnect_error
         self.name = name
+        # A file touched on disconnect, so a test can observe teardown in a worker process.
+        self._disconnect_marker = disconnect_marker
         self.sent_actions: list[np.ndarray] = []
 
     def connect(self) -> None:
@@ -105,6 +109,8 @@ class FakeRobot:
     def disconnect(self) -> None:
         _track_disconnect(self.name, self._disconnect_error)
         self._connected = False
+        if self._disconnect_marker is not None:
+            Path(self._disconnect_marker).touch()
 
     def get_observation(self) -> FakeObservation:
         if self._observation_error is not None:

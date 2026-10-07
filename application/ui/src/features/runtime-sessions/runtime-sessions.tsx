@@ -24,7 +24,6 @@ import { getApiErrorMessage } from '../../api/errors';
 import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
 import { Table, TableColumn } from '../../components/table/table';
 import {
-    idleSecondsRemaining,
     sessionActivity,
     sessionLabel,
     sessionStatusVariant,
@@ -51,19 +50,13 @@ const Field = ({ label, children }: { label: string; children: string }) => (
     </>
 );
 
-const SessionDetail = ({ session, now }: { session: SchemaRuntimeSessionInfo; now: number }) => {
-    const idleSeconds = idleSecondsRemaining(session, now);
+const SessionDetail = ({ session }: { session: SchemaRuntimeSessionInfo }) => {
     const cameras = session.camera_keys ?? [];
     const activity = session.activity;
     const loadedLabel = (loaded: boolean | null | undefined) => (loaded ? 'Loaded' : 'Not loaded');
 
     return (
         <div className={classes.detail}>
-            {idleSeconds !== undefined && (
-                <Text UNSAFE_className={classes.abandoned}>
-                    Nobody is watching this session. It shuts down in {idleSeconds}s.
-                </Text>
-            )}
             {session.error && (
                 <Text UNSAFE_className={classes.errorMessage}>
                     {session.error.message} ({session.error.error_code})
@@ -198,7 +191,7 @@ const SessionRow = ({
     return (
         <Table.ExpandableRow
             label={`Details for ${label}`}
-            detail={<SessionDetail session={session} now={now} />}
+            detail={<SessionDetail session={session} />}
             isExpanded={isExpanded}
             onExpandedChange={onExpandedChange}
             after={
@@ -265,8 +258,8 @@ export const RuntimeSessionsDialog = ({
         }
     };
 
-    // Uptime and the idle countdown are derived from timestamps, so they need a
-    // tick of their own -- the poll alone would make them jump in 2s steps.
+    // Uptime is derived from a timestamp, so it needs a tick of its own -- the
+    // poll alone would make it jump in 2s steps.
     const [now, setNow] = useState(() => Date.now());
     useEffect(() => {
         const timer = setInterval(() => setNow(Date.now()), 1_000);

@@ -1,11 +1,10 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""List and stop the runtime sessions running on this host.
+"""List and stop the runtime sessions this Studio is running.
 
-Deliberately not project-scoped. The lock directory is host-wide, a session's
-identity carries no project, and a session whose robot row has been deleted has
-no project to be listed under.
+Deliberately not project-scoped: a session's identity is its follower robot,
+which is what the footer and the stop action need.
 """
 
 from http import HTTPStatus
@@ -16,7 +15,7 @@ from loguru import logger
 
 from api.dependencies import get_runtime_session_service
 from exceptions import BaseException as AppBaseException
-from runtime.transport.ids import validate_session_name
+from runtime.ids import validate_session_name
 from schemas.runtime_session import RuntimeSessionCount, RuntimeSessionInfo
 from services.runtime_session_service import RuntimeSessionService
 
@@ -28,17 +27,13 @@ SessionName = Annotated[str, Path(description="Runtime session name, `rt-<follow
 
 @router.get("/sessions")
 async def list_runtime_sessions(service: RuntimeSessionServiceDep) -> list[RuntimeSessionInfo]:
-    """List the runtime sessions holding a lock on this host."""
+    """List the running runtime sessions."""
     return await service.list_sessions()
 
 
 @router.get("/sessions/count")
 async def count_runtime_sessions(service: RuntimeSessionServiceDep) -> RuntimeSessionCount:
-    """Count the runtime sessions holding a lock on this host.
-
-    Answered from the lock directory alone. The always-mounted footer polls this,
-    so the common case of nothing running must not open a transport session.
-    """
+    """Count the running runtime sessions."""
     return RuntimeSessionCount(count=service.count())
 
 
@@ -46,14 +41,13 @@ async def count_runtime_sessions(service: RuntimeSessionServiceDep) -> RuntimeSe
 async def stop_runtime_session(session_name: SessionName, service: RuntimeSessionServiceDep) -> None:
     """Terminate a runtime session, releasing its robot and cameras.
 
-    Graceful: the worker takes SIGTERM through the same teardown the idle timeout
-    uses, so devices are released and any recording is finalized. It escalates to
-    SIGKILL only if that does not land.
+    Graceful: the worker is stopped through its stop event and runs the same
+    teardown as a websocket close, so devices are released and any recording is
+    finalized. It escalates to SIGTERM/SIGKILL only if that does not land.
     """
     try:
-        # Reuses the transport's own validator rather than restating the pattern
-        # as a route regex, so the two cannot drift. This is the only thing
-        # standing between a path parameter and a signalled pid.
+        # Reuses the session-name validator rather than restating the pattern
+        # as a route regex, so the two cannot drift.
         name = validate_session_name(session_name)
     except ValueError as exc:
         raise AppBaseException(
@@ -63,7 +57,7 @@ async def stop_runtime_session(session_name: SessionName, service: RuntimeSessio
         ) from exc
 
     if not await service.stop(name):
-        logger.error("Runtime session {} still holds its lock after a stop", name)
+        logger.error("Runtime session {} is still running after a stop", name)
         raise AppBaseException(
             message=f"Runtime session {name} did not stop.",
             error_code="runtime_session_stop_failed",

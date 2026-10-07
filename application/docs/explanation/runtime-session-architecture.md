@@ -1,6 +1,6 @@
 # Runtime Session Architecture
 
-Studio drives a physical robot four ways: teleoperation by hand, running a trained policy, recording a dataset, and exporting a model that reproduces the run elsewhere. All four run on one session, a long-lived process that owns the robot and its cameras for as long as you are working with them. Each capability arrives as a command sent to that session.
+Studio drives a physical robot four ways: teleoperation by hand, running a trained policy, recording a dataset, and exporting a model that reproduces the run elsewhere. All four run on one session, a worker process that owns the robot and its cameras for as long as the page driving it keeps its websocket open. Each capability arrives as a command sent to that session.
 
 This replaced two hand-written control loops (`TeleoperateWorker`, `RobotControlWorker`) and a separate model-worker process pool. Studio no longer owns loop machinery, timing, or teardown ordering. It owns three things: which action to send, what to stream to the browser, and what to write to a dataset. `physicalai.runtime.RobotRuntime` runs the loop.
 
@@ -13,7 +13,7 @@ This document covers the decisions and constraints you cannot read off the code,
 - [One tick](#one-tick)
 - [Modes](#modes)
 - [Session lifecycle and ownership](#session-lifecycle-and-ownership)
-- [Identity: when two sessions are the same session](#identity-when-two-sessions-are-the-same-session)
+- [One session per follower](#one-session-per-follower)
 - [Exclusivity](#exclusivity)
 - [Export](#export)
 - [Traps](#traps)
@@ -49,7 +49,7 @@ flowchart LR
     api2["FastAPI process<br/>runtime_ws"]
     sess2["Session process<br/>RuntimeSession · StudioActionSource · callbacks"]
     arm2(["Robot + cameras<br/><i>one owner, held open</i>"])
-    api2 -->|zenoh| sess2
+    api2 -->|mp.Queue| sess2
     sess2 --> arm2
   end
 ```
@@ -73,8 +73,8 @@ flowchart TB
   hw2(["USB / RealSense camera"])
 
   ui <-->|WebSocket| api
-  api <-->|"commands + events"| sess
-  api -.->|"spawn, kill backstop"| sess
+  api <-->|"mp.Queue: commands + events"| sess
+  api -.->|"spawn, stop event, kill backstop"| sess
   sess <-->|"zenoh: state, action"| ro
   sess <-->|"iceoryx2: frames"| cp
   api <-->|"iceoryx2: frames (preview)"| cp
@@ -86,57 +86,40 @@ Two things to read off this diagram. Hardware I/O already lives in its own proce
 
 ### Transport
 
-The session runs in its own OS process. Control and telemetry go over Zenoh; frames do not.
+The session runs in its own OS process, a `BaseProcessWorker` child of the API process (`runtime/worker.py`). The parent side is `RuntimeSessionHandle` (`runtime/handle.py`). They talk over two `multiprocessing` queues; frames do not cross them.
 
 ```mermaid
 flowchart LR
   subgraph apiproc["FastAPI process"]
-    api["session client"]
-    obs_sub["telemetry subscriber"]
+    ws["runtime_ws"]
+    handle["RuntimeSessionHandle"]
   end
 
   subgraph sessproc["Runtime session process"]
-    cmd_sub["command subscriber<br/>RingChannel(1)"]
-    qable["queryable<br/>acked commands"]
-    meta["queryable<br/>/metadata"]
-    tel_pub["telemetry publisher<br/>BEST_EFFORT / DROP"]
+    pump["command pump thread"]
+    req["request thread<br/>save · discard"]
+    sess["RuntimeSession"]
   end
 
-  ext["observer CLI · rerun · jsonl"]
-
-  api -->|"put · command"| cmd_sub
-  api <-->|"get · request"| qable
-  api <-->|"get · metadata"| meta
-  tel_pub -->|"put · tick, state, error, lifecycle"| obs_sub
-  tel_pub --> ext
+  ws --> handle
+  handle -->|"command queue"| pump
+  pump -->|apply| sess
+  pump --> req
+  req -->|handle_request| sess
+  sess -->|"event queue · tick, state, error, ack"| handle
 ```
 
-The split mirrors what physicalai already does for robots. Commands that set desired state go out as best-effort publications, because re-sending them is harmless and only the newest matters. Commands that fire once and cannot be lost go through a queryable and get a reply.
+Every command goes down the same queue. `save_episode` and `discard_episode` are the two that must not be lost silently: the worker runs them on a separate thread, because they can block for the whole recording timeout, and answers each with an `AckEvent` carrying its `request_id` on the event queue.
 
-| Idempotent (sets desired state) | Edge-triggered (needs a reply) |
+| Fire-and-forget | Answered with an ack |
 | --- | --- |
-| `set_follower_source`, `load_model`, `load_dataset`, `start_task`, `stop_task`, `start_recording`, `disconnect` | `save_episode`, `discard_episode` |
+| `set_follower_source`, `load_model`, `load_dataset`, `start_task`, `stop_task`, `start_recording` | `save_episode`, `discard_episode` |
 
-Losing a `save_episode` loses an episode someone recorded, which is why those two are the exception.
-
-A `/metadata` queryable answers "is there a session for this robot, and what is it doing", which is what makes discovery and reattach work. Telemetry is best-effort with drop-on-congestion, so a slow consumer degrades to a lower frame rate instead of stalling the control loop. It is a publication rather than a pipe, so an observer CLI or a Rerun viewer can attach to a live session without the session knowing.
+The event queue is bounded. Observations are `put_nowait` and dropped when it is full, so a slow websocket degrades to a lower frame rate instead of stalling the control loop. State, errors and acks block briefly instead. A failure that ends the session travels as a `WorkerFatal` on the same queue.
 
 ### Session names
 
-Zenoh keys look like `studio/rt/rt-<follower-uuid>/…` (`runtime/transport/ids.py`).
-
-The `rt-` prefix keeps a session's name clear of the robot's. Without it a session would be named after the follower UUID, which `SharedRobot` already claims through `SharedRobot.from_config(name=...)`. Upstream turns that name into two things and namespaces neither:
-
-- a lock file at `sha256(f"name:{identity}")`
-- a rendezvous port from `physicalai/robot/{name}`
-
-A session sharing the name grabs the lock the robot's owner needs and binds the port it listens on, so the owner dies at startup with `name_lock_contention` while the session waits for a robot nobody started.
-
-Studio separates them three ways:
-
-- The name carries the `rt-` prefix, checked by `_SESSION_NAME_RE`. Upstream's `validate_name` allows letters, digits, `_` and `-`, so it passes.
-- `derive_endpoint_port` hashes into 10000–19999. Physicalai robots use 20000–59999.
-- The lock hashes `f"{SESSION_LOCK_KIND}:{identity}"`, which changes the kind as well as the identity. Upstream's `_lock.py` is private, so Studio carries its own copy.
+A session is named `rt-<follower-uuid>` (`runtime/ids.py`). The name is only a key: the `RuntimeSessionRegistry` holds at most one session per name, and the sessions API takes it as the handle for a stop. The `rt-` prefix keeps it visibly distinct from the follower's own `SharedRobot` name.
 
 ## One request, end to end
 
@@ -146,54 +129,52 @@ Recording one episode is the clearest single path through the architecture, beca
 sequenceDiagram
   participant UI as Browser
   participant WS as api/runtime_ws.py
-  participant OWN as RuntimeSessionOwner
+  participant H as RuntimeSessionHandle
   participant S as Session process
   participant REC as RecordingState
 
   UI->>WS: open /runtime/ws · handshake
-  WS->>OWN: start_runtime_session()
-  OWN->>OWN: probe /metadata
-  OWN->>S: spawn session_worker.main()
-  S-->>OWN: ready · on stdout
-  OWN->>S: attach · zenoh
+  WS->>WS: registry.acquire(handle)
+  WS->>H: start() · spawn worker
+  H-->>WS: wait_until_ready() · first connected state
   UI->>WS: load_dataset
-  WS->>S: apply() · publication
-  S->>S: RuntimeSession.apply() → _load_dataset
+  WS->>H: apply() · command queue
+  H->>S: RuntimeSession.apply() → _load_dataset
   UI->>WS: start_recording
-  WS->>S: apply() · publication
+  WS->>H: apply()
   S->>REC: RecordingState.start()
   loop every tick
     S->>REC: RecordingCallback.on_tick → add_frame
   end
   UI->>WS: save_episode
-  WS->>S: request() · queryable
+  WS->>H: apply()
   S->>REC: CommandWorker → _save_episode
-  S-->>WS: ack · request_id
+  S-->>WS: ack · request_id · event queue
   WS-->>UI: settled
-  Note over S,REC: last subscriber leaves → finalize_recording()
+  UI->>WS: close socket
+  WS->>H: stop() · stop event
+  Note over S,REC: teardown finalizes the recording, disconnects devices
 ```
 
 1. The browser opens the runtime socket. The handshake names the follower, the leader, and the
    camera ids; the API resolves each against the project before anything is spawned.
-2. `start_runtime_session` hands off to `RuntimeSessionOwner`, which probes `/metadata` and either
-   attaches to a live session or spawns one. See
-   [Identity](#identity-when-two-sessions-are-the-same-session) for how it decides.
-3. `RuntimeProcessHost.start()` spawns `session_worker.main()`. Readiness crosses two channels: the
-   child reports ready on its stdout before Zenoh is up, and only then does the client attach over
-   the wire.
-4. `load_dataset` reaches `handle_incoming`, which validates the payload and forwards it.
-5. `RuntimeSessionClient.apply()` publishes it. `RuntimeZenohServer` pumps it into
-   `RuntimeSession.apply()`, which opens the dataset in `_load_dataset`.
-6. `start_recording` arms recording. `StudioActionSource` handles it rather than the session
+2. The websocket claims the follower in `RuntimeSessionRegistry`. See
+   [One session per follower](#one-session-per-follower).
+3. `RuntimeSessionHandle.start()` spawns `RuntimeSessionWorker`. The session is ready when its
+   first connected `StateEvent` arrives on the event queue; a `WorkerFatal` or the worker dying
+   first is reported to the browser instead.
+4. `load_dataset` reaches `handle_incoming`, which validates the payload and puts it on the
+   command queue. The worker's pump thread hands it to `RuntimeSession.apply()`, which opens the
+   dataset in `_load_dataset`.
+5. `start_recording` arms recording. `StudioActionSource` handles it rather than the session
    directly, because recording has to line up with the control loop.
-7. Every tick, `RecordingCallback.on_tick` appends one observation-and-action pair through
+6. Every tick, `RecordingCallback.on_tick` appends one observation-and-action pair through
    `RecordingState.add_frame`.
-8. `save_episode` shows the two command classes in action. It travels through the queryable as a
-   request and comes back as an ack carrying its `request_id`, so the browser learns whether the
+7. `save_episode` comes back as an ack carrying its `request_id`, so the browser learns whether the
    write succeeded. `load_dataset` and `start_recording` above are fire-and-forget.
-9. The write itself runs on `CommandWorker`, off the control thread, because it encodes video.
-10. When the last subscriber leaves, `finalize_recording()` is queued and the cache is copied back
-    into the dataset, so the episode does not wait for process exit.
+8. The write itself runs on `CommandWorker`, off the control thread, because it encodes video.
+9. Closing the socket stops the session. Teardown drains the command worker, copies the recording
+   cache back into the dataset, and disconnects the devices.
 
 ## One tick
 
@@ -305,57 +286,46 @@ The control loop itself does the frame copy and appends to the episode buffer. V
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Probing: client needs a session
-  Probing --> Attached: owner answered /metadata
-  Probing --> Spawning: nobody answered
-  Spawning --> Attached: metadata published
-  Spawning --> Failed: name lock lost / startup error
-  Attached --> Running: connect() then run()
+  [*] --> Claiming: websocket handshake
+  Claiming --> Refused: follower held by another open websocket
+  Claiming --> Starting: slot free, or its previous session finished stopping
+  Starting --> Running: first connected state
+  Starting --> Stopping: websocket closed / startup error
   Running --> Running: mode changes
-  Running --> Stopping: disconnect / idle_timeout / error
+  Running --> Stopping: websocket closed / disconnect / stop endpoint / error / API shutdown
   Stopping --> [*]: finalize recording, disconnect devices, exit
-  Failed --> [*]
-  Attached --> Stopping: kill backstop
+  Refused --> [*]
 ```
 
-**Start** follows `SharedRobot.connect()`: probe `/metadata`, spawn if nobody answers, resolve the spawn race with a name lock and re-probe. Idempotent, and reattach comes free. `Probing` before `Spawning` is what gives reattach, so a page refresh finds the existing session instead of fighting it.
+**A session lives exactly as long as its websocket.** There is no reattach: a page refresh closes the socket, which stops the session, and the new socket starts a fresh one. `RuntimeSessionRegistry.acquire` waits for a session that is already stopping instead of reporting the robot busy, so a refresh does not race its own teardown.
 
-Readiness crosses two channels. The child reports ready on its **stdout** before Zenoh is up, then the client attaches over the wire.
+**Every stop goes through the stop signal.** `RobotRuntime.run()` polls a `StopSignal` once per tick. The worker passes one that reads `BaseProcessWorker.should_stop()`, which is set by any of:
 
-**Stop** has three paths, all required:
+1. **The worker's own stop event.** `RuntimeSessionHandle.stop()` sets it when the websocket closes, on an explicit `disconnect`, or from the sessions stop endpoint.
+2. **The application stop event.** The scheduler's `mp_stop_event`, set on API shutdown. The lifespan also calls `RuntimeSessionRegistry.stop_all()` before the scheduler shuts down, so sessions get their full teardown.
+3. **Parent death.** If the API process dies without cleaning up, the worker notices its parent is gone and stops itself.
 
-1. **Explicit.** The user disconnects. Stop the run, finalize recording, disconnect devices, exit.
-2. **Idle self-exit.** No subscriber present for `idle_timeout`. This covers an API crash, a closed browser, and a dropped network. It is a safety property. An abandoned session in hold mode keeps commanding a latched target with torque on and nobody watching.
-3. **Kill backstop.** The API is the parent process, so it can terminate a wedged session. Control over Zenoh buys reattach; being the parent buys "die now regardless of internal state".
+`run()` returning leads to `teardown()`, which finalizes the recording and disconnects cameras, then the leader, then the follower. The parent waits up to `STOP_TIMEOUT_S`, the recording copy-back timeout plus a margin, before escalating to SIGTERM and then SIGKILL. While it waits it keeps draining the event queue, because a child cannot exit while its queue feeder is blocked on a full pipe.
 
-**Recording finalizes when the last subscriber leaves.** The process stays alive for the idle window, so a returning client keeps the hardware connection. The dataset must not wait that long: the user navigates straight back to the dataset page expecting their episodes. The arm latches to `hold` first, then the recording commits.
-
-**The idle timeout is 45 seconds, as a setting** (`RUNTIME_IDLE_TIMEOUT_S`). A websocket reconnect after a page refresh completes well under 5 seconds, so 45 leaves roughly nine times the headroom for a slow reload or a brief network drop. At the other end it bounds an abandoned, torque-holding arm to under a minute. It runs much longer than `SharedRobot`'s 10-second owner default, because that timeout only costs a process respawn while this one can cost a recording session. Hardware labs on flaky networks will want it longer, and an unattended rig will want it shorter.
+Sessions never outlive the API process: they are its children, and nothing about them is persisted.
 
 On shutdown, leave follower torque enabled. SO101 holds position rather than dropping under gravity.
 
-## Identity: when two sessions are the same session
+## One session per follower
 
-A client asking for a session gets one of three answers: attach to what is running, restart it, or refuse. Two separate questions decide which.
+`RuntimeSessionRegistry` (`runtime/registry.py`) lives on `app.state` and maps `rt-<follower-uuid>` to its `RuntimeSessionHandle`. A websocket asking for a follower gets one of three answers:
 
-- **`runtime_identity_digest`** covers the hardware: robot recipe, leader recipe, fps. Cameras are excluded.
-- **`runtime_camera_keys`** covers which cameras the session has.
+1. **The slot is free: start.**
+2. **The holder is stopping or already dead: wait for it, then start.** This is a page refresh or a restart.
+3. **Another open websocket holds it: refuse** with `423 Busy`, naming the holder. A second tab must never take an arm over.
 
-The check runs in that order:
-
-1. **Different identity, refuse** with `423 Busy`, naming the holder. A client asking for a different arm must never take one over.
-2. **Same identity, missing a camera, restart.** The check asks whether the running session's cameras cover what the client needs, so a session with extra cameras is still a valid attach target. Only a missing camera forces a restart, and the displaced client reattaches to the superset because its identity still matches.
-3. **Otherwise, attach.**
-
-Cameras sit outside identity because they are read-only observation. Folding them in makes every camera edit in the environment form look like a rig change, so a healthy session gets killed and respawned for something that did not affect the arm. Order matters for the same reason in reverse: checking cameras first would let a client wanting a different arm silently take over a session because it also happened to need another camera.
-
-A rig change while recording is rejected. Changing the camera set mid-episode corrupts the dataset.
+Since there is no reattach, the running session's hardware recipe and cameras never have to be compared with what a new client wants: every client gets a session built from its own handshake.
 
 ## Exclusivity
 
 Two resources, two different answers.
 
-**The robot is exclusive.** Two sessions must not command one follower. Both would attach as subscribers to the same owner, whose action channel is latest-wins, so their command streams would interleave on one arm. The session name enforces it: only one session can hold a given name, so a second session for the same follower cannot come into existence.
+**The robot is exclusive.** Two sessions must not command one follower. Both would attach as subscribers to the same owner, whose action channel is latest-wins, so their command streams would interleave on one arm. The registry enforces it: only one session can hold a given name, so a second session for the same follower cannot come into existence.
 
 **Cameras are shared, but their settings are not.** One publisher per physical camera serves many subscribers by design. The conflict is configuration. A session connecting with `overwrite_settings=True` and a different resolution reconfigures the publisher, and every other subscriber's frames change underneath it. `validate_on_connect` checks only at connect, not continuously.
 
@@ -363,16 +333,14 @@ The fix is a **camera claim registry** keyed by fingerprint. The first claimant 
 
 Sessions connect to cameras strictly, with `overwrite_settings=False` and `validate_on_connect=True`. A session never reconfigures another session's publisher. If a camera delivers a resolution the environment did not declare, the session fails instead of reading the wrong size, because wrong pixel dimensions look fine and give a wrong answer.
 
-### The two guards persist differently, on purpose
+### Both guards are in memory
 
-| Guard | Storage | Why |
-| --- | --- | --- |
-| Camera claims | in-memory, per API process | A claim only protects against concurrent misconfiguration inside one API process. |
-| Robot holder | on-disk lock, read first | A detached session keeps driving the arm across an API restart, so this one must survive it. |
+| Guard | Storage |
+| --- | --- |
+| Camera claims | `CameraClaimRegistry`, per API process |
+| Robot holder | `RuntimeSessionRegistry`, per API process |
 
-Deleting a robot, camera, or environment that is in use is rejected with the holder named. Robot deletion reads the on-disk lock registry first and only probes `/metadata` on a hit. A miss is the common case and must not open a Zenoh session. An in-memory registry would forget everything on restart and let a delete succeed while a live session is still driving the arm.
-
-**A live lock with a metadata miss still counts as held.** The worker can hold the flock and the arm before `/metadata` answers, so a probe timeout must not be read as an idle robot.
+Both can be in memory because sessions are children of the API process and end with it; nothing can be driving an arm across a restart. Deleting a robot, camera, or environment that is in use is rejected with the holder named. The websocket releases the camera claims and the follower slot only after the worker has stopped.
 
 ## Export
 

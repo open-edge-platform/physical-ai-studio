@@ -33,10 +33,6 @@
     color: var(--spectrum-global-color-gray-700);
 }
 
-.abandoned {
-    color: var(--spectrum-global-color-orange-600);
-}
-
 .errorMessage {
     color: var(--spectrum-global-color-red-600);
 }

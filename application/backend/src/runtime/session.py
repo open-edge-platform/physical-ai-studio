@@ -230,29 +230,10 @@ class RuntimeSession:
             except Exception as exc:
                 logger.warning("Follower disconnect failed: {}", exc)
 
-    def finalize_recording(self) -> None:
-        """Queue the cache copy so an abandoned session does not hide its episodes.
-
-        Queued rather than run here: ``_save_episode`` writes parquet and encodes
-        video outside the recording lock, so finalizing straight off the watcher
-        thread could stop the image writer mid-save. The command worker already
-        exists to serialize exactly that, and ``teardown`` drains it, so process
-        exit cannot kill a ``copytree`` that has already deleted its destination.
-        """
-        if not self._recording.dataset_loaded:
-            return
-        try:
-            self._command_worker.submit("finalize_recording", self._finalize_recording)
-        except RuntimeError:
-            logger.debug("Command worker is closed; teardown finalizes the recording")
-
     def _finalize_recording(self) -> None:
         """Copy the recording cache back to the dataset and detach the mutation.
 
-        Idempotent: ``take_mutation`` returns ``None`` once the mutation is gone,
-        so a teardown following an abandonment is a no-op. It deliberately does
-        not close ``RecordingState`` -- a client reattaching within the idle
-        window records into a fresh mutation over the updated dataset.
+        Idempotent: ``take_mutation`` returns ``None`` once the mutation is gone.
         """
         self._discard_open_episode()
         mutation = self._recording.take_mutation()
@@ -262,25 +243,24 @@ class RuntimeSession:
             mutation.teardown()
         except Exception:
             logger.exception("Recording mutation teardown failed; the cache may not have been copied back")
-        # The cached state is what a returning client recovers, so it must not
-        # keep advertising a dataset this session no longer holds.
+        # The session list reads the last state; it must not keep advertising
+        # a dataset this session no longer holds.
         self._emit_state()
 
     def _discard_open_episode(self) -> None:
-        """Drop an episode that was still open when the session was abandoned.
+        """Drop an episode that was still open when the session ended.
 
         The frames cannot be recovered -- the cache is deleted moments later --
         so drop them deliberately and say so, rather than letting the buffer
         disappear inside ``teardown()``, which copies back only what
-        ``save_episode`` marked. Safe to check then stop: on abandonment this
-        runs on the command worker, the same thread as save and discard, and on
-        teardown the worker has already drained. Ticks cannot interleave either
-        -- ``add_frame`` and ``stop_episode`` share the recording lock.
+        ``save_episode`` marked. Safe to check then stop: the command worker has
+        already drained, and ticks cannot interleave -- ``add_frame`` and
+        ``stop_episode`` share the recording lock.
         """
         if not self._recording.is_recording:
             return
         mutation = self._recording.stop_episode()
-        logger.warning("Discarding the episode that was still open when the session was abandoned")
+        logger.warning("Discarding the episode that was still open when the session ended")
         try:
             mutation.discard_buffer()
         except Exception:

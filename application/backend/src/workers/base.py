@@ -194,9 +194,13 @@ class BaseProcessWorker(mp.Process, StoppableMixin, ABC):
                     log_threads()
                     logger.info(f"Stopped {self.name}.")
 
+    def request_stop(self) -> None:
+        """Ask the worker to stop without waiting for it."""
+        self._stop_event.set()
+
     def stop(self) -> None:
         timeout = 10
-        self._stop_event.set()
+        self.request_stop()
         if not self.is_alive():
             return
         self.join(timeout=timeout)

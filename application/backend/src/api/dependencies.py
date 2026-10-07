@@ -12,6 +12,7 @@ from core.security import SshFeatureAvailability, get_ssh_feature_availability
 from db.engine import get_async_db_session
 from exceptions import SshFeatureDisabledError
 from robots.robot_client_factory import RobotClientFactory
+from runtime.registry import RuntimeSessionRegistry
 from services import (
     DatasetDownloadService,
     DatasetService,
@@ -63,12 +64,6 @@ def get_system_service() -> SystemService:
 
 
 SystemServiceDep = Annotated[SystemService, Depends(get_system_service)]
-
-
-@lru_cache
-def get_runtime_session_service() -> RuntimeSessionService:
-    """Provide a RuntimeSessionService for listing and stopping runtime sessions."""
-    return RuntimeSessionService()
 
 
 def get_health_service(request: HTTPConnection) -> HealthService:
@@ -346,3 +341,19 @@ def get_camera_claim_registry(request: HTTPConnection) -> CameraClaimRegistry:
 
 
 CameraClaimRegistryDep = Annotated[CameraClaimRegistry, Depends(get_camera_claim_registry)]
+
+
+def get_runtime_session_registry(request: HTTPConnection) -> RuntimeSessionRegistry:
+    """Return the process-local runtime session registry."""
+    registry = getattr(request.app.state, "runtime_session_registry", None)
+    if registry is None:
+        raise RuntimeError("Runtime session registry is not initialized")
+    return cast("RuntimeSessionRegistry", registry)
+
+
+RuntimeSessionRegistryDep = Annotated[RuntimeSessionRegistry, Depends(get_runtime_session_registry)]
+
+
+def get_runtime_session_service(registry: RuntimeSessionRegistryDep) -> RuntimeSessionService:
+    """Provide a RuntimeSessionService for listing and stopping runtime sessions."""
+    return RuntimeSessionService(registry)

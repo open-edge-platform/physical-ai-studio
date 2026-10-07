@@ -124,13 +124,12 @@ export const useJointState = (
                 setError(null);
                 setErrorCode(null);
                 setWarning(null);
-                const shouldRestart = restartRequested.current;
+                // A restart is just a reconnect: closing the socket stopped the old session.
                 restartRequested.current = false;
                 socket.sendJsonMessage({
                     follower_id,
                     leader_id,
                     camera_ids,
-                    ...(shouldRestart ? { restart: true } : {}),
                 });
             },
             onMessage: handleMessage,
