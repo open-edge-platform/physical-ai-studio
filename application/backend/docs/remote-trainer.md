@@ -85,7 +85,8 @@ directory.
 | ---------------------------- | -------- | -------------------------------------------- |
 | `HF_TOKEN`                   | no       | Fallback used only when the studio sends no token for a job (see the [!IMPORTANT] note above); has no effect for SSH-provisioned trainers. |
 | `TRAINER_STORAGE_DIR`        | no       | Working directory for jobs and artifacts.    |
-| `TRAINER_MAX_CONCURRENT_JOBS`| no       | Queue concurrency (default 1).               |
+| `TRAINER_MAX_CONCURRENT_JOBS`| no       | Maximum parallel jobs on distinct GPUs (default 8). Same-GPU jobs queue. |
+| `TRAINER_GPU_BUSY_MEMORY_MB` | no | GPU memory usage that marks a device busy (default 512 MiB). Tune for driver/desktop overhead. |
 | `TRAINER_MAX_UNCOMPRESSED_BYTES` | no   | Cap on an uploaded dataset's uncompressed size. |
 | `TRAINER_MIN_FREE_BYTES`     | no       | Disk headroom kept free after extraction.    |
 | `TRAINER_PORT`               | no       | Listen port (default 8001).                  |
@@ -255,7 +256,13 @@ PyTorch data loaders can exhaust Docker's default 64 MB `/dev/shm` allocation
 during larger training jobs. On a trusted single-tenant host, prefer the host's
 shared-memory pool with `--ipc=host` (or `ipc: host` in Docker Compose). If you
 need an isolated limit instead, set an explicit shared-memory size such as
-`--shm-size=16g` (or `shm_size: 16g` in Docker Compose).
+`--shm-size=32g` (or `shm_size: 32g` in Docker Compose). Managed SSH trainers
+use an isolated 32 GiB `/dev/shm` by default; tune **Trainer shared memory
+(GiB)** in Studio's Managed SSH Training settings (or `ssh.trainer_shm_size_gb`
+via `PATCH /api/settings`). Changing this setting does not resize an existing
+container. Stop the container and save the training target to recreate it
+with the same data volume; an interrupted running job
+will fail on restart, and queued jobs can then proceed.
 
 #### CUDA
 

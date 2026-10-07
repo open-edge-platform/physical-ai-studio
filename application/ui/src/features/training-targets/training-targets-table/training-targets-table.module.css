@@ -7,6 +7,18 @@
     margin-left: 0;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+    .starting::before {
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+}
+
+@keyframes pulse {
+    50% {
+        opacity: 0.35;
+    }
+}
+
 .cudaBadge {
     color: var(--spectrum-global-color-static-green-500);
     background: color-mix(in srgb, var(--spectrum-global-color-static-green-500) 16%, transparent);

@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 
 ARG PYTHON_VERSION=3.13
 
@@ -12,7 +14,7 @@ ARG PYTHON_VERSION=3.13
 # PyPI `av` wheel bundles its own FFmpeg, so both are replaced by these
 # artifacts. Kept in sync with application/docker/Dockerfile.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS ffmpeg-builder
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS ffmpeg-builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
@@ -130,7 +132,7 @@ RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
 
 SHELL ["/bin/sh", "-c"]
 
-FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 # UV_PROJECT_ENVIRONMENT must match the runtime COPY destination (/opt/venv).
@@ -227,7 +229,7 @@ RUN set -eu; \
     find "$CLEANUP_ROOT" -type d \( -path "*/triton/backends/nvidia" -o -path "*/triton/backends/amd" \) \
         -exec rm -rf {} + 2>/dev/null || true
 
-FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS runtime-base
 
 ARG TRAINER_UID=10001
 ARG TRAINER_GID=10001
@@ -271,6 +273,7 @@ ENV LD_LIBRARY_PATH="/opt/vpl/lib:/opt/vpl/lib64:/opt/ffmpeg-vpl/lib:/usr/local/
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src \
     TRAINER_STORAGE_DIR=/var/lib/physicalai-trainer \
+    TMPDIR=/var/lib/physicalai-trainer \
     HF_HOME=/var/lib/physicalai-trainer/huggingface \
     TORCH_HOME=/var/lib/physicalai-trainer/torch \
     XDG_CACHE_HOME=/var/lib/physicalai-trainer/cache \

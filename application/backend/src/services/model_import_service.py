@@ -13,14 +13,10 @@ from schemas.dataset import Dataset
 from schemas.job import LocalTrainJobPayload
 from settings import get_settings
 
-# We assume the directory/zip is taken directly from Physical AI Studio, either
-# by exporting the model from the UI, or by taking it from our storage dir
-_REQUIRED_FILES = (
-    "version_0/hparams.yaml",
-    "version_0/metrics.csv",
-    "exports/torch/manifest.json",
-)
-_TORCH_MANIFEST_PATH = "exports/torch/manifest.json"
+# Imported models must retain the checkpoint needed to resume training. Logger
+# artifacts are optional and deployment exports may target any supported backend.
+_REQUIRED_FILES = ("model.ckpt",)
+_EXPORT_BACKENDS = ("torch", "openvino", "onnx", "executorch")
 _SUPPORTED_POLICIES = frozenset({"act", "smolvla", "pi05", "rldx1", "molmoact2", "xr0"})
 
 
@@ -79,7 +75,7 @@ class ModelImportService:
         base_model_id: UUID | None = None,
         version: int = 1,
     ) -> Model:
-        """Import a model from a directory (copy or move)."""
+        """Import a full model directory or a deployment ``exports`` directory."""
         if not source_dir.exists() or not source_dir.is_dir():
             raise InvalidArchiveError(f"Model directory does not exist: {source_dir}")
 
@@ -91,13 +87,16 @@ class ModelImportService:
         model_dir = settings.models_dir / str(uuid4())
 
         reader = DirectoryModelReader(source_dir)
-        policy = self._inspect_model(reader)
+        source_is_exports_dir = self._is_exports_directory(reader)
+        policy = self._inspect_model(reader, source_is_exports_dir=source_is_exports_dir)
 
         try:
+            destination = model_dir / "exports" if source_is_exports_dir else model_dir
             if move:
-                await asyncio.to_thread(shutil.move, str(source_dir), str(model_dir))
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(shutil.move, str(source_dir), str(destination))
             else:
-                await asyncio.to_thread(shutil.copytree, source_dir, model_dir)
+                await asyncio.to_thread(shutil.copytree, source_dir, destination)
 
             return await self._finalize_import(
                 model_dir=model_dir,
@@ -160,15 +159,32 @@ class ModelImportService:
         )
         return await self._persist_import(job, model)
 
-    def _inspect_model(self, reader: ModelReader) -> str:
-        """Validate model structure and infer policy."""
-        for required in _REQUIRED_FILES:
-            if not reader.file_exists(required):
-                raise InvalidArchiveError(f"Model is missing required file '{required}'")
+    def _is_exports_directory(self, reader: ModelReader) -> bool:
+        """Return whether the reader is rooted at an ``exports`` directory."""
+        return any(reader.file_exists(f"{backend}/manifest.json") for backend in _EXPORT_BACKENDS)
 
-        torch_manifest = self._read_manifest(reader, _TORCH_MANIFEST_PATH)
-        self._validate_torch_artifact(torch_manifest, reader)
-        return self._infer_policy(torch_manifest, _TORCH_MANIFEST_PATH)
+    def _inspect_model(self, reader: ModelReader, *, source_is_exports_dir: bool) -> str:
+        """Validate model structure and infer policy."""
+        if not source_is_exports_dir:
+            for required in _REQUIRED_FILES:
+                if not reader.file_exists(required):
+                    raise InvalidArchiveError(f"Model is missing required file '{required}'")
+
+        for backend in _EXPORT_BACKENDS:
+            manifest_path = f"{backend}/manifest.json" if source_is_exports_dir else f"exports/{backend}/manifest.json"
+            if not reader.file_exists(manifest_path):
+                continue
+            manifest = self._read_manifest(reader, manifest_path)
+            self._validate_backend_artifact(
+                manifest,
+                reader,
+                backend,
+                manifest_path,
+                source_is_exports_dir=source_is_exports_dir,
+            )
+            return self._infer_policy(manifest, manifest_path)
+
+        raise InvalidArchiveError("Model is missing a supported export manifest under 'exports/'")
 
     def _read_manifest(self, reader: ModelReader, path: str) -> dict[str, Any]:
         """Read and validate a manifest JSON file."""
@@ -179,19 +195,25 @@ class ModelImportService:
             raise InvalidArchiveError(f"Manifest '{path}' must declare format='policy_package'")
         return data
 
-    def _validate_torch_artifact(self, torch_manifest: dict[str, Any], reader: ModelReader) -> None:
-        """Validate that the torch artifact referenced in the manifest exists."""
-        torch_artifact = self._extract_torch_artifact_path(torch_manifest, _TORCH_MANIFEST_PATH)
-        artifact_path = f"exports/torch/{torch_artifact}"
+    def _validate_backend_artifact(
+        self,
+        manifest: dict[str, Any],
+        reader: ModelReader,
+        backend: str,
+        manifest_path: str,
+        *,
+        source_is_exports_dir: bool,
+    ) -> None:
+        """Validate that a manifest references an existing backend artifact."""
+        artifact = self._extract_backend_artifact_path(manifest, backend, manifest_path)
+        artifact_path = f"{backend}/{artifact}" if source_is_exports_dir else f"exports/{backend}/{artifact}"
         if not reader.file_exists(artifact_path):
-            raise InvalidArchiveError(
-                f"Manifest '{_TORCH_MANIFEST_PATH}' references missing torch artifact '{torch_artifact}'"
-            )
+            raise InvalidArchiveError(f"Manifest '{manifest_path}' references missing {backend} artifact '{artifact}'")
 
     @staticmethod
-    def _extract_torch_artifact_path(torch_manifest: dict[str, Any], label: str) -> str:
-        """Extract and validate the torch artifact path from the manifest."""
-        model_section = torch_manifest.get("model")
+    def _extract_backend_artifact_path(manifest: dict[str, Any], backend: str, label: str) -> str:
+        """Extract and validate a backend artifact path from a manifest."""
+        model_section = manifest.get("model")
         if not isinstance(model_section, dict):
             raise InvalidArchiveError(f"Manifest '{label}' is missing object field 'model'")
 
@@ -199,15 +221,15 @@ class ModelImportService:
         if not isinstance(artifacts, dict):
             raise InvalidArchiveError(f"Manifest '{label}' is missing object field 'model.artifacts'")
 
-        torch_artifact = artifacts.get("torch")
-        if not isinstance(torch_artifact, str) or not torch_artifact.strip():
-            raise InvalidArchiveError(f"Manifest '{label}' is missing non-empty 'model.artifacts.torch' entry")
+        artifact = artifacts.get(backend)
+        if not isinstance(artifact, str) or not artifact.strip():
+            raise InvalidArchiveError(f"Manifest '{label}' is missing non-empty 'model.artifacts.{backend}' entry")
 
-        artifact_path = Path(torch_artifact)
+        artifact_path = Path(artifact)
         if artifact_path.is_absolute() or ".." in artifact_path.parts:
-            raise InvalidArchiveError(f"Manifest '{label}' contains unsafe torch artifact path '{torch_artifact}'")
+            raise InvalidArchiveError(f"Manifest '{label}' contains unsafe {backend} artifact path '{artifact}'")
 
-        return torch_artifact
+        return artifact
 
     def _infer_policy(self, manifest: dict[str, Any], manifest_path: str) -> str:
         """Extract and validate the policy name from the manifest."""

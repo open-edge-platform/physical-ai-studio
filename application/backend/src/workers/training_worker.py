@@ -35,7 +35,7 @@ from settings import get_settings
 from workers.base import BaseProcessWorker
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from multiprocessing.managers import DictProxy
     from multiprocessing.synchronize import Event as EventClass
 
@@ -63,7 +63,7 @@ class TrainingWorker(BaseProcessWorker):
                 for job in pending_jobs:
                     payload = TrainJobPayloadAdapter.validate_python(job.payload)
                     target = self._target_key(payload)
-                    if target in self._active_training_tasks:
+                    if self._target_is_busy(target, self._active_training_tasks):
                         continue
                     task = asyncio.create_task(self._run_training_job(job, payload), name=f"training-{job.id}")
                     self._active_training_tasks[target] = task
@@ -86,6 +86,13 @@ class TrainingWorker(BaseProcessWorker):
             self._release_target(target, job_id, completed_task)
 
         return _on_done
+
+    @staticmethod
+    def _target_is_busy(target: str, active: Mapping[str, object]) -> bool:
+        return target in active or (
+            target.startswith("remote:")
+            and any(key.startswith(f"{target}:") or target.startswith(f"{key}:") for key in active)
+        )
 
     @staticmethod
     def _target_key(payload: TrainJobPayload) -> str:
@@ -195,7 +202,7 @@ class TrainingWorker(BaseProcessWorker):
                 update={
                     "status": JobStatus.RUNNING,
                     "message": "Training started",
-                    "start_time": datetime.datetime.now(tz=datetime.UTC),
+                    "start_time": job.start_time or datetime.datetime.now(tz=datetime.UTC),
                 },
             )
         dispatcher = TrainingTrackingDispatcher(

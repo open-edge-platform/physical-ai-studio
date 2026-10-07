@@ -3,6 +3,10 @@
 Jobs with ``training_target='ssh'`` cannot be read by the current job schema.
 Delete those jobs and their provisioning tables while retaining trained models.
 
+The migration never contacts remote hosts. It logs any recorded trainer
+containers so the operator can remove leftovers; Studio labels those
+containers, so they remain discoverable after their records are gone.
+
 Revision ID: 7c1a9e2b4d6f
 Revises: 4b8d2f6a1c30
 Create Date: 2026-09-21 00:00:00.000000
@@ -11,6 +15,7 @@ Create Date: 2026-09-21 00:00:00.000000
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from loguru import logger
 
 from alembic import op
 
@@ -19,21 +24,47 @@ down_revision: str | Sequence[str] | None = "4b8d2f6a1c30"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+# Label every Studio-managed trainer container carries (see services.ssh.docker_ops).
+_MANAGED_LABEL = "org.open-edge-platform.physicalai.managed=true"
 
-def upgrade() -> None:
-    """Remove unsupported SSH jobs and their tables."""
-    container = (
+
+def _warn_about_recorded_containers() -> None:
+    """Log recorded trainer containers that may still exist on their SSH hosts."""
+    containers = (
         op.get_bind()
         .execute(
             sa.text(
-                "SELECT coalesce(container_name, container_id) FROM job_provisioning "
-                "WHERE container_name IS NOT NULL OR container_id IS NOT NULL LIMIT 1"
+                "SELECT jp.job_id, jobs.status AS job_status, jp.ssh_host_alias, "
+                "coalesce(jp.container_name, jp.container_id) AS container "
+                "FROM job_provisioning AS jp "
+                "LEFT JOIN jobs ON jobs.id = jp.job_id "
+                "WHERE jp.container_name IS NOT NULL OR jp.container_id IS NOT NULL "
+                "ORDER BY jp.ssh_host_alias, jp.job_id"
             )
         )
-        .scalar()
+        .mappings()
+        .all()
     )
-    if container is not None:
-        raise RuntimeError(f"Remove provisioned container {container} before migrating")
+    if not containers:
+        return
+    details = "\n".join(
+        f"  - host {row['ssh_host_alias']!r}: container {row['container']!r} (job {row['job_status'] or 'unknown'})"
+        for row in containers
+    )
+    logger.warning(
+        "Removed {} unsupported SSH job record(s). Their trainer containers may still exist:\n{}\n"
+        "On each host, list Studio-managed containers and remove leftovers from this list:\n"
+        "  docker ps -a --filter label={}\n"
+        "  docker rm -f <container>",
+        len(containers),
+        details,
+        _MANAGED_LABEL,
+    )
+
+
+def upgrade() -> None:
+    """Remove unsupported SSH jobs and their tables."""
+    _warn_about_recorded_containers()
 
     # Retain trained models without a reference to their deleted jobs.
     op.execute(

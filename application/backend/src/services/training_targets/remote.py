@@ -41,4 +41,5 @@ class RemoteTrainingTargetHandler:
     def target_key(payload: TrainJobPayload) -> str:
         if not isinstance(payload, RemoteTrainJobPayload):
             raise TypeError("RemoteTrainingTargetHandler.target_key requires a RemoteTrainJobPayload")
-        return f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
+        trainer_key = f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
+        return f"{trainer_key}:{payload.device.type}:{payload.device.index}" if payload.device else trainer_key

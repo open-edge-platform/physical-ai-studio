@@ -17,7 +17,7 @@ from runtime.contract import (
     StateEvent,
     StopTaskCommand,
 )
-from runtime.policy_loader import PolicyLoader, model_identity
+from runtime.policy_loader import PolicyLoader, model_identity, requires_task
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -93,6 +93,7 @@ class StudioActionSource:
         return StateData(
             connected=True,
             follower_source=self._follower_source,
+            has_leader=self._leader_reads_enabled,
             model_loaded=self._model_loaded,
             task=self._task,
             dataset_loaded=None if recording is None else recording.dataset_loaded,
@@ -351,6 +352,7 @@ class StudioActionSource:
             self._arm_generation += 1
             generation = self._arm_generation
             self._arming = True
+        self._warn_if_prompt_missing(policy, task)
         snapshot = self._latest_observation()
         if snapshot is None:
             with self._policy_lock:
@@ -367,6 +369,19 @@ class StudioActionSource:
         )
         thread.start()
         return False
+
+    @staticmethod
+    def _warn_if_prompt_missing(policy: PolicySource, task: str | None) -> None:
+        """Log when a language-conditioned policy starts with an empty prompt.
+
+        An empty prompt is allowed (the model then runs on its prompt template
+        alone), but it is rarely intended and otherwise invisible.
+        """
+        if task is not None and task.strip():
+            return
+        model = getattr(policy, "_model", None)
+        if model is not None and requires_task(model):
+            logger.warning("Starting a policy that expects a task prompt with an empty prompt")
 
     def _finish_arm(self, policy: PolicySource, generation: int, snapshot: ObservationSnapshot) -> None:
         """Warm the current observation, then switch into policy mode if still current."""

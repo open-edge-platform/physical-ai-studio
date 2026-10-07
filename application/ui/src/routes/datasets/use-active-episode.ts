@@ -35,7 +35,7 @@ export function useActiveEpisode(): [number | null, (idx: number) => void] {
                 paths.project.datasets.showEpisode({
                     project_id,
                     dataset_id,
-                    episode_index: String(episodes[0].episode_index),
+                    episode_index: String(Math.max(...episodes.map((episode) => episode.episode_index))),
                 }),
                 { replace: true }
             );

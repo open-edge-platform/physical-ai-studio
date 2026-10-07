@@ -53,7 +53,7 @@ policy.eval()
 # Benchmark
 benchmark = LiberoBenchmark(
     task_suite="libero_10",
-    num_episodes=20,         # 20 episodes per task
+    num_episodes=20,  # 20 episodes per task
     seed=42,
     video_dir="./videos",
     record_mode="failures",  # Record only failed episodes

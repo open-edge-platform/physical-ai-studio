@@ -29,6 +29,16 @@ tasks per suite and 50 episodes per task.
 
 The four-suite average is the arithmetic mean of the suite success rates.
 
+### SnapFlow on LIBERO
+
+Our [Pi0.5 SnapFlow benchmark report](../../docs/explanation/benchmark/snapflow-libero.md)
+compares a 20k-step distilled student against its 10-step teacher: 97.55% vs.
+97.05% success across 2,000 LIBERO episodes, with 58.9 vs. 175.4 ms median
+latency per action chunk on an H100 PCIe. It uses Studio's `LiberoBenchmark`
+and Runtime's latency tool, **not** the vla-evaluation-harness protocol used
+for the table above. See the report for the method, limitations, artifact
+links, and evaluation requirements.
+
 ### LIBERO-Plus Results
 
 The LIBERO-Plus protocol evaluates the same four suites with one episode for

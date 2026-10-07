@@ -55,13 +55,13 @@ async def test_check_remote_trainer_reports_starting_while_container_is_launchin
 
     with (
         patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
-        patch(f"{MODULE}.persistent_trainer.get_launch_phase", return_value="Pulling trainer image…"),
+        patch(f"{MODULE}.persistent_trainer.get_launch_phase", return_value="Pulling trainer image"),
         patch(f"{MODULE}.httpx.AsyncClient") as async_client,
     ):
         result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
 
     assert result.status == "starting"
-    assert result.reason_code == "Pulling trainer image…"
+    assert result.reason_code == "Pulling trainer image"
     assert result.devices == []
     async_client.assert_not_called()
 

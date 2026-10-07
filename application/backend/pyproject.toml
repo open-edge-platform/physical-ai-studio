@@ -23,7 +23,7 @@ dependencies = [
   "aiortc>=1.13.0",
   "pydantic>=2.12,<2.13",
   "pydantic-settings>=2.10.1",
-  "sqlalchemy>=2.0.43",
+  "sqlalchemy>=2.0.43,<2.1",
   "aiosqlite~=0.21",
   "alembic>=1.16.5",
   "click>=8.3.0",
@@ -36,7 +36,7 @@ dependencies = [
   "sse-starlette>=2.0.0",
   "huggingface-hub>=0.27",
   "psutil~=7.2",
-  "physicalai-studio-plugin>=0.2.0",
+  "physicalai-studio-plugin>=0.3.0",
   "asyncssh~=2.24",
   "sigstore>=4.0,<5",
   "boto3>=1.40",
@@ -124,7 +124,7 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", tag = "v0.2.0" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "ab00dc71f64470940f67daadc0acd03ab0f8fd33" }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
 # be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
@@ -145,18 +145,18 @@ triton-xpu = { index = "pytorch-xpu" }
 
 [dependency-groups]
 dev = [
-  "ruff==0.11.13",
+  "ruff==0.16.7",
   "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
 ]
 lint = [
-  "ruff==0.11.13",
+  "ruff==0.16.7",
   "mypy==1.20.2",
   "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
 ]
 all = [
-  "ruff==0.11.13",
+  "ruff==0.16.7",
   "mypy==1.20.2",
   "pyrefly==1.3.0",
   "types-PyYAML>=6.0.12.20250915",
@@ -168,7 +168,8 @@ default-groups = ["all"]
 exclude-newer = "7 days"
 # FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
 # FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
-exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false, lightning = false, openvino = false, openvino-tokenizers = false}
+# FIXME: pynokhwa: disable cutoff so 0.1.4 required by physicalai resolves despite being <7 days old
+exclude-newer-package = {pyrealsense2 = "1 days", markupsafe = false, physicalai-rebot-b601-plugin = false, physicalai-stararm-plugin = false, physicalai-bimanual-so101-plugin = false, physicalai-lerobot-plugin = false, physicalai-studio-plugin = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false}
 # The pytorch-xpu index is non-explicit (explicit = false) because
 # transitive deps like triton-xpu only exist on the XPU index.
 # unsafe-best-match is required because PyTorch indexes can host stale
@@ -222,14 +223,22 @@ select = [
 
 ignore = [
     "N801", "N805", "N806", "N807", "N818", "COM812", "RET503", "SIM108",
-    "SIM105", "PLR2004", "RUF010", "TC001", "RUF012"
+    "SIM105", "PLR2004", "RUF010", "TC001", "RUF012",
+    # Backend uses lazy imports for optional hardware/runtime dependencies.
+    "PLC0415",
+    # Existing path checks in async workflows need a separate I/O review.
+    "ASYNC240",
 ]
 
 fixable = ["ALL"]
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
-"*test*.py" = ["S", "ANN", "D", "ARG", "PLR"]
+"*test*.py" = ["S", "ANN", "D", "ARG", "PLR", "PLW0108"]
+# Keep established public signatures and runtime-generic classes unchanged.
+"src/api/{dataset,models,runtime_ws}.py" = ["PLR0917"]
+"src/repositories/{base,mappers/base_mapper_interface}.py" = ["UP046"]
+"src/workers/transport_worker.py" = ["UP042", "UP046"]
 
 [tool.ruff.lint.isort]
 split-on-trailing-comma = false

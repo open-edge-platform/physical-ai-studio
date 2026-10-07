@@ -72,3 +72,51 @@ def tiny_molmoact2_config(
         n_action_steps=2,
         tokenizer_name_or_path=str(tokenizer_dir),
     )
+
+
+@pytest.fixture
+def mock_so101_calibration() -> dict:
+    return {
+        "shoulder_pan": {
+            "id": 1,
+            "drive_mode": 0,
+            "homing_offset": -457,
+            "range_min": 701,
+            "range_max": 3381,
+        },
+        "shoulder_lift": {
+            "id": 2,
+            "drive_mode": 0,
+            "homing_offset": 260,
+            "range_min": 882,
+            "range_max": 3244,
+        },
+        "elbow_flex": {
+            "id": 3,
+            "drive_mode": 0,
+            "homing_offset": 642,
+            "range_min": 888,
+            "range_max": 3088,
+        },
+        "wrist_flex": {
+            "id": 4,
+            "drive_mode": 0,
+            "homing_offset": 1056,
+            "range_min": 778,
+            "range_max": 3092,
+        },
+        "wrist_roll": {
+            "id": 5,
+            "drive_mode": 0,
+            "homing_offset": -56,
+            "range_min": 28,
+            "range_max": 4065,
+        },
+        "gripper": {
+            "id": 6,
+            "drive_mode": 0,
+            "homing_offset": -807,
+            "range_min": 2031,
+            "range_max": 3538,
+        },
+    }

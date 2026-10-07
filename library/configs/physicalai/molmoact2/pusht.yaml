@@ -22,7 +22,6 @@ model:
 
     # PushT uses the base embodiment frame and dataset-owned normalization.
     adapt_to_so101: false
-    convert_pretrained_so101_stats: false
     preserve_pretrained_normalization_in_training: false
 
     # Text inserted into the model prompt to describe the embodiment and action space.

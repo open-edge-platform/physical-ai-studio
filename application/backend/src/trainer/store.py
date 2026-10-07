@@ -123,23 +123,14 @@ class JobStore:
             row = self._conn.execute("SELECT artifact FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return row["artifact"] if row and row["artifact"] else None
 
-    def next_queued(self) -> str | None:
-        """Return the oldest queued job id, if any."""
+    def queued(self) -> list[str]:
+        """Return queued jobs in submission order so a busy GPU cannot block another."""
         with self._lock:
-            row = self._conn.execute(
-                "SELECT id FROM jobs WHERE status = ? ORDER BY created_at ASC, rowid ASC LIMIT 1",
+            rows = self._conn.execute(
+                "SELECT id FROM jobs WHERE status = ? ORDER BY created_at ASC, rowid ASC",
                 (TrainerJobStatus.QUEUED,),
-            ).fetchone()
-        return row["id"] if row else None
-
-    def running_count(self) -> int:
-        """Return the number of jobs currently running."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*) AS c FROM jobs WHERE status = ?",
-                (TrainerJobStatus.RUNNING,),
-            ).fetchone()
-        return int(row["c"])
+            ).fetchall()
+        return [row["id"] for row in rows]
 
     def update(
         self,

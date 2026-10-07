@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from lerobot.policies.factory import make_policy_config
-
 
 def get_delta_timestamps_from_policy(
     policy_name: str,
@@ -43,6 +41,9 @@ def get_delta_timestamps_from_policy(
         ...     delta_timestamps=delta_timestamps,
         ... )
     """
+    # Lazy: lerobot.policies.factory eagerly imports every policy (incl. GR00T -> Qwen3-VL processors).
+    from lerobot.policies.factory import make_policy_config  # noqa: PLC0415
+
     config = make_policy_config(policy_name)
 
     n_obs_steps: int = getattr(config, "n_obs_steps", 1)

@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
 import httpx
@@ -21,9 +21,12 @@ import pytest
 from loguru import logger
 from pydantic import SecretStr
 
+from schemas.base_job import JobStatus
 from schemas.dataset import Snapshot
+from schemas.hardware import DeviceInfo
 from schemas.job import RemoteTrainJobPayload, TrainingDevice
 from schemas.model import Model
+from services.job_service import JobService
 from services.training_backends._transfer_progress import TransferProgressLogger, format_bytes, format_throughput
 from services.training_backends.base import TrainingContext
 from services.training_backends.local import build_spec
@@ -533,6 +536,76 @@ class TestRemoteTrainingBackend:
         safe_zip.extract_to.assert_called_once()
 
     @pytest.mark.anyio
+    async def test_reports_disconnection_before_warning_threshold(self, tmp_path):
+        settings = _settings()  # The warning is 900s away; UI should not wait for it.
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        controller.raise_connection_error = True
+        controller.poll_state = {"status": "completed", "progress": 100}
+
+        class RecoveringClient(_FakeClient):
+            async def get(self, url: str) -> _FakeResponse:
+                if url.endswith(f"/jobs/{controller.remote_job_id}") and controller.poll_count >= 1:
+                    controller.raise_connection_error = False
+                return await super().get(url)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: RecoveringClient(controller, **kw)),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            await asyncio.wait_for(_backend(settings)._wait_for_completion(context, controller.remote_job_id), 2)
+
+        assert context.progress.call_args_list[0].kwargs["message"] == "Trainer unreachable; waiting to reconnect"
+        assert context.progress.call_args_list[-1].kwargs["message"] is None
+
+    @pytest.mark.anyio
+    async def test_recovery_clears_persisted_connection_warning_without_trainer_message(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+        controller = _Controller(states=[])
+        controller.raise_connection_error = True
+        controller.poll_state = {"status": "running", "progress": 50}
+        job = MagicMock(id=uuid4(), message="Training")
+        service = JobService(MagicMock())
+        service.repo.get_by_id = AsyncMock(return_value=job)
+
+        def persist(_job, updates):
+            job.message = updates.get("message", job.message)
+            return job
+
+        service.repo.update = AsyncMock(side_effect=persist)
+        pending = []
+
+        def report(progress, *, message=None, extra_info=None):
+            pending.append(
+                asyncio.create_task(
+                    service.update_job_status(job.id, JobStatus.RUNNING, message=message, progress=progress)
+                )
+            )
+
+        context.progress = report
+
+        class RecoveringClient(_FakeClient):
+            async def get(self, url: str) -> _FakeResponse:
+                if url.endswith(f"/jobs/{controller.remote_job_id}"):
+                    if controller.poll_count >= 1:
+                        controller.raise_connection_error = False
+                    if controller.poll_count >= 2:
+                        controller.poll_state = {"status": "completed", "progress": 100}
+                return await super().get(url)
+
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: RecoveringClient(controller, **kw)),
+            patch(f"{REMOTE}._RECONNECT_BACKOFF_S", 0),
+        ):
+            await asyncio.wait_for(_backend(settings)._wait_for_completion(context, controller.remote_job_id), 2)
+            await asyncio.gather(*pending)
+
+        assert job.message == "Trainer connection restored"
+
+    @pytest.mark.anyio
     async def test_reconnects_after_outage_exceeds_warning_threshold(self, tmp_path):
         """Losing the VPN must not turn a completed remote job into a failed one."""
         settings = _settings()
@@ -811,6 +884,28 @@ class TestHttpDatasetTransfer:
 
         assert body["spec"]["device_type"] is None
         assert body["spec"]["device_index"] is None
+
+    @pytest.mark.anyio
+    async def test_explicit_remote_device_is_validated_before_submission(self, tmp_path):
+        settings = _settings()
+        context = _context(tmp_path)
+        device = TrainingDevice(type="cuda", index=1)
+        controller = _Controller(states=[])
+        with (
+            patch(f"{REMOTE}.get_settings", return_value=settings),
+            patch(f"{REMOTE}.httpx.AsyncClient", lambda **kw: _FakeClient(controller, **kw)),
+        ):
+            backend = _backend(settings)
+            backend._device = device
+            backend.get_training_devices = AsyncMock(return_value=[DeviceInfo(type="cuda", name="GPU 1", index=1)])
+            await backend.submit_job(context)
+            body = controller.posted_bodies[-1]
+            assert body["spec"]["device_type"] == "cuda"
+            assert body["spec"]["device_index"] == 1
+            backend.get_training_devices.return_value = []
+            with pytest.raises(RemoteTrainingError, match="no longer available"):
+                await backend.submit_job(context)
+        assert len(controller.posted_bodies) == 1
 
     @pytest.mark.anyio
     async def test_http_persists_remote_job_id_after_upload(self, tmp_path):
@@ -1213,17 +1308,19 @@ class TestTrainerNameLogPrefix:
         sink_id = logger.add(lambda m: messages.append(m.record["message"]), level="DEBUG")
         return messages, sink_id
 
-    def test_prefixes_log_lines_with_the_pinned_trainer_name(self):
+    def test_prefixes_log_lines_with_the_pinned_trainer_and_gpu(self):
         from services.training_backends.remote import RemoteTrainingBackend
 
         messages, sink_id = self._capture()
         try:
-            backend = RemoteTrainingBackend("https://trainer.test", trainer_name="gpu-box-1")
+            backend = RemoteTrainingBackend(
+                "https://trainer.test", trainer_name="gpu-box-1", device=TrainingDevice(type="cuda", index=1)
+            )
             backend._log.info("hello")
         finally:
             logger.remove(sink_id)
 
-        assert messages == ["[gpu-box-1] hello"]
+        assert messages == ["[gpu-box-1 · CUDA 1] hello"]
 
     def test_falls_back_to_the_base_url_when_no_name_is_pinned(self):
         """Older persisted jobs (submitted before this field existed) have no pinned name."""
@@ -1239,20 +1336,24 @@ class TestTrainerNameLogPrefix:
         assert messages == ["[https://trainer.test] hello"]
 
     def test_two_concurrent_backends_prefix_independently(self):
-        """Two trainers logging interleaved must stay individually attributable."""
+        """Two GPUs on the same trainer logging interleaved stay attributable."""
         from services.training_backends.remote import RemoteTrainingBackend
 
         messages, sink_id = self._capture()
         try:
-            backend_a = RemoteTrainingBackend("https://trainer-a.test", trainer_name="trainer-a")
-            backend_b = RemoteTrainingBackend("https://trainer-b.test", trainer_name="trainer-b")
+            backend_a = RemoteTrainingBackend(
+                "https://trainer.test", trainer_name="trainer", device=TrainingDevice(type="cuda", index=0)
+            )
+            backend_b = RemoteTrainingBackend(
+                "https://trainer.test", trainer_name="trainer", device=TrainingDevice(type="cuda", index=1)
+            )
             backend_a._log.info("from a")
             backend_b._log.info("from b")
             backend_a._log.info("from a again")
         finally:
             logger.remove(sink_id)
 
-        assert messages == ["[trainer-a] from a", "[trainer-b] from b", "[trainer-a] from a again"]
+        assert messages == ["[trainer · CUDA 0] from a", "[trainer · CUDA 1] from b", "[trainer · CUDA 0] from a again"]
 
 
 class TestByteFormatting:

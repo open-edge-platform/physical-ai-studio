@@ -6,7 +6,10 @@ starts one persistent trainer container on the server and forwards its fixed
 loopback port through a standing SSH tunnel. The container and its data volume
 are shared across jobs on that target; they are not tied to a single job or SSH
 session. See [Physical AI Trainer](../remote-trainer.md) for the server-side
-service and image requirements.
+service and image requirements. A trainer reports GPUs with significant allocated
+memory as busy; Studio shows that state and the trainer waits before starting a
+job on one. This is best-effort telemetry, **not** a cross-container reservation:
+simultaneous starts can race, and missing telemetry does not block training.
 
 ## Availability and security
 
@@ -44,21 +47,54 @@ in the UI. The first request returns the presented fingerprint; confirm it
 before retrying. Studio then records the accepted key and rejects changed or
 revoked keys. It never silently accepts an unknown key.
 
-Saving the target opens the tunnel before reporting success and starts the
-managed container in the background. A first image pull can take time; check
-the target's health in the UI before starting a job. Image signatures are
+Saving the target opens the tunnel before reporting success. By default Studio
+starts the managed container in the background. For a new SSH target, check
+**Set up Docker and GPU support** in the form to install
+Docker and GPU prerequisites before pulling the trainer image. Installation
+transfers a bundled script over verified SSH, runs it only on request, and
+reports progress or specific failures in target health. To retry setup for an
+existing SSH target, use `POST /api/remote-trainers/{remote_trainer_id}/install-prerequisites`. It
+supports Ubuntu 24.04 and 26.04 with NVIDIA or Intel GPUs; mixed-vendor hosts
+are rejected. On Ubuntu 26.04, Docker and Intel GPU packages come from the
+Ubuntu repositories; Ubuntu 24.04 retains the pinned Docker and
+checksum-verified upstream Intel packages. Intel hosts must already have a
+kernel and firmware exposing a GPU render device; Studio does not replace the
+host kernel automatically.
+Installation checks for running containers before configuring Docker and again
+before restarting it. Keep the host idle during setup: a container started by
+another process after those checks can still be interrupted by the restart.
+Newly installed GPU packages can require a separately confirmed host reboot;
+Studio checks for active jobs and running containers before rebooting, then
+reconnects and verifies the host before launching the trainer. Re-run
+installation after repairing a failed step; it skips prerequisites that already
+work. NVIDIA
+Container Toolkit packages use its signed vendor repository. Missing
+prerequisites require non-interactive sudo (`sudo -n true`) for the SSH user;
+Ubuntu hosts with incomplete `dpkg` transactions must be repaired by an
+administrator first. Reboot confirmation also requires non-interactive sudo.
+Already-ready hosts do not need sudo for the installation check. Docker group
+membership is root-equivalent. Setup adds the SSH user to the Docker group and
+reconnects Studio's SSH session before launching the trainer. Any terminal session
+already open on the host still needs a fresh login (log out and back in, or run
+`newgrp docker`) before `docker ps` works without sudo. A first image pull can take time; check the target's health in
+the UI before starting a job. Image signatures are
 verified by Studio before launch. Restarting Studio restores standing tunnels
 for configured targets; an SSH host that is temporarily offline at startup is
 retried in the background. A container that stopped independently may still
-need to be started again by saving the target.
+need to be started again by saving the target. Installation is never retried
+automatically on Studio restart.
 
-Settings > General > SSH-provisioned training exposes four timeouts:
-`connect_timeout_s`, `command_timeout_s`, `preflight_timeout_s`, and
-`image_pull_timeout_s`. They can also be changed with `PATCH /api/settings`
-under `ssh`, for example `{"ssh": {"connect_timeout_s": 15}}`. These settings
-are stored in Studio's settings file; environment variables do not override
-them. SSH config and `known_hosts` paths, the image registry, and signature
-policy are environment-only settings.
+Settings > General > Managed SSH Training exposes four timeouts
+(`connect_timeout_s`, `command_timeout_s`, `preflight_timeout_s`, and
+`image_pull_timeout_s`) and the trainer's shared-memory size
+(`trainer_shm_size_gb`, default 32 GiB). They can also be changed with
+`PATCH /api/settings` under `ssh`, for example
+`{"ssh": {"trainer_shm_size_gb": 48}}`. These settings are stored in Studio's
+settings file; environment variables do not override them. Changing shared
+memory affects only newly created containers; stop an existing trainer and
+save its target to recreate it with the same data volume. SSH config and
+`known_hosts` paths, the image registry, and signature policy are
+environment-only settings.
 
 ## Connection loss and cleanup
 

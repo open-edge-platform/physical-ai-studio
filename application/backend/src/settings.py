@@ -71,10 +71,11 @@ _DEFAULT_SSH_CONNECT_TIMEOUT_S = 10.0
 _DEFAULT_SSH_COMMAND_TIMEOUT_S = 15.0
 _DEFAULT_SSH_PREFLIGHT_TIMEOUT_S = 30.0
 _DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S = 1800.0
+_DEFAULT_SSH_TRAINER_SHM_SIZE_GB = 32
 
 
 class SshProvisioningSettings(BaseModel):
-    """User-editable connection and image-pull timeouts for SSH trainers.
+    """User-editable connection, image-pull, and shared-memory settings for SSH trainers.
 
     SSH config, known-hosts paths, and the image registry remain environment-only.
     Managed SSH access requires a loopback-bound Studio backend because the
@@ -85,6 +86,7 @@ class SshProvisioningSettings(BaseModel):
     command_timeout_s: float = Field(default=_DEFAULT_SSH_COMMAND_TIMEOUT_S, gt=0)
     preflight_timeout_s: float = Field(default=_DEFAULT_SSH_PREFLIGHT_TIMEOUT_S, gt=0)
     image_pull_timeout_s: float = Field(default=_DEFAULT_SSH_IMAGE_PULL_TIMEOUT_S, gt=0)
+    trainer_shm_size_gb: int = Field(default=_DEFAULT_SSH_TRAINER_SHM_SIZE_GB, ge=1)
 
     @classmethod
     def from_settings(cls, settings: "Settings") -> "SshProvisioningSettings":
@@ -101,6 +103,7 @@ _SSH_FIELD_MAP: dict[str, str] = {
     "command_timeout_s": "ssh_command_timeout_s",
     "preflight_timeout_s": "ssh_preflight_timeout_s",
     "image_pull_timeout_s": "ssh_image_pull_timeout_s",
+    "trainer_shm_size_gb": "ssh_trainer_shm_size_gb",
 }
 
 
@@ -327,6 +330,10 @@ class Settings(BaseSettings):
     )
 
     # --- Managed trainer container lifecycle --------------------------------
+    # Dataloader workers exchange batches through /dev/shm; Docker's 64 MiB default is too small.
+    ssh_trainer_shm_size_gb: int = Field(
+        default=_DEFAULT_SSH_TRAINER_SHM_SIZE_GB, ge=1, alias="SSH_TRAINER_SHM_SIZE_GB"
+    )
     # `docker stop`'s grace period before SIGKILL, bounding teardown latency.
     ssh_container_stop_timeout_s: int = Field(default=30, alias="SSH_CONTAINER_STOP_TIMEOUT_S")
 

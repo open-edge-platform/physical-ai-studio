@@ -348,10 +348,6 @@ class LeRobotFromConfig(FromConfigMixin):
     ) -> Self:
         """Generic method to instantiate from any configuration format.
 
-        Raises:
-            TypeError: If a keyed configuration is not a mapping or overrides
-                are supplied for an unsupported configuration type.
-
         This method extends the base FromConfig.from_config() to additionally
         support LeRobot's PreTrainedConfig dataclasses.
 
@@ -367,6 +363,10 @@ class LeRobotFromConfig(FromConfigMixin):
 
         Returns:
             An instance of the class.
+
+        Raises:
+            TypeError: If a keyed configuration is not a mapping or overrides
+                are supplied for an unsupported configuration type.
 
         Examples:
             Auto-detect LeRobot config:

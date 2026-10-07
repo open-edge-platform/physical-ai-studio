@@ -104,6 +104,15 @@ rldx1 = [
     "peft>=0.13.0,<1.0.0",
     "diffusers>=0.38.0",
 ]
+
+# NVIDIA Cosmos 3 foundation policy
+cosmos3 = [
+    "diffusers>=0.40.0",
+    "transformers>=5.15.1",
+    "peft>=0.13.0,<1.0.0",
+    "safetensors>=0.4.3,<1.0.0",
+    "Pillow>=10.0.0,<13.0.0",
+]
 # Neural Network Compression Framework (optional, for post-export quantization hooks)
 nncf = ["nncf>=3.0.0"]
 
@@ -129,6 +138,7 @@ policies = [
     "physicalai-train[molmoact2]",
     "physicalai-train[rldx1]",
     "physicalai-train[xr0]",
+    "physicalai-train[cosmos3]",
 ]
 
 # All optional dependencies except hardware (torch) variant.
@@ -178,7 +188,8 @@ dev = [
 exclude-newer = "7 days"
 # FIXME: lightning: disable cutoff so the CVE-2026-58659 fix (2.6.6) resolves despite being <7 days old
 # FIXME: openvino*: disable cutoff so 2026.4.0 required by physicalai resolves despite being <7 days old
-exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false }
+# FIXME: pynokhwa: disable cutoff so 0.1.4 required by physicalai resolves despite being <7 days old
+exclude-newer-package = { pyrealsense2 = "1 days", markupsafe = false, lightning = false, openvino = false, openvino-tokenizers = false, pynokhwa = false }
 index-strategy = "unsafe-best-match"
 override-dependencies = [
     # executorch>=1.1.0 requires pytest<9.0 (its own test-suite constraint),
@@ -220,7 +231,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", tag = "v0.2.0" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "ab00dc71f64470940f67daadc0acd03ab0f8fd33" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -291,7 +302,12 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-ignore = []
+# Existing violations of rules introduced after the previous pre-commit Ruff version.
+ignore = [
+    "too-many-statements-in-try-clause",
+    "non-empty-init-module",
+    "noqa-comments",
+]
 
 
 # ============================================================================ #

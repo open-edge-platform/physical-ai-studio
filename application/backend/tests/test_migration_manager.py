@@ -2,9 +2,9 @@ from types import SimpleNamespace
 from typing import Literal
 
 import pytest
+from alembic.script.revision import ResolutionError
 
 import db.migration as migration_module
-from alembic.script.revision import ResolutionError
 from db.migration import MigrationManager, RevisionNotFoundError
 from settings import Settings
 

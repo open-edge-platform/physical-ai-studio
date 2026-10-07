@@ -68,6 +68,7 @@ def test_get_settings_reports_ssh_defaults(monkeypatch, tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.json()["ssh"] == get_settings().ssh.model_dump()
+    assert response.json()["ssh"]["trainer_shm_size_gb"] == 32
 
 
 def test_patch_ssh_settings_updates_flat_settings(monkeypatch, tmp_path: Path) -> None:
@@ -81,6 +82,19 @@ def test_patch_ssh_settings_updates_flat_settings(monkeypatch, tmp_path: Path) -
     # The grouped API field and the flat field the SSH services read are the
     # same setting, so a save has to be visible through both.
     assert get_settings().ssh_connect_timeout_s == 42.0
+
+
+def test_patch_ssh_trainer_shared_memory(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with TestClient(app) as client:
+        response = client.patch("/api/settings", json={"ssh": {"trainer_shm_size_gb": 48}})
+        invalid = client.patch("/api/settings", json={"ssh": {"trainer_shm_size_gb": 0}})
+
+    assert response.status_code == 200
+    assert response.json()["ssh"]["trainer_shm_size_gb"] == 48
+    assert get_settings().ssh_trainer_shm_size_gb == 48
+    assert invalid.status_code == 400
 
 
 def test_patch_ssh_settings_preserves_other_groups(monkeypatch, tmp_path: Path) -> None:
@@ -170,12 +184,14 @@ def test_ssh_settings_no_longer_read_from_environment(monkeypatch, tmp_path: Pat
     """
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
     monkeypatch.setenv("SSH_CONNECT_TIMEOUT_S", "999")
+    monkeypatch.setenv("SSH_TRAINER_SHM_SIZE_GB", "999")
 
     with TestClient(app) as client:
         response = client.get("/api/settings")
 
     assert response.status_code == 200
     assert response.json()["ssh"]["connect_timeout_s"] == 10.0
+    assert response.json()["ssh"]["trainer_shm_size_gb"] == 32
 
 
 async def test_patch_ssh_settings_updates_a_timeout(monkeypatch, tmp_path: Path) -> None:
