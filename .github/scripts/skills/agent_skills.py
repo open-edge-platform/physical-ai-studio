@@ -19,27 +19,41 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+_AUDIENCES = ("using", "contributing")
+_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
 def skill_dirs(root: Path) -> list[tuple[str, str]]:
-    """Return (bucket, skill_name) for each canonical skill directory."""
+    """Return (audience, skill_name) for each canonical skill directory."""
     found: list[tuple[str, str]] = []
-    for bucket in ("library", "application"):
-        bucket_path = root / "skills" / bucket
-        if not bucket_path.is_dir():
+    for audience in _AUDIENCES:
+        audience_path = root / "skills" / audience
+        if not audience_path.is_dir():
             continue
-        for child in sorted(bucket_path.iterdir()):
+        for child in sorted(audience_path.iterdir()):
             if child.is_dir() and (child / "SKILL.md").is_file():
-                found.append((bucket, child.name))
+                found.append((audience, child.name))
     return found
 
 
-def adapter_target(bucket: str, name: str) -> str:
-    return f"../../skills/{bucket}/{name}"
+def adapter_target(audience: str, name: str) -> str:
+    return f"../../skills/{audience}/{name}"
 
 
 def read_link(path: Path) -> str | None:
     if path.is_symlink():
         return os.readlink(path)
     return None
+
+
+def managed_adapter(root: Path, link: Path) -> bool:
+    """Recognize only our generated symlinks or Windows junctions."""
+    target = read_link(link)
+    if target is not None:
+        return target.startswith("../../skills/")
+    if platform.system() != "Windows" or not link.is_dir():
+        return False
+    return link.resolve().is_relative_to((root / "skills").resolve())
 
 
 def resolves_to(link: Path, expected_target: str) -> bool:
@@ -126,20 +140,32 @@ def _create_windows_link(link: Path, abs_target: Path) -> None:
 
 def cmd_sync(root: Path) -> int:
     adapters = (root / ".claude" / "skills", root / ".agents" / "skills")
+    locations = skill_dirs(root)
+    names = {name for _, name in locations}
+    if len(names) != len(locations) or any(len(name) > 64 or not _NAME_RE.fullmatch(name) for name in names):
+        print("Duplicate or invalid canonical skill names", file=sys.stderr)
+        return 1
 
-    for bucket, name in skill_dirs(root):
-        target = adapter_target(bucket, name)
+    for adapter_root in adapters:
+        adapter_root.mkdir(parents=True, exist_ok=True)
+        for link in adapter_root.iterdir():
+            if link.name not in names and managed_adapter(root, link):
+                if link.is_symlink():
+                    link.unlink()
+                else:
+                    raise RuntimeError(f"Stale Windows junction {link}; remove it and rerun {_SCRIPT} sync")
+
+    for audience, name in locations:
+        target = adapter_target(audience, name)
         for adapter_root in adapters:
             link = adapter_root / name
-            current = read_link(link)
-            if current == target and link.exists():
+            if resolves_to(link, target) and link.exists():
                 continue
             create_adapter(link, target)
 
-    names = sorted({name for _, name in skill_dirs(root)})
     for adapter_root in adapters:
         print(f"{adapter_root.relative_to(root)}:")
-        for name in names:
+        for name in sorted(names):
             if (adapter_root / name).exists():
                 print(f"  {name}")
     return 0
@@ -149,16 +175,24 @@ def cmd_check_adapters(root: Path) -> int:
     errors: list[str] = []
     adapters = (root / ".claude" / "skills", root / ".agents" / "skills")
 
-    for bucket, name in skill_dirs(root):
-        target = adapter_target(bucket, name)
+    locations = skill_dirs(root)
+    names = {name for _, name in locations}
+    if len(names) != len(locations):
+        errors.append("Duplicate canonical skill names across audiences")
+    for audience, name in locations:
+        target = adapter_target(audience, name)
         for adapter_root in adapters:
             link = adapter_root / name
             if resolves_to(link, target):
                 continue
             current = read_link(link)
-            errors.append(
-                f"{link}: expected adapter to {target!r}, got {current!r}"
-            )
+            errors.append(f"{link}: expected adapter to {target!r}, got {current!r}")
+
+    for adapter_root in adapters:
+        if adapter_root.is_dir():
+            for link in adapter_root.iterdir():
+                if link.name not in names and managed_adapter(root, link):
+                    errors.append(f"Stale adapter {link} (run: {_SCRIPT} sync)")
 
     if errors:
         for msg in errors:
@@ -182,13 +216,14 @@ def frontmatter_name(skill_md: Path) -> str | None:
 def cmd_validate(root: Path) -> int:
     errors: list[str] = []
 
-    for bucket in ("library", "application"):
-        bucket_dir = root / "skills" / bucket
-        if not bucket_dir.is_dir():
-            errors.append(f"Missing {bucket_dir}")
+    names: set[str] = set()
+    for audience in _AUDIENCES:
+        audience_dir = root / "skills" / audience
+        if not audience_dir.is_dir():
+            errors.append(f"Missing {audience_dir}")
             continue
 
-        for child in sorted(bucket_dir.iterdir()):
+        for child in sorted(audience_dir.iterdir()):
             if not child.is_dir():
                 continue
             skill_md = child / "SKILL.md"
@@ -196,6 +231,11 @@ def cmd_validate(root: Path) -> int:
                 continue
 
             name = child.name
+            if len(name) > 64 or not _NAME_RE.fullmatch(name):
+                errors.append(f"Invalid canonical skill name: {name}")
+            if name in names:
+                errors.append(f"Duplicate canonical skill name: {name}")
+            names.add(name)
             fm_name = frontmatter_name(skill_md)
             if not fm_name:
                 errors.append(f"{skill_md}: missing frontmatter name")
@@ -213,7 +253,7 @@ def cmd_validate(root: Path) -> int:
                     )
                     break
 
-            target = adapter_target(bucket, name)
+            target = adapter_target(audience, name)
             for adapter_root in (root / ".claude" / "skills", root / ".agents" / "skills"):
                 link = adapter_root / name
                 if not link.exists():
@@ -227,6 +267,12 @@ def cmd_validate(root: Path) -> int:
                     continue
                 if not (link / "SKILL.md").is_file():
                     errors.append(f"Broken adapter {link}")
+
+    for adapter_root in (root / ".claude" / "skills", root / ".agents" / "skills"):
+        if adapter_root.is_dir():
+            for link in adapter_root.iterdir():
+                if link.name not in names and managed_adapter(root, link):
+                    errors.append(f"Stale adapter {link} (run: {_SCRIPT} sync)")
 
     if errors:
         for msg in errors:

@@ -7,7 +7,7 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 - `library/`: `physicalai-train`, the Python library for data, policies, training, benchmarking, export, and Studio-owned `physicalai` CLI subcommands.
 - `application/backend/`: FastAPI backend for the GUI and orchestration workflows.
 - `application/ui/`: React frontend that consumes generated OpenAPI types.
-- `skills/library/` and `skills/application/`: agent skills (canonical). Adapter symlinks under `.claude/skills/` and `.agents/skills/` are committed so clones work out of the box. See `skills/README.md`.
+- `skills/using/` and `skills/contributing/`: canonical customer and source-contribution agent skills. Committed adapters under `.claude/skills/` and `.agents/skills/` expose both locally; only `using/` is published. See `skills/README.md`.
 
 ## Setup
 
@@ -27,7 +27,7 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 ## Cross-Repo Rules
 
 - Runtime owns the `physicalai` executable and `pai` alias. Studio contributes subcommands through `physicalai.cli.subcommands`.
-- Runtime owns `physicalai.config` (single `Config` object). Studio consumes `Config`, `FromConfig`, and `instantiate_obj` from the runtime package and must not ship its own `physicalai/config/` package or duplicate config docs (see Runtime `docs/how-to/config/` and `skills/config/`).
+- Runtime owns `physicalai.config` (single `Config` object). Studio consumes `Config`, `FromConfig`, and `instantiate_obj` from the runtime package and must not ship its own `physicalai/config/` package or duplicate config docs (see Runtime `docs/how-to/config/` and `skills/using/pai-configure-runtime/`).
 - Studio-owned CLI subcommands include `fit`, `validate`, `test`, `predict`, `benchmark`, and `export`.
 - Studio owns the export side of the export/load contract. Runtime consumes exported artifacts with `InferenceModel(...)`.
 - Keep customer-facing instructions stable and avoid exposing internal scaffolding unless the user is contributing to the repo.

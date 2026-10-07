@@ -1,99 +1,31 @@
-# Physical AI Studio Agent Skills
+# Physical AI Studio agent skills
 
-Canonical, repo-specific agent skills for Physical AI Studio. Skills are grouped by the part of the repo they target so agents load the right paths and commands.
+Studio owns these canonical skills. **`skills/using/` is published to the OEP catalog; `skills/contributing/` stays in this repository.** A using skill must work in a customer project with the installed packages, without a Studio source checkout. A contributing skill changes Studio or Runtime source. An external robot plugin belongs to `using/`; changes to Studio's curated manifest or UI belong to contributors.
 
-## Buckets
+| Audience     | Skill                                                                        | Workflow                                |
+| ------------ | ---------------------------------------------------------------------------- | --------------------------------------- |
+| Using        | [`pai-train-policy`](using/pai-train-policy/SKILL.md)                        | Train, validate, test, predict          |
+| Using        | [`pai-work-with-datasets`](using/pai-work-with-datasets/SKILL.md)            | Use LeRobot datasets and datamodules    |
+| Using        | [`pai-export-policy`](using/pai-export-policy/SKILL.md)                      | Export and check deployment parity      |
+| Using        | [`pai-benchmark-policy`](using/pai-benchmark-policy/SKILL.md)                | Evaluate a policy in a gym              |
+| Using        | [`pai-create-robot-plugin`](using/pai-create-robot-plugin/SKILL.md)          | Develop a third-party robot plugin      |
+| Contributing | [`pai-add-policy`](contributing/pai-add-policy/SKILL.md)                     | Extend the library with a policy family |
+| Contributing | [`pai-add-benchmark`](contributing/pai-add-benchmark/SKILL.md)               | Extend first-party benchmarks           |
+| Contributing | [`pai-add-robot-form-field`](contributing/pai-add-robot-form-field/SKILL.md) | Change Studio UI and plugin SDK         |
 
-| Bucket                   | Path                           | Scope                                                                                            |
-| ------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------ |
-| **Library**              | [`library/`](library/)         | `physicalai-train`: policies, data, CLI (`fit`, `export`, `benchmark`), configs under `library/` |
-| **Studio (application)** | [`application/`](application/) | GUI stack: `application/backend/`, `application/ui/`, `application/docker/`                      |
+## Discovery and authoring
 
-Each bucket has its own skill list and [`EVALUATION.md`](library/EVALUATION.md) scenarios (library today; application when skills are added).
+Canonical content is in `skills/<audience>/<name>/`. Both `.agents/skills/<name>` and `.claude/skills/<name>` are committed adapter symlinks. They expose **both audiences to agents working in this repository**, but the org catalog indexes only `using/`. Never publish an adapter as a second source. Windows requires symlink support (Developer Mode or `core.symlinks true`); the sync script falls back to local junctions where available. After a rename, remove any stale junction reported by validation before rerunning sync.
 
-## Layout
-
-```
-skills/
-├── README.md                 # this file — global authoring rules
-├── library/
-│   ├── README.md
-│   ├── EVALUATION.md
-│   └── <skill-name>/
-│       ├── SKILL.md
-│       └── references/
-└── application/
-    ├── README.md
-    ├── EVALUATION.md         # add when the first app skill ships
-    └── <skill-name>/
-```
-
-Client adapters are **committed symlinks** so a fresh clone works for agents (no setup step):
-
-- `.claude/skills/<name>` → `../../skills/<bucket>/<name>`
-- `.agents/skills/<name>` → `../../skills/<bucket>/<name>`
-
-When you add or rename a skill, run `python3 .github/scripts/skills/agent_skills.py sync` and commit the updated symlinks. Pre-commit runs `sync` then `validate` when `skills/` changes. **CI only runs `validate`** on what is in the PR (it does not regenerate symlinks). GitHub may show `\ No newline at end of file` on symlink diffs; that is normal and harmless.
-
-**Windows:** enable [Developer Mode](https://learn.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development) or clone with `git config core.symlinks true` so Git checks out symlinks. If symlink creation fails, `agent_skills.py sync` falls back to a directory junction for local use.
-
-## Authoring standard
-
-These skills follow the open [Agent Skills](https://agentskills.io) format (originated by Anthropic, adopted by Claude Code, opencode, Codex, Gemini CLI, Cursor, and others). Write to the **portable core** so a skill works across every agent, not just one.
-
-### Portability rules (non-negotiable)
-
-- **Frontmatter = the portable subset only:** `name`, `description`, and optionally `license`. These three are understood everywhere.
-- **Do not rely on vendor-only fields for behavior.** `disable-model-invocation` (Claude Code's "user-invoked" switch) is ignored by opencode/Codex/Gemini — never make a skill's correctness depend on it. Default to **model-invoked** skills.
-- Put any client-specific hints in a `metadata:` map (opencode reads it; others ignore it), not in top-level fields.
-- Use forward-slash paths; no Windows backslashes.
-
-### `name`
-
-- Lowercase, hyphenated, matches the directory name, regex `^[a-z0-9]+(-[a-z0-9]+)*$`.
-- Prefix with the bucket id: `library-` or `studio-` (application skills use `studio-` for the GUI/orchestration stack).
-- Prefer gerund/verb phrasing (`physicalai-train-training-a-policy`, `studio-regenerating-openapi-types`).
-- Must not contain the reserved words `anthropic` or `claude`.
-
-### `description` (highest-leverage field)
-
-This is what an agent matches against to decide whether to load the skill. Get it right.
-
-- **Third person**, always: "Trains and validates…", never "I can…" / "You can…".
-- State **what it does and when to use it**, with concrete triggers (CLI names, class names, file paths, policy families).
-- **One trigger per distinct branch** — collapse synonyms. Keep it under 1024 characters.
-
-### Body
-
-- **Be concise; assume the model is smart.** Only add what it can't infer. Every loaded token competes with real context. Keep `SKILL.md` well under 500 lines.
-- **Ground every claim in real paths** for that bucket (`library/src/physicalai/...`, `application/backend/...`, etc.) and real commands. No invented flags.
-- **Numbered workflow steps, each ending in a checkable completion criterion** ("Done when: …") so the agent can tell done from not-done and doesn't stop early.
-- **Match freedom to fragility:** high freedom (prose) for open tasks; low freedom ("run exactly this, don't add flags") for fragile/destructive ops like export or migrations.
-- **Feedback loops** for quality-critical work: run → validate → fix → repeat, with the exact command.
-- Consistent terminology; no time-sensitive text (use a collapsed "old patterns" section if needed).
-- **Progressive disclosure:** push long detail into `references/*.md`, linked **one level deep** from `SKILL.md`. Add a table of contents to any reference file over ~100 lines.
-
-### Before you ship
-
-- Description has both _what_ and _when_, third person, distinct triggers.
-- Every path/command verified against the current tree.
-- Steps have checkable completion criteria.
-- References are one level deep.
-- Runs offline by default; tests needing downloads are marked `requires_download`.
-- Pass at least three scenarios in the bucket's `EVALUATION.md`.
-
-## Add a new skill
+- Choose a distinct action and a globally unique `pai-` name (directory and frontmatter must match; `^[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 characters). Preserve the `pai-` name in the product repo and catalog; the sync does not rewrite reviewed skill content.
+- Describe _what_ and _when_, with distinct user triggers. Give a specific negative trigger where neighboring workflows overlap; keep `SKILL.md` focused and disclose detailed unique knowledge in bundled `references/`. Link to existing documentation at its canonical URL so an installed copy does not depend on the Studio checkout.
+- Write steps with checkable completion criteria; test with fake devices and ask before network downloads, hardware I/O, or mutating a running system.
+- Run at least three audience-appropriate prompts from [`using/EVALUATION.md`](using/EVALUATION.md) or [`contributing/EVALUATION.md`](contributing/EVALUATION.md). Catalog publication and quality gates are managed in `open-edge-platform/skills`; future RFC family tags describe a **different axis** from these audiences.
 
 ```bash
-BUCKET=library   # or application
-NAME=library-my-workflow
-mkdir -p "skills/$BUCKET/$NAME"
-$EDITOR "skills/$BUCKET/$NAME/SKILL.md"
+# from the Studio repo root after adding, moving, or renaming a skill
 python3 .github/scripts/skills/agent_skills.py sync
+python3 .github/scripts/skills/agent_skills.py validate
 ```
 
-Then dry-run the workflow in the skill end-to-end and fix any step where an agent could stall or guess.
-
-## Org skills catalog (`open-edge-platform/skills`)
-
-Studio is the **source of truth** under `skills/`. The org [`open-edge-platform/skills`](https://github.com/open-edge-platform/skills) repo pulls from product repos on its own schedule (see `scripts/update_skills_index.py` and related workflows there — same pattern as dlstreamer). **Do not** open PRs from Studio into that repo; register or update this product in the skills-repo automation instead.
+CI validates the committed adapters; it does not regenerate them. Register a using skill under its canonical `skills/using` path in the catalog config after its source changes land. Remove stale installed names and add the new `pai-` name when migrating an existing install.
