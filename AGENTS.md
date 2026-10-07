@@ -39,6 +39,13 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 - Keep `denoise` and `step` graph-capturable: tensor ops only, no `.item()`, no Python-side randomness, fixed shapes.
 - Do not refactor existing policy heads onto these classes without keeping module attribute names unchanged and checking the policy's LoRA target regexes and Hugging Face key remapping; `state_dict` keys must not change.
 
+## Robot Hardware Safety
+
+- Before writing or changing code that commands a physical arm (`send_action`, hold, replay, move-to-pose, pose-capture, or leader-to-follower loops, or `RobotRuntime` on hardware), load `skills/application/studio-commanding-so101-servos-safely/`.
+- Never re-send a constant or unreachable position target in a loop. Ramp, send the final target once, and stop; while streaming, abort if a joint stops tracking its command. Each new command releases the Feetech servo's overload protection, so a stalled command stream burns out servos.
+- Clamp SO-101 arm joints short of ±100: normalized ±100 is the calibrated mechanical stop.
+- `SO101.connect()` changes torque and can move the arm. Diagnose with read-only register reads instead.
+
 ## Contribution Notes
 
 - Use Conventional Commits for PR titles and commits.
