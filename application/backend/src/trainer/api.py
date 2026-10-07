@@ -22,13 +22,12 @@ from loguru import logger
 from physicalai.data.archive_safety import (
     InsufficientDiskSpaceError,
     InvalidArchiveError,
-    SafeZipArchive,
     ZipBombDetectedError,
     check_disk_headroom,
-    flatten_single_root_directory,
 )
 from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
+from trainer.archive import validate_and_extract
 from trainer.schemas import (
     CancelResponse,
     DatasetTransfer,
@@ -185,17 +184,6 @@ def _check_upload_disk_headroom(request: Request, start: int, total: int | None)
         check_disk_headroom(settings.datasets_dir, remaining_bytes, settings.min_free_bytes)
 
 
-def _validate_and_extract(archive_path: Path, target_dir: Path) -> None:
-    """Validate the ZIP and extract it into ``target_dir`` (blocking)."""
-    settings = get_settings()
-    safe = SafeZipArchive(archive_path, max_uncompressed_bytes=settings.max_uncompressed_bytes)
-    safe.validate()
-    target_dir.mkdir(parents=True, exist_ok=True)
-    safe.extract_to(target_dir, min_free_bytes=settings.min_free_bytes)
-    # Tolerate a single wrapping directory in uploaded snapshots.
-    flatten_single_root_directory(target_dir)
-
-
 @router.post("", response_model=SubmitJobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def submit_job(body: SubmitJobRequest, request: Request) -> SubmitJobResponse:
     """Enqueue a job, awaiting upload for HTTP transfers."""
@@ -239,7 +227,7 @@ async def upload_dataset(job_id: HttpDatasetJob, request: Request, response: Res
             response.headers["Upload-Offset"] = str(next_offset)
             if next_offset < total:
                 return state
-        await asyncio.to_thread(_validate_and_extract, archive_path, target_dir)
+        await asyncio.to_thread(validate_and_extract, archive_path, target_dir)
         completed_upload = True
     except (ZipBombDetectedError, InvalidArchiveError) as exc:
         _cleanup_upload(archive_path, target_dir)
