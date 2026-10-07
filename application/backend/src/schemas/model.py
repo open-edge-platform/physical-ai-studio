@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
@@ -192,7 +192,7 @@ class BackendExportDetail(BaseModel):
             return None
 
         total_size = sum(f.stat().st_size for f in files)
-        exported_at = datetime.fromtimestamp(backend_dir.stat().st_mtime)
+        exported_at = datetime.fromtimestamp(backend_dir.stat().st_mtime, tz=UTC)
 
         return cls(
             type=backend_dir.name,

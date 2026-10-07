@@ -181,6 +181,30 @@ async def connection_error_exception_handler(_request: Request, exception: Excep
     return JSONResponse(status_code=status_code, content=jsonable_encoder(payload), headers=headers)
 
 
+def _rewrite_validation_error_status_code(schema: dict) -> dict:
+    """Replace FastAPI's default 422 validation-error response with 400.
+
+    `validation_exception_handler` converts every `RequestValidationError` to a 400
+    response app-wide, so the auto-generated 422 entry never reflects reality.
+    """
+    for path_item in schema.get("paths", {}).values():
+        for operation in path_item.values():
+            responses = operation.get("responses") if isinstance(operation, dict) else None
+            if isinstance(responses, dict) and "422" in responses:
+                responses["400"] = responses.pop("422")
+    return schema
+
+
+def _register_openapi_validation_status_override(app: FastAPI) -> None:
+    """Keep the generated OpenAPI schema in sync with validation_exception_handler's status code."""
+    original_openapi = app.openapi
+
+    def custom_openapi() -> dict:
+        return _rewrite_validation_error_status_code(original_openapi())
+
+    app.openapi = custom_openapi
+
+
 def register_application_exception_handlers(app: FastAPI) -> None:
     """
     Register application exception handlers
@@ -196,3 +220,5 @@ def register_application_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(pydantic.ValidationError, pydantic_validation_exception_handler)
     app.add_exception_handler(ConnectionError, connection_error_exception_handler)
+
+    _register_openapi_validation_status_override(app)
