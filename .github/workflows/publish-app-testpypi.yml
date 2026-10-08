@@ -48,8 +48,8 @@ jobs:
 
       - name: Set dev version for TestPyPI
         run: |
-          BASE_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
-          DEV_VERSION="${BASE_VERSION}.dev$(date -u +%Y%m%d%H%M%S)"
+          APP_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
+          DEV_VERSION="${APP_VERSION}.dev$(date -u +%Y%m%d%H%M%S)"
           echo "VERSION_OVERRIDE=${DEV_VERSION}" >> "$GITHUB_ENV"
           echo "Building version: ${DEV_VERSION}"
 

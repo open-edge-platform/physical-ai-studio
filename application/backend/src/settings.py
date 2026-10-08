@@ -44,14 +44,6 @@ def get_settings_file_path() -> Path:
     return get_default_storage_dir() / "settings.json"
 
 
-def _installed_application_version() -> str:
-    """Return the version from the installed Studio distribution metadata."""
-    try:
-        return distribution_version("physicalai-studio")
-    except PackageNotFoundError:
-        return "0.0.0+unknown"
-
-
 class TrainerClientSettings(BaseModel):
     """Client-side timeouts for talking to a remote trainer service."""
 
@@ -228,7 +220,10 @@ class Settings(BaseSettings):
     @property
     def version(self) -> str:
         """Return the installed Studio distribution version."""
-        return _installed_application_version()
+        try:
+            return distribution_version("physicalai-studio")
+        except PackageNotFoundError:
+            return "0.0.0+unknown"
 
     @field_validator("storage_dir", mode="before")
     @classmethod
