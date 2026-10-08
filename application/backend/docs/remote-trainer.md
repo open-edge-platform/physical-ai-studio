@@ -47,10 +47,9 @@ tunnels and restart behavior.
 > and used as-is whenever the studio doesn't send one, but is never itself
 > forwarded to the studio, and is overridden for the duration of any job the
 > studio *does* send a token for. **SSH-provisioned trainer containers never
-> receive any environment variables at launch at all** (see
-> `services.ssh.docker_ops.build_run_argv`), so that fallback does not exist
-> for them - the Studio Settings page is the *only* place a token can come
-> from for an SSH-provisioned job.
+> receive `HF_TOKEN` at launch** (only runtime settings such as proxy variables
+> and `TMPDIR`), so that fallback does not exist for them - the Studio Settings
+> page is the *only* place a token can come from for an SSH-provisioned job.
 
 ## Install
 

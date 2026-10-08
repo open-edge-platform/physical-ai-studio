@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -11,6 +12,9 @@ from schemas.hardware import DeviceType
 from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode
 from services.ssh import persistent_trainer
 from services.ssh.docker_ops import ContainerInspection, ResolvedImage
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 MODULE = "services.ssh.persistent_trainer"
 
@@ -26,6 +30,13 @@ _IMAGE = ResolvedImage(
 def _mock_signature_verification():
     with patch(f"{MODULE}.verify_image_signature", new_callable=AsyncMock) as verify:
         yield verify
+
+
+@pytest.fixture(autouse=True)
+def mock_daemon_proxy() -> Iterator[AsyncMock]:
+    with patch(f"{MODULE}.resolve_daemon_proxy_env", new_callable=AsyncMock) as resolver:
+        resolver.return_value = {}
+        yield resolver
 
 
 def _ssh_trainer() -> RemoteTrainer:
@@ -49,7 +60,7 @@ def _fake_transport_cm() -> MagicMock:
     return cm
 
 
-async def test_get_launch_phase_is_none_before_and_after_a_successful_start() -> None:
+async def test_get_launch_phase_is_none_before_and_after_a_successful_start(mock_daemon_proxy: AsyncMock) -> None:
     trainer = _ssh_trainer()
     assert persistent_trainer.get_launch_phase(trainer.id) is None
 
@@ -60,6 +71,7 @@ async def test_get_launch_phase_is_none_before_and_after_a_successful_start() ->
         patch(f"{MODULE}.docker_ops") as docker_ops_module,
     ):
         settings.return_value.ssh_trainer_shm_size_gb = 8
+        mock_daemon_proxy.return_value = {"HTTPS_PROXY": "http://proxy:8080"}
         docker_ops_module.inspect_container = AsyncMock(return_value=None)
         docker_ops_module.resolve_protocol_image = AsyncMock(return_value=_IMAGE)
         docker_ops_module.pull_image = AsyncMock()
@@ -74,6 +86,7 @@ async def test_get_launch_phase_is_none_before_and_after_a_successful_start() ->
 
     assert persistent_trainer.get_launch_phase(trainer.id) is None
     assert docker_ops_module.build_run_argv.call_args.kwargs["shm_size_gb"] == 8
+    assert docker_ops_module.build_run_argv.call_args.kwargs["proxy_env"] == {"HTTPS_PROXY": "http://proxy:8080"}
     docker_ops_module.launch_container.assert_awaited_once()
 
 
