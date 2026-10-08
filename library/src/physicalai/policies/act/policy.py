@@ -81,6 +81,10 @@ def _remap_lerobot_act_state_dict(
     return remapped
 
 
+POLICY_NAME = "act"
+POLICY_CLASS = "ACT"
+
+
 class ACT(ExportablePolicyMixin, Policy):
     """Action Chunking with Transformers (ACT) policy implementation.
 

@@ -31,6 +31,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+POLICY_NAME = "cosmos3"
+POLICY_CLASS = "Cosmos3"
+
+
 class Cosmos3(Policy):
     """NVIDIA Cosmos 3 Policy - Lightning wrapper for training and inference.
 

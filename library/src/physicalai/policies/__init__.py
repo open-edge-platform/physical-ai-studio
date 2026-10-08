@@ -5,52 +5,83 @@
 
 from __future__ import annotations
 
-from . import lerobot
-from .act import ACT, ACTConfig, ACTModel
-from .base import Policy
-from .cosmos3 import Cosmos3, Cosmos3Config, Cosmos3Model
-from .lerobot import get_lerobot_policy
-from .molmoact2 import MolmoAct2, MolmoAct2Config, MolmoAct2Model
-from .pi05 import Pi05, Pi05Config, Pi05Model
-from .rldx1 import Rldx1, Rldx1Config, Rldx1Model
-from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
-from .xr0 import XR0, XR0Config, XR0Model
+import ast
+from importlib import import_module
+from pathlib import Path
+from typing import Any
 
-__all__ = [  # noqa: RUF022  # grouped by policy family, not isort-sorted
-    # ACT
-    "ACT",
-    "ACTConfig",
-    "ACTModel",
-    # Cosmos3
-    "Cosmos3",
-    "Cosmos3Config",
-    "Cosmos3Model",
-    # MolmoAct2
-    "MolmoAct2",
-    "MolmoAct2Config",
-    "MolmoAct2Model",
-    # Pi05
-    "Pi05",
-    "Pi05Config",
-    "Pi05Model",
-    # Base
-    "Policy",
-    # RLDX
-    "Rldx1",
-    "Rldx1Config",
-    "Rldx1Model",
-    # SmolVLA
-    "SmolVLA",
-    "SmolVLAConfig",
-    "SmolVLAModel",
-    # XR0
-    "XR0",
-    "XR0Config",
-    "XR0Model",
-    # Utils
-    "get_physicalai_policy_class",
-    "get_policy",
-    "lerobot",
+from . import lerobot
+from .base import Policy
+from .lerobot import get_lerobot_policy
+
+
+def _discover_policy_paths() -> dict[str, tuple[str, str]]:
+    """Discover names without importing optional policy dependencies.
+
+    Returns:
+        Policy short names and their module/class locations.
+
+    Raises:
+        ValueError: If a policy has incomplete or duplicate metadata.
+    """
+    paths: dict[str, tuple[str, str]] = {}
+    for path in sorted(Path(__file__).parent.glob("*/policy.py")):
+        if path.parent.name in {"base", "lerobot"}:
+            continue
+        constants = {
+            target.id: node.value.value
+            for node in ast.parse(path.read_text(encoding="utf-8"), filename=str(path)).body
+            if isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+            for target in node.targets
+            if isinstance(target, ast.Name) and target.id in {"POLICY_NAME", "POLICY_CLASS"}
+        }
+        if set(constants) != {"POLICY_NAME", "POLICY_CLASS"}:
+            msg = f"Incomplete policy metadata in {path}"
+            raise ValueError(msg)
+        name = constants["POLICY_NAME"]
+        if name in paths:
+            msg = f"Duplicate policy name: {name}"
+            raise ValueError(msg)
+        paths[name] = (path.parent.name, constants["POLICY_CLASS"])
+    return paths
+
+
+_POLICY_PATHS = _discover_policy_paths()
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401
+    """Keep root-level exports available without importing every policy.
+
+    Returns:
+        The requested policy class, configuration, or model.
+
+    Raises:
+        AttributeError: If the export is unknown.
+    """
+    for directory, class_name in _POLICY_PATHS.values():
+        if name in {class_name, f"{class_name}Config", f"{class_name}Model"}:
+            value = getattr(import_module(f".{directory}", __name__), name)
+            globals()[name] = value
+            return value
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
+
+
+def __dir__() -> list[str]:
+    """Show lazy exports in package introspection.
+
+    Returns:
+        All available package attributes, including policy exports.
+    """
+    return sorted(set(globals()) | set(__all__))
+
+
+__all__ = ["Policy", "get_physicalai_policy_class", "get_policy", "lerobot", "get_lerobot_policy"] + [
+    export
+    for _, class_name in _POLICY_PATHS.values()
+    for export in (class_name, f"{class_name}Config", f"{class_name}Model")
 ]
 
 
@@ -120,7 +151,7 @@ def get_policy(policy_name: str, *, source: str = "physicalai", **kwargs) -> Pol
     raise ValueError(msg)
 
 
-def get_physicalai_policy_class(policy_name: str) -> type[Policy]:  # noqa: PLR0911
+def get_physicalai_policy_class(policy_name: str) -> type[Policy]:
     """Get a first-party policy class by name.
 
     Args:
@@ -132,24 +163,9 @@ def get_physicalai_policy_class(policy_name: str) -> type[Policy]:  # noqa: PLR0
     Raises:
         ValueError: If the policy name is unknown.
     """
-    policy_name = policy_name.lower()
-
-    if policy_name == "act":
-        return ACT
-    if policy_name == "cosmos3":
-        return Cosmos3
-    if policy_name == "molmoact2":
-        return MolmoAct2
-    if policy_name == "pi05":
-        return Pi05
-    if policy_name == "rldx1":
-        return Rldx1
-    if policy_name == "smolvla":
-        return SmolVLA
-    if policy_name == "xr0":
-        return XR0
-    msg = (
-        f"Unknown physicalai policy: {policy_name}. "
-        "Supported policies: act, cosmos3, molmoact2, pi05, rldx1, smolvla, xr0"
-    )
-    raise ValueError(msg)
+    try:
+        directory, class_name = _POLICY_PATHS[policy_name.lower()]
+    except KeyError:
+        msg = f"Unknown physicalai policy: {policy_name}. Supported policies: {', '.join(sorted(_POLICY_PATHS))}"
+        raise ValueError(msg) from None
+    return getattr(import_module(f".{directory}.policy", __name__), class_name)

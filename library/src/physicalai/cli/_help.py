@@ -32,7 +32,7 @@ options:
   -h, --help              Show this help message and exit.
   --config CONFIG         YAML/JSON config file.
   --benchmark CLASS       Benchmark class path.
-  --policy POLICY         Policy class path, for example physicalai.policies.ACT.
+  --policy POLICY         Policy class path, for example physicalai.policies.act.policy.ACT.
   --ckpt_path PATH        Checkpoint file or export directory.
   --output_dir DIR        Directory where benchmark results are written.
 
@@ -47,7 +47,7 @@ _EXPORT_HELP = """usage: {prog} --config CONFIG [options]
 options:
   -h, --help              Show this help message and exit.
   --config CONFIG         YAML/JSON config file.
-  --policy POLICY         Policy class path, for example physicalai.policies.ACT.
+  --policy POLICY         Policy class path, for example physicalai.policies.act.policy.ACT.
   --ckpt_path PATH        Lightning checkpoint path.
   --backend BACKEND       Export backend: onnx, openvino, executorch, or torch.
   --output_dir DIR        Directory where export artifacts are written.

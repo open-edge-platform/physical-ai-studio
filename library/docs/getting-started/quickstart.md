@@ -23,7 +23,7 @@ Use `physicalai export` after training when you need deployment artifacts.
 
 ```bash
 physicalai fit \
-    --model physicalai.policies.ACT \
+    --model physicalai.policies.act.policy.ACT \
     --data physicalai.data.LeRobotDataModule \
     --data.repo_id lerobot/aloha_sim_transfer_cube_human \
     --trainer.max_epochs 10
@@ -106,7 +106,7 @@ For reproducible experiments, use YAML configs:
 ```yaml
 # configs/my_experiment.yaml
 model:
-  class_path: physicalai.policies.ACT
+  class_path: physicalai.policies.act.policy.ACT
 
 data:
   class_path: physicalai.data.LeRobotDataModule

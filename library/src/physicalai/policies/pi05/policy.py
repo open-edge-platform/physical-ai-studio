@@ -49,6 +49,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+POLICY_NAME = "pi05"
+POLICY_CLASS = "Pi05"
+
+
 class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy):
     """Pi05 Policy - Physical Intelligence's flow matching VLA model.
 

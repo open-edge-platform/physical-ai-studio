@@ -162,6 +162,10 @@ class XR0ExportablePolicyMixin(ExportablePolicyMixin):
         }
 
 
+POLICY_NAME = "xr0"
+POLICY_CLASS = "XR0"
+
+
 class XR0(XR0ExportablePolicyMixin, Policy):
     """XR0 Policy - Xiaomi's flow-matching VLA model.
 

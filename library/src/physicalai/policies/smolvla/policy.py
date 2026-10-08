@@ -45,6 +45,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+POLICY_NAME = "smolvla"
+POLICY_CLASS = "SmolVLA"
+
+
 class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy):
     """SmolVLA Policy - Hugging Face's flow matching VLA model.
 

@@ -62,7 +62,7 @@ The parts that matter:
 
 ```yaml
 model:
-  class_path: physicalai.policies.Pi05
+  class_path: physicalai.policies.pi05.policy.Pi05
   init_args:
     pretrained_name_or_path: lerobot/pi05_base
     # Phase 1 is plain flow matching — the callback turns SnapFlow on later.

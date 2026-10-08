@@ -108,6 +108,10 @@ def _normalization_to_checkpoint(
     ]
 
 
+POLICY_NAME = "molmoact2"
+POLICY_CLASS = "MolmoAct2"
+
+
 class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Policy):
     """MolmoAct2 policy wrapper for loading pretrained checkpoints and configs."""
 
