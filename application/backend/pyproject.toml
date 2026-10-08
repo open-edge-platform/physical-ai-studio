@@ -10,7 +10,7 @@ dependencies = [
   "cv2-enumerate-cameras",
   'harvesters; sys_platform != "darwin"',
   "fastapi[standard]<1",
-  "physicalai[robots, capture, transport]>=0.3.0",
+  "physicalai[robots, capture, transport]~=0.3.0",
   "eclipse-zenoh==1.9.0",
   "msgpack==1.2.1",
   "physicalai-train[pi05,smolvla,rldx1]>=0.3.0",
