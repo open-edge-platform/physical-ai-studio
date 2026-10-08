@@ -160,7 +160,7 @@ jobs:
           trap cleanup EXIT
 
           test "$(docker image inspect "$IMAGE" --format '{{.Config.User}}')" = "trainer"
-          test "$(docker image inspect "$IMAGE" --format '{{json .Config.Entrypoint}}')" = '["physicalai-trainer"]'
+          test "$(docker image inspect "$IMAGE" --format '{{json .Config.Cmd}}')" = '["physicalai-trainer"]'
           test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.open-edge-platform.physicalai.trainer.api-protocol"}}')" = "1"
           # `services.ssh.docker_ops.resolve_protocol_image` reads this label
           # pre-pull, before `/health` is ever reachable: it must carry the
