@@ -18,6 +18,15 @@
     min-width: 0;
 }
 
+.advancedSettingsToggle,
+.advancedSettingsToggle::marker {
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.advancedSettingsToggle {
+    cursor: pointer;
+}
+
 @media (max-width: 360px) {
     .modeFields {
         min-height: 0;

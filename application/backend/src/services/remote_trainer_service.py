@@ -71,6 +71,14 @@ _NULLABLE_UPDATE_FIELDS = frozenset({"ssh_host_alias", "ssh_connection", "ssh_re
 _CONNECTION_FIELDS = {"connection_mode", "url", "ssh_host_alias", "ssh_connection", "ssh_remote_port", "ssh_local_port"}
 
 
+def _local_port_conflict(port: int | None) -> ResourceAlreadyExistsError:
+    return ResourceAlreadyExistsError(
+        "Local port",
+        f"{port} is already in use on this Studio host. "
+        "Choose another local port under Advanced settings or leave it blank to assign one automatically.",
+    )
+
+
 class RemoteTrainerService:
     """Manage configured remote trainer endpoints."""
 
@@ -249,7 +257,7 @@ class RemoteTrainerService:
                 raise ResourceAlreadyExistsError(
                     "Remote trainer",
                     f"Remote port {remote_trainer.ssh_remote_port} is already used on this SSH host. "
-                    "Choose a different remote port.",
+                    "Choose a different remote port under Advanced settings.",
                 )
 
     async def _require_no_active_jobs(self, remote_trainer_id: UUID) -> None:
@@ -348,12 +356,11 @@ class RemoteTrainerService:
                     saved = await self.repo.save(remote_trainer)
                 except IntegrityError as error:
                     await self.session.rollback()
-                    if (
-                        config.connection_mode is RemoteTrainerConnectionMode.SSH
-                        and config.ssh_local_port is None
-                        and attempt < 2
-                    ):
-                        continue
+                    if config.connection_mode is RemoteTrainerConnectionMode.SSH:
+                        if config.ssh_local_port is None and attempt < 2:
+                            continue
+                        if config.ssh_local_port is not None:
+                            raise _local_port_conflict(config.ssh_local_port) from error
                     raise ResourceAlreadyExistsError(
                         "Remote trainer",
                         "A trainer with this URL is already configured.",
@@ -363,14 +370,11 @@ class RemoteTrainerService:
                     break
                 except Exception as error:
                     await self.repo.delete_by_id(saved.id)
-                    if not (
-                        config.connection_mode is RemoteTrainerConnectionMode.SSH
-                        and config.ssh_local_port is None
-                        and isinstance(error, OSError)
-                        and error.errno == errno.EADDRINUSE
-                        and attempt < 2
-                    ):
-                        raise
+                    if isinstance(error, OSError) and error.errno == errno.EADDRINUSE:
+                        if config.ssh_local_port is None and attempt < 2:
+                            continue
+                        raise _local_port_conflict(saved.ssh_local_port) from error
+                    raise
         if install_prerequisites:
             await self.install_remote_trainer(saved.id)
         else:
@@ -498,7 +502,7 @@ class RemoteTrainerService:
             persistent_trainer.set_install_phase(remote_trainer_id, "Waiting for SSH host to reboot")
             _background_installs[remote_trainer_id] = asyncio.create_task(_reboot())
 
-    async def update_remote_trainer(
+    async def update_remote_trainer(  # noqa: PLR0912 - handle explicit local-port conflicts on save and bind
         self,
         remote_trainer_id: UUID,
         update: RemoteTrainerUpdate,
@@ -513,6 +517,7 @@ class RemoteTrainerService:
         async with _port_allocation_lock:
             for attempt in range(3):
                 auto_port = False
+                validated: RemoteTrainerCreate = remote_trainer
                 try:
                     # Keep explicit nulls for nullable tunnel fields.
                     data = update.model_dump(exclude_unset=True)
@@ -546,6 +551,8 @@ class RemoteTrainerService:
                     await self.session.rollback()
                     if auto_port and attempt < 2:
                         continue
+                    if validated.connection_mode is RemoteTrainerConnectionMode.SSH and not auto_port:
+                        raise _local_port_conflict(validated.ssh_local_port) from error
                     raise ResourceAlreadyExistsError(
                         "Remote trainer",
                         "A trainer with this URL is already configured.",
@@ -555,10 +562,12 @@ class RemoteTrainerService:
                     break
                 except Exception as error:
                     await self.repo.update(saved, remote_trainer.model_dump(include={"name", *_CONNECTION_FIELDS}))
-                    if not (
-                        auto_port and isinstance(error, OSError) and error.errno == errno.EADDRINUSE and attempt < 2
-                    ):
-                        raise
+                    if isinstance(error, OSError) and error.errno == errno.EADDRINUSE:
+                        if auto_port and attempt < 2:
+                            continue
+                        await remote_trainer_tunnel_manager.sync_tunnel(remote_trainer)
+                        raise _local_port_conflict(saved.ssh_local_port) from error
+                    raise
         if remote_trainer.connection_mode is RemoteTrainerConnectionMode.SSH:
             await self._cancel_launch(remote_trainer_id)
             host_changed = (

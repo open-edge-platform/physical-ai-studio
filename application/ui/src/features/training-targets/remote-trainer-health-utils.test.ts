@@ -49,7 +49,7 @@ describe('remote-trainer-health-utils starting status', () => {
 
     it('explains a remote port collision and how to resolve it', () => {
         expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'remote_port_in_use' })).toBe(
-            'The remote port is already in use on the SSH host. Edit this trainer and choose another remote port.'
+            'The remote port is already in use on the SSH host. Go to Settings → Training Targets, edit this trainer, and choose another remote port under Advanced settings.'
         );
     });
 

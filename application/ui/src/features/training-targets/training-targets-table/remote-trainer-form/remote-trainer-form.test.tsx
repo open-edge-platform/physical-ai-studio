@@ -24,7 +24,11 @@ describe('RemoteTrainerForm', () => {
         expect(screen.getByText('Connect through SSH when the trainer is not directly reachable.')).toBeInTheDocument();
         expect(screen.getByRole('tab', { name: /connection details/i })).toHaveAttribute('aria-selected', 'true');
         expect(screen.getByRole('textbox', { name: /^User/ })).toHaveValue('ec2-user');
-        expect(screen.queryByRole('textbox', { name: /local port/i })).not.toBeInTheDocument();
+        expect(screen.getByRole('textbox', { name: /remote port/i })).not.toBeVisible();
+        expect(screen.getByRole('textbox', { name: /local port/i })).not.toBeVisible();
+        await user.click(screen.getByText('Advanced settings'));
+        expect(screen.getByRole('textbox', { name: /remote port/i })).toHaveValue('8001');
+        expect(screen.getByRole('textbox', { name: /local port/i })).toHaveValue('');
         expect(screen.queryByRole('textbox', { name: /trainer url/i })).not.toBeInTheDocument();
     });
 
@@ -128,9 +132,11 @@ describe('RemoteTrainerForm', () => {
         expect(screen.getByRole('textbox', { name: /^Port/ })).toHaveValue('2,222');
         expect(screen.getByRole('textbox', { name: /^User/ })).toHaveValue('');
         expect(screen.getByRole('textbox', { name: /key path/i })).toHaveValue('~/.ssh/trainer');
+        await userEvent.setup().click(screen.getByText('Advanced settings'));
+        expect(screen.getByRole('textbox', { name: /remote port/i })).toHaveValue('8001');
     });
 
-    it('keeps the assigned local port when editing an SSH trainer', async () => {
+    it('allows editing both SSH tunnel ports', async () => {
         const user = userEvent.setup();
         let updated: Record<string, unknown> | undefined;
         server.use(
@@ -147,8 +153,14 @@ describe('RemoteTrainerForm', () => {
             }),
         });
 
+        await user.click(screen.getByText('Advanced settings'));
+        await user.clear(screen.getByRole('textbox', { name: /remote port/i }));
+        await user.type(screen.getByRole('textbox', { name: /remote port/i }), '8002');
+        expect(screen.getByRole('textbox', { name: /local port/i })).toHaveValue('9012');
+        await user.clear(screen.getByRole('textbox', { name: /local port/i }));
+        await user.type(screen.getByRole('textbox', { name: /local port/i }), '9013');
         await user.click(screen.getByRole('button', { name: 'Save changes' }));
-        await waitFor(() => expect(updated).toMatchObject({ ssh_local_port: 9012 }));
+        await waitFor(() => expect(updated).toMatchObject({ ssh_remote_port: 8002, ssh_local_port: 9013 }));
     });
 
     it('does not offer SSH actions for an existing SSH trainer when the feature is unavailable', async () => {

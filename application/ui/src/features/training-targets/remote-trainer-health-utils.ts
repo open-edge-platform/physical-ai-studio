@@ -44,7 +44,8 @@ export const healthDescription = (health?: SchemaRemoteTrainerHealth) => {
         case 'remote_port_in_use':
             return (
                 'The remote port is already in use on the SSH host. ' +
-                'Edit this trainer and choose another remote port.'
+                'Go to Settings → Training Targets, edit this trainer, ' +
+                'and choose another remote port under Advanced settings.'
             );
         case 'docker_unavailable':
             return (
