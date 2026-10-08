@@ -49,14 +49,14 @@ jobs:
           RC_NUMBER="${RC_VERSION##*rc}"
 
           # Read the Studio package version from its project metadata
-          PROJECT_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
+          APP_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
 
           echo "::group::Validation parameters"
           echo "Tag: $TAG"
           echo "RC version: $RC_VERSION"
           echo "Tag base version: $TAG_VERSION"
           echo "RC number: $RC_NUMBER"
-          echo "Project version: $PROJECT_VERSION"
+          echo "App version: $APP_VERSION"
           echo "::endgroup::"
 
           # Validate RC number is a positive integer
@@ -66,19 +66,19 @@ jobs:
           fi
           echo "✓ RC number is valid"
 
-          # Validate project version format (semver: major.minor.patch)
-          if ! [[ "$PROJECT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Project version is not valid semver: '$PROJECT_VERSION'"
+          # Validate app version format (semver: major.minor.patch)
+          if ! [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::App version is not valid semver: '$APP_VERSION'"
             exit 1
           fi
-          echo "✓ Project version has valid semver format"
+          echo "✓ App version has valid semver format"
 
           # Validate tag version matches project metadata
-          if [[ "$TAG_VERSION" != "$PROJECT_VERSION" ]]; then
-            echo "::error::Tag version '$TAG_VERSION' does not match project version '$PROJECT_VERSION'"
+          if [[ "$TAG_VERSION" != "$APP_VERSION" ]]; then
+            echo "::error::Tag version '$TAG_VERSION' does not match Studio app version '$APP_VERSION'"
             exit 1
           fi
-          echo "✓ Tag version matches project version"
+          echo "✓ Tag version matches app version"
 
           # Validate base release exists for patch releases
           PATCH_VERSION="${TAG_VERSION##*.}"

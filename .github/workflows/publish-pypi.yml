@@ -31,16 +31,16 @@ jobs:
           TAG_VERSION="${TAG#lib/v}"
 
           # Read version from library/pyproject.toml
-          TOML_VERSION="$(grep '^version' library/pyproject.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')"
+          LIBRARY_VERSION="$(grep -m1 '^version = ' library/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
 
-          echo "Tag version:    $TAG_VERSION"
-          echo "pyproject.toml: $TOML_VERSION"
+          echo "Tag version:     $TAG_VERSION"
+          echo "Library version: $LIBRARY_VERSION"
 
-          if [[ "$TAG_VERSION" != "$TOML_VERSION" ]]; then
-            echo "::error::Tag version '$TAG_VERSION' does not match pyproject.toml version '$TOML_VERSION'"
+          if [[ "$TAG_VERSION" != "$LIBRARY_VERSION" ]]; then
+            echo "::error::Tag version '$TAG_VERSION' does not match library version '$LIBRARY_VERSION'"
             exit 1
           fi
-          echo "✓ Tag version matches pyproject.toml"
+          echo "✓ Tag version matches library version"
 
   build:
     needs: validate

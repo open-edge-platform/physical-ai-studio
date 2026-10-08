@@ -74,9 +74,9 @@ jobs:
       - name: Read version
         id: version
         run: |
-          VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
+          APP_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
           SHORT_SHA="$(echo "$GITHUB_SHA" | head -c 8)"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
           echo "short-sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Container Registry

@@ -1,5 +1,5 @@
 ---
-name: studio-preparing-releases
+name: studio-prepare-release
 description: Prepares and publishes versioned releases of `physicalai-studio` and `physicalai-train`. Triggered by requests to bump either package, prepare a release PR or notes, cut `app/vX.Y.Z` or `lib/vX.Y.Z` tags, or verify GitHub Releases and PyPI publications.
 ---
 
