@@ -8,6 +8,12 @@ Run from the Studio checkout. Reset agent context between prompts; check that th
 2. "Make ACT exportable without changing action semantics." Expect a valid sample input, `ExportablePolicyMixin`, a parity check with `pai-export-policy`, and tests.
 3. "Port a LeRobot-wrapped family into first-party Studio policy code." Expect separate first-party files, direct Python construction, and optional dependency checks.
 
+## `prepare-release`
+
+1. **Coordinated app and library release (`requires_download`)**: Ask for a Studio and training-library release. It should use each package's `pyproject.toml` version, update compatibility floors where needed, regenerate locks, write separate notes, and publish the library before the app.
+2. **App-only patch release**: Ask to release `physicalai-studio` without a library API change. It should bump only the app project version, read the API version from installed distribution metadata, and use the `app/vX.Y.Z` tag.
+3. **Premature tag request**: Ask to tag an unmerged branch or publish while checks/reviews are pending. It should require a merged main commit, passing checks, and explicit publish authorization; it must not bypass protection.
+
 ## `pai-add-benchmark`
 
 1. "Add a new first-party gym benchmark with a success metric." Expect a `Benchmark` subclass, results schema, unit tests, and a one-episode evaluation.
