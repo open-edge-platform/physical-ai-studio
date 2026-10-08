@@ -55,8 +55,13 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("connection", sa.JSON(), nullable=True))
 
     bind = op.get_bind()
-    columns = ", ".join(_SSH_COLUMNS)  # fixed identifiers, not user input
-    rows = bind.execute(sa.text(f"SELECT id, connection_mode, {columns} FROM remote_trainers")).all()  # noqa: S608
+    remote_trainers = sa.table(
+        "remote_trainers",
+        sa.column("id"),
+        sa.column("connection_mode"),
+        *(sa.column(column) for column in _SSH_COLUMNS),
+    )
+    rows = bind.execute(sa.select(remote_trainers)).all()
     for row in rows:
         bind.execute(
             sa.text("UPDATE remote_trainers SET connection = :connection WHERE id = :id"),
