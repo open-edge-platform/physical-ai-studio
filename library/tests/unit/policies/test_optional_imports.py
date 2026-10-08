@@ -8,12 +8,14 @@ import sys
 import textwrap
 
 
-def test_act_policy_import_does_not_import_optional_cosmos_dependency() -> None:
+def test_policy_exports_work_without_cosmos_optional_dependencies() -> None:
+    """Base installs can import policies; only constructing Cosmos3Model requires Diffusers."""
     script = textwrap.dedent(
         """
         import builtins
         import importlib.util
         import sys
+        from typing import get_type_hints
 
         real_find_spec = importlib.util.find_spec
         real_import = builtins.__import__
@@ -32,23 +34,31 @@ def test_act_policy_import_does_not_import_optional_cosmos_dependency() -> None:
         builtins.__import__ = block_diffusers
 
         import physicalai.data
+        import physicalai.train
         import physicalai.policies as policies
-        assert "physicalai.policies.cosmos3" not in sys.modules
+        from physicalai.policies import Cosmos3, Cosmos3Config, Cosmos3Model
+        from physicalai.policies.cosmos3 import Cosmos3Preprocessor
+
+        assert "diffusers" not in sys.modules
+        assert "physicalai.policies.cosmos3.pipeline" not in sys.modules
         assert policies.ACT.__name__ == "ACT"
         assert policies.Pi05.__name__ == "Pi05"
         assert policies.MolmoAct2.__name__ == "MolmoAct2"
-        from physicalai.policies.cosmos3 import Cosmos3Config, Cosmos3Preprocessor
         assert Cosmos3Config.__name__ == "Cosmos3Config"
+        assert Cosmos3Model.__name__ == "Cosmos3Model"
         assert Cosmos3Preprocessor.__name__ == "Cosmos3Preprocessor"
+        assert policies.get_physicalai_policy_class("cosmos3") is Cosmos3
+        assert "pipeline" in get_type_hints(Cosmos3.__init__)
         assert policies.get_physicalai_policy_class("act") is policies.ACT
         assert isinstance(policies.get_policy("act"), policies.ACT)
 
         try:
-            policies.get_physicalai_policy_class("cosmos3")
+            Cosmos3Model(Cosmos3Config(embodiment="pusht"))
         except ModuleNotFoundError as error:
             assert error.name == "diffusers"
+            assert "physicalai-train[cosmos3]" in str(error)
         else:
-            raise AssertionError("loading Cosmos3 should require its optional diffusers dependency")
+            raise AssertionError("constructing Cosmos3Model must require its optional diffusers dependency")
         """
     )
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, check=False, text=True)

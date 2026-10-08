@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING, Any
 import torch
 from torch.nn import functional
 
-from .pipeline import state_action_mrope_ids
-
 if TYPE_CHECKING:
     from torch import nn
 
@@ -123,6 +121,8 @@ def build_pack(
     )
 
     if paradigm == "policy":
+        from .pipeline import state_action_mrope_ids  # noqa: PLC0415  # Cosmos3-only dependency
+
         # Case B parity: state token aligns to frame 0, actions land at 1..chunk
         act["action_mrope_ids"] = state_action_mrope_ids(
             pipe,
