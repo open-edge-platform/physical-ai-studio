@@ -45,7 +45,7 @@ dependencies = [
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
-    "physicalai>=0.3.0",
+    "physicalai~=0.3.0",
 ]
 
 [project.optional-dependencies]

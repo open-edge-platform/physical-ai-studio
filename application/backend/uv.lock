@@ -56,7 +56,7 @@ conflicts = [[
 ]]
 
 [options]
-exclude-newer = "2026-09-30T16:43:46.123871Z"
+exclude-newer = "2026-10-01T10:23:23.468993Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -67,7 +67,7 @@ markupsafe = false
 openvino = false
 lightning = false
 physicalai-rebot-b601-plugin = false
-pyrealsense2 = { timestamp = "2026-10-06T16:43:46.123879Z", span = "P1D" }
+pyrealsense2 = { timestamp = "2026-10-07T10:23:23.468999Z", span = "P1D" }
 physicalai-lerobot-plugin = false
 physicalai-studio-plugin = false
 physicalai-stararm-plugin = false
@@ -2751,7 +2751,7 @@ requires-dist = [
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "opencv-python" },
     { name = "physicalai", extras = ["robots", "capture", "transport"], git = "https://github.com/openvinotoolkit/physicalai.git?rev=f90b3767cfa99e243fc7b277b9faa242c87db213" },
-    { name = "physicalai-studio-plugin", specifier = ">=0.3.0" },
+    { name = "physicalai-studio-plugin", specifier = "~=0.3.0" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cpu'", editable = "../../library" },
     { name = "physicalai-train", extras = ["executorch"], marker = "extra == 'cuda'", editable = "../../library" },
     { name = "physicalai-train", extras = ["pi05", "smolvla", "rldx1"], editable = "../../library" },

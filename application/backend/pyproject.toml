@@ -13,7 +13,7 @@ dependencies = [
   "physicalai[robots, capture, transport]~=0.3.0",
   "eclipse-zenoh==1.9.0",
   "msgpack==1.2.1",
-  "physicalai-train[pi05,smolvla,rldx1]>=0.3.0",
+  "physicalai-train[pi05,smolvla,rldx1]~=0.3.0",
   "lerobot[dataset,feetech]==0.6.0",
   "torchcodec==0.11.1",
   "numpy",
@@ -36,7 +36,7 @@ dependencies = [
   "sse-starlette>=2.0.0",
   "huggingface-hub>=0.27",
   "psutil~=7.2",
-  "physicalai-studio-plugin>=0.3.0",
+  "physicalai-studio-plugin~=0.3.0",
   "asyncssh~=2.24",
   "sigstore>=4.0,<5",
 ]
