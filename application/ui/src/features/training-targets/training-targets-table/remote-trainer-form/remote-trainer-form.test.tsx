@@ -89,32 +89,37 @@ describe('RemoteTrainerForm', () => {
         await waitFor(() => expect(created).toBeDefined());
         expect(requestedInstallation).toBe(true);
         expect(created).toMatchObject({
-            connection_mode: 'ssh',
-            url: null,
-            ssh_host_alias: null,
-            ssh_connection: {
-                hostname: 'gpu.example.test',
-                port: 2222,
-                user: 'trainer',
-                identity_file: '~/.ssh/trainer',
+            connection: {
+                connection_mode: 'ssh',
+                ssh_host_alias: null,
+                ssh_connection: {
+                    hostname: 'gpu.example.test',
+                    port: 2222,
+                    user: 'trainer',
+                    identity_file: '~/.ssh/trainer',
+                },
+                ssh_remote_port: 8001,
+                ssh_local_port: 8001,
             },
-            ssh_remote_port: 8001,
-            ssh_local_port: 8001,
         });
     });
 
     it('restores a manually configured SSH host when editing a remote trainer', async () => {
         const manualTrainer = getMockedRemoteTrainer({
             connection_mode: 'ssh',
-            url: undefined,
-            ssh_connection: {
-                hostname: 'gpu.example.test',
-                port: 2222,
-                user: null,
-                identity_file: '~/.ssh/trainer',
+            url: 'http://127.0.0.1:8001',
+            connection: {
+                connection_mode: 'ssh',
+                ssh_host_alias: null,
+                ssh_connection: {
+                    hostname: 'gpu.example.test',
+                    port: 2222,
+                    user: null,
+                    identity_file: '~/.ssh/trainer',
+                },
+                ssh_remote_port: 8001,
+                ssh_local_port: 8001,
             },
-            ssh_remote_port: 8001,
-            ssh_local_port: 8001,
         });
 
         renderForm({ remoteTrainer: manualTrainer });
@@ -135,9 +140,13 @@ describe('RemoteTrainerForm', () => {
             sshAvailable: false,
             remoteTrainer: getMockedRemoteTrainer({
                 connection_mode: 'ssh',
-                ssh_host_alias: 'gpu-box',
-                ssh_remote_port: 8001,
-                ssh_local_port: 8001,
+                url: 'http://127.0.0.1:8001',
+                connection: {
+                    connection_mode: 'ssh',
+                    ssh_host_alias: 'gpu-box',
+                    ssh_remote_port: 8001,
+                    ssh_local_port: 8001,
+                },
             }),
         });
 
@@ -175,13 +184,48 @@ describe('RemoteTrainerForm', () => {
 
         await waitFor(() => expect(created).toBeDefined());
         expect(created).toMatchObject({
-            connection_mode: 'ssh',
-            url: null,
-            ssh_host_alias: 'gpu-box',
-            ssh_connection: null,
-            ssh_remote_port: 8001,
-            ssh_local_port: 8001,
+            connection: {
+                connection_mode: 'ssh',
+                ssh_host_alias: 'gpu-box',
+                ssh_connection: null,
+                ssh_remote_port: 8001,
+                ssh_local_port: 8001,
+            },
         });
+    });
+
+    it('creates an AWS Batch trainer from the pasted stack configuration', async () => {
+        const user = userEvent.setup();
+        let created: Record<string, unknown> | undefined;
+        const configuration = {
+            schema_version: 1,
+            region: 'eu-west-1',
+            studio_role_arn: 'arn:aws:iam::123456789012:role/studio',
+            bucket: 'jobs-bucket',
+            targets: { 'g4dn.xlarge': { queue: 'arn:q', job_definition: 'arn:jd' } },
+        };
+
+        server.use(
+            http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
+                created = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json(getMockedRemoteTrainer({ id: 'trainer-1' }), { status: 201 });
+            })
+        );
+
+        renderForm();
+
+        await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'batch');
+        await user.click(screen.getByRole('tab', { name: 'AWS Batch' }));
+        expect(screen.getByRole('button', { name: 'Add trainer' })).toBeDisabled();
+
+        await user.click(screen.getByRole('textbox', { name: /studio configuration/i }));
+        await user.paste(JSON.stringify(configuration));
+
+        expect(screen.getByRole('button', { name: 'Add trainer' })).toBeEnabled();
+        await user.click(screen.getByRole('button', { name: 'Add trainer' }));
+
+        await waitFor(() => expect(created).toBeDefined());
+        expect(created).toEqual({ name: 'batch', connection: { connection_mode: 'aws_batch', ...configuration } });
     });
 
     it('shows an insecure-URL warning for a non-loopback http:// trainer URL', async () => {

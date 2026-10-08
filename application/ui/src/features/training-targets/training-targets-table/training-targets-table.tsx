@@ -17,7 +17,7 @@ import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteTrainer } from '../../../api/openapi-spec';
 import { Table, TableColumn } from '../../../components/table/table';
-import { connectionModeLabel } from '../remote-trainer-connection-utils';
+import { connectionModeLabel, connectionSummary } from '../remote-trainer-connection-utils';
 import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
 import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
 import { TrainingTargetRow, trainingTargetRowId } from './training-target-row';
@@ -230,7 +230,7 @@ const DirectUrlTargetRow = ({
         >
             {targetRowCells({
                 name: trainer.name,
-                connectionLabel: trainer.url,
+                connectionLabel: connectionSummary(trainer),
                 connectionModeText: connectionModeLabel(trainer.connection_mode),
                 statusVariant: healthVariant(displayHealth, isChecking),
                 statusLabel: healthLabel(displayHealth, isChecking),

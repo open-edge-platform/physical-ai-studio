@@ -1,0 +1,644 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: |-
+  Creates AWS Batch resources for Physical AI Studio training jobs.
+  Compute environments scale to zero when no jobs are running.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Trainer image
+        Parameters:
+          - TrainerImage
+      - Label:
+          default: Job limits
+        Parameters:
+          - JobTimeoutSeconds
+          - LogRetentionDays
+    ParameterLabels:
+      TrainerImage:
+        default: Trainer image URI
+      JobTimeoutSeconds:
+        default: Maximum job duration (seconds)
+      LogRetentionDays:
+        default: Job log retention (days)
+
+Parameters:
+  TrainerImage:
+    Type: String
+    Description: >-
+      Immutable public GHCR image URI, including its sha256 digest. Obtain the digest from a
+      Physical AI Studio release or by running
+      "cosign verify ghcr.io/open-edge-platform/physicalai-trainer-cuda:<tag>" and copying
+      critical.image.docker-manifest-digest.
+    AllowedPattern: "^ghcr\\.io/open-edge-platform/physicalai-trainer-cuda@sha256:[0-9a-f]{64}$"
+    ConstraintDescription: >-
+      Enter the Physical AI trainer image as
+      ghcr.io/open-edge-platform/physicalai-trainer-cuda@sha256:<64 lowercase hexadecimal characters>.
+
+  JobTimeoutSeconds:
+    Type: Number
+    Default: 86400
+    MinValue: 60
+    MaxValue: 604800
+    Description: >-
+      AWS Batch terminates a job that runs longer than this (default 24 hours), so a hung
+      run cannot accrue charges indefinitely.
+
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365]
+    Description: How long CloudWatch keeps trainer container logs.
+
+Mappings:
+  # One job owns a whole instance: VCPU matches the instance and MEMORY leaves
+  # headroom for the ECS agent, so Batch never packs two trainings on one GPU box.
+  InstanceResources:
+    g4dn.xlarge:
+      Vcpu: "4"
+      MemoryMiB: "14000"
+    g6e.2xlarge:
+      Vcpu: "8"
+      MemoryMiB: "30000"
+    p5.4xlarge:
+      Vcpu: "16"
+      MemoryMiB: "240000"
+
+Resources:
+  TrainerVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.43.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-vpc
+
+  TrainerInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-igw
+
+  TrainerGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref TrainerInternetGateway
+      VpcId: !Ref TrainerVpc
+
+  TrainerSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ""
+      CidrBlock: 10.43.1.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref TrainerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-subnet
+
+  TrainerRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref TrainerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-routes
+
+  TrainerDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: TrainerGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref TrainerInternetGateway
+      RouteTableId: !Ref TrainerRouteTable
+
+  TrainerSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref TrainerRouteTable
+      SubnetId: !Ref TrainerSubnet
+
+  TrainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Outbound network access for Physical AI trainer instances
+      VpcId: !Ref TrainerVpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-trainer
+
+  JobsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireJobData
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  JobsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref JobsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt JobsBucket.Arn
+              - !Sub ${JobsBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+  StudioRole:
+    Type: AWS::IAM::Role
+    Properties:
+      # Trusting the account root lets any IAM principal in this account that
+      # holds sts:AssumeRole take this role. Suitable for a single-operator
+      # development account; restrict Principal.AWS to specific users/roles
+      # before using this stack in a shared account.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: StudioJobStorage
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource: !GetAtt JobsBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - jobs/*
+                      - validation/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource:
+                  - !Sub ${JobsBucket.Arn}/jobs/*
+                  - !Sub ${JobsBucket.Arn}/validation/*
+              - Effect: Allow
+                Action: s3:DeleteObject
+                Resource: !Sub ${JobsBucket.Arn}/validation/*
+        - PolicyName: StudioBatchRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - batch:DescribeJobDefinitions
+                  - batch:DescribeJobQueues
+                  - batch:DescribeJobs
+                Resource: "*"
+
+  BatchJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TrainerJobStorage
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource: !GetAtt JobsBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: jobs/*
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:GetObject
+                  - s3:ListMultipartUploadParts
+                  - s3:PutObject
+                Resource: !Sub ${JobsBucket.Arn}/jobs/*
+
+  BatchInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+
+  BatchInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref BatchInstanceRole
+
+  BatchLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: 100
+              VolumeType: gp3
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - Key: Name
+              Value: !Sub ${AWS::StackName}-batch
+
+  G4dnComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: EC2
+        AllocationStrategy: BEST_FIT
+        MinvCpus: 0
+        DesiredvCpus: 0
+        MaxvCpus: 4
+        InstanceTypes:
+          - g4dn.xlarge
+        Ec2Configuration:
+          - ImageType: ECS_AL2023_NVIDIA
+        InstanceRole: !GetAtt BatchInstanceProfile.Arn
+        LaunchTemplate:
+          LaunchTemplateId: !Ref BatchLaunchTemplate
+          Version: !GetAtt BatchLaunchTemplate.LatestVersionNumber
+        SecurityGroupIds:
+          - !Ref TrainerSecurityGroup
+        Subnets:
+          - !Ref TrainerSubnet
+        Tags:
+          Name: !Sub ${AWS::StackName}-g4dn
+
+  G6eComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: EC2
+        AllocationStrategy: BEST_FIT
+        MinvCpus: 0
+        DesiredvCpus: 0
+        MaxvCpus: 8
+        InstanceTypes:
+          - g6e.2xlarge
+        Ec2Configuration:
+          - ImageType: ECS_AL2023_NVIDIA
+        InstanceRole: !GetAtt BatchInstanceProfile.Arn
+        LaunchTemplate:
+          LaunchTemplateId: !Ref BatchLaunchTemplate
+          Version: !GetAtt BatchLaunchTemplate.LatestVersionNumber
+        SecurityGroupIds:
+          - !Ref TrainerSecurityGroup
+        Subnets:
+          - !Ref TrainerSubnet
+        Tags:
+          Name: !Sub ${AWS::StackName}-g6e
+
+  P5ComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: EC2
+        AllocationStrategy: BEST_FIT
+        MinvCpus: 0
+        DesiredvCpus: 0
+        MaxvCpus: 16
+        InstanceTypes:
+          - p5.4xlarge
+        Ec2Configuration:
+          - ImageType: ECS_AL2023_NVIDIA
+        InstanceRole: !GetAtt BatchInstanceProfile.Arn
+        LaunchTemplate:
+          LaunchTemplateId: !Ref BatchLaunchTemplate
+          Version: !GetAtt BatchLaunchTemplate.LatestVersionNumber
+        SecurityGroupIds:
+          - !Ref TrainerSecurityGroup
+        Subnets:
+          - !Ref TrainerSubnet
+        Tags:
+          Name: !Sub ${AWS::StackName}-p5
+
+  G4dnJobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      State: ENABLED
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref G4dnComputeEnvironment
+
+  G6eJobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      State: ENABLED
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref G6eComputeEnvironment
+
+  P5JobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      State: ENABLED
+      Priority: 1
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref P5ComputeEnvironment
+
+  TrainerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /physicalai/${AWS::StackName}/trainer
+      RetentionInDays: !Ref LogRetentionDays
+
+  # S3 contract between Studio and the one-shot trainer container. Studio
+  # submits with Parameters.job_prefix = "jobs/<job-id>" after writing
+  # spec.json and dataset.zip there; the container writes status.json during
+  # training and uploads artifact.zip. The HF token, if any, is passed by
+  # Studio via containerOverrides.environment (HF_TOKEN) and never stored in S3.
+  G4dnJobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      PlatformCapabilities:
+        - EC2
+      Parameters:
+        job_prefix: ""
+      Timeout:
+        AttemptDurationSeconds: !Ref JobTimeoutSeconds
+      RetryStrategy:
+        Attempts: 1
+      ContainerProperties:
+        Image: !Ref TrainerImage
+        Command:
+          - physicalai-trainer-batch
+        JobRoleArn: !GetAtt BatchJobRole.Arn
+        Environment:
+          - Name: PHYSICALAI_BATCH_PROVIDER
+            Value: aws
+          - Name: PHYSICALAI_BATCH_BUCKET
+            Value: !Ref JobsBucket
+          - Name: PHYSICALAI_BATCH_JOB_PREFIX
+            Value: Ref::job_prefix
+          - Name: PHYSICALAI_BATCH_SPEC_KEY
+            Value: spec.json
+          - Name: PHYSICALAI_BATCH_DATASET_KEY
+            Value: dataset.zip
+          - Name: PHYSICALAI_BATCH_STATUS_KEY
+            Value: status.json
+          - Name: PHYSICALAI_BATCH_ARTIFACT_KEY
+            Value: artifact.zip
+        ResourceRequirements:
+          - Type: VCPU
+            Value: !FindInMap [InstanceResources, g4dn.xlarge, Vcpu]
+          - Type: MEMORY
+            Value: !FindInMap [InstanceResources, g4dn.xlarge, MemoryMiB]
+          - Type: GPU
+            Value: "1"
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref TrainerLogGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: g4dn
+
+  G6eJobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      PlatformCapabilities:
+        - EC2
+      Parameters:
+        job_prefix: ""
+      Timeout:
+        AttemptDurationSeconds: !Ref JobTimeoutSeconds
+      RetryStrategy:
+        Attempts: 1
+      ContainerProperties:
+        Image: !Ref TrainerImage
+        Command:
+          - physicalai-trainer-batch
+        JobRoleArn: !GetAtt BatchJobRole.Arn
+        Environment:
+          - Name: PHYSICALAI_BATCH_PROVIDER
+            Value: aws
+          - Name: PHYSICALAI_BATCH_BUCKET
+            Value: !Ref JobsBucket
+          - Name: PHYSICALAI_BATCH_JOB_PREFIX
+            Value: Ref::job_prefix
+          - Name: PHYSICALAI_BATCH_SPEC_KEY
+            Value: spec.json
+          - Name: PHYSICALAI_BATCH_DATASET_KEY
+            Value: dataset.zip
+          - Name: PHYSICALAI_BATCH_STATUS_KEY
+            Value: status.json
+          - Name: PHYSICALAI_BATCH_ARTIFACT_KEY
+            Value: artifact.zip
+        ResourceRequirements:
+          - Type: VCPU
+            Value: !FindInMap [InstanceResources, g6e.2xlarge, Vcpu]
+          - Type: MEMORY
+            Value: !FindInMap [InstanceResources, g6e.2xlarge, MemoryMiB]
+          - Type: GPU
+            Value: "1"
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref TrainerLogGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: g6e
+
+  P5JobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      PlatformCapabilities:
+        - EC2
+      Parameters:
+        job_prefix: ""
+      Timeout:
+        AttemptDurationSeconds: !Ref JobTimeoutSeconds
+      RetryStrategy:
+        Attempts: 1
+      ContainerProperties:
+        Image: !Ref TrainerImage
+        Command:
+          - physicalai-trainer-batch
+        JobRoleArn: !GetAtt BatchJobRole.Arn
+        Environment:
+          - Name: PHYSICALAI_BATCH_PROVIDER
+            Value: aws
+          - Name: PHYSICALAI_BATCH_BUCKET
+            Value: !Ref JobsBucket
+          - Name: PHYSICALAI_BATCH_JOB_PREFIX
+            Value: Ref::job_prefix
+          - Name: PHYSICALAI_BATCH_SPEC_KEY
+            Value: spec.json
+          - Name: PHYSICALAI_BATCH_DATASET_KEY
+            Value: dataset.zip
+          - Name: PHYSICALAI_BATCH_STATUS_KEY
+            Value: status.json
+          - Name: PHYSICALAI_BATCH_ARTIFACT_KEY
+            Value: artifact.zip
+        ResourceRequirements:
+          - Type: VCPU
+            Value: !FindInMap [InstanceResources, p5.4xlarge, Vcpu]
+          - Type: MEMORY
+            Value: !FindInMap [InstanceResources, p5.4xlarge, MemoryMiB]
+          - Type: GPU
+            Value: "1"
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref TrainerLogGroup
+            awslogs-region: !Ref AWS::Region
+            awslogs-stream-prefix: p5
+
+  StudioBatchSubmitPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: StudioBatchJobs
+      Roles:
+        - !Ref StudioRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: batch:SubmitJob
+            Resource:
+              - !Ref G4dnJobDefinition
+              - !Ref G6eJobDefinition
+              - !Ref P5JobDefinition
+              - !Ref G4dnJobQueue
+              - !Ref G6eJobQueue
+              - !Ref P5JobQueue
+          # TerminateJob takes a job id, not a queue/definition ARN, and Batch
+          # exposes no condition key to scope it, so "*" is the narrowest option.
+          - Effect: Allow
+            Action: batch:TerminateJob
+            Resource: "*"
+
+  BucketCleanupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: EmptyJobsBucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:ListBucketVersions
+                Resource:
+                  - !GetAtt JobsBucket.Arn
+                  - !Sub ${JobsBucket.Arn}/*
+
+  BucketCleanupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: index.handler
+      Role: !GetAtt BucketCleanupRole.Arn
+      Timeout: 900
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          def handler(event, context):
+              try:
+                  if event["RequestType"] == "Delete":
+                      bucket = boto3.resource("s3").Bucket(event["ResourceProperties"]["BucketName"])
+                      bucket.object_versions.delete()
+                      bucket.multipart_uploads.abort()
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as error:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": str(error)})
+
+  EmptyJobsBucket:
+    Type: Custom::EmptyBucket
+    Properties:
+      ServiceToken: !GetAtt BucketCleanupFunction.Arn
+      BucketName: !Ref JobsBucket
+
+Outputs:
+  StudioConfiguration:
+    Description: Copy this value into the Physical AI Studio AWS cloud target form.
+    Value:
+      Fn::Sub:
+        - >-
+          {"schema_version":1,"region":"${AWS::Region}","studio_role_arn":"${StudioRoleArn}","bucket":"${BucketName}","targets":{"g4dn.xlarge":{"queue":"${G4dnQueueArn}","job_definition":"${G4dnJobDefinitionArn}"},"g6e.2xlarge":{"queue":"${G6eQueueArn}","job_definition":"${G6eJobDefinitionArn}"},"p5.4xlarge":{"queue":"${P5QueueArn}","job_definition":"${P5JobDefinitionArn}"}}}
+        - StudioRoleArn: !GetAtt StudioRole.Arn
+          BucketName: !Ref JobsBucket
+          G4dnQueueArn: !Ref G4dnJobQueue
+          G6eQueueArn: !Ref G6eJobQueue
+          P5QueueArn: !Ref P5JobQueue
+          G4dnJobDefinitionArn: !Ref G4dnJobDefinition
+          G6eJobDefinitionArn: !Ref G6eJobDefinition
+          P5JobDefinitionArn: !Ref P5JobDefinition

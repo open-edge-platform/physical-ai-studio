@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from schemas.hardware import DeviceType
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode
+from schemas.remote_trainer import DirectConnection, RemoteTrainer, SshConnection
 from services.ssh import persistent_trainer
 from services.ssh.docker_ops import ContainerInspection, ResolvedImage
 
@@ -32,11 +32,7 @@ def _ssh_trainer() -> RemoteTrainer:
     return RemoteTrainer(
         id=uuid4(),
         name="gpu-trainer",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-        ssh_remote_port=8001,
-        ssh_local_port=8001,
+        connection=SshConnection(ssh_host_alias="gpu-box", ssh_remote_port=8001, ssh_local_port=8001),
     )
 
 
@@ -208,7 +204,7 @@ async def test_start_records_missing_accelerator_for_the_health_ui() -> None:
 
 
 async def test_start_is_a_noop_for_a_direct_url_trainer() -> None:
-    trainer = RemoteTrainer(id=uuid4(), name="direct", url="https://trainer.test")
+    trainer = RemoteTrainer(id=uuid4(), name="direct", connection=DirectConnection(url="https://trainer.test"))
 
     with patch(f"{MODULE}.SshTransport") as ssh_transport:
         await persistent_trainer.start(trainer)

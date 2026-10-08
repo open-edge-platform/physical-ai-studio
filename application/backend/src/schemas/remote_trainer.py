@@ -1,9 +1,9 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from schemas.hardware import DeviceInfo, StorageInfo
 from schemas.remote_server import SSH_HOST_ALIAS_PATTERN
@@ -16,6 +16,7 @@ class RemoteTrainerConnectionMode(StrEnum):
 
     DIRECT = "direct"
     SSH = "ssh"
+    AWS_BATCH = "aws_batch"
 
 
 class ManualSshConnection(BaseModel):
@@ -33,94 +34,120 @@ class ManualSshConnection(BaseModel):
     )
 
 
-class RemoteTrainerCreate(BaseModel):
-    """Configuration for a direct or managed SSH remote trainer.
+class DirectConnection(BaseModel):
+    """A trainer service reachable at a URL Studio can open directly."""
 
-    SSH aliases refer to ``Host`` entries in the user's ``~/.ssh/config``.
-    Studio starts the managed container and forwards its host loopback port
-    through a standing tunnel; the local URL is derived from ``ssh_local_port``.
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    connection_mode: Literal[RemoteTrainerConnectionMode.DIRECT] = RemoteTrainerConnectionMode.DIRECT
+    url: AnyHttpUrl
+
+
+class SshConnection(BaseModel):
+    """A trainer container Studio starts on an SSH host and reaches through a tunnel.
+
+    ``ssh_host_alias`` refers to a ``Host`` entry in the user's ``~/.ssh/config``;
+    ``ssh_connection`` carries the same information entered by hand. Exactly one
+    of the two must be set.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    name: str = Field(min_length=1, max_length=255)
-    connection_mode: RemoteTrainerConnectionMode = RemoteTrainerConnectionMode.DIRECT
-    url: AnyHttpUrl | None = None
-    ssh_host_alias: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=255,
-        pattern=SSH_HOST_ALIAS_PATTERN,
-        description="Name of a Host entry in the user's SSH config, for an optional port-forward tunnel. Non-secret.",
+    connection_mode: Literal[RemoteTrainerConnectionMode.SSH] = RemoteTrainerConnectionMode.SSH
+    ssh_host_alias: str | None = Field(default=None, min_length=1, max_length=255, pattern=SSH_HOST_ALIAS_PATTERN)
+    ssh_connection: ManualSshConnection | None = None
+    ssh_remote_port: int = Field(
+        default=8001, ge=1, le=65535, description="Loopback port on the SSH host the trainer container publishes."
     )
-    ssh_connection: ManualSshConnection | None = Field(
-        default=None,
-        description="Manual SSH connection fields for a tunnel which does not use an SSH config alias.",
-    )
-    ssh_remote_port: int | None = Field(
-        default=8001,
-        ge=1,
-        le=65535,
-        description="Port on the SSH host's loopback interface to forward to. Defaults to the trainer URL's port.",
-    )
-    ssh_local_port: int | None = Field(
-        default=8001,
-        ge=1,
-        le=65535,
-        description="Loopback port on the studio host the tunnel binds to. Required when ssh_host_alias is set.",
+    ssh_local_port: int = Field(
+        default=8001, ge=1, le=65535, description="Loopback port on the Studio host the tunnel binds to."
     )
 
     @model_validator(mode="after")
-    def _validate_connection(self) -> Self:
-        """Require fields coherent with the selected connection mode."""
-        if self.connection_mode is RemoteTrainerConnectionMode.DIRECT:
-            if self.url is None:
-                raise ValueError("url is required for a direct connection")
-            has_explicit_ssh_port = any(
-                field in self.model_fields_set and getattr(self, field) is not None
-                for field in ("ssh_remote_port", "ssh_local_port")
-            )
-            if self.ssh_host_alias is not None or self.ssh_connection is not None or has_explicit_ssh_port:
-                raise ValueError("SSH fields require connection_mode='ssh'")
-            self.ssh_remote_port = None
-            self.ssh_local_port = None
-            return self
-
+    def _exactly_one_host(self) -> Self:
         if self.ssh_host_alias is not None and self.ssh_connection is not None:
             raise ValueError("ssh_host_alias and ssh_connection are mutually exclusive")
         if self.ssh_host_alias is None and self.ssh_connection is None:
             raise ValueError("SSH mode requires either ssh_host_alias or ssh_connection")
-        if self.ssh_local_port is None:
-            raise ValueError("ssh_local_port is required when ssh_host_alias is set, so the tunnel binds a stable port")
-        if self.ssh_remote_port is None:
-            raise ValueError("ssh_remote_port is required for an SSH connection")
-        self.url = AnyHttpUrl(f"http://127.0.0.1:{self.ssh_local_port}")
         return self
+
+    @property
+    def host_name(self) -> str:
+        """Human-readable host identifier for logs and UI."""
+        if self.ssh_host_alias is not None:
+            return self.ssh_host_alias
+        assert self.ssh_connection is not None  # noqa: S101 - guaranteed by _exactly_one_host
+        return self.ssh_connection.hostname
+
+    @property
+    def url(self) -> AnyHttpUrl:
+        """Local end of the tunnel."""
+        return AnyHttpUrl(f"http://127.0.0.1:{self.ssh_local_port}")
+
+
+class AwsBatchTarget(BaseModel):
+    """Batch job queue and job definition provisioned for one instance type."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    queue: str = Field(min_length=1, max_length=2048)
+    job_definition: str = Field(min_length=1, max_length=2048)
+
+
+class AwsBatchConnection(BaseModel):
+    """AWS Batch resources from the ``aws-batch-trainer`` CloudFormation stack output."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    connection_mode: Literal[RemoteTrainerConnectionMode.AWS_BATCH] = RemoteTrainerConnectionMode.AWS_BATCH
+    schema_version: Literal[1] = 1
+    region: str = Field(min_length=1, max_length=64)
+    studio_role_arn: str = Field(min_length=1, max_length=2048)
+    bucket: str = Field(min_length=3, max_length=63)
+    targets: dict[str, AwsBatchTarget] = Field(min_length=1, description="Instance type -> Batch resources.")
+
+
+TrainerConnection = Annotated[
+    DirectConnection | SshConnection | AwsBatchConnection,
+    Field(discriminator="connection_mode"),
+]
+
+
+class RemoteTrainerCreate(BaseModel):
+    """Configuration for a remote trainer; ``connection`` carries the mode-specific fields."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=255)
+    connection: TrainerConnection
 
 
 class RemoteTrainerUpdate(BaseModel):
-    """Mutable fields for a remote trainer endpoint.
-
-    Cross-field tunnel consistency is only enforced on create: an update that
-    only touches ``name`` must not be rejected for fields it never mentions.
-    """
+    """Mutable fields for a remote trainer; ``connection`` is replaced as a whole."""
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    url: AnyHttpUrl | None = None
-    connection_mode: RemoteTrainerConnectionMode | None = None
-    ssh_host_alias: str | None = Field(default=None, min_length=1, max_length=255, pattern=SSH_HOST_ALIAS_PATTERN)
-    ssh_connection: ManualSshConnection | None = None
-    ssh_remote_port: int | None = Field(default=None, ge=1, le=65535)
-    ssh_local_port: int | None = Field(default=None, ge=1, le=65535)
+    connection: TrainerConnection | None = None
 
 
 class RemoteTrainer(RemoteTrainerCreate):
     """Persisted remote trainer endpoint."""
 
     id: UUID
-    url: AnyHttpUrl  # pyrefly: ignore[bad-override-mutable-attribute]
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def connection_mode(self) -> RemoteTrainerConnectionMode:
+        return self.connection.connection_mode
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def url(self) -> AnyHttpUrl | None:
+        """HTTP endpoint of the trainer service, when the mode has one."""
+        if isinstance(self.connection, DirectConnection | SshConnection):
+            return self.connection.url
+        return None
 
 
 class RemoteTrainerHealth(BaseModel):

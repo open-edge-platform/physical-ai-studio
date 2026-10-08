@@ -10,22 +10,19 @@ import pytest
 
 import services.remote_trainer_tunnel_manager as tunnel_manager
 from core.security.ssh_network_exposure import SshFeatureAvailability
-from schemas.remote_trainer import ManualSshConnection, RemoteTrainer, RemoteTrainerConnectionMode
+from schemas.remote_trainer import DirectConnection, ManualSshConnection, RemoteTrainer, SshConnection
 from services.ssh.connection import DirectTarget
 
 MODULE = "services.remote_trainer_tunnel_manager"
 
 
 def _trainer(*, ssh_host_alias: str | None = "training-box", local_port: int | None = 8001) -> RemoteTrainer:
-    return RemoteTrainer(
-        id=uuid4(),
-        name="trainer",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH if ssh_host_alias else RemoteTrainerConnectionMode.DIRECT,
-        ssh_host_alias=ssh_host_alias,
-        ssh_remote_port=8001 if ssh_host_alias else None,
-        ssh_local_port=local_port if ssh_host_alias else None,
+    connection = (
+        SshConnection(ssh_host_alias=ssh_host_alias, ssh_remote_port=8001, ssh_local_port=local_port or 8001)
+        if ssh_host_alias
+        else DirectConnection(url="http://127.0.0.1:8001")
     )
+    return RemoteTrainer(id=uuid4(), name="trainer", connection=connection)
 
 
 def _active_availability() -> SshFeatureAvailability:
@@ -74,16 +71,16 @@ async def test_sync_tunnel_uses_persisted_manual_connection() -> None:
     trainer = RemoteTrainer(
         id=uuid4(),
         name="trainer",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_connection=ManualSshConnection(
-            hostname="gpu.example.test",
-            port=2222,
-            user="trainer",
-            identity_file="~/.ssh/trainer",
+        connection=SshConnection(
+            ssh_connection=ManualSshConnection(
+                hostname="gpu.example.test",
+                port=2222,
+                user="trainer",
+                identity_file="~/.ssh/trainer",
+            ),
+            ssh_remote_port=8001,
+            ssh_local_port=8001,
         ),
-        ssh_remote_port=8001,
-        ssh_local_port=8001,
     )
     tunnel = AsyncMock()
     tunnel.local_port = 8001

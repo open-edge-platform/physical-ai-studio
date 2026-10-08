@@ -11,21 +11,15 @@ class Base(DeclarativeBase):
 
 
 class RemoteTrainerDB(Base):
-    """A direct trainer endpoint configured for reuse across projects."""
+    """A remote trainer endpoint configured for reuse across projects."""
 
     __tablename__ = "remote_trainers"
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    connection_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="direct")
-    url: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
-    ssh_host_alias: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    ssh_hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    ssh_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ssh_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    ssh_identity_file: Mapped[str | None] = mapped_column(String(4096), nullable=True)
-    ssh_remote_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    ssh_local_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    connection_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Mode-specific fields (see schemas.remote_trainer.TrainerConnection).
+    connection: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

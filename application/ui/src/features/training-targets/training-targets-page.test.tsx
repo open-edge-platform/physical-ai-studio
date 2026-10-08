@@ -16,10 +16,22 @@ const remoteTrainer = {
     name: 'managed-trainer',
     connection_mode: 'direct' as const,
     url: 'https://trainer.example.test/api',
-    ssh_remote_port: null,
-    ssh_local_port: null,
+    connection: { connection_mode: 'direct' as const, url: 'https://trainer.example.test/api' },
     created_at: '2026-07-14T12:00:00Z',
 };
+
+const sshTrainer = (alias: string) => ({
+    ...remoteTrainer,
+    connection_mode: 'ssh' as const,
+    url: 'http://127.0.0.1:8001',
+    connection: {
+        connection_mode: 'ssh' as const,
+        ssh_host_alias: alias,
+        ssh_connection: null,
+        ssh_remote_port: 8001,
+        ssh_local_port: 8001,
+    },
+});
 
 const healthyTrainer = {
     remote_trainer_id: remoteTrainer.id,
@@ -90,7 +102,7 @@ describe('TrainingTargetsPage', () => {
         await user.type(within(dialog).getByRole('textbox', { name: /trainer url/i }), 'https://trainer.example.test');
         await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
         await waitFor(() => expect(created).toBeDefined());
-        expect(created).toMatchObject({ connection_mode: 'direct', ssh_connection: null });
+        expect(created).toMatchObject({ connection: { connection_mode: 'direct' } });
         expect(aliasRequests).toBe(0);
     });
 
@@ -114,9 +126,7 @@ describe('TrainingTargetsPage', () => {
     it.each(['healthy', 'reboot_required'])('hides SSH setup actions when SSH is disabled (%s)', async (reason) => {
         const user = userEvent.setup();
         server.use(
-            http.get(REMOTE_TRAINERS_PATH, () =>
-                HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'gpu' }])
-            ),
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([sshTrainer('gpu')])),
             http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
                 HttpResponse.json({
                     ...healthyTrainer,
@@ -139,14 +149,14 @@ describe('TrainingTargetsPage', () => {
         server.use(
             http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json(trainers)),
             http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
-                const body = (await request.json()) as Pick<typeof remoteTrainer, 'name' | 'url'>;
+                const body = (await request.json()) as { name: string; connection: { url: string } };
                 trainers = [
                     {
-                        ...body,
                         id: remoteTrainer.id,
+                        name: body.name,
                         connection_mode: 'direct',
-                        ssh_remote_port: null,
-                        ssh_local_port: null,
+                        url: body.connection.url,
+                        connection: { connection_mode: 'direct', url: body.connection.url },
                         created_at: remoteTrainer.created_at,
                     },
                 ];
@@ -169,9 +179,7 @@ describe('TrainingTargetsPage', () => {
 
     it('shows the startup phase without shifting the status dot while pulling an image', async () => {
         server.use(
-            http.get(REMOTE_TRAINERS_PATH, () =>
-                HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'xpu' }])
-            ),
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([sshTrainer('xpu')])),
             http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
                 HttpResponse.json({ ...healthyTrainer, status: 'starting', reason_code: 'Pulling trainer image' })
             )
@@ -191,9 +199,7 @@ describe('TrainingTargetsPage', () => {
             finishRequest = resolve;
         });
         server.use(
-            http.get(REMOTE_TRAINERS_PATH, () =>
-                HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'gpu' }])
-            ),
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([sshTrainer('gpu')])),
             http.post('/api/remote-trainers/{remote_trainer_id}/install-prerequisites', async () => {
                 installs++;
                 await requestPending;
@@ -223,9 +229,7 @@ describe('TrainingTargetsPage', () => {
             const user = userEvent.setup();
             let reboots = 0;
             server.use(
-                http.get(REMOTE_TRAINERS_PATH, () =>
-                    HttpResponse.json([{ ...remoteTrainer, connection_mode: 'ssh', ssh_host_alias: 'gpu' }])
-                ),
+                http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([sshTrainer('gpu')])),
                 http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
                     HttpResponse.json({ ...healthyTrainer, status: 'degraded', reason_code: reason })
                 ),

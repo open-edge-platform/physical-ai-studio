@@ -7,9 +7,8 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from pydantic import AnyHttpUrl
 
-from schemas.remote_trainer import RemoteTrainer
+from schemas.remote_trainer import AwsBatchConnection, DirectConnection, RemoteTrainer, SshConnection
 from services import RemoteTrainerService
 
 MODULE = "services.remote_trainer_service"
@@ -43,7 +42,7 @@ class _Client:
 
 
 def _trainer() -> RemoteTrainer:
-    return RemoteTrainer(id=uuid4(), name="trainer", url=AnyHttpUrl("https://trainer.test"))
+    return RemoteTrainer(id=uuid4(), name="trainer", connection=DirectConnection(url="https://trainer.test"))
 
 
 @pytest.mark.anyio
@@ -229,11 +228,7 @@ async def test_check_remote_trainer_requires_an_accelerator_for_studio_managed_t
     trainer = RemoteTrainer(
         id=uuid4(),
         name="managed",
-        url="http://127.0.0.1:8001",
-        connection_mode="ssh",
-        ssh_host_alias="gpu-box",
-        ssh_remote_port=8001,
-        ssh_local_port=8001,
+        connection=SshConnection(ssh_host_alias="gpu-box", ssh_remote_port=8001, ssh_local_port=8001),
     )
     client = _Client(
         [
@@ -251,6 +246,70 @@ async def test_check_remote_trainer_requires_an_accelerator_for_studio_managed_t
 
     assert result.status == "degraded"
     assert result.reason_code == "container_accelerator_unavailable"
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_probes_aws_batch_without_http() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="batch",
+        connection=AwsBatchConnection(
+            region="eu-west-1",
+            studio_role_arn="arn:aws:iam::1:role/studio",
+            bucket="jobs-bucket",
+            targets={
+                "g4dn.xlarge": {"queue": "q1", "job_definition": "jd1"},
+                "p5.4xlarge": {"queue": "q2", "job_definition": "jd2"},
+            },
+        ),
+    )
+    batch = MagicMock()
+    batch.describe_job_queues.return_value = {
+        "jobQueues": [{"state": "ENABLED", "status": "VALID"}, {"state": "ENABLED", "status": "VALID"}]
+    }
+    session = MagicMock()
+    session.client.return_value = batch
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch(f"{MODULE}.httpx.AsyncClient") as http_client,
+        patch("services.aws_batch._make_session", return_value=session),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    http_client.assert_not_called()
+    batch.describe_job_queues.assert_called_once_with(jobQueues=["q1", "q2"])
+    assert result.status == "healthy"
+    assert [d.name for d in result.devices] == ["g4dn.xlarge", "p5.4xlarge"]
+    assert all(d.type == "cuda" for d in result.devices)
+
+
+@pytest.mark.anyio
+async def test_check_remote_trainer_reports_disabled_aws_queue_as_degraded() -> None:
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="batch",
+        connection=AwsBatchConnection(
+            region="eu-west-1",
+            studio_role_arn="arn",
+            bucket="jobs-bucket",
+            targets={"g4dn.xlarge": {"queue": "q1", "job_definition": "jd1"}},
+        ),
+    )
+    batch = MagicMock()
+    batch.describe_job_queues.return_value = {"jobQueues": [{"state": "DISABLED", "status": "VALID"}]}
+    session = MagicMock()
+    session.client.return_value = batch
+
+    with (
+        patch.object(RemoteTrainerService, "get_remote_trainer", new=AsyncMock(return_value=trainer)),
+        patch("services.aws_batch._make_session", return_value=session),
+    ):
+        result = await RemoteTrainerService(MagicMock()).check_remote_trainer(trainer.id)
+
+    assert result.status == "degraded"
+    assert result.reason_code == "job_queue_disabled"
+    assert result.devices == []
 
 
 @pytest.mark.anyio

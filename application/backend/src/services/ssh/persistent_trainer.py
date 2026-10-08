@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Final
 
 from core.backend_instance import get_backend_instance_id
 from schemas.hardware import DeviceType
-from schemas.remote_trainer import RemoteTrainer
+from schemas.remote_trainer import RemoteTrainer, SshConnection
 from services.ssh import docker_ops
 from services.ssh.connection import AliasTarget, DirectTarget
 from services.ssh.docker_ops import verify_image_signature
@@ -94,9 +94,12 @@ def _container_name(trainer_id: object) -> str:
 
 
 def _ssh_target(remote_trainer: RemoteTrainer) -> AliasTarget | DirectTarget:
-    if remote_trainer.ssh_host_alias:
-        return AliasTarget(remote_trainer.ssh_host_alias)
-    connection = remote_trainer.ssh_connection
+    ssh = remote_trainer.connection
+    if not isinstance(ssh, SshConnection):
+        raise ValueError("Trainer is not an SSH trainer")
+    if ssh.ssh_host_alias:
+        return AliasTarget(ssh.ssh_host_alias)
+    connection = ssh.ssh_connection
     if connection is None:
         raise ValueError("SSH trainer has no configured host")
     return DirectTarget(connection.hostname, connection.port, connection.user, connection.identity_file)
@@ -104,13 +107,11 @@ def _ssh_target(remote_trainer: RemoteTrainer) -> AliasTarget | DirectTarget:
 
 async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
     """Ensure an SSH trainer has a running container."""
-    if remote_trainer.connection_mode.value != "ssh":
+    if not isinstance(remote_trainer.connection, SshConnection):
         return
     settings = get_settings()
     target = _ssh_target(remote_trainer)
-    remote_port = remote_trainer.ssh_remote_port
-    if remote_port is None:
-        raise ValueError("SSH trainer has no configured remote port")
+    remote_port = remote_trainer.connection.ssh_remote_port
     name = _container_name(remote_trainer.id)
     _launch_started_at[remote_trainer.id] = datetime.now(UTC)
     _launch_failure.pop(remote_trainer.id, None)
@@ -184,7 +185,7 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
 
 async def stop(remote_trainer: RemoteTrainer, *, remove_volume: bool = True) -> None:
     """Remove the container, retaining its volume when reconfiguring a trainer."""
-    if remote_trainer.connection_mode.value != "ssh":
+    if not isinstance(remote_trainer.connection, SshConnection):
         return
     settings = get_settings()
     async with SshTransport(_ssh_target(remote_trainer), settings) as transport:
