@@ -11,9 +11,3 @@
 1. **Add a new upload-based field kind**: Ask the agent to add a `robot_payload_ui` item kind that uploads and parses structured JSON, with SDK validation and a kind-based `SchemaFormItem` renderer path (no heuristic schema detection).
 2. **Preserve advanced/required semantics**: Ask the agent to wire the new field through shared visibility rules so `advanced_configuration` hides it by default while required/optional labeling remains accurate.
 3. **Document plugin adoption and migration**: Ask the agent to update plugin docs and architecture docs with the new supported kind, include a plugin snippet, and create a handoff note for plugin maintainers covering rollout guidance and tests.
-
-## `studio-prepare-release`
-
-1. **Coordinated app and library release (`requires_download`)**: Ask for a Studio and training-library release. It should treat each `pyproject.toml` as its package-version source, update compatibility floors, regenerate locks, write separate notes, and schedule the library PyPI release before the app release.
-2. **App-only patch release**: Ask to release `physicalai-studio` without a library API change. It should change only the app package version, avoid changing the library version, derive the runtime version from installed metadata, and use the `app/vX.Y.Z` tag.
-3. **Premature tag request**: Ask to create release tags from an unmerged branch or while checks/reviews are pending. It should stop and require a merged main commit, passing checks, and explicit publish authorization; it must not bypass protection.
