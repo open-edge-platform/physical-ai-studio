@@ -48,15 +48,15 @@ jobs:
           # Extract RC number: 0.1.0rc1 -> 1
           RC_NUMBER="${RC_VERSION##*rc}"
 
-          # Read VERSION file
-          FILE_VERSION="$(tr -d '[:space:]' < application/VERSION)"
+          # Read the Studio package version from its project metadata
+          PROJECT_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
 
           echo "::group::Validation parameters"
           echo "Tag: $TAG"
           echo "RC version: $RC_VERSION"
           echo "Tag base version: $TAG_VERSION"
           echo "RC number: $RC_NUMBER"
-          echo "VERSION file: $FILE_VERSION"
+          echo "Project version: $PROJECT_VERSION"
           echo "::endgroup::"
 
           # Validate RC number is a positive integer
@@ -66,19 +66,19 @@ jobs:
           fi
           echo "✓ RC number is valid"
 
-          # Validate VERSION file format (semver: major.minor.patch)
-          if ! [[ "$FILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::VERSION file contains invalid semver format: '$FILE_VERSION'"
+          # Validate project version format (semver: major.minor.patch)
+          if ! [[ "$PROJECT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Project version is not valid semver: '$PROJECT_VERSION'"
             exit 1
           fi
-          echo "✓ VERSION file has valid semver format"
+          echo "✓ Project version has valid semver format"
 
-          # Validate tag version matches VERSION file
-          if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then
-            echo "::error::Tag version '$TAG_VERSION' does not match VERSION file '$FILE_VERSION'"
+          # Validate tag version matches project metadata
+          if [[ "$TAG_VERSION" != "$PROJECT_VERSION" ]]; then
+            echo "::error::Tag version '$TAG_VERSION' does not match project version '$PROJECT_VERSION'"
             exit 1
           fi
-          echo "✓ Tag version matches VERSION file"
+          echo "✓ Tag version matches project version"
 
           # Validate base release exists for patch releases
           PATCH_VERSION="${TAG_VERSION##*.}"

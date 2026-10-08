@@ -79,7 +79,7 @@ The UI and robot assets are included through `force_include` entries that `scrip
 The wheel is build and published using GitHub Actions.
 
 - **TestPyPI** — Publishes on every push to `main` (or manual dispatch). Appends `.dev<timestamp>` to the version for unique uploads.
-- **PyPI** — Publishes when an `app/vX.Y.Z` tag is pushed. Validates the tag matches `application/VERSION` and `pyproject.toml` before building.
+- **PyPI** — Publishes when an `app/vX.Y.Z` tag is pushed. Validates the tag against `application/backend/pyproject.toml` before building; that project metadata is the source of truth for the Studio package version.
 
 ### Test From TestPyPI
 

@@ -7,6 +7,8 @@ import json
 import os
 import sys
 import tempfile
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Any, Literal
 
@@ -40,6 +42,14 @@ def get_settings_file_path() -> Path:
     if override:
         return Path(override).expanduser()
     return get_default_storage_dir() / "settings.json"
+
+
+def _installed_application_version() -> str:
+    """Return the version from the installed Studio distribution metadata."""
+    try:
+        return distribution_version("physicalai-studio")
+    except PackageNotFoundError:
+        return "0.0.0+unknown"
 
 
 class TrainerClientSettings(BaseModel):
@@ -204,7 +214,6 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Physical AI Studio"
-    version: str = "0.2.0"
     summary: str = "Physical AI Studio server"
     description: str = (
         "Physical AI Studio is a framework to train robots. It allows the user to create datasets, "
@@ -215,6 +224,11 @@ class Settings(BaseSettings):
     environment: Literal["dev", "prod"] = "dev"
     storage_dir: Path = Field(default_factory=get_default_storage_dir, alias="STORAGE_DIR")
     static_files_dir: str | None = Field(default=None, alias="STATIC_FILES_DIR")
+
+    @property
+    def version(self) -> str:
+        """Return the installed Studio distribution version."""
+        return _installed_application_version()
 
     @field_validator("storage_dir", mode="before")
     @classmethod
