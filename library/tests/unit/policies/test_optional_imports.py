@@ -37,6 +37,9 @@ def test_act_policy_import_does_not_import_optional_cosmos_dependency() -> None:
         assert policies.ACT.__name__ == "ACT"
         assert policies.Pi05.__name__ == "Pi05"
         assert policies.MolmoAct2.__name__ == "MolmoAct2"
+        from physicalai.policies.cosmos3 import Cosmos3Config, Cosmos3Preprocessor
+        assert Cosmos3Config.__name__ == "Cosmos3Config"
+        assert Cosmos3Preprocessor.__name__ == "Cosmos3Preprocessor"
         assert policies.get_physicalai_policy_class("act") is policies.ACT
         assert isinstance(policies.get_policy("act"), policies.ACT)
 

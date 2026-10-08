@@ -1,73 +1,56 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""NVIDIA Cosmos 3 Policy.
+"""NVIDIA Cosmos 3 policy public entry points."""
 
-Multimodal world model policy based on diffusers Cosmos3OmniPipeline and rectified flow matching.
-"""
+from __future__ import annotations
 
-from .config import DEFAULT_COSMOS3_REVISION, Cosmos3Config
-from .flow_matching import build_action_tokens, build_pack, flow_matching_step
-from .model import Cosmos3Model
-from .normalization import load_stats_file, resolve_affine
-from .pipeline import (
-    DEFAULT_MIN_XPU_DRIVER,
-    PolicyPipelineWithState,
-    check_xpu_driver,
-    require_xpu_driver,
-    state_action_mrope_ids,
-)
-from .policy import Cosmos3
-from .preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
-from .representation import (
-    EMBODIMENT_ACTION_SPACE,
-    EMBODIMENT_NORMALIZATION,
-    embodiment_gripper_flipped,
-    embodiment_normalization,
-    flip_gripper_last_channel,
-    resolve_action_space,
-    uses_minmax_normalization,
-)
-from .surgery import (
-    GEN_TOWER_KEYS,
-    HEAD_KEYS,
-    LORA_TARGETS,
-    configure_trainable,
-    init_domain_action_head,
-    load_finetuned,
-    split_trainable_params,
-)
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
 
-__all__ = [
-    "DEFAULT_COSMOS3_REVISION",
-    "DEFAULT_MIN_XPU_DRIVER",
-    "EMBODIMENT_ACTION_SPACE",
-    "EMBODIMENT_NORMALIZATION",
-    "GEN_TOWER_KEYS",
-    "HEAD_KEYS",
-    "LORA_TARGETS",
-    "Cosmos3",
-    "Cosmos3Config",
-    "Cosmos3Model",
-    "Cosmos3Preprocessor",
-    "PolicyPipelineWithState",
-    "build_action_tokens",
-    "build_pack",
-    "check_xpu_driver",
-    "compose_horizontal_views",
-    "compose_t_views",
-    "configure_trainable",
-    "embodiment_gripper_flipped",
-    "embodiment_normalization",
-    "flip_gripper_last_channel",
-    "flow_matching_step",
-    "init_domain_action_head",
-    "load_finetuned",
-    "load_stats_file",
-    "require_xpu_driver",
-    "resolve_action_space",
-    "resolve_affine",
-    "split_trainable_params",
-    "state_action_mrope_ids",
-    "uses_minmax_normalization",
-]
+if TYPE_CHECKING:
+    from .config import Cosmos3Config
+    from .model import Cosmos3Model
+    from .policy import Cosmos3
+    from .preprocessor import Cosmos3Preprocessor
+
+_EXPORTS = {
+    "Cosmos3": (".policy", "Cosmos3"),
+    "Cosmos3Config": (".config", "Cosmos3Config"),
+    "Cosmos3Model": (".model", "Cosmos3Model"),
+    "Cosmos3Preprocessor": (".preprocessor", "Cosmos3Preprocessor"),
+}
+
+__all__ = ["Cosmos3", "Cosmos3Config", "Cosmos3Model", "Cosmos3Preprocessor"]
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401  # PEP 562 module exports are dynamic.
+    """Load a Cosmos3 implementation export only when a caller requests it.
+
+    Import errors from the requested Cosmos3 module are propagated.
+
+    Returns:
+        The requested Cosmos3 export.
+
+    Raises:
+        AttributeError: If the requested name is not a public Cosmos3 export.
+    """
+    try:
+        module_name, attribute_name = _EXPORTS[name]
+    except KeyError:
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg) from None
+
+    module = import_module(module_name, __name__)
+    value = getattr(module, attribute_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    """Include lazy Cosmos3 exports in module introspection.
+
+    Returns:
+        Names available from this module, including lazy Cosmos3 exports.
+    """
+    return sorted(set(globals()) | set(_EXPORTS))

@@ -20,7 +20,7 @@ from diffusers.utils.outputs import BaseOutput
 from physicalai.config import Config
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies import Cosmos3, Cosmos3Config, Cosmos3Model, get_physicalai_policy_class, get_policy
-from physicalai.policies.cosmos3 import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
+from physicalai.policies.cosmos3.preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 from physicalai.policies.cosmos3.flow_matching import _unpack_transformer_output, flow_matching_step
 from physicalai.policies.cosmos3.pipeline import PolicyPipelineWithState
 
@@ -34,7 +34,7 @@ class TestCosmos3Config:
 
     def test_default_config(self) -> None:
         """Test default configuration values."""
-        from physicalai.policies.cosmos3 import DEFAULT_COSMOS3_REVISION
+        from physicalai.policies.cosmos3.config import DEFAULT_COSMOS3_REVISION
 
         config = Cosmos3Config(embodiment="pusht")
         assert config.pretrained_model_name_or_path == "nvidia/Cosmos3-Edge"
