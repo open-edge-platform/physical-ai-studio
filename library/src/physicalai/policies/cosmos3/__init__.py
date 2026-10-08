@@ -1,10 +1,9 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""NVIDIA Cosmos 3 policy public entry points.
+"""NVIDIA Cosmos 3 Policy.
 
-Keep Diffusers imports in the model's runtime paths: this package is imported by
-``physicalai.policies`` even when the Cosmos3 extra is not installed.
+Multimodal world model policy based on diffusers Cosmos3OmniPipeline and rectified flow matching.
 """
 
 from .config import Cosmos3Config
