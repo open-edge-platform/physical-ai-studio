@@ -86,7 +86,7 @@ Expected behavior:
 Expected behavior:
 
 - Loads the policy and evaluates with `PushTBenchmark(num_episodes=10).evaluate(policy)` from Python.
-- Shows the equivalent `physicalai benchmark --config configs/benchmark/pusht.yaml --policy physicalai.policies.act.policy.ACT --ckpt_path <path> --benchmark.num_episodes 10`.
+- Shows the equivalent `physicalai benchmark --config configs/benchmark/pusht.yaml --policy physicalai.policies.ACT --ckpt_path <path> --benchmark.num_episodes 10`.
 - Confirms `results.json` and `results.csv` are written to `--output_dir`.
 - Interprets the success metric and compares it to a baseline if one exists.
 
@@ -152,7 +152,7 @@ Expected behavior:
 Expected behavior:
 
 - Exports through `policy.export("./export", backend=ExportBackend.ONNX)` after loading the checkpoint from Python.
-- Shows the equivalent `physicalai export --policy physicalai.policies.act.policy.ACT --ckpt_path <path> --backend onnx --output_dir ./export`.
+- Shows the equivalent `physicalai export --policy physicalai.policies.ACT --ckpt_path <path> --backend onnx --output_dir ./export`.
 - Verifies the export directory contains a model file and metadata.
 - Runs a numerical parity check against the Torch policy path.
 

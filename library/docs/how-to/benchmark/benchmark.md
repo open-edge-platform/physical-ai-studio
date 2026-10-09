@@ -13,7 +13,7 @@ runtime CLI host, while the user-facing invocation stays `physicalai benchmark .
 physicalai benchmark \
     --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
-    --policy physicalai.policies.act.policy.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```
 
@@ -21,7 +21,7 @@ physicalai benchmark \
 
 ```python test="skip" reason="requires checkpoint and libero"
 from physicalai.benchmark.gyms import LiberoBenchmark
-from physicalai.policies.act.policy import ACT
+from physicalai.policies import ACT
 
 policy = ACT.load_from_checkpoint("./checkpoints/model.ckpt")
 policy.eval()
@@ -112,7 +112,7 @@ benchmark:
     video_dir: ./results/videos
     record_mode: failures
 
-policy: physicalai.policies.act.policy.ACT
+policy: physicalai.policies.ACT
 ckpt_path: ./checkpoints/model.ckpt
 output_dir: ./results/benchmark
 ```
@@ -161,7 +161,7 @@ physicalai benchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.task_ids "[0]" \
     --benchmark.num_episodes 1 \
-    --policy physicalai.policies.act.policy.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```
 
@@ -174,7 +174,7 @@ physicalai benchmark \
     --benchmark.num_episodes 50 \
     --benchmark.video_dir ./results/videos \
     --benchmark.record_mode all \
-    --policy physicalai.policies.act.policy.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```
 
@@ -186,6 +186,6 @@ physicalai benchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.video_dir ./debug_videos \
     --benchmark.record_mode failures \
-    --policy physicalai.policies.act.policy.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```

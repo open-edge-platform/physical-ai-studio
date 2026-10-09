@@ -86,7 +86,7 @@ class TestConfigParsing:
     def test_fit_parser_accepts_existing_act_config(self) -> None:
         parser = fit_module.register().parser
         cfg = parser.parse_args([f"--config={_act_config_path()}"])
-        assert cfg.model.class_path == "physicalai.policies.act.policy.ACT"
+        assert cfg.model.class_path == "physicalai.policies.ACT"
         assert cfg.data.class_path == "physicalai.data.lerobot.LeRobotDataModule"
         assert cfg.trainer.max_steps == 70000
 
@@ -94,7 +94,7 @@ class TestConfigParsing:
         parser = fit_module.register().parser
         cfg = parser.parse_args([f"--config={_molmoact2_config_path('pusht')}"])
 
-        assert cfg.model.class_path == "physicalai.policies.molmoact2.policy.MolmoAct2"
+        assert cfg.model.class_path == "physicalai.policies.MolmoAct2"
         assert cfg.model.init_args.pretrained_name_or_path == "allenai/MolmoAct2"
         assert cfg.model.init_args.chunk_size == 10
         assert cfg.model.init_args.n_action_steps == 10
@@ -120,7 +120,7 @@ class TestConfigParsing:
         parser = fit_module.register().parser
         cfg = parser.parse_args([f"--config={_molmoact2_config_path('so101')}"])
 
-        assert cfg.model.class_path == "physicalai.policies.molmoact2.policy.MolmoAct2"
+        assert cfg.model.class_path == "physicalai.policies.MolmoAct2"
         assert cfg.model.init_args.pretrained_name_or_path == "allenai/MolmoAct2-SO100_101"
         assert cfg.model.init_args.chunk_size == 30
         assert cfg.model.init_args.n_action_steps == 30
@@ -138,7 +138,7 @@ class TestConfigParsing:
         cfg = parser.parse_args(
             [
                 f"--config={_libero_config_path()}",
-                "--policy=physicalai.policies.act.policy.ACT",
+                "--policy=physicalai.policies.ACT",
             ],
         )
         assert cfg.benchmark.class_path == "physicalai.benchmark.gyms.LiberoBenchmark"
@@ -317,7 +317,7 @@ class TestDispatch:
         cfg = parser.parse_args(
             [
                 f"--config={_libero_config_path()}",
-                "--policy=physicalai.policies.act.policy.ACT",
+                "--policy=physicalai.policies.ACT",
                 f"--output_dir={tmp_path}",
             ],
         )
@@ -346,7 +346,7 @@ class TestDispatch:
         parser = export_module.register().parser
         cfg = parser.parse_args(
             [
-                "--policy=physicalai.policies.act.policy.ACT",
+                "--policy=physicalai.policies.ACT",
                 "--ckpt_path=checkpoints/best.ckpt",
                 "--backend=openvino",
                 "--output_dir=exports/act",

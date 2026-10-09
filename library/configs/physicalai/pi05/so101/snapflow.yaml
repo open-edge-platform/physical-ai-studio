@@ -27,7 +27,7 @@
 # Paper reference: arXiv:2604.05656 (SnapFlow).
 
 model:
-  class_path: physicalai.policies.pi05.policy.Pi05
+  class_path: physicalai.policies.Pi05
   init_args:
     # Warm-start from the base VLA. Phase 1 is standard flow matching; SnapFlow
     # is switched on later by the callback, so snapflow_enabled stays false here.

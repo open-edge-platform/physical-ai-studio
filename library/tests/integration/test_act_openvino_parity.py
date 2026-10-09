@@ -4,7 +4,7 @@
 """Integration tests: native PyTorch ACT vs OpenVINO export numerical and closed-loop parity.
 
 Loads a real pretrained LeRobot ACT checkpoint via
-``physicalai.policies.act.policy.ACT(pretrained_name_or_path=...)``, exports it to
+``physicalai.policies.act.ACT(pretrained_name_or_path=...)``, exports it to
 OpenVINO, and validates that the export reproduces the native model's behaviour:
 
   1. **Numerical**: ``predict_action_chunk`` max-abs-diff and cosine similarity

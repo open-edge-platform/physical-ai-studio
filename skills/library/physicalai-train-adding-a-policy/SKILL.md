@@ -23,9 +23,9 @@ Policies live in `library/src/physicalai/policies/<name>/`. Each family is a Lig
    - `select_action(...)` — use base-class action-queue behavior unless a specialized flow is justified.
    - Done when: shapes match the checks below for a synthetic batch.
 4. **Expose the family** so API and CLI users can find it:
-   - Define the string constants `POLICY_NAME = "<name>"` and `POLICY_CLASS = "<Name>"` in `policies/<name>/policy.py`. Short-name discovery reads these without importing optional dependencies; no root registration is needed.
-   - Export `<Name>`, `<Name>Config`, and `<Name>Model` from `policies/<name>/__init__.py` for existing direct-import users.
-   - Done when: `from physicalai.policies.<name>.policy import <Name>` and `from physicalai.policies import get_policy` work, `get_policy("<name>")` returns an instance, and `--model physicalai.policies.<name>.policy.<Name>` resolves.
+   - Add `<name>: <Name>` to `_POLICIES` and the three `TYPE_CHECKING` exports in `policies/__init__.py`. This registers the short name and keeps root imports typed and lazy.
+   - Export `<Name>`, `<Name>Config`, and `<Name>Model` from `policies/<name>/__init__.py` for direct-import users.
+   - Done when: `from physicalai.policies import <Name>` and `from physicalai.policies.<name>.policy import <Name>` work, `get_policy("<name>")` returns an instance, and `--model physicalai.policies.<Name>` resolves.
 5. **Prove direct API construction** before adding CLI config:
 
    ```python
@@ -36,7 +36,7 @@ Policies live in `library/src/physicalai/policies/<name>/`. Each family is a Lig
 
    - Done when: direct construction, config round-trip, and synthetic `forward(...)` / `predict_action_chunk(...)` shape checks pass.
 
-6. **Add a training config** under `library/configs/physicalai/<policy>/<embodiment>/` when the policy is user-facing from the CLI. Set `model.class_path` to `physicalai.policies.<name>.policy.<Name>`, alongside a `data.class_path` (usually `physicalai.data.lerobot.LeRobotDataModule`) and `trainer.*`. Mirror `configs/physicalai/pi05/aloha/default.yaml`.
+6. **Add a training config** under `library/configs/physicalai/<policy>/<embodiment>/` when the policy is user-facing from the CLI. Set `model.class_path` to `physicalai.policies.<Name>`, alongside a `data.class_path` (usually `physicalai.data.lerobot.LeRobotDataModule`) and `trainer.*`. Mirror `configs/physicalai/pi05/aloha/default.yaml`.
    - Done when: `physicalai fit --config configs/physicalai/<policy>/<embodiment>/<config>.yaml --trainer.fast_dev_run=true` completes one step.
 7. **Wire export only when ready.** Add `ExportablePolicyMixin` and a valid sample input, then follow the `physicalai-train-exporting-and-validating` skill. If export is intentionally unsupported, say so explicitly in the policy docstring.
 8. **Add tests** under `library/tests/unit/policies/` next to existing policy tests: at least one construction/config path and one shape-validation test.

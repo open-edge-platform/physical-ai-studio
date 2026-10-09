@@ -75,17 +75,17 @@ def create_policy(name: str, *, compile_model: bool) -> Policy:
         ValueError: If the policy name is not recognized.
     """
     if name == "act":
-        from physicalai.policies.act.policy import ACT  # noqa: PLC0415
+        from physicalai.policies import ACT  # noqa: PLC0415
 
         return ACT(compile_model=compile_model)
 
     if name == "smolvla":
-        from physicalai.policies.smolvla.policy import SmolVLA  # noqa: PLC0415
+        from physicalai.policies import SmolVLA  # noqa: PLC0415
 
         return SmolVLA(compile_model=compile_model)
 
     if name == "pi05":
-        from physicalai.policies.pi05.policy import Pi05  # noqa: PLC0415
+        from physicalai.policies import Pi05  # noqa: PLC0415
 
         return Pi05(compile_model=compile_model)
 

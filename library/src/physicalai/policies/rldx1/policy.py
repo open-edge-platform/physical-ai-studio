@@ -86,10 +86,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-POLICY_NAME = "rldx1"
-POLICY_CLASS = "Rldx1"
-
-
 class Rldx1(Rldx1ExportMixin, Policy):
     """RLDX-1 Policy - first-party Lightning wrapper.
 

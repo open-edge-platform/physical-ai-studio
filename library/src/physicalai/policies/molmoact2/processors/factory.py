@@ -28,7 +28,7 @@ from .preprocessor import MolmoAct2Preprocessor
 from .tokenizers import MolmoAct2Tokenizers
 
 if TYPE_CHECKING:
-    from physicalai.policies.molmoact2.config import MolmoAct2Config
+    from physicalai.policies import MolmoAct2Config
     from physicalai.policies.utils import JointFrameTransform
 
 

@@ -23,7 +23,7 @@
 # =============================================================================
 
 model:
-  class_path: physicalai.policies.cosmos3.policy.Cosmos3
+  class_path: physicalai.policies.Cosmos3
   init_args:
     pretrained_model_name_or_path: "nvidia/Cosmos3-Edge"
     mode: "peft"

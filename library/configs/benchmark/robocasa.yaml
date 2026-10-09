@@ -5,20 +5,20 @@
 #
 # Usage:
 #   physicalai benchmark --config configs/benchmark/robocasa.yaml \
-#       --policy physicalai.policies.act.policy.ACT \
+#       --policy physicalai.policies.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt
 #
 # Common overrides:
 #   # Quick smoke test on a different group
 #   physicalai benchmark --config configs/benchmark/robocasa.yaml \
-#       --policy physicalai.policies.act.policy.ACT \
+#       --policy physicalai.policies.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt \
 #       --benchmark.task composite_unseen \
 #       --benchmark.num_episodes 5
 #
 #   # Headless server (MuJoCo EGL backend)
 #   MUJOCO_GL=egl physicalai benchmark --config configs/benchmark/robocasa.yaml \
-#       --policy physicalai.policies.act.policy.ACT \
+#       --policy physicalai.policies.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt
 #
 # -----------------------------------------------------------------------------
@@ -123,10 +123,10 @@ benchmark:
 # -----------------------------------------------------------------------------
 # Policy class to evaluate (must have load_from_checkpoint method)
 #
-# CLI: --policy physicalai.policies.act.policy.ACT
+# CLI: --policy physicalai.policies.ACT
 #
 # Uncomment and configure:
-# policy: physicalai.policies.act.policy.ACT
+# policy: physicalai.policies.ACT
 
 # Checkpoint or export path (required for evaluation)
 #

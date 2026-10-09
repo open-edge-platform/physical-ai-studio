@@ -15,7 +15,7 @@ pytest.importorskip("gym_pusht")
 
 from physicalai.data import FeatureType, Observation
 from physicalai.gyms.pusht import PushTGym
-from physicalai.policies.act.policy import ACT
+from physicalai.policies import ACT
 
 
 @pytest.fixture

@@ -17,8 +17,7 @@ from typing import Any
 import pytest
 import torch
 from physicalai.config import Config
-from physicalai.policies.pi05.policy import Pi05
-from physicalai.policies.smolvla.policy import SmolVLA
+from physicalai.policies import Pi05, SmolVLA
 from physicalai.policies.mixins import SnapFlowConfigMixin, SnapFlowModelMixin, SnapFlowPolicyMixin
 from physicalai.policies.pi05 import Pi05Config
 from physicalai.policies.smolvla import SmolVLAConfig

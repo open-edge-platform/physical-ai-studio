@@ -30,7 +30,7 @@ action = model.select_action(observation)
 ## Export
 
 ```python test="skip" reason="requires checkpoint"
-from physicalai.policies.act.policy import ACT
+from physicalai.policies import ACT
 
 policy = ACT.load_from_checkpoint("checkpoints/best.ckpt")
 policy.export("./exports", backend="openvino")
@@ -40,7 +40,7 @@ The same export contract is available from the shared CLI host:
 
 ```bash
 physicalai export \
-    --policy physicalai.policies.act.policy.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path checkpoints/best.ckpt \
     --backend openvino \
     --output_dir ./exports
@@ -84,7 +84,7 @@ pip install physicalai-train[nncf]
 Then pass the hook to `export(...)`:
 
 ```python test="skip" reason="requires checkpoint and nncf"
-from physicalai.policies.pi05.policy import Pi05
+from physicalai.policies import Pi05
 from physicalai.export import compress_weights_openvino_int8_sym
 
 policy = Pi05.load_from_checkpoint("checkpoints/best.ckpt")

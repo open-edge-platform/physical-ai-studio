@@ -16,7 +16,7 @@ pytest.importorskip("robosuite")
 
 from physicalai.data import Observation
 from physicalai.gyms.libero import LiberoGym, create_libero_gyms
-from physicalai.policies.act.policy import ACT
+from physicalai.policies import ACT
 
 
 @pytest.fixture

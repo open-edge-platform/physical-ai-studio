@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # ruff: noqa: S101, S404, S603
 
-"""Policy names resolve without a central import registry."""
+"""Policy names resolve without importing unused policies."""
 
 import importlib
 import subprocess
@@ -15,11 +15,13 @@ from physicalai.policies import get_physicalai_policy_class
 
 def test_short_names_resolve_to_direct_class_paths() -> None:
     """Every registered short name and training class path loads the same class."""
-    for short_name, (directory, class_name) in policies._POLICY_PATHS.items():  # noqa: SLF001
-        cls = getattr(importlib.import_module(f"physicalai.policies.{directory}.policy"), class_name)
+    for short_name, class_name in policies._POLICIES.items():  # noqa: SLF001
+        cls = getattr(importlib.import_module(f"physicalai.policies.{short_name}.policy"), class_name)
         assert get_physicalai_policy_class(short_name.upper()) is cls
 
     root = Path(__file__).resolve().parents[3]
+    policy_dirs = {path.parent.name for path in (root / "src/physicalai/policies").glob("*/policy.py")}
+    assert policy_dirs - {"base", "lerobot"} == set(policies._POLICIES)  # noqa: SLF001
     for config in (root / "configs/physicalai").rglob("*.yaml"):
         for line in config.read_text(encoding="utf-8").splitlines():
             if "class_path: physicalai.policies." not in line:
@@ -29,19 +31,22 @@ def test_short_names_resolve_to_direct_class_paths() -> None:
                 continue
             module, name = path.rsplit(".", 1)
             cls = getattr(importlib.import_module(module), name)
-            assert get_physicalai_policy_class(module.split(".")[2]) is cls
+            assert get_physicalai_policy_class(cls.__module__.split(".")[2]) is cls
 
 
 def test_loading_one_policy_does_not_import_the_others() -> None:
-    """Short-name discovery leaves unrelated optional policies unloaded."""
+    """Root exports and short names load only the requested policy."""
     script = """
 import sys
 import physicalai.policies as policies
 assert 'physicalai.policies.cosmos3' not in sys.modules
-from physicalai.policies.act.policy import ACT
-assert policies.get_physicalai_policy_class('act') is ACT
+from physicalai.policies import ACT, ACTConfig, ACTModel
+from physicalai.policies.act.policy import ACT as DirectACT
+assert ACT is DirectACT
+assert policies.get_physicalai_policy_class('ACT') is ACT
+assert ACTConfig is policies.ACTConfig and ACTModel is policies.ACTModel
+assert {'ACT', 'ACTConfig', 'ACTModel'} <= set(policies.__all__)
 assert 'physicalai.policies.cosmos3' not in sys.modules
-assert 'ACT' not in dir(policies)
 """
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, check=False, text=True)
     assert result.returncode == 0, result.stdout + result.stderr

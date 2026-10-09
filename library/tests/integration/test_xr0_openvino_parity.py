@@ -34,7 +34,7 @@ from openvino.preprocess import PrePostProcessor
 
 from physicalai.data.observation import IMAGES, STATE, TASK
 from physicalai.inference.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.policies.xr0.policy import XR0
+from physicalai.policies import XR0
 from physicalai.policies.xr0.pretrained_utils import extract_xr0_dataset_stats
 
 # ---------------------------------------------------------------------------

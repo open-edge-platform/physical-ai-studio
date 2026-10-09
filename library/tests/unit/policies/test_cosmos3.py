@@ -19,10 +19,7 @@ from diffusers.utils.outputs import BaseOutput
 
 from physicalai.config import Config
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
-from physicalai.policies import get_physicalai_policy_class, get_policy
-from physicalai.policies.cosmos3.config import Cosmos3Config
-from physicalai.policies.cosmos3.model import Cosmos3Model
-from physicalai.policies.cosmos3.policy import Cosmos3
+from physicalai.policies import Cosmos3, Cosmos3Config, Cosmos3Model, get_physicalai_policy_class, get_policy
 from physicalai.policies.cosmos3.preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 from physicalai.policies.cosmos3.flow_matching import _unpack_transformer_output, flow_matching_step
 from physicalai.policies.cosmos3.pipeline import PolicyPipelineWithState

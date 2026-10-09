@@ -29,7 +29,7 @@ MolmoAct2 has two distinct loading paths:
 import torch
 
 from physicalai.devices.utils import get_device
-from physicalai.policies.molmoact2.policy import MolmoAct2
+from physicalai.policies import MolmoAct2
 
 DEVICE = get_device()
 
@@ -58,7 +58,7 @@ trainer.save_checkpoint("checkpoints/molmoact2.ckpt", weights_only=True)
 Restore it directly for inference:
 
 ```python
-from physicalai.policies.molmoact2.policy import MolmoAct2
+from physicalai.policies import MolmoAct2
 
 policy = MolmoAct2.load_from_checkpoint(
     "checkpoints/molmoact2.ckpt",
@@ -95,7 +95,7 @@ for the available overrides.
 import multiprocessing
 
 from physicalai.data import LeRobotDataModule
-from physicalai.policies.molmoact2.policy import MolmoAct2
+from physicalai.policies import MolmoAct2
 from physicalai.train import Trainer
 
 multiprocessing.set_start_method("spawn", force=True)
@@ -205,7 +205,7 @@ import numpy as np
 import torch
 
 from physicalai.benchmark.gyms import LiberoBenchmark
-from physicalai.policies.molmoact2.policy import MolmoAct2
+from physicalai.policies import MolmoAct2
 
 DEVICE = "cuda"
 
@@ -281,7 +281,7 @@ MolmoAct2 supports Torch and OpenVINO export.
 Load a trained Lightning checkpoint before exporting it:
 
 ```python
-from physicalai.policies.molmoact2.policy import MolmoAct2
+from physicalai.policies import MolmoAct2
 
 policy = MolmoAct2.load_from_checkpoint(
     "checkpoints/molmoact2.ckpt",
@@ -350,7 +350,7 @@ then treated as degrees.
 ```python
 import torch
 
-from physicalai.policies.molmoact2.policy import MolmoAct2
+from physicalai.policies import MolmoAct2
 
 calibration_so101 = "SO101 Follower-calibration.json"
 

@@ -21,7 +21,7 @@ the shared runtime CLI host.
 >
 > ```bash
 > physicalai fit \
->     --model physicalai.policies.act.policy.ACT \
+>     --model physicalai.policies.ACT \
 >     --data physicalai.data.LeRobotDataModule \
 >     --data.repo_id lerobot/libero_10_demo \
 >     --trainer.max_epochs 100
@@ -36,7 +36,7 @@ physicalai benchmark \
     --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.num_episodes 20 \
-    --policy physicalai.policies.act.policy.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt
 ```
 
@@ -48,7 +48,7 @@ For more control:
 
 ```python test="skip" reason="requires checkpoint and libero"
 from physicalai.benchmark.gyms import LiberoBenchmark
-from physicalai.policies.act.policy import ACT
+from physicalai.policies import ACT
 
 # Load trained policy
 policy = ACT.load_from_checkpoint(
@@ -128,7 +128,7 @@ physicalai benchmark \
     --benchmark.num_episodes 20 \
     --benchmark.video_dir ./videos \
     --benchmark.record_mode failures \
-    --policy physicalai.policies.act.policy.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt
 ```
 
@@ -189,7 +189,7 @@ export MUJOCO_GL=egl
 
 ```python test="skip" reason="requires robocasa dedicated venv"
 from physicalai.benchmark.gyms import RoboCasaBenchmark
-from physicalai.policies.rldx1.policy import Rldx1
+from physicalai.policies import Rldx1
 
 policy = Rldx1(pretrained_name_or_path="RLWRLD/RLDX-1-FT-ROBOCASA")
 policy.eval()
@@ -211,7 +211,7 @@ physicalai benchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.task_ids "[0]" \
     --benchmark.num_episodes 1 \
-    --policy physicalai.policies.act.policy.ACT \
+    --policy physicalai.policies.ACT \
     --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt
 ```
 
@@ -229,7 +229,7 @@ benchmark:
     video_dir: ./results/videos
     record_mode: failures
 
-policy: physicalai.policies.act.policy.ACT
+policy: physicalai.policies.ACT
 ckpt_path: ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
 output_dir: ./results/benchmark
 ```

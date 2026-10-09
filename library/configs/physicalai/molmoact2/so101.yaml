@@ -3,7 +3,7 @@
 # Usage:
 #   physicalai fit --config configs/physicalai/molmoact2/so101.yaml
 model:
-  class_path: physicalai.policies.molmoact2.policy.MolmoAct2
+  class_path: physicalai.policies.MolmoAct2
   init_args:
     # Initialize from the released SO100/SO101 checkpoint. norm_tag is deliberately
     # omitted so setup("fit") adopts this dataset's feature contract and quantiles.

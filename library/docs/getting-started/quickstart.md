@@ -23,7 +23,7 @@ Use `physicalai export` after training when you need deployment artifacts.
 
 ```bash
 physicalai fit \
-    --model physicalai.policies.act.policy.ACT \
+    --model physicalai.policies.ACT \
     --data physicalai.data.LeRobotDataModule \
     --data.repo_id lerobot/aloha_sim_transfer_cube_human \
     --trainer.max_epochs 10
@@ -43,7 +43,7 @@ For more control, use the Python API:
 
 ```python test="skip" reason="requires dataset download"
 from physicalai.data import LeRobotDataModule
-from physicalai.policies.act.policy import ACT
+from physicalai.policies import ACT
 from physicalai.train import Trainer
 
 # 1. Load dataset
@@ -106,7 +106,7 @@ For reproducible experiments, use YAML configs:
 ```yaml
 # configs/my_experiment.yaml
 model:
-  class_path: physicalai.policies.act.policy.ACT
+  class_path: physicalai.policies.ACT
 
 data:
   class_path: physicalai.data.LeRobotDataModule

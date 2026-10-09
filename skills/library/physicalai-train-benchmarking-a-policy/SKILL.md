@@ -14,7 +14,7 @@ Use this path for notebooks, tests, custom scripts, or direct library integratio
 
 ```python
 from physicalai.benchmark.gyms import PushTBenchmark
-from physicalai.policies.act.policy import ACT
+from physicalai.policies import ACT
 
 policy = ACT.load_from_checkpoint("experiments/act/version_0/checkpoints/last.ckpt")
 benchmark = PushTBenchmark(num_episodes=1)
@@ -39,7 +39,7 @@ results = PushTBenchmark(num_episodes=1).evaluate(model)
 ```bash
 physicalai benchmark \
   --config configs/benchmark/pusht.yaml \
-  --policy physicalai.policies.act.policy.ACT \
+  --policy physicalai.policies.ACT \
   --ckpt_path experiments/act/version_0/checkpoints/last.ckpt \
   --output_dir ./results/benchmark
 ```

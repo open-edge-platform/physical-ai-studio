@@ -156,8 +156,8 @@ class SnapFlowCapable(Protocol):
 
     Satisfied by any policy mixing in
     :class:`~physicalai.policies.mixins.SnapFlowPolicyMixin`, which covers
-    :class:`~physicalai.policies.pi05.policy.Pi05` and
-    :class:`~physicalai.policies.smolvla.policy.SmolVLA`.
+    :class:`~physicalai.policies.Pi05` and
+    :class:`~physicalai.policies.SmolVLA`.
 
     Note:
         Used for static typing and documentation. Runtime detection goes through
@@ -432,8 +432,8 @@ class SnapFlowPhaseCallback(Callback):
     does not have to be converted to steps by hand.
 
     The policy must expose an ``enable_snapflow`` method — both
-    :class:`~physicalai.policies.smolvla.policy.SmolVLA` and
-    :class:`~physicalai.policies.pi05.policy.Pi05` satisfy this contract.
+    :class:`~physicalai.policies.SmolVLA` and
+    :class:`~physicalai.policies.Pi05` satisfy this contract.
 
     Phase 2 is made visible in three ways, so a run never switches objectives
     silently:

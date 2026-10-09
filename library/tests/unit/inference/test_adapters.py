@@ -51,7 +51,7 @@ class TestTorchAdapter:
             "version": "1.0",
             "policy": {
                 "name": "act",
-                "source": {"class_path": "physicalai.policies.act.policy.ACT"},
+                "source": {"class_path": "physicalai.policies.act.ACT"},
             },
             "model": {
                 "input_features": [
@@ -78,7 +78,7 @@ class TestTorchAdapter:
         mock_model.to.return_value = mock_model
         mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
-        with patch("physicalai.policies.act.policy.ACT.load_from_checkpoint", return_value=mock_model):
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
             assert adapter.device == "cpu"
             assert "cpu" in repr(adapter)
@@ -109,7 +109,7 @@ class TestTorchAdapter:
         mock_model.model.sample_input = {"state": torch.zeros(1, 2), "images": torch.zeros(1, 3, 96, 96)}
         mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
-        with patch("physicalai.policies.act.policy.ACT.load_from_checkpoint", return_value=mock_model):
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
             adapter.load(model_path)
 
@@ -136,7 +136,7 @@ class TestTorchAdapter:
             del mock_model.model.sample_input
         mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
-        with patch("physicalai.policies.act.policy.ACT.load_from_checkpoint", return_value=mock_model):
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter(device="cpu")
             adapter.load(model_path)
 
@@ -171,7 +171,7 @@ class TestTorchAdapter:
         """Test error handling when torch.load fails."""
         model_path = self._write_policy_manifest(tmp_path)
 
-        with patch("physicalai.policies.act.policy.ACT.load_from_checkpoint", side_effect=RuntimeError("Load error")):
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", side_effect=RuntimeError("Load error")):
             adapter = TorchAdapter()
             with pytest.raises(RuntimeError, match="Failed to load"):
                 adapter.load(model_path)
@@ -200,7 +200,7 @@ class TestTorchAdapter:
         mock_model.to.return_value = mock_model
         mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
-        with patch("physicalai.policies.act.policy.ACT.load_from_checkpoint", return_value=mock_model):
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model):
             adapter = TorchAdapter()
             adapter.load(model_path)
             assert adapter.output_names == ["action"]
@@ -230,7 +230,7 @@ class TestTorchAdapter:
         mock_model.to.return_value = mock_model
         mock_model.extra_export_args = {"torch": TorchExportParameters()}
 
-        with patch("physicalai.policies.act.policy.ACT.load_from_checkpoint", return_value=mock_model) as mock_load:
+        with patch("physicalai.policies.act.ACT.load_from_checkpoint", return_value=mock_model) as mock_load:
             adapter = TorchAdapter(device="cpu", compile_model=True)
             assert adapter.compile_model is True
 
