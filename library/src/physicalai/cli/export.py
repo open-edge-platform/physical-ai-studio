@@ -32,7 +32,7 @@ def build_parser() -> ArgumentParser:
         "--policy",
         type=str,
         required=True,
-        help="Policy class path (e.g., physicalai.policies.act.policy.ACT).",
+        help="Policy class path (e.g., physicalai.policies.ACT).",
     )
     parser.add_argument(
         "--ckpt_path",

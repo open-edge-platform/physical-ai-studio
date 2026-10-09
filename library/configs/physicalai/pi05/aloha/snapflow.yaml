@@ -37,7 +37,7 @@
 # Paper reference: arXiv:2604.05656 (SnapFlow)
 
 model:
-  class_path: physicalai.policies.pi05.policy.Pi05
+  class_path: physicalai.policies.Pi05
   init_args:
     # Model architecture
     paligemma_variant: gemma_2b

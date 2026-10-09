@@ -4,7 +4,7 @@
 #   physicalai fit --config configs/physicalai/smolvla/pusht/default.yaml
 
 model:
-  class_path: physicalai.policies.smolvla.policy.SmolVLA
+  class_path: physicalai.policies.SmolVLA
   init_args:
     # Optional camera remapping for pretrained SmolVLA checkpoints.
     # Example: map dataset camera keys to pretrained camera slot indices.

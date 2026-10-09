@@ -5,7 +5,7 @@
 #   physicalai fit --config configs/physicalai/act/pusht/default.yaml
 
 model:
-  class_path: physicalai.policies.act.policy.ACT
+  class_path: physicalai.policies.ACT
   init_args:
     optimizer_lr: 1e-5
 

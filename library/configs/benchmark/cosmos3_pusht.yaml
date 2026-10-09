@@ -48,7 +48,7 @@ benchmark:
 # -----------------------------------------------------------------------------
 # Policy Configuration
 # -----------------------------------------------------------------------------
-policy: physicalai.policies.cosmos3.policy.Cosmos3
+policy: physicalai.policies.Cosmos3
 
 # -----------------------------------------------------------------------------
 # Output Configuration

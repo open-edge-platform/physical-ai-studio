@@ -30,7 +30,7 @@ def test_short_names_resolve_to_direct_class_paths() -> None:
                 continue
             module, name = path.rsplit(".", 1)
             cls = getattr(importlib.import_module(module), name)
-            assert get_physicalai_policy_class(module.split(".")[2].upper()) is cls
+            assert get_physicalai_policy_class(name) is cls
 
 
 def test_loading_one_policy_does_not_import_the_others() -> None:
