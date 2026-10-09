@@ -16,7 +16,9 @@ import {
     Text,
 } from '@geti-ui/ui';
 import { Back, DownloadIcon, Pause, Play } from '@geti-ui/ui/icons';
+import { v4 as uuidv4 } from 'uuid';
 
+import { $api } from '../../../api/client';
 import { paths } from '../../../router';
 import { useProjectId } from '../../projects/use-project';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
@@ -35,6 +37,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
     // stay allowed: otherwise the combo box discards typed text when it loses focus.
     const [task, setTask] = useState<string>(tasks[0] ?? '');
     const [isEmptyPromptDialogOpen, setIsEmptyPromptDialogOpen] = useState(false);
+    const [recordEpisodes, setRecordEpisodes] = useState(false);
 
     const {
         model,
@@ -46,10 +49,66 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
         environment,
         observation,
         inferenceDevice,
+        dataset,
+        loadDataset,
+        startEpisode,
+        saveEpisode,
+        discardEpisode,
     } = useRuntimeSession();
+
+    const createDataset = $api.useMutation('post', '/api/dataset', {
+        meta: {
+            invalidates: [['get', '/api/projects/{project_id}', { params: { path: { project_id } } }]],
+        },
+    });
+
+    // Record into a fresh dataset of this environment so training datasets stay untouched.
+    const toggleRecording = (enabled: boolean) => {
+        setRecordEpisodes(enabled);
+        if (!enabled || dataset !== undefined) {
+            return;
+        }
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+        createDataset.mutate(
+            {
+                body: {
+                    id: uuidv4(),
+                    name: `${model?.name ?? 'model'}-inference-${timestamp}`,
+                    project_id,
+                    environment_id: environment.id,
+                    default_task: task,
+                },
+            },
+            {
+                onSuccess: (created) => loadDataset.mutate(created),
+                onError: () => setRecordEpisodes(false),
+            }
+        );
+    };
 
     const canTeleoperate = state.has_leader;
     const isTeleoperating = state.follower_source === 'teleop';
+    const isPolicyRunning = state.follower_source === 'policy';
+    const hasOpenEpisode = state.is_recording && !isPolicyRunning;
+
+    const play = () => {
+        if (recordEpisodes && state.dataset_loaded && !state.is_recording) {
+            startEpisode.mutate(task, { onSuccess: () => startTask.mutate(task) });
+            return;
+        }
+        startTask.mutate(task);
+    };
+
+    const stop = () => {
+        const wasRecording = state.is_recording;
+        stopTask.mutate(undefined, {
+            onSuccess: () => {
+                if (wasRecording) {
+                    saveEpisode.mutate();
+                }
+            },
+        });
+    };
 
     const exportUrl =
         model?.id !== undefined && inferenceDevice !== undefined
@@ -103,6 +162,20 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                     >
                         Teleoperate
                     </Switch>
+                    <Switch
+                        isSelected={recordEpisodes}
+                        isDisabled={
+                            state.is_recording || isPolicyRunning || createDataset.isPending || loadDataset.isPending
+                        }
+                        onChange={toggleRecording}
+                    >
+                        Record episodes
+                    </Switch>
+                    {recordEpisodes && state.dataset_loaded && dataset !== undefined && (
+                        <StatusLight variant={state.is_recording ? 'negative' : 'neutral'}>
+                            {dataset.name}: {state.is_recording ? 'recording' : `${state.episodes_recorded} saved`}
+                        </StatusLight>
+                    )}
                     <ButtonGroup>
                         {exportUrl !== undefined && (
                             <Button
@@ -116,18 +189,34 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                                 Runtime export
                             </Button>
                         )}
-                        {state.follower_source === 'policy' ? (
-                            <Button variant='primary' isPending={stopTask.isPending} onPress={() => stopTask.mutate()}>
+                        {hasOpenEpisode && (
+                            <>
+                                <Button
+                                    variant='negative'
+                                    isDisabled={saveEpisode.isPending}
+                                    onPress={() => discardEpisode.mutate()}
+                                >
+                                    Discard episode
+                                </Button>
+                                <Button
+                                    variant='secondary'
+                                    isPending={saveEpisode.isPending}
+                                    onPress={() => saveEpisode.mutate()}
+                                >
+                                    Save episode
+                                </Button>
+                            </>
+                        )}
+                        {isPolicyRunning ? (
+                            <Button variant='primary' isPending={stopTask.isPending} onPress={stop}>
                                 <Pause fill='white' />
                                 Stop
                             </Button>
                         ) : (
                             <Button
                                 variant='primary'
-                                isPending={startTask.isPending}
-                                onPress={() =>
-                                    task.trim() === '' ? setIsEmptyPromptDialogOpen(true) : startTask.mutate(task)
-                                }
+                                isPending={startTask.isPending || startEpisode.isPending}
+                                onPress={() => (task.trim() === '' ? setIsEmptyPromptDialogOpen(true) : play())}
                             >
                                 <Play fill='white' />
                                 Play
@@ -146,7 +235,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         secondaryActionLabel='Cancel'
                         onPrimaryAction={() => {
                             setIsEmptyPromptDialogOpen(false);
-                            startTask.mutate(task);
+                            play();
                         }}
                         onSecondaryAction={() => setIsEmptyPromptDialogOpen(false)}
                     >
