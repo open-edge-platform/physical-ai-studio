@@ -64,10 +64,10 @@ class RemoteTrainerCreate(BaseModel):
         description="Port on the SSH host's loopback interface to forward to. Defaults to the trainer URL's port.",
     )
     ssh_local_port: int | None = Field(
-        default=8001,
+        default=None,
         ge=1,
         le=65535,
-        description="Loopback port on the studio host the tunnel binds to. Required when ssh_host_alias is set.",
+        description="Loopback port for the tunnel. Studio assigns an available port when omitted.",
     )
 
     @model_validator(mode="after")
@@ -90,11 +90,10 @@ class RemoteTrainerCreate(BaseModel):
             raise ValueError("ssh_host_alias and ssh_connection are mutually exclusive")
         if self.ssh_host_alias is None and self.ssh_connection is None:
             raise ValueError("SSH mode requires either ssh_host_alias or ssh_connection")
-        if self.ssh_local_port is None:
-            raise ValueError("ssh_local_port is required when ssh_host_alias is set, so the tunnel binds a stable port")
         if self.ssh_remote_port is None:
             raise ValueError("ssh_remote_port is required for an SSH connection")
-        self.url = AnyHttpUrl(f"http://127.0.0.1:{self.ssh_local_port}")
+        if self.ssh_local_port is not None:
+            self.url = AnyHttpUrl(f"http://127.0.0.1:{self.ssh_local_port}")
         return self
 
 
