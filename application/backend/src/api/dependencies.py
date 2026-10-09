@@ -2,8 +2,7 @@ from functools import lru_cache
 from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import Depends, status
-from fastapi.exceptions import HTTPException
+from fastapi import Depends
 from fastapi.requests import HTTPConnection
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,19 +40,6 @@ from utils.serial_robot_tools import RobotConnectionManager
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 AsyncSessionDep = Annotated[AsyncSession, Depends(get_async_db_session)]
-
-
-def is_valid_uuid(identifier: str) -> bool:
-    """Check if a given string identifier is formatted as a valid UUID.
-
-    :param identifier: String to check
-    :return: True if valid UUID, False otherwise
-    """
-    try:
-        UUID(identifier)
-    except ValueError:
-        return False
-    return True
 
 
 @lru_cache
@@ -269,53 +255,42 @@ def get_log_service(settings: SettingsDep, job_service: JobServiceDep) -> LogSer
 LogServiceDep = Annotated[LogService, Depends(get_log_service)]
 
 
-def get_project_id(project_id: str) -> UUID:
-    """Initialize and validates a project ID."""
-    if not is_valid_uuid(project_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid project ID")
-    return UUID(project_id)
+def get_project_id(project_id: UUID) -> UUID:
+    """Validate a project ID.
+
+    Typed as UUID so FastAPI rejects malformed values with its standard 422 response.
+    """
+    return project_id
 
 
-def get_dataset_id(dataset_id: str) -> UUID:
-    """Initialize and validates a dataset ID."""
-    if not is_valid_uuid(dataset_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid dataset ID")
-    return UUID(dataset_id)
+def get_dataset_id(dataset_id: UUID) -> UUID:
+    """Validate a dataset ID."""
+    return dataset_id
 
 
-def get_model_id(model_id: str) -> UUID:
-    """Initialize and validates a model ID."""
-    if not is_valid_uuid(model_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid model ID")
-    return UUID(model_id)
+def get_model_id(model_id: UUID) -> UUID:
+    """Validate a model ID."""
+    return model_id
 
 
-def get_robot_id(robot_id: str) -> UUID:
-    """Initialize and validates a robot ID."""
-    if not is_valid_uuid(robot_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid robot ID")
-    return UUID(robot_id)
+def get_robot_id(robot_id: UUID) -> UUID:
+    """Validate a robot ID."""
+    return robot_id
 
 
-def get_camera_id(camera_id: str) -> UUID:
-    """Initialize and validates a camera ID."""
-    if not is_valid_uuid(camera_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid camera ID")
-    return UUID(camera_id)
+def get_camera_id(camera_id: UUID) -> UUID:
+    """Validate a camera ID."""
+    return camera_id
 
 
-def get_job_id(job_id: str) -> UUID:
-    """Initialize and validates a project ID."""
-    if not is_valid_uuid(job_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid job ID")
-    return UUID(job_id)
+def get_job_id(job_id: UUID) -> UUID:
+    """Validate a job ID."""
+    return job_id
 
 
-def get_environment_id(environment_id: str) -> UUID:
-    """Initialize and validates an environment ID."""
-    if not is_valid_uuid(environment_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid environment ID")
-    return UUID(environment_id)
+def get_environment_id(environment_id: UUID) -> UUID:
+    """Validate an environment ID."""
+    return environment_id
 
 
 def get_scheduler(request: HTTPConnection) -> Scheduler:

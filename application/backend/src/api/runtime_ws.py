@@ -4,7 +4,7 @@ import asyncio
 import queue
 import time
 from typing import TYPE_CHECKING, Annotated, Any
-from uuid import UUID  # noqa: TC003  # FastAPI evaluates websocket annotations at runtime
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, WebSocket, status
 from fastapi.exceptions import HTTPException
@@ -19,9 +19,7 @@ from api.dependencies import (
     ProjectServiceDep,
     RobotClientFactoryDep,
     SettingsDep,
-    get_camera_id,
     get_project_id,
-    get_robot_id,
     get_robot_service,
 )
 from exceptions import BaseException as AppBaseException
@@ -146,6 +144,16 @@ async def start_runtime_session(
     await asyncio.to_thread(client.wait_until_ready, owner)
 
 
+def _parse_device_id(value: Any, *, detail: str) -> UUID:
+    """Parse an untrusted handshake value as a UUID, rejecting anything else with a 400."""
+    if isinstance(value, str):
+        try:
+            return UUID(value)
+        except ValueError:
+            pass
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
 async def _devices_from_handshake(
     handshake: dict[str, Any],
     project_id: UUID,
@@ -153,12 +161,12 @@ async def _devices_from_handshake(
     camera_service: ProjectCameraService,
 ) -> tuple[Robot, Robot | None, list[Camera]]:
     """Resolve handshake ids against the project so a client cannot name another project's devices."""
-    follower_id = get_robot_id(handshake["follower_id"])
+    follower_id = _parse_device_id(handshake["follower_id"], detail="Invalid robot ID")
     follower = await robot_service.get_robot_by_id(project_id, follower_id)
     _ensure_robot_available(follower)
     leader = None
     if handshake.get("leader_id") is not None:
-        leader_id = get_robot_id(handshake["leader_id"])
+        leader_id = _parse_device_id(handshake["leader_id"], detail="Invalid robot ID")
         leader = await robot_service.get_robot_by_id(project_id, leader_id)
 
         if isinstance(leader, UnavailableRobot):
@@ -169,9 +177,8 @@ async def _devices_from_handshake(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="camera_ids must be a list")
     cameras: list[Camera] = []
     for raw in raw_camera_ids:
-        if not isinstance(raw, str):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid camera ID")
-        cameras.append(await camera_service.get_camera_by_id(project_id, get_camera_id(raw)))
+        camera_id = _parse_device_id(raw, detail="Invalid camera ID")
+        cameras.append(await camera_service.get_camera_by_id(project_id, camera_id))
     return follower, leader, cameras
 
 

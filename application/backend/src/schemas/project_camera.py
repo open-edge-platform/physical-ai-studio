@@ -1,10 +1,9 @@
 from abc import ABC
-from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-from schemas.base import BaseIDModel
+from schemas.base import BaseIDModel, UTCDatetime
 
 SupportedCameraDriver = Literal[
     "usb_camera",
@@ -18,8 +17,8 @@ SupportedCameraDriver = Literal[
 class BaseCamera(BaseIDModel, ABC):
     driver: SupportedCameraDriver
 
-    created_at: datetime | None = Field(None)
-    updated_at: datetime | None = Field(None)
+    created_at: UTCDatetime | None = Field(None)
+    updated_at: UTCDatetime | None = Field(None)
 
     name: str = Field(..., description="Human-readable camera name")
     fingerprint: dict[str, Any] | None = Field(
