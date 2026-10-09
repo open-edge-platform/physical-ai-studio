@@ -12,6 +12,7 @@ hyperparameter capture, error handling, and the policy factory.
 from __future__ import annotations
 
 import types
+from inspect import signature
 from typing import Any
 
 import pytest
@@ -23,7 +24,7 @@ from physicalai.export import ExportBackend
 from physicalai.export.backends import TorchExportParameters
 from physicalai.inference.data import InferenceFeatureDtype, InferenceFeatureType
 from physicalai.policies import get_physicalai_policy_class, get_policy
-from physicalai.policies.xr0 import XR0, XR0Config
+from physicalai.policies.xr0 import XR0, XR0Config, XR0Model
 
 
 
@@ -56,6 +57,14 @@ def _minimal_export_stats() -> dict[str, dict[str, Any]]:
 
 class TestXR0Config:
     """Config resolution through the policy constructor."""
+
+    def test_default_attention_backend(self) -> None:
+        assert XR0Config().vlm_attn_implementation == "sdpa"
+        assert signature(XR0Model).parameters["vlm_attn_implementation"].default == "sdpa"
+        policy = XR0()
+        assert policy.config.vlm_attn_implementation == "sdpa"
+        assert policy.hparams["vlm_attn_implementation"] == "sdpa"
+        assert XR0(vlm_attn_implementation="flash_attention_2").config.vlm_attn_implementation == "flash_attention_2"
 
     def test_lazy_initialization(self) -> None:
         policy = XR0()
