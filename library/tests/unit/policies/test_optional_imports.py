@@ -36,21 +36,26 @@ def test_policy_exports_work_without_cosmos_optional_dependencies() -> None:
         import physicalai.data
         import physicalai.train
         import physicalai.policies as policies
-        from physicalai.policies import Cosmos3, Cosmos3Config, Cosmos3Model
+        from physicalai.policies.act.policy import ACT
+        from physicalai.policies.cosmos3.config import Cosmos3Config
+        from physicalai.policies.cosmos3.model import Cosmos3Model
+        from physicalai.policies.cosmos3.policy import Cosmos3
         from physicalai.policies.cosmos3 import Cosmos3Preprocessor
+        from physicalai.policies.molmoact2.policy import MolmoAct2
+        from physicalai.policies.pi05.policy import Pi05
 
         assert "diffusers" not in sys.modules
         assert "physicalai.policies.cosmos3.pipeline" not in sys.modules
-        assert policies.ACT.__name__ == "ACT"
-        assert policies.Pi05.__name__ == "Pi05"
-        assert policies.MolmoAct2.__name__ == "MolmoAct2"
+        assert ACT.__name__ == "ACT"
+        assert Pi05.__name__ == "Pi05"
+        assert MolmoAct2.__name__ == "MolmoAct2"
         assert Cosmos3Config.__name__ == "Cosmos3Config"
         assert Cosmos3Model.__name__ == "Cosmos3Model"
         assert Cosmos3Preprocessor.__name__ == "Cosmos3Preprocessor"
         assert policies.get_physicalai_policy_class("cosmos3") is Cosmos3
         assert "pipeline" in get_type_hints(Cosmos3.__init__)
-        assert policies.get_physicalai_policy_class("act") is policies.ACT
-        assert isinstance(policies.get_policy("act"), policies.ACT)
+        assert policies.get_physicalai_policy_class("act") is ACT
+        assert isinstance(policies.get_policy("act"), ACT)
 
         try:
             Cosmos3Model(Cosmos3Config(embodiment="pusht"))

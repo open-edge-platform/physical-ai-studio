@@ -79,7 +79,7 @@ Configuration loaded from `metadata.yaml`:
 
 ```yaml
 backend: openvino
-policy_class: physicalai.policies.ACT
+policy_class: physicalai.policies.act.policy.ACT
 chunk_size: 100
 use_action_queue: true
 input_shapes: { image: [3, 224, 224], state: [14] }

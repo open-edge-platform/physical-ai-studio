@@ -37,7 +37,7 @@ uv sync --extra libero --extra pi05
 ```python
 from physicalai.benchmark.gyms import LiberoBenchmark
 from physicalai.data import LeRobotDataModule
-from physicalai.policies import Pi05
+from physicalai.policies.pi05.policy import Pi05
 from physicalai.train import Trainer
 
 # Imitation dataset of LIBERO
@@ -67,7 +67,7 @@ or from the lerobot pre-trained policy:
 
 ```python
 import torch
-from physicalai.policies.pi05 import Pi05
+from physicalai.policies.pi05.policy import Pi05
 from physicalai.benchmark.gyms import LiberoBenchmark
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -100,6 +100,6 @@ physicalai benchmark \
     --benchmark.num_episodes 20 \
     --benchmark.video_dir ./results/videos \
     --benchmark.record_mode failures \
-    --policy physicalai.policies.pi05.Pi05 \
+    --policy physicalai.policies.pi05.policy.Pi05 \
     --ckpt_path ./checkpoints/pi05_libero.ckpt
 ```

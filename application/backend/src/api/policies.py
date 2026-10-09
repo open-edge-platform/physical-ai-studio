@@ -4,7 +4,6 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from huggingface_hub import HfApi
 from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
-from physicalai.policies import ACT, XR0, MolmoAct2, Pi05, Rldx1, SmolVLA
 from pydantic import BaseModel
 
 from services.training_backends.local import resolve_hf_token
@@ -13,14 +12,7 @@ router = APIRouter(prefix="/api/policies", tags=["Policies"])
 
 _AccessStatus = Literal["granted", "missing_token", "denied", "unavailable", "not_required"]
 
-_POLICY_CLASSES = {
-    "act": ACT,
-    "pi05": Pi05,
-    "rldx1": Rldx1,
-    "smolvla": SmolVLA,
-    "molmoact2": MolmoAct2,
-    "xr0": XR0,
-}
+_POLICY_NAMES = ("act", "pi05", "rldx1", "smolvla", "molmoact2", "xr0")
 
 _HUGGINGFACE_REQUIREMENTS = {
     # Hub dependencies are lazy and can vary with a policy's configuration, so
@@ -60,18 +52,23 @@ class HuggingFaceAccessResponse(BaseModel):
 @router.get("/backends")
 def get_supported_backends_per_policy() -> dict[str, list[str]]:
     """Return the supported export backends for each policy."""
-    return {
-        name: [str(b) for b in cls.get_supported_export_backends()]
-        if hasattr(cls, "get_supported_export_backends")
-        else []
-        for name, cls in _POLICY_CLASSES.items()
-    }
+    from physicalai.policies import get_physicalai_policy_class
+
+    backends: dict[str, list[str]] = {}
+    for name in _POLICY_NAMES:
+        cls = get_physicalai_policy_class(name)
+        backends[name] = (
+            [str(b) for b in cls.get_supported_export_backends()]
+            if hasattr(cls, "get_supported_export_backends")
+            else []
+        )
+    return backends
 
 
 @router.get("/{policy}/huggingface-access")
 async def check_huggingface_access(policy: str) -> HuggingFaceAccessResponse:
     """Check whether the configured token can read a policy's required Hub model."""
-    if policy not in _POLICY_CLASSES:
+    if policy not in _POLICY_NAMES:
         raise HTTPException(status_code=404, detail="Unknown policy")
 
     requirements = _HUGGINGFACE_REQUIREMENTS.get(policy, ())

@@ -14,7 +14,7 @@ The `Trainer` class extends Lightning's Trainer with:
 
 ```python
 from physicalai.train import Trainer
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 from physicalai.data import LeRobotDataModule
 
 # Basic training

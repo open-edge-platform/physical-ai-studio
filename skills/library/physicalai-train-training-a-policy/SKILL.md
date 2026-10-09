@@ -19,7 +19,7 @@ The four CLI subcommands share the same `--model` / `--data` / `--trainer.*` sha
 
 A config wires three pieces via `class_path` / `init_args`:
 
-- `model` — a `Policy` subclass (e.g. `physicalai.policies.ACT`).
+- `model` — a `Policy` subclass (e.g. `physicalai.policies.act.policy.ACT`).
 - `data` — a `DataModule`, usually `physicalai.data.lerobot.LeRobotDataModule` with a `repo_id` (e.g. `lerobot/pusht`).
 - `trainer` — Lightning args (`max_epochs`, `accelerator`, `devices`, callbacks…).
 
@@ -31,7 +31,7 @@ Use this path when the user asks for code, notebooks, tests, direct library inte
 
 ```python
 from physicalai.data import LeRobotDataModule
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 from physicalai.train import Trainer
 
 datamodule = LeRobotDataModule(repo_id="lerobot/pusht", train_batch_size=2)

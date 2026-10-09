@@ -92,7 +92,7 @@ PhysicalAI supports both API and CLI-based training. Checkpoints are saved to `e
 
 ```python test="skip" reason="requires dataset download"
 from physicalai.data import LeRobotDataModule
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 from physicalai.train import Trainer
 
 # Initialize components
@@ -112,7 +112,7 @@ physicalai fit --config configs/physicalai/act/pusht/default.yaml
 
 # Train with CLI arguments
 physicalai fit \
-    --model physicalai.policies.ACT \
+    --model physicalai.policies.act.policy.ACT \
     --data physicalai.data.LeRobotDataModule \
     --data.repo_id lerobot/aloha_sim_transfer_cube_human
 
@@ -133,7 +133,7 @@ for success and per-chunk latency measured against the 10-step teacher.
 
 ```python test="skip" reason="requires checkpoint and libero"
 from physicalai.benchmark.gyms import LiberoBenchmark
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 
 # Load trained policy (path from training output)
 policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
@@ -165,7 +165,7 @@ results = benchmark.evaluate(policy)
 physicalai benchmark \
     --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
     --benchmark.task_suite libero_10 \
-    --policy physicalai.policies.ACT \
+    --policy physicalai.policies.act.policy.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 
 # With video recording
@@ -174,7 +174,7 @@ physicalai benchmark \
     --benchmark.task_suite libero_10 \
     --benchmark.video_dir ./videos \
     --benchmark.record_mode failures \
-    --policy physicalai.policies.ACT \
+    --policy physicalai.policies.act.policy.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 ```
 
@@ -185,7 +185,7 @@ Export trained policies to optimized formats for deployment.
 ## API
 
 ```python test="skip" reason="requires checkpoint"
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 
 # Load and export
 policy = ACT.load_from_checkpoint("checkpoints/model.ckpt")
@@ -196,7 +196,7 @@ policy.export("./exports", backend="openvino")
 
 ```bash
 physicalai export \
-    --policy physicalai.policies.ACT \
+    --policy physicalai.policies.act.policy.ACT \
     --ckpt_path checkpoints/model.ckpt \
     --backend openvino \
     --output_dir ./exports

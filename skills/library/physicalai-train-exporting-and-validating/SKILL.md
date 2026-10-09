@@ -10,11 +10,11 @@ Export lives in `library/src/physicalai/export/`: `backends.py` (the `ExportBack
 
 ## Workflow
 
-1. **Identify the inputs**: source policy class (e.g. `physicalai.policies.ACT`), `.ckpt` path, target backend, and the Runtime loader behavior expected for that backend.
+1. **Identify the inputs**: source policy class (e.g. `physicalai.policies.act.policy.ACT`), `.ckpt` path, target backend, and the Runtime loader behavior expected for that backend.
    - Done when: all four are pinned before touching code.
 2. **Pick the route** and keep both consistent — they must produce the same artifact:
    - Python: `policy.export(output_dir, backend=ExportBackend.ONNX)`.
-   - CLI: `physicalai export --policy physicalai.policies.ACT --ckpt_path model.ckpt --backend onnx --output_dir ./export`.
+   - CLI: `physicalai export --policy physicalai.policies.act.policy.ACT --ckpt_path model.ckpt --backend onnx --output_dir ./export`.
 3. **Read backend constraints before editing generic code.** See the backend reference for the target (`references/<backend>.md`). Do not generalize a fix across backends without checking each.
 4. **Export, then validate numerical parity** against the Torch policy path on representative inputs. Parity proves correctness.
    - Done when: max abs/rel diff on sample inputs is within the family's tolerance, or the divergence is understood and documented.

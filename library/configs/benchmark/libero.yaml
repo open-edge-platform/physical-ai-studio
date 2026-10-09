@@ -5,13 +5,13 @@
 #
 # Usage:
 #   physicalai benchmark --config configs/benchmark/libero.yaml \
-#       --policy physicalai.policies.ACT \
+#       --policy physicalai.policies.act.policy.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt
 #
 # Common overrides:
 #   # Quick test on specific tasks
 #   physicalai benchmark --config configs/benchmark/libero.yaml \
-#       --policy physicalai.policies.ACT \
+#       --policy physicalai.policies.act.policy.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt \
 #       --benchmark.task_ids [0,1,2] \
 #       --benchmark.num_episodes 5
@@ -19,7 +19,7 @@
 #   # Different task suite
 #   physicalai benchmark --config configs/benchmark/libero.yaml \
 #       --benchmark.task_suite libero_spatial \
-#       --policy physicalai.policies.ACT \
+#       --policy physicalai.policies.act.policy.ACT \
 #       --ckpt_path ./checkpoints/model.ckpt
 #
 # -----------------------------------------------------------------------------
@@ -85,10 +85,10 @@ benchmark:
 # -----------------------------------------------------------------------------
 # Policy class to evaluate (must have load_from_checkpoint method)
 #
-# CLI: --policy physicalai.policies.ACT
+# CLI: --policy physicalai.policies.act.policy.ACT
 #
 # Uncomment and configure:
-# policy: physicalai.policies.ACT
+# policy: physicalai.policies.act.policy.ACT
 
 # Checkpoint or export path (required for evaluation)
 #

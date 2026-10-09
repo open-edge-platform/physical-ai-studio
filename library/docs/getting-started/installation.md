@@ -95,7 +95,7 @@ import physicalai
 print(physicalai.__version__)
 
 # Test imports
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 from physicalai.data import LeRobotDataModule
 from physicalai.train import Trainer
 

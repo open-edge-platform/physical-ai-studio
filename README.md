@@ -123,7 +123,7 @@ pip install physicalai-train
 
 ```python test="skip" reason="requires dataset download"
 from physicalai.data import LeRobotDataModule
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 from physicalai.train import Trainer
 
 datamodule = LeRobotDataModule(repo_id="lerobot/aloha_sim_transfer_cube_human")
@@ -139,7 +139,7 @@ trainer.fit(model=model, datamodule=datamodule)
 
 ```python test="skip" reason="requires checkpoint and libero"
 from physicalai.benchmark import LiberoBenchmark
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 
 policy = ACT.load_from_checkpoint("experiments/lightning_logs/version_0/checkpoints/last.ckpt")
 benchmark = LiberoBenchmark(task_suite="libero_10", num_episodes=20)
@@ -154,7 +154,7 @@ print(f"Success rate: {results.aggregate_success_rate:.1f}%")
 
 ```python test="skip" reason="requires checkpoint"
 from physicalai.export import get_available_backends
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 
 # See available backends
 print(get_available_backends())  # ['onnx', 'openvino', 'torch', 'executorch']

@@ -8,7 +8,6 @@ from __future__ import annotations
 import ast
 from importlib import import_module
 from pathlib import Path
-from typing import Any
 
 from . import lerobot
 from .base import Policy
@@ -51,38 +50,7 @@ def _discover_policy_paths() -> dict[str, tuple[str, str]]:
 _POLICY_PATHS = _discover_policy_paths()
 
 
-def __getattr__(name: str) -> Any:  # noqa: ANN401
-    """Keep root-level exports available without importing every policy.
-
-    Returns:
-        The requested policy class, configuration, or model.
-
-    Raises:
-        AttributeError: If the export is unknown.
-    """
-    for directory, class_name in _POLICY_PATHS.values():
-        if name in {class_name, f"{class_name}Config", f"{class_name}Model"}:
-            value = getattr(import_module(f".{directory}", __name__), name)
-            globals()[name] = value
-            return value
-    msg = f"module {__name__!r} has no attribute {name!r}"
-    raise AttributeError(msg)
-
-
-def __dir__() -> list[str]:
-    """Show lazy exports in package introspection.
-
-    Returns:
-        All available package attributes, including policy exports.
-    """
-    return sorted(set(globals()) | set(__all__))
-
-
-__all__ = ["Policy", "get_physicalai_policy_class", "get_policy", "lerobot", "get_lerobot_policy"] + [
-    export
-    for _, class_name in _POLICY_PATHS.values()
-    for export in (class_name, f"{class_name}Config", f"{class_name}Model")
-]
+__all__ = ["Policy", "get_lerobot_policy", "get_physicalai_policy_class", "get_policy", "lerobot"]
 
 
 def get_policy(policy_name: str, *, source: str = "physicalai", **kwargs) -> Policy:  # noqa: ANN003

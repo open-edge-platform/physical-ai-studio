@@ -11,8 +11,8 @@ first, then a short distillation phase with the VLM backbone frozen.
 The target-time embedding and the ``nn.Module`` forward paths that are
 ``torch.compile``-wrapped and traced during export still live in each policy's
 model. What this module owns is the surface that was otherwise duplicated
-verbatim between :class:`~physicalai.policies.Pi05` and
-:class:`~physicalai.policies.SmolVLA`:
+verbatim between :class:`~physicalai.policies.pi05.policy.Pi05` and
+:class:`~physicalai.policies.smolvla.policy.SmolVLA`:
 
 - :class:`SnapFlowConfigMixin` — the four config flags and their validation.
 - :class:`SnapFlowPolicyMixin` — the ``enable_snapflow()`` phase-2 entry point
@@ -24,7 +24,7 @@ verbatim between :class:`~physicalai.policies.Pi05` and
   velocity prediction) and a ``sample_noise`` callable to reuse it.
 
 Example:
-    >>> from physicalai.policies import Pi05
+    >>> from physicalai.policies.pi05.policy import Pi05
     >>> policy = Pi05(pretrained_name_or_path="lerobot/pi05_base")
     >>> policy.enable_snapflow(alpha=0.5, lambda_=0.1, num_inference_steps=1)  # doctest: +SKIP
 """

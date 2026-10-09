@@ -25,7 +25,7 @@ physicalai fit --config configs/physicalai/act/pusht/default.yaml
 # Benchmark
 physicalai benchmark \
     --benchmark physicalai.benchmark.gyms.LiberoBenchmark \
-    --policy physicalai.policies.ACT \
+    --policy physicalai.policies.act.policy.ACT \
     --ckpt_path ./checkpoints/model.ckpt
 
 # Export

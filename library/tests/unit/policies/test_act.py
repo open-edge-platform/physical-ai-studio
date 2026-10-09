@@ -12,7 +12,7 @@ import lightning
 from physicalai.data import Observation
 from physicalai.data.observation import IMAGES
 from physicalai.inference.preprocessors.resize import ResizePreprocessor
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 from physicalai.policies.act.model import ACT as ACTModel
 from physicalai.policies.act.preprocessor import ACTPreprocessor
 

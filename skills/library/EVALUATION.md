@@ -19,7 +19,7 @@ Expected behavior:
 
 - Creates `library/src/physicalai/policies/mynet/{config.py,model.py,policy.py}` mirroring `policies/act/`.
 - Registers `Mynet`, `MynetConfig`, `MynetModel` in `policies/__init__.py` and the `get_policy(...)` dispatch.
-- Verifies `from physicalai.policies import Mynet, get_policy` and `get_policy("mynet")` work without CLI involvement.
+- Verifies `from physicalai.policies.mynet.policy import Mynet` and `from physicalai.policies import get_policy` and `get_policy("mynet")` work without CLI involvement.
 - Adds `library/configs/physicalai/mynet/pusht/default.yaml` wiring `model`, `data`, and `trainer`.
 - Adds at least one test under `library/tests/unit/policies/`.
 - Runs `uv run --no-sync pytest tests/unit/policies -k mynet` and `physicalai fit --config configs/physicalai/mynet/pusht/default.yaml --trainer.fast_dev_run=true`.
@@ -86,7 +86,7 @@ Expected behavior:
 Expected behavior:
 
 - Loads the policy and evaluates with `PushTBenchmark(num_episodes=10).evaluate(policy)` from Python.
-- Shows the equivalent `physicalai benchmark --config configs/benchmark/pusht.yaml --policy physicalai.policies.ACT --ckpt_path <path> --benchmark.num_episodes 10`.
+- Shows the equivalent `physicalai benchmark --config configs/benchmark/pusht.yaml --policy physicalai.policies.act.policy.ACT --ckpt_path <path> --benchmark.num_episodes 10`.
 - Confirms `results.json` and `results.csv` are written to `--output_dir`.
 - Interprets the success metric and compares it to a baseline if one exists.
 
@@ -152,7 +152,7 @@ Expected behavior:
 Expected behavior:
 
 - Exports through `policy.export("./export", backend=ExportBackend.ONNX)` after loading the checkpoint from Python.
-- Shows the equivalent `physicalai export --policy physicalai.policies.ACT --ckpt_path <path> --backend onnx --output_dir ./export`.
+- Shows the equivalent `physicalai export --policy physicalai.policies.act.policy.ACT --ckpt_path <path> --backend onnx --output_dir ./export`.
 - Verifies the export directory contains a model file and metadata.
 - Runs a numerical parity check against the Torch policy path.
 

@@ -34,7 +34,7 @@ from openvino.preprocess import PrePostProcessor
 
 from physicalai.data.observation import IMAGES, STATE, TASK
 from physicalai.inference.constants import TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
-from physicalai.policies import XR0
+from physicalai.policies.xr0.policy import XR0
 from physicalai.policies.xr0.pretrained_utils import extract_xr0_dataset_stats
 
 # ---------------------------------------------------------------------------
@@ -444,4 +444,3 @@ class TestXR0OVTokenizerParity:
             f"Token count mismatch: ov_tokenizer {ov_real_ids.shape} vs processor {reference_ids.shape}"
         )
         np.testing.assert_array_equal(ov_real_ids, reference_ids)
-

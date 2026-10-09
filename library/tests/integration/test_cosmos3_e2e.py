@@ -23,7 +23,7 @@ from safetensors.torch import load_file
 
 from physicalai.data import LeRobotDataModule
 from physicalai.data.observation import IMAGES, STATE
-from physicalai.policies import Cosmos3
+from physicalai.policies.cosmos3.policy import Cosmos3
 from physicalai.policies.cosmos3.surgery import HEAD_KEYS
 from physicalai.train import Trainer
 from tests.unit.policies.test_cosmos3 import _create_mock_cosmos3_pipeline

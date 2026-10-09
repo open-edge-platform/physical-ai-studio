@@ -3,7 +3,7 @@
 # Usage:
 #   physicalai fit --config configs/physicalai/molmoact2/pusht.yaml
 model:
-  class_path: physicalai.policies.MolmoAct2
+  class_path: physicalai.policies.molmoact2.policy.MolmoAct2
   init_args:
     # Initialize weights, tokenizer, and image processor from the released base checkpoint.
     pretrained_name_or_path: allenai/MolmoAct2

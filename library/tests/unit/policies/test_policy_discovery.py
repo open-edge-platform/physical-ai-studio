@@ -18,7 +18,6 @@ def test_short_names_resolve_to_direct_class_paths() -> None:
     for short_name, (directory, class_name) in policies._POLICY_PATHS.items():  # noqa: SLF001
         cls = getattr(importlib.import_module(f"physicalai.policies.{directory}.policy"), class_name)
         assert get_physicalai_policy_class(short_name.upper()) is cls
-        assert getattr(policies, class_name) is cls
 
     root = Path(__file__).resolve().parents[3]
     for config in (root / "configs/physicalai").rglob("*.yaml"):
@@ -30,7 +29,7 @@ def test_short_names_resolve_to_direct_class_paths() -> None:
                 continue
             module, name = path.rsplit(".", 1)
             cls = getattr(importlib.import_module(module), name)
-            assert get_physicalai_policy_class(name) is cls
+            assert get_physicalai_policy_class(module.split(".")[2]) is cls
 
 
 def test_loading_one_policy_does_not_import_the_others() -> None:
@@ -39,9 +38,10 @@ def test_loading_one_policy_does_not_import_the_others() -> None:
 import sys
 import physicalai.policies as policies
 assert 'physicalai.policies.cosmos3' not in sys.modules
-assert policies.get_physicalai_policy_class('act') is policies.ACT
+from physicalai.policies.act.policy import ACT
+assert policies.get_physicalai_policy_class('act') is ACT
 assert 'physicalai.policies.cosmos3' not in sys.modules
-assert 'Cosmos3' in dir(policies)
+assert 'ACT' not in dir(policies)
 """
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, check=False, text=True)
     assert result.returncode == 0, result.stdout + result.stderr

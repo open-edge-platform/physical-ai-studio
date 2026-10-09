@@ -22,7 +22,7 @@
 #   physicalai fit --config configs/physicalai/pi05/aloha/lora.yaml
 
 model:
-  class_path: physicalai.policies.Pi05
+  class_path: physicalai.policies.pi05.policy.Pi05
   init_args:
     # Pretrained checkpoint to adapt. LoRA fine-tuning from scratch is not meaningful.
     pretrained_name_or_path: lerobot/pi05_base

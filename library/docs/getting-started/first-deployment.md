@@ -26,7 +26,7 @@ Export your trained policy and run inference in production.
 ### Export with Python
 
 ```python test="skip" reason="requires checkpoint"
-from physicalai.policies import ACT
+from physicalai.policies.act.policy import ACT
 
 # Load checkpoint
 policy = ACT.load_from_checkpoint(
