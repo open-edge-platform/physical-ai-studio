@@ -5,52 +5,63 @@
 
 from __future__ import annotations
 
-from . import lerobot
-from .act import ACT, ACTConfig, ACTModel
-from .base import Policy
-from .cosmos3 import Cosmos3, Cosmos3Config, Cosmos3Model
-from .lerobot import get_lerobot_policy
-from .molmoact2 import MolmoAct2, MolmoAct2Config, MolmoAct2Model
-from .pi05 import Pi05, Pi05Config, Pi05Model
-from .rldx1 import Rldx1, Rldx1Config, Rldx1Model
-from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel
-from .xr0 import XR0, XR0Config, XR0Model
+from importlib import import_module
+from typing import TYPE_CHECKING, Any
 
-__all__ = [  # noqa: RUF022  # grouped by policy family, not isort-sorted
-    # ACT
-    "ACT",
-    "ACTConfig",
-    "ACTModel",
-    # Cosmos3
-    "Cosmos3",
-    "Cosmos3Config",
-    "Cosmos3Model",
-    # MolmoAct2
-    "MolmoAct2",
-    "MolmoAct2Config",
-    "MolmoAct2Model",
-    # Pi05
-    "Pi05",
-    "Pi05Config",
-    "Pi05Model",
-    # Base
+from . import lerobot
+from .base import Policy
+from .lerobot import get_lerobot_policy
+
+if TYPE_CHECKING:
+    from .act import ACT, ACTConfig, ACTModel  # noqa: F401
+    from .cosmos3 import Cosmos3, Cosmos3Config, Cosmos3Model  # noqa: F401
+    from .molmoact2 import MolmoAct2, MolmoAct2Config, MolmoAct2Model  # noqa: F401
+    from .pi05 import Pi05, Pi05Config, Pi05Model  # noqa: F401
+    from .rldx1 import Rldx1, Rldx1Config, Rldx1Model  # noqa: F401
+    from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel  # noqa: F401
+    from .xr0 import XR0, XR0Config, XR0Model  # noqa: F401
+
+
+_POLICIES = {
+    "act": "ACT",
+    "cosmos3": "Cosmos3",
+    "molmoact2": "MolmoAct2",
+    "pi05": "Pi05",
+    "rldx1": "Rldx1",
+    "smolvla": "SmolVLA",
+    "xr0": "XR0",
+}
+_LAZY_EXPORTS = {
+    f"{class_name}{suffix}": directory
+    for directory, class_name in _POLICIES.items()
+    for suffix in ("", "Config", "Model")
+}
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401
+    """Load a policy export only when it is requested.
+
+    Returns:
+        The policy class, config, or model.
+
+    Raises:
+        AttributeError: If the export is unknown.
+    """
+    if name not in _LAZY_EXPORTS:
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
+    value = getattr(import_module(f".{_LAZY_EXPORTS[name]}", __name__), name)
+    globals()[name] = value
+    return value
+
+
+__all__ = [  # noqa: PLE0604  # exports are derived from the policy mapping
     "Policy",
-    # RLDX
-    "Rldx1",
-    "Rldx1Config",
-    "Rldx1Model",
-    # SmolVLA
-    "SmolVLA",
-    "SmolVLAConfig",
-    "SmolVLAModel",
-    # XR0
-    "XR0",
-    "XR0Config",
-    "XR0Model",
-    # Utils
+    "get_lerobot_policy",
     "get_physicalai_policy_class",
     "get_policy",
     "lerobot",
+    *_LAZY_EXPORTS,
 ]
 
 
@@ -120,7 +131,7 @@ def get_policy(policy_name: str, *, source: str = "physicalai", **kwargs) -> Pol
     raise ValueError(msg)
 
 
-def get_physicalai_policy_class(policy_name: str) -> type[Policy]:  # noqa: PLR0911
+def get_physicalai_policy_class(policy_name: str) -> type[Policy]:
     """Get a first-party policy class by name.
 
     Args:
@@ -132,24 +143,9 @@ def get_physicalai_policy_class(policy_name: str) -> type[Policy]:  # noqa: PLR0
     Raises:
         ValueError: If the policy name is unknown.
     """
-    policy_name = policy_name.lower()
-
-    if policy_name == "act":
-        return ACT
-    if policy_name == "cosmos3":
-        return Cosmos3
-    if policy_name == "molmoact2":
-        return MolmoAct2
-    if policy_name == "pi05":
-        return Pi05
-    if policy_name == "rldx1":
-        return Rldx1
-    if policy_name == "smolvla":
-        return SmolVLA
-    if policy_name == "xr0":
-        return XR0
-    msg = (
-        f"Unknown physicalai policy: {policy_name}. "
-        "Supported policies: act, cosmos3, molmoact2, pi05, rldx1, smolvla, xr0"
-    )
-    raise ValueError(msg)
+    try:
+        class_name = _POLICIES[policy_name.lower()]
+    except KeyError:
+        msg = f"Unknown physicalai policy: {policy_name}. Supported policies: {', '.join(sorted(_POLICIES))}"
+        raise ValueError(msg) from None
+    return __getattr__(class_name)
