@@ -94,8 +94,56 @@ class AwsBatchTarget(BaseModel):
     job_definition: str = Field(min_length=1, max_length=2048)
 
 
+class AwsBatchProviderConfiguration(BaseModel):
+    """Connection details used to load a provisioned AWS Batch configuration."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    configuration_uri: str = Field(
+        max_length=4096,
+        pattern=r"^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[^?#]+$",
+        title="S3 configuration file URI",
+    )
+
+
+class CloudProviderField(BaseModel):
+    """Form constraints exposed by a cloud provider's configuration schema."""
+
+    name: str
+    title: str
+    min_length: int | None = Field(default=None, alias="minLength")
+    max_length: int | None = Field(default=None, alias="maxLength")
+    pattern: str | None = None
+
+
+class CloudProviderError(BaseModel):
+    """Sanitized provider configuration resolution failure."""
+
+    detail: str
+
+
+class CloudProviderSchema(BaseModel):
+    """Configuration fields for a selectable cloud provider."""
+
+    id: Literal["aws"] = "aws"
+    title: str = "AWS"
+    fields: list[CloudProviderField]
+
+
+class AwsBatchResourceConfiguration(BaseModel):
+    """Deployment-independent resource document stored in S3."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    schema_version: Literal[1]
+    region: str = Field(min_length=1, max_length=64)
+    studio_role_arn: str = Field(min_length=1, max_length=2048)
+    bucket: str = Field(min_length=3, max_length=63)
+    targets: dict[str, AwsBatchTarget] = Field(min_length=1)
+
+
 class AwsBatchConnection(BaseModel):
-    """AWS Batch resources from the ``aws-batch-trainer`` CloudFormation stack output."""
+    """Resolved AWS Batch connection and resources."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -103,6 +151,7 @@ class AwsBatchConnection(BaseModel):
     schema_version: Literal[1] = 1
     region: str = Field(min_length=1, max_length=64)
     studio_role_arn: str = Field(min_length=1, max_length=2048)
+    configuration_uri: str | None = None
     bucket: str = Field(min_length=3, max_length=63)
     targets: dict[str, AwsBatchTarget] = Field(min_length=1, description="Instance type -> Batch resources.")
 

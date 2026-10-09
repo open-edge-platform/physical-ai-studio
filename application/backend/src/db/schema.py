@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -14,6 +14,14 @@ class RemoteTrainerDB(Base):
     """A remote trainer endpoint configured for reuse across projects."""
 
     __tablename__ = "remote_trainers"
+    __table_args__ = (
+        Index(
+            "uq_remote_trainers_aws_provider",
+            "connection_mode",
+            unique=True,
+            sqlite_where=text("connection_mode = 'aws_batch'"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(255), nullable=False)

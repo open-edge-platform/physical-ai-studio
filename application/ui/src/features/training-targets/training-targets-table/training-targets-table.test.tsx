@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 import { vi } from 'vitest';
@@ -140,9 +140,7 @@ describe('TrainingTargetsTable', () => {
 
             render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={onEdit} onDelete={vi.fn()} />);
 
-            await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
-            expect(screen.queryByRole('menuitem', { name: 'Install prerequisites' })).not.toBeInTheDocument();
-            await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+            await user.click(await screen.findByRole('button', { name: `Edit ${remoteTrainer.name}` }));
 
             expect(onEdit).toHaveBeenCalledWith(directUrlRow(remoteTrainer));
         });
@@ -153,8 +151,7 @@ describe('TrainingTargetsTable', () => {
 
             render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={vi.fn()} onDelete={onDelete} />);
 
-            await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
-            await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+            await user.click(await screen.findByRole('button', { name: `Remove ${remoteTrainer.name}` }));
 
             expect(onDelete).toHaveBeenCalledWith(directUrlRow(remoteTrainer));
         });
@@ -175,6 +172,7 @@ describe('TrainingTargetsTable', () => {
         });
 
         it('shows a failed health check for a row without swallowing other rows', async () => {
+            const user = userEvent.setup();
             server.use(
                 http.get(REMOTE_TRAINER_HEALTH_PATH, ({ params }) =>
                     params.remote_trainer_id === secondRemoteTrainer.id
@@ -191,11 +189,10 @@ describe('TrainingTargetsTable', () => {
                 />
             );
 
-            const unavailableRow = await screen.findByTestId(`training-target-row-${secondRemoteTrainer.id}`);
-            expect(await within(unavailableRow).findByText('Check failed')).toBeInTheDocument();
-
-            const healthyRow = await screen.findByTestId(`training-target-row-${remoteTrainer.id}`);
-            expect(await within(healthyRow).findAllByText('Healthy')).not.toHaveLength(0);
+            expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);
+            await user.click(screen.getByRole('button', { name: `Show details for ${secondRemoteTrainer.name}` }));
+            expect(await screen.findAllByText('Check failed')).not.toHaveLength(0);
+            expect(screen.getByRole('button', { name: `Edit ${remoteTrainer.name}` })).toBeInTheDocument();
         });
     });
 });

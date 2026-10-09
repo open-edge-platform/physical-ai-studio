@@ -9,6 +9,7 @@ import httpx
 from loguru import logger
 from pydantic import ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import get_ssh_feature_availability
@@ -230,6 +231,8 @@ class RemoteTrainerService:
         for existing in await self.repo.list_ordered():
             if existing.id == remote_trainer.id:
                 continue
+            if isinstance(connection, AwsBatchConnection) and isinstance(existing.connection, AwsBatchConnection):
+                raise ResourceAlreadyExistsError("AWS Provider", "Only one AWS Provider training target is allowed.")
             if isinstance(connection, SshConnection):
                 other = existing.connection
                 if (
@@ -333,8 +336,15 @@ class RemoteTrainerService:
             raise InvalidResourceError("remote_trainer", "Prerequisite installation requires an SSH trainer")
         self._require_ssh_feature_if_tunneled(config.connection.connection_mode)
         remote_trainer = RemoteTrainer(id=uuid4(), **config.model_dump())
+        if isinstance(remote_trainer.connection, AwsBatchConnection):
+            remote_trainer.name = "AWS Provider"
         await self._ensure_unique_connection(remote_trainer)
-        saved = await self.repo.save(remote_trainer)
+        try:
+            saved = await self.repo.save(remote_trainer)
+        except IntegrityError:
+            await self.session.rollback()
+            await self._ensure_unique_connection(remote_trainer)
+            raise
         try:
             await remote_trainer_tunnel_manager.sync_tunnel(saved, accepted_host_key_fingerprint)
         except Exception:
@@ -486,13 +496,21 @@ class RemoteTrainerService:
             # Full dump so the discriminator (a default) survives revalidation.
             data["connection"] = update.connection.model_dump()
         validated = RemoteTrainer.model_validate({**remote_trainer.model_dump(), **data})
+        if isinstance(validated.connection, AwsBatchConnection):
+            data["name"] = "AWS Provider"
+            validated.name = "AWS Provider"
         connection_changed = validated.connection != remote_trainer.connection
         if connection_changed:
             self._require_ssh_feature_if_tunneled(validated.connection.connection_mode)
             if isinstance(remote_trainer.connection, SshConnection) or isinstance(validated.connection, SshConnection):
                 await self._require_no_active_jobs(remote_trainer_id)
             await self._ensure_unique_connection(validated)
-        saved = await self.repo.update(remote_trainer, data)
+        try:
+            saved = await self.repo.update(remote_trainer, data)
+        except IntegrityError:
+            await self.session.rollback()
+            await self._ensure_unique_connection(validated)
+            raise
         try:
             await remote_trainer_tunnel_manager.sync_tunnel(saved, accepted_host_key_fingerprint)
         except Exception:

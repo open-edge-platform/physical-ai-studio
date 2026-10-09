@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
+import { SchemaRemoteTrainer } from '../../api/openapi-spec';
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
 import { render } from '../../test-utils/render';
@@ -43,9 +44,41 @@ const healthyTrainer = {
     reason_code: null,
 };
 
+const awsTrainer: SchemaRemoteTrainer = {
+    ...remoteTrainer,
+    id: 'aws-instance',
+    name: 'AWS Provider',
+    connection_mode: 'aws_batch',
+    url: null,
+    connection: {
+        connection_mode: 'aws_batch',
+        schema_version: 1,
+        region: 'eu-west-1',
+        studio_role_arn: 'arn:aws:iam::123456789012:role/studio',
+        configuration_uri: 's3://config-bucket/studio-config.json',
+        bucket: 'jobs-bucket',
+        targets: { 'g4dn.xlarge': { queue: 'queue-name', job_definition: 'definition-name' } },
+    },
+};
+
+const providerSchema = [
+    {
+        id: 'aws' as const,
+        title: 'AWS',
+        fields: [
+            {
+                name: 'configuration_uri',
+                title: 'S3 configuration file URI',
+                pattern: '^s3://[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]/[^?#]+$',
+            },
+        ],
+    },
+];
+
 describe('TrainingTargetsPage', () => {
     beforeEach(() => {
         server.use(
+            http.get('/api/remote-trainers/providers', () => HttpResponse.json(providerSchema)),
             http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)),
             http.get('/api/remote-servers/feature-status', () => HttpResponse.json({ network_exposed: false }))
         );
@@ -56,21 +89,37 @@ describe('TrainingTargetsPage', () => {
 
         render(<TrainingTargetsPage />);
 
-        expect(await screen.findByText('Configure and monitor where training jobs run.')).toBeInTheDocument();
+        expect(await screen.findByRole('heading', { name: 'Training targets' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Add a training target' })).toBeInTheDocument();
+        for (const card of screen.getAllByRole('button', { name: /^Add training target:/ })) {
+            expect(card).not.toHaveTextContent('Add instance');
+        }
+        for (const [title, description] of [
+            ['Self Managed Remote Trainer', 'Connect to a trainer service you deploy and manage.'],
+            ['SSH Remote Trainer', 'Let Studio set up and manage a trainer over SSH.'],
+            ['AWS Provider', 'Run training jobs on on-demand GPU compute on AWS.'],
+        ]) {
+            const card = screen.getByRole('button', { name: `Add training target: ${title}` });
+            expect(within(card).getByText(description)).toBeInTheDocument();
+            expect(card).toHaveAccessibleDescription(description);
+        }
         expect(await screen.findAllByText('managed-trainer')).not.toHaveLength(0);
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
     });
 
-    it('opens the remote trainer form without a target type switch', async () => {
+    it('opens the SSH card with only SSH configuration', async () => {
         const user = userEvent.setup();
         server.use(http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([])));
 
         render(<TrainingTargetsPage />);
 
-        await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
+        const card = await screen.findByRole('button', { name: 'Add training target: SSH Remote Trainer' });
+        await waitFor(() => expect(card).toBeEnabled());
+        await user.click(card);
+        const dialog = await screen.findByRole('dialog', { name: 'Add training target' });
         expect(within(dialog).queryByText('Target type')).not.toBeInTheDocument();
-        expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toBeInTheDocument();
+        expect(within(dialog).getByRole('textbox', { name: /Remote port/i })).toBeInTheDocument();
+        expect(within(dialog).queryByRole('tab', { name: 'Trainer URL' })).not.toBeInTheDocument();
     });
 
     it('disables SSH and defaults to a direct URL when SSH is unavailable', async () => {
@@ -93,14 +142,13 @@ describe('TrainingTargetsPage', () => {
         render(<TrainingTargetsPage />);
 
         expect(await screen.findByText(/SSH training targets are unavailable/i)).toBeInTheDocument();
-        await user.click(screen.getByRole('button', { name: /new training target/i }));
-        const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
-        expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toHaveAttribute('aria-disabled', 'true');
-        expect(within(dialog).getByRole('tab', { name: 'Trainer URL' })).toHaveAttribute('aria-selected', 'true');
+        expect(screen.getByRole('button', { name: 'Add training target: SSH Remote Trainer' })).toBeDisabled();
+        await user.click(screen.getByRole('button', { name: 'Add training target: Self Managed Remote Trainer' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Add training target' });
         expect(within(dialog).queryByRole('button', { name: /add ssh connection/i })).not.toBeInTheDocument();
         await user.type(within(dialog).getByRole('textbox', { name: /^Name/ }), 'direct-trainer');
         await user.type(within(dialog).getByRole('textbox', { name: /trainer url/i }), 'https://trainer.example.test');
-        await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
+        await user.click(within(dialog).getByRole('button', { name: 'Add training target' }));
         await waitFor(() => expect(created).toBeDefined());
         expect(created).toMatchObject({ connection: { connection_mode: 'direct' } });
         expect(aliasRequests).toBe(0);
@@ -117,10 +165,12 @@ describe('TrainingTargetsPage', () => {
 
         render(<TrainingTargetsPage />);
 
-        await user.click(await screen.findByRole('button', { name: /new training target/i }));
-        const dialog = await screen.findByRole('dialog', { name: /add remote trainer/i });
-        expect(within(dialog).getByRole('tab', { name: 'SSH tunnel' })).toHaveAttribute('aria-disabled', 'true');
-        expect(within(dialog).getByRole('tab', { name: 'Trainer URL' })).toHaveAttribute('aria-selected', 'true');
+        await user.click(
+            await screen.findByRole('button', { name: 'Add training target: Self Managed Remote Trainer' })
+        );
+        const dialog = await screen.findByRole('dialog', { name: 'Add training target' });
+        expect(within(dialog).getByRole('textbox', { name: /trainer url/i })).toBeInTheDocument();
+        expect(within(dialog).queryByRole('tab', { name: 'SSH tunnel' })).not.toBeInTheDocument();
     });
 
     it.each(['healthy', 'reboot_required'])('hides SSH setup actions when SSH is disabled (%s)', async (reason) => {
@@ -166,12 +216,13 @@ describe('TrainingTargetsPage', () => {
 
         render(<TrainingTargetsPage />);
 
-        await user.click(await screen.findByRole('button', { name: /new training target/i }));
+        await user.click(
+            await screen.findByRole('button', { name: 'Add training target: Self Managed Remote Trainer' })
+        );
         const dialog = await screen.findByRole('dialog');
         await user.type(within(dialog).getByLabelText(/name/i), remoteTrainer.name);
-        await user.click(within(dialog).getByRole('tab', { name: 'Trainer URL' }));
         await user.type(within(dialog).getByRole('textbox', { name: /trainer url/i }), remoteTrainer.url);
-        await user.click(within(dialog).getByRole('button', { name: 'Add trainer' }));
+        await user.click(within(dialog).getByRole('button', { name: 'Add training target' }));
 
         expect(await screen.findByRole('button', { name: /show details for managed-trainer/i })).toBeInTheDocument();
         await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -265,10 +316,159 @@ describe('TrainingTargetsPage', () => {
 
         render(<TrainingTargetsPage />);
 
-        await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
-        await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
-        await user.click(await screen.findByRole('button', { name: 'Delete' }));
+        await user.click(await screen.findByRole('button', { name: `Remove ${remoteTrainer.name}` }));
+        const confirmation = await screen.findByRole('alertdialog', { name: 'Remove training target' });
+        expect(within(confirmation).getByText(`Remove ${remoteTrainer.name}?`)).toBeInTheDocument();
+        await user.click(within(confirmation).getByRole('button', { name: 'Remove' }));
 
-        expect(await screen.findByText('No training targets are configured.')).toBeInTheDocument();
+        expect(await screen.findByText('No training targets added')).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Training targets' })).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: /^Add training target:/ })).toHaveLength(3);
+    });
+
+    it('shows multiple instances of the same type alongside other types', async () => {
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () =>
+                HttpResponse.json([
+                    remoteTrainer,
+                    { ...remoteTrainer, id: 'second', name: 'second trainer' },
+                    awsTrainer,
+                ])
+            )
+        );
+        render(<TrainingTargetsPage />);
+        expect(await screen.findByRole('heading', { name: 'Training targets' })).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: /^Edit / })).toHaveLength(3);
+        expect(screen.getAllByRole('button', { name: /^Remove / })).toHaveLength(3);
+        expect(screen.getAllByRole('button', { name: /^Add training target:/ })).toHaveLength(3);
+    });
+
+    it('creates the AWS provider from only an S3 configuration URI', async () => {
+        const user = userEvent.setup();
+        let trainers: SchemaRemoteTrainer[] = [];
+        let resolution: unknown;
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json(trainers)),
+            http.post('/api/remote-trainers/providers/aws/configuration', async ({ request }) => {
+                resolution = await request.json();
+                return HttpResponse.json(
+                    awsTrainer.connection as Extract<
+                        SchemaRemoteTrainer['connection'],
+                        { connection_mode: 'aws_batch' }
+                    >
+                );
+            }),
+            http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
+                const body = await request.json();
+                trainers = [{ ...awsTrainer, ...body }];
+                return HttpResponse.json(trainers[0], { status: 201 });
+            })
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS Provider' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Add training target' });
+        expect(within(dialog).getByRole('button', { name: 'Add training target' })).toBeDisabled();
+        expect(within(dialog).queryByRole('textbox', { name: /^Name/ })).not.toBeInTheDocument();
+        expect(dialog).not.toHaveTextContent(/instance/i);
+        const deployLink = within(dialog).getByRole('link', { name: 'Deploy AWS Batch stack' });
+        expect(deployLink).toHaveAttribute('target', '_blank');
+        expect(deployLink).toHaveAttribute('rel', 'noopener noreferrer');
+        expect(deployLink.getAttribute('href')).toContain('aws-batch-trainer.yaml');
+        expect(deployLink.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+        expect(within(dialog).getAllByRole('separator')).toHaveLength(2);
+        await user.type(
+            await within(dialog).findByRole('textbox', { name: /^S3 configuration file URI/ }),
+            's3://config-bucket/studio-config.json'
+        );
+        expect(within(dialog).getAllByRole('textbox')).toHaveLength(1);
+        expect(within(dialog).queryByRole('textbox', { name: /^Region/ })).not.toBeInTheDocument();
+        expect(within(dialog).queryByRole('textbox', { name: /^Studio role ARN/ })).not.toBeInTheDocument();
+        await user.click(within(dialog).getByRole('button', { name: 'Add training target' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+        expect(resolution).toEqual({
+            configuration_uri: 's3://config-bucket/studio-config.json',
+        });
+        expect(await screen.findByRole('button', { name: 'Edit AWS Provider' })).toBeInTheDocument();
+        expect(trainers[0].name).toBe('AWS Provider');
+        expect(trainers[0].connection).toEqual(awsTrainer.connection);
+    });
+
+    it('prefills AWS edits and refreshes resources when saving', async () => {
+        const user = userEvent.setup();
+        let updated: unknown;
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([awsTrainer])),
+            http.post('/api/remote-trainers/providers/aws/configuration', () =>
+                HttpResponse.json({
+                    ...(awsTrainer.connection as Extract<
+                        SchemaRemoteTrainer['connection'],
+                        { connection_mode: 'aws_batch' }
+                    >),
+                    bucket: 'updated-bucket',
+                })
+            ),
+            http.patch(REMOTE_TRAINER_PATH, async ({ request }) => {
+                updated = await request.json();
+                return HttpResponse.json(awsTrainer);
+            })
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: 'Edit AWS Provider' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Edit training target' });
+        expect(await within(dialog).findByDisplayValue('s3://config-bucket/studio-config.json')).toBeInTheDocument();
+        expect(within(dialog).getAllByRole('textbox')).toHaveLength(1);
+        await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+        await waitFor(() => expect(updated).toMatchObject({ connection: { bucket: 'updated-bucket' } }));
+    });
+
+    it('shows the backend constraint when adding another AWS provider', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([awsTrainer])),
+            http.post('/api/remote-trainers/providers/aws/configuration', () =>
+                HttpResponse.json(
+                    awsTrainer.connection as Extract<
+                        SchemaRemoteTrainer['connection'],
+                        { connection_mode: 'aws_batch' }
+                    >
+                )
+            ),
+            http.post(
+                REMOTE_TRAINERS_PATH,
+                () =>
+                    new Response(JSON.stringify({ message: 'Only one AWS Provider training target is allowed.' }), {
+                        status: 409,
+                        headers: { 'Content-Type': 'application/json' },
+                    })
+            )
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: 'Add training target: AWS Provider' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Add training target' });
+        await user.type(
+            await within(dialog).findByRole('textbox', { name: /^S3 configuration file URI/ }),
+            's3://config-bucket/studio-config.json'
+        );
+        await user.click(within(dialog).getByRole('button', { name: 'Add training target' }));
+        expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+            'Only one AWS Provider training target is allowed.'
+        );
+    });
+
+    it('keeps the AWS form open when configuration resolution fails', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINERS_PATH, () => HttpResponse.json([awsTrainer])),
+            http.post('/api/remote-trainers/providers/aws/configuration', () =>
+                HttpResponse.json({ detail: 'Cannot read the S3 configuration.' }, { status: 400 })
+            )
+        );
+        render(<TrainingTargetsPage />);
+        await user.click(await screen.findByRole('button', { name: 'Edit AWS Provider' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Edit training target' });
+        await within(dialog).findByDisplayValue('s3://config-bucket/studio-config.json');
+        await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+        expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cannot read the S3 configuration.');
+        expect(dialog).toBeInTheDocument();
     });
 });

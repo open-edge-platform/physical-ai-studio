@@ -5,19 +5,25 @@ from __future__ import annotations
 import asyncio
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from loguru import logger
 
 from schemas.hardware import DeviceInfo, DeviceType
-from schemas.remote_trainer import HealthStatus, RemoteTrainerHealth
+from schemas.remote_trainer import (
+    AwsBatchConnection,
+    AwsBatchProviderConfiguration,
+    AwsBatchResourceConfiguration,
+    HealthStatus,
+    RemoteTrainerHealth,
+)
 
 if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
 
-    from schemas.remote_trainer import AwsBatchConnection
-
 _PROBE_TIMEOUT_S = 10.0
+_MAX_CONFIGURATION_BYTES = 65536
 
 
 def _make_session(connection: AwsBatchConnection) -> Any:
@@ -32,6 +38,24 @@ def _make_session(connection: AwsBatchConnection) -> Any:
         aws_session_token=creds["SessionToken"],
         region_name=connection.region,
     )
+
+
+def resolve_aws_batch_configuration(configuration: AwsBatchProviderConfiguration) -> AwsBatchConnection:
+    """Load and validate configuration using the ambient AWS credential chain."""
+    import boto3
+
+    location = urlsplit(configuration.configuration_uri)
+    session = boto3.Session()
+    response = session.client("s3").get_object(Bucket=location.netloc, Key=location.path[1:])
+    body = response["Body"]
+    try:
+        payload = body.read(_MAX_CONFIGURATION_BYTES + 1)
+    finally:
+        body.close()
+    if len(payload) > _MAX_CONFIGURATION_BYTES:
+        raise ValueError("AWS configuration exceeds 64 KiB.")
+    resources = AwsBatchResourceConfiguration.model_validate_json(payload)
+    return AwsBatchConnection(**configuration.model_dump(), **resources.model_dump())
 
 
 def _probe_sync(connection: AwsBatchConnection) -> tuple[HealthStatus, str | None]:

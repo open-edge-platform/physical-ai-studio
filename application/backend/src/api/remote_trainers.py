@@ -1,13 +1,54 @@
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from api.dependencies import get_remote_trainer_service
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerCreate, RemoteTrainerHealth, RemoteTrainerUpdate
+from schemas.remote_trainer import (
+    AwsBatchConnection,
+    AwsBatchProviderConfiguration,
+    CloudProviderError,
+    CloudProviderField,
+    CloudProviderSchema,
+    RemoteTrainer,
+    RemoteTrainerCreate,
+    RemoteTrainerHealth,
+    RemoteTrainerUpdate,
+)
+from services.aws_batch import resolve_aws_batch_configuration
 from services.remote_trainer_service import RemoteTrainerService
 
 router = APIRouter(prefix="/api/remote-trainers", tags=["Remote trainers"])
+
+
+@router.get("/providers")
+async def list_cloud_provider_schemas() -> list[CloudProviderSchema]:
+    """Return the backend-owned configuration fields for supported providers."""
+    properties = AwsBatchProviderConfiguration.model_json_schema()["properties"]
+    return [
+        CloudProviderSchema(
+            fields=[CloudProviderField.model_validate({"name": name, **field}) for name, field in properties.items()]
+        )
+    ]
+
+
+@router.post("/providers/aws/configuration", responses={400: {"model": CloudProviderError}})
+async def resolve_cloud_provider_configuration(configuration: AwsBatchProviderConfiguration) -> AwsBatchConnection:
+    """Resolve provisioned resources before saving an AWS provider training target."""
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(resolve_aws_batch_configuration, configuration), timeout=30)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400, detail="The S3 configuration document is invalid or exceeds 64 KiB."
+        ) from error
+    except (BotoCoreError, ClientError, TimeoutError) as error:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot read the S3 configuration. Check backend AWS credentials, object read permissions, and URI.",
+        ) from error
 
 
 @router.get("")

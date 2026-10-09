@@ -144,6 +144,15 @@ Resources:
         Rules:
           - Id: ExpireJobData
             Status: Enabled
+            Prefix: jobs/
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: ExpireValidationData
+            Status: Enabled
+            Prefix: validation/
             ExpirationInDays: 30
             NoncurrentVersionExpiration:
               NoncurrentDays: 30
@@ -214,7 +223,7 @@ Resources:
               - Effect: Allow
                 Action: s3:DeleteObject
                 Resource: !Sub ${JobsBucket.Arn}/validation/*
-        - PolicyName: StudioBatchRead
+        - PolicyName: StudioBatchDescribe
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -598,6 +607,13 @@ Resources:
                 Resource:
                   - !GetAtt JobsBucket.Arn
                   - !Sub ${JobsBucket.Arn}/*
+        - PolicyName: PublishStudioConfiguration
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${JobsBucket.Arn}/studio-config.json
 
   BucketCleanupFunction:
     Type: AWS::Lambda::Function
@@ -610,6 +626,7 @@ Resources:
         ZipFile: |
           import boto3
           import cfnresponse
+          import json
 
           def handler(event, context):
               try:
@@ -617,7 +634,17 @@ Resources:
                       bucket = boto3.resource("s3").Bucket(event["ResourceProperties"]["BucketName"])
                       bucket.object_versions.delete()
                       bucket.multipart_uploads.abort()
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+                  else:
+                      configuration = event["ResourceProperties"]["Configuration"]
+                      configuration["schema_version"] = int(configuration["schema_version"])
+                      boto3.client("s3").put_object(
+                          Bucket=event["ResourceProperties"]["BucketName"],
+                          Key="studio-config.json",
+                          Body=json.dumps(configuration).encode(),
+                          ContentType="application/json",
+                      )
+                  physical_id = event.get("PhysicalResourceId", context.log_stream_name)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
               except Exception as error:
                   cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": str(error)})
 
@@ -626,19 +653,23 @@ Resources:
     Properties:
       ServiceToken: !GetAtt BucketCleanupFunction.Arn
       BucketName: !Ref JobsBucket
+      Configuration:
+        schema_version: 1
+        region: !Ref AWS::Region
+        studio_role_arn: !GetAtt StudioRole.Arn
+        bucket: !Ref JobsBucket
+        targets:
+          g4dn.xlarge:
+            queue: !Ref G4dnJobQueue
+            job_definition: !Ref G4dnJobDefinition
+          g6e.2xlarge:
+            queue: !Ref G6eJobQueue
+            job_definition: !Ref G6eJobDefinition
+          p5.4xlarge:
+            queue: !Ref P5JobQueue
+            job_definition: !Ref P5JobDefinition
 
 Outputs:
-  StudioConfiguration:
-    Description: Copy this value into the Physical AI Studio AWS cloud target form.
-    Value:
-      Fn::Sub:
-        - >-
-          {"schema_version":1,"region":"${AWS::Region}","studio_role_arn":"${StudioRoleArn}","bucket":"${BucketName}","targets":{"g4dn.xlarge":{"queue":"${G4dnQueueArn}","job_definition":"${G4dnJobDefinitionArn}"},"g6e.2xlarge":{"queue":"${G6eQueueArn}","job_definition":"${G6eJobDefinitionArn}"},"p5.4xlarge":{"queue":"${P5QueueArn}","job_definition":"${P5JobDefinitionArn}"}}}
-        - StudioRoleArn: !GetAtt StudioRole.Arn
-          BucketName: !Ref JobsBucket
-          G4dnQueueArn: !Ref G4dnJobQueue
-          G6eQueueArn: !Ref G6eJobQueue
-          P5QueueArn: !Ref P5JobQueue
-          G4dnJobDefinitionArn: !Ref G4dnJobDefinition
-          G6eJobDefinitionArn: !Ref G6eJobDefinition
-          P5JobDefinitionArn: !Ref P5JobDefinition
+  ConfigurationUri:
+    Description: S3 configuration URI for the Studio training target. The backend AWS identity requires s3:GetObject on this object.
+    Value: !Sub s3://${JobsBucket}/studio-config.json

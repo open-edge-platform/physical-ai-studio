@@ -1,10 +1,13 @@
 import asyncio
+import json
+from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from core.security.ssh_network_exposure import SshFeatureAvailability
@@ -20,6 +23,7 @@ from exceptions import (
 )
 from schemas.remote_trainer import (
     AwsBatchConnection,
+    AwsBatchProviderConfiguration,
     DirectConnection,
     RemoteTrainer,
     RemoteTrainerCreate,
@@ -28,9 +32,70 @@ from schemas.remote_trainer import (
 )
 from services import RemoteTrainerService
 from services import remote_trainer_service as remote_trainer_service_module
+from services.aws_batch import resolve_aws_batch_configuration
 from services.ssh import persistent_trainer
 
 MODULE = "services.remote_trainer_service"
+
+
+def test_resolve_aws_configuration() -> None:
+    configuration = AwsBatchProviderConfiguration(
+        configuration_uri="s3://config-bucket/studio-config.json",
+    )
+    resources = {
+        "schema_version": 1,
+        "region": "eu-west-1",
+        "studio_role_arn": "arn:aws:iam::123456789012:role/studio",
+        "bucket": "jobs-bucket",
+        "targets": {"g4dn.xlarge": {"queue": "queue-name", "job_definition": "definition-name"}},
+    }
+    body = BytesIO(json.dumps(resources).encode())
+    with patch("boto3.Session") as make_session:
+        client = make_session.return_value.client.return_value
+        client.get_object.return_value = {"Body": body}
+        result = resolve_aws_batch_configuration(configuration)
+
+    make_session.assert_called_once_with()
+    make_session.return_value.client.assert_called_once_with("s3")
+    client.get_object.assert_called_once_with(Bucket="config-bucket", Key="studio-config.json")
+    assert result.configuration_uri == configuration.configuration_uri
+    assert result.region == resources["region"]
+    assert result.studio_role_arn == resources["studio_role_arn"]
+    assert result.bucket == "jobs-bucket"
+    assert result.targets["g4dn.xlarge"].queue == "queue-name"
+    assert body.closed
+
+
+@pytest.mark.parametrize("payload", [b"{}", b'{"schema_version":2}', b"not json", b"x" * 65537])
+def test_resolve_aws_configuration_rejects_invalid_document(payload: bytes) -> None:
+    configuration = AwsBatchProviderConfiguration(
+        configuration_uri="s3://config-bucket/studio-config.json",
+    )
+    body = BytesIO(payload)
+    with patch("boto3.Session") as make_session:
+        make_session.return_value.client.return_value.get_object.return_value = {"Body": body}
+        with pytest.raises(ValueError):
+            resolve_aws_batch_configuration(configuration)
+    assert body.closed
+
+
+@pytest.mark.parametrize("uri", ["https://bucket/config.json", "s3://bucket/", "s3://bucket/config?version=1"])
+def test_aws_configuration_requires_s3_object_uri(uri: str) -> None:
+    with pytest.raises(ValidationError):
+        AwsBatchProviderConfiguration(configuration_uri=uri)
+
+
+@pytest.mark.parametrize("missing_field", ["region", "studio_role_arn"])
+def test_aws_configuration_requires_connection_fields_in_document(missing_field: str) -> None:
+    resources = _aws().model_dump(exclude={"connection_mode", "configuration_uri", missing_field})
+    body = BytesIO(json.dumps(resources).encode())
+    with patch("boto3.Session") as session:
+        session.return_value.client.return_value.get_object.return_value = {"Body": body}
+        with pytest.raises(ValidationError, match=missing_field):
+            resolve_aws_batch_configuration(
+                AwsBatchProviderConfiguration(configuration_uri="s3://config-bucket/studio-config.json")
+            )
+    assert body.closed
 
 
 def _session() -> AsyncMock:
@@ -67,6 +132,71 @@ def test_remote_trainer_name_is_trimmed() -> None:
 def test_remote_trainer_rejects_whitespace_only_name() -> None:
     with pytest.raises(ValidationError):
         RemoteTrainerCreate(name="   ", connection=_direct())
+
+
+@pytest.mark.anyio
+async def test_create_aws_provider_rejects_second_target() -> None:
+    repository = MagicMock()
+    repository.list_ordered = AsyncMock(return_value=[_remote_trainer(_aws())])
+    repository.save = AsyncMock()
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        pytest.raises(ResourceAlreadyExistsError, match="Only one AWS Provider"),
+    ):
+        await RemoteTrainerService(_session()).create_remote_trainer(
+            RemoteTrainerCreate(name="Another name", connection=_aws())
+        )
+    repository.save.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_concurrent_aws_creation_reports_constraint_after_rollback() -> None:
+    session = _session()
+    repository = MagicMock()
+    repository.list_ordered = AsyncMock(side_effect=[[], [_remote_trainer(_aws())]])
+    repository.save = AsyncMock(side_effect=IntegrityError("INSERT", {}, Exception("unique constraint")))
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        pytest.raises(ResourceAlreadyExistsError, match="Only one AWS Provider"),
+    ):
+        await RemoteTrainerService(session).create_remote_trainer(
+            RemoteTrainerCreate(name="AWS Provider", connection=_aws())
+        )
+    session.rollback.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_aws_provider_name_is_fixed_on_create_and_update() -> None:
+    repository = MagicMock()
+    repository.list_ordered = AsyncMock(return_value=[])
+    repository.save = AsyncMock(side_effect=lambda trainer: trainer)
+    repository.update = AsyncMock(side_effect=lambda trainer, data: trainer.model_copy(update=data))
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.remote_trainer_tunnel_manager.sync_tunnel", new_callable=AsyncMock),
+        patch(f"{MODULE}.RemoteTrainerService._start_persistent_trainer_in_background"),
+    ):
+        service = RemoteTrainerService(_session())
+        created = await service.create_remote_trainer(RemoteTrainerCreate(name="Custom", connection=_aws()))
+        assert created.name == "AWS Provider"
+        repository.get_by_id = AsyncMock(return_value=created)
+        updated = await service.update_remote_trainer(created.id, RemoteTrainerUpdate(name="Renamed"))
+        assert updated.name == "AWS Provider"
+
+
+@pytest.mark.anyio
+async def test_converting_target_to_aws_rejects_duplicate_provider() -> None:
+    trainer = _remote_trainer()
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    repository.list_ordered = AsyncMock(return_value=[trainer, _remote_trainer(_aws())])
+    repository.update = AsyncMock()
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        pytest.raises(ResourceAlreadyExistsError, match="Only one AWS Provider"),
+    ):
+        await RemoteTrainerService(_session()).update_remote_trainer(trainer.id, RemoteTrainerUpdate(connection=_aws()))
+    repository.update.assert_not_awaited()
 
 
 @pytest.mark.anyio

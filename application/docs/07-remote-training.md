@@ -53,8 +53,8 @@ When running Studio with Docker Compose, set these variables in `application/doc
 
 ### Deploy the stack
 
-1. In Studio, open **Settings**, then **Compute**.
-2. Under **Remote Trainers**, select **New remote trainer**.
+1. In Studio, open **Settings**, then **Training Targets**.
+2. Under **Add a training target**, select **SSH Remote Trainer**.
 3. Select **Deploy AWS stack**.
 4. Set **Policy to train** to the policy that will run on this trainer.
 5. Paste the SSH public key corresponding to the private key on the Studio host.
@@ -64,10 +64,10 @@ Stack creation can take up to 5-10 minutes.
 
 ### Register the trainer
 
-Open the completed stack's **Outputs** tab, then return to the **Add remote trainer** dialog in Studio.
+Open the completed stack's **Outputs** tab, then return to the **Add training target** dialog in Studio.
 
 1. Enter a name for the trainer.
-2. Select **SSH tunnel** and **Connection details**.
+2. Select **Connection details**.
 3. Copy the stack outputs into the form:
 
 | CloudFormation output | Studio field    |
@@ -77,9 +77,43 @@ Open the completed stack's **Outputs** tab, then return to the **Add remote trai
 | `SshUserName`         | **User**        |
 
 4. Set **Key path** to the private key file corresponding to the public key passed to CloudFormation. The path is resolved on the Studio backend host.
-6. Select **Add trainer**.
+5. Select **Add training target**.
 
 After adding the trainer, return to [Training Policies](./06-training-policies.md) to create and start a model training job.
+
+## AWS Batch provider
+
+The **AWS Provider** training target submits one-off training jobs to AWS Batch. Studio supports one AWS provider with the fixed name **AWS Provider**. Studio uses the AWS SDK credential chain on its backend host to assume the configured Studio role.
+
+1. Open **Settings**, then **Training Targets**, and select **AWS Provider**.
+2. Deploy the linked AWS Batch CloudFormation stack, or provision equivalent resources with Terraform or another tool.
+3. Enter the stack's `ConfigurationUri` output in **S3 configuration file URI**.
+4. Select **Add training target**.
+
+The AWS Batch template publishes `studio-config.json` in its jobs bucket. Studio reads and validates this document with the backend's existing AWS credentials before saving the training target. That identity needs `s3:GetObject` permission on the configuration object and permission to assume the role specified in the document. The role must trust that identity. Cross-account access also requires the bucket policy to allow the identity to read the configuration object.
+
+### Configuration document
+
+Terraform and other provisioning tools can publish the same JSON document to an S3 object:
+
+```json
+{
+	"schema_version": 1,
+	"region": "eu-west-1",
+	"studio_role_arn": "arn:aws:iam::123456789012:role/studio",
+	"bucket": "my-training-jobs",
+	"targets": {
+		"g4dn.xlarge": {
+			"queue": "my-training-queue",
+			"job_definition": "my-training-definition:1"
+		}
+	}
+}
+```
+
+`bucket` identifies the bucket for datasets, progress, and model artifacts. Each `targets` entry associates an instance type with its Batch queue and job definition. The provisioned compute environment and job definition must match that entry. At least one target is required; documents are limited to 64 KiB and schema version 1.
+
+Studio stores the resolved resource configuration with the training target. After provisioning changes, open **Edit** and select **Save changes** to reload the S3 document. Existing AWS Batch registrations without a configuration URI require one when edited. An upgrade rejects databases containing multiple AWS providers; remove the extra registrations before upgrading.
 
 ## Remove an AWS trainer
 

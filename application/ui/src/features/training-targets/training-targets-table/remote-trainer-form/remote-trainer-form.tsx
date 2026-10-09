@@ -19,17 +19,15 @@ import {
     TabList,
     Tabs,
     Text,
-    TextArea,
     TextField,
 } from '@geti-ui/ui';
 import { Add, ExternalLinkIcon } from '@geti-ui/ui/icons';
 
 import { getApiErrorMessage, getSshHostKeyFingerprint } from '../../../../api/errors';
-import { SchemaAwsBatchConnection, SchemaRemoteTrainer } from '../../../../api/openapi-spec';
+import { SchemaRemoteTrainer } from '../../../../api/openapi-spec';
 import { ReactComponent as AwsIcon } from '../../../../assets/icons/aws-icon.svg';
 import { AddSshHostDialog } from '../add-ssh-host-dialog';
 import { SshHostKeyConfirmation } from '../ssh-host-key-confirmation-dialog';
-import { parseAwsBatchConfiguration } from './aws-batch-configuration';
 import { INSECURE_TRAINER_URL_WARNING, isInsecureTrainerUrl } from './insecure-trainer-url';
 import { InfoHelp } from './ssh-tunnel-section';
 import { RemoteTrainerFormValues, useRemoteTrainerFormMutation } from './use-remote-trainer-form-mutation';
@@ -46,16 +44,16 @@ const awsStackUrl = (template: string, stackName: string) =>
     `#/stacks/create/review?templateURL=${encodeURIComponent(AWS_TEMPLATE_BASE + template)}` +
     `&stackName=${stackName}`;
 const AWS_EC2_STACK_URL = awsStackUrl('remote-trainer.yaml', 'physical-ai-studio-remote-trainer');
-const AWS_BATCH_STACK_URL = awsStackUrl('aws-batch-trainer.yaml', 'physical-ai-studio-batch-trainer');
 
 type RemoteTrainerFormProps = {
     remoteTrainer?: SchemaRemoteTrainer;
     close: () => void;
     requestHostKeyConfirmation: (confirmation: SshHostKeyConfirmation) => void;
     sshAvailable?: boolean;
+    instanceType?: 'direct' | 'ssh';
 };
 
-type ConnectionMode = SchemaRemoteTrainer['connection_mode'];
+type ConnectionMode = 'direct' | 'ssh';
 type SshHostSource = 'manual' | 'pick';
 
 export const RemoteTrainerForm = ({
@@ -63,16 +61,16 @@ export const RemoteTrainerForm = ({
     close,
     requestHostKeyConfirmation,
     sshAvailable = true,
+    instanceType,
 }: RemoteTrainerFormProps) => {
     const existing = remoteTrainer?.connection;
     const existingSsh = existing?.connection_mode === 'ssh' ? existing : undefined;
     const existingDirect = existing?.connection_mode === 'direct' ? existing : undefined;
-    const existingAws = existing?.connection_mode === 'aws_batch' ? existing : undefined;
 
     const [name, setName] = useState(remoteTrainer?.name ?? '');
     const [url, setUrl] = useState(existingDirect?.url ?? '');
     const [connectionMode, setConnectionMode] = useState<ConnectionMode>(
-        existing?.connection_mode ?? (sshAvailable ? 'ssh' : 'direct')
+        instanceType ?? (existingSsh ? 'ssh' : existingDirect ? 'direct' : sshAvailable ? 'ssh' : 'direct')
     );
     const [sshHostSource, setSshHostSource] = useState<SshHostSource>(existingSsh?.ssh_connection ? 'manual' : 'pick');
     const [sshHostAlias, setSshHostAlias] = useState(existingSsh?.ssh_host_alias ?? '');
@@ -84,20 +82,15 @@ export const RemoteTrainerForm = ({
     const [sshIdentityFile, setSshIdentityFile] = useState(existingSsh?.ssh_connection?.identity_file ?? '');
     const [sshRemotePort, setSshRemotePort] = useState<number | undefined>(existingSsh?.ssh_remote_port ?? 8001);
     const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(existingSsh?.ssh_local_port ?? 8001);
-    const [awsConfigText, setAwsConfigText] = useState(
-        existingAws ? JSON.stringify(stripMode(existingAws), null, 2) : ''
-    );
     const [installPrerequisites, setInstallPrerequisites] = useState(false);
     const isEditing = remoteTrainer !== undefined;
     const { aliases } = useSshHostAliases(sshAvailable);
     const { save, reset, isPending, error } = useRemoteTrainerFormMutation(remoteTrainer);
 
     const isSsh = connectionMode === 'ssh';
-    const isAws = connectionMode === 'aws_batch';
     const isManual = isSsh && sshHostSource === 'manual';
-    const awsConfig = isAws ? parseAwsBatchConfiguration(awsConfigText) : undefined;
 
-    const connection: RemoteTrainerFormValues['connection'] | undefined = isSsh
+    const connection: RemoteTrainerFormValues['connection'] = isSsh
         ? {
               connection_mode: 'ssh',
               ssh_host_alias: isManual ? null : sshHostAlias.trim(),
@@ -112,11 +105,8 @@ export const RemoteTrainerForm = ({
               ssh_remote_port: sshRemotePort ?? 8001,
               ssh_local_port: sshLocalPort ?? 8001,
           }
-        : isAws
-          ? awsConfig?.value
-          : { connection_mode: 'direct', url };
-    const values: RemoteTrainerFormValues | undefined =
-        connection === undefined ? undefined : { name: name.trim(), connection };
+        : { connection_mode: 'direct', url };
+    const values: RemoteTrainerFormValues = { name: name.trim(), connection };
 
     const sshHostIdentity = isManual ? `${sshHostname.trim()}:${sshPort ?? 22}` : sshHostAlias.trim();
     const errorMessage =
@@ -134,7 +124,6 @@ export const RemoteTrainerForm = ({
     };
 
     const submit = (acceptedHostKeyFingerprint?: string) => {
-        if (values === undefined) return;
         save(values, {
             onSuccess: close,
             installPrerequisites: !isEditing && isSsh && installPrerequisites,
@@ -148,9 +137,7 @@ export const RemoteTrainerForm = ({
         name.trim() !== '' &&
         (isSsh
             ? sshAvailable && hasValidSshHost && Boolean(sshRemotePort) && Boolean(sshLocalPort)
-            : isAws
-              ? awsConfig?.value !== undefined
-              : url.trim() !== '');
+            : url.trim() !== '');
 
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -164,7 +151,15 @@ export const RemoteTrainerForm = ({
     return (
         <Form onSubmit={handleSubmit} validationBehavior='native'>
             <Dialog width='size-6000'>
-                <Heading>{isEditing ? 'Edit remote trainer' : 'Add remote trainer'}</Heading>
+                <Heading>
+                    {instanceType
+                        ? isEditing
+                            ? 'Edit training target'
+                            : 'Add training target'
+                        : isEditing
+                          ? 'Edit remote trainer'
+                          : 'Add remote trainer'}
+                </Heading>
                 <Divider />
                 <Content>
                     <Flex direction='column' gap='size-150'>
@@ -177,55 +172,24 @@ export const RemoteTrainerForm = ({
                             onChange={setName}
                             width='100%'
                         />
-                        <Tabs
-                            selectedKey={connectionMode}
-                            disabledKeys={!sshAvailable ? ['ssh'] : []}
-                            onSelectionChange={(key) => setConnectionMode(key as ConnectionMode)}
-                        >
-                            <TabList aria-label='Connection method'>
-                                <Item key='ssh'>SSH tunnel</Item>
-                                <Item key='direct'>Trainer URL</Item>
-                                <Item key='aws_batch'>AWS Batch</Item>
-                            </TabList>
-                        </Tabs>
+                        {!instanceType && (
+                            <Tabs
+                                selectedKey={connectionMode}
+                                disabledKeys={!sshAvailable ? ['ssh'] : []}
+                                onSelectionChange={(key) => setConnectionMode(key as ConnectionMode)}
+                            >
+                                <TabList aria-label='Connection method'>
+                                    <Item key='ssh'>SSH tunnel</Item>
+                                    <Item key='direct'>Trainer URL</Item>
+                                </TabList>
+                            </Tabs>
+                        )}
                         <div className={classes.modeFields}>
                             <Text>
                                 {isSsh
                                     ? 'Connect through SSH when the trainer is not directly reachable.'
-                                    : isAws
-                                      ? 'Run each training as an AWS Batch job on compute provisioned on demand.'
-                                      : 'Enter the URL of a trainer that Studio can reach directly.'}
+                                    : 'Enter the URL of a trainer that Studio can reach directly.'}
                             </Text>
-                            {isAws && (
-                                <>
-                                    <TextArea
-                                        isRequired
-                                        label='Studio configuration'
-                                        value={awsConfigText}
-                                        onChange={setAwsConfigText}
-                                        description='Paste the StudioConfiguration output of the AWS Batch stack.'
-                                        validationState={
-                                            awsConfigText.trim() !== '' && awsConfig?.error ? 'invalid' : undefined
-                                        }
-                                        errorMessage={awsConfig?.error}
-                                        contextualHelp={
-                                            <InfoHelp title='Studio configuration'>
-                                                After the CloudFormation stack finishes, open its Outputs tab and copy
-                                                the StudioConfiguration value here.
-                                            </InfoHelp>
-                                        }
-                                        width='100%'
-                                    />
-                                    {!isEditing && (
-                                        <Link href={AWS_BATCH_STACK_URL} target='_blank' rel='noopener noreferrer'>
-                                            <span className={classes.awsStackLinkContent}>
-                                                Deploy AWS Batch stack
-                                                <ExternalLinkIcon aria-hidden='true' />
-                                            </span>
-                                        </Link>
-                                    )}
-                                </>
-                            )}
                             {connectionMode === 'direct' ? (
                                 <TextField
                                     isRequired
@@ -399,7 +363,7 @@ export const RemoteTrainerForm = ({
                         {errorMessage !== undefined && (
                             <Text UNSAFE_className={classes.errorMessage}>{errorMessage}</Text>
                         )}
-                        {!isEditing && !isAws && (
+                        {!isEditing && (
                             <>
                                 <Divider size='S' />
                                 <Flex direction='column' alignItems='start' gap='size-50'>
@@ -423,12 +387,10 @@ export const RemoteTrainerForm = ({
                         Cancel
                     </Button>
                     <Button variant='accent' type='submit' isDisabled={!canSubmit} isPending={isPending}>
-                        {isEditing ? 'Save changes' : 'Add trainer'}
+                        {isEditing ? 'Save changes' : instanceType ? 'Add training target' : 'Add trainer'}
                     </Button>
                 </ButtonGroup>
             </Dialog>
         </Form>
     );
 };
-
-const stripMode = ({ connection_mode: _mode, ...rest }: SchemaAwsBatchConnection) => rest;

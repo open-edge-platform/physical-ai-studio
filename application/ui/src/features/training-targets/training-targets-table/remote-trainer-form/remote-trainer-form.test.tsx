@@ -194,38 +194,10 @@ describe('RemoteTrainerForm', () => {
         });
     });
 
-    it('creates an AWS Batch trainer from the pasted stack configuration', async () => {
-        const user = userEvent.setup();
-        let created: Record<string, unknown> | undefined;
-        const configuration = {
-            schema_version: 1,
-            region: 'eu-west-1',
-            studio_role_arn: 'arn:aws:iam::123456789012:role/studio',
-            bucket: 'jobs-bucket',
-            targets: { 'g4dn.xlarge': { queue: 'arn:q', job_definition: 'arn:jd' } },
-        };
-
-        server.use(
-            http.post(REMOTE_TRAINERS_PATH, async ({ request }) => {
-                created = (await request.json()) as Record<string, unknown>;
-                return HttpResponse.json(getMockedRemoteTrainer({ id: 'trainer-1' }), { status: 201 });
-            })
-        );
-
+    it('keeps AWS Batch out of the self-managed form', () => {
         renderForm();
-
-        await user.type(screen.getByRole('textbox', { name: /^Name/ }), 'batch');
-        await user.click(screen.getByRole('tab', { name: 'AWS Batch' }));
-        expect(screen.getByRole('button', { name: 'Add trainer' })).toBeDisabled();
-
-        await user.click(screen.getByRole('textbox', { name: /studio configuration/i }));
-        await user.paste(JSON.stringify(configuration));
-
-        expect(screen.getByRole('button', { name: 'Add trainer' })).toBeEnabled();
-        await user.click(screen.getByRole('button', { name: 'Add trainer' }));
-
-        await waitFor(() => expect(created).toBeDefined());
-        expect(created).toEqual({ name: 'batch', connection: { connection_mode: 'aws_batch', ...configuration } });
+        expect(screen.queryByRole('tab', { name: 'AWS Batch' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('textbox', { name: /studio configuration/i })).not.toBeInTheDocument();
     });
 
     it('shows an insecure-URL warning for a non-loopback http:// trainer URL', async () => {
