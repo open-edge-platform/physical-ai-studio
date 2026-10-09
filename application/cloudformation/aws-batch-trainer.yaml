@@ -7,35 +7,14 @@ Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
-          default: Trainer image
-        Parameters:
-          - TrainerImage
-      - Label:
           default: Job limits
         Parameters:
           - JobTimeoutSeconds
-          - LogRetentionDays
     ParameterLabels:
-      TrainerImage:
-        default: Trainer image URI
       JobTimeoutSeconds:
         default: Maximum job duration (seconds)
-      LogRetentionDays:
-        default: Job log retention (days)
 
 Parameters:
-  TrainerImage:
-    Type: String
-    Description: >-
-      Immutable public GHCR image URI, including its sha256 digest. Obtain the digest from a
-      Physical AI Studio release or by running
-      "cosign verify ghcr.io/open-edge-platform/physicalai-trainer-cuda:<tag>" and copying
-      critical.image.docker-manifest-digest.
-    AllowedPattern: "^ghcr\\.io/open-edge-platform/physicalai-trainer-cuda@sha256:[0-9a-f]{64}$"
-    ConstraintDescription: >-
-      Enter the Physical AI trainer image as
-      ghcr.io/open-edge-platform/physicalai-trainer-cuda@sha256:<64 lowercase hexadecimal characters>.
-
   JobTimeoutSeconds:
     Type: Number
     Default: 86400
@@ -44,26 +23,6 @@ Parameters:
     Description: >-
       AWS Batch terminates a job that runs longer than this (default 24 hours), so a hung
       run cannot accrue charges indefinitely.
-
-  LogRetentionDays:
-    Type: Number
-    Default: 14
-    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365]
-    Description: How long CloudWatch keeps trainer container logs.
-
-Mappings:
-  # One job owns a whole instance: VCPU matches the instance and MEMORY leaves
-  # headroom for the ECS agent, so Batch never packs two trainings on one GPU box.
-  InstanceResources:
-    g4dn.xlarge:
-      Vcpu: "4"
-      MemoryMiB: "14000"
-    g6e.2xlarge:
-      Vcpu: "8"
-      MemoryMiB: "30000"
-    p5.4xlarge:
-      Vcpu: "16"
-      MemoryMiB: "240000"
 
 Resources:
   TrainerVpc:
@@ -204,9 +163,10 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action:
-                  - s3:GetBucketLocation
-                  - s3:ListBucket
+                Action: s3:GetBucketLocation
+                Resource: !GetAtt JobsBucket.Arn
+              - Effect: Allow
+                Action: s3:ListBucket
                 Resource: !GetAtt JobsBucket.Arn
                 Condition:
                   StringLike:
@@ -250,9 +210,10 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action:
-                  - s3:GetBucketLocation
-                  - s3:ListBucket
+                Action: s3:GetBucketLocation
+                Resource: !GetAtt JobsBucket.Arn
+              - Effect: Allow
+                Action: s3:ListBucket
                 Resource: !GetAtt JobsBucket.Arn
                 Condition:
                   StringLike:
@@ -410,7 +371,7 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /physicalai/${AWS::StackName}/trainer
-      RetentionInDays: !Ref LogRetentionDays
+      RetentionInDays: 14
 
   # S3 contract between Studio and the one-shot trainer container. Studio
   # submits with Parameters.job_prefix = "jobs/<job-id>" after writing
@@ -421,39 +382,29 @@ Resources:
     Type: AWS::Batch::JobDefinition
     Properties:
       Type: container
-      PlatformCapabilities:
-        - EC2
       Parameters:
         job_prefix: ""
       Timeout:
         AttemptDurationSeconds: !Ref JobTimeoutSeconds
-      RetryStrategy:
-        Attempts: 1
       ContainerProperties:
-        Image: !Ref TrainerImage
+        Image: ghcr.io/open-edge-platform/physicalai-trainer-cuda:main
         Command:
+          - /bin/sh
+          - -c
+          - 'export PHYSICALAI_BATCH_JOB_PREFIX="$1"; exec physicalai-trainer-batch'
           - physicalai-trainer-batch
+          - Ref::job_prefix
         JobRoleArn: !GetAtt BatchJobRole.Arn
         Environment:
           - Name: PHYSICALAI_BATCH_PROVIDER
             Value: aws
           - Name: PHYSICALAI_BATCH_BUCKET
             Value: !Ref JobsBucket
-          - Name: PHYSICALAI_BATCH_JOB_PREFIX
-            Value: Ref::job_prefix
-          - Name: PHYSICALAI_BATCH_SPEC_KEY
-            Value: spec.json
-          - Name: PHYSICALAI_BATCH_DATASET_KEY
-            Value: dataset.zip
-          - Name: PHYSICALAI_BATCH_STATUS_KEY
-            Value: status.json
-          - Name: PHYSICALAI_BATCH_ARTIFACT_KEY
-            Value: artifact.zip
         ResourceRequirements:
           - Type: VCPU
-            Value: !FindInMap [InstanceResources, g4dn.xlarge, Vcpu]
+            Value: "4"
           - Type: MEMORY
-            Value: !FindInMap [InstanceResources, g4dn.xlarge, MemoryMiB]
+            Value: "14000"
           - Type: GPU
             Value: "1"
         LogConfiguration:
@@ -467,39 +418,29 @@ Resources:
     Type: AWS::Batch::JobDefinition
     Properties:
       Type: container
-      PlatformCapabilities:
-        - EC2
       Parameters:
         job_prefix: ""
       Timeout:
         AttemptDurationSeconds: !Ref JobTimeoutSeconds
-      RetryStrategy:
-        Attempts: 1
       ContainerProperties:
-        Image: !Ref TrainerImage
+        Image: ghcr.io/open-edge-platform/physicalai-trainer-cuda:main
         Command:
+          - /bin/sh
+          - -c
+          - 'export PHYSICALAI_BATCH_JOB_PREFIX="$1"; exec physicalai-trainer-batch'
           - physicalai-trainer-batch
+          - Ref::job_prefix
         JobRoleArn: !GetAtt BatchJobRole.Arn
         Environment:
           - Name: PHYSICALAI_BATCH_PROVIDER
             Value: aws
           - Name: PHYSICALAI_BATCH_BUCKET
             Value: !Ref JobsBucket
-          - Name: PHYSICALAI_BATCH_JOB_PREFIX
-            Value: Ref::job_prefix
-          - Name: PHYSICALAI_BATCH_SPEC_KEY
-            Value: spec.json
-          - Name: PHYSICALAI_BATCH_DATASET_KEY
-            Value: dataset.zip
-          - Name: PHYSICALAI_BATCH_STATUS_KEY
-            Value: status.json
-          - Name: PHYSICALAI_BATCH_ARTIFACT_KEY
-            Value: artifact.zip
         ResourceRequirements:
           - Type: VCPU
-            Value: !FindInMap [InstanceResources, g6e.2xlarge, Vcpu]
+            Value: "8"
           - Type: MEMORY
-            Value: !FindInMap [InstanceResources, g6e.2xlarge, MemoryMiB]
+            Value: "30000"
           - Type: GPU
             Value: "1"
         LogConfiguration:
@@ -513,39 +454,29 @@ Resources:
     Type: AWS::Batch::JobDefinition
     Properties:
       Type: container
-      PlatformCapabilities:
-        - EC2
       Parameters:
         job_prefix: ""
       Timeout:
         AttemptDurationSeconds: !Ref JobTimeoutSeconds
-      RetryStrategy:
-        Attempts: 1
       ContainerProperties:
-        Image: !Ref TrainerImage
+        Image: ghcr.io/open-edge-platform/physicalai-trainer-cuda:main
         Command:
+          - /bin/sh
+          - -c
+          - 'export PHYSICALAI_BATCH_JOB_PREFIX="$1"; exec physicalai-trainer-batch'
           - physicalai-trainer-batch
+          - Ref::job_prefix
         JobRoleArn: !GetAtt BatchJobRole.Arn
         Environment:
           - Name: PHYSICALAI_BATCH_PROVIDER
             Value: aws
           - Name: PHYSICALAI_BATCH_BUCKET
             Value: !Ref JobsBucket
-          - Name: PHYSICALAI_BATCH_JOB_PREFIX
-            Value: Ref::job_prefix
-          - Name: PHYSICALAI_BATCH_SPEC_KEY
-            Value: spec.json
-          - Name: PHYSICALAI_BATCH_DATASET_KEY
-            Value: dataset.zip
-          - Name: PHYSICALAI_BATCH_STATUS_KEY
-            Value: status.json
-          - Name: PHYSICALAI_BATCH_ARTIFACT_KEY
-            Value: artifact.zip
         ResourceRequirements:
           - Type: VCPU
-            Value: !FindInMap [InstanceResources, p5.4xlarge, Vcpu]
+            Value: "16"
           - Type: MEMORY
-            Value: !FindInMap [InstanceResources, p5.4xlarge, MemoryMiB]
+            Value: "240000"
           - Type: GPU
             Value: "1"
         LogConfiguration:
