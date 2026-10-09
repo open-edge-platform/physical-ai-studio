@@ -107,6 +107,11 @@ class SmolVLA(SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolicyMixin, Policy
         >>> action = policy.select_action(obs)
     """
 
+    STUDIO_TRAINABLE = True
+    DISPLAY_NAME = "SmolVLA"
+    TRAINING_DESCRIPTION = "Small Vision-Language-Action model based on SmolVLM2-500M (Apache 2.0 license)"
+    MIN_TRAINING_VRAM_GB = 3
+
     model: Any
     _preprocessor: Any
 

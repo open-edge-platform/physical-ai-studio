@@ -164,6 +164,13 @@ class Rldx1(Rldx1ExportMixin, Policy):
             the same way as ``input_features``.
     """
 
+    STUDIO_TRAINABLE = True
+    DISPLAY_NAME = "RLDX-1"
+    TRAINING_DESCRIPTION = (
+        "General-purpose robot foundation model for dexterous manipulation (RLWRLD Model License v1.0)"
+    )
+    MIN_TRAINING_VRAM_GB = 40
+
     def __init__(  # noqa: PLR0913
         self,
         # Model architecture

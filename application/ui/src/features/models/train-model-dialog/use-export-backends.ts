@@ -45,5 +45,11 @@ export const useExportBackends = (policy: string): ExportSelection => {
             ? 'Pick at least one export format; a model with no exports can only be retrained, not deployed.'
             : null;
 
-    return { backends, selectedBackends, setSelectedBackends, isLoading, error };
+    return {
+        backends,
+        selectedBackends,
+        setSelectedBackends,
+        isLoading,
+        error,
+    };
 };

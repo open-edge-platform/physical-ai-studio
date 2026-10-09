@@ -14,7 +14,7 @@ import { supportsLora } from '../shared/peft';
 import { supportsSnapflow } from '../shared/snapflow';
 import { ExportStep } from './export-step';
 import { FeatureMappingStep } from './feature-mapping-step';
-import { formatBytes, MODELS } from './policies';
+import { formatBytes } from './policies';
 import { SetupStep } from './setup-step';
 import { TrainingDeviceInfo } from './training-device-info';
 import { MIN_EPOCHS_FOR_SNAPFLOW, TrainingParameters } from './training-parameters';
@@ -126,6 +126,10 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     const [currentStep, setCurrentStep] = useState<WizardStep>('setup');
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
+    const { data: availablePolicies = [], isLoading: isLoadingPolicies } = $api.useQuery(
+        'get',
+        '/api/policies/available'
+    );
     const { datasets, id: projectId } = useProject();
 
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
@@ -252,6 +256,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const isSetupIncomplete =
         !selectedDataset ||
         !selectedPolicy ||
+        !availablePolicies.some((policy) => policy.id === selectedPolicy) ||
         targetId === null ||
         remoteUnavailable ||
         selectedGpuUnavailable ||
@@ -287,7 +292,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
               }`;
     const selectedDatasetName =
         datasets.find((dataset) => dataset.id === selectedDataset?.toString())?.name ?? 'No dataset';
-    const selectedPolicyName = MODELS.find((model) => model.id === selectedPolicy)?.name ?? selectedPolicy;
+    const selectedPolicyName = availablePolicies.find((policy) => policy.id === selectedPolicy)?.name ?? selectedPolicy;
 
     const goToStep = (offset: number) => {
         const nextStep = steps[currentStepIndex + offset];
@@ -334,7 +339,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 }
             }
 
-            const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
+            const name = baseModel?.name ?? selectedPolicyName;
 
             const commonPayload = {
                 dataset_id,
@@ -351,8 +356,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 // which the training side reads as "keep the order it already has".
                 image_key_reorder_map: hasFeatureMapping ? featureMapping.imageKeyReorderMap : {},
                 num_cameras: hasFeatureMapping ? featureMapping.numCameras : 0,
-                // With no formats on offer (the list failed to load, or is empty) there
-                // was nothing to choose from, so fall back to exporting every supported
+                // With no formats on offer, there was nothing to choose from,
+                // so fall back to exporting every supported
                 // format rather than sending [] and exporting none.
                 export_backends: exportSelection.backends.length > 0 ? exportSelection.selectedBackends : null,
                 lora_enabled: isLoraRequested,
@@ -439,6 +444,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 selectedGpuUnavailable={selectedGpuUnavailable}
                                 remoteUnavailable={remoteUnavailable}
                                 selectedPolicy={selectedPolicy}
+                                availablePolicies={availablePolicies}
+                                isLoadingPolicies={isLoadingPolicies}
                                 onSelectedPolicyChange={setSelectedPolicy}
                                 isPolicyDisabled={baseModel !== undefined}
                                 activeDevice={activeDevice}
@@ -446,7 +453,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                         )}
 
                         {activeStep === 'feature-mapping' && (
-                            <FeatureMappingStep policy={selectedPolicy} mapping={featureMapping} />
+                            <FeatureMappingStep policyName={selectedPolicyName} mapping={featureMapping} />
                         )}
 
                         {activeStep === 'training-parameters' && (
@@ -487,7 +494,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                             />
                         )}
 
-                        {activeStep === 'export' && <ExportStep policy={selectedPolicy} selection={exportSelection} />}
+                        {activeStep === 'export' && (
+                            <ExportStep policyName={selectedPolicyName} selection={exportSelection} />
+                        )}
                     </View>
                 </Flex>
             </Content>

@@ -245,6 +245,13 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         >>> trainer.fit(policy, datamodule)
     """
 
+    STUDIO_TRAINABLE = True
+    DISPLAY_NAME = "XR0"
+    TRAINING_DESCRIPTION = (
+        "Vision-Language-Action model with a Qwen3-VL backbone and flow-matching action expert (Apache 2.0 license)"
+    )
+    MIN_TRAINING_VRAM_GB = 60
+
     def __init__(  # noqa: PLR0913
         self,
         pretrained_name_or_path: str | Path | None = None,

@@ -145,6 +145,11 @@ class ACT(ExportablePolicyMixin, Policy):
             >>> policy.export("./exports", backend="onnx")
     """
 
+    STUDIO_TRAINABLE = True
+    DISPLAY_NAME = "ACT"
+    TRAINING_DESCRIPTION = "Action Chunking with Transformers, lightweight and fast to train (BSD 3-Clause license)"
+    MIN_TRAINING_VRAM_GB = 2
+
     def __init__(  # noqa: PLR0913
         self,
         pretrained_name_or_path: str | Path | None = None,

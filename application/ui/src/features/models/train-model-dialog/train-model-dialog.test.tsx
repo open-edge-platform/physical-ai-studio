@@ -81,6 +81,16 @@ const mockProjectWithRemoteTrainer = () => {
                 hotkeys: { bindings: {} },
             })
         ),
+        http.get('/api/policies/available', () =>
+            HttpResponse.json([
+                { id: 'act', name: 'ACT', description: 'ACT policy', min_vram: 2 * 1024 ** 3 },
+                { id: 'smolvla', name: 'SmolVLA', description: 'SmolVLA policy', min_vram: 3 * 1024 ** 3 },
+                { id: 'molmoact2', name: 'MolmoAct2', description: 'MolmoAct2 policy', min_vram: 80 * 1024 ** 3 },
+                { id: 'pi05', name: 'Pi0.5', description: 'Pi0.5 policy', min_vram: 40 * 1024 ** 3 },
+                { id: 'rldx1', name: 'RLDX-1', description: 'RLDX-1 policy', min_vram: 40 * 1024 ** 3 },
+                { id: 'xr0', name: 'XR0', description: 'XR0 policy', min_vram: 60 * 1024 ** 3 },
+            ])
+        ),
         http.get('/api/policies/backends', () =>
             HttpResponse.json({
                 act: ['torch', 'openvino', 'onnx', 'executorch'],
@@ -915,28 +925,37 @@ describe('TrainModelDialog', () => {
         expect(submitted).toMatchObject({ image_key_reorder_map: {}, num_cameras: 0 });
     });
 
-    it('exports every supported format when the format list cannot be loaded', async () => {
+    it('offers only policies available in the backend and blocks an unavailable default', async () => {
         const user = userEvent.setup();
-        let submitted: Record<string, unknown> | null = null;
-
         mockProjectWithRemoteTrainer();
         server.use(
-            http.get('/api/policies/backends', () => HttpResponse.json({ detail: [] }, { status: 500 })),
-            http.post('/api/jobs:train', async ({ request }) => {
-                submitted = (await request.json()) as Record<string, unknown>;
-                return HttpResponse.json({}, { status: 201 });
-            })
+            http.get('/api/policies/available', () =>
+                HttpResponse.json([
+                    { id: 'smolvla', name: 'SmolVLA', description: 'SmolVLA policy', min_vram: 3 * 1024 ** 3 },
+                ])
+            )
         );
 
         renderDialog();
         await user.click(await screen.findByRole('button', { name: /select…/i }));
         await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        await goToLastStep(user);
-        await user.click(screen.getByRole('button', { name: 'Train' }));
 
-        await waitFor(() => expect(submitted).not.toBeNull());
-        // `null` is "every format the policy supports"; `[]` would export none.
-        expect(submitted).toHaveProperty('export_backends', null);
+        expect(await screen.findByLabelText('Select SmolVLA policy')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Select ACT policy')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+        await user.click(screen.getByLabelText('Select SmolVLA policy'));
+        expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
+    });
+
+    it('blocks training when policy availability cannot be loaded', async () => {
+        mockProjectWithRemoteTrainer();
+        server.use(http.get('/api/policies/available', () => HttpResponse.json([], { status: 500 })));
+
+        renderDialog();
+        expect(
+            await screen.findByText('No training policies are available. Check the backend logs.')
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });
 
     it('walks through the wizard steps and back', async () => {
