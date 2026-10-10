@@ -30,11 +30,13 @@ from typing import Any, Callable
 
 import pytest
 import torch
+from transformers import BatchFeature
 
 from physicalai.data.constants import IMAGE_MASKS, TOKENIZED_PROMPT, TOKENIZED_PROMPT_MASK
 from physicalai.data.observation import ACTION, EXTRA, IMAGES
 from physicalai.policies.act.model import ACT
 from physicalai.policies.pi05.model import Pi05Model
+from physicalai.policies.rldx1.model import RLDXActionModel, Rldx1Model
 from physicalai.policies.smolvla.model import SmolVLAModel
 
 BATCH, CHUNK, ACTION_DIM = 2, 6, 4
@@ -138,11 +140,68 @@ def _smolvla_loss(action_is_pad: torch.Tensor) -> float:
     return float(loss)
 
 
+def _rldx1_action_mask(action_is_pad: torch.Tensor) -> torch.Tensor:
+    """Expand an episode-bound mask over the RLDX-1 action dimension."""
+    return (~action_is_pad).unsqueeze(-1).expand(BATCH, CHUNK, ACTION_DIM).to(torch.float32)
+
+
+def _rldx1_train_loss(action_is_pad: torch.Tensor) -> float:
+    """Compute RLDX-1's training loss with lightweight action-model stubs."""
+    actions = torch.zeros(BATCH, CHUNK, ACTION_DIM)
+    predicted_velocity = _per_step_error().sqrt()
+    backbone_output = BatchFeature(data={"backbone_features": torch.zeros(BATCH, 1, 1)})
+    action_input = BatchFeature(
+        data={
+            "state": torch.zeros(BATCH, 1, 1),
+            ACTION: actions,
+            "embodiment_id": torch.zeros(BATCH, dtype=torch.long),
+            "action_mask": _rldx1_action_mask(action_is_pad),
+        },
+    )
+    stub = SimpleNamespace(
+        process_backbone_output=lambda output: output,
+        state_encoder=lambda *_args: torch.zeros(BATCH, 1, 1),
+        state_dropout_prob=0.0,
+        training=True,
+        state_additive_noise_scale=0.0,
+        sample_time=lambda batch_size, **_kwargs: torch.zeros(batch_size),
+        action_horizon=CHUNK,
+        action_encoder=lambda *_args: torch.zeros(BATCH, CHUNK, 1),
+        add_pos_embed=False,
+        model=lambda **_kwargs: torch.zeros(BATCH, CHUNK + 1, 1),
+        action_decoder=lambda *_args: predicted_velocity,
+        physics=SimpleNamespace(
+            prepare_train=lambda *_args: (None, None, None),
+            compute_loss=lambda *_args: None,
+        ),
+    )
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(torch, "randn", lambda *_args, **_kwargs: torch.zeros_like(actions))
+        outputs = RLDXActionModel.forward(stub, backbone_output, action_input)
+    return float(outputs["loss"])
+
+
+def _rldx1_val_loss(action_is_pad: torch.Tensor) -> float:
+    """Compute RLDX-1's validation loss with a fixed prediction error."""
+    target = torch.zeros(BATCH, CHUNK, ACTION_DIM)
+    predicted = _per_step_error().sqrt()
+    batch = {
+        ACTION: target,
+        "action_mask": _rldx1_action_mask(action_is_pad),
+    }
+    stub = SimpleNamespace(get_action=lambda _batch: predicted)
+
+    loss, _ = Rldx1Model.compute_val_loss(stub, batch)
+    return float(loss)
+
+
 # Maps a policy name to a callable that computes its training loss for a
 # given ``action_is_pad`` mask, holding the underlying prediction error fixed.
 MASKING_POLICIES: dict[str, Callable[[torch.Tensor], float]] = {
     "act": _act_loss,
     "pi05": _pi05_loss,
+    "rldx1": _rldx1_train_loss,
     "smolvla": _smolvla_loss,
 }
 
@@ -193,3 +252,14 @@ def test_act_padding_does_not_dilute_loss(stage: str) -> None:
 
     assert _act_loss(no_pad, validation=validation) == pytest.approx(3.5)
     assert _act_loss(tail_pad, validation=validation) == pytest.approx(2.0)
+
+
+@pytest.mark.parametrize("stage", ["train", "val"])
+def test_rldx1_padding_does_not_dilute_loss(stage: str) -> None:
+    """RLDX-1 loss should average over valid action elements only."""
+    no_pad = _pad_mask(all_padded_from=None)
+    tail_pad = _pad_mask(all_padded_from=CHUNK // 2)
+    compute_loss = _rldx1_train_loss if stage == "train" else _rldx1_val_loss
+
+    assert compute_loss(no_pad) == pytest.approx(3.5)
+    assert compute_loss(tail_pad) == pytest.approx(2.0)

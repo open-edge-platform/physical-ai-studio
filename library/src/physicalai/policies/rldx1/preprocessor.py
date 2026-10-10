@@ -49,6 +49,7 @@ from torch import nn
 from transformers import AutoProcessor
 
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
+from physicalai.policies.utils import in_episode_bound
 from physicalai.policies.utils.normalization import FeatureNormalizeTransform
 
 from .augmentations import AspectAreaResizeAndCrop
@@ -351,6 +352,19 @@ class Rldx1Preprocessor(nn.Module):
             max_action_dim=self.max_action_dim,
             max_action_horizon=self.action_horizon,
         )
+
+        episode_mask = in_episode_bound(batch_dict)
+        if has_action and episode_mask is not None:
+            action_mask = sa_batch[ACTION_MASK]
+            episode_horizon = min(episode_mask.shape[-1], action_mask.shape[-2])
+            action_mask[:, :episode_horizon] *= (
+                episode_mask[:, :episode_horizon]
+                .to(
+                    device=action_mask.device,
+                    dtype=action_mask.dtype,
+                )
+                .unsqueeze(-1)
+            )
 
         dtype = torch.get_default_dtype()
         return {key: value.to(dtype) for key, value in sa_batch.items()}
