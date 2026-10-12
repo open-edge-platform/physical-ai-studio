@@ -75,6 +75,10 @@ const mockApi = (initialJobs: SchemaTrainJob[]) => {
         http.get('/api/dataset/{dataset_id}', () => HttpResponse.error()),
         http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.error()),
         http.get('/api/remote-trainers', () => HttpResponse.json([])),
+        http.get('/api/policies/available', () =>
+            HttpResponse.json([{ id: 'act', name: 'ACT', description: 'ACT policy', min_vram: null }])
+        ),
+        http.get('/api/policies/backends', () => HttpResponse.json({ act: ['torch'] })),
         http.get('/api/projects/{project_id}', () =>
             HttpResponse.json({
                 id: projectId,
