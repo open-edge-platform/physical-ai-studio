@@ -10,16 +10,17 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from loguru import logger
 
 from trainer.api import router as jobs_router
 from trainer.devices import get_training_devices
 from trainer.log_setup import setup_logging, setup_uvicorn_logging
 from trainer.queue_worker import QueueManager
-from trainer.schemas import DeviceInfo, HealthInfo, StorageInfo
+from trainer.schemas import _SUPPORTED_POLICIES, DeviceInfo, HealthInfo, StorageInfo
 from trainer.settings import get_settings
 from trainer.storage import get_storage_info
+from training.policy_catalog import PolicyCatalog, available_policy_classes, policy_catalog
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -56,6 +57,31 @@ app.include_router(jobs_router)
 async def health() -> HealthInfo:
     """Return liveness plus non-sensitive image compatibility metadata."""
     return HealthInfo()  # type: ignore[call-arg]
+
+
+@app.get("/policies", response_model=PolicyCatalog)
+async def policies() -> PolicyCatalog:
+    """Report policies and export formats installed in this trainer image."""
+    return policy_catalog(
+        {name: entry for name, entry in available_policy_classes().items() if name in _SUPPORTED_POLICIES}
+    )
+
+
+@app.post("/maintenance/drain")
+async def drain(request: Request) -> None:
+    """Reserve an idle managed trainer for image replacement, blocking new submissions."""
+    if os.environ.get("TRAINER_MANAGED") != "1":
+        raise HTTPException(status_code=404)
+    if not request.app.state.queue_manager.begin_drain():
+        raise HTTPException(status_code=409, detail="Trainer has active jobs")
+
+
+@app.post("/maintenance/resume")
+async def resume(request: Request) -> None:
+    """Release a drain if image replacement failed before stopping the trainer."""
+    if os.environ.get("TRAINER_MANAGED") != "1":
+        raise HTTPException(status_code=404)
+    request.app.state.queue_manager.draining = False
 
 
 @app.get("/devices", response_model=list[DeviceInfo])

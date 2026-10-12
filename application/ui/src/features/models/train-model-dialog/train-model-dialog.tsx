@@ -126,9 +126,18 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     const [currentStep, setCurrentStep] = useState<WizardStep>('setup');
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
-    const { data: availablePolicies = [], isLoading: isLoadingPolicies } = $api.useQuery(
+    const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
+    const remoteTrainerId =
+        targetId === null || targetId === LOCAL_TARGET_ID ? undefined : targetRawId(String(targetId));
+    const {
+        data: availablePolicies = [],
+        isLoading: isLoadingPolicies,
+        isError: policiesUnavailable,
+    } = $api.useQuery(
         'get',
-        '/api/policies/available'
+        '/api/policies/available',
+        { params: { query: { remote_trainer_id: remoteTrainerId } } },
+        { staleTime: remoteTrainerId ? 0 : undefined }
     );
     const { datasets, id: projectId } = useProject();
 
@@ -153,7 +162,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [snapflowEnabled, setSnapflowEnabled] = useState<boolean>(false);
     const [snapflowDistillEpochs, setSnapflowDistillEpochs] = useState<number>(DEFAULT_SNAPFLOW_DISTILL_EPOCHS);
     const [augmentImages, setAugmentImages] = useState<boolean>(false);
-    const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
     const [selectedGpuKey, setSelectedGpuKey] = useState<Key | null>(null);
     const selectedTarget = trainingTargetOptions.find((option) => option.id === targetId) ?? null;
     const isRemoteTarget = selectedTarget?.kind === 'trainer';
@@ -234,7 +242,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     // Which formats the trained model is exported to; the policy decides what is
     // on offer.
-    const exportSelection = useExportBackends(selectedPolicy);
+    const exportSelection = useExportBackends(selectedPolicy, remoteTrainerId);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train', {
         meta: {
@@ -256,6 +264,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const isSetupIncomplete =
         !selectedDataset ||
         !selectedPolicy ||
+        policiesUnavailable ||
+        isLoadingPolicies ||
         !availablePolicies.some((policy) => policy.id === selectedPolicy) ||
         targetId === null ||
         remoteUnavailable ||
@@ -316,6 +326,10 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         setIsSubmitting(true);
         setSubmitError(null);
         try {
+            if (policiesUnavailable || !availablePolicies.some((policy) => policy.id === selectedPolicy)) {
+                setSubmitError('This policy is not available on the selected training target.');
+                return;
+            }
             let submissionDevice = selectedRemoteDevice;
             if (isRemoteTarget) {
                 // Final guard: the remote trainer may have gone offline since the last
@@ -445,6 +459,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 remoteUnavailable={remoteUnavailable}
                                 selectedPolicy={selectedPolicy}
                                 availablePolicies={availablePolicies}
+                                policiesUnavailable={policiesUnavailable}
                                 isLoadingPolicies={isLoadingPolicies}
                                 onSelectedPolicyChange={setSelectedPolicy}
                                 isPolicyDisabled={baseModel !== undefined}

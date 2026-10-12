@@ -23,6 +23,7 @@ interface SetupStepProps {
     selectedPolicy: string;
     availablePolicies: SchemaAvailablePolicy[];
     isLoadingPolicies: boolean;
+    policiesUnavailable?: boolean;
     onSelectedPolicyChange: (policy: string) => void;
     isPolicyDisabled: boolean;
     activeDevice: SchemaDeviceInfo | null;
@@ -44,6 +45,7 @@ export const SetupStep = ({
     selectedPolicy,
     availablePolicies,
     isLoadingPolicies,
+    policiesUnavailable,
     onSelectedPolicyChange,
     isPolicyDisabled,
     activeDevice,
@@ -121,6 +123,7 @@ export const SetupStep = ({
             selectedPolicy={selectedPolicy}
             availablePolicies={availablePolicies}
             isLoadingPolicies={isLoadingPolicies}
+            policiesUnavailable={policiesUnavailable}
             onSelectionChange={onSelectedPolicyChange}
             isDisabled={isPolicyDisabled}
             trainingDevice={activeDevice}

@@ -10,6 +10,7 @@ interface PolicySelectionProps {
     selectedPolicy: string;
     availablePolicies: SchemaAvailablePolicy[];
     isLoadingPolicies: boolean;
+    policiesUnavailable?: boolean;
     onSelectionChange: (policy: string) => void;
     isDisabled?: boolean;
     trainingDevice: SchemaDeviceInfo | null;
@@ -19,6 +20,7 @@ export const PolicySelection = ({
     selectedPolicy,
     availablePolicies,
     isLoadingPolicies,
+    policiesUnavailable,
     onSelectionChange,
     isDisabled,
     trainingDevice,
@@ -77,7 +79,12 @@ export const PolicySelection = ({
                 })}
             </div>
 
-            {!isLoadingPolicies && availablePolicies.length === 0 && (
+            {policiesUnavailable && (
+                <InlineAlert variant='warning'>
+                    Cannot verify policies on this training target. Check its connection.
+                </InlineAlert>
+            )}
+            {!isLoadingPolicies && !policiesUnavailable && availablePolicies.length === 0 && (
                 <InlineAlert variant='warning'>No training policies are available. Check the backend logs.</InlineAlert>
             )}
             {!isLoadingPolicies && availablePolicies.length > 0 && !selectedModel && (

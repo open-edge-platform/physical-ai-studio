@@ -92,7 +92,16 @@ Settings > General > Managed SSH Training exposes four timeouts
 `{"ssh": {"trainer_shm_size_gb": 48}}`. These settings are stored in Studio's
 settings file; environment variables do not override them. Changing shared
 memory affects only newly created containers; stop an existing trainer and
-save its target to recreate it with the same data volume. SSH config and
+save its target to recreate it with the same data volume. To refresh a managed
+trainer to the latest signed `protocol-<N>` image without deleting its data,
+call `POST /api/remote-trainers/{id}/refresh-image`. This can take several
+minutes while the image is pulled. Studio refuses the refresh while its jobs are active. The trainer also blocks
+new submissions while checking for active uploads and jobs, so a refresh cannot
+interrupt a job submitted directly to it. If Studio exits mid-refresh before
+stopping the old container, its drain can be released with
+`POST /maintenance/resume` on the trainer's loopback URL. Older images without
+the drain endpoint cannot be refreshed while running: first confirm they have
+no active jobs and stop their container on the SSH host, then call refresh. SSH config and
 `known_hosts` paths, the image registry, and signature policy are
 environment-only settings.
 

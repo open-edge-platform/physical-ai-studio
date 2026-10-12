@@ -41,6 +41,7 @@ from schemas.remote_trainer import (
 from services import remote_trainer_tunnel_manager
 from services.ssh import host_installer, persistent_trainer
 from services.ssh.transport import SshTransport
+from training.policy_catalog import PolicyCatalog
 
 _HEALTH_CHECK_TIMEOUT_S = 5.0
 
@@ -84,6 +85,17 @@ class RemoteTrainerService:
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
         return remote_trainer
+
+    async def get_policy_catalog(self, remote_trainer_id: UUID) -> PolicyCatalog:
+        """Ask the registered trainer what its own Python environment can train."""
+        trainer = await self.get_remote_trainer(remote_trainer_id)
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=False, trust_env=False) as client:
+                response = await client.get(f"{str(trainer.url).rstrip('/')}/policies")
+                response.raise_for_status()
+                return PolicyCatalog.model_validate(response.json())
+        except (httpx.HTTPError, ValueError) as exc:
+            raise InvalidResourceError("remote trainer", "Cannot verify available policies") from exc
 
     async def check_remote_trainer(self, remote_trainer_id: UUID) -> RemoteTrainerHealth:
         """Check a configured trainer's liveness and available compute devices.
@@ -256,14 +268,17 @@ class RemoteTrainerService:
             yield
             return
         async with _setup_lock:
-            if remote_trainer_id in _background_installs or persistent_trainer.get_launch_failure(
-                remote_trainer_id
-            ) in {
-                "reboot_required",
-                "relogin_required",
-                "reboot_blocked_active_containers",
-                "nvidia_driver_unavailable",
-            }:
+            if (
+                remote_trainer_id in _background_installs
+                or remote_trainer_id in _background_launches
+                or persistent_trainer.get_launch_failure(remote_trainer_id)
+                in {
+                    "reboot_required",
+                    "relogin_required",
+                    "reboot_blocked_active_containers",
+                    "nvidia_driver_unavailable",
+                }
+            ):
                 raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
             yield
 
@@ -353,6 +368,18 @@ class RemoteTrainerService:
             async with SshTransport(target) as transport:
                 return await host_installer.install(transport, check_only=True)
         return outcome
+
+    async def refresh_trainer_image(self, remote_trainer_id: UUID) -> None:
+        """Explicitly replace an outdated managed image only while its trainer is idle."""
+        trainer = await self.get_remote_trainer(remote_trainer_id)
+        if trainer.connection_mode is not RemoteTrainerConnectionMode.SSH:
+            raise InvalidResourceError("remote trainer", "Only managed SSH trainers have replaceable images")
+        self._require_ssh_feature_if_tunneled(trainer.connection_mode)
+        async with _setup_lock:
+            if remote_trainer_id in _background_launches or remote_trainer_id in _background_installs:
+                raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
+            await self._require_no_active_jobs(remote_trainer_id)
+            await persistent_trainer.start(trainer, refresh=True)
 
     async def install_remote_trainer(self, remote_trainer_id: UUID) -> None:
         """Start a user-requested prerequisite installation; report progress via health."""

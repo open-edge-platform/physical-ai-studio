@@ -233,6 +233,45 @@ async def test_start_skips_launch_when_the_container_is_running() -> None:
     assert persistent_trainer.get_launch_phase(trainer.id) is None
 
 
+@pytest.mark.parametrize("active", [True, False])
+async def test_refresh_only_replaces_owned_idle_container(active: bool) -> None:
+    trainer = _ssh_trainer()
+    labels = {"managed": "true", "server": str(trainer.id), "instance": "this-instance", "digest": "old"}
+    response = MagicMock()
+    response.status_code = 409 if active else 200
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=response)))
+    client.__aexit__ = AsyncMock(return_value=False)
+    with (
+        patch(f"{MODULE}.SshTransport", return_value=_fake_transport_cm()),
+        patch(f"{MODULE}.get_backend_instance_id", return_value="this-instance"),
+        patch(f"{MODULE}.docker_ops") as ops,
+        patch("httpx.AsyncClient", return_value=client),
+    ):
+        ops.MANAGED_LABEL = "managed"
+        ops.SERVER_LABEL = "server"
+        ops.INSTANCE_LABEL = "instance"
+        ops.IMAGE_DIGEST_LABEL = "digest"
+        ops.inspect_container = AsyncMock(side_effect=[ContainerInspection(running=True, labels=labels), None])
+        ops.resolve_protocol_image = AsyncMock(return_value=_IMAGE)
+        ops.pull_image = AsyncMock()
+        ops.stop_and_remove_container = AsyncMock()
+        ops.management_labels = MagicMock(return_value={})
+        ops.data_volume_name = MagicMock(return_value="vol")
+        ops.create_data_volume = AsyncMock()
+        ops.build_run_argv = MagicMock(return_value=["docker", "run", "127.0.0.1::8001", "img"])
+        ops.remove_stale_containers_on_port = AsyncMock(return_value=[])
+        ops.launch_container = AsyncMock(return_value="container-id")
+        if active:
+            with pytest.raises(ValueError, match="active jobs"):
+                await persistent_trainer.start(trainer, refresh=True)
+            ops.stop_and_remove_container.assert_not_awaited()
+        else:
+            await persistent_trainer.start(trainer, refresh=True)
+            ops.stop_and_remove_container.assert_awaited_once()
+            ops.launch_container.assert_awaited_once()
+
+
 async def test_start_recreates_a_stopped_container() -> None:
     trainer = _ssh_trainer()
 

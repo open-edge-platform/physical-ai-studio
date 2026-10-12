@@ -122,7 +122,7 @@ def test_backends_skip_policy_with_deferred_missing_dependency(monkeypatch, tmp_
         return installed_version(name)
 
     with (
-        patch("api.policies.metadata.version", side_effect=version),
+        patch("training.policy_catalog.metadata.version", side_effect=version),
         patch("api.policies.logger") as logger,
         TestClient(app) as client,
     ):
@@ -133,7 +133,7 @@ def test_backends_skip_policy_with_deferred_missing_dependency(monkeypatch, tmp_
     assert "smolvla" not in response.json()
     assert "smolvla" not in {policy["id"] for policy in available.json()}
     assert "act" in response.json()
-    assert logger.warning.call_count == 2
+    assert sum(call.args[1] == "smolvla" for call in logger.warning.call_args_list) == 2
 
 
 def test_available_policies_include_display_and_vram_metadata(monkeypatch, tmp_path: Path) -> None:

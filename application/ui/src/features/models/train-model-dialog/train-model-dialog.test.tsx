@@ -947,13 +947,34 @@ describe('TrainModelDialog', () => {
         expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled();
     });
 
+    it('shows policies installed on the selected remote trainer even if absent locally', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/available', ({ request }) =>
+                HttpResponse.json(
+                    new URL(request.url).searchParams.get('remote_trainer_id') === remoteTrainerId
+                        ? [{ id: 'pi05', name: 'Pi0.5', description: 'remote', min_vram: null }]
+                        : [{ id: 'act', name: 'ACT', description: 'local', min_vram: null }]
+                )
+            )
+        );
+        renderDialog();
+        expect(await screen.findByLabelText('Select ACT policy')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Select Pi0.5 policy')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        expect(await screen.findByLabelText('Select Pi0.5 policy')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Select ACT policy')).not.toBeInTheDocument();
+    });
+
     it('blocks training when policy availability cannot be loaded', async () => {
         mockProjectWithRemoteTrainer();
         server.use(http.get('/api/policies/available', () => HttpResponse.json([], { status: 500 })));
 
         renderDialog();
         expect(
-            await screen.findByText('No training policies are available. Check the backend logs.')
+            await screen.findByText('Cannot verify policies on this training target. Check its connection.')
         ).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });

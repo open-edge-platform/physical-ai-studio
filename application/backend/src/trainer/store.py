@@ -123,6 +123,15 @@ class JobStore:
             row = self._conn.execute("SELECT artifact FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return row["artifact"] if row and row["artifact"] else None
 
+    def has_active_jobs(self) -> bool:
+        """Include uploads as well as queued and running jobs before image replacement."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM jobs WHERE status IN (?, ?, ?) LIMIT 1",
+                (TrainerJobStatus.AWAITING_DATASET, TrainerJobStatus.QUEUED, TrainerJobStatus.RUNNING),
+            ).fetchone()
+        return row is not None
+
     def queued(self) -> list[str]:
         """Return queued jobs in submission order so a busy GPU cannot block another."""
         with self._lock:
