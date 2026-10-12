@@ -63,7 +63,7 @@ tests = [
     "pytest-mock",
     "pytest-examples>=0.0.13",
     "mypy==2.3.1",
-    "diffusers>=0.38.0",
+    "diffusers>=0.40.0",
 ]
 loggers = ["wandb>=0.22", "tensorboard>=2.20"]
 libero = ["hf-libero>=0.1.3,<0.2.0"]
@@ -108,7 +108,7 @@ rldx1 = [
 # NVIDIA Cosmos 3 foundation policy
 cosmos3 = [
     "diffusers>=0.40.0",
-    "transformers>=5.15.1",
+    "transformers>=5.15.1,<5.16.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
     "Pillow>=10.0.0,<13.0.0",
@@ -176,7 +176,7 @@ dev = [
     "mypy==2.3.1",
     "pyrefly==1.3.0",
     "ruff==0.16.7",
-    "diffusers>=0.38.0",
+    "diffusers>=0.40.0",
     "peft>=0.13.0,<1.0.0",
 ]
 
