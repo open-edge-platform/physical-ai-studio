@@ -25,27 +25,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate tag version matches application version
+      - name: Validate tag version matches Studio app metadata
         if: startsWith(github.ref, 'refs/tags/app/v')
         env:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           TAG_VERSION="${TAG#app/v}"
-          APP_VERSION="$(tr -d '[:space:]' < application/VERSION)"
-          PYPROJECT_VERSION="$(grep '^version' application/backend/pyproject.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')"
+          APP_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
 
-          echo "Tag version:       ${TAG_VERSION}"
-          echo "application/VERSION: ${APP_VERSION}"
-          echo "pyproject.toml:   ${PYPROJECT_VERSION}"
+          echo "Tag version:    ${TAG_VERSION}"
+          echo "App version:    ${APP_VERSION} (from pyproject.toml)"
 
           if [[ "${TAG_VERSION}" != "${APP_VERSION}" ]]; then
-            echo "::error::Tag version '${TAG_VERSION}' does not match application/VERSION '${APP_VERSION}'"
-            exit 1
-          fi
-
-          if [[ "${TAG_VERSION}" != "${PYPROJECT_VERSION}" ]]; then
-            echo "::error::Tag version '${TAG_VERSION}' does not match application/backend/pyproject.toml '${PYPROJECT_VERSION}'"
+            echo "::error::Tag version '${TAG_VERSION}' does not match Studio app version '${APP_VERSION}'"
             exit 1
           fi
 

@@ -20,12 +20,13 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import DEFAULT_COSMOS3_REVISION, Cosmos3Config
 from .model import Cosmos3Model
-from .pipeline import PolicyPipelineWithState, require_xpu_driver
 from .preprocessor import Cosmos3Preprocessor
 from .surgery import HEAD_KEYS, load_finetuned, split_trainable_params
 
 if TYPE_CHECKING:
     from physicalai.data import DataModule
+
+    from .pipeline import PolicyPipelineWithState
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,8 @@ class Cosmos3(Policy):
         optimizer_weight_decay: float = 0.01,
         optimizer_grad_clip_norm: float = 1.0,
         dataset_stats: dict[str, Any] | None = None,
-        pipeline: PolicyPipelineWithState | None = None,
+        # PolicyPipelineWithState's annotation cannot be evaluated without optional diffusers.
+        pipeline: Any | None = None,  # noqa: ANN401
         rank: int | None = None,
         alpha_scale: float | None = None,
         dora: bool | None = None,
@@ -220,8 +222,11 @@ class Cosmos3(Policy):
         """
         del stage
 
-        if hasattr(self.device, "type") and self.device.type == "xpu" and require_xpu_driver is not None:
-            require_xpu_driver()
+        if hasattr(self.device, "type") and self.device.type == "xpu":
+            from .pipeline import require_xpu_driver  # noqa: PLC0415  # Cosmos3-only dependency
+
+            if require_xpu_driver is not None:
+                require_xpu_driver()
 
         datamodule: DataModule = self.trainer.datamodule  # type: ignore[assignment]
         train_dataset = datamodule.train_dataset

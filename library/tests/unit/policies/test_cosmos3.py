@@ -20,7 +20,7 @@ from diffusers.utils.outputs import BaseOutput
 from physicalai.config import Config
 from physicalai.data.observation import ACTION, IMAGES, STATE, TASK, Observation
 from physicalai.policies import Cosmos3, Cosmos3Config, Cosmos3Model, get_physicalai_policy_class, get_policy
-from physicalai.policies.cosmos3 import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
+from physicalai.policies.cosmos3.preprocessor import Cosmos3Preprocessor, compose_horizontal_views, compose_t_views
 from physicalai.policies.cosmos3.flow_matching import _unpack_transformer_output, flow_matching_step
 from physicalai.policies.cosmos3.pipeline import PolicyPipelineWithState
 
@@ -34,7 +34,7 @@ class TestCosmos3Config:
 
     def test_default_config(self) -> None:
         """Test default configuration values."""
-        from physicalai.policies.cosmos3 import DEFAULT_COSMOS3_REVISION
+        from physicalai.policies.cosmos3.config import DEFAULT_COSMOS3_REVISION
 
         config = Cosmos3Config(embodiment="pusht")
         assert config.pretrained_model_name_or_path == "nvidia/Cosmos3-Edge"
@@ -576,7 +576,7 @@ class TestMockedCosmos3Model:
         pipe = self._create_mock_pipeline()
         with (
             patch(
-                "physicalai.policies.cosmos3.model.PolicyPipelineWithState.from_pretrained",
+                "physicalai.policies.cosmos3.pipeline.PolicyPipelineWithState.from_pretrained",
                 return_value=pipe,
             ) as mock_from_pretrained,
             patch(
@@ -1256,13 +1256,16 @@ class TestJointPosRepresentation:
         # joint_pos actions are raw (no normalization), matching action_normalization=None.
         assert embodiment_normalization("droid_lerobot") == "none"
 
-    def test_droid_raw_action_dim_is_8(self) -> None:
-        """The DROID raw action dim is pinned to 8 (joint_pos), overriding the diffusers default."""
+    def test_droid_raw_action_dim_is_8(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Model construction pins DROID raw action width to 8, overriding diffusers' default."""
         from diffusers.pipelines.cosmos.pipeline_cosmos3_omni import _EMBODIMENT_TO_RAW_ACTION_DIM
 
-        import physicalai.policies.cosmos3.model  # noqa: F401  (import applies the override)
+        monkeypatch.setitem(_EMBODIMENT_TO_RAW_ACTION_DIM, "droid_lerobot", 10)
+        with patch("physicalai.policies.cosmos3.model._has_pretrained_action_head", return_value=True):
+            model = Cosmos3Model(Cosmos3Config(embodiment="droid_lerobot"), pipeline=_create_mock_cosmos3_pipeline())
 
         assert _EMBODIMENT_TO_RAW_ACTION_DIM["droid_lerobot"] == 8
+        assert model.raw_dim == 8
 
     def test_gripper_flip_last_channel(self) -> None:
         """DROID is gripper-flipped; the flip inverts only the final channel as 1 - g."""

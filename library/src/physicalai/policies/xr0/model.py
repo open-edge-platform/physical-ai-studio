@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import torch
 import torch.nn.functional as F  # noqa: N812
@@ -52,7 +52,7 @@ class XR0Model(Model):
         *,
         vlm: XR0Qwen3VL | None = None,
         vlm_model_id: str = "Qwen/Qwen3-VL-4B-Instruct",
-        vlm_attn_implementation: str = "flash_attention_2",
+        vlm_attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "sdpa",
         state_shape: tuple[int, int] = (1, 32),
         action_shape: tuple[int, int] = (30, 32),
         dit_num_layers: int = 16,

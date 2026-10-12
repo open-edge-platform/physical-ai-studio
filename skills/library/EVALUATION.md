@@ -19,7 +19,7 @@ Expected behavior:
 
 - Creates `library/src/physicalai/policies/mynet/{config.py,model.py,policy.py}` mirroring `policies/act/`.
 - Registers `Mynet`, `MynetConfig`, `MynetModel` in `policies/__init__.py` and the `get_policy(...)` dispatch.
-- Verifies `from physicalai.policies import Mynet, get_policy` and `get_policy("mynet")` work without CLI involvement.
+- Verifies `from physicalai.policies.mynet.policy import Mynet` and `from physicalai.policies import get_policy` and `get_policy("mynet")` work without CLI involvement.
 - Adds `library/configs/physicalai/mynet/pusht/default.yaml` wiring `model`, `data`, and `trainer`.
 - Adds at least one test under `library/tests/unit/policies/`.
 - Runs `uv run --no-sync pytest tests/unit/policies -k mynet` and `physicalai fit --config configs/physicalai/mynet/pusht/default.yaml --trainer.fast_dev_run=true`.

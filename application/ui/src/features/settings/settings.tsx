@@ -51,18 +51,6 @@ export const SettingsView = () => {
                 </Suspense>
             ),
         },
-        /*{
-            key: 'storage',
-            name: 'Storage',
-            href: paths.settings.storage.pattern,
-            content: <></>,
-        },
-        {
-            key: 'about',
-            name: 'About',
-            href: paths.settings.about.pattern,
-            content: <></>,
-        },*/
     ];
 
     return (

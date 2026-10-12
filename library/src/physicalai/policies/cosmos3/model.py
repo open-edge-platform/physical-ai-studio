@@ -11,13 +11,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch
-from diffusers import CosmosActionCondition
-from diffusers.pipelines.cosmos.pipeline_cosmos3_omni import (
-    _ACTION_VIEWPOINT_TEMPLATES,  # ruff: ignore[import-private-name]
-    _EMBODIMENT_TO_DOMAIN_ID,  # ruff: ignore[import-private-name]
-    _EMBODIMENT_TO_RAW_ACTION_DIM,  # ruff: ignore[import-private-name]
-)
-from diffusers.schedulers.scheduling_unipc_multistep import UniPCMultistepScheduler
 from huggingface_hub import file_exists
 from PIL import Image
 
@@ -26,7 +19,6 @@ from physicalai.policies.base import Model
 
 from .flow_matching import build_action_tokens, build_pack, flow_matching_step
 from .normalization import load_stats_file, resolve_affine
-from .pipeline import PolicyPipelineWithState
 from .preprocessor import Cosmos3Preprocessor
 from .representation import (
     embodiment_gripper_flipped,
@@ -38,24 +30,41 @@ from .surgery import configure_trainable, init_domain_action_head
 
 if TYPE_CHECKING:
     from .config import Cosmos3Config
+    from .pipeline import PolicyPipelineWithState
 
 logger = logging.getLogger(__name__)
 
-# Register ALOHA embodiment if not already present in diffusers
-_EMBODIMENT_TO_DOMAIN_ID.setdefault("aloha", 10)
-_EMBODIMENT_TO_RAW_ACTION_DIM.setdefault("aloha", 14)
 
-# The released DROID policy checkpoints (e.g. nvidia/cosmos3-edge-policy-droid, model card:
-# 8D DROID action) emit an 8D ``joint_pos`` action ``[joint(7), gripper(1)]``, not the 10D
-# ee_pose the stock diffusers table assumes. Pin DROID to 8 so the head output is sliced
-# and conditioned at its true width.
-_EMBODIMENT_TO_RAW_ACTION_DIM["droid_lerobot"] = 8
+def _cosmos3_metadata() -> tuple[dict[str, int], dict[str, int]]:
+    """Register Cosmos3-specific diffusers metadata when constructing a model.
 
-# Register top_down_2d_view in diffusers action viewpoint templates if not present
-_ACTION_VIEWPOINT_TEMPLATES.setdefault(
-    "top_down_2d_view",
-    "This video is captured from a top-down view of a flat 2D scene.",
-)
+    Returns:
+        The embodiment-to-domain and embodiment-to-action-width tables.
+
+    Raises:
+        ModuleNotFoundError: If the Cosmos3 optional diffusers dependency is missing.
+    """
+    try:
+        from diffusers.pipelines.cosmos.pipeline_cosmos3_omni import (  # noqa: PLC0415  # Cosmos3-only dependency
+            _ACTION_VIEWPOINT_TEMPLATES,  # ruff: ignore[import-private-name]
+            _EMBODIMENT_TO_DOMAIN_ID,  # ruff: ignore[import-private-name]
+            _EMBODIMENT_TO_RAW_ACTION_DIM,  # ruff: ignore[import-private-name]
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name != "diffusers":
+            raise
+        msg = "Cosmos3 requires diffusers; install 'physicalai-train[cosmos3]'."
+        raise ModuleNotFoundError(msg, name="diffusers") from exc
+
+    # ALOHA and the DROID checkpoint's true 8D joint_pos output.
+    _EMBODIMENT_TO_DOMAIN_ID.setdefault("aloha", 10)
+    _EMBODIMENT_TO_RAW_ACTION_DIM.setdefault("aloha", 14)
+    _EMBODIMENT_TO_RAW_ACTION_DIM["droid_lerobot"] = 8
+    _ACTION_VIEWPOINT_TEMPLATES.setdefault(
+        "top_down_2d_view",
+        "This video is captured from a top-down view of a flat 2D scene.",
+    )
+    return _EMBODIMENT_TO_DOMAIN_ID, _EMBODIMENT_TO_RAW_ACTION_DIM
 
 
 def _has_pretrained_action_head(
@@ -249,6 +258,8 @@ class Cosmos3Model(Model):
         super().__init__()
         self.config = config
 
+        embodiment_to_domain, embodiment_to_raw_action_dim = _cosmos3_metadata()
+
         dtype_map = {
             "bfloat16": torch.bfloat16,
             "float32": torch.float32,
@@ -257,20 +268,20 @@ class Cosmos3Model(Model):
         self.torch_dtype = dtype_map.get(config.dtype, torch.bfloat16)
 
         # Embodiment metadata
-        if config.embodiment not in _EMBODIMENT_TO_DOMAIN_ID:
-            msg = f"Unknown embodiment '{config.embodiment}'. Registered: {list(_EMBODIMENT_TO_DOMAIN_ID.keys())}"
+        if config.embodiment not in embodiment_to_domain:
+            msg = f"Unknown embodiment '{config.embodiment}'. Registered: {list(embodiment_to_domain.keys())}"
             raise ValueError(msg)
 
-        self.domain_id_val = _EMBODIMENT_TO_DOMAIN_ID[config.embodiment]
-        if config.embodiment not in _EMBODIMENT_TO_RAW_ACTION_DIM:
+        self.domain_id_val = embodiment_to_domain[config.embodiment]
+        if config.embodiment not in embodiment_to_raw_action_dim:
             # No silent fallback: an unregistered embodiment would slice actions to the wrong width.
             msg = (
                 f"Embodiment '{config.embodiment}' has no registered raw action width. "
-                f"Registered: {sorted(_EMBODIMENT_TO_RAW_ACTION_DIM)}. Add its canonical action "
+                f"Registered: {sorted(embodiment_to_raw_action_dim)}. Add its canonical action "
                 "width to _EMBODIMENT_TO_RAW_ACTION_DIM before using it."
             )
             raise ValueError(msg)
-        self.raw_dim = _EMBODIMENT_TO_RAW_ACTION_DIM[config.embodiment]
+        self.raw_dim = embodiment_to_raw_action_dim[config.embodiment]
 
         # Action space: resolved from the embodiment, overridable via config.action_space.
         # Only ``identity`` (pusht/aloha) and ``joint_pos`` (droid_lerobot) are supported; both
@@ -359,6 +370,8 @@ class Cosmos3Model(Model):
         if pipeline is not None:
             pipe = pipeline
         else:
+            from .pipeline import PolicyPipelineWithState  # noqa: PLC0415  # Cosmos3-only dependency
+
             if config.revision is None and not Path(config.pretrained_model_name_or_path).exists():
                 logger.warning(
                     "Downloading '%s' without a pinned 'revision'; resolving to HEAD is not reproducible "
@@ -379,6 +392,10 @@ class Cosmos3Model(Model):
             pipe.to(device)
 
         if hasattr(pipe, "scheduler") and pipe.scheduler is not None:
+            from diffusers.schedulers.scheduling_unipc_multistep import (  # noqa: PLC0415  # Cosmos3-only dependency
+                UniPCMultistepScheduler,
+            )
+
             pipe.scheduler = UniPCMultistepScheduler.from_config(
                 pipe.scheduler.config,
                 flow_shift=config.flow_shift,
@@ -736,6 +753,8 @@ class Cosmos3Model(Model):
         # State arrives as a single combined column (the datamodule owns composing split
         # dataset sub-columns into one state vector).
         state_field = state_tensor
+
+        from diffusers import CosmosActionCondition  # noqa: PLC0415  # Cosmos3-only inference dependency
 
         device = self.transformer.device
         batch_size = img_tensor.shape[0] if img_tensor.ndim in {4, 5} else 1

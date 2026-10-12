@@ -8,12 +8,32 @@ import signal
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, status
+from pydantic import BaseModel
 
 from api.dependencies import HealthServiceDep, get_system_service
+from build_info import get_build_info_async
 from schemas.hardware import InferenceDeviceInfo, TrainingDevices
 from services.system_service import SystemService
+from settings import get_settings
 
 system_router = APIRouter(prefix="/api/system", tags=["System"])
+
+
+class SystemInfo(BaseModel):
+    """Version and source provenance of the running Studio application."""
+
+    studio_version: str
+    git_sha: str | None = None
+    git_commit_date: str | None = None
+    git_tag: str | None = None
+    git_dirty: bool = False
+
+
+@system_router.get("/info")
+async def get_system_info() -> SystemInfo:
+    """Return Studio version and the source revision used to build it."""
+    build_info = await get_build_info_async()
+    return SystemInfo(studio_version=get_settings().version, **build_info.__dict__)
 
 
 def request_graceful_restart() -> None:

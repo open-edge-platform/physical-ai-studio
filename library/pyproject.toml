@@ -17,7 +17,7 @@ packages = ["src/physicalai"]
 # ============================================================================ #
 [project]
 name = "physicalai-train"
-version = "0.2.0"
+version = "0.3.0"
 requires-python = ">=3.12, <3.15"
 description = "A package for training vision-action models"
 readme = "README.md"
@@ -45,7 +45,7 @@ dependencies = [
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
-    "physicalai>=0.1.0",
+    "physicalai~=0.3.0",
 ]
 
 [project.optional-dependencies]
@@ -231,7 +231,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "ab00dc71f64470940f67daadc0acd03ab0f8fd33" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "f90b3767cfa99e243fc7b277b9faa242c87db213" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

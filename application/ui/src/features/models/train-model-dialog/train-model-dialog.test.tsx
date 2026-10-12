@@ -185,6 +185,27 @@ describe('TrainModelDialog', () => {
         expect(jobSubmitted).toBe(false);
     });
 
+    it('shows the computed training step count for the selected dataset', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/dataset/{dataset_id}/episodes', () =>
+                HttpResponse.json([
+                    { episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 },
+                    { episode_index: 1, tasks: ['Test task'], length: 100, fps: 30 },
+                ])
+            )
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(await screen.findByText('Estimated training steps: 60')).toBeInTheDocument();
+    });
+
     it('offers remote trainers when training a new model', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();

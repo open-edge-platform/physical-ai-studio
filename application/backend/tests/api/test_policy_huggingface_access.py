@@ -1,9 +1,25 @@
+import subprocess
+import sys
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from main import app
 from settings import write_user_settings
+
+
+def test_importing_policy_api_does_not_import_policy_classes() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import api.policies; assert 'physicalai.policies' not in sys.modules",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_huggingface_access_reports_missing_token(monkeypatch, tmp_path: Path) -> None:

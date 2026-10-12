@@ -60,7 +60,6 @@ export const paths = {
         trainingTargets: settings.path('/training-targets'),
         hotkeys: settings.path('/hotkeys'),
         storage: settings.path('/storage'),
-        about: settings.path('/about'),
     },
     openapi: root.path('/openapi'),
     plugins: {

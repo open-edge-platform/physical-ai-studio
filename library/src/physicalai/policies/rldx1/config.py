@@ -22,7 +22,6 @@ class Rldx1Config(Config):
     backbone_embedding_dim: int = 4096  # project_to_dim
     select_layer: int = 18
     reproject_vision: bool = False
-    use_flash_attention: bool = True
     load_bf16: bool = True  # Enable BF16 loading
     freeze_cog_tokens: bool = False  # Freeze cog_emb to prevent VLM backprop
 
