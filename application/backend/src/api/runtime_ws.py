@@ -19,7 +19,6 @@ from api.dependencies import (
     ProjectServiceDep,
     RobotClientFactoryDep,
     SettingsDep,
-    get_project_id,
     get_robot_service,
 )
 from exceptions import BaseException as AppBaseException
@@ -234,7 +233,7 @@ async def runtime_websocket_openapi(project_id: UUID) -> Response:  # noqa: ARG0
 
 @router.websocket("/ws")
 async def runtime_websocket(  # noqa: PLR0913, PLR0915, PLR0912
-    project_id: Annotated[UUID, Depends(get_project_id)],
+    project_id: UUID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     camera_service: ProjectCameraServiceDep,
     project_service: ProjectServiceDep,

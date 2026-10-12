@@ -1,6 +1,5 @@
 from functools import lru_cache
 from typing import Annotated, cast
-from uuid import UUID
 
 from fastapi import Depends
 from fastapi.requests import HTTPConnection
@@ -253,44 +252,6 @@ def get_log_service(settings: SettingsDep, job_service: JobServiceDep) -> LogSer
 
 
 LogServiceDep = Annotated[LogService, Depends(get_log_service)]
-
-
-def get_project_id(project_id: UUID) -> UUID:
-    """Validate a project ID.
-
-    Typed as UUID so FastAPI rejects malformed values with its standard 422 response.
-    """
-    return project_id
-
-
-def get_dataset_id(dataset_id: UUID) -> UUID:
-    """Validate a dataset ID."""
-    return dataset_id
-
-
-def get_model_id(model_id: UUID) -> UUID:
-    """Validate a model ID."""
-    return model_id
-
-
-def get_robot_id(robot_id: UUID) -> UUID:
-    """Validate a robot ID."""
-    return robot_id
-
-
-def get_camera_id(camera_id: UUID) -> UUID:
-    """Validate a camera ID."""
-    return camera_id
-
-
-def get_job_id(job_id: UUID) -> UUID:
-    """Validate a job ID."""
-    return job_id
-
-
-def get_environment_id(environment_id: UUID) -> UUID:
-    """Validate an environment ID."""
-    return environment_id
 
 
 def get_scheduler(request: HTTPConnection) -> Scheduler:
