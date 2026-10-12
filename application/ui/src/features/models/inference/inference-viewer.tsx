@@ -1,9 +1,11 @@
 import { useState } from 'react';
 
 import {
+    AlertDialog,
     Button,
     ButtonGroup,
     ComboBox,
+    DialogContainer,
     Flex,
     Heading,
     Item,
@@ -15,16 +17,12 @@ import {
 } from '@geti-ui/ui';
 import { Back, DownloadIcon, Pause, Play } from '@geti-ui/ui/icons';
 
-import { SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { paths } from '../../../router';
 import { useProjectId } from '../../projects/use-project';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../robots/robot-models-context';
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
 import { runtimeExportUrl } from '../runtime-export';
-
-const environmentHasLeader = (environment: SchemaEnvironmentWithRelations): boolean =>
-    environment.robots?.[0]?.tele_operator.type === 'robot';
 
 interface InferenceViewerProps {
     tasks: string[];
@@ -33,7 +31,10 @@ interface InferenceViewerProps {
 export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
     const { project_id } = useProjectId();
 
+    // The prompt is free text; the dataset's tasks are offered as suggestions. Custom values must
+    // stay allowed: otherwise the combo box discards typed text when it loses focus.
     const [task, setTask] = useState<string>(tasks[0] ?? '');
+    const [isEmptyPromptDialogOpen, setIsEmptyPromptDialogOpen] = useState(false);
 
     const {
         model,
@@ -47,7 +48,7 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
         inferenceDevice,
     } = useRuntimeSession();
 
-    const canTeleoperate = environmentHasLeader(environment);
+    const canTeleoperate = state.has_leader;
     const isTeleoperating = state.follower_source === 'teleop';
 
     const exportUrl =
@@ -87,21 +88,21 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                         <Back fill='white' />
                     </Link>
                     <Heading>Model Run {model?.name}</Heading>
-                    <ComboBox flex isRequired allowsCustomValue={false} inputValue={task} onInputChange={setTask}>
-                        {tasks.map((taskText, index) => (
-                            <Item key={index}>{taskText}</Item>
+                    <ComboBox flex aria-label='Task prompt' allowsCustomValue inputValue={task} onInputChange={setTask}>
+                        {tasks.map((taskText) => (
+                            <Item key={taskText}>{taskText}</Item>
                         ))}
                     </ComboBox>
-                    {canTeleoperate && (
-                        <Switch
-                            isEmphasized
-                            isSelected={isTeleoperating}
-                            isDisabled={setFollowerSource.isPending || startTask.isPending || stopTask.isPending}
-                            onChange={(enabled) => setFollowerSource.mutate(enabled ? 'teleop' : 'hold')}
-                        >
-                            Teleoperate
-                        </Switch>
-                    )}
+                    <Switch
+                        isEmphasized
+                        isSelected={isTeleoperating}
+                        isDisabled={
+                            !canTeleoperate || setFollowerSource.isPending || startTask.isPending || stopTask.isPending
+                        }
+                        onChange={(enabled) => setFollowerSource.mutate(enabled ? 'teleop' : 'hold')}
+                    >
+                        Teleoperate
+                    </Switch>
                     <ButtonGroup>
                         {exportUrl !== undefined && (
                             <Button
@@ -124,7 +125,9 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                             <Button
                                 variant='primary'
                                 isPending={startTask.isPending}
-                                onPress={() => startTask.mutate(task)}
+                                onPress={() =>
+                                    task.trim() === '' ? setIsEmptyPromptDialogOpen(true) : startTask.mutate(task)
+                                }
                             >
                                 <Play fill='white' />
                                 Play
@@ -134,6 +137,26 @@ export const InferenceViewer = ({ tasks }: InferenceViewerProps) => {
                 </Flex>
                 <RobotControlView environment={environment} isReady={state.connected} joints={observation} />
             </Flex>
+            <DialogContainer onDismiss={() => setIsEmptyPromptDialogOpen(false)}>
+                {isEmptyPromptDialogOpen && (
+                    <AlertDialog
+                        title='Start without a task prompt?'
+                        variant='warning'
+                        primaryActionLabel='Start anyway'
+                        secondaryActionLabel='Cancel'
+                        onPrimaryAction={() => {
+                            setIsEmptyPromptDialogOpen(false);
+                            startTask.mutate(task);
+                        }}
+                        onSecondaryAction={() => setIsEmptyPromptDialogOpen(false)}
+                    >
+                        <Text>
+                            The task prompt is empty. Policies that follow language instructions, such as Pi0.5, will
+                            run without an instruction.
+                        </Text>
+                    </AlertDialog>
+                )}
+            </DialogContainer>
         </RobotModelsProvider>
     );
 };

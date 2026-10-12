@@ -1,0 +1,4 @@
+.dialog {
+    border: 1px solid var(--spectrum-global-color-gray-500);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+}

@@ -14,7 +14,6 @@ from loguru import logger
 
 from core.logging.utils import job_logging_ctx
 from db import get_async_db_session_ctx
-from repositories.job_provisioning_repo import JobProvisioningRepository
 from schemas import Job, Model, Snapshot
 from schemas.base_job import JobStatus
 from schemas.job import TrainingTarget, TrainJobPayload, TrainJobPayloadAdapter
@@ -22,10 +21,8 @@ from schemas.model import DORA_PROPERTY, LORA_PROPERTY, SNAPFLOW_PROPERTY
 from services import DatasetService, ModelService
 from services.event_processor import EventType
 from services.job_service import JobService
-from services.remote_server_service import RemoteServerService
 from services.remote_trainer_service import RemoteTrainerService
 from services.snapshot_service import SnapshotService
-from services.ssh.recovery import recover_ssh_jobs
 from services.training_backends import (
     TrainingCanceledError,
     TrainingContext,
@@ -38,7 +35,7 @@ from settings import get_settings
 from workers.base import BaseProcessWorker
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from multiprocessing.managers import DictProxy
     from multiprocessing.synchronize import Event as EventClass
 
@@ -66,7 +63,7 @@ class TrainingWorker(BaseProcessWorker):
                 for job in pending_jobs:
                     payload = TrainJobPayloadAdapter.validate_python(job.payload)
                     target = self._target_key(payload)
-                    if target in self._active_training_tasks:
+                    if self._target_is_busy(target, self._active_training_tasks):
                         continue
                     task = asyncio.create_task(self._run_training_job(job, payload), name=f"training-{job.id}")
                     self._active_training_tasks[target] = task
@@ -89,6 +86,13 @@ class TrainingWorker(BaseProcessWorker):
             self._release_target(target, job_id, completed_task)
 
         return _on_done
+
+    @staticmethod
+    def _target_is_busy(target: str, active: Mapping[str, object]) -> bool:
+        return target in active or (
+            target.startswith("remote:")
+            and any(key.startswith(f"{target}:") or target.startswith(f"{key}:") for key in active)
+        )
 
     @staticmethod
     def _target_key(payload: TrainJobPayload) -> str:
@@ -155,14 +159,7 @@ class TrainingWorker(BaseProcessWorker):
     async def setup(self) -> None:
         await super().setup()
         with logger.contextualize(worker=self.__class__.__name__):
-            # SSH recovery must run before the generic orphan abort: it confirms
-            # or fails each SSH job's container explicitly, so the generic pass
-            # only ever needs to catch a job this one somehow failed to reach.
-            # Every job id it rendered a verdict for is excluded from the
-            # generic pass, which otherwise judges solely on `remote_job_id`
-            # and could re-fail a job SSH recovery just confirmed healthy.
-            handled_job_ids = await self._recover_ssh_jobs()
-            await self._abort_orphan_jobs(exclude_job_ids=handled_job_ids)
+            await self._abort_orphan_jobs()
 
     async def teardown(self) -> None:
         await super().teardown()
@@ -175,30 +172,6 @@ class TrainingWorker(BaseProcessWorker):
             await TrainingService.abort_orphan_jobs(
                 JobService(session, RemoteTrainerService(session)), exclude_job_ids=exclude_job_ids
             )
-
-    @staticmethod
-    async def _recover_ssh_jobs() -> frozenset[UUID]:
-        """Reattach or fail every SSH-provisioned job left non-terminal by a restart.
-
-        Returns:
-            Every job id SSH recovery rendered a verdict for, so the caller can
-            exclude them from the generic orphan abort that follows.
-        """
-        async with get_async_db_session_ctx() as session:
-            provisioning_repo = JobProvisioningRepository(session)
-            remote_server_service = RemoteServerService(session)
-            job_service = JobService(session, RemoteTrainerService(session), remote_server_service)
-            report = await recover_ssh_jobs(job_service, provisioning_repo, remote_server_service)
-        logger.info(
-            "SSH job recovery: {} confirmed, {} pending retry, {} failed, {} stale row(s) cleaned, "
-            "{} orphan container(s) removed",
-            report.confirmed,
-            report.transient,
-            report.failed,
-            report.stale_rows_cleaned,
-            report.orphans_removed,
-        )
-        return report.handled_job_ids
 
     @staticmethod
     async def _update_training_progress(
@@ -229,7 +202,7 @@ class TrainingWorker(BaseProcessWorker):
                 update={
                     "status": JobStatus.RUNNING,
                     "message": "Training started",
-                    "start_time": datetime.datetime.now(tz=datetime.UTC),
+                    "start_time": job.start_time or datetime.datetime.now(tz=datetime.UTC),
                 },
             )
         dispatcher = TrainingTrackingDispatcher(
@@ -259,7 +232,7 @@ class TrainingWorker(BaseProcessWorker):
                 should_cancel_job=lambda: bool(self.job_interrupt_flags.get(str(job.id), False)),
             )
 
-            backend = await get_training_backend(payload, job.id)
+            backend = await get_training_backend(payload)
             await backend.train(context)
             # The local backend stops cooperatively without raising; treat a
             # completed-but-interrupted run as a cancellation, not a success.

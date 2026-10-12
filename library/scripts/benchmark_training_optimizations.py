@@ -111,21 +111,21 @@ class BenchmarkResult:
 
     @property
     def steady_time_per_step_ms(self) -> float:
-        """Return the mean steady-state step time in milliseconds."""
+        """The mean steady-state step time in milliseconds."""
         if not self.steady_step_times:
             return 0.0
         return statistics.mean(self.steady_step_times) * 1000
 
     @property
     def steady_median_ms(self) -> float:
-        """Return the median steady-state step time in milliseconds."""
+        """The median steady-state step time in milliseconds."""
         if not self.steady_step_times:
             return 0.0
         return statistics.median(self.steady_step_times) * 1000
 
     @property
     def total_steps(self) -> int:
-        """Return the total number of steps (warmup + steady)."""
+        """The total number of steps (warmup + steady)."""
         return self.warmup_steps + self.steady_steps
 
     def to_dict(self) -> dict[str, Any]:
@@ -178,12 +178,12 @@ class TimingCallback(Callback):
 
     @property
     def warmup_times(self) -> list[float]:
-        """Return step times recorded during the warmup phase."""
+        """Step times recorded during the warmup phase."""
         return self.step_times[: self.warmup_steps]
 
     @property
     def steady_times(self) -> list[float]:
-        """Return step times recorded after the warmup phase."""
+        """Step times recorded after the warmup phase."""
         return self.step_times[self.warmup_steps :]
 
 

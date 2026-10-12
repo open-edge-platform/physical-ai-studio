@@ -4,6 +4,7 @@ import hashlib
 import json
 from typing import TYPE_CHECKING, Any, cast
 
+from loguru import logger
 from physicalai.capture import ColorMode, SharedCamera
 from physicalai.config import Config, to_config, validate_config
 from physicalai_studio_plugin import shared_robot_name
@@ -183,7 +184,12 @@ async def build_runtime_config(
     """
     port_finder: CatalogRobotFactory = _StoredPortFallback(robot_factory) if allow_stored_port else robot_factory
     follower_config = await _shared_robot_config(follower, robot_factory, port_finder)
-    leader_config = None if leader is None else await _shared_robot_config(leader, robot_factory, port_finder)
+    leader_config = None
+    if leader is not None:
+        try:
+            leader_config = await _shared_robot_config(leader, robot_factory, port_finder)
+        except ValueError as e:
+            logger.debug(f"Leader could not connect: {e}")
 
     camera_configs: dict[str, dict[str, Any]] = {}
     for camera in cameras:

@@ -156,6 +156,24 @@ def _alias_transport(
     )
 
 
+async def test_upload_file_uses_verified_connection_and_hides_remote_errors(settings: Settings, tmp_path: Path) -> None:
+    source = tmp_path / "installer.sh"
+    source.write_text("#!/bin/bash\n")
+    sftp = AsyncMock()
+    sftp.__aenter__.return_value = sftp
+    connection = MagicMock()
+    connection.start_sftp_client = AsyncMock(return_value=sftp)
+    transport = _connected_transport(settings, connection)
+
+    await transport.upload_file(source, "/tmp/installer.sh")
+    sftp.put.assert_awaited_once_with(source, "/tmp/installer.sh")
+
+    sftp.put.side_effect = OSError("secret remote path")
+    with pytest.raises(SshConnectionError) as error:
+        await transport.upload_file(source, "/tmp/installer.sh")
+    assert "secret remote path" not in str(error.value)
+
+
 async def test_http_connect_socket_negotiates_tunnel(monkeypatch) -> None:
     loop = MagicMock()
     loop.getaddrinfo = AsyncMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 912))])
@@ -438,7 +456,7 @@ async def test_nonzero_exit_status_is_not_ok(settings: Settings) -> None:
 
 
 async def test_process_error_becomes_a_result_not_an_exception(settings: Settings) -> None:
-    # One failing probe must never abort a whole preflight tier.
+    # A failed remote command returns a result for the caller to handle.
     connection = MagicMock()
     connection.run = AsyncMock(side_effect=_process_error(exit_status=2, stderr="denied"))
     transport = _connected_transport(settings, connection)

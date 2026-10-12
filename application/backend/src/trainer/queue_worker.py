@@ -3,22 +3,43 @@
 
 """Background queue worker that dispatches training jobs.
 
-A single asyncio loop polls the store for queued jobs and runs up to
-``max_concurrent_jobs`` at a time, each in a worker thread (training is
-blocking). Cancellation is cooperative via an in-memory request set checked by
-the runner's ``should_stop`` callback.
+A single asyncio loop polls the store for queued jobs and reserves each GPU for
+one job. Parallel training runs in separate processes so process-global state
+(including HF_TOKEN) cannot leak between jobs.
 """
 
 from __future__ import annotations
 
 import asyncio
+import multiprocessing as mp
+from pathlib import Path
+from queue import Empty
+from typing import Any
 
 from loguru import logger
 
+from trainer.devices import get_training_devices, gpu_busy
 from trainer.runner import JobCanceledError, TrainerRunner
-from trainer.schemas import TrainerJobStatus
+from trainer.schemas import SubmitJobRequest, TrainerJobStatus
 from trainer.settings import get_settings
 from trainer.store import JobStore
+
+
+def _train_in_process(job_id: str, request: SubmitJobRequest, updates: Any, stop: Any) -> None:
+    """Run one job in an isolated process; communicate progress over a queue."""
+    try:
+        archive = TrainerRunner().run(
+            job_id,
+            request,
+            should_stop=stop.is_set,
+            report=lambda progress, message, info: updates.put(("progress", progress, message, info)),
+        )
+        updates.put(("completed", str(archive)))
+    except JobCanceledError:
+        updates.put(("canceled",))
+    except Exception as exc:
+        logger.exception("Training job failed: {}", exc)
+        updates.put(("failed", str(exc)))
 
 
 class QueueManager:
@@ -29,9 +50,10 @@ class QueueManager:
         settings = get_settings()
         self.store = JobStore(settings.db_path)
         self._runner = TrainerRunner()
-        self._semaphore = asyncio.Semaphore(settings.max_concurrent_jobs)
+        self._max_concurrent_jobs = settings.max_concurrent_jobs
         self._cancel_requested: set[str] = set()
         self._active: dict[str, asyncio.Task] = {}
+        self._active_devices: dict[str, tuple[str, int] | None] = {}
         self._stopped = asyncio.Event()
         self._loop_task: asyncio.Task | None = None
 
@@ -63,21 +85,58 @@ class QueueManager:
             self.store.update(job_id, status=TrainerJobStatus.CANCELED, message="Canceled before start")
             self.store.discard_secret(job_id)
 
+    def _next_runnable(self) -> tuple[str, tuple[str, int] | None] | None:
+        # Scan the small queue; index by device if queued job counts grow.
+        next_job = None
+        for job_id in self.store.queued():
+            request = self.store.get_request(job_id)
+            # Legacy auto-selection may use any GPU: reserve the entire trainer.
+            device = (
+                (request.spec.device_type, request.spec.device_index or 0)
+                if request and request.spec.device_type in {"cuda", "xpu"}
+                else None
+            )
+            reserved = (device is None and bool(self._active)) or any(
+                active_device is None or active_device == device for active_device in self._active_devices.values()
+            )
+            # Unknown telemetry is not treated as busy; older setups still work.
+            busy = reserved or (
+                gpu_busy(*device) if device is not None else any(gpu.busy for gpu in get_training_devices())
+            )
+            message = (
+                f"Waiting for {device[0].upper()} {device[1]} to become available"
+                if busy and device is not None
+                else "Waiting for a training slot to become available"
+                if busy and reserved
+                else "Waiting for a GPU to become available"
+                if busy
+                else "Queued"
+            )
+            state = self.store.get(job_id)
+            if state is not None and state.status == TrainerJobStatus.QUEUED and state.message != message:
+                self.store.update(job_id, message=message)
+            if not busy and next_job is None:
+                next_job = job_id, device
+        return next_job
+
     async def _dispatch_loop(self) -> None:
         while not self._stopped.is_set():
-            job_id = self.store.next_queued()
-            if job_id is None:
-                await asyncio.sleep(1.0)
-                continue
-            await self._semaphore.acquire()
-            # Re-check: it may have been canceled while queued.
-            state = self.store.get(job_id)
-            if state is None or state.status != TrainerJobStatus.QUEUED:
-                self._semaphore.release()
-                continue
-            self.store.update(job_id, status=TrainerJobStatus.RUNNING, progress=0, message="Starting")
-            task = asyncio.create_task(self._run_job(job_id))
-            self._active[job_id] = task
+            while len(self._active) < self._max_concurrent_jobs:
+                next_job = self._next_runnable()
+                if next_job is None:
+                    break
+                job_id, device = next_job
+                state = self.store.get(job_id)
+                if state is None or state.status != TrainerJobStatus.QUEUED:
+                    continue
+                self.store.update(job_id, status=TrainerJobStatus.RUNNING, progress=0, message="Starting")
+                task = asyncio.create_task(self._run_job(job_id))
+                self._active[job_id] = task
+                self._active_devices[job_id] = device
+            # Keep queued-job reasons current even when all training slots are occupied.
+            if len(self._active) >= self._max_concurrent_jobs:
+                self._next_runnable()
+            await asyncio.sleep(0.5)
 
     async def _run_job(self, job_id: str) -> None:
         try:
@@ -97,13 +156,12 @@ class QueueManager:
             def _should_stop() -> bool:
                 return job_id in self._cancel_requested or self._stopped.is_set()
 
-            archive_path = await asyncio.to_thread(
-                self._runner.run,
-                job_id,
-                request,
-                should_stop=_should_stop,
-                report=_report,
-            )
+            if self._max_concurrent_jobs == 1:
+                archive_path = await asyncio.to_thread(
+                    self._runner.run, job_id, request, should_stop=_should_stop, report=_report
+                )
+            else:
+                archive_path = await self._run_isolated(job_id, request, _report, _should_stop)
             if job_id in self._cancel_requested:
                 self.store.update(job_id, status=TrainerJobStatus.CANCELED, message="Canceled")
             else:
@@ -124,8 +182,38 @@ class QueueManager:
         finally:
             self._cancel_requested.discard(job_id)
             self._active.pop(job_id, None)
-            self._semaphore.release()
+            self._active_devices.pop(job_id, None)
             self._cleanup_if_not_completed(job_id)
+
+    async def _run_isolated(self, job_id: str, request: SubmitJobRequest, report: Any, should_stop: Any) -> Path:
+        context = mp.get_context("spawn")
+        updates = context.Queue()
+        stop = context.Event()
+        process = context.Process(target=_train_in_process, args=(job_id, request, updates, stop))
+        process.start()
+        try:
+            while True:
+                if should_stop():
+                    stop.set()
+                try:
+                    message = await asyncio.to_thread(updates.get, True, 0.2)
+                except Empty:
+                    if not process.is_alive():
+                        raise RuntimeError(f"Trainer process exited unexpectedly ({process.exitcode})")
+                    continue
+                if message[0] == "progress":
+                    report(message[1], message[2], message[3])
+                elif message[0] == "completed":
+                    return Path(message[1])
+                elif message[0] == "canceled":
+                    raise JobCanceledError("Training canceled")
+                else:
+                    raise RuntimeError(message[1])
+        finally:
+            stop.set()
+            await asyncio.to_thread(process.join)
+            updates.close()
+            updates.join_thread()
 
     def _cleanup_if_not_completed(self, job_id: str) -> None:
         """Remove any leftover model/cache output for a job that didn't complete.

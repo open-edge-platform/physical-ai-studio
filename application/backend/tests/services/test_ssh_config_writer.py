@@ -4,11 +4,13 @@
 """Tests for the append-only SSH config writer."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import asyncssh
 import pytest
+from pydantic import ValidationError
 
+import services.ssh_config_writer as ssh_config_writer_module
 from exceptions import ResourceAlreadyExistsError, SshAuthenticationError, SshConnectionError
 from schemas.remote_server import SshHostAliasCreate
 from services.ssh.transport import reset_alias_gates
@@ -43,6 +45,15 @@ def test_add_host_alias_writes_entry_to_missing_config(tmp_path: Path) -> None:
     assert resolved.hostname == "10.0.0.9"
     assert resolved.port == 2222
     assert resolved.user == "trainer"
+
+
+@pytest.mark.parametrize("field", ["hostname", "user", "identity_file"])
+@pytest.mark.parametrize(
+    "injection", ["\n    ProxyCommand false", "\rProxyCommand false", "\x00", "\u2028ProxyCommand false"]
+)
+def test_alias_values_reject_ssh_config_directives(field: str, injection: str) -> None:
+    with pytest.raises(ValidationError):
+        SshHostAliasCreate.model_validate({"alias": "gpu", "hostname": "gpu.example", field: f"valid{injection}value"})
 
 
 def test_add_host_alias_appends_after_existing_content(tmp_path: Path) -> None:
@@ -100,6 +111,25 @@ def test_add_host_alias_omits_identities_only_without_identity_file(tmp_path: Pa
     add_host_alias(config_path, SshHostAliasCreate(alias="new-box", hostname="10.0.0.9"))
 
     assert "IdentitiesOnly" not in config_path.read_text()
+
+
+async def test_add_verified_host_alias_passes_accepted_fingerprint_to_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "config"
+    monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=MagicMock()))
+
+    with patch.object(
+        ssh_config_writer_module, "open_transport", wraps=ssh_config_writer_module.open_transport
+    ) as open_transport:
+        await add_verified_host_alias(
+            config_path,
+            SshHostAliasCreate(alias="new-box", hostname="10.0.0.9"),
+            _settings(config_path),
+            accepted_host_key_fingerprint="SHA256:expected",
+        )
+
+    open_transport.assert_called_once_with("new-box", ANY, accepted_host_key_fingerprint="SHA256:expected")
 
 
 async def test_add_verified_host_alias_keeps_entry_on_successful_connect(

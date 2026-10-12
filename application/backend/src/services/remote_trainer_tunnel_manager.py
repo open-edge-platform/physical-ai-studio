@@ -1,25 +1,12 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Standing SSH port-forward tunnels for direct-URL remote trainers.
+"""Standing SSH port-forward tunnels for managed remote trainers.
 
-A direct trainer's URL is dialed directly by every caller (health checks,
-`RemoteTrainingBackend`) - nothing in this codepath rewrites it. When a
-trainer is configured with an ``ssh_host_alias``, this module keeps one
-`SshTunnel` open per trainer for as long as Studio runs, forwarding
-`ssh_local_port` on the studio host to `ssh_remote_port` on the SSH host's own
-loopback interface. The trainer's `url` is expected to already point at that
-local port (e.g. ``http://127.0.0.1:<ssh_local_port>``), so every other
-codepath keeps working unmodified once the tunnel is up.
-
-Gated the same way as every other SSH capability: `sync_tunnel` is a no-op
-whenever `get_ssh_feature_availability().active` is False, so a trainer saved
-with tunnel config while the feature was on never dials SSH once it's off
-(e.g. after a restart with a changed bind host).
-
-Module-level rather than a class: tunnels are a process-wide resource (one
-per studio process, not one per caller), so there is nothing a second
-instance would ever mean.
+Each SSH trainer has a local loopback URL forwarded to its container's
+loopback port on the SSH host. Health checks and training use that URL.
+Tunnels are process-wide resources and are opened only while the SSH feature
+is active.
 """
 
 from __future__ import annotations
@@ -45,7 +32,12 @@ _tunnels: dict[UUID, SshTunnel] = {}
 _lock = asyncio.Lock()
 
 
-async def sync_tunnel(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
+async def sync_tunnel(
+    remote_trainer: RemoteTrainer,
+    accepted_host_key_fingerprint: str | None = None,
+    *,
+    retry_on_failure: bool = False,
+) -> None:
     """Open, replace, or close this trainer's tunnel to match its current config.
 
     Connection failures propagate to create and update requests so they cannot
@@ -61,7 +53,7 @@ async def sync_tunnel(remote_trainer: RemoteTrainer, accepted_host_key_fingerpri
                 remote_trainer.name,
             )
             return
-        await _open_locked(remote_trainer, accepted_host_key_fingerprint)
+        await _open_locked(remote_trainer, accepted_host_key_fingerprint, retry_on_failure=retry_on_failure)
 
 
 async def stop_tunnel(remote_trainer_id: UUID) -> None:
@@ -80,7 +72,7 @@ async def start_all(remote_trainers: list[RemoteTrainer]) -> None:
     for remote_trainer in remote_trainers:
         if remote_trainer.ssh_host_alias is not None or remote_trainer.ssh_connection is not None:
             try:
-                await sync_tunnel(remote_trainer)
+                await sync_tunnel(remote_trainer, retry_on_failure=True)
             except Exception as error:
                 if remote_trainer.ssh_host_alias is not None:
                     connection_name = remote_trainer.ssh_host_alias
@@ -103,7 +95,12 @@ async def stop_all() -> None:
             await _close_locked(remote_trainer_id)
 
 
-async def _open_locked(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
+async def _open_locked(
+    remote_trainer: RemoteTrainer,
+    accepted_host_key_fingerprint: str | None = None,
+    *,
+    retry_on_failure: bool = False,
+) -> None:
     settings = get_settings()
     alias = remote_trainer.ssh_host_alias
     connection = remote_trainer.ssh_connection
@@ -141,10 +138,14 @@ async def _open_locked(remote_trainer: RemoteTrainer, accepted_host_key_fingerpr
         settings,
         local_port=local_port,
     )
-    await tunnel.open()
+    if retry_on_failure:
+        await tunnel.open(retry_on_failure=True)
+    else:
+        await tunnel.open()
     _tunnels[remote_trainer.id] = tunnel
     logger.info(
-        "SSH tunnel open for trainer '{}': 127.0.0.1:{} -> {} (127.0.0.1:{})",
+        "SSH tunnel {} for trainer '{}': 127.0.0.1:{} -> {} (127.0.0.1:{})",
+        "registered" if retry_on_failure else "open",
         remote_trainer.name,
         tunnel.local_port,
         connection_name,

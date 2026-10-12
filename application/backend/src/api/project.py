@@ -1,10 +1,11 @@
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
+from lerobot.datasets.io_utils import load_tasks
 
 from api.dependencies import get_model_service, get_project_id, get_project_service, get_project_thumbnail_service
-from internal_datasets.utils import get_internal_read_dataset
 from schemas import Model, Project
 from services import ModelService, ProjectService, ProjectThumbnailService
 
@@ -65,7 +66,8 @@ async def get_tasks_for_dataset(
     res = {}
 
     for dataset in project.datasets:
-        res[dataset.name] = get_internal_read_dataset(dataset).get_tasks()
+        path = Path(dataset.path)
+        res[dataset.name] = list(load_tasks(path).index) if (path / "meta/info.json").is_file() else []
 
     return res
 

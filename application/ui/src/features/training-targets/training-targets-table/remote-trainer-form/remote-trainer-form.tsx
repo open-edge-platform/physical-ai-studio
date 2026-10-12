@@ -1,10 +1,13 @@
-import { FormEvent, ReactNode, useState } from 'react';
+import { FormEvent, useState } from 'react';
 
 import {
+    ActionButton,
     Button,
     ButtonGroup,
+    Checkbox,
     Content,
     Dialog,
+    DialogTrigger,
     Divider,
     Flex,
     Form,
@@ -18,11 +21,12 @@ import {
     Text,
     TextField,
 } from '@geti-ui/ui';
-import { ExternalLinkIcon } from '@geti-ui/ui/icons';
+import { Add, ExternalLinkIcon } from '@geti-ui/ui/icons';
 
 import { getApiErrorMessage, getSshHostKeyFingerprint } from '../../../../api/errors';
 import { SchemaRemoteTrainer } from '../../../../api/openapi-spec';
 import { ReactComponent as AwsIcon } from '../../../../assets/icons/aws-icon.svg';
+import { AddSshHostDialog } from '../add-ssh-host-dialog';
 import { SshHostKeyConfirmation } from '../ssh-host-key-confirmation-dialog';
 import { INSECURE_TRAINER_URL_WARNING, isInsecureTrainerUrl } from './insecure-trainer-url';
 import { InfoHelp } from './ssh-tunnel-section';
@@ -31,6 +35,9 @@ import { useSshHostAliases } from './use-ssh-host-aliases';
 
 import classes from './remote-trainer-form.module.css';
 
+const SSH_HOST_SETUP_URL =
+    'https://github.com/open-edge-platform/physical-ai-studio/blob/main/' +
+    'application/docs/07-remote-training.md#prepare-an-ssh-host';
 const AWS_STACK_TEMPLATE_URL = encodeURIComponent(
     'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/aws-cf-templates/remote-trainer.yaml'
 );
@@ -42,15 +49,7 @@ type RemoteTrainerFormProps = {
     remoteTrainer?: SchemaRemoteTrainer;
     close: () => void;
     requestHostKeyConfirmation: (confirmation: SshHostKeyConfirmation) => void;
-    // Rendered above the connection-method tabs, between the Name field and
-    // the rest of the form. Used by `TrainingTargetForm` to inject its
-    // "SSH provisioned / Direct trainer URL" type switch so a single dialog
-    // covers both target kinds without duplicating this form's fields.
-    typeSwitch?: ReactNode;
-    // Seeds the Name field. Used by `TrainingTargetForm` to carry over a name
-    // already typed before switching the type switch to "Direct trainer URL",
-    // since that switch mounts this form fresh.
-    initialName?: string;
+    sshAvailable?: boolean;
 };
 
 type SshHostSource = 'manual' | 'pick';
@@ -59,14 +58,15 @@ export const RemoteTrainerForm = ({
     remoteTrainer,
     close,
     requestHostKeyConfirmation,
-    typeSwitch,
-    initialName,
+    sshAvailable = true,
 }: RemoteTrainerFormProps) => {
-    const [name, setName] = useState(remoteTrainer?.name ?? initialName ?? '');
+    const [name, setName] = useState(remoteTrainer?.name ?? '');
     const [url, setUrl] = useState(remoteTrainer?.url ?? '');
-    const [connectionMode, setConnectionMode] = useState(remoteTrainer?.connection_mode ?? 'direct');
+    const [connectionMode, setConnectionMode] = useState(
+        remoteTrainer?.connection_mode ?? (sshAvailable ? 'ssh' : 'direct')
+    );
     const [sshHostSource, setSshHostSource] = useState<SshHostSource>(
-        remoteTrainer?.ssh_host_alias ? 'pick' : 'manual'
+        remoteTrainer?.ssh_connection ? 'manual' : 'pick'
     );
     const [sshHostAlias, setSshHostAlias] = useState(remoteTrainer?.ssh_host_alias ?? '');
     const [sshHostname, setSshHostname] = useState(remoteTrainer?.ssh_connection?.hostname ?? '');
@@ -77,8 +77,9 @@ export const RemoteTrainerForm = ({
     const [sshIdentityFile, setSshIdentityFile] = useState(remoteTrainer?.ssh_connection?.identity_file ?? '');
     const [sshRemotePort, setSshRemotePort] = useState<number | undefined>(remoteTrainer?.ssh_remote_port ?? 8001);
     const [sshLocalPort, setSshLocalPort] = useState<number | undefined>(remoteTrainer?.ssh_local_port ?? 8001);
+    const [installPrerequisites, setInstallPrerequisites] = useState(false);
     const isEditing = remoteTrainer !== undefined;
-    const { aliases } = useSshHostAliases();
+    const { aliases } = useSshHostAliases(sshAvailable);
     const { save, reset, isPending, error } = useRemoteTrainerFormMutation(remoteTrainer);
 
     const isSsh = connectionMode === 'ssh';
@@ -128,20 +129,25 @@ export const RemoteTrainerForm = ({
     const submit = (acceptedHostKeyFingerprint?: string) => {
         save(values, {
             onSuccess: close,
+            installPrerequisites: !isEditing && isSsh && installPrerequisites,
             acceptedHostKeyFingerprint,
             onHostKeyConfirmationRequired: requestConfirmation,
         });
     };
 
-    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        submit();
-    };
-
     const hasValidSshHost = isManual ? sshHostname.trim() !== '' : sshHostAlias.trim() !== '';
     const canSubmit =
         name.trim() !== '' &&
-        (isSsh ? hasValidSshHost && Boolean(sshRemotePort) && Boolean(sshLocalPort) : url.trim() !== '');
+        (isSsh
+            ? sshAvailable && hasValidSshHost && Boolean(sshRemotePort) && Boolean(sshLocalPort)
+            : url.trim() !== '');
+
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (canSubmit) {
+            submit();
+        }
+    };
 
     const isInsecureUrl = isInsecureTrainerUrl(url);
 
@@ -161,14 +167,14 @@ export const RemoteTrainerForm = ({
                             onChange={setName}
                             width='100%'
                         />
-                        {typeSwitch}
                         <Tabs
                             selectedKey={connectionMode}
+                            disabledKeys={!sshAvailable ? ['ssh'] : []}
                             onSelectionChange={(key) => setConnectionMode(key as 'direct' | 'ssh')}
                         >
                             <TabList aria-label='Connection method'>
-                                <Item key='direct'>Trainer URL</Item>
                                 <Item key='ssh'>SSH tunnel</Item>
+                                <Item key='direct'>Trainer URL</Item>
                             </TabList>
                         </Tabs>
                         <div className={classes.modeFields}>
@@ -196,7 +202,8 @@ export const RemoteTrainerForm = ({
                             {!isSsh && isInsecureUrl && (
                                 <Text UNSAFE_className={classes.errorMessage}>{INSECURE_TRAINER_URL_WARNING}</Text>
                             )}
-                            {isSsh && (
+                            {isSsh && !sshAvailable && <Text>SSH is unavailable in this environment.</Text>}
+                            {isSsh && sshAvailable && (
                                 <Flex direction='column' gap='size-100'>
                                     <div className={classes.fieldRow}>
                                         <NumberField
@@ -235,8 +242,8 @@ export const RemoteTrainerForm = ({
                                         onSelectionChange={(key) => setSshHostSource(key as SshHostSource)}
                                     >
                                         <TabList aria-label='SSH connection'>
-                                            <Item key='manual'>Connection details</Item>
                                             <Item key='pick'>Config alias</Item>
+                                            <Item key='manual'>Connection details</Item>
                                         </TabList>
                                     </Tabs>
                                     {sshHostSource === 'manual' ? (
@@ -284,27 +291,64 @@ export const RemoteTrainerForm = ({
                                             </div>
                                         </>
                                     ) : (
-                                        <Picker
-                                            isRequired
-                                            label='SSH host alias'
-                                            placeholder='Select...'
-                                            selectedKey={sshHostAlias || null}
-                                            onSelectionChange={(key) => setSshHostAlias(key ? String(key) : '')}
-                                            contextualHelp={
-                                                <InfoHelp title='SSH host alias'>
-                                                    Pick a Host entry from your ~/.ssh/config.
-                                                </InfoHelp>
-                                            }
-                                            width='100%'
-                                        >
-                                            {aliases.map((option) => (
-                                                <Item key={option.alias} textValue={option.alias}>
-                                                    {option.hostname && option.hostname !== option.alias
-                                                        ? `${option.alias} (${option.hostname})`
-                                                        : option.alias}
-                                                </Item>
-                                            ))}
-                                        </Picker>
+                                        <Flex alignItems='end' gap='size-100'>
+                                            <Picker
+                                                isRequired
+                                                label='SSH host alias'
+                                                placeholder='Select...'
+                                                selectedKey={sshHostAlias || null}
+                                                onSelectionChange={(key) => setSshHostAlias(key ? String(key) : '')}
+                                                contextualHelp={
+                                                    <InfoHelp title='SSH host alias'>
+                                                        Pick a Host entry from your ~/.ssh/config.
+                                                    </InfoHelp>
+                                                }
+                                                width='100%'
+                                            >
+                                                {aliases.map((option) => (
+                                                    <Item key={option.alias} textValue={option.alias}>
+                                                        {option.hostname && option.hostname !== option.alias
+                                                            ? `${option.alias} (${option.hostname})`
+                                                            : option.alias}
+                                                    </Item>
+                                                ))}
+                                            </Picker>
+                                            <DialogTrigger>
+                                                <ActionButton aria-label='Add SSH connection'>
+                                                    <Add />
+                                                </ActionButton>
+                                                {(closeAddHostDialog) => (
+                                                    <AddSshHostDialog
+                                                        close={closeAddHostDialog}
+                                                        onCreated={(option) => setSshHostAlias(option.alias)}
+                                                    />
+                                                )}
+                                            </DialogTrigger>
+                                        </Flex>
+                                    )}
+                                    {!isEditing && (
+                                        <Flex alignItems='center' gap='size-50'>
+                                            <Checkbox
+                                                isSelected={installPrerequisites}
+                                                onChange={setInstallPrerequisites}
+                                            >
+                                                Set up Docker and GPU support
+                                            </Checkbox>
+                                            <InfoHelp title='SSH host setup'>
+                                                On Ubuntu 24.04 or 26.04, Studio checks the selected SSH host and
+                                                installs missing Docker and NVIDIA or Intel GPU packages before pulling
+                                                the trainer image. Missing prerequisites require passwordless sudo. A
+                                                reboot needs separate confirmation; SSH re-login may also be needed.
+                                                Docker access grants root-equivalent privileges.{' '}
+                                                <Link
+                                                    href={SSH_HOST_SETUP_URL}
+                                                    target='_blank'
+                                                    rel='noopener noreferrer'
+                                                >
+                                                    How to prepare an SSH host
+                                                </Link>
+                                            </InfoHelp>
+                                        </Flex>
                                     )}
                                 </Flex>
                             )}

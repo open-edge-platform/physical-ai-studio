@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import dataclasses
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from physicalai_studio_plugin import RobotCatalogDefinition
 
 from robots.catalog.registry import RobotCatalogRegistry
 
@@ -86,3 +89,16 @@ def test_builtin_adapter_options_are_pinned(
     assert definition is not None
     assert definition.adapter_options.include_velocities is include_velocities
     assert definition.adapter_options.external_effort_gain == external_effort_gain
+
+
+def test_coerce_definition_keeps_every_catalog_field() -> None:
+    # A duck-typed (legacy) definition must keep optional fields such as
+    # zero_calibration instead of falling back to their defaults.
+    values = {field.name: object() for field in dataclasses.fields(RobotCatalogDefinition)}
+    values |= {"type": "Legacy_Follower", "display_name": "Legacy", "role": "follower", "asset": None}
+
+    definition = RobotCatalogRegistry._coerce_definition(SimpleNamespace(**values))
+
+    assert isinstance(definition, RobotCatalogDefinition)
+    for name, value in values.items():
+        assert getattr(definition, name) is value, name

@@ -249,7 +249,7 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         self,
         pretrained_name_or_path: str | Path | None = None,
         vlm_model_id: str = "Qwen/Qwen3-VL-4B-Instruct",
-        vlm_attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "flash_attention_2",
+        vlm_attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "sdpa",
         dtype: Literal["bfloat16", "float16", "float32"] = "bfloat16",
         n_obs_steps: int = 1,
         chunk_size: int = 30,

@@ -1,15 +1,11 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""SSH local-forward tunnel to an SSH-provisioned trainer container.
+"""SSH local-forward tunnel to a managed remote trainer.
 
-The tunnel is the only path a studio process ever reaches a provisioned
-trainer through: the container publishes on its host's loopback interface
-only, and :class:`SshTunnel` forwards a local loopback port to it over the
-same SSH connection class the rest of :mod:`services.ssh` uses. A dropped
-tunnel reconnects and re-forwards against the still-running container within a
-bounded retry budget, so a flaky network path never fails a job that is
-otherwise progressing fine.
+Trainer containers publish on the SSH host's loopback interface.
+:class:`SshTunnel` forwards a local loopback port to the container and
+reconnects until the SSH connection returns or the tunnel is closed.
 """
 
 from __future__ import annotations
@@ -29,10 +25,6 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     import asyncssh
-
-
-class TunnelReconnectExhaustedError(RuntimeError):
-    """Raised when a dropped tunnel could not be re-established within its budget."""
 
 
 class SshTunnel:
@@ -60,6 +52,7 @@ class SshTunnel:
         self._transport: SshTransport | None = None
         self._listener: asyncssh.SSHListener | None = None
         self._local_port = local_port
+        self._fixed_port = local_port is not None
         self._watchdog_task: asyncio.Task[None] | None = None
         self._closed = False
 
@@ -82,9 +75,18 @@ class SshTunnel:
     ) -> None:
         await self.close()
 
-    async def open(self) -> None:
-        """Connect and establish the forward. Starts the reconnect watchdog."""
-        await self._connect_and_forward()
+    async def open(self, *, retry_on_failure: bool = False) -> None:
+        """Connect and establish the forward. Starts the reconnect watchdog.
+
+        At startup, an offline VPN can delay the first connection without
+        preventing remote jobs from reattaching once it returns.
+        """
+        try:
+            await self._connect_and_forward()
+        except Exception:
+            if not retry_on_failure:
+                raise
+            logger.warning("SSH tunnel unavailable at startup; retrying in background")
         self._watchdog_task = asyncio.create_task(self._watch())
 
     async def _connect_and_forward(self) -> None:
@@ -97,10 +99,8 @@ class SshTunnel:
 
         On a reconnect (`self._local_port` already set), re-binds to that same
         local port so callers that cached a base URL derived from it keep
-        working. Falls back to a fresh ephemeral port only if the previous one
-        is not immediately available for re-bind (e.g. still in the OS's
-        `TIME_WAIT`) - a best effort, not a guarantee: a caller that needs a
-        hard guarantee should still re-read `local_port` after a reconnect.
+        working. A configured port must not change: persisted job URLs point
+        at it. Only ephemeral tunnels may fall back to a fresh port.
         """
         await self._close_current_connection()
 
@@ -113,7 +113,7 @@ class SshTunnel:
                     self._remote_host, self._remote_port, local_port=preferred_port or 0
                 )
             except OSError:
-                if preferred_port is None:
+                if preferred_port is None or self._fixed_port:
                     raise
                 logger.warning(
                     "SSH tunnel could not re-bind local port {}; a new port will be assigned", preferred_port
@@ -146,49 +146,39 @@ class SshTunnel:
         the listener's wait_closed() resolving; this never happens on a
         deliberate `close()`, since that cancels this task first.
         """
-        while True:
+        while not self._closed:
             listener = self._listener
-            if listener is None:
-                return
-            try:
-                await listener.wait_closed()
-            except asyncio.CancelledError:
-                return
-            if self._closed:
-                return
-            logger.warning("SSH tunnel to remote trainer dropped; attempting to reconnect")
-            try:
-                await self._reconnect_with_backoff()
-            except TunnelReconnectExhaustedError:
-                logger.error("SSH tunnel reconnect budget exhausted; giving up")
-                return
+            if listener is not None:
+                try:
+                    await listener.wait_closed()
+                except asyncio.CancelledError:
+                    return
+                if self._closed:
+                    return
+                logger.warning("SSH tunnel to remote trainer dropped; attempting to reconnect")
+            await self._reconnect_with_backoff()
 
     async def _reconnect_with_backoff(self) -> None:
-        """Retry `_connect_and_forward` with exponential backoff, within budget.
+        """Retry `_connect_and_forward` with exponential backoff until closed.
 
-        `_connect_and_forward` re-binds to the same `local_port` on success, so
-        a caller's cached base URL keeps working across a reconnect in the
-        common case. That re-bind is best effort, not guaranteed (see its
-        docstring), so a caller that needs a hard guarantee should still read
-        `local_port` again after a successful reconnect rather than caching it
-        once.
+        A configured local port stays fixed across reconnects. The reconnect
+        budget is a warning threshold, not a reason to abandon remote jobs.
         """
         settings = self._settings
         started = monotonic()
         backoff = 1.0
-        last_error: Exception | None = None
-        while monotonic() - started < settings.ssh_tunnel_reconnect_budget_s:
+        warned = False
+        while not self._closed:
             try:
                 await self._connect_and_forward()
                 logger.info("SSH tunnel reconnected on local port {}", self._local_port)
                 return
             except Exception as error:
-                last_error = error
+                if not warned and monotonic() - started >= settings.ssh_tunnel_reconnect_budget_s:
+                    logger.warning("SSH tunnel still unavailable; retrying: {}", error)
+                    warned = True
                 await asyncio.sleep(min(backoff, settings.ssh_tunnel_reconnect_backoff_max_s))
                 backoff = min(backoff * 2, settings.ssh_tunnel_reconnect_backoff_max_s)
-        raise TunnelReconnectExhaustedError(
-            f"Could not reconnect the SSH tunnel within {settings.ssh_tunnel_reconnect_budget_s:.0f}s"
-        ) from last_error
 
     async def close(self) -> None:
         """Cancel the reconnect watchdog and tear down the tunnel and connection."""

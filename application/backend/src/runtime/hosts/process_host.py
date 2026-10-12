@@ -77,7 +77,7 @@ class RuntimeProcessHost:
             # surface. Configuration is sent as JSON on stdin instead of argv.
             # Popen does not inherit sys.path, so preserve pytest-only imports such
             # as tests.runtime.fakes for the detached worker.
-            self._proc = subprocess.Popen(  # noqa: S603 # nosec: B603
+            self._proc = subprocess.Popen(  # nosec: B603
                 [sys.executable, "-m", "runtime.hosts.session_worker"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,

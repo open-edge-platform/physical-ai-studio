@@ -15,20 +15,12 @@ import {
 } from '@geti-ui/ui';
 import { MoreMenu } from '@geti-ui/ui/icons';
 
-import { SchemaPreflightResult, SchemaRemoteServer, SchemaRemoteTrainer } from '../../../api/openapi-spec';
+import { SchemaRemoteTrainer } from '../../../api/openapi-spec';
 import { Table, TableColumn } from '../../../components/table/table';
-import {
-    remoteServerComputeDetail,
-    remoteServerStatusLabel,
-    remoteServerStatusVariant,
-} from '../remote-server-status-utils';
+import { connectionModeLabel } from '../remote-trainer-connection-utils';
 import { deviceTypes, getDisplayHealth, healthLabel, healthVariant } from '../remote-trainer-health-utils';
-import { RemoteServerDetail } from './remote-server-detail/remote-server-detail';
 import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
 import { TrainingTargetRow, trainingTargetRowId } from './training-target-row';
-import { useIsRemoteServerCheckRunning } from './use-is-remote-server-check-running';
-import { useRemoteServerCheckMutation } from './use-remote-server-check-mutation';
-import { useRemoteServersStatus } from './use-remote-servers-status';
 import { useRemoteTrainersHealth } from './use-remote-trainers-health';
 
 import classes from './training-targets-table.module.css';
@@ -51,6 +43,8 @@ const TARGET_MENU_ACTION_ITEMS = {
     CHECK_STATUS: 'check_status',
     EDIT: 'Edit',
     DELETE: 'Delete',
+    REBOOT: 'reboot_after_install',
+    INSTALL: 'install_prerequisites',
 };
 
 type TargetMenuActionsProps = {
@@ -58,10 +52,29 @@ type TargetMenuActionsProps = {
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onReboot?: () => void;
+    onInstall?: () => void;
     isChecking: boolean;
+    isStarting: boolean;
 };
 
-const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }: TargetMenuActionsProps) => {
+const TargetMenuActions = ({
+    targetName,
+    onCheck,
+    onEdit,
+    onDelete,
+    onReboot,
+    onInstall,
+    isChecking,
+    isStarting,
+}: TargetMenuActionsProps) => {
+    const items = [
+        { key: TARGET_MENU_ACTION_ITEMS.EDIT, label: 'Edit' },
+        { key: TARGET_MENU_ACTION_ITEMS.DELETE, label: 'Delete' },
+        { key: TARGET_MENU_ACTION_ITEMS.CHECK_STATUS, label: 'Check status' },
+        ...(onReboot ? [{ key: TARGET_MENU_ACTION_ITEMS.REBOOT, label: 'Reboot to finish setup' }] : []),
+        ...(onInstall ? [{ key: TARGET_MENU_ACTION_ITEMS.INSTALL, label: 'Install prerequisites' }] : []),
+    ];
     const handleAction = (action: Key) => {
         if (action === TARGET_MENU_ACTION_ITEMS.CHECK_STATUS) {
             onCheck?.();
@@ -69,6 +82,10 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }
             onEdit();
         } else if (action === TARGET_MENU_ACTION_ITEMS.DELETE) {
             onDelete();
+        } else if (action === TARGET_MENU_ACTION_ITEMS.REBOOT) {
+            onReboot?.();
+        } else if (action === TARGET_MENU_ACTION_ITEMS.INSTALL) {
+            onInstall?.();
         }
     };
 
@@ -78,12 +95,14 @@ const TargetMenuActions = ({ targetName, onCheck, onEdit, onDelete, isChecking }
                 <MoreMenu />
             </ActionButton>
             <Menu
+                items={items}
                 onAction={handleAction}
-                disabledKeys={isChecking || onCheck === undefined ? [TARGET_MENU_ACTION_ITEMS.CHECK_STATUS] : undefined}
+                disabledKeys={[
+                    ...(isChecking || onCheck === undefined ? [TARGET_MENU_ACTION_ITEMS.CHECK_STATUS] : []),
+                    ...(isStarting ? [TARGET_MENU_ACTION_ITEMS.INSTALL] : []),
+                ]}
             >
-                <Item key={TARGET_MENU_ACTION_ITEMS.EDIT}>Edit</Item>
-                <Item key={TARGET_MENU_ACTION_ITEMS.DELETE}>Delete</Item>
-                <Item key={TARGET_MENU_ACTION_ITEMS.CHECK_STATUS}>Check status</Item>
+                {(item) => <Item key={item.key}>{item.label}</Item>}
             </Menu>
         </MenuTrigger>
     );
@@ -94,15 +113,18 @@ type StatusVariant = 'positive' | 'notice' | 'negative' | 'neutral' | 'yellow';
 type TargetRowContentProps = {
     name: string;
     connectionLabel: string;
+    connectionModeText: string;
     statusVariant: StatusVariant;
     statusLabel: string;
+    isStarting: boolean;
     deviceTypes: string[];
     computeDetail: string;
-    kindBadge: 'SSH' | 'Direct URL';
     isChecking: boolean;
     onCheck?: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onReboot?: () => void;
+    onInstall?: () => void;
 };
 
 /**
@@ -114,28 +136,35 @@ type TargetRowContentProps = {
 const targetRowCells = ({
     name,
     connectionLabel,
+    connectionModeText,
     statusVariant,
     statusLabel,
+    isStarting,
     deviceTypes: types,
     computeDetail,
-    kindBadge,
     isChecking,
     onCheck,
     onEdit,
     onDelete,
+    onReboot,
+    onInstall,
 }: TargetRowContentProps) => [
     <Text key='name'>{name}</Text>,
 
     <TooltipTrigger key='connection' delay={300}>
         <ActionButton isQuiet UNSAFE_className={classes.kindBadgeTrigger} aria-label={connectionLabel}>
             <Badge variant='neutral' UNSAFE_className={classes.kindBadge}>
-                {kindBadge}
+                {connectionModeText}
             </Badge>
         </ActionButton>
         <Tooltip>{connectionLabel}</Tooltip>
     </TooltipTrigger>,
 
-    <StatusLight key='status' variant={statusVariant} UNSAFE_className={classes.healthStatus}>
+    <StatusLight
+        key='status'
+        variant={statusVariant}
+        UNSAFE_className={`${classes.healthStatus} ${isStarting ? classes.starting : ''}`}
+    >
         {statusLabel}
     </StatusLight>,
 
@@ -154,7 +183,10 @@ const targetRowCells = ({
             onCheck={onCheck}
             onEdit={onEdit}
             onDelete={onDelete}
+            onReboot={onReboot}
+            onInstall={onInstall}
             isChecking={isChecking}
+            isStarting={isStarting}
         />
     </div>,
 ];
@@ -166,6 +198,7 @@ type DirectUrlTargetRowProps = {
     onExpand: () => void;
     onEdit: () => void;
     onDelete: () => void;
+    onSetup?: (reboot: boolean) => void;
 };
 
 const DirectUrlTargetRow = ({
@@ -175,11 +208,17 @@ const DirectUrlTargetRow = ({
     onExpand,
     onEdit,
     onDelete,
+    onSetup,
 }: DirectUrlTargetRowProps) => {
     const health = useRemoteTrainersHealth([trainer.id]).get(trainer.id);
     const displayHealth = getDisplayHealth(trainer.id, health?.health, health?.hasError ?? false);
     const isChecking = health?.isChecking ?? false;
     const types = deviceTypes(displayHealth);
+    const awaitingReboot = [
+        'reboot_required',
+        'reboot_blocked_active_containers',
+        'nvidia_driver_unavailable',
+    ].includes(displayHealth?.reason_code ?? '');
 
     return (
         <Table.ExpandableRow
@@ -192,12 +231,13 @@ const DirectUrlTargetRow = ({
             {targetRowCells({
                 name: trainer.name,
                 connectionLabel: trainer.url,
+                connectionModeText: connectionModeLabel(trainer.connection_mode),
                 statusVariant: healthVariant(displayHealth, isChecking),
                 statusLabel: healthLabel(displayHealth, isChecking),
+                isStarting: displayHealth?.status === 'starting',
                 deviceTypes: types,
                 computeDetail:
                     displayHealth?.devices?.at(0)?.name ?? (isChecking ? 'Checking capability…' : 'Not reported'),
-                kindBadge: 'Direct URL',
                 isChecking,
                 onCheck: () => {
                     void health?.checkHealth();
@@ -205,82 +245,9 @@ const DirectUrlTargetRow = ({
                 },
                 onEdit,
                 onDelete,
-            })}
-        </Table.ExpandableRow>
-    );
-};
-
-type SshTargetRowProps = {
-    server: SchemaRemoteServer;
-    isExpanded: boolean;
-    onExpandedChange: (isExpanded: boolean) => void;
-    onExpand: () => void;
-    onEdit: () => void;
-    onDelete: () => void;
-};
-
-/**
- * Reconstructs the last persisted Tier 2 result from the server record itself
- * (`last_check_checks`/`last_check_at`), so a row that mounts fresh - e.g. after
- * navigating back to the training-targets page, or after verifying from the
- * post-save dialog's own mutation instance - still shows the server's real
- * verification state instead of "Not verified yet" just because *this*
- * component's local check mutation has never fired.
- */
-const persistedTier2Result = (server: SchemaRemoteServer): SchemaPreflightResult | undefined => {
-    if (server.last_check_checks === undefined || server.last_check_checks.length === 0) return undefined;
-
-    return {
-        remote_server_id: server.id,
-        checks: server.last_check_checks,
-        checked_at: server.last_check_at ?? new Date(0).toISOString(),
-    };
-};
-
-const SshTargetRow = ({ server, isExpanded, onExpandedChange, onExpand, onEdit, onDelete }: SshTargetRowProps) => {
-    const entry = useRemoteServersStatus([server.id]).get(server.id);
-    const isChecking = entry?.isChecking ?? false;
-    const checkMutation = useRemoteServerCheckMutation();
-    const tier2Result = checkMutation.data ?? persistedTier2Result(server);
-    const tier2CheckedAt = checkMutation.data?.checked_at ?? server.last_check_at ?? undefined;
-    // Reflects any in-flight Tier 2 check for this server, including one
-    // fired from the post-save dialog's own (now-unmounted) mutation
-    // instance - not just this row's local `checkMutation.isPending`.
-    const isRunningTier2 = useIsRemoteServerCheckRunning(server.id) || checkMutation.isPending;
-
-    return (
-        <Table.ExpandableRow
-            id={`training-target-row-${server.id}`}
-            label={server.name}
-            isExpanded={isExpanded}
-            onExpandedChange={onExpandedChange}
-            detail={
-                <RemoteServerDetail
-                    remoteServer={server}
-                    status={entry?.status}
-                    isChecking={isChecking}
-                    tier2Result={tier2Result}
-                    tier2CheckedAt={tier2CheckedAt}
-                    isRunningTier2={isRunningTier2}
-                    onTestConnection={() => checkMutation.mutate({ params: { path: { remote_server_id: server.id } } })}
-                />
-            }
-        >
-            {targetRowCells({
-                name: server.name,
-                connectionLabel: `ssh ${server.ssh_host_alias}`,
-                statusVariant: remoteServerStatusVariant(entry?.status, isChecking),
-                statusLabel: remoteServerStatusLabel(entry?.status, isChecking),
-                deviceTypes: [server.device_type.toUpperCase()],
-                computeDetail: isChecking ? 'Checking…' : (remoteServerComputeDetail(entry?.status) ?? 'Not reported'),
-                kindBadge: 'SSH',
-                isChecking,
-                onCheck: () => {
-                    void entry?.checkStatus();
-                    onExpand();
-                },
-                onEdit,
-                onDelete,
+                onReboot:
+                    trainer.connection_mode === 'ssh' && awaitingReboot && onSetup ? () => onSetup(true) : undefined,
+                onInstall: trainer.connection_mode === 'ssh' && onSetup ? () => onSetup(false) : undefined,
             })}
         </Table.ExpandableRow>
     );
@@ -290,9 +257,10 @@ type TrainingTargetsTableProps = {
     rows: TrainingTargetRow[];
     onEdit: (row: TrainingTargetRow) => void;
     onDelete: (row: TrainingTargetRow) => void;
+    onSetup?: (row: TrainingTargetRow, reboot: boolean) => void;
 };
 
-export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargetsTableProps) => {
+export const TrainingTargetsTable = ({ rows, onEdit, onDelete, onSetup }: TrainingTargetsTableProps) => {
     const [expandedId, setExpandedId] = useState<string | undefined>(
         rows[0] ? trainingTargetRowId(rows[0]) : undefined
     );
@@ -305,29 +273,16 @@ export const TrainingTargetsTable = ({ rows, onEdit, onDelete }: TrainingTargets
                 const id = trainingTargetRowId(row);
                 const isExpanded = expandedId === id;
 
-                if (row.kind === 'direct-url') {
-                    return (
-                        <DirectUrlTargetRow
-                            key={id}
-                            trainer={row.trainer}
-                            isExpanded={isExpanded}
-                            onExpandedChange={() => toggleExpanded(id)}
-                            onExpand={() => setExpandedId(id)}
-                            onEdit={() => onEdit(row)}
-                            onDelete={() => onDelete(row)}
-                        />
-                    );
-                }
-
                 return (
-                    <SshTargetRow
+                    <DirectUrlTargetRow
                         key={id}
-                        server={row.server}
+                        trainer={row.trainer}
                         isExpanded={isExpanded}
                         onExpandedChange={() => toggleExpanded(id)}
                         onExpand={() => setExpandedId(id)}
                         onEdit={() => onEdit(row)}
                         onDelete={() => onDelete(row)}
+                        onSetup={onSetup ? (reboot) => onSetup(row, reboot) : undefined}
                     />
                 );
             })}

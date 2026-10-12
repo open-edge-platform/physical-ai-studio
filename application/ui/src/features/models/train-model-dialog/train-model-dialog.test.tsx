@@ -2,9 +2,11 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 
-import { SchemaModel, SchemaRemoteServer } from '../../../api/openapi-spec';
+import { SchemaModel } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
+import { getMockedTrainJob } from '../../../test-utils/mocks/mock-train-job';
+import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
 import { TrainModelDialog } from './train-model-dialog';
 
@@ -20,16 +22,6 @@ const remoteTrainer = {
     ssh_remote_port: null,
     ssh_local_port: null,
     created_at: '2026-07-14T12:00:00Z',
-};
-
-const remoteServerId = 'c5c3a1a2-2f0d-4c6b-9c7c-9a1a2b3c4d5e';
-
-const healthyRemoteServer: SchemaRemoteServer = {
-    id: remoteServerId,
-    name: 'lab-gpu-box',
-    ssh_host_alias: 'gpu-box',
-    device_type: 'cuda',
-    last_check_status: 'healthy',
 };
 
 const healthyRemoteTrainer = {
@@ -48,7 +40,7 @@ const baseModel = {
     policy: 'act',
 } as SchemaModel;
 
-const mockProjectWithRemoteTrainer = (options: { remoteServers?: (typeof healthyRemoteServer)[] } = {}) => {
+const mockProjectWithRemoteTrainer = () => {
     server.use(
         http.get('/api/projects/{project_id}', () =>
             HttpResponse.json({
@@ -69,6 +61,7 @@ const mockProjectWithRemoteTrainer = (options: { remoteServers?: (typeof healthy
             HttpResponse.json({ mode: 'local', remote_available: true, devices: [] })
         ),
         http.get('/api/remote-trainers', () => HttpResponse.json([remoteTrainer])),
+        http.get('/api/jobs', () => HttpResponse.json([])),
         http.get('/api/settings', () =>
             HttpResponse.json({
                 trainer: {
@@ -83,9 +76,7 @@ const mockProjectWithRemoteTrainer = (options: { remoteServers?: (typeof healthy
                     command_timeout_s: 15,
                     preflight_timeout_s: 30,
                     image_pull_timeout_s: 1800,
-                    readiness_timeout_s: 120,
-                    gpu_wait_giveup_s: 1800,
-                    min_free_disk_bytes: 53687091200,
+                    trainer_shm_size_gb: 32,
                 },
                 hotkeys: { bindings: {} },
             })
@@ -130,17 +121,7 @@ const mockProjectWithRemoteTrainer = (options: { remoteServers?: (typeof healthy
                               },
                           ],
             });
-        }),
-        http.get('/api/remote-servers', () => HttpResponse.json(options.remoteServers ?? [])),
-        http.get('/api/remote-servers/{remote_server_id}/status', ({ params }) =>
-            HttpResponse.json({
-                remote_server_id: params.remote_server_id,
-                status: 'healthy',
-                device_type: 'cuda',
-                waiting_for_gpu: false,
-                checks: [],
-            })
-        )
+        })
     );
 };
 
@@ -202,6 +183,27 @@ describe('TrainModelDialog', () => {
 
         await waitFor(() => expect(healthCheckCount).toBeGreaterThan(1));
         expect(jobSubmitted).toBe(false);
+    });
+
+    it('shows the computed training step count for the selected dataset', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/dataset/{dataset_id}/episodes', () =>
+                HttpResponse.json([
+                    { episode_index: 0, tasks: ['Test task'], length: 100, fps: 30 },
+                    { episode_index: 1, tasks: ['Test task'], length: 100, fps: 30 },
+                ])
+            )
+        );
+
+        renderDialog();
+
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+
+        expect(await screen.findByText('Estimated training steps: 60')).toBeInTheDocument();
     });
 
     it('offers remote trainers when training a new model', async () => {
@@ -421,196 +423,11 @@ describe('TrainModelDialog', () => {
         expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
     });
 
-    it('lists a configured SSH server alongside local and direct-URL trainers in a single control', async () => {
-        const user = userEvent.setup();
-        mockProjectWithRemoteTrainer({ remoteServers: [healthyRemoteServer] });
-
-        renderDialog();
-
-        // Exactly one "Run on" control: no second remote-server dropdown.
-        expect(await screen.findByRole('button', { name: /this machine \(local\)/i })).toBeInTheDocument();
-        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
-
-        expect(await screen.findByRole('option', { name: remoteTrainer.name })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: healthyRemoteServer.name })).toBeInTheDocument();
-        expect(screen.getAllByRole('listbox', { name: 'Run on' })).toHaveLength(1);
-    });
-
-    it('submits an SSH job with remote_server_id when a healthy remote server is selected', async () => {
-        const user = userEvent.setup();
-        let submittedPayload: Record<string, unknown> | null = null;
-
-        mockProjectWithRemoteTrainer({ remoteServers: [healthyRemoteServer] });
-        server.use(
-            http.post('/api/jobs:train', async ({ request }) => {
-                submittedPayload = (await request.json()) as Record<string, unknown>;
-                return HttpResponse.json({}, { status: 201 });
-            })
-        );
-
-        renderDialog();
-
-        await user.click(await screen.findByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
-        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
-        await goToLastStep(user);
-        await user.click(screen.getByRole('button', { name: 'Train' }));
-
-        await waitFor(() => expect(submittedPayload).not.toBeNull());
-        expect(submittedPayload).toMatchObject({
-            training_target: 'ssh',
-            remote_server_id: remoteServerId,
-        });
-        expect(submittedPayload).not.toHaveProperty('remote_trainer_id');
-    });
-
-    it('disables Next and shows a warning for a remote server that is not ready', async () => {
-        const user = userEvent.setup();
-        mockProjectWithRemoteTrainer({
-            remoteServers: [{ ...healthyRemoteServer, last_check_status: 'unreachable' }],
-        });
-
-        renderDialog();
-
-        await user.click(await screen.findByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
-        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
-
-        expect(
-            await screen.findByText(
-                (_, element) =>
-                    element?.children.length === 0 && (element?.textContent ?? '').includes("isn't ready for training")
-            )
-        ).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-    });
-
-    it('allows submitting a job against a never-verified SSH server, letting the backend verify it', async () => {
-        // "unknown" last_check_status just means nobody has clicked "Pull & verify
-        // image" yet - not a confirmed failure. The job endpoint runs the same
-        // Tier-2 verification automatically, so the dialog must not force a trip
-        // to the training targets page first.
-        const user = userEvent.setup();
-        let submittedPayload: Record<string, unknown> | null = null;
-
-        mockProjectWithRemoteTrainer({
-            remoteServers: [{ ...healthyRemoteServer, last_check_status: 'unknown' }],
-        });
-        server.use(
-            http.post('/api/jobs:train', async ({ request }) => {
-                submittedPayload = (await request.json()) as Record<string, unknown>;
-                return HttpResponse.json({}, { status: 201 });
-            })
-        );
-
-        renderDialog();
-
-        await user.click(await screen.findByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
-        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
-
-        expect(await screen.findByText(/hasn't been verified yet/i)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Next' })).not.toBeDisabled();
-
-        await goToLastStep(user);
-        await user.click(screen.getByRole('button', { name: 'Train' }));
-
-        await waitFor(() => expect(submittedPayload).not.toBeNull());
-        expect(submittedPayload).toMatchObject({
-            training_target: 'ssh',
-            remote_server_id: remoteServerId,
-        });
-    });
-
-    it('shows the backend error when Tier-2 verification fails during submission', async () => {
-        const user = userEvent.setup();
-
-        mockProjectWithRemoteTrainer({
-            remoteServers: [{ ...healthyRemoteServer, last_check_status: 'unknown' }],
-        });
-        server.use(
-            http.post('/api/jobs:train', () =>
-                HttpResponse.json(
-                    {
-                        error_code: 'remote_server_not_ready',
-                        message: "Remote server 'lab-gpu-box' is not ready for training.",
-                        http_status: 409,
-                    } as never,
-                    { status: 409 }
-                )
-            )
-        );
-
-        renderDialog();
-
-        await user.click(await screen.findByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
-        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
-        await goToLastStep(user);
-        await user.click(screen.getByRole('button', { name: 'Train' }));
-
-        expect(await screen.findByText(/is not ready for training/i)).toBeInTheDocument();
-    });
-
-    it('does not submit an SSH job when the live status is unhealthy despite a persisted healthy check', async () => {
-        // A server can be verified (last_check_status === "healthy") yet go
-        // unreachable before the next explicit verification — the live Tier-1
-        // poll must still block submission.
-        const user = userEvent.setup();
-        let jobSubmitted = false;
-
-        mockProjectWithRemoteTrainer({ remoteServers: [healthyRemoteServer] });
-        server.use(
-            http.get('/api/remote-servers/{remote_server_id}/status', ({ params }) =>
-                HttpResponse.json({
-                    remote_server_id: params.remote_server_id,
-                    status: 'unreachable',
-                    device_type: 'cuda',
-                    waiting_for_gpu: false,
-                    checks: [],
-                })
-            ),
-            http.post('/api/jobs:train', () => {
-                jobSubmitted = true;
-                return HttpResponse.json({}, { status: 201 });
-            })
-        );
-
-        renderDialog();
-
-        await user.click(await screen.findByRole('button', { name: /select…/i }));
-        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
-        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
-        await user.click(await screen.findByRole('option', { name: healthyRemoteServer.name }));
-
-        expect(
-            await screen.findByText(
-                (_, element) =>
-                    element?.children.length === 0 && (element?.textContent ?? '').includes("isn't ready for training")
-            )
-        ).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
-        expect(jobSubmitted).toBe(false);
-    });
-
     it('shows a status indicator for each run target so its health is clear at a glance', async () => {
         const user = userEvent.setup();
-        mockProjectWithRemoteTrainer({ remoteServers: [healthyRemoteServer] });
+        mockProjectWithRemoteTrainer();
         server.use(
-            http.get('/api/remote-trainers/{remote_trainer_id}/health', () => HttpResponse.json(healthyRemoteTrainer)),
-            http.get('/api/remote-servers/{remote_server_id}/status', () =>
-                HttpResponse.json({
-                    remote_server_id: remoteServerId,
-                    status: 'healthy',
-                    device_type: 'cuda',
-                    waiting_for_gpu: false,
-                    checks: [],
-                })
-            )
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () => HttpResponse.json(healthyRemoteTrainer))
         );
 
         renderDialog();
@@ -623,9 +440,294 @@ describe('TrainModelDialog', () => {
 
         const trainerOption = screen.getByRole('option', { name: new RegExp(remoteTrainer.name) });
         await waitFor(() => expect(within(trainerOption).getByText('Healthy')).toBeInTheDocument());
+    });
 
-        const sshOption = screen.getByRole('option', { name: new RegExp(healthyRemoteServer.name) });
-        await waitFor(() => expect(within(sshOption).getByText('Healthy')).toBeInTheDocument());
+    it('lets users pick a remote GPU and sends its index with the job', async () => {
+        const user = userEvent.setup();
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'Small GPU', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'Large GPU', memory: 24_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        await user.click(await screen.findByRole('button', { name: /CUDA 0 — Small GPU/i }));
+        expect(screen.queryByRole('option', { name: /Automatic/i })).not.toBeInTheDocument();
+        await user.click(await screen.findByRole('option', { name: /CUDA 1 — Large GPU/i }));
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
+    });
+
+    it('submits the first free remote GPU without an explicit GPU choice', async () => {
+        const user = userEvent.setup();
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json([
+                    getMockedTrainJob({
+                        payload: getMockedTrainJobPayload({
+                            training_target: 'remote',
+                            remote_trainer_id: remoteTrainerId,
+                            device: { type: 'cuda', index: 0 },
+                        }),
+                    }),
+                ])
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        expect(await screen.findByRole('button', { name: /CUDA 1 — GPU one/i })).toBeInTheDocument();
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 1 }));
+    });
+
+    it('refreshes the automatic GPU choice after the final health check', async () => {
+        const user = userEvent.setup();
+        let finalCheck = false;
+        let submittedDevice: unknown;
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json([
+                    getMockedTrainJob({
+                        payload: getMockedTrainJobPayload({
+                            training_target: 'remote',
+                            remote_trainer_id: remoteTrainerId,
+                            device: { type: 'cuda', index: 1 },
+                        }),
+                    }),
+                ])
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000, busy: finalCheck },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 2, name: 'GPU two', memory: 8_000_000_000 },
+                    ],
+                })
+            ),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submittedDevice = ((await request.json()) as { device?: unknown }).device;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+        await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+        expect(await screen.findByRole('button', { name: /CUDA 0 — GPU zero/i })).toBeInTheDocument();
+        await goToLastStep(user);
+        finalCheck = true;
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submittedDevice).toEqual({ type: 'cuda', index: 2 }));
+    });
+
+    it('marks a GPU used by another trainer busy without any Studio jobs', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () => HttpResponse.json([])),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000, busy: true },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 8_000_000_000, busy: false },
+                    ],
+                })
+            )
+        );
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText('1/2 GPUs free')).toBeInTheDocument());
+        await user.click(trainerOption);
+        expect(await screen.findByRole('button', { name: /CUDA 1 — GPU one/i })).toBeInTheDocument();
+    });
+
+    it.each([undefined, 0])(
+        'marks a running job’s GPU busy (device index %s) but keeps the other GPU selectable',
+        async (index) => {
+            const user = userEvent.setup();
+            mockProjectWithRemoteTrainer();
+            server.use(
+                http.get('/api/jobs', () =>
+                    HttpResponse.json([
+                        getMockedTrainJob({
+                            payload: getMockedTrainJobPayload({
+                                training_target: 'remote',
+                                remote_trainer_id: remoteTrainerId,
+                                ...(index === undefined ? {} : { device: { type: 'cuda' as const, index } }),
+                            }),
+                        }),
+                    ])
+                ),
+                http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                    HttpResponse.json({
+                        ...healthyRemoteTrainer,
+                        devices: [
+                            { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                            { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                            { type: 'cuda', index: 2, name: 'GPU two', memory: 24_000_000_000 },
+                        ],
+                    })
+                )
+            );
+
+            renderDialog();
+            await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+            const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+            await waitFor(() => expect(within(trainerOption).getByText('2/3 GPUs free')).toBeInTheDocument());
+            expect(trainerOption.querySelectorAll('[class*="StatusLight--"]')).toHaveLength(1);
+            expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(
+                'StatusLight--positive'
+            );
+            await user.click(trainerOption);
+            expect(
+                screen
+                    .getByRole('button', { name: new RegExp(remoteTrainer.name) })
+                    .querySelector('[class*="StatusLight--"]')?.className
+            ).toContain('StatusLight--positive');
+            expect(screen.getByText(/GPU one, .*VRAM/)).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: /CUDA 1 — GPU one/i }));
+            const busyGpu = screen.getByRole('option', { name: /CUDA 0 — GPU zero/i });
+            const freeGpu = screen.getByRole('option', { name: /CUDA 1 — GPU one/i });
+            expect(within(busyGpu).getByLabelText('GPU busy; new jobs will wait')).toBeInTheDocument();
+            expect(within(freeGpu).getByLabelText('GPU free')).toBeInTheDocument();
+            expect(screen.queryByText(/· Busy/)).not.toBeInTheDocument();
+            await user.click(busyGpu);
+            expect(screen.getByText(/GPU zero, .*VRAM/)).toBeInTheDocument();
+            await user.click(screen.getByRole('button', { name: /CUDA 0 — GPU zero/i }));
+            await user.click(screen.getByRole('option', { name: /CUDA 1 — GPU one/i }));
+            expect(
+                within(screen.getByRole('button', { name: /CUDA 1 — GPU one/i })).getByRole('status', {
+                    name: 'GPU free',
+                })
+            ).toBeInTheDocument();
+            expect(screen.getByText(/GPU one, .*VRAM/)).toBeInTheDocument();
+        }
+    );
+
+    it.each([
+        { indices: [], status: '2/2 GPUs free', color: 'positive' },
+        { indices: [0, 1], status: '0/2 GPUs free', color: 'yellow' },
+    ])('shows an ordinary run-on indicator with busy GPU indices $indices', async ({ indices, status, color }) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json(
+                    indices.map((index) =>
+                        getMockedTrainJob({
+                            id: `job-${index}`,
+                            payload: getMockedTrainJobPayload({
+                                training_target: 'remote',
+                                remote_trainer_id: remoteTrainerId,
+                                device: { type: 'cuda', index },
+                            }),
+                        })
+                    )
+                )
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [
+                        { type: 'cuda', index: 0, name: 'GPU zero', memory: 8_000_000_000 },
+                        { type: 'cuda', index: 1, name: 'GPU one', memory: 24_000_000_000 },
+                    ],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText(status)).toBeInTheDocument());
+        expect(trainerOption.querySelectorAll('[class*="StatusLight--"]')).toHaveLength(1);
+        expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(`StatusLight--${color}`);
+        if (indices.length === 2) {
+            await user.click(trainerOption);
+            expect(screen.getByRole('button', { name: /CUDA 0 — GPU zero/i })).toBeInTheDocument();
+        }
+    });
+
+    it.each([
+        { busy: false, label: 'Healthy', color: 'positive' },
+        { busy: true, label: 'Training in progress', color: 'yellow' },
+    ])('keeps the ordinary status label for a single GPU (busy: $busy)', async ({ busy, label, color }) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/jobs', () =>
+                HttpResponse.json(
+                    busy
+                        ? [
+                              getMockedTrainJob({
+                                  payload: getMockedTrainJobPayload({
+                                      training_target: 'remote',
+                                      remote_trainer_id: remoteTrainerId,
+                                      device: { type: 'cuda', index: 0 },
+                                  }),
+                              }),
+                          ]
+                        : []
+                )
+            ),
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () =>
+                HttpResponse.json({
+                    ...healthyRemoteTrainer,
+                    devices: [{ type: 'cuda', index: 0, name: 'Only GPU', memory: 24_000_000_000 }],
+                })
+            )
+        );
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /this machine \(local\)/i }));
+        const trainerOption = await screen.findByRole('option', { name: new RegExp(remoteTrainer.name) });
+        await waitFor(() => expect(within(trainerOption).getByText(label)).toBeInTheDocument());
+        expect(trainerOption).not.toHaveTextContent('/1 GPUs free');
+        expect(trainerOption.querySelector('[class*="StatusLight--"]')?.className).toContain(`StatusLight--${color}`);
     });
 
     it('submits only one job when Train is double-clicked before the request resolves', async () => {

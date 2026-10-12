@@ -24,16 +24,27 @@ class DataFormat(StrEnum):
 def _collect_field(
     item: dict,
     base_key: str,
-    prefix: str | None = None,
+    prefix: str | tuple[str, ...] | None = None,
 ) -> tuple[dict[str, torch.Tensor] | torch.Tensor | None, set[str]]:
     """Collect fields from `item` based on `base_key` and `prefix`.
+
+    Args:
+        item: The flattened LeRobot sample.
+        base_key: Exact key for a single combined column (e.g. ``"action"``).
+        prefix: One or more sub-column prefixes to gather (e.g. ``"action."``). A tuple lets a field
+            tolerate multiple spellings, such as both ``"observation.images."`` and the singular
+            ``"observation.image."`` used by some datasets. Defaults to ``base_key + "."``.
 
     Returns:
         - Either a single `torch.Tensor`, a `dict`, or `None`
         - The set of keys that were consumed
     """
     if prefix is None:
-        prefix = base_key + "."
+        prefixes: tuple[str, ...] = (base_key + ".",)
+    elif isinstance(prefix, str):
+        prefixes = (prefix,)
+    else:
+        prefixes = prefix
 
     collected: dict[str, torch.Tensor] = {}
     used_keys: set[str] = set()
@@ -45,10 +56,12 @@ def _collect_field(
 
     # prefixed subkeys
     for key, value in item.items():
-        if key.startswith(prefix):
-            subkey = key.split(prefix, 1)[1]
-            collected[subkey] = value
-            used_keys.add(key)
+        for pfx in prefixes:
+            if key.startswith(pfx):
+                subkey = key.split(pfx, 1)[1]
+                collected[subkey] = value
+                used_keys.add(key)
+                break
 
     if not collected:
         return None, used_keys
@@ -92,7 +105,11 @@ def _convert_lerobot_dict_to_observation(lerobot_dict: dict) -> Observation:
     used_keys: set[str] = set()
 
     # Observation images
-    images, used = _collect_field(lerobot_dict, "observation.image", "observation.images.")
+    images, used = _collect_field(
+        lerobot_dict,
+        "observation.image",
+        ("observation.images.", "observation.image."),
+    )
     used_keys |= used
 
     # Observation states

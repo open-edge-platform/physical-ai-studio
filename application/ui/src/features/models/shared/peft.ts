@@ -25,7 +25,6 @@ export const LORA_BADGE_TITLE = 'Fine-tuned with LoRA: adapts the base model via
 export const DORA_BADGE_TITLE = 'Fine-tuned with DoRA: LoRA adaptation plus a learned per-column magnitude vector';
 
 /**
- * Badge colour. Distinct from the status badges (energy blue / red) and the
- * remote-trainer badge (purple), so the badges never read as one another.
+ * Badge colour. Distinct from the status badges (energy blue / red).
  */
 export const LORA_BADGE_COLOR = '#7b61ff';

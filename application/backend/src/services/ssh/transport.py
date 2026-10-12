@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Async SSH transport for SSH-provisioned remote training servers.
+"""Async SSH transport for managed remote trainers.
 
 This module is the remote-execution trust boundary. Everything crossing it is
 constrained here rather than at the call sites:
@@ -41,6 +41,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from time import perf_counter
 from types import TracebackType
 from typing import Final, Self
@@ -200,8 +201,8 @@ class SshTransport:
         await gate.semaphore.acquire()
         try:
             async with gate.lock:
-                # Status polling and the GPU-busy re-check share this throttle so
-                # UI polling cannot pile connections onto a server running a job.
+                # Limit connection bursts to an SSH host during health checks
+                # and trainer management.
                 if gate.last_connect_at is not None:
                     elapsed = perf_counter() - gate.last_connect_at
                     remaining = settings.ssh_preflight_throttle_s - elapsed
@@ -240,6 +241,16 @@ class SshTransport:
             raise
         self._gate = gate
 
+    async def upload_file(self, source: Path, destination: str) -> None:
+        """Transfer a bundled file over the verified SSH connection using SFTP."""
+        if self._connection is None:
+            raise RuntimeError("SshTransport.upload_file requires an open connection")
+        try:
+            async with await self._connection.start_sftp_client() as sftp:
+                await sftp.put(source, destination)
+        except (asyncssh.Error, OSError) as error:
+            raise SshConnectionError(self.alias, reason="file_transfer_failed") from error
+
     # ASYNC109: an explicit `timeout` is part of this method's contract - a caller
     # gets a CommandResult carrying a TIMEOUT failure rather than a raised
     # CancelledError, which `asyncio.timeout` at the call site cannot express.
@@ -253,7 +264,7 @@ class SshTransport:
 
         A command that times out, is refused a channel, or dies on a signal
         returns a :class:`CommandResult` carrying a ``failure`` rather than
-        raising, so one failed probe never aborts a whole preflight tier.
+        raising, so callers can handle individual command failures.
 
         Args:
             argv: Program and arguments. Every element comes from an application
@@ -399,7 +410,7 @@ class SshTransport:
     async def forward_local_port(self, remote_host: str, remote_port: int, local_port: int = 0) -> asyncssh.SSHListener:
         """Open a local-forward tunnel to ``remote_host:remote_port`` over this connection.
 
-        Binds the local end to ``127.0.0.1``, so an SSH-provisioned trainer is
+        Binds the local end to ``127.0.0.1``, so a managed SSH trainer is
         reachable only through the tunnel, never from another host on the
         network.
 
@@ -435,8 +446,8 @@ def open_transport(
 ) -> SshTransport:
     """Return a transport for one alias.
 
-    The seam preflight and provisioning go through, so a test can substitute a
-    fake transport without patching ``asyncssh`` itself.
+    Callers can substitute a fake transport in tests without patching
+    ``asyncssh`` itself.
 
     Args:
         alias: SSH config alias to dial.

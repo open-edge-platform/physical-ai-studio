@@ -52,7 +52,6 @@ if TYPE_CHECKING or module_available("lerobot"):
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.configs.types import FeatureType
     from lerobot.datasets.lerobot_dataset import LeRobotDataset, LeRobotDatasetMetadata
-    from lerobot.policies.factory import get_policy_class, make_policy_config, make_pre_post_processors
 
     LEROBOT_AVAILABLE = True
 else:
@@ -61,9 +60,6 @@ else:
     LeRobotDataset = None
     LeRobotDatasetMetadata = None
     dataset_to_policy_features = None
-    get_policy_class = None
-    make_policy_config = None
-    make_pre_post_processors = None
     LEROBOT_AVAILABLE = False
 
 
@@ -146,8 +142,11 @@ def _coerce_policy_config_kwargs(
     Raises:
         ValueError: If ``dtype`` is supplied with an unsupported string value.
     """
-    if not LEROBOT_AVAILABLE or get_policy_class is None:
+    if not LEROBOT_AVAILABLE:
         return policy_config, None
+
+    # Lazy: lerobot.policies.factory eagerly imports every policy (incl. GR00T -> Qwen3-VL processors).
+    from lerobot.policies.factory import get_policy_class  # noqa: PLC0415
 
     policy_cls = get_policy_class(policy_name)
     config_cls = getattr(policy_cls, "config_class", None)
@@ -587,6 +586,8 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
         config_dict = dict(config_dict)
         config_dict.pop("type", None)
 
+        from lerobot.policies.factory import get_policy_class  # noqa: PLC0415
+
         # Reconstruct LeRobot config from dict
         policy_cls = get_policy_class(policy_name)
         config_cls = policy_cls.config_class  # type: ignore[attr-defined]
@@ -697,7 +698,7 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
 
     @property
     def lerobot_policy(self) -> PreTrainedPolicy:
-        """Get the initialized LeRobot policy.
+        """The initialized LeRobot policy.
 
         Returns:
             The initialized LeRobot policy.
@@ -757,6 +758,8 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
                 )
                 raise ValueError(msg)
 
+            from lerobot.policies.factory import make_policy_config  # noqa: PLC0415
+
             # Remove dataset_stats from policy_config if present
             # (it should be passed to policy constructor, not config)
             clean_policy_config = {k: v for k, v in self._policy_config.items() if k != "dataset_stats"}
@@ -774,6 +777,8 @@ class LeRobotPolicy(ExportablePolicyMixin, LeRobotFromConfig, Policy):
             )
         else:
             module_cast_dtype = None
+
+        from lerobot.policies.factory import get_policy_class, make_pre_post_processors  # noqa: PLC0415
 
         # Get the policy class dynamically
         policy_cls = get_policy_class(self.policy_name)

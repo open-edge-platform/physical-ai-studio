@@ -46,6 +46,7 @@ interface TrainingParametersProps {
     maxEpochs: number;
     onMaxEpochsChange: (value: number) => void;
     batchSize: number;
+    trainingSteps?: number;
     onBatchSizeChange: (value: number) => void;
     numWorkers: Key | null;
     onNumWorkersChange: (value: Key | null) => void;
@@ -83,6 +84,7 @@ export const TrainingParameters = ({
     maxEpochs,
     onMaxEpochsChange,
     batchSize,
+    trainingSteps,
     onBatchSizeChange,
     numWorkers,
     onNumWorkersChange,
@@ -164,6 +166,13 @@ export const TrainingParameters = ({
         <Flex direction='row' gap='size-150' width='100%'>
             <NumberField
                 label='Max Epochs'
+                description={
+                    trainingSteps === undefined
+                        ? undefined
+                        : autoScaleBatchSize
+                          ? 'Training steps: set when training starts (Auto batch size)'
+                          : `Estimated training steps: ${trainingSteps.toLocaleString()}`
+                }
                 value={maxEpochs}
                 onChange={onMaxEpochsChange}
                 minValue={1}
@@ -176,7 +185,7 @@ export const TrainingParameters = ({
                         <Content>
                             <Text>
                                 Total number of training epochs. Training will stop after this many full passes through
-                                the dataset. We recommend training for 5 to 10 epochs
+                                the dataset. We recommend training for 5 to 10 epochs.
                             </Text>
                         </Content>
                     </ContextualHelp>

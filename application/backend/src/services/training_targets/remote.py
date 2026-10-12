@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Remote (direct-URL) training target: offloads to a configured remote trainer."""
+"""Remote training target: offloads to a configured direct or managed trainer."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from services.remote_trainer_service import RemoteTrainerService
 
 
 class RemoteTrainingTargetHandler:
-    """Validates and keys jobs that offload to a directly-configured remote trainer."""
+    """Validates and keys jobs that offload to a configured remote trainer."""
 
     def __init__(self, remote_trainer_service: RemoteTrainerService) -> None:
         self.remote_trainer_service = remote_trainer_service
@@ -39,4 +39,5 @@ class RemoteTrainingTargetHandler:
     def target_key(payload: TrainJobPayload) -> str:
         if not isinstance(payload, RemoteTrainJobPayload):
             raise TypeError("RemoteTrainingTargetHandler.target_key requires a RemoteTrainJobPayload")
-        return f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
+        trainer_key = f"{TrainingTarget.REMOTE.value}:{payload.remote_trainer_id}"
+        return f"{trainer_key}:{payload.device.type}:{payload.device.index}" if payload.device else trainer_key

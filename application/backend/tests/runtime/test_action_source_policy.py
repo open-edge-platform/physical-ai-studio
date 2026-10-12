@@ -3,11 +3,13 @@ from __future__ import annotations
 import threading
 import time
 from itertools import pairwise
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import numpy as np
 import pytest
+from loguru import logger
 from physicalai.capture import Frame
 from physicalai.inference.constants import IMAGES, STATE
 from physicalai.runtime import ChunkedActionQueue, LerpSmoother, PolicySource, SyncExecution, WorkerDiedError
@@ -395,3 +397,39 @@ def test_a_policy_that_failed_inference_is_not_reused() -> None:
     assert source._loaded_identity is None
     errors = [event for event in _drain(events) if isinstance(event, ErrorEvent)]
     assert [error.error_code for error in errors] == ["policy_inference_failed"]
+
+
+@pytest.mark.parametrize(
+    ("task", "model_takes_task", "expect_warning"),
+    [
+        ("", True, True),
+        ("   ", True, True),
+        ("pick up the red cube", True, False),
+        ("", False, False),
+    ],
+)
+def test_starting_a_task_warns_when_a_language_policy_gets_an_empty_prompt(
+    task: str, model_takes_task: bool, expect_warning: bool
+) -> None:
+    model = FakeInferenceModel(chunk=np.zeros((2, 2), dtype=np.float32), input_names=[STATE, IMAGES])
+    if model_takes_task:
+        model.input_features = [SimpleNamespace(name="task")]
+    policy = PolicySource(
+        model=model,
+        execution=SyncExecution(),
+        action_queue=ChunkedActionQueue(smoother=LerpSmoother()),
+        task=None,
+    )
+    source, mailbox, _ = _source()
+    policy.connect(bus=MagicMock(), session_id="test")
+    source._set_policy(policy, generation=1)
+    warnings: list[str] = []
+    sink_id = logger.add(lambda message: warnings.append(message.record["message"]), level="WARNING")
+    try:
+        mailbox.apply(StartTaskCommand(task=task))
+        source.update(_observation([0.0, 0.0]), {}, 0)
+    finally:
+        logger.remove(sink_id)
+        policy.disconnect()
+
+    assert any("empty prompt" in message for message in warnings) is expect_warning

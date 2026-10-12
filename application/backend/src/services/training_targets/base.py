@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Training target contract shared by local, remote, and SSH implementations."""
+"""Training target contract shared by local and remote implementations."""
 
 from __future__ import annotations
 
@@ -19,10 +19,8 @@ class TrainingTargetHandler(Protocol):
     reject an invalid target selection and pin any target-specific fields
     (e.g. a resolved remote trainer URL) onto the payload. `TrainingWorker`
     calls `target_key` for every pending job to derive the key that keeps two
-    jobs on the same target (the same remote trainer, the same SSH server)
-    from running concurrently. Adding a target (e.g. a future
-    AWS-provisioned trainer) means adding one handler class, not another
-    branch in each caller.
+    jobs on the same target (local execution or a configured remote trainer)
+    from running concurrently.
 
     Each concrete handler is only ever invoked with the payload variant
     matching its target (`get_training_target_handler` routes on

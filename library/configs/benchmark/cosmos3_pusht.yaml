@@ -1,0 +1,56 @@
+# =============================================================================
+# PushT Benchmark Evaluation Configuration - Cosmos3 Policy
+# =============================================================================
+#
+# Evaluates a trained Cosmos 3 policy on the Push-T gym environment.
+#
+# Usage:
+#   physicalai benchmark --config configs/benchmark/cosmos3_pusht.yaml \
+#       --ckpt_path ./experiments/lightning_logs/version_0/checkpoints/last.ckpt
+#
+# Quick test run:
+#   physicalai benchmark --config configs/benchmark/cosmos3_pusht.yaml \
+#       --ckpt_path ./experiments/lightning_logs/version_0/checkpoints/last.ckpt \
+#       --benchmark.num_episodes 5
+#
+# =============================================================================
+
+benchmark:
+  class_path: physicalai.benchmark.gyms.PushTBenchmark
+  init_args:
+    # -------------------------------------------------------------------------
+    # Evaluation Parameters
+    # -------------------------------------------------------------------------
+    # Number of episodes to evaluate
+    num_episodes: 50
+
+    # Maximum steps per episode (Push-T standard: 300)
+    max_steps: 300
+
+    # Base seed for environment resets
+    seed: 100000
+
+    # -------------------------------------------------------------------------
+    # Environment Configuration
+    # -------------------------------------------------------------------------
+    # Single environment worker
+    num_envs: 1
+
+    # Push-T observation type matching policy preprocessor
+    obs_type: pixels_agent_pos
+
+    # -------------------------------------------------------------------------
+    # Video Recording
+    # -------------------------------------------------------------------------
+    video_dir: ./results/benchmark/cosmos3_pusht/videos
+    record_mode: failures
+
+# -----------------------------------------------------------------------------
+# Policy Configuration
+# -----------------------------------------------------------------------------
+policy: physicalai.policies.Cosmos3
+
+# -----------------------------------------------------------------------------
+# Output Configuration
+# -----------------------------------------------------------------------------
+output_dir: ./results/benchmark/cosmos3_pusht

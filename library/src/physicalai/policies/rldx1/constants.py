@@ -18,10 +18,20 @@ EMBODIMENT_ID = "embodiment_id"
 POSITION_IDS = "position_ids"
 ATTENTION_MASK = "attention_mask"
 
+# Built-in visual feature shapes for known pretrained checkpoints whose
+# upstream stats do not include camera resolution metadata.
+DEFAULT_INPUT_FEATURE_SHAPES_BY_MODEL_ID: dict[str, dict[str, tuple[int, int, int]]] = {
+    "RLWRLD/RLDX-1-FT-LIBERO": {
+        "front_view": (3, 256, 256),
+        "left_wrist_view": (3, 256, 256),
+    },
+}
+
 __all__ = [
     "ACTION_PRED",
     "ATTENTION_MASK",
     "BACKBONE_FEATURES",
+    "DEFAULT_INPUT_FEATURE_SHAPES_BY_MODEL_ID",
     "EMBODIMENT_ID",
     "IMAGE_GRID_THW",
     "INPUT_IDS",

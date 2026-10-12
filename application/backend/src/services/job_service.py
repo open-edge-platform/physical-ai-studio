@@ -4,20 +4,12 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.security import get_ssh_feature_availability
 from db.schema import JobDB
-from exceptions import (
-    DuplicateJobException,
-    ResourceInUseError,
-    ResourceNotFoundError,
-    ResourceType,
-    SshFeatureDisabledError,
-)
+from exceptions import DuplicateJobException, ResourceInUseError, ResourceNotFoundError, ResourceType
 from repositories import JobRepository
 from schemas import Job
 from schemas.base_job import JobStatus, JobType
-from schemas.job import JobPayload, TrainingTarget, TrainJob, TrainJobPayload
-from services.remote_server_service import RemoteServerService
+from schemas.job import JobPayload, RemoteTrainJobPayload, TrainJob, TrainJobPayload
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets import get_training_target_handler
 
@@ -27,12 +19,10 @@ class JobService:
         self,
         session: AsyncSession,
         remote_trainer_service: RemoteTrainerService | None = None,
-        remote_server_service: RemoteServerService | None = None,
     ) -> None:
         self.session = session
         self.repo = JobRepository(session)
         self.remote_trainer_service = remote_trainer_service
-        self.remote_server_service = remote_server_service
 
     async def create_job(self, job: Job) -> Job:
         return await self.repo.save(job)
@@ -55,28 +45,23 @@ class JobService:
 
     async def submit_train_job(self, payload: TrainJobPayload) -> Job:
         """Validate and persist a training job with its execution target pinned."""
-        if payload.training_target is TrainingTarget.SSH:
-            availability = get_ssh_feature_availability()
-            if not availability.active:
-                raise SshFeatureDisabledError(availability.reason)
+        trainer_id = payload.remote_trainer_id if isinstance(payload, RemoteTrainJobPayload) else None
+        async with RemoteTrainerService.allow_job_submission(trainer_id):
+            handler = get_training_target_handler(payload, self.session, self.remote_trainer_service)
+            payload = await handler.prepare(payload)
 
-        handler = get_training_target_handler(
-            payload, self.session, self.remote_trainer_service, self.remote_server_service
-        )
-        payload = await handler.prepare(payload)
+            if await self.repo.is_job_duplicate(project_id=payload.project_id, payload=payload):
+                raise DuplicateJobException
 
-        if await self.repo.is_job_duplicate(project_id=payload.project_id, payload=payload):
-            raise DuplicateJobException
-
-        try:
-            job = TrainJob(
-                project_id=payload.project_id,
-                payload=payload,
-                message="Training job submitted",
-            )
-            return await self.repo.save(job)
-        except IntegrityError:
-            raise ResourceNotFoundError(resource_type=ResourceType.PROJECT, resource_id=payload.project_id)
+            try:
+                job = TrainJob(
+                    project_id=payload.project_id,
+                    payload=payload,
+                    message="Training job submitted",
+                )
+                return await self.repo.save(job)
+            except IntegrityError:
+                raise ResourceNotFoundError(resource_type=ResourceType.PROJECT, resource_id=payload.project_id)
 
     async def get_pending_train_job(self) -> Job | None:
         return await self.repo.get_pending_job_by_type(JobType.TRAINING)

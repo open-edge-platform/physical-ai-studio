@@ -59,6 +59,7 @@ from physicalai.policies.rldx1.export import Rldx1ExportMixin
 from physicalai.policies.rldx1.model import Rldx1Model
 from physicalai.policies.rldx1.utils.pretrain import (
     extract_camera_names,
+    get_default_input_features_for_model_id,
     retrieve_safetensors_shards,
 )
 from physicalai.policies.rldx1.utils.stats import (
@@ -155,7 +156,8 @@ class Rldx1(Rldx1ExportMixin, Policy):
             no file in the repo records pixel resolution). Camera *names* are auto-discovered
             from the checkpoint's ``processor_config.json`` in :meth:`_from_hf` (see
             ``self._camera_names``) purely to guide this override -- only the shape must be
-            supplied. For ``RLWRLD/RLDX-1-FT-LIBERO``:
+            supplied. Known pretrained IDs may provide built-in defaults (currently
+            ``RLWRLD/RLDX-1-FT-LIBERO``). For ``RLWRLD/RLDX-1-FT-LIBERO``:
             ``{"front_view": Feature(ftype=FeatureType.VISUAL, shape=(3, 256, 256)),
             "left_wrist_view": Feature(ftype=FeatureType.VISUAL, shape=(3, 256, 256))}``.
         output_features: Explicit action feature overrides, merged into ``dataset_stats``
@@ -323,6 +325,8 @@ class Rldx1(Rldx1ExportMixin, Policy):
             video_length=self.config.video_length,
             video_stride=self.config.video_stride,
         )
+        if input_features is None and pretrained_name_or_path is not None:
+            input_features = get_default_input_features_for_model_id(pretrained_name_or_path)
         # Explicit Feature overrides win over anything auto-fetched/user-supplied above --
         # required for RLWRLD checkpoints, which never record camera shapes anywhere.
         dataset_stats = merge_explicit_features(dataset_stats, input_features, output_features)

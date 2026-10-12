@@ -8,6 +8,7 @@ import { $api } from '../../../api/client';
 import type { SchemaSo101RobotPayload } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
 import { paths } from '../../../router';
+import { useRobotCatalogQuery } from '../robot-catalog.hooks';
 import { FormFields, RobotFormHeading, RobotType } from './form';
 import { useRobotForm, useRobotFormBody } from './provider';
 
@@ -23,6 +24,7 @@ export const CreateRobotForm = () => {
     const navigate = useNavigate();
     const { project_id } = useProjectId();
     const { activeType } = useRobotForm();
+    const { data: catalog } = useRobotCatalogQuery();
 
     const addRobotMutation = $api.useMutation('post', '/api/projects/{project_id}/robots', {
         meta: {
@@ -36,6 +38,15 @@ export const CreateRobotForm = () => {
     const body = useRobotFormBody(uuidv4());
     const isSO101 = activeType === 'SO101_Follower' || activeType === 'SO101_Leader';
     const shouldRunSO101Setup = isSO101 && !hasUploadedCalibration(body?.payload);
+    const shouldRunZeroCalibration = catalog.some(
+        ({ type, zero_calibration }) => type === activeType && zero_calibration != null
+    );
+    const zeroCalibrationPath =
+        activeType === 'ReBot_B601_RS_Follower'
+            ? paths.project.robots.rebotRsSetup
+            : activeType === 'StarArm_102_LD_Leader' || activeType === 'StarArm_102_HD_Leader'
+              ? paths.project.robots.stararmSetup
+              : paths.project.robots.zeroCalibration;
 
     const handleSubmit = async (event: FormEvent) => {
         event.preventDefault();
@@ -46,6 +57,11 @@ export const CreateRobotForm = () => {
 
         if (shouldRunSO101Setup) {
             navigate(paths.project.robots.so101Setup({ project_id }));
+            return;
+        }
+
+        if (shouldRunZeroCalibration) {
+            navigate(zeroCalibrationPath({ project_id }));
             return;
         }
 
@@ -77,7 +93,11 @@ export const CreateRobotForm = () => {
                             isDisabled={isCreateDisabled}
                             isPending={addRobotMutation.isPending}
                         >
-                            {shouldRunSO101Setup ? 'Begin Setup' : 'Add robot'}
+                            {shouldRunSO101Setup
+                                ? 'Begin Setup'
+                                : shouldRunZeroCalibration
+                                  ? 'Begin Calibration'
+                                  : 'Add robot'}
                         </Button>
                     </View>
                 </Flex>

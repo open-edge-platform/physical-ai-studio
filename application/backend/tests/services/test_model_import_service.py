@@ -76,10 +76,10 @@ def job(project_id, dataset_id):
 # ---------------------------------------------------------------------------
 
 
-def _make_manifest(policy: str = "act", artifact: str = "act.pt") -> dict:
+def _make_manifest(policy: str = "act", artifact: str = "act.pt", backend: str = "torch") -> dict:
     return {
         "policy": {"name": policy, "source": {"class_path": f"physicalai.policies.{policy}.policy"}},
-        "model": {"artifacts": {"torch": artifact}},
+        "model": {"artifacts": {backend: artifact}},
         "format": "policy_package",
         "version": "1.0",
     }
@@ -88,8 +88,7 @@ def _make_manifest(policy: str = "act", artifact: str = "act.pt") -> dict:
 def _base_files(policy: str = "act", artifact: str = "act.pt") -> dict[str, str]:
     """Minimal valid model files."""
     return {
-        "version_0/hparams.yaml": "policy: act\n",
-        "version_0/metrics.csv": "step,loss\n1,0.1\n",
+        "model.ckpt": "checkpoint",
         "exports/torch/manifest.json": json.dumps(_make_manifest(policy, artifact)),
         f"exports/torch/{artifact}": "weights",
     }
@@ -165,6 +164,55 @@ async def test_import_model_directory_move_removes_source(tmp_path, project_id, 
 
     assert Path(model.path).is_dir()
     assert not source_dir.exists()
+
+
+@pytest.mark.anyio
+async def test_import_model_directory_accepts_openvino_export_without_logger_files(
+    tmp_path, project_id, dataset_id, settings, dataset, job
+):
+    source_dir = _create_model_directory(
+        tmp_path,
+        {
+            "model.ckpt": "checkpoint",
+            "exports/openvino/manifest.json": json.dumps(_make_manifest("pi05", "pi05.xml", "openvino")),
+            "exports/openvino/pi05.xml": "model",
+        },
+    )
+
+    with _mock_services(settings, dataset, job) as service:
+        model = await service.import_model_directory(
+            source_dir=source_dir,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            model_name="imported",
+        )
+
+    assert model.policy == "pi05"
+    assert Path(model.path, "exports/openvino/pi05.xml").is_file()
+
+
+@pytest.mark.anyio
+async def test_import_model_directory_accepts_exports_directory_without_checkpoint(
+    tmp_path, project_id, dataset_id, settings, dataset, job
+):
+    source_dir = _create_model_directory(
+        tmp_path,
+        {
+            "openvino/manifest.json": json.dumps(_make_manifest("pi05", "pi05.xml", "openvino")),
+            "openvino/pi05.xml": "model",
+        },
+    )
+
+    with _mock_services(settings, dataset, job) as service:
+        model = await service.import_model_directory(
+            source_dir=source_dir,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            model_name="export-only",
+        )
+
+    assert model.policy == "pi05"
+    assert Path(model.path, "exports/openvino/pi05.xml").is_file()
 
 
 @pytest.mark.anyio

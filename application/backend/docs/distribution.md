@@ -79,7 +79,7 @@ The UI and robot assets are included through `force_include` entries that `scrip
 The wheel is build and published using GitHub Actions.
 
 - **TestPyPI** — Publishes on every push to `main` (or manual dispatch). Appends `.dev<timestamp>` to the version for unique uploads.
-- **PyPI** — Publishes when an `app/vX.Y.Z` tag is pushed. Validates the tag matches `application/VERSION` and `pyproject.toml` before building.
+- **PyPI** — Publishes when an `app/vX.Y.Z` tag is pushed. Validates the tag against `application/backend/pyproject.toml` before building; that project metadata is the source of truth for the Studio package version.
 
 ### Test From TestPyPI
 
@@ -95,7 +95,7 @@ uvx \
   --index https://pypi.org/simple \
   --index https://download.pytorch.org/whl/xpu \
   --index-strategy unsafe-best-match \
-  --from "physicalai-studio[xpu]==0.2.0" \
+  --from "physicalai-studio[xpu]==0.3.0" \
   physicalai-studio serve
 ```
 
@@ -159,7 +159,7 @@ robot asset file count: <non-zero>
 Use the wheel directly, without publishing to PyPI:
 
 ```bash
-WHEEL="/home/intel/physical-ai-studio/application/backend/dist/physicalai_studio-0.2.0-py3-none-any.whl"
+WHEEL="/home/intel/physical-ai-studio/application/backend/dist/physicalai_studio-0.3.0-py3-none-any.whl"
 
 uvx --isolated --no-cache \
   --index https://download.pytorch.org/whl/xpu \

@@ -42,7 +42,6 @@ class TrainingTarget(StrEnum):
 
     LOCAL = "local"
     REMOTE = "remote"
-    SSH = "ssh"
 
 
 class JobList(BaseModel):
@@ -90,13 +89,10 @@ _DEFAULT_SNAPFLOW_DISTILL_EPOCHS = 3
 class TrainJobPayloadBase(BaseModel):
     """Fields shared by every training execution target.
 
-    Concrete payloads are `LocalTrainJobPayload`, `RemoteTrainJobPayload`, and
-    `SshTrainJobPayload` below: each adds only the fields meaningful for its
+    Concrete payloads are `LocalTrainJobPayload` and `RemoteTrainJobPayload`
+    below: each adds only the fields meaningful for its
     target and forbids the rest (`extra="forbid"`), so a payload can never
-    express two targets at once and target-specific fields don't need a
-    manual mutual-exclusion validator. Adding a target (e.g. a future
-    AWS-provisioned trainer) means adding one subclass here and one entry in
-    the `TrainJobPayload` union, not another branch in a validator.
+    express two targets at once.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -386,32 +382,15 @@ class RemoteTrainJobPayload(TrainJobPayloadBase):
     )
 
 
-class SshTrainJobPayload(TrainJobPayloadBase):
-    """Trains on an SSH-provisioned remote server.
-
-    `base_model_id` resume is rejected by `SshTrainingTargetHandler.prepare`
-    for the same reason as `RemoteTrainJobPayload`.
-    """
-
-    training_target: Literal[TrainingTarget.SSH] = TrainingTarget.SSH
-    remote_server_id: UUID = Field(..., description="Configured SSH-provisioned remote server selected for an SSH run")
-    remote_server_name: str | None = Field(
-        default=None,
-        description="Resolved remote server name pinned when the job is submitted, for display once deleted",
-    )
-
-
 TrainJobPayload = Annotated[
-    LocalTrainJobPayload | RemoteTrainJobPayload | SshTrainJobPayload,
+    LocalTrainJobPayload | RemoteTrainJobPayload,
     Field(discriminator="training_target"),
 ]
 
 # Used to (de)serialize a persisted/request payload dict into the right
 # variant, since `TrainJobPayload` is a type alias (not a class) and has no
 # `model_validate`/`model_dump` of its own.
-TrainJobPayloadAdapter: TypeAdapter[LocalTrainJobPayload | RemoteTrainJobPayload | SshTrainJobPayload] = TypeAdapter(
-    TrainJobPayload
-)
+TrainJobPayloadAdapter: TypeAdapter[LocalTrainJobPayload | RemoteTrainJobPayload] = TypeAdapter(TrainJobPayload)
 
 
 class TrainJob(BaseJob):
@@ -424,7 +403,7 @@ class DatasetImportJob(BaseJob):
     payload: DatasetImportJobPayload
 
 
-JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | SshTrainJobPayload | DatasetImportJobPayload
+JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | DatasetImportJobPayload
 
 Job = Annotated[
     TrainJob | DatasetImportJob,

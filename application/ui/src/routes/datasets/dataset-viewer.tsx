@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import {
     ActionButton,
     AlertDialog,
@@ -12,7 +14,7 @@ import {
     Text,
     View,
 } from '@geti-ui/ui';
-import { Add, Delete } from '@geti-ui/ui/icons';
+import { Add, Delete, SortUpDown } from '@geti-ui/ui/icons';
 import { keepPreviousData } from '@tanstack/react-query';
 
 import { $api } from '../../api/client';
@@ -32,6 +34,7 @@ export const DatasetViewer = () => {
 
     const { deleteEpisodes, isPending } = useDeleteEpisodeQuery(dataset.id!);
     const [activeEpisodeIndex, setActiveEpisodeIndex] = useActiveEpisode();
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
     const { data: environment } = $api.useSuspenseQuery(
         'get',
@@ -89,45 +92,60 @@ export const DatasetViewer = () => {
             </View>
             <Divider orientation='vertical' size='S' />
             <Flex direction='column'>
-                {selectedEpisodes.length === 0 ? (
-                    <Button
-                        href={recordPath}
-                        variant='secondary'
-                        alignSelf='end'
-                        marginEnd='size-400'
-                        marginBottom={'size-200'}
-                    >
-                        <Add fill='white' style={{ marginRight: '4px' }} />
-                        <Text>Add Episode</Text>
-                    </Button>
-                ) : (
-                    <Flex marginBottom='size-200' gap='size-200' justifyContent='end' marginEnd='size-400'>
-                        <ActionButton onPress={() => setSelectedEpisodes([])}>
-                            <Text>Clear selection</Text>
-                        </ActionButton>
-                        <DialogTrigger>
-                            <ActionButton>
-                                <Delete fill='white' />
+                <Flex
+                    justifyContent='space-between'
+                    alignItems='center'
+                    gap='size-100'
+                    marginStart='size-250'
+                    marginEnd='size-250'
+                    marginBottom='size-200'
+                >
+                    {selectedEpisodes.length === 0 ? (
+                        <Button href={recordPath} variant='secondary'>
+                            <Add fill='white' style={{ marginRight: '4px' }} />
+                            <Text>Add Episode</Text>
+                        </Button>
+                    ) : (
+                        <Flex gap='size-200' justifyContent='end'>
+                            <ActionButton onPress={() => setSelectedEpisodes([])}>
+                                <Text>Clear selection</Text>
                             </ActionButton>
-                            <AlertDialog
-                                onPrimaryAction={async () => {
-                                    const deletePromise = deleteEpisodes(selectedEpisodes);
-                                    setSelectedEpisodes([]);
+                            <DialogTrigger>
+                                <ActionButton>
+                                    <Delete fill='white' />
+                                </ActionButton>
+                                <AlertDialog
+                                    onPrimaryAction={async () => {
+                                        const deletePromise = deleteEpisodes(selectedEpisodes);
+                                        setSelectedEpisodes([]);
 
-                                    await deletePromise;
-                                }}
-                                title='Delete episodes'
-                                variant='warning'
-                                primaryActionLabel='Delete'
-                                isPrimaryActionDisabled={isPending}
-                            >
-                                Are you sure you want to delete {selectedEpisodes.length} selected{' '}
-                                {pluralize(selectedEpisodes.length, 'episode', 'episodes')}?
-                            </AlertDialog>
-                        </DialogTrigger>
-                    </Flex>
-                )}
-                <EpisodeList episodes={episodes} onSelect={setActiveEpisodeIndex} currentEpisode={activeEpisodeIndex} />
+                                        await deletePromise;
+                                    }}
+                                    title='Delete episodes'
+                                    variant='warning'
+                                    primaryActionLabel='Delete'
+                                    isPrimaryActionDisabled={isPending}
+                                >
+                                    Are you sure you want to delete {selectedEpisodes.length} selected{' '}
+                                    {pluralize(selectedEpisodes.length, 'episode', 'episodes')}?
+                                </AlertDialog>
+                            </DialogTrigger>
+                        </Flex>
+                    )}
+                    <ActionButton
+                        isQuiet
+                        aria-label={`Sort by episode number: ${sortOrder} first`}
+                        onPress={() => setSortOrder((order) => (order === 'newest' ? 'oldest' : 'newest'))}
+                    >
+                        <SortUpDown />
+                    </ActionButton>
+                </Flex>
+                <EpisodeList
+                    episodes={episodes}
+                    onSelect={setActiveEpisodeIndex}
+                    currentEpisode={activeEpisodeIndex}
+                    sortOrder={sortOrder}
+                />
             </Flex>
         </Flex>
     );

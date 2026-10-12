@@ -10,8 +10,8 @@ application/docker/Dockerfile         @open-edge-platform/physical-ai-studio-mai
 application/docker/Dockerfile.trainer @open-edge-platform/physical-ai-studio-maintain @sys-geti
 
 # CI and security
-.github/actions/                  @open-edge-platform/geti-ci-maintain
-.github/workflows/                @open-edge-platform/geti-ci-maintain
+.github/actions/                  @open-edge-platform/geti-ci-maintain @sys-geti
+.github/workflows/                @open-edge-platform/geti-ci-maintain @sys-geti
 .github/renovate.json5            @open-edge-platform/geti-ci-maintain
 .github/bandit_config.yml         @open-edge-platform/geti-ci-maintain
 security.md                       @open-edge-platform/geti-ci-maintain

@@ -90,7 +90,8 @@ async def validation_exception_handler(_request: Request, exception: Exception) 
         # with a message explaining what the problem with the parameter is.
         loc, msg = pydantic_error["loc"], pydantic_error["msg"]
         filtered_loc = loc[1:] if loc[0] in ("body", "query", "path") else loc
-        field_string = ".".join(str(filtered_loc))  # nested fields with dot-notation
+        # Report nested fields as dot-separated path segments.
+        field_string = ".".join(str(segment) for segment in filtered_loc)
         reformatted_message[field_string].append(msg)
 
     headers = {"Cache-Control": "no-cache"}  # always revalidate

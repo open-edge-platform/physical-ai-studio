@@ -101,9 +101,9 @@ class ObservationEvent(BaseModel):
 
 class StateData(BaseModel):
     model_config = ConfigDict(extra="allow")
-
     connected: bool
     follower_source: FollowerSource
+    has_leader: bool = False
     model_loaded: bool | None = None
     task: str | None = None
     dataset_loaded: bool | None = None

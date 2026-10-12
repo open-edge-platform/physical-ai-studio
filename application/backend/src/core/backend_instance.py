@@ -1,16 +1,11 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Stable identity for this Studio installation, used to own SSH-provisioned containers.
+"""Stable identity for this Studio installation's managed trainer containers.
 
-Remote servers are global: two Studio installations can legitimately target the
-same host, and a container's management labels alone cannot distinguish "mine,
-now orphaned" from "a different, still-active installation's job". A container
-is also labeled with the *owning* installation's id, generated once and
-persisted to disk so it survives process restarts (the orphan sweep runs after
-every restart) but is never shared between installations, e.g. by copying a
-database between machines - copying the data directory copies this file too,
-which is exactly the "same installation" case the orphan sweep needs to widen.
+The id is persisted in the data directory and labels each container so
+cleanup only removes containers owned by this installation. It survives
+process restarts and is shared when the installation's data directory moves.
 """
 
 import os

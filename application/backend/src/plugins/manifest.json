@@ -4,11 +4,16 @@
     "name": "ReBot Robot Plugin",
     "description": "ReBot B601 robot integrations.",
     "repo_url": "https://github.com/openvinotoolkit/physicalai",
-    "install_source": "physicalai-rebot-b601-plugin>=0.7.0",
+    "install_source": "physicalai-rebot-b601-plugin>=0.8.0",
     "robots": [
       {
         "type": "ReBot_B601_DM_Follower",
         "display_name": "ReBot B601 DM Follower",
+        "role": "follower"
+      },
+      {
+        "type": "ReBot_B601_RS_Follower",
+        "display_name": "ReBot B601 RS Follower",
         "role": "follower"
       }
     ]
@@ -18,7 +23,7 @@
     "name": "Stararm 102 Robot Plugin",
     "description": "Stararm 102 robot integrations.",
     "repo_url": "https://github.com/openvinotoolkit/physicalai",
-    "install_source": "physicalai-stararm-plugin>=0.3.0",
+    "install_source": "physicalai-stararm-plugin>=0.4.0",
     "robots": [
       {
         "type": "StarArm_102_LD_Leader",

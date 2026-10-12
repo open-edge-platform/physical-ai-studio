@@ -46,4 +46,75 @@ describe('getApiErrorMessage', () => {
         expect(getApiErrorMessage({ message: 42 })).toBeUndefined();
         expect(getApiErrorMessage(null)).toBeUndefined();
     });
+
+    it('falls back to a FastAPI validation-error detail when message is absent', () => {
+        expect(
+            getApiErrorMessage({
+                detail: [
+                    {
+                        loc: ['body', 'alias'],
+                        msg: "String should match pattern '^[A-Za-z0-9]...'",
+                        type: 'string_pattern_mismatch',
+                    },
+                ],
+            })
+        ).toBe("alias: String should match pattern '^[A-Za-z0-9]...'");
+    });
+
+    it('joins multiple validation-error details', () => {
+        expect(
+            getApiErrorMessage({
+                detail: [
+                    { loc: ['body', 'alias'], msg: 'Field required' },
+                    { loc: ['body', 'hostname'], msg: 'Field required' },
+                ],
+            })
+        ).toBe('alias: Field required; hostname: Field required');
+    });
+
+    it('omits the field prefix when loc has no field name', () => {
+        expect(getApiErrorMessage({ detail: [{ loc: [], msg: 'Invalid request body' }] })).toBe('Invalid request body');
+    });
+
+    it('returns undefined for empty or malformed validation details', () => {
+        expect(getApiErrorMessage({ detail: [] })).toBeUndefined();
+        expect(getApiErrorMessage({ detail: 'Not found' })).toBeUndefined();
+        expect(getApiErrorMessage({ detail: [{ loc: ['body'] }, null] })).toBeUndefined();
+        expect(getApiErrorMessage({ errors: 'Not found' })).toBeUndefined();
+    });
+
+    it("reads the app's reshaped field-validation error (message as a field->messages record)", () => {
+        // What `exception_handlers.validation_exception_handler` actually returns
+        // for a `RequestValidationError` - e.g. a POST body failing a Pydantic
+        // field constraint such as the SSH host alias pattern.
+        expect(
+            getApiErrorMessage({
+                error_code: 'bad_request',
+                message: { alias: ["String should match pattern '^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$'"] },
+                http_status: 400,
+            })
+        ).toBe("alias: String should match pattern '^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$'");
+    });
+
+    it('joins multiple fields and multiple messages per field in a reshaped field-validation error', () => {
+        expect(
+            getApiErrorMessage({
+                error_code: 'bad_request',
+                message: { alias: ['Field required'], hostname: ['Field required', 'String too short'] },
+                http_status: 400,
+            })
+        ).toBe('alias: Field required; hostname: Field required, String too short');
+    });
+
+    it("reads the app's reshaped pydantic validation error (errors array)", () => {
+        // What `exception_handlers.pydantic_validation_exception_handler` returns
+        // for a `pydantic.ValidationError` raised directly by application code.
+        expect(
+            getApiErrorMessage({
+                error_code: 'invalid_payload',
+                errors: [{ message: 'Field required', type: 'missing', location: 'alias' }],
+                http_status: 400,
+            })
+        ).toBe('alias: Field required');
+    });
 });

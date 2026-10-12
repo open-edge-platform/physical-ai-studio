@@ -31,6 +31,7 @@ Physical AI Studio is an end-to-end framework for teaching robots to perform tas
 - **Flexible Interface** - Use Python API, CLI, or GUI
 - **Production Export** - Deploy to [OpenVINO](https://docs.openvino.ai/), [ONNX](https://onnx.ai/), or [Torch](https://docs.pytorch.org/executorch/stable/index.html) for any hardware
 - **Standardized Benchmarks** - Evaluate on benchmarks such as [LIBERO](https://libero-project.github.io/), [PushT](https://diffusion-policy.cs.columbia.edu/), and [RoboCasa](https://robocasa.ai/)
+- **Inference Optimizations** - [SnapFlow](library/docs/how-to/training/snapflow_distillation.md) gives about 3× faster Pi0.5 action-chunk inference; [LIBERO results](library/docs/explanation/benchmark/snapflow-libero.md)
 - **Built on Lightning** - [PyTorch Lightning](https://lightning.ai/docs/pytorch/stable/) for distributed training, mixed precision, and more
 
 ## Quick Start

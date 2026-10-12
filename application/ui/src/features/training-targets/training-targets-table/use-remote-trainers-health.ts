@@ -4,6 +4,7 @@ import { $api } from '../../../api/client';
 import { SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
 
 const REMOTE_UNAVAILABLE_POLL_MS = 15000;
+const REMOTE_STARTING_POLL_MS = 5000;
 
 type RemoteTrainerHealthEntry = {
     health?: SchemaRemoteTrainerHealth;
@@ -25,8 +26,11 @@ export const useRemoteTrainersHealth = (remoteTrainerIds: string[]): Map<string,
                 { params: { path: { remote_trainer_id: remoteTrainerId } } },
                 {
                     refetchOnMount: 'always',
-                    refetchInterval: (healthQuery) =>
-                        healthQuery.state.data?.status === 'unreachable' ? REMOTE_UNAVAILABLE_POLL_MS : false,
+                    refetchInterval: (healthQuery) => {
+                        const status = healthQuery.state.data?.status;
+                        if (status === 'starting') return REMOTE_STARTING_POLL_MS;
+                        return status === 'unreachable' ? REMOTE_UNAVAILABLE_POLL_MS : false;
+                    },
                 }
             )
         ),

@@ -19,7 +19,7 @@ class XPUAccelerator(Accelerator):
 
     @property
     def name(self) -> str:
-        """Return the name of the accelerator."""
+        """The name of the accelerator."""
         return self.accelerator_name
 
     def setup_device(self, device: torch.device) -> None:  # noqa: PLR6301

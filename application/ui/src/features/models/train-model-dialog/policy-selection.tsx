@@ -22,7 +22,11 @@ export const PolicySelection = ({
     const availableVram = trainingDevice?.memory ?? 0;
 
     const selectedModel = MODELS.find((m) => m.id === selectedPolicy) ?? null;
-    const hasInsufficientVram = selectedModel !== null && availableVram > 0 && selectedModel.minVRAM > availableVram;
+    const hasInsufficientVram =
+        selectedModel !== null &&
+        availableVram > 0 &&
+        selectedModel.minVRAM > availableVram &&
+        formatBytes(selectedModel.minVRAM) !== formatBytes(availableVram);
 
     return (
         <Flex direction='column' gap='size-100'>
@@ -72,8 +76,8 @@ export const PolicySelection = ({
             {hasInsufficientVram && (
                 <View marginTop='size-100'>
                     <InlineAlert variant='warning'>
-                        {selectedModel.name} requires at least {formatBytes(selectedModel!.minVRAM)} VRAM but your
-                        device has {formatBytes(availableVram)}. Training may fail or be very slow.
+                        {selectedModel.name} requires at least {formatBytes(selectedModel.minVRAM)} VRAM, but the device
+                        reports less than that. Training may fail or be very slow.
                     </InlineAlert>
                 </View>
             )}

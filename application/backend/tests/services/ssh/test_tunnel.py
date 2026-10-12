@@ -124,21 +124,51 @@ async def test_dropped_tunnel_reconnects_without_failing(settings) -> None:
     await tunnel.close()
 
 
-async def test_reconnect_gives_up_after_budget_exhausted() -> None:
-    settings = Settings(SSH_TUNNEL_RECONNECT_BUDGET_S=0.05, SSH_TUNNEL_RECONNECT_BACKOFF_MAX_S=0.01)
-    listener = FakeListener(port=1111)
-    transport = FakeTransport(listener)
+async def test_offline_start_reconnects_when_vpn_returns(settings) -> None:
+    listener = FakeListener(1111)
+    available = False
 
     def open_transport():
-        return transport if not transport.connected else FakeTransport(listener, fail_connect=True)
+        return FakeTransport(listener, fail_connect=not available)
 
-    tunnel = SshTunnel(open_transport, "127.0.0.1", 8080, settings)
+    tunnel = SshTunnel(open_transport, "127.0.0.1", 8080, settings, local_port=1111)
+    await tunnel.open(retry_on_failure=True)
+    assert tunnel.local_port == 1111
+    available = True
+    for _ in range(100):
+        if tunnel._listener is listener:
+            break
+        await asyncio.sleep(0.01)
+    assert tunnel._listener is listener
+    await tunnel.close()
+
+
+async def test_reconnect_continues_past_warning_threshold() -> None:
+    settings = Settings(SSH_TUNNEL_RECONNECT_BUDGET_S=0.05, SSH_TUNNEL_RECONNECT_BACKOFF_MAX_S=0.01)
+    first = FakeListener(port=1111)
+    second = FakeListener(port=1111)
+    available = False
+    attempts = 0
+
+    def open_transport():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return FakeTransport(first)
+        return FakeTransport(second, fail_connect=not available)
+
+    tunnel = SshTunnel(open_transport, "127.0.0.1", 8080, settings, local_port=1111)
     await tunnel.open()
-
-    listener.drop()
-    await asyncio.sleep(0.2)  # let the watchdog exhaust its reconnect budget
-
-    # The tunnel gave up quietly (logged, not raised) - closing it must still be safe.
+    first.drop()
+    await asyncio.sleep(0.15)
+    assert attempts > 1
+    available = True
+    for _ in range(50):
+        if tunnel._listener is second:
+            break
+        await asyncio.sleep(0.01)
+    assert tunnel._listener is second
+    assert tunnel.local_port == 1111
     await tunnel.close()
 
 
@@ -218,6 +248,57 @@ async def test_reconnect_falls_back_to_a_fresh_port_if_the_old_one_is_unavailabl
 
     assert tunnel.local_port == 2222
     assert transports[1].requested_local_ports == [1111, 0]
+    await tunnel.close()
+
+
+async def test_configured_port_never_falls_back_to_an_ephemeral_port(settings) -> None:
+    class _UnavailablePort(FakeTransport):
+        async def forward_local_port(self, remote_host: str, remote_port: int, local_port: int = 0):
+            self.requested_local_ports.append(local_port)
+            raise OSError("port in use")
+
+    transport = _UnavailablePort(FakeListener(2222))
+    tunnel = SshTunnel(lambda: transport, "127.0.0.1", 8080, settings, local_port=1111)
+    with pytest.raises(OSError, match="port in use"):
+        await tunnel.open()
+    assert transport.requested_local_ports == [1111]
+    assert transport.closed
+
+
+async def test_reconnect_waits_for_configured_port_instead_of_rebinding(settings) -> None:
+    first = FakeListener(1111)
+    second = FakeListener(1111)
+    available = False
+    attempts: list[FakeTransport] = []
+
+    class _PortBusy(FakeTransport):
+        async def forward_local_port(self, remote_host: str, remote_port: int, local_port: int = 0):
+            self.requested_local_ports.append(local_port)
+            if not available:
+                raise OSError("port in use")
+            return self.listener
+
+    def open_transport():
+        transport = FakeTransport(first) if not attempts else _PortBusy(second)
+        attempts.append(transport)
+        return transport
+
+    tunnel = SshTunnel(open_transport, "127.0.0.1", 8080, settings, local_port=1111)
+    await tunnel.open()
+    first.drop()
+    for _ in range(50):
+        if len(attempts) >= 2:
+            break
+        await asyncio.sleep(0.01)
+    assert len(attempts) >= 2
+    assert attempts[1].requested_local_ports == [1111]
+    available = True
+    for _ in range(100):
+        if tunnel._listener is second:
+            break
+        await asyncio.sleep(0.01)
+    assert tunnel._listener is second
+    assert tunnel.local_port == 1111
     await tunnel.close()
 
 
