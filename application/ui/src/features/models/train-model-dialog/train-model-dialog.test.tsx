@@ -828,6 +828,21 @@ describe('TrainModelDialog', () => {
         expect(screen.queryByRole('checkbox', { name: /ONNX/i })).not.toBeInTheDocument();
     });
 
+    it('shows a policy export lookup failure instead of claiming the policy has no formats', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        server.use(http.get('/api/policies/backends', () => HttpResponse.json({}, { status: 500 })));
+
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await goToLastStep(user);
+
+        expect(await screen.findByText('Cannot verify export formats on this training target.')).toBeInTheDocument();
+        expect(screen.queryByText(/has no export formats/i)).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+    });
+
     it('blocks training when no export format is picked', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();

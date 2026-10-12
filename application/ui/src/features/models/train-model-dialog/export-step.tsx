@@ -30,6 +30,10 @@ export const ExportStep = ({ policyName, selection }: ExportStepProps) => {
         );
     }
 
+    if (error !== null && backends.length === 0) {
+        return <InlineAlert variant='warning'>{error}</InlineAlert>;
+    }
+
     if (backends.length === 0) {
         return (
             <Flex direction='column' justifyContent='center' height='100%' width='100%'>

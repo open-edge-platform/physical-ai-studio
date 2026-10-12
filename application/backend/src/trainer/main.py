@@ -17,7 +17,7 @@ from trainer.api import router as jobs_router
 from trainer.devices import get_training_devices
 from trainer.log_setup import setup_logging, setup_uvicorn_logging
 from trainer.queue_worker import QueueManager
-from trainer.schemas import _SUPPORTED_POLICIES, DeviceInfo, HealthInfo, StorageInfo
+from trainer.schemas import DeviceInfo, HealthInfo, StorageInfo
 from trainer.settings import get_settings
 from trainer.storage import get_storage_info
 from training.policy_catalog import PolicyCatalog, available_policy_classes, policy_catalog
@@ -62,9 +62,7 @@ async def health() -> HealthInfo:
 @app.get("/policies", response_model=PolicyCatalog)
 async def policies() -> PolicyCatalog:
     """Report policies and export formats installed in this trainer image."""
-    return policy_catalog(
-        {name: entry for name, entry in available_policy_classes().items() if name in _SUPPORTED_POLICIES}
-    )
+    return policy_catalog(available_policy_classes())
 
 
 @app.get("/devices", response_model=list[DeviceInfo])
