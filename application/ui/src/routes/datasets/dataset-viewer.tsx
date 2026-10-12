@@ -105,14 +105,7 @@ export const DatasetViewer = () => {
                 </Panel>
                 <Separator className={classes.separator} />
                 <Panel id='episode-list' defaultSize='35%' minSize='250px' maxSize='70%' className={classes.listPanel}>
-                    <Flex
-                        justifyContent='space-between'
-                        alignItems='center'
-                        gap='size-100'
-                        marginStart='size-250'
-                        marginEnd='size-250'
-                        marginBottom='size-200'
-                    >
+                    <Flex justifyContent='space-between' alignItems='center' gap='size-100' marginBottom='size-200'>
                         {selectedEpisodes.length === 0 ? (
                             <Button href={recordPath} variant='secondary'>
                                 <Add fill='white' style={{ marginRight: '4px' }} />
