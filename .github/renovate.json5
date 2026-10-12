@@ -88,6 +88,11 @@
       matchManagers: ["github-actions", "custom.regex"],
       matchPackagePatterns: ["*"],
       schedule: ["* * 1,15 * *"], // twice a month
+      automerge: true,
+      automergeType: "pr",
+      reviewers: ["sys-geti"],
+      platformAutomerge: true,
+      assignAutomerge: true,
     },
 
     // Custom semver versioning for geti-ci actions to support tags like zizmor/v0.1.0
