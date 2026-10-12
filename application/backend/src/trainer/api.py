@@ -204,8 +204,6 @@ async def submit_job(body: SubmitJobRequest, request: Request) -> SubmitJobRespo
     if missing := missing_policy_dependencies(body.spec.policy):
         raise HTTPException(status_code=422, detail=f"Policy {body.spec.policy!r} is missing: {', '.join(missing)}")
     manager = _manager(request)
-    if manager.draining:
-        raise HTTPException(status_code=409, detail="Trainer is refreshing its image")
     job_id = manager.store.create(body)
     manager.store.stash_secret(job_id, body.hf_token)
     state = manager.store.get(job_id)

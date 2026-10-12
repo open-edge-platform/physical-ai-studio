@@ -268,17 +268,14 @@ class RemoteTrainerService:
             yield
             return
         async with _setup_lock:
-            if (
-                remote_trainer_id in _background_installs
-                or remote_trainer_id in _background_launches
-                or persistent_trainer.get_launch_failure(remote_trainer_id)
-                in {
-                    "reboot_required",
-                    "relogin_required",
-                    "reboot_blocked_active_containers",
-                    "nvidia_driver_unavailable",
-                }
-            ):
+            if remote_trainer_id in _background_installs or persistent_trainer.get_launch_failure(
+                remote_trainer_id
+            ) in {
+                "reboot_required",
+                "relogin_required",
+                "reboot_blocked_active_containers",
+                "nvidia_driver_unavailable",
+            }:
                 raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
             yield
 
@@ -368,18 +365,6 @@ class RemoteTrainerService:
             async with SshTransport(target) as transport:
                 return await host_installer.install(transport, check_only=True)
         return outcome
-
-    async def refresh_trainer_image(self, remote_trainer_id: UUID) -> None:
-        """Explicitly replace an outdated managed image only while its trainer is idle."""
-        trainer = await self.get_remote_trainer(remote_trainer_id)
-        if trainer.connection_mode is not RemoteTrainerConnectionMode.SSH:
-            raise InvalidResourceError("remote trainer", "Only managed SSH trainers have replaceable images")
-        self._require_ssh_feature_if_tunneled(trainer.connection_mode)
-        async with _setup_lock:
-            if remote_trainer_id in _background_launches or remote_trainer_id in _background_installs:
-                raise ResourceInUseError(ResourceType.REMOTE_TRAINER, remote_trainer_id)
-            await self._require_no_active_jobs(remote_trainer_id)
-            await persistent_trainer.start(trainer, refresh=True)
 
     async def install_remote_trainer(self, remote_trainer_id: UUID) -> None:
         """Start a user-requested prerequisite installation; report progress via health."""

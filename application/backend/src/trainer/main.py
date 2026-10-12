@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from loguru import logger
 
 from trainer.api import router as jobs_router
@@ -65,23 +65,6 @@ async def policies() -> PolicyCatalog:
     return policy_catalog(
         {name: entry for name, entry in available_policy_classes().items() if name in _SUPPORTED_POLICIES}
     )
-
-
-@app.post("/maintenance/drain")
-async def drain(request: Request) -> None:
-    """Reserve an idle managed trainer for image replacement, blocking new submissions."""
-    if os.environ.get("TRAINER_MANAGED") != "1":
-        raise HTTPException(status_code=404)
-    if not request.app.state.queue_manager.begin_drain():
-        raise HTTPException(status_code=409, detail="Trainer has active jobs")
-
-
-@app.post("/maintenance/resume")
-async def resume(request: Request) -> None:
-    """Release a drain if image replacement failed before stopping the trainer."""
-    if os.environ.get("TRAINER_MANAGED") != "1":
-        raise HTTPException(status_code=404)
-    request.app.state.queue_manager.draining = False
 
 
 @app.get("/devices", response_model=list[DeviceInfo])

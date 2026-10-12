@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
-import httpx
-
 from core.backend_instance import get_backend_instance_id
 from schemas.hardware import DeviceType
 from schemas.remote_trainer import RemoteTrainer
@@ -104,9 +102,7 @@ def _ssh_target(remote_trainer: RemoteTrainer) -> AliasTarget | DirectTarget:
     return DirectTarget(connection.hostname, connection.port, connection.user, connection.identity_file)
 
 
-async def start(  # noqa: PLR0912, PLR0915 - image verification and replacement must stay ordered
-    remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None, *, refresh: bool = False
-) -> None:
+async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
     """Ensure an SSH trainer has a running container."""
     if remote_trainer.connection_mode.value != "ssh":
         return
@@ -119,7 +115,6 @@ async def start(  # noqa: PLR0912, PLR0915 - image verification and replacement 
     _launch_started_at[remote_trainer.id] = datetime.now(UTC)
     _launch_failure.pop(remote_trainer.id, None)
     _launch_phase[remote_trainer.id] = f"Connecting to '{target.name}'"
-    drained = False
     try:
         async with SshTransport(
             target, settings, accepted_host_key_fingerprint=accepted_host_key_fingerprint
@@ -130,9 +125,9 @@ async def start(  # noqa: PLR0912, PLR0915 - image verification and replacement 
                 _launch_failure[remote_trainer.id] = "docker_unavailable"
                 raise ValueError("Docker is not available on the SSH host")
             existing = await docker_ops.inspect_container(transport, name)
-            if existing and existing.running and not refresh:
+            if existing and existing.running:
                 return
-            if existing and not existing.running:
+            if existing:
                 await docker_ops.stop_and_remove_container(transport, name, settings.ssh_container_stop_timeout_s)
             backend_instance_id = get_backend_instance_id()
             _launch_phase[remote_trainer.id] = "Detecting accelerator"
@@ -148,32 +143,10 @@ async def start(  # noqa: PLR0912, PLR0915 - image verification and replacement 
                 raise ValueError("No supported CUDA or XPU accelerator found on SSH trainer")
             _launch_phase[remote_trainer.id] = "Resolving trainer image"
             image = await docker_ops.resolve_protocol_image(transport, device, DEFAULT_PROTOCOL_VERSION, settings)
-            if existing and existing.running and existing.labels.get(docker_ops.IMAGE_DIGEST_LABEL) == image.digest:
-                return
             _launch_phase[remote_trainer.id] = "Verifying trainer image"
             await verify_image_signature(image, settings)
             _launch_phase[remote_trainer.id] = "Pulling trainer image"
             await docker_ops.pull_image(transport, image, settings)
-            if existing and existing.running:
-                if (
-                    existing.labels.get(docker_ops.MANAGED_LABEL) != "true"
-                    or existing.labels.get(docker_ops.SERVER_LABEL) != str(remote_trainer.id)
-                    or existing.labels.get(docker_ops.INSTANCE_LABEL) != get_backend_instance_id()
-                ):
-                    raise ValueError("Refusing to replace a trainer container not owned by this Studio instance")
-                # Drain prevents submissions (including direct clients) between the idle check and stop.
-                async with httpx.AsyncClient(timeout=5, trust_env=False, follow_redirects=False) as client:
-                    response = await client.post(f"{str(remote_trainer.url).rstrip('/')}/maintenance/drain")
-                    if response.status_code == 409:
-                        raise ValueError("Trainer has active jobs; image refresh postponed")
-                    if response.status_code == 404:
-                        raise ValueError("Trainer image cannot drain jobs; stop the idle container before refreshing")
-                    response.raise_for_status()
-                    drained = True
-                await docker_ops.stop_and_remove_container(transport, name, settings.ssh_container_stop_timeout_s)
-                if await docker_ops.inspect_container(transport, name) is not None:
-                    raise ValueError("Trainer container could not be stopped; image refresh aborted")
-                drained = False
             labels = docker_ops.management_labels(
                 job_id=str(remote_trainer.id),
                 server_id=str(remote_trainer.id),
@@ -206,12 +179,6 @@ async def start(  # noqa: PLR0912, PLR0915 - image verification and replacement 
             )
             await docker_ops.launch_container(transport, argv, remote_trainer.name)
     finally:
-        if drained:
-            try:
-                async with httpx.AsyncClient(timeout=5, trust_env=False, follow_redirects=False) as client:
-                    await client.post(f"{str(remote_trainer.url).rstrip('/')}/maintenance/resume")
-            except httpx.HTTPError:
-                pass  # The old container may already have stopped.
         _launch_phase.pop(remote_trainer.id, None)
 
 

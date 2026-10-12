@@ -52,18 +52,10 @@ class QueueManager:
         self._runner = TrainerRunner()
         self._max_concurrent_jobs = settings.max_concurrent_jobs
         self._cancel_requested: set[str] = set()
-        self.draining = False
         self._active: dict[str, asyncio.Task] = {}
         self._active_devices: dict[str, tuple[str, int] | None] = {}
         self._stopped = asyncio.Event()
         self._loop_task: asyncio.Task | None = None
-
-    def begin_drain(self) -> bool:
-        """Block new submissions atomically with checking the store on this event loop."""
-        if self.store.has_active_jobs():
-            return False
-        self.draining = True
-        return True
 
     async def start(self) -> None:
         """Reset orphaned jobs and begin dispatching."""

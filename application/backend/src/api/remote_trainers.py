@@ -49,15 +49,6 @@ async def reboot_remote_trainer_after_install(
     await remote_trainer_service.reboot_installed_host(remote_trainer_id)
 
 
-@router.post("/{remote_trainer_id}/refresh-image")
-async def refresh_remote_trainer_image(
-    remote_trainer_id: UUID,
-    remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
-) -> None:
-    """Refresh an idle managed trainer to the current signed protocol image."""
-    await remote_trainer_service.refresh_trainer_image(remote_trainer_id)
-
-
 @router.get("/{remote_trainer_id}/health")
 async def check_remote_trainer(
     remote_trainer_id: UUID,
