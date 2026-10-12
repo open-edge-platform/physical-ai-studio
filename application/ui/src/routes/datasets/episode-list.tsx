@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 
-import { Checkbox, Flex, View, VirtualizedListLayout } from '@geti-ui/ui';
+import { Checkbox, Flex, Size, View, type Selection } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 
 import { fetchClient } from '../../api/client';
+import { VirtualizedGridLayout } from '../../components/virtualized-grid-layout/virtualized-grid-layout';
 import { EpisodeTag } from '../../features/datasets/episodes/episode-tag';
 import { EpisodeSummary, useDataset } from './dataset-provider';
 
@@ -15,6 +16,13 @@ interface EpisodeListProps {
     currentEpisode: number | null;
     sortOrder: 'newest' | 'oldest';
 }
+
+const episodeGridLayoutOptions = {
+    minItemSize: new Size(200, 180),
+    maxItemSize: new Size(280, 252),
+    preserveAspectRatio: true,
+    minSpace: new Size(12, 12),
+};
 
 export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder }: EpisodeListProps) => {
     const { dataset_id, selectedEpisodes, setSelectedEpisodes } = useDataset();
@@ -32,16 +40,30 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder }: E
         );
     };
 
+    const selectedKeys = currentEpisode !== null ? new Set([String(currentEpisode)]) : new Set<string>();
+
+    const handleSelectionChange = (keys: Selection) => {
+        if (keys === 'all') {
+            return;
+        }
+
+        onSelect(Number(keys.values().next().value));
+    };
+
     return (
         <View UNSAFE_className={classes.episodePreviewList}>
             <div className={classes.episodePreviewListInner}>
-                <VirtualizedListLayout
+                <VirtualizedGridLayout
                     items={sortedEpisodes}
                     ariaLabel='Episode list'
                     containerHeight='100%'
-                    layoutOptions={{ rowHeight: 190 }}
-                    idFormatter={(episode) => `${episode.episode_index}`}
+                    layoutOptions={episodeGridLayoutOptions}
+                    idFormatter={(episode) => String(episode.episode_index)}
                     textValueFormatter={(episode) => `Episode ${episode.episode_index + 1}`}
+                    selectionMode='single'
+                    disallowEmptySelection
+                    selectedKeys={selectedKeys}
+                    onSelectionChange={handleSelectionChange}
                     renderItem={(episode) => {
                         const thumbnailSrc = fetchClient.PATH(
                             '/api/dataset/{dataset_id}/episodes/{episode_index}/thumbnail',
@@ -58,8 +80,7 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder }: E
 
                         return (
                             <View
-                                UNSAFE_className={clsx({
-                                    [classes.episodeItem]: true,
+                                UNSAFE_className={clsx(classes.episodeItem, {
                                     [classes.active]: currentEpisode === episode.episode_index,
                                 })}
                             >
@@ -67,7 +88,6 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder }: E
                                     alt={`Camera frame of ${episode.episode_index}`}
                                     src={thumbnailSrc}
                                     className={classes.episodeImage}
-                                    onClick={() => onSelect(episode.episode_index)}
                                 />
                                 <Flex
                                     alignItems={'center'}
@@ -76,6 +96,7 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder }: E
                                     width='100%'
                                 >
                                     <EpisodeTag episode={episode} variant='small' />
+
                                     <Checkbox
                                         isEmphasized
                                         isSelected={selectedEpisodes.includes(episode.episode_index)}
