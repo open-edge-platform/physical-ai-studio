@@ -64,6 +64,26 @@ class Dataset(BaseIDModel):
     }
 
 
+class CameraMapping(BaseModel):
+    dataset_camera_key: str
+    environment_camera_id: UUID
+
+
+class RecordingEnvironment(BaseIDModel):
+    dataset_id: UUID
+    environment_id: UUID
+    camera_mappings: list[CameraMapping] = []
+
+
+class RecordingEnvironmentCreate(BaseModel):
+    environment_id: UUID
+    camera_mappings: list[CameraMapping] = []
+
+
+class RecordingEnvironmentUpdate(BaseModel):
+    camera_mappings: list[CameraMapping]
+
+
 class Snapshot(BaseIDModel):
     path: str
     dataset_id: Annotated[UUID, Field(description="Dataset Unique Identifier")]
