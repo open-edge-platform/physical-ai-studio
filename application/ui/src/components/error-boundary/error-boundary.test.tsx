@@ -25,7 +25,7 @@ describe('ErrorBoundary', () => {
 
     it('renders the fallback once a child throws while rendering', () => {
         // Errors thrown while rendering are expected here; silence React's console.error noise for this test.
-        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        rs.spyOn(console, 'error').mockImplementation(() => undefined);
 
         render(
             <ErrorBoundary fallback={() => <div>fallback</div>}>
@@ -37,7 +37,7 @@ describe('ErrorBoundary', () => {
     });
 
     it('re-renders children once retry is called', async () => {
-        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        rs.spyOn(console, 'error').mockImplementation(() => undefined);
         const user = userEvent.setup();
         let shouldThrow = true;
         const Flaky = () => {

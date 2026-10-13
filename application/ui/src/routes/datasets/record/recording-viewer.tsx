@@ -20,7 +20,7 @@ import { useHotkey } from '../../../features/hotkeys/use-hotkey';
 import { RobotControlView } from '../../../features/robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../../features/robots/robot-models-context';
 import { useRuntimeSession } from '../../../features/robots/runtime-session-provider';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 
 import classes from './recording-viewer.module.css';
 

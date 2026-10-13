@@ -1,17 +1,17 @@
+import { rs } from '@rstest/core';
 import { act, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { render } from '../test-utils/render';
 import { ElapsedDuration } from './elapsed-duration.component';
 
 describe('ElapsedDuration', () => {
     beforeEach(() => {
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-07-14T12:00:00Z'));
+        rs.useFakeTimers();
+        rs.setSystemTime(new Date('2026-07-14T12:00:00Z'));
     });
 
     afterEach(() => {
-        vi.useRealTimers();
+        rs.useRealTimers();
     });
 
     it('updates the displayed duration every second', () => {
@@ -19,7 +19,7 @@ describe('ElapsedDuration', () => {
 
         expect(screen.getByText('2s')).toBeInTheDocument();
 
-        act(() => vi.advanceTimersByTime(1000));
+        act(() => rs.advanceTimersByTime(1000));
 
         expect(screen.getByText('3s')).toBeInTheDocument();
     });

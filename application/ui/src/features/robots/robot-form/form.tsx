@@ -5,7 +5,7 @@ import { Item, Picker, TextField } from '@geti-ui/ui';
 import { $api } from '../../../api/client';
 import { FormHeading } from '../../../components/form-heading/form-heading';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { useRobotCatalogQuery } from '../robot-catalog.hooks';
 import { SchemaRobotType } from '../robot-types';
 import { BimanualSO101FormFields } from './catalog/bimanual-so101';

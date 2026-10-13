@@ -14,6 +14,7 @@ type SettingsSectionProps = {
     saved: boolean;
     error?: unknown;
     onSave: () => void;
+    showSave?: boolean;
     children: ReactNode;
 };
 
@@ -25,6 +26,7 @@ export const SettingsSection = ({
     saved,
     error,
     onSave,
+    showSave = true,
     children,
 }: SettingsSectionProps) => {
     const errorMessage = error
@@ -39,12 +41,14 @@ export const SettingsSection = ({
                 {children}
             </Flex>
             {errorMessage !== undefined && <Text UNSAFE_className={classes.error}>{errorMessage}</Text>}
-            <Flex alignItems='center' gap='size-200' marginTop='size-200'>
-                <Button variant='accent' onPress={onSave} isDisabled={!isDirty || isPending} isPending={isPending}>
-                    Save
-                </Button>
-                {saved && !isDirty && <Text UNSAFE_className={classes.saved}>Saved</Text>}
-            </Flex>
+            {showSave ? (
+                <Flex alignItems='center' gap='size-200' marginTop='size-200'>
+                    <Button variant='accent' onPress={onSave} isDisabled={!isDirty || isPending} isPending={isPending}>
+                        Save
+                    </Button>
+                    {saved && !isDirty && <Text UNSAFE_className={classes.saved}>Saved</Text>}
+                </Flex>
+            ) : null}
         </View>
     );
 };

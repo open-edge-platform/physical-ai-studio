@@ -171,7 +171,7 @@ npm run format:check       # Prettier
 npm run lint               # ESLint (zero warnings allowed)
 npm run cyclic-deps-check  # Circular dependency check (madge)
 npm run type-check         # TypeScript (tsc --noEmit)
-npm run test:unit          # Vitest unit tests
+npm run test:unit          # Rstest unit tests
 npm run build              # Production build (catch any bundler errors)
 ```
 
@@ -203,7 +203,7 @@ npm run build              # Production build (catch any bundler errors)
 
 | Tool                                                                             | Role                                             |
 | -------------------------------------------------------------------------------- | ------------------------------------------------ |
-| [Vitest](https://vitest.dev/)                                                    | Test runner and assertions                       |
+| [Rstest](https://rstest.rs/)                                                      | Test runner and assertions                       |
 | [Testing Library](https://testing-library.com/docs/react-testing-library/intro/) | Component rendering and queries                  |
 | [MSW v2](https://mswjs.io/)                                                      | API mocking via `setupServer`                    |
 | [openapi-msw](https://github.com/christoph-fricke/openapi-msw)                   | Type-safe MSW handlers matching the OpenAPI spec |
@@ -218,7 +218,7 @@ npm run test:unit
 npm run test:unit:watch
 
 # Single file
-npx vitest run src/features/robots/environment-form/submit-new-environment-button.test.tsx
+npx rstest src/features/robots/environment-form/submit-new-environment-button.test.tsx
 ```
 
 ## File conventions
@@ -281,7 +281,7 @@ render(<MyComponent />, {
 
 Provide `route` + `path` whenever the component (or any hook it calls) reads route params via `useParams` / `useProjectId`.
 
-### 2. Mock API calls with MSW — never `vi.mock` the API client
+### 2. Mock API calls with MSW — never `rs.mock` the API client
 
 Use `server.use()` to override handlers for a single test. Import `http` from `src/api/utils` for type-safe OpenAPI path handlers.
 

@@ -1,5 +1,5 @@
+import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
 
 import { render } from '../../../test-utils/render';
 import { PolicySelection } from './policy-selection';
@@ -16,7 +16,7 @@ const renderWithVram = (gib: number) =>
             selectedPolicy='pi05'
             availablePolicies={policies}
             isLoadingPolicies={false}
-            onSelectionChange={vi.fn()}
+            onSelectionChange={rs.fn()}
             trainingDevice={{ type: 'cuda', name: 'A100', index: 0, memory: gib * 1024 ** 3 }}
         />
     );
@@ -39,7 +39,7 @@ describe('PolicySelection VRAM warning', () => {
                 selectedPolicy='act'
                 availablePolicies={policies.slice(0, 1)}
                 isLoadingPolicies={false}
-                onSelectionChange={vi.fn()}
+                onSelectionChange={rs.fn()}
                 trainingDevice={null}
             />
         );
@@ -53,7 +53,7 @@ describe('PolicySelection VRAM warning', () => {
                 selectedPolicy='cosmos3'
                 availablePolicies={[{ id: 'cosmos3', name: 'Cosmos3', description: 'World model', min_vram: null }]}
                 isLoadingPolicies={false}
-                onSelectionChange={vi.fn()}
+                onSelectionChange={rs.fn()}
                 trainingDevice={null}
             />
         );

@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router';
 
 import { fetchClient } from '../../api/client';
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 import { ImportDatasetDialog } from '../../routes/datasets/import/dataset-import-button';
 import { NewDatasetForm } from '../../routes/datasets/new-dataset.component';
 import { useProjectId } from '../projects/use-project';

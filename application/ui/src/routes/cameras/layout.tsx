@@ -30,7 +30,7 @@ import { AddResourceButton } from '../../components/add-resource-button/add-reso
 import { fingerprintKey, formatFingerprint } from '../../features/cameras/fingerprint';
 import { useProjectId } from '../../features/projects/use-project';
 import { ConnectionStatus } from '../../features/robots/robots-list';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 import { ReactComponent as CameraIcon } from './../../assets/camera.svg';
 
 import classes from './../../features/robots/robots-list.module.css';

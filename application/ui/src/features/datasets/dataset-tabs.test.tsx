@@ -1,7 +1,7 @@
+import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Tabs } from 'react-aria-components';
-import { describe, expect, it, vi } from 'vitest';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { render } from '../../test-utils/render';
@@ -57,7 +57,7 @@ describe('DatasetTabs', () => {
 
     it('exports the selected dataset from its contextual menu', async () => {
         const user = userEvent.setup();
-        const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+        const open = rs.spyOn(window, 'open').mockImplementation(() => null);
 
         renderDatasetTabs();
 

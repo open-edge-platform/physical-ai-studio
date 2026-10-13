@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from api.dependencies import get_project_id, get_robot_id, get_robot_service
+from api.dependencies import get_robot_service
 from exceptions import RuntimeSessionBusyError
 from runtime.owner import runtime_session_holder
 from schemas.robot import (
@@ -18,7 +18,7 @@ from services import RobotService
 
 router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Project Robots"])
 
-ProjectID = Annotated[UUID, Depends(get_project_id)]
+ProjectID = UUID
 
 
 @router.get("")
@@ -51,8 +51,8 @@ async def create_project_robot(
 
 @router.get("/{robot_id}")
 async def get_project_robot(
-    project_id: Annotated[UUID, Depends(get_project_id)],
-    robot_id: Annotated[UUID, Depends(get_robot_id)],
+    project_id: ProjectID,
+    robot_id: UUID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
 ) -> Robot | UnavailableRobot:
     """Get robot by id."""
@@ -61,8 +61,8 @@ async def get_project_robot(
 
 @router.put("/{robot_id}")
 async def update_project_robot(
-    project_id: Annotated[UUID, Depends(get_project_id)],
-    robot_id: Annotated[UUID, Depends(get_robot_id)],
+    project_id: ProjectID,
+    robot_id: UUID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
     robot: Robot,
 ) -> Robot:
@@ -77,8 +77,8 @@ async def update_project_robot(
 
 @router.delete("/{robot_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project_robot(
-    project_id: Annotated[UUID, Depends(get_project_id)],
-    robot_id: Annotated[UUID, Depends(get_robot_id)],
+    project_id: ProjectID,
+    robot_id: UUID,
     robot_service: Annotated[RobotService, Depends(get_robot_service)],
 ) -> None:
     """Delete a robot."""

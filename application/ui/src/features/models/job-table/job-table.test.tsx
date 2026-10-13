@@ -1,7 +1,7 @@
+import { rs } from '@rstest/core';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
-import { vi } from 'vitest';
 
 import { SchemaTrainJob } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
@@ -55,7 +55,7 @@ const environment = getMockedEnvironment();
 
 const renderTrainingRow = (
     trainJobOverride: Partial<SchemaTrainJob> = {},
-    { onInterrupt = vi.fn(), onViewLogs = vi.fn() }: { onInterrupt?: () => void; onViewLogs?: () => void } = {}
+    { onInterrupt = rs.fn(), onViewLogs = rs.fn() }: { onInterrupt?: () => void; onViewLogs?: () => void } = {}
 ) => {
     const trainJob: SchemaTrainJob = { ...localJob, ...trainJobOverride };
     return render(<TrainingRow trainJob={trainJob} onInterrupt={onInterrupt} onViewLogs={onViewLogs} />);
@@ -63,11 +63,11 @@ const renderTrainingRow = (
 
 describe('TrainingRow', () => {
     beforeAll(() => {
-        vi.stubGlobal('EventSource', ImmediatelyClosingEventSource);
+        rs.stubGlobal('EventSource', ImmediatelyClosingEventSource);
     });
 
     afterAll(() => {
-        vi.unstubAllGlobals();
+        rs.unstubAllGlobals();
     });
 
     beforeEach(() => {
@@ -375,8 +375,8 @@ describe('TrainingRow', () => {
 
         render(
             <>
-                <TrainingRow trainJob={localJob} onInterrupt={vi.fn()} onViewLogs={vi.fn()} />
-                <TrainingRow trainJob={secondJob} onInterrupt={vi.fn()} onViewLogs={vi.fn()} />
+                <TrainingRow trainJob={localJob} onInterrupt={rs.fn()} onViewLogs={rs.fn()} />
+                <TrainingRow trainJob={secondJob} onInterrupt={rs.fn()} onViewLogs={rs.fn()} />
             </>
         );
 

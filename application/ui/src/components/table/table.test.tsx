@@ -1,6 +1,6 @@
+import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi } from 'vitest';
 
 import { render } from '../../test-utils/render';
 import { Table, TableColumn } from './table';
@@ -160,7 +160,7 @@ describe('Table', () => {
 
     it('lets isExpanded drive rendering in controlled mode without changing on its own', async () => {
         const user = userEvent.setup();
-        const onExpandedChange = vi.fn();
+        const onExpandedChange = rs.fn();
 
         const { rerender } = render(
             <Table columns={EXPANDABLE_COLUMNS}>
@@ -401,7 +401,7 @@ describe('Table', () => {
     });
 
     it('logs a console.error when the cell count differs from the column count', () => {
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const consoleError = rs.spyOn(console, 'error').mockImplementation(() => undefined);
 
         render(
             <Table columns={COLUMNS}>

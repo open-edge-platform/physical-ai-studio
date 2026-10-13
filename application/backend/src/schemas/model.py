@@ -1,12 +1,12 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, computed_field
 
-from schemas.base import BaseIDModel, Field
+from schemas.base import BaseIDModel, Field, UTCDatetime
 
 LORA_PROPERTY = "lora_enabled"
 DORA_PROPERTY = "lora_use_dora"
@@ -24,7 +24,7 @@ class Model(BaseIDModel):
     train_job_id: UUID | None = Field(None, description="ID of the training job that created this model")
     parent_model_id: UUID | None = Field(None, description="Parent model this was retrained from")
     version: int = Field(1, description="Model version, incremented on each retrain")
-    created_at: datetime | None = Field(None)
+    created_at: UTCDatetime | None = Field(None)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -178,7 +178,7 @@ class BackendExportDetail(BaseModel):
     type: str
     size_bytes: int
     file_count: int
-    exported_at: datetime | None = None
+    exported_at: UTCDatetime | None = None
     io_spec: BackendIOSpec | None = None
 
     @classmethod
@@ -192,7 +192,7 @@ class BackendExportDetail(BaseModel):
             return None
 
         total_size = sum(f.stat().st_size for f in files)
-        exported_at = datetime.fromtimestamp(backend_dir.stat().st_mtime)
+        exported_at = datetime.fromtimestamp(backend_dir.stat().st_mtime, tz=UTC)
 
         return cls(
             type=backend_dir.name,

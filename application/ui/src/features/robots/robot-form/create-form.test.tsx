@@ -1,6 +1,6 @@
+import { describe, expect, it } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import { HttpResponse } from 'msw';
-import { describe, expect, it } from 'vitest';
 
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';

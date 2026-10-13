@@ -1,8 +1,8 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+import { rs } from '@rstest/core';
 import { act } from '@testing-library/react';
-import { vi } from 'vitest';
 
 import { createQueryClient } from '../../query-client/query-client';
 import { getMockedDatasetImportJob } from '../../test-utils/mocks/mock-dataset-import-job';
@@ -11,15 +11,15 @@ import { renderHook } from '../../test-utils/render';
 import { JOBS_QUERY_KEY, SchemaJob } from './use-job-cache';
 import { useJobUpdates } from './use-job-updates';
 
-const notify = vi.fn();
-vi.mock('../../components/notification/notification.component', () => ({
+const notify = rs.fn();
+rs.mock('../../components/notification/notification.component', () => ({
     notify: (...args: unknown[]) => notify(...args),
 }));
 
 let capturedOnMessage: ((event: { data: string }) => void) | undefined;
 let capturedOnOpen: (() => void) | undefined;
 
-vi.mock('react-use-websocket', () => ({
+rs.mock('react-use-websocket', () => ({
     default: (_url: unknown, options: { onMessage?: (event: { data: string }) => void; onOpen?: () => void }) => {
         capturedOnMessage = options.onMessage;
         capturedOnOpen = options.onOpen;

@@ -1,11 +1,10 @@
-from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from pydantic import Field, field_serializer
 
-from schemas.base import BaseIDModel
+from schemas.base import BaseIDModel, UTCDatetime
 
 
 class JobType(StrEnum):
@@ -30,9 +29,9 @@ class BaseJob(BaseIDModel):
     # If deleting this field would break execution or UI behavior, that data belongs in typed payload.
     extra_info: dict | None = None
     message: str = "Job created"
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    created_at: datetime | None = Field(None)
+    start_time: UTCDatetime | None = None
+    end_time: UTCDatetime | None = None
+    created_at: UTCDatetime | None = Field(None)
 
     @field_serializer("project_id")
     def serialize_project_id(self, project_id: UUID, _info: Any) -> str:

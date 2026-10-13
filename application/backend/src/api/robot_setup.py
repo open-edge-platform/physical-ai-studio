@@ -1,11 +1,11 @@
 """WebSocket endpoint for the SO101 robot setup wizard."""
 
-from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, WebSocket, status
+from fastapi import APIRouter, WebSocket, status
 from loguru import logger
 
-from api.dependencies import RobotConnectionManagerDep, get_project_id
+from api.dependencies import RobotConnectionManagerDep
 from schemas import SerialPortInfo
 from workers.robots.so101_setup_worker import SO101SetupWorker
 from workers.transport.websocket_transport import WebSocketTransport
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/projects/{project_id}/robots", tags=["Robot Setu
 
 @router.websocket("/setup/ws")
 async def robot_setup_websocket(
-    _project_id: Annotated[str, Depends(get_project_id)],
+    project_id: UUID,  # noqa: ARG001
     robot_manager: RobotConnectionManagerDep,
     websocket: WebSocket,
     robot_type: str,

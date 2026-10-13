@@ -22,7 +22,7 @@ import { $api } from '../../../api/client';
 import { AppFooter } from '../../../components/app-footer/app-footer';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
 import { RuntimeSessionProvider, useRuntimeSession } from '../../../features/robots/runtime-session-provider';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { RecordingViewer } from './recording-viewer';
 
 import classes from './index.module.css';

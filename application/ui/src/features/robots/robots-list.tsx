@@ -8,7 +8,7 @@ import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
 import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
 import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 import { useProjectId } from '../projects/use-project';
 import {
     sessionActivity,

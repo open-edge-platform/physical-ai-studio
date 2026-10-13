@@ -1,6 +1,6 @@
 import { ActionButton, Content, Dialog, DialogTrigger, Divider, Flex, Header, Heading, View } from '@geti-ui/ui';
 
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { ProjectThumbnail } from '../project-thumbnail/project-thumbnail';
 import { useProject } from './../use-project';
 import { PanelLink } from './page-link/panel-link.component';

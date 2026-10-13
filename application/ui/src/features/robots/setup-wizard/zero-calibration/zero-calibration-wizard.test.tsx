@@ -1,7 +1,7 @@
+import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { http } from '../../../../api/utils';
 import { server } from '../../../../msw-node-setup';
@@ -10,20 +10,20 @@ import { RobotFormProvider } from '../../robot-form/provider';
 import { useZeroCalibrationWebSocket, ZeroCalibrationWebSocketState } from './use-zero-calibration-websocket';
 import { ZeroCalibrationWizardContent } from './zero-calibration-wizard';
 
-vi.mock('./use-zero-calibration-websocket', () => ({
-    useZeroCalibrationWebSocket: vi.fn(),
+rs.mock('./use-zero-calibration-websocket', () => ({
+    useZeroCalibrationWebSocket: rs.fn(),
 }));
 
 // The 3D viewer needs WebGL; the live sync is covered by use-joint-state.
-vi.mock('../shared/setup-robot-viewer', () => ({
+rs.mock('../shared/setup-robot-viewer', () => ({
     SetupRobotViewer: () => <div>robot-viewer</div>,
 }));
-vi.mock('../../use-joint-state', () => ({
-    useSynchronizeModelJoints: vi.fn(),
+rs.mock('../../use-joint-state', () => ({
+    useSynchronizeModelJoints: rs.fn(),
 }));
 
 const PROJECT_ID = 'project-1';
-const setZero = vi.fn();
+const setZero = rs.fn();
 
 const READY_STATE: ZeroCalibrationWebSocketState = {
     phase: 'positioning',
@@ -37,7 +37,7 @@ const READY_STATE: ZeroCalibrationWebSocketState = {
 };
 
 const renderWizard = (state: Partial<ZeroCalibrationWebSocketState> = {}) => {
-    vi.mocked(useZeroCalibrationWebSocket).mockReturnValue({
+    rs.mocked(useZeroCalibrationWebSocket).mockReturnValue({
         state: { ...READY_STATE, ...state },
         readyState: 1,
         commands: { setZero },
@@ -64,7 +64,7 @@ describe('ZeroCalibrationWizardContent', () => {
     it('starts calibration with the robot from the form', () => {
         renderWizard();
 
-        expect(vi.mocked(useZeroCalibrationWebSocket)).toHaveBeenCalledWith({
+        expect(rs.mocked(useZeroCalibrationWebSocket)).toHaveBeenCalledWith({
             projectId: PROJECT_ID,
             robot: expect.objectContaining({
                 name: 'Khaos',
@@ -108,7 +108,7 @@ describe('ZeroCalibrationWizardContent', () => {
 
     it('saves the robot once calibration succeeds', async () => {
         const user = userEvent.setup();
-        const created = vi.fn();
+        const created = rs.fn();
         server.use(
             http.post('/api/projects/{project_id}/robots', async ({ request }) => {
                 const body = await request.json();
@@ -129,13 +129,13 @@ describe('ZeroCalibrationWizardContent', () => {
         expect(await screen.findByText(/Zero position set/)).toBeInTheDocument();
         await user.click(screen.getByRole('button', { name: 'Save Robot' }));
 
-        await vi.waitFor(() => expect(created).toHaveBeenCalledTimes(1));
+        await rs.waitFor(() => expect(created).toHaveBeenCalledTimes(1));
         expect(created.mock.calls[0][0]).toMatchObject({ name: 'Khaos', type: 'ReBot_B601_RS_Follower' });
     });
 
     it('lets an already calibrated arm be added without a new zero', async () => {
         const user = userEvent.setup();
-        const created = vi.fn();
+        const created = rs.fn();
         server.use(
             http.post('/api/projects/{project_id}/robots', async ({ request }) => {
                 const body = await request.json();
@@ -147,7 +147,7 @@ describe('ZeroCalibrationWizardContent', () => {
 
         await user.click(await screen.findByRole('button', { name: 'Skip calibration' }));
 
-        await vi.waitFor(() => expect(created).toHaveBeenCalledTimes(1));
+        await rs.waitFor(() => expect(created).toHaveBeenCalledTimes(1));
         expect(setZero).not.toHaveBeenCalled();
     });
 });

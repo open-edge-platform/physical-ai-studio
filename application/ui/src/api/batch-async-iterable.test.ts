@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { vi } from 'vitest';
+import { rs } from '@rstest/core';
 
 import { batchAsyncIterable } from './batch-async-iterable';
 
@@ -29,7 +29,7 @@ const collectWhileAdvancing = async <T>(iterable: AsyncIterable<T>, elapsedMs: n
         }
     })();
 
-    await vi.advanceTimersByTimeAsync(elapsedMs);
+    await rs.advanceTimersByTimeAsync(elapsedMs);
     await consumed;
 
     return results;
@@ -37,11 +37,11 @@ const collectWhileAdvancing = async <T>(iterable: AsyncIterable<T>, elapsedMs: n
 
 describe('batchAsyncIterable', () => {
     beforeEach(() => {
-        vi.useFakeTimers();
+        rs.useFakeTimers();
     });
 
     afterEach(() => {
-        vi.useRealTimers();
+        rs.useRealTimers();
     });
 
     it('groups items produced within one interval window into a single batch', async () => {
@@ -104,7 +104,7 @@ describe('batchAsyncIterable', () => {
         })();
         const assertion = expect(consumed).rejects.toThrow('stream failed');
 
-        await vi.advanceTimersByTimeAsync(300);
+        await rs.advanceTimersByTimeAsync(300);
         await assertion;
 
         expect(batches).toEqual([[1, 2]]);
