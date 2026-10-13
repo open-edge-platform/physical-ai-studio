@@ -35,7 +35,6 @@ def _make_dataset() -> Dataset:
         name="Dataset Export @ 2026",
         default_task="Do the thing",
         project_id=uuid4(),
-        environment_id=uuid4(),
     )
 
 
