@@ -37,6 +37,7 @@ dependencies = [
   "huggingface-hub>=0.27",
   "psutil~=7.2",
   "physicalai-studio-plugin~=0.3.0",
+  "physicalai-mujoco-plugin",
   "asyncssh~=2.24",
   "sigstore>=4.0,<5",
 ]
@@ -123,7 +124,8 @@ explicit = false
 
 [tool.uv.sources]
 physicalai-train = { path = "../../library", editable = true }
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "f90b3767cfa99e243fc7b277b9faa242c87db213" }
+# MuJoCo simulations need openvinotoolkit/physicalai#337 and #353; back to a release pin once they ship.
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "max/mujoco-generic-robots" }
 # Keep torchao on PyPI for all extras.
 # The XPU index publishes `torchao` local-version wheels (e.g. `+xpu`) that can
 # be selected via unsafe-best-match even for non-XPU installs (like `--extra cuda`),
@@ -141,6 +143,8 @@ torchvision = [
 ]
 # torch's XPU build depends on triton-xpu transitively; pin its index.
 triton-xpu = { index = "pytorch-xpu" }
+physicalai-mujoco-plugin = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "max/mujoco-generic-robots", subdirectory = "packages/physicalai-mujoco-plugin" }
+physicalai-studio-plugin = { git = "https://github.com/openvinotoolkit/physicalai.git", branch = "max/mujoco-generic-robots", subdirectory = "packages/physicalai-studio-plugin" }
 
 [dependency-groups]
 dev = [

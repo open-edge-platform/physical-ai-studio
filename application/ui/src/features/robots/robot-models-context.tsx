@@ -93,8 +93,10 @@ export const useLoadModelQuery = (robotType: SchemaRobotType) => {
     const { getModel, setModel } = useRobotModels();
 
     const { data: definition } = useRobotCatalogDefinitionQuery(robotType);
-    const path = definition.urdf_path;
     const packageMap = definition.package_map ?? {};
+    // A type without URDF packages has no model to load (e.g. a simulated robot that only the
+    // simulation draws); its urdf_path would 404.
+    const path = Object.keys(packageMap).length > 0 ? definition.urdf_path : null;
 
     const cachedModel = path == null ? undefined : getModel(path);
 

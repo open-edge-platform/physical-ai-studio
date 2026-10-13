@@ -376,9 +376,15 @@ RUN groupadd --gid "${APP_GID}" appuser \
 # The GPL `ffmpeg` package is intentionally omitted; the LGPL FFmpeg binary and
 # shared libraries from ffmpeg-builder are added below. libva*/libvpx/libnuma
 # are the runtime counterparts of the -dev packages used to build them.
+# libegl1 (the EGL loader) with Mesa's EGL and DRI drivers lets simulation plugins
+# (MuJoCo) render camera images without a display: on Intel GPUs (iris) or in software
+# (llvmpipe). On NVIDIA the container toolkit adds its own EGL driver (see runtime-cuda).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         git \
+        libegl1 \
+        libegl-mesa0 \
+        libgl1-mesa-dri \
         libgl1 \
         libglib2.0-0 \
         libusb-1.0-0 \
@@ -566,6 +572,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
         libcudnn9-cuda-12=9.19.0.56-1 \
     && rm -rf /var/lib/apt/lists/*
 SHELL ["/bin/sh", "-c"]
+
+# The NVIDIA Container Toolkit mounts only the driver parts named here. `graphics`
+# adds the EGL driver, so simulations render their cameras on the GPU.
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
 
 FROM runtime-cuda AS physical-ai-studio-cuda
 

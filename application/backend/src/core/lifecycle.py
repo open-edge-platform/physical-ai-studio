@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from loguru import logger
 
+from api.dependencies import get_robot_catalog_service
 from core.logging import setup_logging, setup_uvicorn_logging
 from core.security import get_ssh_feature_availability
 from db import get_async_db_session_ctx
@@ -16,6 +17,7 @@ from services.camera_claims import CameraClaimRegistry
 from services.event_processor import EventProcessor
 from services.health_service import HealthService
 from services.remote_trainer_service import RemoteTrainerService
+from services.simulation_manager import SimulationManager
 from settings import get_settings
 from utils.multiprocessing import ensure_spawn_start_method
 from utils.serial_robot_tools import RobotConnectionManager
@@ -81,6 +83,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # aliased project rows for the same physical device share one pin.
     app.state.camera_claim_registry = CameraClaimRegistry()
 
+    # The one simulation Studio starts for a simulated robot. Owned by this
+    # process, not a session worker, so it outlives sessions; stopped below.
+    app.state.simulation_manager = SimulationManager(get_robot_catalog_service().registry)
+
     # Fail the SSH remote-trainer feature closed if it is bound to a
     # non-loopback address: the feature has no authentication model, so a
     # network-exposed instance would let anyone who can reach the API execute
@@ -120,6 +126,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info(f"Shutting down {settings.app_name} application...")
     app.state.remote_trainer_tunnel_startup_task.cancel()
     await remote_trainer_tunnel_manager.stop_all()
+    await app.state.simulation_manager.shutdown()
 
     # We might want to shutdown the hardware manager too, though releasing workers should handle it.
     # But a global cleanup is safe.

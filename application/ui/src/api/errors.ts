@@ -168,6 +168,8 @@ export const getRobotConnectionErrorTitle = (errorCode: string | null): string =
             return 'Robot name conflict';
         case 'robot_protocol_mismatch':
             return 'Incompatible robot session';
+        case 'simulation_not_running':
+            return 'Simulation not running';
         case 'robot_transport_error':
         case 'robot_connection_failed':
             return 'Connection failed';

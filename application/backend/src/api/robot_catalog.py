@@ -17,6 +17,19 @@ class RobotZeroCalibrationResponse(BaseModel):
     zero_tolerance_deg: float = Field(..., description="Largest joint reading, in degrees, that counts as zero")
 
 
+class RobotSimulationSceneResponse(BaseModel):
+    id: str = Field(..., description="Scene id to pass when starting the simulation")
+    display_name: str = Field(..., description="Human-readable scene name")
+    description: str = Field("", description="One-line description of the scene")
+
+
+class RobotSimulationResponse(BaseModel):
+    scenes: list[RobotSimulationSceneResponse] = Field(..., description="Scenes to choose from, in display order")
+    default_scene: str = Field(..., description="Id of the scene to preselect")
+    max_seed: int | None = Field(None, description="Largest fixed seed, or null when the simulation takes no seed")
+    labels: list[str] = Field(default_factory=list, description="Read-only facts shown in the start dialog")
+
+
 class RobotCatalogDefinitionResponse(BaseModel):
     type: str = Field(..., description="Stable backend robot type identifier")
     display_name: str = Field(..., description="Human-readable robot type label")
@@ -29,6 +42,10 @@ class RobotCatalogDefinitionResponse(BaseModel):
     zero_calibration: RobotZeroCalibrationResponse | None = Field(
         default=None,
         description="Zero-pose calibration offered when adding this robot type, if any",
+    )
+    simulation: RobotSimulationResponse | None = Field(
+        default=None,
+        description="How Studio can start this robot type's simulation, if it is simulated",
     )
 
 
@@ -54,6 +71,22 @@ def _to_response(definition: RobotCatalogDefinition) -> RobotCatalogDefinitionRe
             instructions=definition.zero_calibration.instructions,
             zero_tolerance_deg=definition.zero_calibration.zero_tolerance_deg,
         ),
+        simulation=_simulation_response(getattr(definition, "simulation", None)),
+    )
+
+
+def _simulation_response(launch: Any) -> RobotSimulationResponse | None:
+    # `simulation` is missing on physicalai-studio-plugin releases without SimulationLaunch.
+    if launch is None:
+        return None
+    return RobotSimulationResponse(
+        scenes=[
+            RobotSimulationSceneResponse(id=scene.id, display_name=scene.display_name, description=scene.description)
+            for scene in launch.scenes
+        ],
+        default_scene=launch.default_scene,
+        max_seed=launch.max_seed,
+        labels=list(launch.labels),
     )
 
 
