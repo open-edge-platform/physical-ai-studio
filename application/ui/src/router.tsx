@@ -5,9 +5,10 @@ import { isObject } from 'lodash-es';
 import { createBrowserRouter, Outlet, redirect } from 'react-router';
 
 import { queryClient } from '../src/query-client/query-client';
-import { $api, fetchClient } from './api/client';
+import { $api } from './api/client';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
+import { datasetsIndexLoader } from './features/datasets/datasets-index-loader';
 import { paths } from './paths';
 import { AppLayout } from './routes/app/app.layout';
 import { Camera } from './routes/cameras/camera';
@@ -123,31 +124,7 @@ export const router = createBrowserRouter([
                         children: [
                             {
                                 index: true,
-                                loader: async ({ params }) => {
-                                    const project_id = params.project_id;
-
-                                    if (project_id === undefined) {
-                                        return redirect(paths.projects.index({}));
-                                    }
-
-                                    const { data: projectData, error } = await fetchClient.GET(
-                                        '/api/projects/{project_id}',
-                                        {
-                                            params: { path: { project_id } },
-                                        }
-                                    );
-
-                                    if (error !== undefined || projectData?.datasets[0]?.id === undefined) {
-                                        return null;
-                                    }
-
-                                    return redirect(
-                                        paths.project.datasets.show({
-                                            project_id,
-                                            dataset_id: projectData.datasets[0].id,
-                                        })
-                                    );
-                                },
+                                loader: datasetsIndexLoader,
                                 element: <Datasets />,
                             },
                             {
