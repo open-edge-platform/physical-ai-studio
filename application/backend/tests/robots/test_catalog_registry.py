@@ -25,8 +25,7 @@ def test_registry_continues_when_plugin_discovery_fails() -> None:
         registry = RobotCatalogRegistry()
 
     definitions = registry.list_definitions()
-    assert definitions
-    assert any(definition.type == "SO101_Follower" for definition in definitions)
+    assert definitions == []
 
 
 def test_registry_skips_bad_plugins_and_continues_loading_remaining_plugins() -> None:
@@ -61,9 +60,35 @@ def test_registry_skips_bad_plugins_and_continues_loading_remaining_plugins() ->
         registry = RobotCatalogRegistry()
 
     assert called == ["ok"]
-    definitions = registry.list_definitions()
-    assert definitions
-    assert any(definition.type == "SO101_Follower" for definition in definitions)
+    assert registry.list_definitions() == []
+
+
+def test_so101_types_are_discovered_from_the_installed_plugin() -> None:
+    registry = RobotCatalogRegistry()
+
+    expected_types = {"SO101_Follower", "SO101_Leader"}
+    discovered_types = [definition.type for definition in registry.list_definitions()]
+
+    assert {robot_type for robot_type in discovered_types if robot_type in expected_types} == expected_types
+    assert all(discovered_types.count(robot_type) == 1 for robot_type in expected_types)
+    distributions = {registry.get_plugin_distribution(robot_type) for robot_type in expected_types}
+    assert distributions == {"physicalai-so101-plugin"}
+
+
+def test_trossen_types_are_discovered_from_the_installed_plugin() -> None:
+    registry = RobotCatalogRegistry()
+
+    expected_types = {
+        "Trossen_WidowXAI_Follower",
+        "Trossen_WidowXAI_Leader",
+        "Trossen_Bimanual_WidowXAI_Follower",
+        "Trossen_Bimanual_WidowXAI_Leader",
+    }
+
+    assert expected_types <= {definition.type for definition in registry.list_definitions()}
+    assert {registry.get_plugin_distribution(robot_type) for robot_type in expected_types} == {
+        "physicalai-trossen-plugin"
+    }
 
 
 # include_velocities decides whether ".vel" keys join the robot's feature list,
@@ -81,7 +106,7 @@ def test_registry_skips_bad_plugins_and_continues_loading_remaining_plugins() ->
         ("Trossen_Bimanual_WidowXAI_Leader", True, 0.1),
     ],
 )
-def test_builtin_adapter_options_are_pinned(
+def test_catalog_adapter_options_are_pinned(
     robot_type: str, include_velocities: bool, external_effort_gain: float | None
 ) -> None:
     definition = RobotCatalogRegistry().get_definition(robot_type)

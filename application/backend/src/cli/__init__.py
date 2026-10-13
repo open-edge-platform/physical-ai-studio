@@ -1,8 +1,6 @@
 """Command line interface for interacting with the Physical AI Studio application."""
 
-import subprocess  # nosec B404 - imported only to catch CalledProcessError, never invoked here
 import sys
-from pathlib import Path
 
 import click
 
@@ -10,8 +8,6 @@ from cli.database import database
 from cli.datasets import datasets
 from cli.models import models
 from cli.serve import serve
-from robots.catalog.assets import get_builtin_robot_assets_root
-from robots.catalog.sync_robot_assets import sync_robot_assets as sync_builtin_robot_assets
 
 
 @click.group()
@@ -33,22 +29,6 @@ def gen_api(target_path: str) -> None:
         click.echo(f"✗ Failed to generate OpenAPI specification: {e}")
         sys.exit(1)
     click.echo("Waiting for threading to finish...")
-
-
-@cli.command()
-@click.option(
-    "--target-dir",
-    default=str(get_builtin_robot_assets_root()),
-    show_default=True,
-)
-def sync_robot_assets(target_dir: str) -> None:
-    """Sync SO101 and WidowX assets into backend static storage."""
-    try:
-        sync_builtin_robot_assets(Path(target_dir))
-        click.echo("✓ Robot assets synced successfully")
-    except (subprocess.CalledProcessError, OSError) as error:
-        click.echo(f"✗ Failed to sync robot assets: {error}")
-        sys.exit(1)
 
 
 cli.add_command(database)

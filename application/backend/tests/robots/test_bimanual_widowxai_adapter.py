@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from physicalai.robot.trossen.constants import WIDOWXAI_JOINT_ORDER
+from physicalai_trossen_plugin.constants import WIDOWXAI_JOINT_ORDER
 
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig
 

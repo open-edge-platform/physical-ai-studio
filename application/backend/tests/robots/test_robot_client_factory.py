@@ -115,7 +115,7 @@ class TestBuild:
         client = await _factory().build(_so101_robot("SO101_Leader"))
 
         recipe = to_config(client._robot)["init_args"]["robot"]
-        assert recipe["class_path"] == "physicalai.robot.SO101"
+        assert recipe["class_path"] == "physicalai_so101_plugin.SO101"
         assert recipe["init_args"]["port"] == "/dev/ttyACM0"
         assert recipe["init_args"]["role"] == "leader"
 

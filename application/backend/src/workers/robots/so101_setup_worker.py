@@ -20,8 +20,8 @@ from typing import Any
 from lerobot.motors.feetech.feetech import FeetechMotorsBus
 from lerobot.motors.motors_bus import Motor, MotorCalibration, MotorNormMode
 from loguru import logger
+from physicalai_so101_plugin.studio_catalog import find_so101_port
 
-from robots.catalog.so101 import find_so101_port
 from schemas import SerialPortInfo
 from utils.serial_robot_tools import RobotConnectionManager
 from workers.transport.worker_transport import WorkerTransport

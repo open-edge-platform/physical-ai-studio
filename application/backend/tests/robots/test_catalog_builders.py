@@ -20,9 +20,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from physicalai.config import instantiate, to_config
+from physicalai_so101_plugin import SO101
+from physicalai_so101_plugin.studio_catalog import SO101RobotPayload, _build_so101_driver
+from physicalai_trossen_plugin import BimanualWidowXAI, WidowXAI
+from physicalai_trossen_plugin.studio_catalog import _build_trossen_bimanual_driver, _build_trossen_single_arm_driver
 
-from robots.catalog.so101 import _build_so101_driver
-from robots.catalog.widowxai import _build_trossen_bimanual_driver, _build_trossen_single_arm_driver
 from schemas.robot import RobotAdapter
 
 DISPLAY_NAME = "My SO101 Arm #1"
@@ -74,14 +76,11 @@ class _StubFactory:
 class TestRegistryModelShape:
     """Guards the assumption these tests and the builders depend on."""
 
-    def test_builder_receives_a_generated_model_not_the_local_one(self) -> None:
-        from robots.catalog.so101 import SO101Robot
-
+    def test_builder_receives_a_generated_model_not_the_payload(self) -> None:
         robot = _so101_robot("SO101_Leader")
 
         assert type(robot).__name__ == "SO101_LeaderRobot"
-        # The historical bug: builders narrowed on SO101Robot, which never matches.
-        assert not isinstance(robot, SO101Robot)
+        assert not isinstance(robot, SO101RobotPayload)
 
 
 class TestSO101Builder:
@@ -89,7 +88,8 @@ class TestSO101Builder:
         driver = await _build_so101_driver(_so101_robot(), _StubFactory())
 
         recipe = to_config(driver)
-        assert recipe["class_path"] == "physicalai.robot.SO101"
+        assert isinstance(driver, SO101)
+        assert recipe["class_path"] == "physicalai_so101_plugin.SO101"
         assert recipe["init_args"]["port"] == "/dev/ttyACM0"
         assert recipe["init_args"]["role"] == "follower"
         assert recipe["init_args"]["unit"] == "normalized"
@@ -144,8 +144,9 @@ class TestTrossenBuilders:
 
         driver = await _build_trossen_single_arm_driver(robot, _StubFactory())
 
+        assert isinstance(driver, WidowXAI)
         assert to_config(driver) == {
-            "class_path": "physicalai.robot.WidowXAI",
+            "class_path": "physicalai_trossen_plugin.WidowXAI",
             "init_args": {"ip": "192.168.1.2", "role": "follower"},
         }
 
@@ -164,9 +165,10 @@ class TestTrossenBuilders:
 
         driver = await _build_trossen_bimanual_driver(robot, _StubFactory())
 
+        assert isinstance(driver, BimanualWidowXAI)
         # A single owner holds both arms, rather than one SharedRobot per arm.
         recipe = to_config(driver)
-        assert recipe["class_path"] == "physicalai.robot.BimanualWidowXAI"
+        assert recipe["class_path"] == "physicalai_trossen_plugin.BimanualWidowXAI"
         assert recipe["init_args"]["left"]["init_args"]["ip"] == "192.168.1.2"
         assert recipe["init_args"]["right"]["init_args"]["ip"] == "192.168.1.3"
 

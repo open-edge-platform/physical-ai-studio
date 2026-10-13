@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from physicalai.robot import RobotDeviceAlreadyOwned, RobotNameConflict
-from physicalai.robot.so101.constants import SO101_JOINT_ORDER
+from physicalai_so101_plugin.constants import SO101_JOINT_ORDER
 
 from exceptions import RobotDeviceAlreadyOwnedError, RobotNameConflictError
 from robots.physicalai_adapter import PhysicalAIRobotAdapter, PhysicalAIRobotAdapterConfig

@@ -1,16 +1,12 @@
 """Serve backend and frontend CLI commands."""
 
 import os
-import subprocess  # nosec B404 - imported only to catch CalledProcessError, never invoked here
-import sys
 from pathlib import Path
 
 import click
 
 from cli.database import _run_migrations
 from core.security import get_ssh_feature_availability
-from robots.catalog.assets import builtin_robot_assets_are_available
-from robots.catalog.sync_robot_assets import sync_robot_assets
 from settings import get_settings
 
 
@@ -41,7 +37,6 @@ def start_server(host: str, port: int) -> None:
     os.environ["HOST"] = host
     os.environ["PORT"] = str(port)
     get_ssh_feature_availability.cache_clear()
-    _sync_missing_robot_assets()
     _run_migrations()
 
     import uvicorn
@@ -58,15 +53,3 @@ def start_server(host: str, port: int) -> None:
 def serve(host: str, port: int) -> None:
     """Start the Physical AI Studio web application."""
     start_server(host, port)
-
-
-def _sync_missing_robot_assets() -> None:
-    if builtin_robot_assets_are_available():
-        return
-
-    click.echo("Robot assets are missing; syncing them now...")
-    try:
-        sync_robot_assets()
-    except (subprocess.CalledProcessError, OSError) as error:
-        click.echo(f"✗ Failed to sync robot assets: {error}")
-        sys.exit(1)

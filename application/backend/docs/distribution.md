@@ -68,11 +68,10 @@ The wheel contains:
 - Alembic configuration and migrations.
 - A `physicalai-studio` console script with a `serve` command that runs the backend and UI together.
 - The production UI build from `application/ui/dist`, packaged into the wheel as `webui/`.
-- Built-in robot URDF and mesh assets, packaged into the wheel as `static/robot-assets/`.
 
 Supported options: `--host 127.0.0.1 --port 7860`.
 
-The UI and robot assets are included through `force_include` entries that `scripts/hatch_build.py` adds to `build_data` during non-editable builds. The hatch hook also prevents publishing a wheel without the frontend, validates required robot assets are present, and transforms relative URLs in the app README to absolute GitHub URLs for the PyPI description.
+The UI is included through a `force_include` entry that `scripts/hatch_build.py` adds to `build_data` during non-editable builds. Robot plugins package and resolve their own URDF and mesh assets. The hatch hook prevents publishing a wheel without the frontend and transforms relative URLs in the app README to absolute GitHub URLs for the PyPI description.
 
 ## GitHub Actions
 
@@ -117,7 +116,7 @@ application/backend/dist/
 
 ### Inspect Wheel Contents
 
-Confirm that the wheel contains UI assets, robot assets, and migrations:
+Confirm that the wheel contains UI assets and migrations:
 
 ```python
 from pathlib import Path
@@ -129,29 +128,21 @@ with ZipFile(wheel) as zf:
 
 for name in (
     "webui/index.html",
-    "static/robot-assets/SO101/so101_new_calib.urdf",
-    "static/robot-assets/widowx/urdf/generated/wxai/wxai_follower.urdf",
-    "static/robot-assets/widowx/urdf/generated/stationary_ai.urdf",
     "alembic.ini",
     "alembic/env.py",
 ):
     print(f"{name}: {name in names}")
 
 print("webui file count:", sum(name.startswith("webui/") for name in names))
-print("robot asset file count:", sum(name.startswith("static/robot-assets/") for name in names))
 ```
 
 Expected:
 
 ```text
 webui/index.html: True
-static/robot-assets/SO101/so101_new_calib.urdf: True
-static/robot-assets/widowx/urdf/generated/wxai/wxai_follower.urdf: True
-static/robot-assets/widowx/urdf/generated/stationary_ai.urdf: True
 alembic.ini: True
 alembic/env.py: True
 webui file count: <non-zero>
-robot asset file count: <non-zero>
 ```
 
 ### Test The Wheel Locally With uvx

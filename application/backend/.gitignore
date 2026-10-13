@@ -1,6 +1,6 @@
 data/
 .uv-extra
 
-# Robot assets are cloned at runtime - only track the directory, not contents
+# Preserve legacy local robot asset caches; plugins package their own assets.
 src/static/robot-assets/*
 !src/static/robot-assets/.gitkeep

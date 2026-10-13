@@ -15,11 +15,10 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import numpy as np
+import physicalai_so101_plugin.studio_catalog as so101_module
 import pytest
+from physicalai_so101_plugin.studio_catalog import SO101Probe, SO101RobotPayload
 
-import robots.catalog.so101 as so101_module
-from exceptions import RobotIdentifyError
-from robots.catalog.so101 import SO101Probe, SO101RobotPayload
 from schemas import SerialPortInfo
 
 if TYPE_CHECKING:
@@ -167,12 +166,12 @@ async def test_identify_lets_connect_errors_propagate(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_identify_wraps_overload_as_robot_identify_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_identify_reports_overload_protection(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(so101_module, "SO101", _FakeDriver)
     _FakeDriver.default_start = np.array([0, 0, 0, 0, 0, 2048.0], dtype=np.float32)
     _FakeDriver.default_observation_failure = ConnectionError("Servo 'gripper' (ID 6) data not available in sync read")
 
-    with pytest.raises(RobotIdentifyError, match="overload"):
+    with pytest.raises(RuntimeError, match="overload"):
         await SO101Probe().identify(_payload(), _FakePortScanner())
 
     driver = _last_driver()

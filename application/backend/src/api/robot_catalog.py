@@ -7,7 +7,7 @@ from physicalai_studio_plugin import RobotCatalogDefinition
 from pydantic import BaseModel, Field
 
 from api.dependencies import RobotCatalogServiceDep, RobotConnectionManagerDep
-from exceptions import ResourceNotFoundError, ResourceType
+from exceptions import ResourceNotFoundError, ResourceType, RobotIdentifyError
 from robots.catalog.assets import resolve_robot_relative_asset_path, resolve_robot_urdf_path
 from schemas import SerialPortInfo
 
@@ -111,7 +111,12 @@ async def identify_robot(
             resource_id=definition.type,
             message=f"Robot type {definition.type} does not support identification.",
         )
-    await definition.probe.identify(payload, robot_manager, joint)
+    try:
+        await definition.probe.identify(payload, robot_manager, joint)
+    except RuntimeError as error:
+        if definition.type in {"SO101_Follower", "SO101_Leader"}:
+            raise RobotIdentifyError(str(error)) from error
+        raise
 
 
 @router.post("/{robot_type}/is-online")  # noqa: FAST003 - consumed by RobotDefinitionDep via _get_robot_definition
