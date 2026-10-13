@@ -1,7 +1,7 @@
 """Policy discovery uses the selected trainer's environment, not Studio's."""
 
 from importlib import metadata
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import httpx
@@ -101,12 +101,12 @@ def test_trainer_rejects_missing_policy_extra(monkeypatch) -> None:
 
 def test_trainer_rejects_policy_that_cannot_be_imported() -> None:
     with (
-        patch("physicalai.policies.list_physicalai_policies", return_value=["broken"]),
+        patch("physicalai.policies.list_physicalai_policies", return_value=["act"]),
         patch("physicalai.policies.get_physicalai_policy_class", side_effect=ImportError("missing dependency")),
     ):
         client = TestClient(trainer_app)
         assert client.get("/policies").json()["available"] == []
-        response = client.post("/jobs", json={"spec": {"policy": "broken"}})
+        response = client.post("/jobs", json={"spec": {"policy": "act"}})
     assert response.status_code == 422
     assert "unavailable" in response.json()["detail"]
 
@@ -117,20 +117,15 @@ def test_trainer_rejects_unknown_policy_before_queueing() -> None:
     assert "unavailable" in response.json()["detail"]
 
 
-def test_trainer_accepts_new_discovered_policy_without_schema_registration() -> None:
-    class NewPolicy:
-        STUDIO_TRAINABLE = True
-
-    manager = MagicMock()
-    manager.store.create.return_value = str(uuid4())
-    manager.store.get.return_value = None
+def test_trainer_rejects_discovered_policy_not_supported_by_studio() -> None:
     with (
-        patch("physicalai.policies.list_physicalai_policies", return_value=["new"]),
-        patch("physicalai.policies.get_physicalai_policy_class", return_value=NewPolicy),
-        patch("trainer.api._manager", return_value=manager),
+        patch("physicalai.policies.list_physicalai_policies", return_value=["cosmos3"]),
+        patch("physicalai.policies.get_physicalai_policy_class") as load_policy,
     ):
         client = TestClient(trainer_app)
-        assert client.get("/policies").json()["available"][0]["id"] == "new"
-        response = client.post("/jobs", json={"spec": {"policy": "new"}})
-    assert response.status_code == 202
-    manager.store.create.assert_called_once()
+        assert client.get("/policies").json()["available"] == []
+        response = client.post("/jobs", json={"spec": {"policy": "cosmos3"}})
+
+    assert response.status_code == 422
+    assert "unavailable" in response.json()["detail"]
+    load_policy.assert_not_called()

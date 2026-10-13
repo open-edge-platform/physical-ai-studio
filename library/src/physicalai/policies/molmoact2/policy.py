@@ -111,11 +111,6 @@ def _normalization_to_checkpoint(
 class MolmoAct2(PeftPolicyMixin, MolmoAct2ExportMixin, MolmoAct2FromHFMixin, Policy):
     """MolmoAct2 policy wrapper for loading pretrained checkpoints and configs."""
 
-    STUDIO_TRAINABLE = True
-    DISPLAY_NAME = "MolmoAct2"
-    TRAINING_DESCRIPTION = "Vision-Language-Action model with flow-matching action generation (Apache 2.0 license)"
-    MIN_TRAINING_VRAM_GB = 80
-
     def __init__(  # noqa: PLR0913, PLR0915
         self,
         # Input and output features

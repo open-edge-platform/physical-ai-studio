@@ -111,11 +111,6 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
         >>> action = policy.select_action(obs)
     """
 
-    STUDIO_TRAINABLE = True
-    DISPLAY_NAME = "Pi0.5"
-    TRAINING_DESCRIPTION = "Flow-matching VLA with discrete state encoding and longer context (Gemma license)"
-    MIN_TRAINING_VRAM_GB = 40
-
     def __init__(  # noqa: PLR0913
         self,
         # Pretrained model id

@@ -152,24 +152,18 @@ def test_available_policies_include_display_and_vram_metadata(monkeypatch, tmp_p
     }
 
 
-def test_new_library_policy_needs_no_studio_registry_entry(monkeypatch, tmp_path: Path) -> None:
+def test_unsupported_library_policies_are_not_selectable(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
 
-    class NewPolicy:
-        """A policy added by the library."""
-
-        STUDIO_TRAINABLE = True
-
     with (
-        patch("physicalai.policies.list_physicalai_policies", return_value=["new"]),
-        patch("physicalai.policies.get_physicalai_policy_class", return_value=NewPolicy),
+        patch("physicalai.policies.list_physicalai_policies", return_value=["act", "cosmos3", "new"]),
         TestClient(app) as client,
     ):
-        response = client.get("/api/policies/available")
+        available = client.get("/api/policies/available")
+        backends = client.get("/api/policies/backends")
 
-    assert response.json() == [
-        {"id": "new", "name": "NewPolicy", "description": "A policy added by the library.", "min_vram": None}
-    ]
+    assert [policy["id"] for policy in available.json()] == ["act"]
+    assert set(backends.json()) == {"act"}
 
 
 def test_policy_names_come_from_library(monkeypatch, tmp_path: Path) -> None:

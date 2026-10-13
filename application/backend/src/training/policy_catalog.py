@@ -20,6 +20,49 @@ class PolicyCatalog(BaseModel):
     backends: dict[str, list[str]]
 
 
+# Only policies whose constructors support Studio's training job are selectable.
+_STUDIO_POLICIES = {
+    "act": AvailablePolicy(
+        id="act",
+        name="ACT",
+        description="Action Chunking with Transformers, lightweight and fast to train (BSD 3-Clause license)",
+        min_vram=2 * 1024**3,
+    ),
+    "molmoact2": AvailablePolicy(
+        id="molmoact2",
+        name="MolmoAct2",
+        description="Vision-Language-Action model with flow-matching action generation (Apache 2.0 license)",
+        min_vram=80 * 1024**3,
+    ),
+    "pi05": AvailablePolicy(
+        id="pi05",
+        name="Pi0.5",
+        description="Flow-matching VLA with discrete state encoding and longer context (Gemma license)",
+        min_vram=40 * 1024**3,
+    ),
+    "rldx1": AvailablePolicy(
+        id="rldx1",
+        name="RLDX-1",
+        description="General-purpose robot foundation model for dexterous manipulation (RLWRLD Model License v1.0)",
+        min_vram=40 * 1024**3,
+    ),
+    "smolvla": AvailablePolicy(
+        id="smolvla",
+        name="SmolVLA",
+        description="Small Vision-Language-Action model based on SmolVLM2-500M (Apache 2.0 license)",
+        min_vram=3 * 1024**3,
+    ),
+    "xr0": AvailablePolicy(
+        id="xr0",
+        name="XR0",
+        description=(
+            "Vision-Language-Action model with a Qwen3-VL backbone and flow-matching action expert (Apache 2.0 license)"
+        ),
+        min_vram=60 * 1024**3,
+    ),
+}
+
+
 def missing_policy_dependencies(name: str) -> list[str]:
     """Check extras without loading deferred model dependencies."""
     missing = []
@@ -47,13 +90,13 @@ def available_policy_classes(
 
     classes = {}
     for name in list_physicalai_policies():
+        if name not in _STUDIO_POLICIES:
+            continue
         if missing := missing_dependencies(name):
             warning("Policy {} is unavailable (missing optional dependencies): {}", name, ", ".join(missing))
             continue
         try:
             cls = get_physicalai_policy_class(name)
-            if not getattr(cls, "STUDIO_TRAINABLE", False):
-                continue
             backends = (
                 [str(b) for b in cls.get_supported_export_backends()]
                 if hasattr(cls, "get_supported_export_backends")
@@ -68,14 +111,6 @@ def available_policy_classes(
 def policy_catalog(classes: dict[str, tuple[type, list[str]]]) -> PolicyCatalog:
     """Describe the policies and backends of this process."""
     return PolicyCatalog(
-        available=[
-            AvailablePolicy(
-                id=name,
-                name=getattr(cls, "DISPLAY_NAME", cls.__name__),
-                description=getattr(cls, "TRAINING_DESCRIPTION", (cls.__doc__ or cls.__name__).strip().splitlines()[0]),
-                min_vram=vram * 1024**3 if (vram := getattr(cls, "MIN_TRAINING_VRAM_GB", None)) is not None else None,
-            )
-            for name, (cls, _) in classes.items()
-        ],
+        available=[_STUDIO_POLICIES[name] for name in classes],
         backends={name: backends for name, (_, backends) in classes.items()},
     )
