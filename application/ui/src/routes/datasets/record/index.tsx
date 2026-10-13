@@ -145,13 +145,16 @@ const RecordingPage = () => {
         },
     });
 
-    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
-        params: { path: { project_id } },
-    });
-    const environmentId = environments[0]?.id;
-    if (environmentId === undefined) {
-        throw new Error('Cannot record without an environment.');
+    const { data: recordingEnvironments } = $api.useSuspenseQuery(
+        'get',
+        '/api/dataset/{dataset_id}/recording-environments',
+        { params: { path: { dataset_id } } }
+    );
+    const recordingEnvironment = recordingEnvironments[0];
+    if (recordingEnvironment === undefined) {
+        throw new Error('Select a recording environment before recording episodes.');
     }
+    const environmentId = recordingEnvironment.environment_id;
     const { data: environment } = $api.useSuspenseQuery(
         'get',
         '/api/projects/{project_id}/environments/{environment_id}',
