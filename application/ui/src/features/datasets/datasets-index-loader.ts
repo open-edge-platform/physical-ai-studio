@@ -5,7 +5,17 @@ import { redirect, type LoaderFunctionArgs } from 'react-router';
 
 import { fetchClient } from '../../api/client';
 import { paths } from '../../paths';
-import { clearLastUsedDatasetId, getLastUsedDatasetId } from './last-used-dataset';
+import { clearLastUsedDatasetId, getLastUsedDatasetId, setLastUsedDatasetId } from './last-used-dataset';
+
+export const recordLastUsedDatasetLoader = ({ params }: LoaderFunctionArgs): null => {
+    const { project_id, dataset_id } = params;
+
+    if (project_id !== undefined && dataset_id !== undefined) {
+        setLastUsedDatasetId(project_id, dataset_id);
+    }
+
+    return null;
+};
 
 export const datasetsIndexLoader = async ({ params }: LoaderFunctionArgs) => {
     const project_id = params.project_id;

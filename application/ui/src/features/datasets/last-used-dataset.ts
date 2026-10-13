@@ -1,8 +1,6 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect } from 'react';
-
 const STORAGE_KEY_PREFIX = 'physicalai:lastDataset:';
 
 const getStorageKey = (projectId: string): string => `${STORAGE_KEY_PREFIX}${projectId}`;
@@ -38,12 +36,4 @@ export const clearLastUsedDatasetId = (projectId: string): void => {
     try {
         window.localStorage.removeItem(getStorageKey(projectId));
     } catch {}
-};
-
-export const useRecordLastUsedDataset = (projectId: string, datasetId: string | undefined): void => {
-    useEffect(() => {
-        if (datasetId !== undefined) {
-            setLastUsedDatasetId(projectId, datasetId);
-        }
-    }, [projectId, datasetId]);
 };

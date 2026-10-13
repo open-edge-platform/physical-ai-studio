@@ -6,7 +6,6 @@ import { useNavigate, useParams } from 'react-router';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { DatasetTabs } from '../../features/datasets/dataset-tabs';
-import { useRecordLastUsedDataset } from '../../features/datasets/last-used-dataset';
 import { useProject, useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../paths';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
@@ -24,8 +23,6 @@ const Datasets = ({ datasets }: DatasetsProps) => {
     const navigate = useNavigate();
     const params = useParams();
     const dataset_id = params.dataset_id;
-
-    useRecordLastUsedDataset(project_id, dataset_id);
 
     if (datasets.length === 0) {
         return (

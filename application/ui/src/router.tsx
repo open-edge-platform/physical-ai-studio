@@ -8,7 +8,7 @@ import { queryClient } from '../src/query-client/query-client';
 import { $api } from './api/client';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
-import { datasetsIndexLoader } from './features/datasets/datasets-index-loader';
+import { datasetsIndexLoader, recordLastUsedDatasetLoader } from './features/datasets/datasets-index-loader';
 import { paths } from './paths';
 import { AppLayout } from './routes/app/app.layout';
 import { Camera } from './routes/cameras/camera';
@@ -129,10 +129,12 @@ export const router = createBrowserRouter([
                             },
                             {
                                 path: paths.project.datasets.show.pattern,
+                                loader: recordLastUsedDatasetLoader,
                                 element: <Datasets />,
                             },
                             {
                                 path: paths.project.datasets.showEpisode.pattern,
+                                loader: recordLastUsedDatasetLoader,
                                 element: <Datasets />,
                             },
                         ],

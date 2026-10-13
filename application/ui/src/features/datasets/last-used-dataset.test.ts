@@ -1,13 +1,7 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { renderHook } from '../../test-utils/render';
-import {
-    clearLastUsedDatasetId,
-    getLastUsedDatasetId,
-    setLastUsedDatasetId,
-    useRecordLastUsedDataset,
-} from './last-used-dataset';
+import { clearLastUsedDatasetId, getLastUsedDatasetId, setLastUsedDatasetId } from './last-used-dataset';
 
 describe('last-used-dataset storage', () => {
     afterEach(() => {
@@ -60,34 +54,5 @@ describe('last-used-dataset storage', () => {
         expect(getLastUsedDatasetId('project-1')).toBeUndefined();
         expect(() => setLastUsedDatasetId('project-1', 'dataset-1')).not.toThrow();
         expect(() => clearLastUsedDatasetId('project-1')).not.toThrow();
-    });
-});
-
-describe('useRecordLastUsedDataset', () => {
-    afterEach(() => {
-        vi.restoreAllMocks();
-        localStorage.clear();
-    });
-
-    it('records id on mount and when dataset id changes', () => {
-        let datasetId: string | undefined = 'dataset-1';
-        const { rerender } = renderHook(() => useRecordLastUsedDataset('project-1', datasetId));
-
-        expect(getLastUsedDatasetId('project-1')).toBe('dataset-1');
-
-        datasetId = 'dataset-2';
-        rerender();
-
-        expect(getLastUsedDatasetId('project-1')).toBe('dataset-2');
-    });
-
-    it('does not write when dataset id is undefined', () => {
-        let datasetId: string | undefined = 'dataset-1';
-        const { rerender } = renderHook(() => useRecordLastUsedDataset('project-1', datasetId));
-
-        datasetId = undefined;
-        rerender();
-
-        expect(getLastUsedDatasetId('project-1')).toBe('dataset-1');
     });
 });
