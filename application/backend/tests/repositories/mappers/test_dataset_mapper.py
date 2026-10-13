@@ -17,7 +17,7 @@ def _point_datasets_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Sett
 
 def test_to_schema_persists_computed_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _point_datasets_dir(monkeypatch, tmp_path)
-    dataset = Dataset(name="x", default_task="t", project_id=uuid4(), environment_id=uuid4())
+    dataset = Dataset(name="x", default_task="t", project_id=uuid4())
 
     db_row = DatasetMapper.to_schema(dataset)
 
@@ -33,7 +33,6 @@ def test_from_schema_ignores_stored_path_column(tmp_path: Path, monkeypatch: pyt
         path="/legacy/name-based/location",
         default_task="t",
         project_id=str(uuid4()),
-        environment_id=str(uuid4()),
     )
 
     dataset = DatasetMapper.from_schema(db_row)

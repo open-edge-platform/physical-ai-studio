@@ -13,12 +13,12 @@ class _StubDatasetService:
     def __init__(self, dataset: Dataset) -> None:
         self._dataset = dataset
         # Capture call arguments for assertion
-        self.update_dataset_name_calls: list[dict] = []
+        self.update_dataset_calls: list[dict] = []
         self.delete_dataset_calls: list[dict] = []
 
-    async def update_dataset_name(self, dataset_id: UUID, name: str) -> Dataset:
-        self.update_dataset_name_calls.append({"dataset_id": dataset_id, "name": name})
-        return self._dataset.model_copy(update={"name": name})
+    async def update_dataset(self, dataset_id: UUID, updates: dict[str, str]) -> Dataset:
+        self.update_dataset_calls.append({"dataset_id": dataset_id, "updates": updates})
+        return self._dataset.model_copy(update=updates)
 
     async def delete_dataset(self, dataset_id: UUID, remove_files: bool) -> None:
         self.delete_dataset_calls.append({"dataset_id": dataset_id, "remove_files": remove_files})
@@ -31,7 +31,6 @@ def _make_dataset() -> Dataset:
         default_task="Pick and place",
         path="/datasets/test",
         project_id=uuid4(),
-        environment_id=uuid4(),
     )
 
 
@@ -60,10 +59,10 @@ def test_update_dataset_name_returns_200_with_updated_payload() -> None:
     assert body["id"] == str(dataset.id)
 
     # Check that we called the dataset service properly
-    assert len(stub.update_dataset_name_calls) == 1
-    call = stub.update_dataset_name_calls[0]
+    assert len(stub.update_dataset_calls) == 1
+    call = stub.update_dataset_calls[0]
     assert call["dataset_id"] == dataset.id
-    assert call["name"] == "New Name"
+    assert call["updates"] == {"name": "New Name"}
 
 
 # ---------------------------------------------------------------------------

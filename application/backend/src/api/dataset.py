@@ -218,17 +218,21 @@ async def create_dataset(
 
 
 class DatasetNameUpdate(BaseModel):
-    name: str
+    name: str | None = None
+    default_task: str | None = None
 
 
 @router.put("/{dataset_id}")
-async def update_dataset_name(
+async def update_dataset(
     dataset_id: UUID,
     payload: DatasetNameUpdate,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> Dataset:
-    """Update dataset name by id."""
-    return await dataset_service.update_dataset_name(dataset_id=dataset_id, name=payload.name)
+    """Update dataset metadata by id."""
+    updates = payload.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No dataset updates provided")
+    return await dataset_service.update_dataset(dataset_id=dataset_id, updates=updates)
 
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
