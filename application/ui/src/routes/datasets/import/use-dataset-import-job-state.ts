@@ -2,7 +2,6 @@ import { $api } from '../../../api/client';
 
 export interface FinalizeFields {
     defaultTask: string | undefined;
-    environmentId: string | undefined;
 }
 
 export const useDatasetImportJobQuery = (importJobId: string | undefined) => {

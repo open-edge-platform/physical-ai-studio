@@ -46,12 +46,15 @@ export const DatasetViewer = () => {
         changeThumbnailCamera,
     } = useThumbnailCamera(dataset.id!);
 
-    const { data: environment } = $api.useSuspenseQuery(
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
+        params: { path: { project_id } },
+    });
+    const environmentId = environments[0]?.id;
+    const { data: environment } = $api.useQuery(
         'get',
         '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: { path: { project_id, environment_id: dataset.environment_id } },
-        }
+        { params: { path: { project_id, environment_id: environmentId ?? '' } } },
+        { enabled: environmentId !== undefined }
     );
 
     const {
@@ -111,6 +114,11 @@ export const DatasetViewer = () => {
                 <Panel id='episode-viewer' minSize='30%' className={classes.viewerPanel}>
                     {isEpisodeLoading || !selectedEpisode ? (
                         <Loading />
+                    ) : environment === undefined ? (
+                        <IllustratedMessage>
+                            <Heading>No environment available</Heading>
+                            <Content>Create an environment to view robot overlays for this episode.</Content>
+                        </IllustratedMessage>
                     ) : (
                         <EpisodeViewer
                             episode={selectedEpisode}

@@ -145,17 +145,17 @@ const RecordingPage = () => {
         },
     });
 
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
+        params: { path: { project_id } },
+    });
+    const environmentId = environments[0]?.id;
+    if (environmentId === undefined) {
+        throw new Error('Cannot record without an environment.');
+    }
     const { data: environment } = $api.useSuspenseQuery(
         'get',
         '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: {
-                path: {
-                    environment_id: dataset.environment_id,
-                    project_id,
-                },
-            },
-        }
+        { params: { path: { project_id, environment_id: environmentId } } }
     );
     return (
         <RuntimeSessionProvider

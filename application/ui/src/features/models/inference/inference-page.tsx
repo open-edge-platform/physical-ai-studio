@@ -7,7 +7,7 @@ import { $api } from '../../../api/client';
 import { SchemaEnvironmentDraft, SchemaModel } from '../../../api/openapi-spec';
 import { AppFooter } from '../../../components/app-footer/app-footer';
 import { paths } from '../../../paths';
-import { environmentDraft, RuntimeSessionProvider } from '../../runtime-session/runtime-session-provider';
+import { RuntimeSessionProvider } from '../../runtime-session/runtime-session-provider';
 import { SessionWorkspace } from '../../runtime-session/workspace/session-workspace';
 import { useInferenceParams } from './use-inference-params';
 
@@ -20,7 +20,7 @@ const InferenceSession = ({ model }: { model: SchemaModel }) => (
     />
 );
 
-/** The model running in a session, on the environment it was trained for if it knows it. */
+/** The model running in a session with a user-selected environment. */
 const InferenceWorkspace = ({
     model,
     environment,
@@ -77,20 +77,6 @@ const InferenceWorkspace = ({
     );
 };
 
-/** The environment of the dataset the model was trained on. */
-const TrainedOn = ({ model, dataset_id }: { model: SchemaModel; dataset_id: string }) => {
-    const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
-        params: { path: { dataset_id } },
-    });
-    const { data: environment } = $api.useSuspenseQuery(
-        'get',
-        '/api/projects/{project_id}/environments/{environment_id}',
-        { params: { path: { project_id: model.project_id, environment_id: dataset.environment_id } } }
-    );
-
-    return <InferenceWorkspace model={model} environment={environmentDraft(environment)} />;
-};
-
 export const InferencePage = () => {
     const { model_id } = useInferenceParams();
     const {
@@ -99,10 +85,6 @@ export const InferencePage = () => {
         params: { path: { model_id } },
     });
 
-    // A model without a dataset (imported) starts with no environment; the side bar loads one.
-    return model.dataset_id ? (
-        <TrainedOn model={model} dataset_id={model.dataset_id} />
-    ) : (
-        <InferenceWorkspace model={model} environment={null} />
-    );
+    // Datasets do not select an environment; the side bar loads one for this session.
+    return <InferenceWorkspace model={model} environment={null} />;
 };

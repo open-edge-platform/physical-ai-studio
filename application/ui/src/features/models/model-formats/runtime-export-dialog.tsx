@@ -31,7 +31,7 @@ export const RuntimeExportDialog = ({ close, model, backend }: RuntimeExportDial
     );
     const { data: inferenceDevices = [] } = $api.useQuery('get', '/api/system/devices/inference');
 
-    const defaultEnvironmentId = dataset?.environment_id ?? environments[0]?.id;
+    const defaultEnvironmentId = environments[0]?.id;
     const [environmentId, setEnvironmentId] = useState<string | undefined>(defaultEnvironmentId);
     const selectedEnvironmentId = environmentId ?? defaultEnvironmentId;
 
