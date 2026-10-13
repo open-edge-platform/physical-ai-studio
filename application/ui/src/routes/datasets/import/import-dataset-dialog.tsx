@@ -112,7 +112,6 @@ const InternalImportDatasetDialog = ({
     const [datasetName, setDatasetName] = useState('');
     const [finalizeFields, setFinalizeFields] = useState<FinalizeFields>({
         defaultTask: undefined,
-        environmentId: undefined,
     });
     const [importJobId, setImportJobId] = useState<string | undefined>(initialJobId);
 

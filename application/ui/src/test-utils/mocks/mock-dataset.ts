@@ -8,6 +8,5 @@ export const getMockedDataset = (overrides: Partial<SchemaDatasetOutput> = {}): 
     name: 'pick-dataset',
     default_task: 'manipulation',
     project_id: 'project-1',
-    environment_id: 'environment-1',
     ...overrides,
 });

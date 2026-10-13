@@ -202,7 +202,7 @@ export const TrainingRow = ({
     const loss = trainJob.extra_info && (trainJob.extra_info['train/loss_step'] as number | undefined);
 
     const { data: dataset } = useDatasetQuery(trainJob.payload.dataset_id);
-    const { data: environment } = useEnvironmentQuery(trainJob.payload.project_id, dataset?.environment_id);
+    const { data: environment } = useEnvironmentQuery(trainJob.payload.project_id, undefined);
 
     if (trainJob.status === 'failed') {
         return (
