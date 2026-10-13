@@ -289,7 +289,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         // Checked on every step from the mapping on, not just its own: the dataset's
         // cameras can finish loading after Next was pressed and turn the mapping invalid.
         (hasFeatureMapping && activeStep !== 'setup' && featureMapping.error !== null) ||
-        (activeStep === 'export' && exportSelection.error !== null);
+        (activeStep === 'export' && (exportSelection.isLoading || exportSelection.error !== null));
 
     // What the later steps recap: the trainer that runs the job and the device it
     // trains on, plus the dataset and policy the run is about.
@@ -328,6 +328,10 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         try {
             if (policiesUnavailable || !availablePolicies.some((policy) => policy.id === selectedPolicy)) {
                 setSubmitError('This policy is not available on the selected training target.');
+                return;
+            }
+            if (exportSelection.isLoading) {
+                setSubmitError('Export formats are still loading. Try again in a moment.');
                 return;
             }
             let submissionDevice = selectedRemoteDevice;

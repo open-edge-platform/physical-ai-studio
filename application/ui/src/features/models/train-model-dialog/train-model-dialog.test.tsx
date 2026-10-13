@@ -828,6 +828,36 @@ describe('TrainModelDialog', () => {
         expect(screen.queryByRole('checkbox', { name: /ONNX/i })).not.toBeInTheDocument();
     });
 
+    it('waits for export formats before enabling Train', async () => {
+        const user = userEvent.setup();
+        let releaseFormats!: () => void;
+        const formatsReady = new Promise<void>((resolve) => {
+            releaseFormats = resolve;
+        });
+        mockProjectWithRemoteTrainer();
+        server.use(
+            http.get('/api/policies/backends', async () => {
+                await formatsReady;
+                return HttpResponse.json({ act: ['torch'] });
+            })
+        );
+
+        try {
+            renderDialog();
+            await user.click(await screen.findByRole('button', { name: /select…/i }));
+            await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+            await goToLastStep(user);
+
+            expect(await screen.findByLabelText('Loading export formats')).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Train' })).toBeDisabled();
+            releaseFormats();
+            expect(await screen.findByRole('checkbox', { name: /PyTorch/i })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Train' })).toBeEnabled();
+        } finally {
+            releaseFormats();
+        }
+    });
+
     it('shows a policy export lookup failure instead of claiming the policy has no formats', async () => {
         const user = userEvent.setup();
         mockProjectWithRemoteTrainer();
