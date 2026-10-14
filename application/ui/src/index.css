@@ -1,7 +1,7 @@
 @import '@geti-ui/blocks/styles.css';
 @import '@geti-ui/ui/styles.css';
 
-@import './../node_modules/dockview-react/dist/styles/dockview.css';
+@import 'dockview-react/dist/styles/dockview.css';
 
 @font-face {
     src: url('./assets/fonts/inter-v20-latin-variable.woff2') format('woff2');

@@ -6,13 +6,7 @@ from fastapi.responses import Response
 from loguru import logger
 from sse_starlette import EventSourceResponse
 
-from api.dependencies import (
-    get_event_processor_ws,
-    get_job_id,
-    get_job_service,
-    get_model_metrics_service,
-    get_scheduler,
-)
+from api.dependencies import get_event_processor_ws, get_job_service, get_model_metrics_service, get_scheduler
 from core.scheduler import Scheduler
 from exceptions import InvalidJobStateError, ResourceNotFoundError, ResourceType
 from schemas import Job
@@ -34,7 +28,7 @@ async def list_jobs(
 
 @router.get("/{job_id}")
 async def get_job(
-    job_id: Annotated[UUID, Depends(get_job_id)],
+    job_id: UUID,
     job_service: Annotated[JobService, Depends(get_job_service)],
 ) -> Job:
     """Fetch one job by id."""
@@ -43,7 +37,7 @@ async def get_job(
 
 @router.delete("/{job_id}")
 async def delete_job(
-    job_id: Annotated[UUID, Depends(get_job_id)],
+    job_id: UUID,
     job_service: Annotated[JobService, Depends(get_job_service)],
 ) -> None:
     """Delete a job. Only allows deleting failed or canceled jobs"""
@@ -61,7 +55,7 @@ async def submit_train_job(
 
 @router.post("/{job_id}:interrupt")
 async def interrupt_job(
-    job_id: Annotated[UUID, Depends(get_job_id)],
+    job_id: UUID,
     job_service: Annotated[JobService, Depends(get_job_service)],
     scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:
@@ -84,7 +78,7 @@ async def interrupt_job(
 
 @router.get("/{job_id}/model_metrics")
 async def get_model_job_metrics(
-    job_id: Annotated[UUID, Depends(get_job_id)],
+    job_id: UUID,
     job_service: Annotated[JobService, Depends(get_job_service)],
     model_metrics_service: Annotated[ModelMetricsService, Depends(get_model_metrics_service)],
 ) -> EventSourceResponse:

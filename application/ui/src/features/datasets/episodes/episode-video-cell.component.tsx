@@ -48,7 +48,7 @@ const EpisodeVideo = ({ url, player, episodeVideo }: EpisodeVideoProps) => {
     /* eslint-disable jsx-a11y/media-has-caption */
     return (
         <div ref={containerRef} style={{ height: '100%', width: '100%' }}>
-            {url !== undefined && <video ref={videoRef} src={url} width={width} height={height} />}
+            {url !== undefined && <video ref={videoRef} src={url} preload='metadata' width={width} height={height} />}
         </div>
     );
 };

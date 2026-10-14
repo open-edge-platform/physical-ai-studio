@@ -19,6 +19,7 @@ import { $api } from '../../../api/client';
 import { ElapsedDuration } from '../../../components/elapsed-duration.component';
 import { notify } from '../../../components/notification/notification.component';
 import { Table } from '../../../components/table/table';
+import { useRemoteTrainerHealth } from '../../training-targets/use-remote-trainer-health';
 import { useDatasetQuery, useEnvironmentQuery } from '../api/queries';
 import { durationBetween } from '../shared/duration';
 import { PeftBadge } from '../shared/peft-badge';
@@ -30,19 +31,36 @@ import { JobRowContent } from './job-row-content';
 
 import classes from './job-table.module.css';
 
-/** Small pill naming the remote trainer a job runs on. Hidden entirely for local jobs. */
-const TrainingLocationBadge = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
-    const { data: remoteTrainers = [] } = $api.useQuery('get', '/api/remote-trainers');
+const TrainerCell = ({ payload }: { payload: SchemaTrainJob['payload'] }) => {
+    const remoteId = payload.training_target === 'remote' ? payload.remote_trainer_id : null;
+    const { health } = useRemoteTrainerHealth(remoteId);
+    const { data: remoteTrainers = [] } = $api.useQuery(
+        'get',
+        '/api/remote-trainers',
+        {},
+        { enabled: remoteId !== null }
+    );
+    const trainer =
+        payload.training_target === 'remote'
+            ? (payload.remote_trainer_name ??
+              remoteTrainers.find((remoteTrainer) => remoteTrainer.id === remoteId)?.name ??
+              payload.remote_trainer_url ??
+              'Remote')
+            : getTrainerLabel(payload);
+    const devices = health?.devices ?? [];
+    const selected = payload.device;
+    const gpu = devices.find(
+        (device) => device.index === (selected?.index ?? 0) && (!selected || device.type === selected.type)
+    );
+    const device = selected ?? (devices.length > 1 ? gpu : undefined);
+    const showDevice = remoteId && device && (devices.length > 1 || !gpu);
 
-    if (payload.training_target !== 'remote') {
-        return null;
-    }
-
-    const remoteTrainer = remoteTrainers.find((trainer) => trainer.id === payload.remote_trainer_id);
-    const label = remoteTrainer?.name ?? payload.remote_trainer_url ?? 'unknown';
-    const text = `Remote · ${label}`;
-
-    return <SingleBadge color='var(--spectrum-global-color-purple-600)' text={text} title={text} preserveCase />;
+    return (
+        <Flex direction='column' data-testid='trainer-cell'>
+            <Text>{remoteId && trainer !== 'Remote' ? `Remote · ${trainer}` : trainer || '-'}</Text>
+            {showDevice && <Text>{`${device.type.toUpperCase()} ${device.index}${gpu ? ` · ${gpu.name}` : ''}`}</Text>}
+        </Flex>
+    );
 };
 
 const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
@@ -60,7 +78,6 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                     )}
                     <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
                     <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
-                    <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time ? (
                     <Text UNSAFE_className={classes.rowInfo}>
@@ -86,7 +103,6 @@ const TrainJobStatus = ({ job }: { job: SchemaTrainJob }) => {
                     <SingleBadge color={color} text={job.status} />
                     <PeftBadge isEnabled={job.payload.lora_enabled} isDora={job.payload.lora_use_dora} />
                     <SnapflowBadge isEnabled={job.payload.snapflow_enabled} />
-                    <TrainingLocationBadge payload={job.payload} />
                 </Flex>
                 {job.start_time && job.end_time && (
                     <Text UNSAFE_className={classes.rowInfo}>
@@ -156,7 +172,6 @@ export const TrainingRow = ({
 
     const { data: dataset } = useDatasetQuery(trainJob.payload.dataset_id);
     const { data: environment } = useEnvironmentQuery(trainJob.payload.project_id, dataset?.environment_id);
-    const trainer = getTrainerLabel(trainJob.payload);
 
     if (trainJob.status === 'failed') {
         return (
@@ -167,7 +182,7 @@ export const TrainingRow = ({
                 <Text>{trainJob.payload.policy.toUpperCase()}</Text>
                 <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
                 <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
-                <Text data-testid='trainer-cell'>{trainer || '-'}</Text>
+                <TrainerCell payload={trainJob.payload} />
                 <div />
                 <View>
                     <JobMenu trainJob={trainJob} onViewLogs={onViewLogs} />
@@ -198,7 +213,7 @@ export const TrainingRow = ({
             <Text>{trainJob.payload.policy.toUpperCase()}</Text>
             <Text data-testid='dataset-cell'>{dataset?.name ?? '-'}</Text>
             <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
-            <Text data-testid='trainer-cell'>{trainer || '-'}</Text>
+            <TrainerCell payload={trainJob.payload} />
             <div onClick={(e) => e.stopPropagation()}>
                 {trainJob.status === 'running' && (
                     <DialogTrigger>

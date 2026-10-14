@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { NumberField, Text } from '@geti-ui/ui';
+import { Content, ContextualHelp, Heading, NumberField, Text } from '@geti-ui/ui';
 
 import { SchemaSettingsUpdate, SchemaSshProvisioningSettings } from '../../../api/openapi-spec';
 import { SettingsSection } from './settings-section';
@@ -89,16 +89,23 @@ export const SshSettingsForm = ({ ssh }: SshSettingsFormProps) => {
             />
             <NumberField
                 label='Trainer shared memory (GiB)'
+                contextualHelp={
+                    <ContextualHelp variant='info'>
+                        <Heading>Trainer shared memory</Heading>
+                        <Content>
+                            <Text>
+                                Applies only to new containers. A running container keeps its current size. After jobs
+                                finish, stop the container and save its training target to recreate it.
+                            </Text>
+                        </Content>
+                    </ContextualHelp>
+                }
                 value={trainerShmSizeGb}
                 onChange={(value) => update(setTrainerShmSizeGb, value)}
                 minValue={1}
                 step={1}
                 width='100%'
             />
-            <Text>
-                Applies only to new containers. A running container keeps its current size. After jobs finish, stop the
-                container and save its training target to recreate it.
-            </Text>
         </SettingsSection>
     );
 };

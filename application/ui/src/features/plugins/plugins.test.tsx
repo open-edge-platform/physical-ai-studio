@@ -1,7 +1,7 @@
+import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
-import { describe, expect, it, vi } from 'vitest';
 
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
@@ -97,7 +97,7 @@ describe('PluginsView', () => {
         await user.click(await screen.findByRole('button', { name: 'Install' }));
         await user.click(await screen.findByRole('button', { name: 'Restart now' }));
 
-        await vi.waitFor(() => {
+        await rs.waitFor(() => {
             expect(restartCalls).toBe(1);
         });
 

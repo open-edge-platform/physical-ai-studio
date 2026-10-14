@@ -29,12 +29,22 @@ def test_list_robot_catalog_returns_definitions_without_internal_fields() -> Non
 
     assert payload
     first = payload[0]
-    assert set(first.keys()) == {"type", "display_name", "role", "urdf_path", "package_map", "joint_map"}
+    assert set(first.keys()) == {
+        "type",
+        "display_name",
+        "role",
+        "urdf_path",
+        "package_map",
+        "joint_map",
+        "zero_calibration",
+    }
     assert "urdf_relative_path" not in first
 
     so101 = next(definition for definition in payload if definition["type"] == "SO101_Follower")
     assert so101["urdf_path"] == "/api/robots/catalog/SO101_Follower/urdf"
     assert so101["package_map"] == {"SO101": "/api/robots/catalog/SO101_Follower"}
+    # SO101 calibrates through its own setup wizard, not the plugin zero-pose calibration.
+    assert so101["zero_calibration"] is None
 
 
 def test_get_robot_catalog_schema_returns_pydantic_schema() -> None:

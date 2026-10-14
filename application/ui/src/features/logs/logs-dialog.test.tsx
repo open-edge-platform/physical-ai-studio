@@ -1,9 +1,9 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import { HttpResponse } from 'msw';
-import { vi } from 'vitest';
 
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
@@ -33,7 +33,7 @@ class StubEventSource {
 }
 
 const stubEventSourceWith = (...messages: string[]) => {
-    vi.stubGlobal(
+    rs.stubGlobal(
         'EventSource',
         class extends StubEventSource {
             constructor() {
@@ -45,7 +45,7 @@ const stubEventSourceWith = (...messages: string[]) => {
 
 describe('LogsDialog', () => {
     afterEach(() => {
-        vi.unstubAllGlobals();
+        rs.unstubAllGlobals();
     });
 
     beforeEach(() => {
@@ -67,7 +67,7 @@ describe('LogsDialog', () => {
             })
         );
 
-        render(<LogsDialog close={vi.fn()} initialSourceId='job-abc' />);
+        render(<LogsDialog close={rs.fn()} initialSourceId='job-abc' />);
 
         expect(await screen.findByText('hello world')).toBeInTheDocument();
     });
@@ -94,7 +94,7 @@ describe('LogsDialog', () => {
             })
         );
 
-        render(<LogsDialog close={vi.fn()} initialSourceId='job-abc' />);
+        render(<LogsDialog close={rs.fn()} initialSourceId='job-abc' />);
 
         expect(await screen.findByText('No logs available')).toBeInTheDocument();
         // The dialog itself (and the rest of the app) must still be intact.

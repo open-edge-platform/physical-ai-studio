@@ -31,7 +31,7 @@ const setupMocks = (episodes = EPISODES) => {
 };
 
 describe('useActiveEpisode', () => {
-    it('redirects to the first episode when no episode index is in the URL', async () => {
+    it('redirects to the newest episode when no episode index is in the URL', async () => {
         setupMocks();
 
         const { result } = renderHook(() => useActiveEpisode(), {
@@ -40,10 +40,10 @@ describe('useActiveEpisode', () => {
             wrapper,
         });
 
-        await waitFor(() => expect(result.current[0]).toBe(5));
+        await waitFor(() => expect(result.current[0]).toBe(7));
     });
 
-    it('redirects to the first episode when the URL has an invalid episode index', async () => {
+    it('redirects to the newest episode when the URL has an invalid episode index', async () => {
         setupMocks();
 
         const { result } = renderHook(() => useActiveEpisode(), {
@@ -52,7 +52,7 @@ describe('useActiveEpisode', () => {
             wrapper,
         });
 
-        await waitFor(() => expect(result.current[0]).toBe(5));
+        await waitFor(() => expect(result.current[0]).toBe(7));
     });
 
     it('keeps a valid episode index from the URL', async () => {

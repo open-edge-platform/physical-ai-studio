@@ -23,3 +23,7 @@
 .saved {
     color: var(--spectrum-global-color-gray-700);
 }
+
+.aboutValue {
+    color: var(--spectrum-global-color-gray-700);
+}

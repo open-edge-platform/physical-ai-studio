@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from loguru import logger
 
-from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingTarget, TrainJobPayload
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainingDevice, TrainingTarget, TrainJobPayload
 from services.training_backends import get_training_backend
 from services.training_backends.local import LocalTrainingBackend
 from services.training_backends.remote import SNAPSHOT_UPLOAD_PROGRESS, TRAINING_PROGRESS_END, RemoteTrainingBackend
@@ -50,12 +50,15 @@ async def test_get_training_backend_returns_local_for_local_job() -> None:
 
 async def test_get_training_backend_returns_remote_for_remote_job() -> None:
     settings = _settings()
+    payload = _payload(TrainingTarget.REMOTE)
+    payload.device = TrainingDevice(type="cuda", index=1)
     with (
         patch("settings.get_settings", return_value=settings),
         patch("services.training_backends.remote.get_settings", return_value=settings),
     ):
-        backend = await get_training_backend(_payload(TrainingTarget.REMOTE))
+        backend = await get_training_backend(payload)
     assert isinstance(backend, RemoteTrainingBackend)
+    assert backend._device == payload.device
 
     # The pinned trainer name reaches the backend, so its job logs are attributable.
     messages: list[str] = []
@@ -64,7 +67,7 @@ async def test_get_training_backend_returns_remote_for_remote_job() -> None:
         backend._log.info("check")
     finally:
         logger.remove(sink_id)
-    assert messages == ["[gpu-box-1] check"]
+    assert messages == ["[gpu-box-1 · CUDA 1] check"]
 
 
 def test_dispatcher_report_enqueues_progress_tuple() -> None:

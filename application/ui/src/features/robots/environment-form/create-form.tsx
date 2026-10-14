@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../api/client';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { EnvironmentFormFields, EnvironmentFormHeading } from './form';
 import { useEnvironmentFormBody } from './provider';
 

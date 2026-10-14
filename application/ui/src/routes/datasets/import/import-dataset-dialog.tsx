@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router';
 
 import { SchemaDatasetImportJob } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { ImportStepDetectionFailed } from './import-step-detection-failed';
 import { ImportStepInProgress } from './import-step-in-progress';
 import { ImportStepUpload } from './import-step-upload';
@@ -97,7 +97,7 @@ const useOnImportDone = (importJob: SchemaDatasetImportJob | undefined, onImport
         if (completedDatasetId) {
             onImportDoneEvent(completedDatasetId);
         }
-    }, [completedDatasetId, onImportDoneEvent]);
+    }, [completedDatasetId]);
 };
 
 const InternalImportDatasetDialog = ({

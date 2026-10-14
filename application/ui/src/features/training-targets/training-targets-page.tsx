@@ -6,6 +6,7 @@ import { Add } from '@geti-ui/ui/icons';
 import { $api } from '../../api/client';
 import { TrainingTargetForm } from './training-target-form/training-target-form';
 import { DeleteRemoteTrainerDialog } from './training-targets-table/delete-remote-trainer-dialog';
+import { InstallPrerequisitesDialog } from './training-targets-table/install-prerequisites-dialog';
 import { RemoteTrainerForm } from './training-targets-table/remote-trainer-form/remote-trainer-form';
 import {
     SshHostKeyConfirmation,
@@ -20,6 +21,7 @@ type TrainingTargetAction =
     | { type: 'create' }
     | { type: 'edit'; row: TrainingTargetRow }
     | { type: 'delete'; row: TrainingTargetRow }
+    | { type: 'setup'; row: TrainingTargetRow; reboot: boolean }
     | undefined;
 
 export const TrainingTargetsPage = () => {
@@ -76,6 +78,7 @@ export const TrainingTargetsPage = () => {
                     rows={rows}
                     onEdit={(row) => setAction({ type: 'edit', row })}
                     onDelete={(row) => setAction({ type: 'delete', row })}
+                    onSetup={sshAvailable ? (row, reboot) => setAction({ type: 'setup', row, reboot }) : undefined}
                 />
             )}
 
@@ -100,6 +103,13 @@ export const TrainingTargetsPage = () => {
                         remoteTrainer={action.row.trainer}
                         onCancel={closeForm}
                         onDeleted={closeForm}
+                    />
+                )}
+                {action?.type === 'setup' && (
+                    <InstallPrerequisitesDialog
+                        trainer={action.row.trainer}
+                        reboot={action.reboot}
+                        onClose={closeForm}
                     />
                 )}
             </DialogContainer>

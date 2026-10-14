@@ -2,7 +2,7 @@ import { Flex, Link as SpectrumLink } from '@geti-ui/ui';
 import { Link } from 'react-router';
 
 import { $api } from '../../../api/client';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 
 type PolicyAccessAlertProps = { policy: string };

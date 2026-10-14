@@ -177,6 +177,8 @@ The important definition fields are:
 - `robot_builder` converts validated configuration into a driver.
 - `probe` optionally supports discovery, identification, and online checks.
 - `asset` optionally describes URDF and visualization data.
+- `zero_calibration` optionally describes a zero-pose calibration Studio runs when
+  the robot is added.
 
 Registration failures are intentionally visible at startup. Import errors,
 duplicate types, invalid payload models, or invalid form metadata prevent the
@@ -252,6 +254,14 @@ After a user saves a robot:
 
 An optional probe is used for discovery and online checks; it is separate from
 the builder so catalog browsing does not have to construct a connected driver.
+
+An optional `zero_calibration` runs before the robot is saved. The zero-calibration
+websocket validates the unsaved robot, calls `robot_builder`, and connects to
+the plain driver directly rather than through a `SharedRobot`, because a shared
+robot only forwards observations and actions. It calls the plugin's `release`
+and `set_zero` steps, streams observations for the 3D view (when the type has an
+asset), and disconnects the
+driver when the websocket closes. The UI saves the robot afterwards.
 For the runtime after construction, see [Runtime Session Architecture](./runtime-session-architecture.md).
 
 ## Assets

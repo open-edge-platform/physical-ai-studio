@@ -154,6 +154,39 @@ async def test_start_records_missing_docker_for_the_health_ui() -> None:
     assert persistent_trainer.get_launch_failure(trainer.id) == "docker_unavailable"
 
 
+async def test_start_detects_intel_gpu_without_xpu_smi() -> None:
+    trainer = _ssh_trainer()
+    transport = _fake_transport_cm()
+    remote = transport.__aenter__.return_value
+    remote.run_command.side_effect = [
+        MagicMock(ok=True),
+        MagicMock(ok=False),
+        MagicMock(
+            ok=True,
+            stdout="Platform #0: Intel(R) OpenCL Graphics\n `-- Device #0: Intel(R) Arc Pro B70 Graphics",
+        ),
+    ]
+    with (
+        patch(f"{MODULE}.SshTransport", return_value=transport),
+        patch(f"{MODULE}.get_backend_instance_id", return_value="this-instance"),
+        patch(f"{MODULE}.docker_ops") as docker_ops_module,
+        patch(f"{MODULE}.resolve_render_group_gid", new=AsyncMock(return_value=109)),
+    ):
+        docker_ops_module.inspect_container = AsyncMock(return_value=None)
+        docker_ops_module.resolve_protocol_image = AsyncMock(return_value=_IMAGE)
+        docker_ops_module.pull_image = AsyncMock()
+        docker_ops_module.management_labels = MagicMock(return_value={})
+        docker_ops_module.data_volume_name = MagicMock(return_value="vol")
+        docker_ops_module.create_data_volume = AsyncMock()
+        docker_ops_module.build_run_argv = MagicMock(return_value=["docker", "run", "127.0.0.1::8001", "img"])
+        docker_ops_module.remove_stale_containers_on_port = AsyncMock(return_value=[])
+        docker_ops_module.launch_container = AsyncMock(return_value="container-id")
+        await persistent_trainer.start(trainer)
+
+    assert docker_ops_module.resolve_protocol_image.call_args.args[1] == DeviceType.XPU
+    remote.run_command.assert_any_await(["clinfo", "-l"])
+
+
 async def test_start_records_missing_accelerator_for_the_health_ui() -> None:
     trainer = _ssh_trainer()
     transport = _fake_transport_cm()

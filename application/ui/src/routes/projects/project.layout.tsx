@@ -7,7 +7,7 @@ import { AppFooter } from '../../components/app-footer/app-footer';
 import { AppLogo } from '../../components/app-logo/app-logo';
 import { ProjectMenu } from '../../features/projects/menu/project-menu.component';
 import { useProject, useProjectId } from '../../features/projects/use-project';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 import { getMainPageInProjectUrl } from './project-navigation';
 
 const Header = ({ project_id }: { project_id: string }) => {

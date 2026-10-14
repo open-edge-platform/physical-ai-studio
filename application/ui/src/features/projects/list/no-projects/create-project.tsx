@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router';
 import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../../api/client';
-import { paths } from '../../../../router';
+import { paths } from '../../../../paths';
 
 type CreateProjectProps = {
     trigger: ReactElement;

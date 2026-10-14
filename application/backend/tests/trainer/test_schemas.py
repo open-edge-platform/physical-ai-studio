@@ -23,16 +23,9 @@ def test_spec_defaults_come_from_the_library() -> None:
     assert request.spec == TrainingJobSpec(policy="act")
 
 
-@pytest.mark.parametrize("policy", ["unknown", "gpt", ""])
-def test_unsupported_policy_rejected(policy: str) -> None:
-    with pytest.raises(ValidationError):
-        SubmitJobRequest(spec=TrainingJobSpec(policy=policy))
-
-
-@pytest.mark.parametrize("policy", ["act", "molmoact2", "pi05", "rldx1", "smolvla", "xr0"])
-def test_selectable_policies_accepted(policy: str) -> None:
-    """Every policy the UI can select must pass trainer submission validation."""
-    assert SubmitJobRequest(spec=TrainingJobSpec(policy=policy)).spec.policy == policy
+def test_policy_name_is_validated_at_submission_not_when_reading_stored_requests() -> None:
+    """A new policy can be added without changing the trainer wire schema."""
+    assert SubmitJobRequest(spec=TrainingJobSpec(policy="new-policy")).spec.policy == "new-policy"
 
 
 def test_unknown_spec_field_rejected() -> None:

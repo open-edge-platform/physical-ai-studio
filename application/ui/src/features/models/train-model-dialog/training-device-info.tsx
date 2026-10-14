@@ -1,22 +1,26 @@
-import { useMemo } from 'react';
-
 import { Flex, StatusLight } from '@geti-ui/ui';
 
-import { SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
+import { SchemaDeviceInfo, SchemaRemoteTrainerHealth } from '../../../api/openapi-spec';
 import { formatBytes } from './policies';
 import { TrainingTargetKind } from './train-model-dialog';
-import { pickBestDevice, useBestTrainingDevice } from './use-training-devices';
 
 interface TrainingDeviceInfoProps {
     targetKind: TrainingTargetKind;
     remoteHealth: SchemaRemoteTrainerHealth | null;
+    localDevice: SchemaDeviceInfo | null;
+    remoteDevice: SchemaDeviceInfo | null;
+    isRemoteDeviceBusy: boolean;
     isCheckingRemote: boolean;
 }
 
-export const TrainingDeviceInfo = ({ targetKind, remoteHealth, isCheckingRemote }: TrainingDeviceInfoProps) => {
-    const bestDevice = useBestTrainingDevice();
-    const bestRemoteDevice = useMemo(() => pickBestDevice(remoteHealth?.devices ?? []), [remoteHealth]);
-
+export const TrainingDeviceInfo = ({
+    targetKind,
+    remoteHealth,
+    localDevice,
+    remoteDevice,
+    isRemoteDeviceBusy,
+    isCheckingRemote,
+}: TrainingDeviceInfoProps) => {
     return (
         <Flex UNSAFE_style={{ textAlign: 'right' }} direction='column' gap='size-75'>
             {targetKind === 'trainer' ? (
@@ -24,18 +28,18 @@ export const TrainingDeviceInfo = ({ targetKind, remoteHealth, isCheckingRemote 
                     <StatusLight variant='negative'>Remote trainer unavailable</StatusLight>
                 ) : remoteHealth?.status === 'starting' ? (
                     <StatusLight variant='neutral'>Starting trainer container…</StatusLight>
-                ) : bestRemoteDevice ? (
-                    <StatusLight variant='positive'>
-                        {bestRemoteDevice.name}, {formatBytes(bestRemoteDevice.memory!)} VRAM
+                ) : remoteDevice ? (
+                    <StatusLight variant={isRemoteDeviceBusy ? 'yellow' : 'positive'}>
+                        {remoteDevice.name}, {formatBytes(remoteDevice.memory!)} VRAM
                     </StatusLight>
                 ) : isCheckingRemote && remoteHealth === null ? (
                     <StatusLight variant='neutral'>Checking remote trainer…</StatusLight>
                 ) : (
                     <StatusLight variant='neutral'>Remote trainer selected</StatusLight>
                 )
-            ) : bestDevice ? (
+            ) : localDevice ? (
                 <StatusLight variant='positive'>
-                    {bestDevice.name}, {formatBytes(bestDevice.memory!)} VRAM
+                    {localDevice.name}, {formatBytes(localDevice.memory!)} VRAM
                 </StatusLight>
             ) : (
                 <StatusLight variant='neutral'>CPU only (no GPU detected)</StatusLight>

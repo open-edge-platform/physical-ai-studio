@@ -88,6 +88,11 @@
       matchManagers: ["github-actions", "custom.regex"],
       matchPackagePatterns: ["*"],
       schedule: ["* * 1,15 * *"], // twice a month
+      automerge: true,
+      automergeType: "pr",
+      reviewers: ["sys-geti"],
+      platformAutomerge: true,
+      assignAutomerge: true,
     },
 
     // Custom semver versioning for geti-ci actions to support tags like zizmor/v0.1.0
@@ -186,10 +191,11 @@
       matchUpdateTypes: ["digest"],
     },
 
-    // Disable non-security upgrades for npm, except lock file update
+    // Disable non-security and lock file upgrades for npm
+    // FIXME: Lock is updated manually
     {
       enabled: false,
-      matchDatasources: ["npm"],
+      matchManagers: ["npm"],
     },
 
     // NPM version in package.json is updated manually

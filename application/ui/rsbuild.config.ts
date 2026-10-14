@@ -1,5 +1,4 @@
 import { defineConfig, loadEnv } from '@rsbuild/core';
-import { pluginBabel } from '@rsbuild/plugin-babel';
 import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginSvgr } from '@rsbuild/plugin-svgr';
 
@@ -8,13 +7,8 @@ const apiProxyTarget = rawPublicVars.PUBLIC_API_PROXY_TARGET ?? 'http://localhos
 
 export default defineConfig({
     plugins: [
-        pluginReact(),
-        pluginBabel({
-            include: /\.[jt]sx?$/,
-            exclude: [/[\\/]node_modules[\\/]/],
-            babelLoaderOptions(opts) {
-                opts.plugins?.unshift('babel-plugin-react-compiler');
-            },
+        pluginReact({
+            reactCompiler: true,
         }),
 
         pluginSvgr({
@@ -43,6 +37,15 @@ export default defineConfig({
     },
     tools: {
         rspack: {
+            // Scalar intentionally imports user-provided plugins at runtime. Rspack
+            // cannot statically resolve that expression, but it is not bundled and
+            // does not affect the API reference's normal operation.
+            ignoreWarnings: [
+                {
+                    module: /@scalar[\\/]api-reference[\\/]dist[\\/]standalone[\\/]lib[\\/]load-plugins-from-urls\.js$/,
+                    message: /Critical dependency: the request of a dependency is an expression/,
+                },
+            ],
             watchOptions: {
                 ignored: ['**/src-tauri/**'],
             },

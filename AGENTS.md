@@ -32,6 +32,13 @@ Physical AI Studio is the training-side repo for the Physical AI workflow: colle
 - Studio owns the export side of the export/load contract. Runtime consumes exported artifacts with `InferenceModel(...)`.
 - Keep customer-facing instructions stable and avoid exposing internal scaffolding unless the user is contributing to the repo.
 
+## Shared Policy Components
+
+- Reuse `physicalai.policies.components` before writing policy-specific building blocks. See `library/src/physicalai/policies/components/README.md`.
+- New action heads subclass `ActionHead` (one-shot) or `IterativeActionHead` (flow matching / diffusion) from `physicalai.policies.components.action_heads`. Heads take a `dict[str, Tensor]` context and return unreduced per-element losses.
+- Keep `denoise` and `step` graph-capturable: tensor ops only, no `.item()`, no Python-side randomness, fixed shapes.
+- Do not refactor existing policy heads onto these classes without keeping module attribute names unchanged and checking the policy's LoRA target regexes and Hugging Face key remapping; `state_dict` keys must not change.
+
 ## Contribution Notes
 
 - Use Conventional Commits for PR titles and commits.

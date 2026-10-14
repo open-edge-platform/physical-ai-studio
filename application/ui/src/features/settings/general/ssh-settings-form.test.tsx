@@ -48,6 +48,7 @@ describe('SshSettingsForm', () => {
         const connectTimeoutField = screen.getByRole('textbox', { name: /connect timeout/i });
         await user.clear(connectTimeoutField);
         await user.type(connectTimeoutField, '42');
+        await user.tab();
         await user.click(screen.getByRole('button', { name: /save/i }));
 
         expect(await screen.findByText('Saved')).toBeInTheDocument();
@@ -78,10 +79,12 @@ describe('SshSettingsForm', () => {
         const shmField = screen.getByRole('textbox', { name: /trainer shared memory/i });
         await user.clear(shmField);
         await user.type(shmField, '48');
+        await user.tab();
         await user.click(screen.getByRole('button', { name: /save/i }));
 
         expect(await screen.findByText('Saved')).toBeInTheDocument();
         expect(patchedBody).toMatchObject({ ssh: { trainer_shm_size_gb: 48 } });
-        expect(screen.getByText(/applies only to new containers/i)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: /Information$/ }));
+        expect(await screen.findByText(/applies only to new containers/i)).toBeVisible();
     });
 });

@@ -1,6 +1,6 @@
 import { Tabs } from '@geti-ui/ui';
+import { afterEach, beforeEach, describe, expect, it } from '@rstest/core';
 import { screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { render } from '../../test-utils/render';
 import { AppSidebar } from './app-sidebar';

@@ -897,7 +897,8 @@ class MSAT(nn.Module):
                     # Action positions: axis 1 = sequence position starting from (num_temb_tokens)
                     start_pos = (self.num_temb_tokens if has_time_token else 0) + 1
                     ids_single[:, action_start_idx_in_x:, 1] = (
-                        torch.arange(start_pos, start_pos + n_action_pure, device=device_single)
+                        torch
+                        .arange(start_pos, start_pos + n_action_pure, device=device_single)
                         .unsqueeze(0)
                         .expand(b_single, -1)
                     )
@@ -917,7 +918,8 @@ class MSAT(nn.Module):
                     # Action positions: axis 1 = sequence position starting from (num_temb_tokens)
                     start_pos = (self.num_temb_tokens if has_time_token else 0) + 1
                     ids_single[:, action_start_idx_in_x:, 1] = (
-                        torch.arange(start_pos, start_pos + n_action_pure, device=device_single)
+                        torch
+                        .arange(start_pos, start_pos + n_action_pure, device=device_single)
                         .unsqueeze(0)
                         .expand(b_single, -1)
                     )
@@ -1147,7 +1149,8 @@ class MSAT(nn.Module):
                     sa_pure_len = sa.shape[1]
                     start_pos = (self.num_temb_tokens if has_time_token else 0) + 1
                     ids_s[:, current_idx : current_idx + sa_pure_len, 1] = (
-                        torch.arange(start_pos, start_pos + sa_pure_len, device=x.device)
+                        torch
+                        .arange(start_pos, start_pos + sa_pure_len, device=x.device)
                         .unsqueeze(0)
                         .expand(batch_size, -1)
                     )

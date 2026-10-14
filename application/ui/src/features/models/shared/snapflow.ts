@@ -19,7 +19,6 @@ export const SNAPFLOW_BADGE_TEXT = 'SnapFlow';
 export const SNAPFLOW_BADGE_TITLE = 'Distilled with SnapFlow: generates an action chunk in a single denoising step';
 
 /**
- * Badge colour. Distinct from the status badges (energy blue / red) and the
- * remote-trainer badge (purple), so the three never read as one another.
+ * Badge colour. Distinct from the status badges (energy blue / red).
  */
 export const SNAPFLOW_BADGE_COLOR = 'var(--brand-rust)';

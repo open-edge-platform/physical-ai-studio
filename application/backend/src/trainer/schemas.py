@@ -16,7 +16,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from training import TrainingJobSpec
 
-_SUPPORTED_POLICIES = frozenset({"act", "pi05", "rldx1", "smolvla", "molmoact2", "xr0"})
 _DEFAULT_PROTOCOL_VERSION = 1
 
 
@@ -64,6 +63,7 @@ class DeviceInfo(BaseModel):
     name: str = Field(..., description="Human-readable device name")
     memory: int | None = Field(default=None, description="Total device memory in bytes (null for CPU)")
     index: int | None = Field(default=None, description="Device index among those of the same type (null for CPU)")
+    busy: bool | None = Field(default=None, description="GPU memory suggests another workload (null if unknown)")
 
 
 class HealthInfo(BaseSettings):
@@ -161,21 +161,6 @@ class SubmitJobRequest(BaseModel):
             "lifetime of the job (see `JobStore.stash_secret`/`take_secret`)."
         ),
     )
-
-    @field_validator("spec")
-    @classmethod
-    def _validate_policy(cls, value: TrainingJobSpec) -> TrainingJobSpec:
-        """Reject an unsupported policy at submission time.
-
-        ``TrainingJobSpec.policy`` is a free-form string so new policies can be
-        added without a schema change. Checking it here turns an unknown
-        policy into a 422 on POST /jobs rather than a job that fails minutes
-        later when the policy class is constructed.
-        """
-        if value.policy not in _SUPPORTED_POLICIES:
-            msg = f"Unsupported policy {value.policy!r}"
-            raise ValueError(msg)
-        return value
 
 
 class SubmitJobResponse(BaseModel):

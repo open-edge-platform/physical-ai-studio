@@ -67,7 +67,7 @@ Never commit real tokens to source control. Store them only in `settings.json`, 
 
 Studio can execute training on the Studio backend host or on a registered remote trainer. Local training uses the compute resources of the Studio backend host. Remote training uploads a dataset snapshot to the trainer and downloads the model artifacts when training finishes.
 
-To train remotely, follow [Remote Training](./07-remote-training.md) to provision and register a trainer in AWS, then return here. Select the trainer when you create a model.
+To train remotely, follow [Remote Training](./07-remote-training.md) to provision and register a trainer, then return here. Select the trainer when you create a model. If it reports multiple GPUs, the **GPU** field selects the first free GPU by default; you can choose another. Jobs on different GPUs can run together; jobs targeting the same GPU wait for it to finish. GPU availability combines Studio job state with best-effort GPU-memory telemetry from the trainer, so workloads outside Studio can also mark a GPU busy.
 
 ## Monitor training progress
 

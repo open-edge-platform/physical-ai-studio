@@ -355,7 +355,7 @@ class SmolVLAModel(RTCModelMixin, Model):
 
     @property
     def reward_delta_indices(self) -> None:
-        """Return reward indices.
+        """Reward indices.
 
         Currently returns `None` as rewards are not implemented.
 
@@ -366,7 +366,7 @@ class SmolVLAModel(RTCModelMixin, Model):
 
     @property
     def action_delta_indices(self) -> list[int]:
-        """Get indices of actions relative to the current timestep.
+        """Indices of actions relative to the current timestep.
 
         Returns:
             list[int]: A list of relative action indices.
@@ -375,7 +375,7 @@ class SmolVLAModel(RTCModelMixin, Model):
 
     @property
     def observation_delta_indices(self) -> list[int]:
-        """Get indices of observations relative to the current timestep.
+        """Indices of observations relative to the current timestep.
 
         Returns:
             list[int]: A list of relative observation indices.
@@ -951,13 +951,14 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             num_img_embs = batched_embs.shape[1]
             batched_embs = batched_embs.reshape(num_cameras, bsize, num_img_embs, -1)
 
-        for _img_idx, (
+        for img_idx, (
             img,
             img_mask,
         ) in enumerate(zip(images, img_masks, strict=False)):
             if self.add_image_special_tokens:
                 image_start_token = (
-                    self.vlm_with_expert.embed_language_tokens(
+                    self.vlm_with_expert
+                    .embed_language_tokens(
                         self.global_image_start_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)
@@ -973,7 +974,7 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
                 pad_masks.append(image_start_mask)
                 img_emb = self.vlm_with_expert.embed_image(img)
             else:
-                img_emb = batched_embs[_img_idx]
+                img_emb = batched_embs[img_idx]
 
             # Normalize image embeddings
             img_emb_dim = img_emb.shape[-1]
@@ -988,7 +989,8 @@ class VLAFlowMatching(SnapFlowModelMixin, nn.Module):
             att_masks += [0] * (num_img_embs)
             if self.add_image_special_tokens:
                 image_end_token = (
-                    self.vlm_with_expert.embed_language_tokens(
+                    self.vlm_with_expert
+                    .embed_language_tokens(
                         self.image_end_token.to(device=self.vlm_with_expert.vlm.device),
                     )
                     .unsqueeze(0)

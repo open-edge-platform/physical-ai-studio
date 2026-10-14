@@ -4,7 +4,7 @@ import { Button, Divider, Flex, Form, View } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 
 import { $api } from '../../../api/client';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { useEnvironmentId } from '../use-environment';
 import { EnvironmentFormFields, EnvironmentFormHeading } from './form';
 import { useEnvironmentFormBody } from './provider';
@@ -31,7 +31,7 @@ export const UpdateEnvironmentForm = () => {
     );
 
     const body = useEnvironmentFormBody(environment_id);
-    const isDisabled = body.name.length === 0 || body.robots.length === 0 || body.cameras.length === 0;
+    const isDisabled = body.name.length === 0;
 
     const handleSubmit = (event: FormEvent) => {
         event.preventDefault();

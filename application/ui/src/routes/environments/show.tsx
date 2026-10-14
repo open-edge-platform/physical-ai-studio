@@ -4,7 +4,7 @@ import { useProjectId } from '../../features/projects/use-project';
 import { Preview } from '../../features/robots/environment-form/preview';
 import { EnvironmentForm, EnvironmentFormProvider } from '../../features/robots/environment-form/provider';
 import { useEnvironment } from '../../features/robots/use-environment';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 
 const Header = () => {
     const { project_id } = useProjectId();

@@ -48,15 +48,15 @@ jobs:
           # Extract RC number: 0.1.0rc1 -> 1
           RC_NUMBER="${RC_VERSION##*rc}"
 
-          # Read VERSION file
-          FILE_VERSION="$(tr -d '[:space:]' < application/VERSION)"
+          # Read the Studio package version from its project metadata
+          APP_VERSION="$(grep -m1 '^version = ' application/backend/pyproject.toml | sed -E 's/version = "(.*)"/\1/')"
 
           echo "::group::Validation parameters"
           echo "Tag: $TAG"
           echo "RC version: $RC_VERSION"
           echo "Tag base version: $TAG_VERSION"
           echo "RC number: $RC_NUMBER"
-          echo "VERSION file: $FILE_VERSION"
+          echo "App version: $APP_VERSION"
           echo "::endgroup::"
 
           # Validate RC number is a positive integer
@@ -66,19 +66,19 @@ jobs:
           fi
           echo "✓ RC number is valid"
 
-          # Validate VERSION file format (semver: major.minor.patch)
-          if ! [[ "$FILE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::VERSION file contains invalid semver format: '$FILE_VERSION'"
+          # Validate app version format (semver: major.minor.patch)
+          if ! [[ "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::App version is not valid semver: '$APP_VERSION'"
             exit 1
           fi
-          echo "✓ VERSION file has valid semver format"
+          echo "✓ App version has valid semver format"
 
-          # Validate tag version matches VERSION file
-          if [[ "$TAG_VERSION" != "$FILE_VERSION" ]]; then
-            echo "::error::Tag version '$TAG_VERSION' does not match VERSION file '$FILE_VERSION'"
+          # Validate tag version matches project metadata
+          if [[ "$TAG_VERSION" != "$APP_VERSION" ]]; then
+            echo "::error::Tag version '$TAG_VERSION' does not match Studio app version '$APP_VERSION'"
             exit 1
           fi
-          echo "✓ Tag version matches VERSION file"
+          echo "✓ Tag version matches app version"
 
           # Validate base release exists for patch releases
           PATCH_VERSION="${TAG_VERSION##*.}"
@@ -244,11 +244,11 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build and push trainer RC image
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: application/docker/Dockerfile.trainer

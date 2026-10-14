@@ -1,5 +1,5 @@
+import { describe, expect, it } from '@rstest/core';
 import { screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
 
 import { render } from '../../test-utils/render';
 import { asCalibrationRows, CalibrationTable, formatCalibrationCell } from './calibration-table';

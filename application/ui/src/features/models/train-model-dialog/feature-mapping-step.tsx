@@ -1,14 +1,13 @@
 import { Content, ContextualHelp, Flex, Heading, Item, Picker, ProgressCircle, Text } from '@geti-ui/ui';
 
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
-import { MODELS } from './policies';
 import { FeatureMapping } from './use-feature-mapping';
 
 /** Picker key standing in for "no camera in this slot". */
 const EMPTY_SLOT_KEY = '__empty__';
 
 interface FeatureMappingStepProps {
-    policy: string;
+    policyName: string;
     mapping: FeatureMapping;
 }
 
@@ -20,8 +19,7 @@ interface FeatureMappingStepProps {
  * this is where the two are lined up. Policies without such an order skip this
  * step altogether (see `getWizardSteps`), so `mapping.slots` is never empty here.
  */
-export const FeatureMappingStep = ({ policy, mapping }: FeatureMappingStepProps) => {
-    const policyName = MODELS.find((model) => model.id === policy)?.name ?? policy;
+export const FeatureMappingStep = ({ policyName, mapping }: FeatureMappingStepProps) => {
     const { slots, cameras, cameraKeyBySlotId, assignCamera, isLoading, isDatasetEmpty, error } = mapping;
 
     if (isLoading) {

@@ -1,10 +1,10 @@
 // Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+import { rs } from '@rstest/core';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
-import { describe, expect, it, vi } from 'vitest';
 
 import { SchemaDatasetOutput } from '../../api/openapi-spec';
 import { http } from '../../api/utils';
@@ -54,7 +54,7 @@ describe('RenameDatasetDialog', () => {
         );
 
         const user = userEvent.setup();
-        const onDone = vi.fn();
+        const onDone = rs.fn();
         renderRenameDatasetDialog(onDone, createQueryClient());
 
         await renameDataset(user, '  renamed  ');
@@ -76,7 +76,7 @@ describe('RenameDatasetDialog', () => {
         queryClient.setQueryData(projectsListQueryKey, [{ id: PROJECT_ID, name: 'test-project' }]);
 
         const user = userEvent.setup();
-        renderRenameDatasetDialog(vi.fn(), queryClient);
+        renderRenameDatasetDialog(rs.fn(), queryClient);
 
         await renameDataset(user, 'renamed');
 
@@ -97,7 +97,7 @@ describe('RenameDatasetDialog', () => {
         );
 
         const user = userEvent.setup();
-        const onDone = vi.fn();
+        const onDone = rs.fn();
         renderRenameDatasetDialog(onDone, createQueryClient());
 
         await user.click(await screen.findByRole('button', { name: 'Cancel' }));
@@ -108,7 +108,7 @@ describe('RenameDatasetDialog', () => {
 
     it('field prefilled and Save disabled unless the name changes to a non-empty value', async () => {
         const user = userEvent.setup();
-        renderRenameDatasetDialog(vi.fn(), createQueryClient());
+        renderRenameDatasetDialog(rs.fn(), createQueryClient());
 
         const textField = await screen.findByLabelText(/Dataset name/);
         const saveButton = screen.getByRole('button', { name: 'Save' });

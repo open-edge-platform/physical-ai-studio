@@ -347,6 +347,7 @@ def build_run_argv(  # noqa: PLR0913 - each flag is an independent run/security 
         "--security-opt",
         "no-new-privileges",
         "--read-only",
+        "--env=TMPDIR=/var/lib/physicalai-trainer",  # Lightning checkpoints exceed the /tmp tmpfs.
         f"--shm-size={shm_size_gb}g",
         "--tmpfs",
         f"/tmp:size=2g,{tmpfs_owner}",  # noqa: S108  # nosec B108 - a `docker run` mount spec, not a local temp-file access

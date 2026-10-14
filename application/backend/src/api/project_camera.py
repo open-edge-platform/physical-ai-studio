@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from api.dependencies import CameraClaimRegistryDep, get_camera_id, get_camera_service, get_project_id
+from api.dependencies import CameraClaimRegistryDep, get_camera_service
 from exceptions import RecordingLockError
 from schemas.project_camera import Camera
 from services import ProjectCameraService
@@ -11,7 +11,7 @@ from services.camera_claims import CameraClaimRegistry
 
 router = APIRouter(prefix="/api/projects/{project_id}/cameras", tags=["Project Cameras"])
 
-ProjectID = Annotated[UUID, Depends(get_project_id)]
+ProjectID = UUID
 
 
 def _require_fingerprint(fingerprint: dict[str, Any] | None) -> dict[str, Any]:
@@ -51,7 +51,7 @@ async def create_project_camera(
 @router.get("/{camera_id}")
 async def get_project_camera(
     project_id: ProjectID,
-    camera_id: Annotated[UUID, Depends(get_camera_id)],
+    camera_id: UUID,
     camera_service: Annotated[ProjectCameraService, Depends(get_camera_service)],
 ) -> Camera:
     """Get camera by id."""
@@ -61,7 +61,7 @@ async def get_project_camera(
 @router.put("/{camera_id}")
 async def update_project_camera(
     project_id: ProjectID,
-    camera_id: Annotated[UUID, Depends(get_camera_id)],
+    camera_id: UUID,
     camera_service: Annotated[ProjectCameraService, Depends(get_camera_service)],
     camera: Camera,
     claims: CameraClaimRegistryDep,
@@ -81,7 +81,7 @@ async def update_project_camera(
 @router.delete("/{camera_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project_camera(
     project_id: ProjectID,
-    camera_id: Annotated[UUID, Depends(get_camera_id)],
+    camera_id: UUID,
     camera_service: Annotated[ProjectCameraService, Depends(get_camera_service)],
     claims: CameraClaimRegistryDep,
 ) -> None:

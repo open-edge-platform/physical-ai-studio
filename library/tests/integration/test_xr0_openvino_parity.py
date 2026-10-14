@@ -444,4 +444,3 @@ class TestXR0OVTokenizerParity:
             f"Token count mismatch: ov_tokenizer {ov_real_ids.shape} vs processor {reference_ids.shape}"
         )
         np.testing.assert_array_equal(ov_real_ids, reference_ids)
-

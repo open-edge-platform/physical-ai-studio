@@ -4,7 +4,7 @@ import { Button, Divider, Flex, Form, View } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 
 import { $api } from '../../../api/client';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { useRobotId } from '../use-robot';
 import { FormFields, RobotFormHeading } from './form';
 import { useRobotFormBody } from './provider';

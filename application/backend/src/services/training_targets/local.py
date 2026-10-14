@@ -5,27 +5,24 @@
 
 from __future__ import annotations
 
-from exceptions import UnsupportedDeviceError
+from exceptions import InvalidResourceError, UnsupportedDeviceError
 from schemas.job import TrainingTarget, TrainJobPayload
 from services.system_service import SystemService
+from training.policy_catalog import available_policy_classes
 
 
 class LocalTrainingTargetHandler:
     """Validates and keys jobs that train in the Studio process."""
 
     async def prepare(self, payload: TrainJobPayload) -> TrainJobPayload:
-        """Reject a local device SystemService reports as unsupported for training.
-
-        Remote trainers validate their own devices, so only local device
-        choices are checked here. `device` is a shared field
-        (declared on `TrainJobPayloadBase`), so no narrowing to
-        `LocalTrainJobPayload` is needed to read it.
-        """
+        """Reject unsupported local devices and policies before saving a job."""
         if payload.device is not None and not SystemService.is_device_supported_for_training(payload.device.type):
             raise UnsupportedDeviceError(
                 device_type=payload.device.type,
                 supported=SystemService.supported_training_device_types(),
             )
+        if payload.policy not in available_policy_classes():
+            raise InvalidResourceError("policy", f"{payload.policy!r} is not available on this machine")
         return payload
 
     @staticmethod

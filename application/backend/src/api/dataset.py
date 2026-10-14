@@ -4,17 +4,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.exceptions import HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
-from api.dependencies import (
-    HTTPException,
-    get_dataset_download_service,
-    get_dataset_id,
-    get_dataset_service,
-    get_episode_thumbnail_service,
-)
+from api.dependencies import get_dataset_download_service, get_dataset_service, get_episode_thumbnail_service
 from api.utils import safe_archive_name
 from internal_datasets.lerobot.lerobot_dataset import InternalLeRobotDataset
 from internal_datasets.mutations.delete_episode_mutation import DeleteEpisodesMutation
@@ -27,7 +22,7 @@ router = APIRouter(prefix="/api/dataset", tags=["Dataset"])
 
 @router.get("/{dataset_id}")
 async def get_dataset(
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> Dataset:
     """Get dataset by id"""
@@ -36,7 +31,7 @@ async def get_dataset(
 
 @router.get("/{dataset_id}/episodes")
 async def get_episodes_of_dataset(
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> list[EpisodeInfo]:
     """Get dataset episodes of dataset by id."""
@@ -47,7 +42,7 @@ async def get_episodes_of_dataset(
 
 @router.get("/{dataset_id}/episodes/{episode_index}")
 async def get_single_episode_of_dataset(
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     episode_index: int,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> Episode | None:
@@ -59,7 +54,7 @@ async def get_single_episode_of_dataset(
 
 @router.get("/{dataset_id}/episodes/{episode_index}/thumbnail")
 async def get_episode_thumbnail(  # noqa: PLR0913
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     episode_index: int,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
     thumbnail_service: Annotated[EpisodeThumbnailService, Depends(get_episode_thumbnail_service)],
@@ -104,7 +99,7 @@ async def get_episode_thumbnail(  # noqa: PLR0913
 
 @router.delete("/{dataset_id}/episodes")
 async def delete_episodes_of_dataset(
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     episode_indices: list[int],
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> list[Episode]:
@@ -118,7 +113,7 @@ async def delete_episodes_of_dataset(
 
 @router.get("/{dataset_id}/video/{video_path:path}")
 async def dataset_video_endpoint(
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     video_path: str,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> FileResponse:
@@ -143,7 +138,7 @@ async def dataset_video_endpoint(
 
 @router.get("/{dataset_id}/download")
 async def dataset_download_endpoint(
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
     dataset_download_service: Annotated[DatasetDownloadService, Depends(get_dataset_download_service)],
 ) -> FileResponse:
@@ -178,7 +173,7 @@ class DatasetNameUpdate(BaseModel):
 
 @router.put("/{dataset_id}")
 async def update_dataset_name(
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     payload: DatasetNameUpdate,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> Dataset:
@@ -188,7 +183,7 @@ async def update_dataset_name(
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dataset(
-    dataset_id: Annotated[UUID, Depends(get_dataset_id)],
+    dataset_id: UUID,
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
     remove_files: bool = False,
 ) -> None:

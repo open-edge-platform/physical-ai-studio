@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
+import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
 
 import { render } from '../../../../../test-utils/render';
 import { FieldSchema } from '../types';
@@ -92,7 +92,7 @@ describe('CalibrationField', () => {
     });
 
     it('uploads calibration JSON, updates value, and shows sorted preview', async () => {
-        const onChange = vi.fn();
+        const onChange = rs.fn();
         const user = userEvent.setup();
         const calibrationPayload = {
             wrist_flex: { id: 5, drive_mode: 0, homing_offset: 11, range_min: -80, range_max: 80 },
@@ -140,7 +140,7 @@ describe('CalibrationField', () => {
     });
 
     it('clears calibration to an empty object', async () => {
-        const onChange = vi.fn();
+        const onChange = rs.fn();
         const user = userEvent.setup();
 
         render(<ControlledCalibrationField initialValue={{ shoulder_pan: { id: 1 } }} onChange={onChange} />);

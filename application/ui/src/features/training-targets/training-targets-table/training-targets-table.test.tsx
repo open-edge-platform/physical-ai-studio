@@ -1,7 +1,7 @@
+import { rs } from '@rstest/core';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
-import { vi } from 'vitest';
 
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
@@ -37,11 +37,38 @@ const healthyTrainer = {
     reason_code: null,
 };
 
-const directUrlRow = (trainer: typeof remoteTrainer): TrainingTargetRow => ({ kind: 'direct-url', trainer });
+const directUrlRow = (trainer: TrainingTargetRow['trainer']): TrainingTargetRow => ({ kind: 'direct-url', trainer });
 
 describe('TrainingTargetsTable', () => {
     beforeEach(() => {
         server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
+    });
+
+    it('disables installation while SSH host setup is in progress', async () => {
+        const user = userEvent.setup();
+        server.use(
+            http.get(REMOTE_TRAINER_HEALTH_PATH, () =>
+                HttpResponse.json({
+                    ...healthyTrainer,
+                    status: 'starting',
+                    reason_code: 'Installing host prerequisites',
+                })
+            )
+        );
+        render(
+            <TrainingTargetsTable
+                rows={[directUrlRow({ ...remoteTrainer, connection_mode: 'ssh' })]}
+                onEdit={rs.fn()}
+                onDelete={rs.fn()}
+                onSetup={rs.fn()}
+            />
+        );
+        expect(await screen.findAllByText('Starting: Installing host prerequisites')).not.toHaveLength(0);
+        await user.click(screen.getByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+        expect(screen.getByRole('menuitem', { name: 'Install prerequisites' })).toHaveAttribute(
+            'aria-disabled',
+            'true'
+        );
     });
 
     describe('direct-URL trainer rows', () => {
@@ -49,8 +76,8 @@ describe('TrainingTargetsTable', () => {
             render(
                 <TrainingTargetsTable
                     rows={[directUrlRow(remoteTrainer), directUrlRow(secondRemoteTrainer)]}
-                    onEdit={vi.fn()}
-                    onDelete={vi.fn()}
+                    onEdit={rs.fn()}
+                    onDelete={rs.fn()}
                 />
             );
 
@@ -61,7 +88,7 @@ describe('TrainingTargetsTable', () => {
         });
 
         it('shows connection details for the expanded remote trainer', async () => {
-            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={vi.fn()} onDelete={vi.fn()} />);
+            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={rs.fn()} onDelete={rs.fn()} />);
 
             expect(await screen.findAllByText('Healthy')).not.toHaveLength(0);
             expect(screen.getByText('Trainer health endpoint')).toBeInTheDocument();
@@ -75,7 +102,7 @@ describe('TrainingTargetsTable', () => {
         it('distinguishes a failed health request from an unreachable trainer', async () => {
             server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json({ detail: [] }, { status: 422 })));
 
-            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={vi.fn()} onDelete={vi.fn()} />);
+            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={rs.fn()} onDelete={rs.fn()} />);
 
             expect(await screen.findAllByText('Check failed')).not.toHaveLength(0);
             expect(screen.getAllByText('Studio could not complete the health check. Try again.')).not.toHaveLength(0);
@@ -87,8 +114,8 @@ describe('TrainingTargetsTable', () => {
             render(
                 <TrainingTargetsTable
                     rows={[directUrlRow(remoteTrainer), directUrlRow(secondRemoteTrainer)]}
-                    onEdit={vi.fn()}
-                    onDelete={vi.fn()}
+                    onEdit={rs.fn()}
+                    onDelete={rs.fn()}
                 />
             );
 
@@ -110,11 +137,12 @@ describe('TrainingTargetsTable', () => {
 
         it('calls onEdit with the selected row', async () => {
             const user = userEvent.setup();
-            const onEdit = vi.fn();
+            const onEdit = rs.fn();
 
-            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={onEdit} onDelete={vi.fn()} />);
+            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={onEdit} onDelete={rs.fn()} />);
 
             await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
+            expect(screen.queryByRole('menuitem', { name: 'Install prerequisites' })).not.toBeInTheDocument();
             await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
 
             expect(onEdit).toHaveBeenCalledWith(directUrlRow(remoteTrainer));
@@ -122,9 +150,9 @@ describe('TrainingTargetsTable', () => {
 
         it('calls onDelete with the selected row', async () => {
             const user = userEvent.setup();
-            const onDelete = vi.fn();
+            const onDelete = rs.fn();
 
-            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={vi.fn()} onDelete={onDelete} />);
+            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={rs.fn()} onDelete={onDelete} />);
 
             await user.click(await screen.findByRole('button', { name: `More actions ${remoteTrainer.name}` }));
             await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
@@ -135,7 +163,7 @@ describe('TrainingTargetsTable', () => {
         it('triggers a health re-check without expanding or collapsing the row', async () => {
             const user = userEvent.setup();
 
-            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={vi.fn()} onDelete={vi.fn()} />);
+            render(<TrainingTargetsTable rows={[directUrlRow(remoteTrainer)]} onEdit={rs.fn()} onDelete={rs.fn()} />);
 
             const toggle = await screen.findByRole('button', { name: /show details for managed-trainer/i });
             expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -159,8 +187,8 @@ describe('TrainingTargetsTable', () => {
             render(
                 <TrainingTargetsTable
                     rows={[directUrlRow(remoteTrainer), directUrlRow(secondRemoteTrainer)]}
-                    onEdit={vi.fn()}
-                    onDelete={vi.fn()}
+                    onEdit={rs.fn()}
+                    onDelete={rs.fn()}
                 />
             );
 

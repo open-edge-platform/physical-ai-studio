@@ -226,6 +226,7 @@ def test_build_run_argv_mounts_disk_backed_data_volume_not_tmpfs() -> None:
     )
 
     assert "type=volume,src=physicalai-trainer-data-abc,dst=/var/lib/physicalai-trainer" in argv
+    assert "--env=TMPDIR=/var/lib/physicalai-trainer" in argv
     assert any(part.startswith("/tmp:size=2g") for part in argv)
     assert not any("size=64g" in part for part in argv)
 

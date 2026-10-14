@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:b6afd42430b15f2d2a4c5a02b919e98a525b785b1aaff16747d2f623364e39b6
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 
 # Build arguments
 ARG PYTHON_VERSION=3.13
@@ -60,7 +62,7 @@ COPY --link --from=web-ui /home/app/web_ui/dist /app/application/ui/dist
 # PyPI `av` wheel bundles its own FFmpeg, so both are replaced by these
 # artifacts in the runtime stages. Built in parallel with the other stages.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285 AS ffmpeg-builder
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS ffmpeg-builder
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG DEBIAN_FRONTEND=noninteractive
@@ -184,7 +186,7 @@ RUN python -m pip wheel --no-binary av "av==${PYAV_VERSION}" -w /dist
 # This separation ensures that source-only changes do not invalidate
 # the expensive uv sync layers in the device-specific builders below.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS builder-base
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS builder-base
 
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
@@ -356,7 +358,7 @@ RUN PYTHONPATH=/app/application/backend/src \
 # variables, and directory structure. Healthcheck is defined in
 # docker-compose.yaml (not here) so it can reference runtime PORT.
 # ===========================================================================
-FROM python:${PYTHON_VERSION}-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS runtime-base
+FROM python:${PYTHON_VERSION}-slim@sha256:bb2988715db2cf7ace7b53f38f3cffbef7c7046a656bee66245eb0ed386e2e81 AS runtime-base
 
 # uv is needed at runtime for `uv run` in run.sh
 COPY --from=docker.io/astral/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /uvx /bin/
@@ -442,6 +444,11 @@ EXPOSE 8000
 FROM runtime-base AS physical-ai-studio-cpu
 
 ARG GIT_SHA=unknown
+ARG GIT_COMMIT_DATE=unknown
+ARG GIT_TAG=
+ENV STUDIO_GIT_SHA="${GIT_SHA}" \
+    STUDIO_GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
+    STUDIO_GIT_TAG="${GIT_TAG}"
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
       org.opencontainers.image.revision="${GIT_SHA}"
@@ -503,6 +510,11 @@ SHELL ["/bin/sh", "-c"]
 FROM runtime-xpu AS physical-ai-studio-xpu
 
 ARG GIT_SHA=unknown
+ARG GIT_COMMIT_DATE=unknown
+ARG GIT_TAG=
+ENV STUDIO_GIT_SHA="${GIT_SHA}" \
+    STUDIO_GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
+    STUDIO_GIT_TAG="${GIT_TAG}"
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
       org.opencontainers.image.revision="${GIT_SHA}"
@@ -558,6 +570,11 @@ SHELL ["/bin/sh", "-c"]
 FROM runtime-cuda AS physical-ai-studio-cuda
 
 ARG GIT_SHA=unknown
+ARG GIT_COMMIT_DATE=unknown
+ARG GIT_TAG=
+ENV STUDIO_GIT_SHA="${GIT_SHA}" \
+    STUDIO_GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
+    STUDIO_GIT_TAG="${GIT_TAG}"
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
       org.opencontainers.image.revision="${GIT_SHA}"
@@ -586,6 +603,11 @@ CMD ["./run.sh"]
 
 FROM runtime-base AS physical-ai-studio-cpu-redistributable
 ARG GIT_SHA=unknown
+ARG GIT_COMMIT_DATE=unknown
+ARG GIT_TAG=
+ENV STUDIO_GIT_SHA="${GIT_SHA}" \
+    STUDIO_GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
+    STUDIO_GIT_TAG="${GIT_TAG}"
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
       org.opencontainers.image.revision="${GIT_SHA}"
@@ -608,6 +630,11 @@ CMD ["./run.sh"]
 
 FROM runtime-xpu AS physical-ai-studio-xpu-redistributable
 ARG GIT_SHA=unknown
+ARG GIT_COMMIT_DATE=unknown
+ARG GIT_TAG=
+ENV STUDIO_GIT_SHA="${GIT_SHA}" \
+    STUDIO_GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
+    STUDIO_GIT_TAG="${GIT_TAG}"
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
       org.opencontainers.image.revision="${GIT_SHA}"
@@ -630,6 +657,11 @@ CMD ["./run.sh"]
 
 FROM runtime-cuda AS physical-ai-studio-cuda-redistributable
 ARG GIT_SHA=unknown
+ARG GIT_COMMIT_DATE=unknown
+ARG GIT_TAG=
+ENV STUDIO_GIT_SHA="${GIT_SHA}" \
+    STUDIO_GIT_COMMIT_DATE="${GIT_COMMIT_DATE}" \
+    STUDIO_GIT_TAG="${GIT_TAG}"
 LABEL org.opencontainers.image.source="https://github.com/open-edge-platform/physical-ai-studio" \
       org.opencontainers.image.description="Physical AI Studio is an end-to-end framework for teaching robots to perform tasks through imitation learning from human demonstrations" \
       org.opencontainers.image.revision="${GIT_SHA}"

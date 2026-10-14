@@ -1,4 +1,5 @@
-import { Button, Flex, ProgressCircle, Switch, View } from '@geti-ui/ui';
+import { Button, Flex, ProgressCircle, Switch, Tooltip, TooltipTrigger, View } from '@geti-ui/ui';
+import { Focusable } from 'react-aria';
 
 import { $api } from '../../../../api/client';
 import { getRobotConnectionErrorTitle } from '../../../../api/errors';
@@ -28,6 +29,8 @@ const AvailableRobotCell = ({
         cameraIds
     );
     useSynchronizeModelJoints(joints, robot.type);
+
+    const canTeleoperate = state.has_leader;
 
     const isTeleoperating = state.follower_source === 'teleop';
 
@@ -86,13 +89,28 @@ const AvailableRobotCell = ({
                         Restart session
                     </Button>
                     {leaderId !== undefined && (
-                        <Switch
-                            isEmphasized
-                            isSelected={isTeleoperating}
-                            onChange={(b) => setFollowerSource(b ? 'teleop' : 'hold')}
-                        >
-                            Teleoperate
-                        </Switch>
+                        <TooltipTrigger delay={300}>
+                            {/* Disabled elements don't fire hover events, so the tooltip trigger is
+                                moved to a wrapping span (react-aria's documented workaround) rather
+                                than the Switch itself. */}
+                            <Focusable excludeFromTabOrder>
+                                <span>
+                                    <Switch
+                                        isEmphasized
+                                        isSelected={isTeleoperating}
+                                        onChange={(b) => setFollowerSource(b ? 'teleop' : 'hold')}
+                                        isDisabled={!canTeleoperate}
+                                    >
+                                        Teleoperate
+                                    </Switch>
+                                </span>
+                            </Focusable>
+                            <Tooltip>
+                                {canTeleoperate
+                                    ? 'Control the follower using the leader robot'
+                                    : 'Connect a leader robot to enable teleoperation'}
+                            </Tooltip>
+                        </TooltipTrigger>
                     )}
                 </Flex>
             </View>

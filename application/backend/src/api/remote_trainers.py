@@ -23,9 +23,30 @@ async def create_remote_trainer(
     config: RemoteTrainerCreate,
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
     accepted_host_key_fingerprint: Annotated[str | None, Header()] = None,
+    install_prerequisites: bool = False,
 ) -> RemoteTrainer:
-    """Persist a remote trainer endpoint."""
-    return await remote_trainer_service.create_remote_trainer(config, accepted_host_key_fingerprint)
+    """Persist a remote trainer endpoint, optionally installing SSH prerequisites first."""
+    return await remote_trainer_service.create_remote_trainer(
+        config, accepted_host_key_fingerprint, install_prerequisites
+    )
+
+
+@router.post("/{remote_trainer_id}/install-prerequisites", status_code=status.HTTP_202_ACCEPTED)
+async def install_remote_trainer_prerequisites(
+    remote_trainer_id: UUID,
+    remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+) -> None:
+    """Explicitly install SSH host prerequisites; poll trainer health for the result."""
+    await remote_trainer_service.install_remote_trainer(remote_trainer_id)
+
+
+@router.post("/{remote_trainer_id}/reboot-after-install", status_code=status.HTTP_202_ACCEPTED)
+async def reboot_remote_trainer_after_install(
+    remote_trainer_id: UUID,
+    remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+) -> None:
+    """Confirm the reboot required by a completed host installation."""
+    await remote_trainer_service.reboot_installed_host(remote_trainer_id)
 
 
 @router.get("/{remote_trainer_id}/health")
