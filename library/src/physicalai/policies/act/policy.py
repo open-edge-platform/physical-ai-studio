@@ -26,7 +26,7 @@ from physicalai.export.backends import (
 )
 from physicalai.export.mixin_policy import ExportablePolicyMixin, ExportBackend
 from physicalai.gyms import Gym
-from physicalai.policies.act.config import IMAGENET_MEAN, IMAGENET_STD, ACTConfig
+from physicalai.policies.act.config import ACTConfig
 from physicalai.policies.act.model import ACT as ACTModel  # noqa: N811
 from physicalai.policies.act.preprocessor import ACTPreprocessor
 from physicalai.policies.base import Policy
@@ -745,6 +745,8 @@ class ACT(ExportablePolicyMixin, Policy):
 
 
 _RGB_CHANNELS = 3
+_IMAGENET_MEAN: list[float] = [0.485, 0.456, 0.406]
+_IMAGENET_STD: list[float] = [0.229, 0.224, 0.225]
 
 # LeRobot's checkpoint state dict uses a flat "model."/"normalize_inputs."/"normalize_targets."/
 # "unnormalize_outputs." prefix scheme, while physicalai's ACTModel nests the core network under
@@ -803,6 +805,10 @@ def _with_imagenet_stats(dataset_stats: dict[str, dict[str, Any]]) -> dict[str, 
     stats = copy.deepcopy(dataset_stats)
     for stat in stats.values():
         shape = stat["shape"]
-        if FeatureType(stat["type"]) == FeatureType.VISUAL and len(shape) >= _RGB_CHANNELS and shape[0] == _RGB_CHANNELS:
-            stat["mean"], stat["std"] = list(IMAGENET_MEAN), list(IMAGENET_STD)
+        if (
+            FeatureType(stat["type"]) == FeatureType.VISUAL
+            and len(shape) >= _RGB_CHANNELS
+            and shape[0] == _RGB_CHANNELS
+        ):
+            stat["mean"], stat["std"] = list(_IMAGENET_MEAN), list(_IMAGENET_STD)
     return stats

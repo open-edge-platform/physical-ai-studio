@@ -11,9 +11,6 @@ from physicalai.config import Config
 
 from physicalai.data import Feature  # noqa: TC001 - Needed at runtime for type hint resolution
 
-IMAGENET_MEAN: list[float] = [0.485, 0.456, 0.406]
-IMAGENET_STD: list[float] = [0.229, 0.224, 0.225]
-
 
 @dataclass(frozen=True)
 class ACTConfig(Config):
