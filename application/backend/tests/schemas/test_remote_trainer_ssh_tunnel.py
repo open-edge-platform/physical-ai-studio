@@ -57,7 +57,7 @@ def test_manual_ssh_connection_uses_ec2_user_by_default() -> None:
     assert connection.user == "ec2-user"
 
 
-def test_remote_trainer_ssh_tunnel_uses_trainer_ports_by_default() -> None:
+def test_remote_trainer_ssh_tunnel_leaves_local_port_for_service_to_assign() -> None:
     config = RemoteTrainerCreate(
         name="trainer",
         connection_mode=RemoteTrainerConnectionMode.SSH,
@@ -65,8 +65,8 @@ def test_remote_trainer_ssh_tunnel_uses_trainer_ports_by_default() -> None:
     )
 
     assert config.ssh_remote_port == 8001
-    assert config.ssh_local_port == 8001
-    assert str(config.url) == "http://127.0.0.1:8001/"
+    assert config.ssh_local_port is None
+    assert config.url is None
 
 
 def test_remote_trainer_rejects_alias_and_manual_connection_together() -> None:
@@ -78,17 +78,6 @@ def test_remote_trainer_rejects_alias_and_manual_connection_together() -> None:
             ssh_connection=ManualSshConnection(hostname="gpu.example.test"),
             ssh_remote_port=8001,
             ssh_local_port=8001,
-        )
-
-
-def test_remote_trainer_ssh_tunnel_requires_local_port() -> None:
-    with pytest.raises(ValidationError, match="ssh_local_port is required"):
-        RemoteTrainerCreate(
-            name="trainer",
-            connection_mode=RemoteTrainerConnectionMode.SSH,
-            ssh_host_alias="training-box",
-            ssh_remote_port=8001,
-            ssh_local_port=None,
         )
 
 

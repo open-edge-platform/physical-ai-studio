@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from core.backend_instance import get_backend_instance_id
+from exceptions import TrainerContainerLaunchError
 from schemas.hardware import DeviceType
 from schemas.remote_trainer import RemoteTrainer
 from services.ssh import docker_ops
@@ -102,7 +103,7 @@ def _ssh_target(remote_trainer: RemoteTrainer) -> AliasTarget | DirectTarget:
     return DirectTarget(connection.hostname, connection.port, connection.user, connection.identity_file)
 
 
-async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:
+async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: str | None = None) -> None:  # noqa: PLR0915
     """Ensure an SSH trainer has a running container."""
     if remote_trainer.connection_mode.value != "ssh":
         return
@@ -177,7 +178,12 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
             await docker_ops.remove_stale_containers_on_port(
                 transport, remote_port, backend_instance_id, str(remote_trainer.id)
             )
-            await docker_ops.launch_container(transport, argv, remote_trainer.name)
+            try:
+                await docker_ops.launch_container(transport, argv, remote_trainer.name)
+            except TrainerContainerLaunchError as error:
+                if any(marker in error.message.lower() for marker in ("already allocated", "address already in use")):
+                    _launch_failure[remote_trainer.id] = "remote_port_in_use"
+                raise
     finally:
         _launch_phase.pop(remote_trainer.id, None)
 

@@ -47,6 +47,12 @@ describe('remote-trainer-health-utils starting status', () => {
         );
     });
 
+    it('explains a remote port collision and how to resolve it', () => {
+        expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'remote_port_in_use' })).toBe(
+            'The remote port is already in use on the SSH host. Go to Settings → Training Targets, edit this trainer, and choose another remote port under Advanced settings.'
+        );
+    });
+
     it('explains missing Docker for a Studio-managed trainer', () => {
         expect(healthDescription({ ...startingHealth, status: 'degraded', reason_code: 'docker_unavailable' })).toBe(
             'Docker must be running and accessible to the SSH user. If Docker was just installed, log out of the SSH host and back in, then retry setup.'

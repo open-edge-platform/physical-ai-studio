@@ -79,7 +79,7 @@ Open the completed stack's **Outputs** tab, then return to the **Add remote trai
 4. Set **Key path** to the private key file corresponding to the public key passed to CloudFormation. The path is resolved on the Studio backend host.
 6. Select **Add trainer**.
 
-After adding the trainer, return to [Training Policies](./06-training-policies.md) to create and start a model training job.
+Studio automatically assigns an available local loopback port for each SSH trainer. After adding the trainer, return to [Training Policies](./06-training-policies.md) to create and start a model training job.
 
 ## Remove an AWS trainer
 
