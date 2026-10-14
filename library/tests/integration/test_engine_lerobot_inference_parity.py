@@ -20,6 +20,7 @@ def test_runtime_actions_match_native_lerobot_across_reset(tmp_path: Path) -> No
     from lerobot.policies.act.configuration_act import ACTConfig
     from lerobot.policies.act.modeling_act import ACTPolicy
     from physicalai.engine import Engine
+    from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
     torch.manual_seed(42)
     config = ACTConfig(
@@ -55,8 +56,8 @@ def test_runtime_actions_match_native_lerobot_across_reset(tmp_path: Path) -> No
     preprocessor.save_pretrained(native_dir)
     postprocessor.save_pretrained(native_dir)
 
-    package = Engine().export(native_dir, output_dir=tmp_path / "runtime-package", framework="lerobot")
-    runtime_model = Engine().load(package, device="cpu")
+    package = LeRobotEngine.export(native_dir, output_path=tmp_path / "runtime-package")
+    runtime_model = Engine.load(package, device="cpu")
     native_observation = {
         "observation.state": torch.tensor([0.2, -0.1]),
         "observation.environment_state": torch.tensor([0.3, 0.4]),

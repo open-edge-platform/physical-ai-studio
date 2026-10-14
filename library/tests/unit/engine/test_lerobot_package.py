@@ -14,7 +14,8 @@ import numpy as np
 import pytest
 import torch
 
-from physicalai.engine import Engine, Run
+from physicalai.engine import Run
+from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
 
 def _write_native_checkpoint(model_dir: Path) -> None:
@@ -84,7 +85,7 @@ def test_engine_packages_native_checkpoint_for_runtime_and_reset(
     output_dir = tmp_path / "exports" / "lerobot"
     run = Run(framework="lerobot", output_dir=tmp_path, checkpoint=native_model_dir)
 
-    package = Engine().export(run, output_dir=output_dir)
+    package = LeRobotEngine.export(run, output_path=output_dir)
 
     packaged_native_dir = output_dir / "act.lerobot" / "pretrained_model"
     assert package == output_dir
@@ -161,7 +162,7 @@ def test_export_rejects_pretrained_model_symlink_escape(tmp_path: Path) -> None:
     package_dir = tmp_path / "package"
 
     with pytest.raises(ValueError, match="escapes"):
-        Engine().export(run_dir, output_dir=package_dir, framework="lerobot")
+        LeRobotEngine.export(run_dir, output_path=package_dir)
 
     assert not package_dir.exists()
 
@@ -194,6 +195,6 @@ def test_export_rejects_unsafe_policy_directory_component(tmp_path: Path) -> Non
     package_dir = tmp_path / "package"
 
     with pytest.raises(ValueError, match="policy type"):
-        Engine().export(native_model_dir, output_dir=package_dir, framework="lerobot")
+        LeRobotEngine.export(native_model_dir, output_path=package_dir)
 
     assert not package_dir.exists()

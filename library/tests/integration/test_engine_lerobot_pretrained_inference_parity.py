@@ -74,6 +74,7 @@ def test_runtime_actions_match_pinned_pretrained_lerobot_policy_after_reset(
     from lerobot.utils.constants import POLICY_POSTPROCESSOR_DEFAULT_NAME, POLICY_PREPROCESSOR_DEFAULT_NAME
     from lerobot.utils.import_utils import register_third_party_plugins
     from physicalai.engine import Engine
+    from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
     device = _requested_device(torch)
     native_dir = tmp_path / "source-native" / "pretrained_model"
@@ -150,12 +151,8 @@ def test_runtime_actions_match_pinned_pretrained_lerobot_policy_after_reset(
     del policy, preprocessor, postprocessor
     gc.collect()
 
-    package = Engine().export(
-        native_dir,
-        output_dir=tmp_path / "runtime-package",
-        framework="lerobot",
-    )
-    runtime_model = Engine().load(package, device=device)
+    package = LeRobotEngine.export(native_dir, output_path=tmp_path / "runtime-package")
+    runtime_model = Engine.load(package, device=device)
     runtime_first, runtime_after_reset = _runtime_action_sequences(
         runtime_model, rows, policy_config.input_features, device
     )

@@ -107,6 +107,19 @@ def test_create_uses_rgb_encoder_and_not_vcodec(tmp_path: Path) -> None:
     assert "vcodec" not in kwargs
 
 
+def test_missing_tasks_and_episode_metadata_are_empty(tmp_path: Path) -> None:
+    """LeRobot metadata may omit task and episode tables for empty datasets."""
+    dataset = InternalLeRobotDataset.__new__(InternalLeRobotDataset)
+    dataset.path = tmp_path
+    dataset._dataset = MagicMock()
+    dataset._dataset.meta.tasks = None
+    dataset._dataset.meta.episodes = None
+
+    with patch.object(InternalLeRobotDataset, "_check_repository_exists", return_value=True):
+        assert dataset.get_tasks() == []
+    assert dataset._get_episode_metadata_list() == []
+
+
 def test_load_dataset_is_read_only_and_does_not_pass_write_kwargs(tmp_path: Path) -> None:
     settings = StreamingEncodingSettings(
         streaming_encoding=True,

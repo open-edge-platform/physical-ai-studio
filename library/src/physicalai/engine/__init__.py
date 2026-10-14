@@ -1,201 +1,226 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Framework-level training API.
+"""Framework-neutral APIs for native training engines.
 
-Framework implementations are discovered from the
-``physicalai.engine.frameworks`` entry-point group when an :class:`Engine` is
-created. Importing this module does not import LeRobot, Lightning, or PyTorch.
+Engine classes are discovered lazily from the ``physicalai.engines`` entry
+point group. Importing this module does not import Lightning, LeRobot, PyTorch,
+or Runtime inference adapters.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, ClassVar, Literal, overload
 
-from ._registry import DuplicateFrameworkError, FrameworkRegistry
-from ._types import Framework, Run, TrainHooks, TrainingCancelledError
+from . import _registry
+from ._environment import (
+    PreparedEnvironment,
+    engine_cache_root,
+    interpreter_for,
+    list_prepared,
+    locked_version,
+    prepare,
+    prune,
+    prune_prepared,
+    resolve_accelerator,
+    scripts_dir,
+    supported_versions,
+)
+from ._runner import run_worker
+from ._types import Capabilities, Enablement, Run, TrainHooks, TrainingCancelledError, WorkerEnv
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
+    from pathlib import Path
+    from typing import Any
 
     from physicalai.inference.model import InferenceModel
+    from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
+
+    from physicalai.train.trainer import Trainer
 
 
-class _NullTrainHooks:
-    """No-op progress hook used when the caller does not supply one."""
+class Engine(ABC):
+    """Common contract for one native training framework or model repository."""
 
-    @staticmethod
-    def on_step(step: int, total: int | None, metrics: Mapping[str, float]) -> None:
-        """Ignore a progress update."""
+    framework: ClassVar[str]
+    env: ClassVar[WorkerEnv | None] = None
+    enablements: ClassVar[tuple[Enablement, ...]] = ()
+    training_accelerators: ClassVar[tuple[str, ...]] = ()
+    stock_export_formats: ClassVar[tuple[str, ...]] = ()
 
-    @staticmethod
-    def should_stop() -> bool:
-        """Never request cancellation.
-
-        Returns:
-            Always ``False``.
-        """
-        return False
-
-
-def _run_output_directory(path: Path | None) -> Path:
-    """Find a sensible package root from a native run or checkpoint path.
-
-    Args:
-        path: Run output directory or native model checkpoint path.
-
-    Returns:
-        Directory under which ``exports/<framework>`` should be written.
-
-    Raises:
-        ValueError: If no run output or checkpoint path is available.
-    """
-    if path is None:
-        msg = "Cannot determine an export directory without a run output or checkpoint path."
-        raise ValueError(msg)
-    candidate = Path(path).expanduser()
-    if candidate.is_file():
-        candidate = candidate.parent
-    if candidate.name == "pretrained_model":
-        if candidate.parent.name == "last" and candidate.parent.parent.name == "checkpoints":
-            return candidate.parent.parent.parent
-        return candidate.parent
-    if (candidate / "checkpoints" / "last" / "pretrained_model").is_dir() or (candidate / "pretrained_model").is_dir():
-        return candidate
-    return candidate.parent
-
-
-class Engine:
-    """Route native training requests to installed frameworks."""
-
-    def __init__(self, *, registry: FrameworkRegistry | None = None) -> None:
-        """Create an engine and discover installed frameworks when needed.
-
-        Args:
-            registry: Optional registry, useful for embedding the engine with a
-                controlled framework set. Defaults to installed entry points.
-        """
-        self._registry = registry if registry is not None else FrameworkRegistry.discover()
-
-    def frameworks(self) -> list[str]:
-        """Return the identifiers of discovered frameworks.
-
-        Returns:
-            Framework names in registry discovery order.
-        """
-        return self._registry.names()
-
-    def export(
-        self,
-        source: Run | str | Path,
-        output_dir: str | Path | None = None,
+    @classmethod
+    @abstractmethod
+    def cli(
+        cls,
+        argv: Sequence[str],
         *,
-        framework: str | None = None,
-        format: str | None = None,  # noqa: A002
+        interpreter: str | Path | None = None,
+        accelerator: str = "auto",
+    ) -> int:
+        """Run the framework's native CLI and return its exit code."""
+
+    @classmethod
+    @abstractmethod
+    def run(
+        cls,
+        settings: Mapping[str, Any],
+        *,
+        dataset: Path,
+        output_dir: Path,
+        device: str,
+        hooks: TrainHooks | None = None,
+        interpreter: str | Path | None = None,
+    ) -> Run:
+        """Run a headless training job from native settings and standard inputs."""
+
+    @classmethod
+    @abstractmethod
+    def export(
+        cls,
+        source: Run | str | Path,
+        output_path: str | Path,
+        backend: str | None = None,
     ) -> Path:
-        """Package a native training checkpoint for Runtime inference.
+        """Package a native checkpoint for Runtime inference."""
 
-        Args:
-            source: A training :class:`Run` or a framework-native checkpoint.
-            output_dir: Optional destination. Defaults to ``<run>/exports/<framework>``.
-            framework: Framework name for a path source. A :class:`Run` carries
-                its framework name and does not require this argument.
-            format: Optional framework-specific export format.
+    @classmethod
+    @abstractmethod
+    def policies(cls) -> list[str]:
+        """List policy identifiers this engine can train."""
 
-        Returns:
-            The completed Runtime package directory.
+    @classmethod
+    @abstractmethod
+    def config_schema(cls, policy: str) -> dict[str, Any]:
+        """Return the native training config schema for *policy*."""
+
+    @classmethod
+    def capabilities(cls, policy: str) -> Capabilities:
+        """Return stock and validated enablement capabilities for *policy*.
 
         Raises:
-            ValueError: If the framework is ambiguous or conflicts with the Run.
+            ValueError: If *policy* is not provided by this engine.
         """
-        if isinstance(source, Run):
-            if framework is not None and framework != source.framework:
-                msg = f"Run belongs to framework {source.framework!r}, not {framework!r}."
-                raise ValueError(msg)
-            framework_name = source.framework
-            default_base = source.output_dir or _run_output_directory(source.checkpoint)
-        else:
-            names = self._registry.names()
-            if framework is None:
-                if len(names) != 1:
-                    msg = "Specify framework= when exporting a native checkpoint path."
-                    raise ValueError(msg)
-                framework_name = names[0]
-            else:
-                framework_name = framework
-            source_path = Path(source).expanduser()
-            default_base = _run_output_directory(source_path)
+        if policy not in cls.policies():
+            msg = f"Unknown {cls.framework} policy {policy!r}."
+            raise ValueError(msg)
 
-        selected = self._registry.get(framework_name)
-        destination = Path(output_dir) if output_dir is not None else default_base / "exports" / framework_name
-        return selected.export(source, destination, format=format)
+        accelerators = set(cls.training_accelerators)
+        if cls.env is not None:
+            accelerators.update(cls.env.accelerators)
+        export_formats = set(cls.stock_export_formats)
+        active_enablements: list[str] = []
+        for enablement in cls.enablements:
+            provides = enablement.provides.get(policy)
+            if provides is None:
+                continue
+            accelerators.update(provides.get("train", ()))
+            export_formats.update(provides.get("export", ()))
+            active_enablements.append(enablement.name)
+        return Capabilities(
+            training_accelerators=tuple(sorted(accelerators)),
+            export_formats=tuple(sorted(export_formats)),
+            enablements=tuple(sorted(active_enablements)),
+        )
 
-    @staticmethod
-    def load(package: str | Path, **kwargs: Any) -> InferenceModel:  # noqa: ANN401
-        """Load a Runtime policy package through the installed Runtime API.
+    @overload
+    @classmethod
+    def create(
+        cls,
+        name: Literal["physicalai"],
+        /,
+        **options: Any,  # ruff: ignore[any-type]  # Engine constructor options are framework-specific.
+    ) -> Trainer: ...
 
-        Args:
-            package: Directory containing a Runtime-compatible ``manifest.json``.
-            **kwargs: Arguments forwarded to :class:`InferenceModel`.
+    @overload
+    @classmethod
+    def create(
+        cls,
+        name: Literal["lerobot"],
+        /,
+        **options: Any,  # ruff: ignore[any-type]  # Engine constructor options are framework-specific.
+    ) -> LeRobotEngine: ...
+
+    @overload
+    @classmethod
+    def create(
+        cls,
+        name: str,
+        /,
+        **options: Any,  # ruff: ignore[any-type]  # Engine constructor options are framework-specific.
+    ) -> Engine: ...
+
+    @classmethod
+    def create(cls, name: str, /, **options: Any) -> Engine:
+        """Instantiate the engine registered as *name*.
 
         Returns:
-            Initialized Runtime inference model.
+            An instance of the selected engine. Prefer its concrete class for static option checking.
         """
-        from physicalai.inference.model import InferenceModel as RuntimeInferenceModel  # noqa: PLC0415
+        engine_class = cls.get(name)
+        return engine_class(**options)
+
+    @overload
+    @classmethod
+    def get(cls, name: Literal["physicalai"], /) -> type[Trainer]: ...
+
+    @overload
+    @classmethod
+    def get(cls, name: Literal["lerobot"], /) -> type[LeRobotEngine]: ...
+
+    @overload
+    @classmethod
+    def get(cls, name: str, /) -> type[Engine]: ...
+
+    @classmethod
+    def get(cls, name: str, /) -> type[Engine]:
+        """Return the engine class registered as *name*.
+
+        Returns:
+            The class registered under *name*.
+        """
+        return _registry.get_engine(name, Engine)
+
+    @classmethod
+    def names(cls) -> list[str]:
+        """List installed engine identifiers without importing engine modules.
+
+        Returns:
+            Installed engine identifiers in sorted order.
+        """
+        return _registry.names()
+
+    @staticmethod
+    def load(package: str | Path, **kwargs: Any) -> InferenceModel:  # ruff: ignore[any-type]  # Runtime accepts adapter options.
+        """Load a Runtime policy package through the Runtime API.
+
+        Returns:
+            The initialized Runtime inference model.
+        """
+        from physicalai.inference.model import InferenceModel as RuntimeInferenceModel  # ruff: ignore[import-outside-top-level]
 
         return RuntimeInferenceModel(package, **kwargs)
 
-    def train(
-        self,
-        config: object | Sequence[str],
-        *,
-        framework: str | None = None,
-        hooks: TrainHooks | None = None,
-    ) -> Run:
-        """Train using a framework's native config object or CLI arguments.
-
-        Args:
-            config: Native config object, or an ordered sequence of native CLI
-                argument tokens.
-            framework: Optional framework name. Required for CLI argument
-                sequences and when more than one framework accepts a config.
-            hooks: Optional progress and cancellation hooks.
-
-        Returns:
-            Framework-produced run metadata.
-
-        Raises:
-            TypeError: If CLI arguments contain non-string values.
-            ValueError: If the framework is unknown, no framework accepts the
-                config, or config dispatch is ambiguous.
-        """
-        if isinstance(config, Sequence) and not isinstance(config, (str, bytes)):
-            if not all(isinstance(argument, str) for argument in config):
-                msg = "Framework CLI arguments must be strings."
-                raise TypeError(msg)
-            if framework is None:
-                msg = "A framework name is required when training from CLI arguments."
-                raise ValueError(msg)
-            native_config: object | Sequence[str] = list(config)
-            selected = self._registry.get(framework)
-        elif framework is not None:
-            selected = self._registry.get(framework)
-            native_config = config
-        else:
-            selected = self._registry.for_config(config)
-            native_config = config
-
-        return selected.train(native_config, hooks if hooks is not None else _NullTrainHooks())
-
 
 __all__ = [
-    "DuplicateFrameworkError",
+    "Capabilities",
+    "Enablement",
     "Engine",
-    "Framework",
-    "FrameworkRegistry",
+    "PreparedEnvironment",
     "Run",
     "TrainHooks",
     "TrainingCancelledError",
+    "WorkerEnv",
+    "engine_cache_root",
+    "interpreter_for",
+    "list_prepared",
+    "locked_version",
+    "prepare",
+    "prune",
+    "prune_prepared",
+    "resolve_accelerator",
+    "run_worker",
+    "scripts_dir",
+    "supported_versions",
 ]

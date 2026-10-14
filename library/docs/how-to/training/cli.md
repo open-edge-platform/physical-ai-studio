@@ -54,6 +54,28 @@ physicalai fit \
     --trainer.max_epochs=100
 ```
 
+## Native Framework Training
+
+`physicalai train <framework>` delegates directly to an installed native engine. The Studio options must precede the framework name; every argument after the name is passed through unchanged, including native `--help` and native flags:
+
+```bash
+physicalai train lerobot --policy.type=act --dataset.repo_id=lerobot/pusht --steps=20000
+physicalai train --accelerator xpu lerobot --policy.type=act --dataset.repo_id=lerobot/pusht
+physicalai train --interpreter /opt/lerobot/bin/python lerobot --help
+```
+
+The native command keeps its standard streams and exit status. `physicalai train physicalai` aliases `physicalai fit`; first-party Lightning options remain on `fit` (`--trainer.*`, `--model.*`, and `--data.*`).
+
+Managed worker environments are provisioned by the shared engine manager:
+
+```bash
+physicalai engine prepare lerobot --accelerator xpu
+physicalai engine list
+physicalai engine prune
+```
+
+Each framework plugin supplies its own locked worker project. `--interpreter` skips managed-environment provisioning and uses a pre-installed framework environment.
+
 ## Configuration Patterns
 
 ### Pattern 1: class_path (Dynamic)
@@ -111,12 +133,14 @@ physicalai fit \
 
 ## Commands
 
-| Command    | Description         |
-| ---------- | ------------------- |
-| `fit`      | Train a model       |
-| `validate` | Run validation      |
-| `test`     | Run test evaluation |
-| `predict`  | Run inference       |
+| Command    | Description                                    |
+| ---------- | ---------------------------------------------- |
+| `fit`      | Train a model                                  |
+| `validate` | Run validation                                 |
+| `test`     | Run test evaluation                            |
+| `predict`  | Run inference                                  |
+| `train`    | Run a native framework trainer                 |
+| `engine`   | Prepare, inspect, or prune worker environments |
 
 ```bash
 physicalai fit --config CONFIG_PATH

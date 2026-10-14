@@ -263,8 +263,8 @@ def test_engine_trains_public_lerobot_dataset_and_packages_checkpoint(
     if os.environ.get("PHYSICALAI_RUN_LEROBOT_INTEGRATION") != "1":
         pytest.skip("Set PHYSICALAI_RUN_LEROBOT_INTEGRATION=1 to run public-dataset training tests.")
 
-    from physicalai.engine import Engine
     from physicalai.inference.manifest import Manifest
+    from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
     requested_steps, device = _training_options()
     _require_training_device(device)
@@ -278,7 +278,7 @@ def test_engine_trains_public_lerobot_dataset_and_packages_checkpoint(
         device=device,
     )
     hooks = _RecordingHooks()
-    run = Engine().train(config, hooks=hooks)
+    run = LeRobotEngine().train(config, hooks=hooks)
 
     assert run.output_dir == output_dir
     assert run.checkpoint is not None
@@ -292,7 +292,7 @@ def test_engine_trains_public_lerobot_dataset_and_packages_checkpoint(
         output_path=tmp_path / "training-trajectory.json",
     )
 
-    package = Engine().export(run, output_dir=tmp_path / "export")
+    package = LeRobotEngine.export(run, output_path=tmp_path / "export")
     artifact = package / f"{policy_type}.lerobot" / "pretrained_model"
     assert artifact.is_dir()
     assert (artifact / "train_config.json").is_file()
@@ -315,7 +315,7 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     from lerobot.scripts import lerobot_train
     from lerobot.utils.import_utils import register_third_party_plugins
     from safetensors.torch import load_file
-    from physicalai.engine import Engine
+    from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
     requested_steps, device = _training_options()
     _require_training_device(device)
@@ -357,7 +357,7 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     phase = "engine"
     hooks = _RecordingHooks()
     _reset_training_seed(42, device)
-    run = Engine().train(engine_config, hooks=hooks)
+    run = LeRobotEngine().train(engine_config, hooks=hooks)
 
     native_checkpoint = native_output / "checkpoints" / "last" / "pretrained_model"
     assert run.output_dir == engine_output

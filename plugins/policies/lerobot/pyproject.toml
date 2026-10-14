@@ -11,21 +11,40 @@ requires-python = ">=3.12, <3.15"
 license = "Apache-2.0"
 dependencies = [
     "physicalai~=0.3.0",
-    "lerobot[dataset]==0.6.0",
+    "lerobot[dataset]>=0.6.1,<0.7",
 ]
 
 [project.optional-dependencies]
-train = ["lerobot[training]==0.6.0", "diffusers>=0.38.0"]
+train = [
+    "physicalai-train>=0.3.0",
+    "lerobot[training]",
+    "diffusers>=0.38.0,<0.40.0",
+]
 tests = ["pytest>=9.0.3"]
 
-[project.entry-points."physicalai.engine.frameworks"]
-lerobot = "physicalai_lerobot_policy_plugin.framework:register"
+[project.entry-points."physicalai.engines"]
+lerobot = "physicalai_lerobot_policy_plugin.engine:LeRobotEngine"
 
 [project.entry-points."physicalai.inference.adapters"]
 lerobot = "physicalai_lerobot_policy_plugin.inference:register"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/physicalai_lerobot_policy_plugin"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/physicalai_lerobot_policy_plugin/env/pyproject.toml" = "physicalai_lerobot_policy_plugin/env/pyproject.toml"
+"src/physicalai_lerobot_policy_plugin/env/uv.lock" = "physicalai_lerobot_policy_plugin/env/uv.lock"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/README.md",
+    "/pyproject.toml",
+    "/src/physicalai_lerobot_policy_plugin/**",
+]
+
+[tool.hatch.build.targets.sdist.force-include]
+"src/physicalai_lerobot_policy_plugin/env/pyproject.toml" = "src/physicalai_lerobot_policy_plugin/env/pyproject.toml"
+"src/physicalai_lerobot_policy_plugin/env/uv.lock" = "src/physicalai_lerobot_policy_plugin/env/uv.lock"
 
 [tool.ruff]
 extend = "../../../pyproject.toml"

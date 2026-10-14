@@ -212,8 +212,14 @@ class _LeRobotDatasetAdapter(Dataset):
 
         Returns:
             Observation: The item from the dataset.
+
+        Raises:
+            TypeError: If the underlying dataset returns multiple frames for an integer index.
         """
         item = self._lerobot_dataset[idx]
+        if not isinstance(item, dict):
+            msg = "LeRobotDataset returned multiple frames for an integer index."
+            raise TypeError(msg)
         item = self._combine_split_columns(item)
         return FormatConverter.to_observation(item)
 

@@ -1,6 +1,8 @@
 # Policy Plugins: Engine and Native Frameworks
 
-> Status: Proposal, revised 2026-10-14. The proof of concept in the `feat/engine-poc` worktree validated the core idea: run LeRobot's own trainer and package its checkpoint for Runtime (see [POC Validation](#poc-validation)). This revision replaces the POC's routing `Engine`, its `Framework` protocol, and its `uv run --with` environments with one engine class per framework, a native CLI passthrough, Studio-owned display data, and locked worker environments. The revision is not implemented yet. It also proposes how models are enabled step by step, including XPU training and optimized export (OpenVINO, ONNX, ExecuTorch) through enablements (see [Model Enablement](#model-enablement)); whether another team's patch series may be applied at install time still needs SDL review.
+> Status: Approved design, implemented for the shared `Engine` API, first-party `Trainer`, and native LeRobot training/runtime plugin. The implementation uses one class per engine, `physicalai.engines`, native CLI passthrough, and locked uv worker environments. Studio remains separate and owns display/forms through the policy catalog introduced in #1294. Enablements remain upstream-first; patch downloading/applying and concrete OpenVINO, ONNX, or ExecuTorch recipes are not implemented pending SDL review.
+
+The proof of concept in the `feat/engine-poc` worktree validated the core idea: run LeRobot's own trainer and package its checkpoint for Runtime (see [POC Validation](#poc-validation)). This approved design replaces the POC's routing `Engine`, its `Framework` protocol, and its `uv run --with` environments with one engine class per framework and locked worker environments. The sections below retain the design rationale and identify follow-up Studio work and SDL-gated enablements.
 
 Paths are relative to the Studio repository root unless marked Runtime, which refers to [`openvinotoolkit/physicalai`](https://github.com/openvinotoolkit/physicalai). LeRobot behavior and dependency claims below are checked against the upstream [`v0.6.1` tag](https://github.com/huggingface/lerobot/tree/v0.6.1), the latest stable release published on [PyPI](https://pypi.org/project/lerobot/0.6.1/) as of 2026-10-12. Studio's library and plugin declare `lerobot>=0.6.1,<0.7`; `library/uv.lock` pins 0.6.1 for reproducible CI.
 
@@ -178,7 +180,7 @@ class Trainer(Engine, lightning.Trainer):
 - Parity with today's API comes for free because nothing is copied. `isinstance(trainer, lightning.Trainer)` and `Tuner(trainer)` keep working; this was checked with Lightning and the Studio `Trainer`.
 - `export()` keeps every option of `policy.export()`. The base class declares only the generic minimum that the CLI and Studio pass; adding optional keyword arguments in a subclass type-checks with `mypy --strict` and basedpyright.
 - `PhysicalAIEngine = Trainer` can be offered as an alias for symmetry in documentation.
-- Studio keeps its current first-party form and `run_training_job()` at first. Moving them onto `run()` and `config_schema()` is a follow-up.
+- Studio keeps its current first-party form and `run_training_job()`; `Trainer.run()` reports that this Studio-owned execution path has not moved onto the Engine API yet. `Trainer.config_schema()` exposes the first-party policy config, while the full GUI job form remains Studio-owned follow-up work.
 
 ### LeRobot: `LeRobotEngine`
 
@@ -217,12 +219,12 @@ class LeRobotEngine(Engine):
     def policies(cls) -> list[str]: ...  # supported subset of PreTrainedConfig.get_known_choices()
 
     @classmethod
-    def config_schema(cls, policy) -> dict: ...  # schemas/<policy>.json, generated when the wheel is built
+    def config_schema(cls, policy) -> dict: ...  # generated from LeRobot's native config classes on request
 ```
 
 - The standard inputs of `run()` (`dataset`, `output_dir`, `device`) override the same native fields in `settings`.
 - `export()` accepts a `Run` or a local native checkpoint folder. Hub repository IDs must be downloaded first.
-- Schemas come from LeRobot's own config classes. Pydantic's `TypeAdapter(...).json_schema()` works on the LeRobot 0.6.1 dataclasses: 37 fields for `ACTConfig`, 56 for `PI05Config`, and 118 across 15 nested types for `TrainPipelineConfig`. The generated fields have no descriptions, and `TrainPipelineConfig.policy` is typed as the abstract base, so schemas are generated per policy type. Generation needs LeRobot importable, which the backend cannot assume, so it runs when the plugin wheel is built.
+- Schemas come from LeRobot's own config classes. The plugin's `config_schema()` specializes `TrainPipelineConfig` with the selected policy config through Pydantic's `TypeAdapter(...).json_schema()`. The schema method imports LeRobot only when called; storing pre-generated schemas in the wheel remains an optimization if a backend later needs schema lookup without the loader dependency.
 
 ### Third-Party Engines
 
@@ -268,7 +270,7 @@ name = "physicalai-lerobot-policy-plugin"
 dependencies = ["physicalai~=0.3.0", "lerobot[dataset]>=0.6.1,<0.7"]  # loader side, for robots; also the supported LeRobot range
 
 [project.optional-dependencies]
-train = ["physicalai-train>=0.4"]  # engine side; LeRobot's training dependencies live in env/
+train = ["physicalai-train>=0.3.0", "lerobot[training]", "diffusers>=0.38.0,<0.40.0"]
 
 [project.entry-points."physicalai.engines"]  # read by physicalai-train
 lerobot = "physicalai_lerobot_policy_plugin.engine:LeRobotEngine"
@@ -277,17 +279,19 @@ lerobot = "physicalai_lerobot_policy_plugin.engine:LeRobotEngine"
 lerobot = "physicalai_lerobot_policy_plugin.inference:register"
 ```
 
+The plugin's train extra also keeps the legacy Lightning LeRobot wrapper usable in the host; the native engine's locked worker project owns the dependencies used for isolated LeRobot training.
+
 ```text
 physicalai_lerobot_policy_plugin/
 ├── __init__.py     does not import engine.py; robots install the plugin without physicalai-train
 ├── engine.py       LeRobotEngine: API and CLI; no Studio imports
 ├── _worker.py      runs inside the worker environment; standard library and LeRobot only
-├── env/            stock worker environment: pyproject.toml + uv.lock (cpu, cu128, and xpu extras)
-├── enablements/    one directory per enablement: pyproject.toml + uv.lock + glue.py
-├── schemas/        config_schema() output, generated when the wheel is built
+├── env/            stock worker project and lock (cpu, cu128, and xpu extras)
 ├── inference.py    registers the Runtime adapter lazily; never imports physicalai-train
 └── runtime.py      Runtime adapter
 ```
+
+Declarative enablement metadata is supported by the core API, but enablement environments, patch materialization, and static schema files are not part of this implementation.
 
 Training plugins need no Studio entry point. Robot plugins ship a `studio_catalog.py` because port selection, calibration, and identification cannot be derived from a driver; training configs can be derived from the framework's own config classes.
 
@@ -702,6 +706,8 @@ pai run --config runtime.yaml  # InferenceModel(".../exports/act")
 | Packaging           | `export(source, output_path, backend)`, `capabilities(policy)` | Which formats are offered, model registry                                  |
 
 ### Studio Side
+
+This implementation leaves backend execution, GUI forms, and display data in Studio; plugins do not import Studio code. The Engine API is the boundary for a separate extension of #1294. The example below describes that follow-up integration, not code installed by this plugin.
 
 [#1294](https://github.com/open-edge-platform/physical-ai-studio/pull/1294) added `application/backend/src/training/policy_catalog.py`. It already follows this split: `_STUDIO_POLICIES` holds Studio-owned display data (`AvailablePolicy`: ID, name, description, minimum VRAM) and acts as an allowlist; availability comes from the environment that will run the job, including a `GET /policies` endpoint on each remote trainer. Today it covers first-party policies only. The proposal generalizes it across engines:
 

@@ -10,10 +10,13 @@ import physicalai.devices.xpu  # noqa: F401 - ensure xpu device is registered if
 from .callbacks import IterationTimer, ProgressReportingCallback, RolloutVideoRecorderCallback, SnapFlowPhaseCallback
 from .trainer import Trainer
 
+PhysicalAIEngine = Trainer
+
 __version__ = version("physicalai-train")
 
 __all__ = [
     "IterationTimer",
+    "PhysicalAIEngine",
     "ProgressReportingCallback",
     "RolloutVideoRecorderCallback",
     "SnapFlowPhaseCallback",

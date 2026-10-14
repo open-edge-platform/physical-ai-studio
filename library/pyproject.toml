@@ -31,7 +31,7 @@ dependencies = [
     "pillow",
     "lightning>=2.6.6",
     "lightning-utilities",
-    "lerobot[dataset]==0.6.0",
+    "lerobot[dataset]>=0.6.1,<0.7",
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
@@ -41,7 +41,9 @@ dependencies = [
     "onnxscript",
     "peft>=0.20.0,<1.0.0",
     "jsonargparse[signatures]>=4.50,<5", # This could be extra
+    "packaging>=24.0",
     "pydantic",                         # This could be extra
+    "uv>=0.10,<0.11",
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
@@ -162,6 +164,10 @@ predict = "physicalai.cli.predict:register"
 benchmark = "physicalai.cli.benchmark:register"
 export = "physicalai.cli.export:register"
 train = "physicalai.cli.train:register"
+engine = "physicalai.cli.engine:register"
+
+[project.entry-points."physicalai.engines"]
+physicalai = "physicalai.train.trainer:Trainer"
 
 [project.entry-points."physicalai.inference.adapters"]
 physicalai-train = "physicalai.inference.adapters._register:register"
@@ -198,7 +204,7 @@ override-dependencies = [
     # Safe to override because executorch
     # production code does not import pytest at runtime.
     "pytest>=9.0.3",
-    # LeRobot 0.6.0 keeps diffusers in optional extras; keep an explicit floor for CVE-2026-44827 fix
+    # Keep the LeRobot Diffusers resolution above the CVE-2026-44827 fixed release.
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",

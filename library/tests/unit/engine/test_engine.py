@@ -1,172 +1,183 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Public API tests for engine framework discovery and dispatch."""
+"""Public Engine API and entry-point discovery tests."""
 
 from __future__ import annotations
 
 import importlib.metadata
 import subprocess
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
-from physicalai.engine import Engine, FrameworkRegistry, Run
+from physicalai.engine import Enablement, Engine, Run, TrainHooks
 
 
 class _EntryPoint:
-    def __init__(self, name: str, register: Any) -> None:
+    def __init__(self, name: str, engine_class: type[Engine]) -> None:
         self.name = name
-        self._register = register
+        self._engine_class = engine_class
+        self.loaded = False
 
-    def load(self) -> Any:
-        return self._register
-
-
-class _BrokenEntryPoint:
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def load(self) -> Any:
-        raise ImportError("optional plugin import failed")
+    def load(self) -> type[Engine]:
+        self.loaded = True
+        return self._engine_class
 
 
-class _Framework:
-    def __init__(self, name: str, accepted_config: object) -> None:
-        self.name = name
-        self.accepted_config = accepted_config
-        self.received_config: object | None = None
-        self.received_hooks: object | None = None
+class _FakeEngine(Engine):
+    framework: ClassVar[str] = "fake"
+    env = None
+    training_accelerators = ("cpu",)
+    stock_export_formats = ("native",)
+    enablements: ClassVar[tuple[Enablement, ...]] = (
+        Enablement(
+            name="upstream-xpu",
+            provides={"tiny": {"train": ("xpu",), "export": ("onnx",)}},
+            upstream="pytorch-xpu@2.11.0",
+        ),
+    )
+    calls: ClassVar[list[tuple[str, object]]] = []
 
-    def accepts(self, config: object) -> bool:
-        return config is self.accepted_config
+    def __init__(self, *, value: str = "default") -> None:
+        self.value = value
 
-    def train(self, config: object, hooks: object) -> Run:
-        self.received_config = config
-        self.received_hooks = hooks
-        return Run(framework=self.name, output_dir=Path("run"), checkpoint=Path("run/checkpoint"))
+    @classmethod
+    def cli(
+        cls,
+        argv: Sequence[str],
+        *,
+        interpreter: str | Path | None = None,
+        accelerator: str = "auto",
+    ) -> int:
+        cls.calls.append(("cli", (list(argv), interpreter, accelerator)))
+        return 7
 
-    def export(self, source: object, output_dir: Path, format: str | None = None) -> Path:  # noqa: ARG002
-        return output_dir
+    @classmethod
+    def run(
+        cls,
+        settings: Mapping[str, Any],
+        *,
+        dataset: Path,
+        output_dir: Path,
+        device: str,
+        hooks: TrainHooks | None = None,
+        interpreter: str | Path | None = None,
+    ) -> Run:
+        cls.calls.append(("run", (settings, dataset, output_dir, device, hooks, interpreter)))
+        return Run(framework=cls.framework, output_dir=output_dir, checkpoint=None)
 
+    @classmethod
+    def export(
+        cls,
+        source: Run | str | Path,
+        output_path: str | Path,
+        backend: str | None = None,
+    ) -> Path:
+        cls.calls.append(("export", (source, output_path, backend)))
+        return Path(output_path)
 
-def test_discovered_frameworks_are_listed_and_engine_dispatches_publicly(
+    @classmethod
+    def policies(cls) -> list[str]:
+        return ["tiny"]
+
+    @classmethod
+    def config_schema(cls, policy: str) -> dict[str, Any]:
+        return {"title": policy, "type": "object"}
+
+def test_engine_discovery_lists_entry_points_without_importing_classes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    builtin_config = object()
-    external_config = object()
-    builtin = _Framework("native", builtin_config)
-    external = _Framework("external", external_config)
+    from physicalai.engine import _registry
 
-    def register_builtin(registry: FrameworkRegistry) -> None:
-        registry.register(builtin)
+    entry = _EntryPoint("fake", _FakeEngine)
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda *, group: [entry])
+    monkeypatch.setattr(_registry, "_entry_points", lambda: [entry])
 
-    def register_external(registry: FrameworkRegistry) -> None:
-        registry.register(external)
-
-    entries = [
-        _EntryPoint("native", register_builtin),
-        _EntryPoint("external", register_external),
-    ]
-    monkeypatch.setattr(importlib.metadata, "entry_points", lambda *, group: entries)
-
-    registry = FrameworkRegistry.discover()
-    engine = Engine(registry=registry)
-    hooks = object()
-
-    run = engine.train(external_config, hooks=hooks)
-
-    assert engine.frameworks() == ["external", "native"]
-    assert run.framework == "external"
-    assert external.received_config is external_config
-    assert external.received_hooks is hooks
+    assert Engine.names() == ["fake"]
+    assert not entry.loaded
 
 
-def test_broken_framework_import_does_not_hide_healthy_plugins() -> None:
-    def register_healthy(registry: FrameworkRegistry) -> None:
-        registry.register(_Framework("healthy", object()))
+def test_engine_get_and_create_return_the_framework_specific_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from physicalai.engine import _registry
 
-    registry = FrameworkRegistry.discover(
-        [_BrokenEntryPoint("a-broken"), _EntryPoint("z-healthy", register_healthy)]
-    )
+    entry = _EntryPoint("fake", _FakeEngine)
+    monkeypatch.setattr(_registry, "_entry_points", lambda: [entry])
 
-    assert registry.names() == ["healthy"]
-
-
-def test_partial_framework_registration_is_rolled_back_before_loading_healthy_plugins() -> None:
-    def register_broken(registry: FrameworkRegistry) -> None:
-        registry.register(_Framework("partial", object()))
-        raise RuntimeError("optional plugin registration failed")
-
-    def register_healthy(registry: FrameworkRegistry) -> None:
-        registry.register(_Framework("healthy", object()))
-
-    registry = FrameworkRegistry.discover(
-        [_EntryPoint("a-broken", register_broken), _EntryPoint("z-healthy", register_healthy)]
-    )
-
-    assert registry.names() == ["healthy"]
+    assert Engine.get("fake") is _FakeEngine
+    engine = Engine.create("fake", value="configured")
+    assert isinstance(engine, _FakeEngine)
+    assert engine.value == "configured"
 
 
-def test_duplicate_framework_names_are_rejected_deterministically() -> None:
-    def register_first(registry: FrameworkRegistry) -> None:
-        registry.register(_Framework("duplicate", object()))
+def test_engine_rejects_duplicate_names_and_entry_point_mismatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from physicalai.engine import _registry
 
-    def register_second(registry: FrameworkRegistry) -> None:
-        registry.register(_Framework("duplicate", object()))
+    duplicate_entries = [_EntryPoint("fake", _FakeEngine), _EntryPoint("fake", _FakeEngine)]
+    monkeypatch.setattr(_registry, "_entry_points", lambda: duplicate_entries)
+    with pytest.raises(ValueError, match="Duplicate engine"):
+        Engine.names()
 
-    first_order = [_EntryPoint("z-provider", register_second), _EntryPoint("a-provider", register_first)]
-    reverse_order = list(reversed(first_order))
-    errors = []
-    for entries in (first_order, reverse_order):
-        with pytest.raises(ValueError, match="Duplicate framework") as exc_info:
-            FrameworkRegistry.discover(entries)
-        errors.append(str(exc_info.value))
-
-    assert errors[0] == errors[1]
+    mismatched = _EntryPoint("not-fake", _FakeEngine)
+    monkeypatch.setattr(_registry, "_entry_points", lambda: [mismatched])
+    with pytest.raises(ValueError, match="framework.*does not match"):
+        Engine.get("not-fake")
 
 
-def test_engine_import_and_builtin_discovery_keep_model_dependencies_lazy() -> None:
+def test_engine_import_and_listing_do_not_load_framework_dependencies() -> None:
     code = (
-        "import sys; from physicalai.engine import Engine; "
-        "assert 'lerobot' in Engine().frameworks(); "
+        "import sys; from physicalai.engine import Engine; Engine.names(); "
         "heavy = ('torch', 'lerobot', 'lightning', 'physicalai.inference'); "
         "assert not [name for name in sys.modules if any(name == item or name.startswith(item + '.') for item in heavy)]"
     )
-
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    result = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
 
     assert result.returncode == 0, result.stderr
 
 
-def test_registry_rejects_duplicate_names() -> None:
-    registry = FrameworkRegistry()
-    config = object()
-    registry.register(_Framework("lerobot", config))
+def test_unknown_engine_error_lists_available_entry_points(monkeypatch: pytest.MonkeyPatch) -> None:
+    from physicalai.engine import _registry
 
-    with pytest.raises(ValueError, match="Duplicate framework.*lerobot"):
-        registry.register(_Framework("lerobot", object()))
+    monkeypatch.setattr(_registry, "_entry_points", lambda: [_EntryPoint("fake", _FakeEngine)])
+
+    with pytest.raises(ValueError, match="Unknown engine 'missing'.*fake"):
+        Engine.get("missing")
 
 
-def test_engine_requires_unambiguous_config_or_known_framework() -> None:
-    config = object()
-    registry = FrameworkRegistry()
-    registry.register(_Framework("first", config))
-    registry.register(_Framework("second", config))
-    engine = Engine(registry=registry)
+def test_engine_capabilities_combine_stock_and_validated_enablements(monkeypatch: pytest.MonkeyPatch) -> None:
+    from physicalai.engine import _registry
 
-    with pytest.raises(ValueError, match="ambiguous.*framework", check=lambda error: "first" in str(error)):
-        engine.train(config)
+    monkeypatch.setattr(_registry, "_entry_points", lambda: [_EntryPoint("fake", _FakeEngine)])
 
-    with pytest.raises(ValueError, match="Unknown framework.*missing"):
-        engine.train(config, framework="missing")
+    capabilities = Engine.get("fake").capabilities("tiny")
 
-    with pytest.raises(ValueError, match="No registered framework accepts"):
-        engine.train(object())
+    assert capabilities.training_accelerators == ("cpu", "xpu")
+    assert capabilities.export_formats == ("native", "onnx")
+    assert capabilities.enablements == ("upstream-xpu",)
+
+
+def test_run_and_cli_are_framework_class_apis(monkeypatch: pytest.MonkeyPatch) -> None:
+    from physicalai.engine import _registry
+
+    monkeypatch.setattr(_registry, "_entry_points", lambda: [_EntryPoint("fake", _FakeEngine)])
+    _FakeEngine.calls.clear()
+    run = Engine.get("fake").run(
+        {"policy": {"type": "tiny"}},
+        dataset=Path("dataset"),
+        output_dir=Path("output"),
+        device="cpu",
+    )
+
+    assert run.framework == "fake"
+    assert Engine.get("fake").cli(["--native", "flag"], accelerator="xpu") == 7
+    assert _FakeEngine.calls == [
+        ("run", ({"policy": {"type": "tiny"}}, Path("dataset"), Path("output"), "cpu", None, None)),
+        ("cli", (["--native", "flag"], None, "xpu")),
+    ]

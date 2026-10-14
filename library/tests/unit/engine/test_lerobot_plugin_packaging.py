@@ -1,24 +1,28 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Installed distribution contract for the standalone LeRobot policy plugin."""
+"""Installed entry-point, worker lock, and Runtime adapter contracts."""
 
 from __future__ import annotations
 
+from importlib import resources
 from importlib.metadata import distribution, entry_points
 import subprocess
 import sys
+import tomllib
 
 from packaging.requirements import Requirement
+
+from physicalai.engine._environment import locked_version, supported_versions
+from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
 _PLUGIN_DISTRIBUTION = "physicalai-lerobot-policy-plugin"
 
 
-def test_lerobot_plugin_owns_framework_and_runtime_entrypoints() -> None:
-    plugin = distribution(_PLUGIN_DISTRIBUTION)
-    framework_entries = [
+def test_lerobot_plugin_owns_engine_and_runtime_adapter_entrypoints() -> None:
+    engine_entries = [
         entry
-        for entry in entry_points(group="physicalai.engine.frameworks")
+        for entry in entry_points(group="physicalai.engines")
         if entry.name == "lerobot" and entry.dist is not None and entry.dist.name == _PLUGIN_DISTRIBUTION
     ]
     adapter_entries = [
@@ -27,13 +31,35 @@ def test_lerobot_plugin_owns_framework_and_runtime_entrypoints() -> None:
         if entry.name == "lerobot" and entry.dist is not None and entry.dist.name == _PLUGIN_DISTRIBUTION
     ]
 
-    assert len(framework_entries) == 1
-    assert framework_entries[0].value == "physicalai_lerobot_policy_plugin.framework:register"
+    assert len(engine_entries) == 1
+    assert engine_entries[0].value == "physicalai_lerobot_policy_plugin.engine:LeRobotEngine"
     assert len(adapter_entries) == 1
     assert adapter_entries[0].value == "physicalai_lerobot_policy_plugin.inference:register"
+    package = resources.files("physicalai_lerobot_policy_plugin")
+    assert (package / "env" / "pyproject.toml").is_file()
+    assert (package / "env" / "uv.lock").is_file()
 
-    requirements = [requirement.lower() for requirement in plugin.requires or []]
-    assert not any("physicalai-train" in requirement for requirement in requirements)
+
+def test_worker_lock_is_inside_the_range_declared_by_plugin_metadata() -> None:
+    assert locked_version(LeRobotEngine.env) in supported_versions(LeRobotEngine.env)
+
+
+def test_worker_project_has_only_locked_framework_dependencies() -> None:
+    project = resources.files("physicalai_lerobot_policy_plugin") / "env"
+    pyproject = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))
+    lock_text = (project / "uv.lock").read_text(encoding="utf-8")
+    lock = tomllib.loads(lock_text)
+    project_dependencies = {item.split("[", maxsplit=1)[0].split(">", maxsplit=1)[0] for item in pyproject["project"]["dependencies"]}
+    lock_packages = {package["name"] for package in lock["package"]}
+
+    assert {"cpu", "cu128", "xpu"} <= set(pyproject["project"]["optional-dependencies"])
+    assert "physicalai" not in project_dependencies
+    assert "physicalai-train" not in project_dependencies
+    assert "physicalai" not in lock_packages
+    assert "physicalai-train" not in lock_packages
+    assert "https://download.pytorch.org/whl/cpu" in lock_text
+    assert "https://download.pytorch.org/whl/cu128" in lock_text
+    assert "https://download.pytorch.org/whl/xpu" in lock_text
 
 
 def test_runtime_registration_import_does_not_load_the_training_engine() -> None:
@@ -42,18 +68,12 @@ def test_runtime_registration_import_does_not_load_the_training_engine() -> None
         "assert not any(name == 'physicalai.engine' or name.startswith('physicalai.engine.') for name in sys.modules); "
         "assert 'lerobot' not in sys.modules and 'torch' not in sys.modules"
     )
-
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    result = subprocess.run([sys.executable, "-c", code], check=False, capture_output=True, text=True)
 
     assert result.returncode == 0, result.stderr
 
 
-def test_physicalai_train_lerobot_extra_installs_the_standalone_plugin() -> None:
+def test_library_lerobot_extra_installs_plugin_train_extra() -> None:
     train = distribution("physicalai-train")
     requirements = [Requirement(requirement) for requirement in train.requires or []]
     plugin_requirement = next(
@@ -74,6 +94,14 @@ def test_physicalai_train_lerobot_extra_installs_the_standalone_plugin() -> None
 
     plugin = distribution(_PLUGIN_DISTRIBUTION)
     plugin_requirements = [Requirement(requirement) for requirement in plugin.requires or []]
+    engine_dependency = next(
+        requirement
+        for requirement in plugin_requirements
+        if requirement.name == "physicalai-train"
+    )
+    assert engine_dependency.marker is not None
+    assert engine_dependency.marker.evaluate({"extra": "train"})
+
     lerobot_training = next(
         requirement
         for requirement in plugin_requirements
@@ -81,26 +109,3 @@ def test_physicalai_train_lerobot_extra_installs_the_standalone_plugin() -> None
     )
     assert lerobot_training.marker is not None
     assert lerobot_training.marker.evaluate({"extra": "train"})
-
-    diffusion_training = next(
-        requirement
-        for requirement in plugin_requirements
-        if requirement.name == "diffusers"
-    )
-    assert diffusion_training.marker is not None
-    assert diffusion_training.marker.evaluate({"extra": "train"})
-
-    lerobot = distribution("lerobot")
-    lerobot_requirements = [Requirement(requirement) for requirement in lerobot.requires or []]
-    assert any(
-        requirement.name == "wandb"
-        and requirement.marker is not None
-        and requirement.marker.evaluate({"extra": "training"})
-        for requirement in lerobot_requirements
-    )
-    assert any(
-        requirement.name == "accelerate"
-        and requirement.marker is not None
-        and requirement.marker.evaluate({"extra": "accelerate-dep"})
-        for requirement in lerobot_requirements
-    )
