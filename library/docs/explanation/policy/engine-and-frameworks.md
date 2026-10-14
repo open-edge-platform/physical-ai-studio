@@ -707,7 +707,7 @@ pai run --config runtime.yaml  # InferenceModel(".../exports/act")
 
 ### Studio Side
 
-This implementation leaves backend execution, GUI forms, and display data in Studio; plugins do not import Studio code. The Engine API is the boundary for a separate extension of #1294. The example below describes that follow-up integration, not code installed by this plugin.
+This implementation leaves backend execution, GUI forms, and display data in Studio; plugins do not import Studio code. The Engine API is the boundary for a separate extension of #1294. The GUI catalog/job wiring is a separate follow-up PR; this PR adds no GUI catalog integration. The example below describes that follow-up, not code installed by this plugin.
 
 [#1294](https://github.com/open-edge-platform/physical-ai-studio/pull/1294) added `application/backend/src/training/policy_catalog.py`. It already follows this split: `_STUDIO_POLICIES` holds Studio-owned display data (`AvailablePolicy`: ID, name, description, minimum VRAM) and acts as an allowlist; availability comes from the environment that will run the job, including a `GET /policies` endpoint on each remote trainer. Today it covers first-party policies only. The proposal generalizes it across engines:
 
@@ -774,7 +774,7 @@ outputs/train/act_pusht/                    # LeRobot's own output layout
 
 ## Runtime Loader
 
-Each plugin ships a regular `RuntimeAdapter` registered in the existing `physicalai.inference.adapters` group, and that adapter owns inference end to end; [Running Enabled Packages](#running-enabled-packages) covers packages produced by enablements. For LeRobot the adapter loads the folder with `PreTrainedPolicy.from_pretrained()` and `make_pre_post_processors()`, and keeps LeRobot's inference behavior (action queue, observation history, and temporal ensembling) by calling LeRobot's own `select_action()` and `reset()`. Returning one action per call is faithful but runs the model at every control step; returning whole chunks needs observation history in the adapter and is a later optimization.
+Each plugin ships a regular `RuntimeAdapter` registered in the existing `physicalai.inference.adapters` group, and that adapter owns inference end to end; [Running Enabled Packages](#running-enabled-packages) covers packages produced by enablements. For LeRobot the adapter loads the folder with `PreTrainedPolicy.from_pretrained()` and `make_pre_post_processors()`, and keeps LeRobot's inference behavior (action queue, observation history, and temporal ensembling) by calling LeRobot's own `select_action()` and `reset()`. It rejects Groot packages before policy-class loading because LeRobot's Groot adapter enables `trust_remote_code=True`; no remote model code runs until it is reviewed and pinned. Returning one action per call is faithful but runs the model at every control step; returning whole chunks needs observation history in the adapter and is a later optimization.
 
 ## Potential Runtime Changes
 

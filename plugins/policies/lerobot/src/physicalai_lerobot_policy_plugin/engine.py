@@ -29,12 +29,13 @@ from physicalai.engine import (
     supported_versions,
 )
 
+from .policy_support import UNREVIEWED_POLICY_TYPES
+
 if TYPE_CHECKING:
     from lerobot.configs.train import TrainPipelineConfig
 
 _POLICY_NAME_RE = re.compile(r"[a-zA-Z0-9_-]{1,64}")
 _SETTING_NAME_RE = re.compile(r"[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*")
-_UNREVIEWED_POLICIES = frozenset({"groot"})
 _MAX_SETTING_DEPTH = 10
 _PLUGIN_DISTRIBUTION = "physicalai-lerobot-policy-plugin"
 _PLUGIN_ROOT = resources.files(__package__)
@@ -217,11 +218,7 @@ class LeRobotEngine(Engine):
 
         choices = PreTrainedConfig.get_known_choices()
         names = choices.keys() if isinstance(choices, Mapping) else choices
-        return sorted(
-            policy
-            for policy in names
-            if isinstance(policy, str) and policy not in _UNREVIEWED_POLICIES
-        )
+        return sorted(policy for policy in names if isinstance(policy, str) and policy not in UNREVIEWED_POLICY_TYPES)
 
     @classmethod
     def config_schema(cls, policy: str) -> dict[str, Any]:

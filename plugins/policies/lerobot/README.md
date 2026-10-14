@@ -61,7 +61,7 @@ LeRobot's worker project and lock ship as plugin package data. The core runner s
 
 Exporting a native LeRobot checkpoint creates a Runtime package containing `manifest.json` and the unchanged `pretrained_model/` files under a `.lerobot` artifact directory. The plugin Runtime adapter loads LeRobot's saved pre/postprocessor pipelines, calls `select_action()`, and forwards resets to the policy and processors. It does not delegate LeRobot preprocessing or postprocessing to Studio or Runtime components.
 
-The stock plugin excludes GR00T from its advertised policy list pending review of LeRobot's remote-code loading. Optimized export enablements and downstream patch materialization are not included; upstream support comes first, and patch application remains SDL-gated.
+The Engine omits Groot from its policy list, and the Runtime adapter rejects Groot artifacts before loading a policy class because LeRobot enables `trust_remote_code=True` for Groot. That guard stays until the remote-code path is reviewed and pinned. Optimized export enablements and downstream patch materialization are not included; upstream support comes first, and patch application remains SDL-gated.
 
 ## Development Checks
 
