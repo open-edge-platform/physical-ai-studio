@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "physicalai-lerobot-policy-plugin"
+version = "0.1.0"
+description = "Native LeRobot training and Runtime policy integration for Physical AI"
+readme = "README.md"
+requires-python = ">=3.12, <3.15"
+license = "Apache-2.0"
+dependencies = [
+    "physicalai~=0.3.0",
+    "lerobot[dataset]==0.6.0",
+]
+
+[project.optional-dependencies]
+train = ["lerobot[training]==0.6.0", "diffusers>=0.38.0"]
+tests = ["pytest>=9.0.3"]
+
+[project.entry-points."physicalai.engine.frameworks"]
+lerobot = "physicalai_lerobot_policy_plugin.framework:register"
+
+[project.entry-points."physicalai.inference.adapters"]
+lerobot = "physicalai_lerobot_policy_plugin.inference:register"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/physicalai_lerobot_policy_plugin"]
+
+[tool.ruff]
+extend = "../../../pyproject.toml"
+src = ["src", "tests"]
+extend-exclude = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D103", "S101"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+show_error_codes = true
+explicit_package_bases = true
