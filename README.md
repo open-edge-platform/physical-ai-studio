@@ -106,12 +106,6 @@ A PushT-trained policy is not directly usable on a physical robot; use a policy 
 
 Run Studio training, benchmarking, and export from Runtime's `physicalai` CLI; Runtime also provides the `run` command for deployment.
 
-<!-- markdownlint-disable MD033 -->
-<p align="center">
-  <img src="docs/assets/readme/cli-demo.gif" alt="CLI demo: train, benchmark, export, and deploy a policy" width="100%">
-</p>
-<!-- markdownlint-enable MD033 -->
-
 <details>
 <summary>Copy the CLI commands</summary>
 

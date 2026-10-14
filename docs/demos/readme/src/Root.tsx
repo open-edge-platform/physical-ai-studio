@@ -2,7 +2,7 @@ import {Composition} from 'remotion';
 import {GuiDemo} from './GuiDemo';
 import {guiDuration} from './gui';
 import {WorkflowDemo} from './WorkflowDemo';
-import {apiLines, cliLines, stages} from './workflow';
+import {apiLines, stages} from './workflow';
 
 export const RemotionRoot = () => {
   return (
@@ -21,23 +21,6 @@ export const RemotionRoot = () => {
           filename: 'train_benchmark_export_deploy.py',
           language: 'python' as const,
           lines: apiLines,
-          stages,
-        }}
-      />
-      <Composition
-        id="CliDemo"
-        component={WorkflowDemo}
-        durationInFrames={500}
-        fps={30}
-        width={1600}
-        height={900}
-        defaultProps={{
-          eyebrow: 'CLI',
-          title: 'The same workflow from the terminal',
-          command: 'physicalai --help',
-          filename: 'terminal',
-          language: 'bash' as const,
-          lines: cliLines,
           stages,
         }}
       />

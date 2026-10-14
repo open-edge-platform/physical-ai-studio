@@ -54,24 +54,3 @@ export const apiLines: CodeLine[] = [
   {text: '', start: 0},
   {text: 'runtime_policy = InferenceModel("./exports/act")', start: 356, stage: 3},
 ];
-
-export const cliLines: CodeLine[] = [
-  {text: '# Train', start: 48, stage: 0},
-  {text: 'physicalai fit \\', start: 58, stage: 0},
-  {text: '  --config configs/physicalai/act/pusht/default.yaml', start: 70, stage: 0},
-  {text: '', start: 0},
-  {text: '# Benchmark', start: 154, stage: 1},
-  {text: 'physicalai benchmark \\', start: 164, stage: 1},
-  {text: '  --config configs/benchmark/pusht.yaml \\', start: 176, stage: 1},
-  {text: '  --policy physicalai.policies.ACT \\', start: 188, stage: 1},
-  {text: '  --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt', start: 200, stage: 1},
-  {text: '', start: 0},
-  {text: '# Export', start: 256, stage: 2},
-  {text: 'physicalai export \\', start: 266, stage: 2},
-  {text: '  --policy physicalai.policies.ACT \\', start: 278, stage: 2},
-  {text: '  --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt \\', start: 290, stage: 2},
-  {text: '  --backend openvino --output_dir exports/act', start: 302, stage: 2},
-  {text: '', start: 0},
-  {text: '# Deploy', start: 346, stage: 3},
-  {text: 'physicalai run --config runtime.yaml', start: 356, stage: 3},
-];
