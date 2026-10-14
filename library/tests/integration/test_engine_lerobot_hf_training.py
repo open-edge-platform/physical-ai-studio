@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from pathlib import Path
 
+    from lerobot.configs.train import TrainPipelineConfig
+
 _DEFAULT_STEPS = 1
 _STEP_ENV = "PHYSICALAI_LEROBOT_TEST_STEPS"
 _DEVICE_ENV = "PHYSICALAI_LEROBOT_DEVICE"
@@ -97,7 +99,8 @@ def _make_training_config(
     *,
     steps: int,
     device: str,
-) -> object:
+    cudnn_deterministic: bool = False,
+) -> TrainPipelineConfig:
     """Build a small native LeRobot config for one pinned public dataset.
 
     Returns:
@@ -152,6 +155,7 @@ def _make_training_config(
         env_eval_freq=0,
         eval_steps=0,
         log_freq=steps,
+        cudnn_deterministic=cudnn_deterministic,
         save_checkpoint=True,
         save_freq=steps,
     )
@@ -194,6 +198,21 @@ def _assert_training_trajectory(
     record_property("training_trajectory", trajectory)
     print(f"Training trajectory ({output_path}): {trajectory}")
     return [metrics["loss"] for _, _, metrics in hooks.steps]
+
+
+def test_native_parity_config_can_enable_cudnn_determinism(tmp_path: Path) -> None:
+    """Use LeRobot's native cuDNN determinism setting for CUDA parity runs."""
+    config = _make_training_config(
+        "act",
+        "lerobot/pusht",
+        "b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+        tmp_path / "run",
+        steps=1,
+        device="cuda",
+        cudnn_deterministic=True,
+    )
+
+    assert config.cudnn_deterministic is True
 
 
 def test_training_options_come_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -323,11 +342,25 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     dataset_revision = "b1c3ecbae7f244acc039a3dbc255a00dad1372b9"
     native_output = tmp_path / "native-output"
     engine_output = tmp_path / "engine-output"
+    # Separate host/worker processes can select different cuDNN benchmark kernels unless this native flag is set.
+    deterministic_cuda = device == "cuda"
     native_config = _make_training_config(
-        "act", dataset_repo, dataset_revision, native_output, steps=requested_steps, device=device
+        "act",
+        dataset_repo,
+        dataset_revision,
+        native_output,
+        steps=requested_steps,
+        device=device,
+        cudnn_deterministic=deterministic_cuda,
     )
     engine_config = _make_training_config(
-        "act", dataset_repo, dataset_revision, engine_output, steps=requested_steps, device=device
+        "act",
+        dataset_repo,
+        dataset_revision,
+        engine_output,
+        steps=requested_steps,
+        device=device,
+        cudnn_deterministic=deterministic_cuda,
     )
     assert native_config is not engine_config
     assert native_output != engine_output
@@ -378,23 +411,36 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     assert engine_saved_config == native_saved_config
 
     rtol, atol = _training_parity_tolerances(device)
-    np.testing.assert_allclose(engine_losses, native_losses, rtol=rtol, atol=atol)
     native_weights = load_file(str(native_checkpoint / "model.safetensors"), device="cpu")
     engine_weights = load_file(str(run.checkpoint / "model.safetensors"), device="cpu")
     assert engine_weights.keys() == native_weights.keys()
-    for name, native_weight in native_weights.items():
-        torch.testing.assert_close(engine_weights[name], native_weight, rtol=rtol, atol=atol, msg=name)
+    weight_differences = {
+        name: float((engine_weights[name] - native_weight).abs().max())
+        for name, native_weight in native_weights.items()
+    }
+    weight_mismatches = [
+        name
+        for name, native_weight in native_weights.items()
+        if not torch.allclose(engine_weights[name], native_weight, rtol=rtol, atol=atol)
+    ]
+    loss_max_abs_difference = float(np.max(np.abs(np.asarray(engine_losses) - np.asarray(native_losses))))
+    losses_match = bool(np.allclose(engine_losses, native_losses, rtol=rtol, atol=atol))
 
     summary = {
         "steps": requested_steps,
         "device": device,
+        "cudnn_deterministic": deterministic_cuda,
         "losses": {"native": native_losses, "engine": engine_losses},
+        "loss_max_abs_difference": loss_max_abs_difference,
+        "weight_max_abs_difference": max(weight_differences.values()),
+        "weight_mismatch_count": len(weight_mismatches),
         "rtol": rtol,
         "atol": atol,
     }
     trajectory = json.dumps(summary, sort_keys=True)
-    (tmp_path / "native-engine-training-parity.json").write_text(trajectory + "\n", encoding="utf-8")
     record_property("native_engine_training_parity", trajectory)
+    assert losses_match and not weight_mismatches, trajectory
+    (tmp_path / "native-engine-training-parity.json").write_text(trajectory + "\n", encoding="utf-8")
     print(f"Native/Engine training parity ({requested_steps} steps, {device}): {trajectory}")
 
 
@@ -416,7 +462,7 @@ def _training_parity_tolerances(device: str) -> tuple[float, float]:
     """Return tolerances for repeated LeRobot optimization on one backend.
 
     Returns:
-        Relative and absolute tolerances. CPU reductions are nearly exact;
-        accelerator kernels allow small float32 implementation differences.
+        Relative and absolute tolerances. CPU and deterministic CUDA parity use
+        tight tolerances; XPU allows small float32 implementation differences.
     """
-    return (1e-6, 1e-7) if device == "cpu" else (5e-4, 5e-5)
+    return (1e-6, 1e-7) if device in {"cpu", "cuda"} else (5e-4, 5e-5)
