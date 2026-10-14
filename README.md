@@ -85,7 +85,7 @@ from physicalai.inference import InferenceModel
 from physicalai.policies import ACT
 from physicalai.train import Trainer
 
-datamodule = LeRobotDataModule(repo_id="lerobot/pusht")
+datamodule = LeRobotDataModule(repo_id="lerobot/pusht", num_workers=0)
 policy = ACT()
 
 trainer = Trainer(max_epochs=100)
@@ -96,12 +96,11 @@ results = benchmark.evaluate(policy)
 
 policy.export("./exports/act", backend="openvino")
 runtime_policy = InferenceModel("./exports/act")
-
-# Pseudocode: get a matching observation from your robot's control loop.
-action = runtime_policy.select_action(observation)
 ```
 
 </details>
+
+A PushT-trained policy is not directly usable on a physical robot; use a policy trained for that robot with a matching Runtime config. See the [robot deployment guide](https://github.com/openvinotoolkit/physicalai/blob/main/docs/getting-started/run-a-policy.md).
 
 ## CLI
 
@@ -129,13 +128,13 @@ physicalai export --policy physicalai.policies.ACT \
   --backend openvino --output_dir exports/act
 ```
 
-From your Runtime project, deploy the exported policy with:
+From your Runtime project, run a robot policy with:
 
 ```bash
-physicalai run --config robot.yaml
+physicalai run --config runtime.yaml
 ```
 
-Replace `robot.yaml` with the Runtime configuration for your robot and exported policy.
+Use the [Runtime config example](https://github.com/openvinotoolkit/physicalai/blob/main/docs/how-to/config/write-runtime-config.md) as `runtime.yaml`; it is separate from the PushT training config above.
 
 </details>
 

@@ -42,7 +42,7 @@ export const apiLines: CodeLine[] = [
   {text: 'from physicalai.policies import ACT', start: 36},
   {text: 'from physicalai.train import Trainer', start: 42},
   {text: '', start: 0},
-  {text: 'datamodule = LeRobotDataModule(repo_id="lerobot/pusht")', start: 58, stage: 0},
+  {text: 'datamodule = LeRobotDataModule(repo_id="lerobot/pusht", num_workers=0)', start: 58, stage: 0},
   {text: 'policy = ACT()', start: 70, stage: 0},
   {text: 'trainer = Trainer(max_epochs=100)', start: 94, stage: 0},
   {text: 'trainer.fit(model=policy, datamodule=datamodule)', start: 106, stage: 0},
@@ -53,8 +53,6 @@ export const apiLines: CodeLine[] = [
   {text: 'policy.export("./exports/act", backend="openvino")', start: 266, stage: 2},
   {text: '', start: 0},
   {text: 'runtime_policy = InferenceModel("./exports/act")', start: 356, stage: 3},
-  {text: '# Pseudocode: get a matching observation from your robot loop', start: 376, stage: 3},
-  {text: 'action = runtime_policy.select_action(observation)', start: 394, stage: 3},
 ];
 
 export const cliLines: CodeLine[] = [
@@ -75,5 +73,5 @@ export const cliLines: CodeLine[] = [
   {text: '  --backend openvino --output_dir exports/act', start: 302, stage: 2},
   {text: '', start: 0},
   {text: '# Deploy', start: 346, stage: 3},
-  {text: 'physicalai run --config robot.yaml', start: 356, stage: 3},
+  {text: 'physicalai run --config runtime.yaml', start: 356, stage: 3},
 ];
