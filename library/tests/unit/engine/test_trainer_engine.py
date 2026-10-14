@@ -5,13 +5,22 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import lightning
 import pytest
+import torch
 
 from physicalai.engine import Engine
+from physicalai.policies.base.policy import Policy
 from physicalai.train import Trainer
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from physicalai.data import Observation
 
 
 def test_trainer_remains_a_lightning_trainer_with_its_existing_constructor() -> None:
@@ -22,6 +31,69 @@ def test_trainer_remains_a_lightning_trainer_with_its_existing_constructor() -> 
     assert trainer.max_epochs == 3
     assert trainer.logger is None
     assert Path(trainer.default_root_dir) == Path("runs")
+
+
+@pytest.mark.parametrize("method_name", ["fit", "validate", "test", "predict"])
+def test_trainer_training_methods_are_unchanged_lightning_methods(method_name: str) -> None:
+    trainer_method = getattr(Trainer, method_name)
+    lightning_method = getattr(lightning.Trainer, method_name)
+
+    assert trainer_method is lightning_method
+    assert inspect.signature(trainer_method) == inspect.signature(lightning_method)
+
+
+def test_trainer_export_forwards_policy_export_arguments() -> None:
+    input_sample = {"state": torch.zeros(1, 2)}
+    post_export_hooks: list[Callable[[str], None]] = [lambda path: None]
+    output_path = Path("exports/act")
+    backend_kwargs = {"opset_version": 17, "dynamic_axes": {"action": {0: "batch"}}}
+
+    class _ExportPolicy(Policy):
+        export_call: dict[str, Any] | None = None
+
+        def forward(self, batch: Observation) -> torch.Tensor:
+            return torch.zeros(1, 2)
+
+        def predict_action_chunk(self, batch: Observation) -> torch.Tensor:
+            return torch.zeros(1, 2)
+
+        def export(
+            self,
+            destination: str | Path,
+            backend: str,
+            input_sample: dict[str, torch.Tensor] | None = None,
+            post_export_hooks: list[Callable[[str], None]] | None = None,
+            **kwargs: Any,
+        ) -> None:
+            self.export_call = {
+                "destination": destination,
+                "backend": backend,
+                "input_sample": input_sample,
+                "post_export_hooks": post_export_hooks,
+                "kwargs": kwargs,
+            }
+
+    policy = _ExportPolicy()
+
+    result = Trainer.export(
+        policy,
+        output_path,
+        backend="onnx",
+        input_sample=input_sample,
+        post_export_hooks=post_export_hooks,
+        **backend_kwargs,
+    )
+
+    assert result == output_path
+    assert policy.export_call == {
+        "destination": output_path,
+        "backend": "onnx",
+        "input_sample": input_sample,
+        "post_export_hooks": post_export_hooks,
+        "kwargs": backend_kwargs,
+    }
+    assert policy.export_call["input_sample"] is input_sample
+    assert policy.export_call["post_export_hooks"] is post_export_hooks
 
 
 def test_physicalai_engine_is_registered_and_create_preserves_trainer_options() -> None:
