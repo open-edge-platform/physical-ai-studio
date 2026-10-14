@@ -332,7 +332,8 @@ class TestACTolicy:
     def test_imagenet_stats_normalization(self):
         """Visual features default to ImageNet mean and std when use_imagenet_stats is True."""
         from physicalai.data import FeatureType
-        from physicalai.policies.act.config import IMAGENET_MEAN, IMAGENET_STD
+        imagenet_mean = [0.485, 0.456, 0.406]
+        imagenet_std = [0.229, 0.224, 0.225]
 
         dataset_stats = {
             "observation.images.top": {
@@ -360,8 +361,8 @@ class TestACTolicy:
         policy = ACT(dataset_stats=dataset_stats)
         assert policy.config.use_imagenet_stats is True
         # Visual stats should be overridden to ImageNet values
-        assert policy._dataset_stats["observation.images.top"]["mean"] == IMAGENET_MEAN
-        assert policy._dataset_stats["observation.images.top"]["std"] == IMAGENET_STD
+        assert policy._dataset_stats["observation.images.top"]["mean"] == imagenet_mean
+        assert policy._dataset_stats["observation.images.top"]["std"] == imagenet_std
         # State stats should remain intact
         assert policy._dataset_stats["observation.state"]["mean"] == [1.0, 2.0, 3.0]
 
@@ -372,7 +373,7 @@ class TestACTolicy:
             "extra.action_is_pad": torch.zeros(1, 100, dtype=torch.bool),
         }
         normed = policy.model._input_normalizer(dict(batch))
-        expected_top = (1.0 - IMAGENET_MEAN[0]) / IMAGENET_STD[0]
+        expected_top = (1.0 - imagenet_mean[0]) / imagenet_std[0]
         assert torch.isclose(normed["images.top"][0, 0, 0, 0], torch.tensor(expected_top), atol=1e-4)
         assert torch.allclose(normed["state"], torch.zeros(1, 3), atol=1e-4)
 
