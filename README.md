@@ -151,7 +151,7 @@ Use the [Runtime config example](https://github.com/openvinotoolkit/physicalai/b
 
 ## Policies
 
-Native policy families include ACT, Pi0.5, SmolVLA, MolmoAct2, RLDX-1, XR0, and Cosmos3. LeRobot policies are also supported; see the library’s [supported policies](./library/README.md#supported-policies) and [LeRobot guide](./library/docs/explanation/policy/lerobot.md).
+Native policy families include ACT, Pi0.5, SmolVLA, MolmoAct2, RLDX-1, XR0, and Cosmos3; see the library’s [supported policies](./library/README.md#supported-policies).
 
 ## Install
 

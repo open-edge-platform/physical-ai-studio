@@ -44,6 +44,17 @@ PhysicalAI Library is a Python SDK for training, evaluating, and deploying Visio
 | **XR0**                                                      | Xiaomi Robotics-0 flow-matching VLA                           | —                                                                 |
 | [**Cosmos3**](docs/explanation/policy/cosmos3.md)            | World Action Model policy                                     | [NVIDIA et al. 2026](https://arxiv.org/abs/2606.02800)            |
 
+<details>
+<summary>List native policies from Python</summary>
+
+```python
+from physicalai.policies import list_physicalai_policies
+
+print(list_physicalai_policies())
+```
+
+</details>
+
 # Installation
 
 ```bash
