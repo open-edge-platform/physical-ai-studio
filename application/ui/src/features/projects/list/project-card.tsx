@@ -6,7 +6,7 @@ import { NavLink } from 'react-router';
 
 import { $api } from '../../../api/client';
 import { SchemaProjectInput } from '../../../api/openapi-spec';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { ProjectThumbnail } from '../project-thumbnail/project-thumbnail';
 import { MenuActions } from './menu-actions.component';
 

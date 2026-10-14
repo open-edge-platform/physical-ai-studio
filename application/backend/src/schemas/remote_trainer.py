@@ -1,10 +1,10 @@
-from datetime import datetime
 from enum import StrEnum
 from typing import Literal, Self
 from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
+from schemas.base import UTCDatetime
 from schemas.hardware import DeviceInfo, StorageInfo
 from schemas.remote_server import SSH_HOST_ALIAS_PATTERN
 
@@ -64,10 +64,10 @@ class RemoteTrainerCreate(BaseModel):
         description="Port on the SSH host's loopback interface to forward to. Defaults to the trainer URL's port.",
     )
     ssh_local_port: int | None = Field(
-        default=8001,
+        default=None,
         ge=1,
         le=65535,
-        description="Loopback port on the studio host the tunnel binds to. Required when ssh_host_alias is set.",
+        description="Loopback port for the tunnel. Studio assigns an available port when omitted.",
     )
 
     @model_validator(mode="after")
@@ -90,11 +90,10 @@ class RemoteTrainerCreate(BaseModel):
             raise ValueError("ssh_host_alias and ssh_connection are mutually exclusive")
         if self.ssh_host_alias is None and self.ssh_connection is None:
             raise ValueError("SSH mode requires either ssh_host_alias or ssh_connection")
-        if self.ssh_local_port is None:
-            raise ValueError("ssh_local_port is required when ssh_host_alias is set, so the tunnel binds a stable port")
         if self.ssh_remote_port is None:
             raise ValueError("ssh_remote_port is required for an SSH connection")
-        self.url = AnyHttpUrl(f"http://127.0.0.1:{self.ssh_local_port}")
+        if self.ssh_local_port is not None:
+            self.url = AnyHttpUrl(f"http://127.0.0.1:{self.ssh_local_port}")
         return self
 
 
@@ -119,8 +118,8 @@ class RemoteTrainer(RemoteTrainerCreate):
 
     id: UUID
     url: AnyHttpUrl  # pyrefly: ignore[bad-override-mutable-attribute]
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: UTCDatetime | None = None
+    updated_at: UTCDatetime | None = None
 
 
 class RemoteTrainerHealth(BaseModel):
@@ -128,7 +127,7 @@ class RemoteTrainerHealth(BaseModel):
 
     remote_trainer_id: UUID
     status: HealthStatus
-    checked_at: datetime
+    checked_at: UTCDatetime
     latency_ms: int | None = Field(default=None, ge=0)
     devices: list[DeviceInfo] = Field(default_factory=list)
     storage: StorageInfo | None = Field(

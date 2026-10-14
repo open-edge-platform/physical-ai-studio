@@ -5,7 +5,7 @@ import { createSearchParams, useNavigate } from 'react-router';
 
 import { $api } from '../../../api/client';
 import { SchemaModel } from '../../../api/openapi-spec';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import {
     BackendSelection,
     defaultBackend,

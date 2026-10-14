@@ -1,14 +1,14 @@
+import { rs } from '@rstest/core';
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SchemaRobotInput } from '../../robot-types';
 import { useZeroCalibrationWebSocket } from './use-zero-calibration-websocket';
 
-const sendJsonMessage = vi.fn();
+const sendJsonMessage = rs.fn();
 let capturedUrl: unknown;
 let capturedOptions: { onMessage?: (event: MessageEvent) => void; onOpen?: () => void } = {};
 
-vi.mock('react-use-websocket', () => ({
+rs.mock('react-use-websocket', () => ({
     default: (url: unknown, options: typeof capturedOptions) => {
         capturedUrl = url;
         capturedOptions = options;

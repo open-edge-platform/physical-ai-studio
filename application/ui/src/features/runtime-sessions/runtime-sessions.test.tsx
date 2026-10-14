@@ -100,7 +100,7 @@ describe('RuntimeSessionStatus', () => {
 
     it('stays open when pinned if the user clicks away or presses Escape', async () => {
         const user = userEvent.setup();
-        const outside = vi.fn();
+        const outside = rs.fn();
         // Spectrum swaps a popover for a modal at <= 700px. jsdom's screen is
         // 0, so without this the pin path never hits the non-modal popover.
         Object.defineProperty(window.screen, 'width', { configurable: true, value: 1280 });
@@ -229,7 +229,7 @@ describe('RuntimeSessionsDialog', () => {
     it('shows an empty state when nothing is running', async () => {
         server.use(http.get(SESSIONS_PATH, () => HttpResponse.json([])));
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         expect(await screen.findByText('No runtime sessions are running.')).toBeInTheDocument();
     });
@@ -237,7 +237,7 @@ describe('RuntimeSessionsDialog', () => {
     it('lists a running session with what it is doing', async () => {
         server.use(http.get(SESSIONS_PATH, () => HttpResponse.json([session()])));
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         expect(await screen.findByText('left arm')).toBeInTheDocument();
         expect(screen.getByText('teleop')).toBeInTheDocument();
@@ -250,7 +250,7 @@ describe('RuntimeSessionsDialog', () => {
             )
         );
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         expect(await screen.findByText('recording')).toBeInTheDocument();
     });
@@ -265,7 +265,7 @@ describe('RuntimeSessionsDialog', () => {
         );
         const user = userEvent.setup();
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         await user.click(await screen.findByRole('button', { name: /details for left arm/i }));
 
@@ -276,7 +276,7 @@ describe('RuntimeSessionsDialog', () => {
         const user = userEvent.setup();
         server.use(http.get(SESSIONS_PATH, () => HttpResponse.json([session()])));
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         await user.click(await screen.findByRole('button', { name: /details for left arm/i }));
 
@@ -313,7 +313,7 @@ describe('RuntimeSessionsDialog', () => {
             )
         );
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         // Falls back to the raw session name: there is no label to show.
         expect(await screen.findByText(`rt-${ROBOT_ID}`)).toBeInTheDocument();
@@ -333,7 +333,7 @@ describe('RuntimeSessionsDialog', () => {
             })
         );
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         await user.click(await screen.findByRole('button', { name: /stop session for left arm/i }));
         expect(await screen.findByRole('heading', { name: /stop session for 'left arm'\?/i })).toBeInTheDocument();
@@ -355,7 +355,7 @@ describe('RuntimeSessionsDialog', () => {
             })
         );
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         await user.click(await screen.findByRole('button', { name: /stop session for left arm/i }));
         await user.click(await screen.findByRole('button', { name: 'Cancel' }));
@@ -368,7 +368,7 @@ describe('RuntimeSessionsDialog', () => {
         const user = userEvent.setup();
         server.use(http.get(SESSIONS_PATH, () => HttpResponse.json([session()])));
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         const stop = await screen.findByRole('button', { name: /stop session for left arm/i });
         await user.click(stop);
@@ -387,7 +387,7 @@ describe('RuntimeSessionsDialog', () => {
         const user = userEvent.setup();
         server.use(http.get(SESSIONS_PATH, () => HttpResponse.json([session()])));
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         await user.click(await screen.findByRole('button', { name: /stop session for left arm/i }));
         await user.keyboard('{Escape}');
@@ -410,7 +410,7 @@ describe('RuntimeSessionsDialog', () => {
             http.post(STOP_PATH, () => new Promise<never>(() => {}))
         );
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         await user.click(await screen.findByRole('button', { name: /stop session for left arm/i }));
         await user.click(screen.getByRole('button', { name: 'Stop session' }));
@@ -427,7 +427,7 @@ describe('RuntimeSessionsDialog', () => {
         // The primary action dismisses the dialog, so the failure has to land
         // somewhere that outlives it. Toasts render into a container the test
         // wrapper does not mount, so assert on the queue itself.
-        const toast = vi.spyOn(ToastQueue, 'negative').mockImplementation(() => () => {});
+        const toast = rs.spyOn(ToastQueue, 'negative').mockImplementation(() => () => {});
         server.use(
             http.get(SESSIONS_PATH, () => HttpResponse.json([session()])),
             // Needs a body: the spec declares no error envelope, and a bodyless
@@ -436,7 +436,7 @@ describe('RuntimeSessionsDialog', () => {
             http.post(STOP_PATH, () => HttpResponse.json({ detail: [] }, { status: 500 }))
         );
 
-        render(<RuntimeSessionsDialog close={vi.fn()} />);
+        render(<RuntimeSessionsDialog close={rs.fn()} />);
 
         await user.click(await screen.findByRole('button', { name: /stop session for left arm/i }));
         await user.click(await screen.findByRole('button', { name: 'Stop session' }));

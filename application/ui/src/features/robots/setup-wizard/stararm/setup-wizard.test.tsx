@@ -1,26 +1,26 @@
+import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
 
 import { render } from '../../../../test-utils/render';
 import { RobotFormProvider } from '../../robot-form/provider';
 import { useZeroCalibrationWebSocket } from '../zero-calibration/use-zero-calibration-websocket';
 import { StarArmSetupWizardContent } from './setup-wizard';
 
-vi.mock('../zero-calibration/use-zero-calibration-websocket', () => ({
-    useZeroCalibrationWebSocket: vi.fn(),
+rs.mock('../zero-calibration/use-zero-calibration-websocket', () => ({
+    useZeroCalibrationWebSocket: rs.fn(),
 }));
 
 // The 3D viewer needs WebGL.
-vi.mock('../shared/setup-robot-viewer', () => ({
+rs.mock('../shared/setup-robot-viewer', () => ({
     SetupRobotViewer: () => <div>robot-viewer</div>,
 }));
-vi.mock('../../use-joint-state', () => ({
-    useSynchronizeModelJoints: vi.fn(),
+rs.mock('../../use-joint-state', () => ({
+    useSynchronizeModelJoints: rs.fn(),
 }));
 
 describe('StarArmSetupWizardContent', () => {
     it('shows its own title and guidance over the shared calibration wizard', async () => {
-        vi.mocked(useZeroCalibrationWebSocket).mockReturnValue({
+        rs.mocked(useZeroCalibrationWebSocket).mockReturnValue({
             state: {
                 phase: 'positioning',
                 statusMessage: 'Plugin instructions.',
@@ -32,7 +32,7 @@ describe('StarArmSetupWizardContent', () => {
                 isConnected: true,
             },
             readyState: 1,
-            commands: { setZero: vi.fn() },
+            commands: { setZero: rs.fn() },
         });
 
         render(

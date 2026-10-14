@@ -48,6 +48,7 @@ describe('SshSettingsForm', () => {
         const connectTimeoutField = screen.getByRole('textbox', { name: /connect timeout/i });
         await user.clear(connectTimeoutField);
         await user.type(connectTimeoutField, '42');
+        await user.tab();
         await user.click(screen.getByRole('button', { name: /save/i }));
 
         expect(await screen.findByText('Saved')).toBeInTheDocument();
@@ -78,6 +79,7 @@ describe('SshSettingsForm', () => {
         const shmField = screen.getByRole('textbox', { name: /trainer shared memory/i });
         await user.clear(shmField);
         await user.type(shmField, '48');
+        await user.tab();
         await user.click(screen.getByRole('button', { name: /save/i }));
 
         expect(await screen.findByText('Saved')).toBeInTheDocument();

@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { $api } from '../../../api/client';
 import type { SchemaSo101RobotPayload } from '../../../api/openapi-spec';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { useRobotCatalogQuery } from '../robot-catalog.hooks';
 import { FormFields, RobotFormHeading, RobotType } from './form';
 import { useRobotForm, useRobotFormBody } from './provider';

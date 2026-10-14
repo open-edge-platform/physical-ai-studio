@@ -6,7 +6,7 @@ import { FormHeading } from '../../../components/form-heading/form-heading';
 import { RadioDisclosure } from '../../../components/radio-disclosure-group/radio-disclosure-group';
 import { featureFlags } from '../../../config/feature-flags';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { CameraIcon } from './camera-icon';
 import { useAllAvailableCameras } from './components/use-camera-data';
 import { BaslerFormFields } from './drivers/basler';

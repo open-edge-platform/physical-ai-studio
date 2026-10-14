@@ -12,7 +12,7 @@ from physicalai.data.archive_safety import (
     check_disk_headroom,
 )
 
-from api.dependencies import get_dataset_import_service, get_job_service, get_project_id
+from api.dependencies import get_dataset_import_service, get_job_service
 from schemas import Job
 from schemas.base_job import JobType
 from schemas.dataset_import_job import DatasetImportFinalizeInput, DatasetImportJobPayload, ImportStep
@@ -26,7 +26,7 @@ from settings import get_settings
 
 router = APIRouter(prefix="/api/projects/{project_id}/imports", tags=["Imports"])
 
-ProjectID = Annotated[UUID, Depends(get_project_id)]
+ProjectID = UUID
 
 _UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 

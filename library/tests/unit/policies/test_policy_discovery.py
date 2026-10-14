@@ -10,18 +10,19 @@ import sys
 from pathlib import Path
 
 from physicalai import policies
-from physicalai.policies import get_physicalai_policy_class
+from physicalai.policies import get_physicalai_policy_class, list_physicalai_policies
 
 
 def test_short_names_resolve_to_direct_class_paths() -> None:
     """Every registered short name and training class path loads the same class."""
-    for short_name, class_name in policies._POLICIES.items():  # noqa: SLF001
-        cls = getattr(importlib.import_module(f"physicalai.policies.{short_name}.policy"), class_name)
+    assert list_physicalai_policies() == sorted(policies._POLICY_PATHS)  # noqa: SLF001
+    for short_name, (directory, class_name) in policies._POLICY_PATHS.items():  # noqa: SLF001
+        cls = getattr(importlib.import_module(f"physicalai.policies.{directory}.policy"), class_name)
         assert get_physicalai_policy_class(short_name.upper()) is cls
 
     root = Path(__file__).resolve().parents[3]
     policy_dirs = {path.parent.name for path in (root / "src/physicalai/policies").glob("*/policy.py")}
-    assert policy_dirs - {"base", "lerobot"} == set(policies._POLICIES)  # noqa: SLF001
+    assert policy_dirs - {"base", "lerobot"} == set(policies._POLICY_PATHS)  # noqa: SLF001
     for config in (root / "configs/physicalai").rglob("*.yaml"):
         for line in config.read_text(encoding="utf-8").splitlines():
             if "class_path: physicalai.policies." not in line:
@@ -39,6 +40,7 @@ def test_loading_one_policy_does_not_import_the_others() -> None:
     script = """
 import sys
 import physicalai.policies as policies
+assert 'cosmos3' in policies.list_physicalai_policies()
 assert 'physicalai.policies.cosmos3' not in sys.modules
 from physicalai.policies import ACT, ACTConfig, ACTModel
 from physicalai.policies.act.policy import ACT as DirectACT

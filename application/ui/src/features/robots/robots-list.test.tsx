@@ -1,12 +1,12 @@
 import { ReactNode, Suspense } from 'react';
 
 import { ThemeProvider } from '@geti-ui/ui';
+import { rs } from '@rstest/core';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { http } from '../../api/utils';
 import { server } from '../../msw-node-setup';
@@ -71,8 +71,8 @@ const openRobotMenu = async (user: ReturnType<typeof userEvent.setup>) => {
 
 describe('RobotsList', () => {
     afterEach(() => {
-        vi.restoreAllMocks();
-        vi.unstubAllGlobals();
+        rs.restoreAllMocks();
+        rs.unstubAllGlobals();
     });
 
     it('shows Export calibration for SO101 robots', async () => {
@@ -120,10 +120,10 @@ describe('RobotsList', () => {
 
     it('downloads the active calibration in import-compatible format', async () => {
         const NativeURL = URL;
-        const createObjectUrl = vi.fn<(blob: Blob) => string>(() => 'blob:calibration');
-        const revokeObjectUrl = vi.fn();
-        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-        vi.stubGlobal(
+        const createObjectUrl = rs.fn<(blob: Blob) => string>(() => 'blob:calibration');
+        const revokeObjectUrl = rs.fn();
+        const click = rs.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        rs.stubGlobal(
             'URL',
             class extends NativeURL {
                 static createObjectURL = createObjectUrl;

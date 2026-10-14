@@ -103,6 +103,11 @@ x-common-build: &common-build
     args:
       - APP_UID=${APP_UID:-1000}
       - APP_GID=${APP_GID:-1000}
+      # Set these from the checkout when building a local image, e.g.
+      # GIT_SHA=$(git rev-parse HEAD) GIT_COMMIT_DATE=$(git show -s --format=%cI HEAD).
+      - GIT_SHA=${GIT_SHA:-unknown}
+      - GIT_COMMIT_DATE=${GIT_COMMIT_DATE:-unknown}
+      - GIT_TAG=${GIT_TAG:-}
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}
       - NO_PROXY=${NO_PROXY}

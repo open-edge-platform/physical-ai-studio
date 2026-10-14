@@ -1,6 +1,6 @@
 import { Flex, Item, Key, Picker, StatusLight, Text } from '@geti-ui/ui';
 
-import { SchemaDeviceInfo, SchemaProjectInput } from '../../../api/openapi-spec';
+import { SchemaAvailablePolicy, SchemaDeviceInfo, SchemaProjectInput } from '../../../api/openapi-spec';
 import { InlineAlert } from '../../robots/setup-wizard/shared/inline-alert';
 import { formatBytes } from './policies';
 import { PolicyAccessAlert } from './policy-access-alert';
@@ -21,6 +21,9 @@ interface SetupStepProps {
     selectedGpuUnavailable: boolean;
     remoteUnavailable: boolean;
     selectedPolicy: string;
+    availablePolicies: SchemaAvailablePolicy[];
+    isLoadingPolicies: boolean;
+    policiesUnavailable?: boolean;
     onSelectedPolicyChange: (policy: string) => void;
     isPolicyDisabled: boolean;
     activeDevice: SchemaDeviceInfo | null;
@@ -40,6 +43,9 @@ export const SetupStep = ({
     selectedGpuUnavailable,
     remoteUnavailable,
     selectedPolicy,
+    availablePolicies,
+    isLoadingPolicies,
+    policiesUnavailable,
     onSelectedPolicyChange,
     isPolicyDisabled,
     activeDevice,
@@ -115,6 +121,9 @@ export const SetupStep = ({
 
         <PolicySelection
             selectedPolicy={selectedPolicy}
+            availablePolicies={availablePolicies}
+            isLoadingPolicies={isLoadingPolicies}
+            policiesUnavailable={policiesUnavailable}
             onSelectionChange={onSelectedPolicyChange}
             isDisabled={isPolicyDisabled}
             trainingDevice={activeDevice}

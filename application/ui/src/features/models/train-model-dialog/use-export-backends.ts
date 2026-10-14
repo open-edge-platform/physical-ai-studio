@@ -22,8 +22,17 @@ export interface ExportSelection {
  * ExecuTorch, the VLA policies only to Torch and OpenVINO — so the list comes
  * from the backend rather than being hardcoded here.
  */
-export const useExportBackends = (policy: string): ExportSelection => {
-    const { data: backendsByPolicy, isLoading } = $api.useQuery('get', '/api/policies/backends');
+export const useExportBackends = (policy: string, remoteTrainerId?: string): ExportSelection => {
+    const {
+        data: backendsByPolicy,
+        isLoading,
+        isError,
+    } = $api.useQuery(
+        'get',
+        '/api/policies/backends',
+        { params: { query: { remote_trainer_id: remoteTrainerId } } },
+        { staleTime: remoteTrainerId ? 0 : undefined }
+    );
 
     const backends = useMemo(
         () => (backendsByPolicy?.[policy] ?? []).filter(isExportBackend).map((backend) => INFERENCE_BACKENDS[backend]),
@@ -40,10 +49,17 @@ export const useExportBackends = (policy: string): ExportSelection => {
         setSelectedBackends(availableBackends === '' ? [] : availableBackends.split(' ').filter(isExportBackend));
     }, [availableBackends]);
 
-    const error =
-        !isLoading && backends.length > 0 && selectedBackends.length === 0
-            ? 'Pick at least one export format; a model with no exports can only be retrained, not deployed.'
-            : null;
+    const error = isError
+        ? 'Cannot verify export formats on this training target.'
+        : !isLoading && backends.length > 0 && selectedBackends.length === 0
+          ? 'Pick at least one export format; a model with no exports can only be retrained, not deployed.'
+          : null;
 
-    return { backends, selectedBackends, setSelectedBackends, isLoading, error };
+    return {
+        backends,
+        selectedBackends,
+        setSelectedBackends,
+        isLoading,
+        error,
+    };
 };

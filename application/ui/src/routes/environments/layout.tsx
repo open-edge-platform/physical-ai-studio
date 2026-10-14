@@ -10,7 +10,7 @@ import { getApiErrorMessage, isResourceInUseError } from '../../api/errors';
 import { SchemaEnvironmentOutput } from '../../api/openapi-spec';
 import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
 import { useProjectId } from '../../features/projects/use-project';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 
 import classes from './../../features/robots/robots-list.module.css';
 

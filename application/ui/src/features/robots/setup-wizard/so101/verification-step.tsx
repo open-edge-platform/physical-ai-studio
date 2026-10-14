@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { $api } from '../../../../api/client';
 import type { SchemaSo101RobotPayload } from '../../../../api/openapi-spec';
-import { paths } from '../../../../router';
+import { paths } from '../../../../paths';
 import { useProjectId } from '../../../projects/use-project';
 import { buildRobotBody } from '../../robot-form/form-data';
 import { useRobotForm } from '../../robot-form/provider';

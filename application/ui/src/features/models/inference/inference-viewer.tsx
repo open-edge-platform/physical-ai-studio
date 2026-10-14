@@ -17,7 +17,7 @@ import {
 } from '@geti-ui/ui';
 import { Back, DownloadIcon, Pause, Play } from '@geti-ui/ui/icons';
 
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { useProjectId } from '../../projects/use-project';
 import { RobotControlView } from '../../robots/robot-control/robot-control-view';
 import { RobotModelsProvider } from '../../robots/robot-models-context';

@@ -23,8 +23,9 @@ Policies live in `library/src/physicalai/policies/<name>/`. Each family is a Lig
    - `select_action(...)` — use base-class action-queue behavior unless a specialized flow is justified.
    - Done when: shapes match the checks below for a synthetic batch.
 4. **Expose the family** so API and CLI users can find it:
-   - Add `<name>: <Name>` to `_POLICIES` and the three `TYPE_CHECKING` exports in `policies/__init__.py`. This registers the short name and keeps root imports typed and lazy.
-   - Export `<Name>`, `<Name>Config`, and `<Name>Model` from `policies/<name>/__init__.py` for direct-import users.
+   - Put one direct `Policy` subclass in `policies/<name>/policy.py`. Discovery reads its class name and the package directory without importing optional dependencies; no runtime registration is needed.
+   - Add `<Name>`, `<Name>Config`, and `<Name>Model` to the `TYPE_CHECKING` exports in `policies/__init__.py` to type root imports, and export them from `policies/<name>/__init__.py` for direct imports.
+   - To offer the policy in Studio's training wizard, first verify its constructor accepts Studio's training arguments, then add its ID, display name, training description, and measured minimum VRAM to `application/backend/src/training/policy_catalog.py`'s `_STUDIO_POLICIES` allowlist. Policies absent from this list remain available through the library but cannot be selected or submitted in Studio.
    - Done when: `from physicalai.policies import <Name>` and `from physicalai.policies.<name>.policy import <Name>` work, `get_policy("<name>")` returns an instance, and `--model physicalai.policies.<Name>` resolves.
 5. **Prove direct API construction** before adding CLI config:
 

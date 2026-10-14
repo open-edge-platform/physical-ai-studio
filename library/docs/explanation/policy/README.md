@@ -2,6 +2,10 @@
 
 Policies are Lightning modules that wrap PyTorch models for training and inference.
 
+## Native Framework Plugins (Proposal)
+
+The [Engine and Native Frameworks design](engine-and-frameworks.md) proposes plugins that run a framework's own trainer, support repo-specific model plugins and capability enablements, and package the result for Runtime. It is a proposal, not an implemented API.
+
 ## Structure
 
 Each policy follows a consistent structure:

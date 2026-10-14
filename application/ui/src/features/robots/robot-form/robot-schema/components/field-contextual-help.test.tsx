@@ -1,6 +1,6 @@
+import { describe, expect, it } from '@rstest/core';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
 
 import { render } from '../../../../../test-utils/render';
 import { FieldContextualHelp } from './field-contextual-help';

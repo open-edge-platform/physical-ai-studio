@@ -199,6 +199,16 @@ def _validate_and_extract(archive_path: Path, target_dir: Path) -> None:
 @router.post("", response_model=SubmitJobResponse, status_code=status.HTTP_202_ACCEPTED)
 async def submit_job(body: SubmitJobRequest, request: Request) -> SubmitJobResponse:
     """Enqueue a job, awaiting upload for HTTP transfers."""
+    from training.policy_catalog import available_policy_classes, missing_policy_dependencies
+
+    if body.spec.policy not in available_policy_classes():
+        missing = missing_policy_dependencies(body.spec.policy)
+        detail = (
+            f"Policy {body.spec.policy!r} is missing: {', '.join(missing)}"
+            if missing
+            else f"Policy {body.spec.policy!r} is unavailable on this trainer"
+        )
+        raise HTTPException(status_code=422, detail=detail)
     manager = _manager(request)
     job_id = manager.store.create(body)
     manager.store.stash_secret(job_id, body.hf_token)

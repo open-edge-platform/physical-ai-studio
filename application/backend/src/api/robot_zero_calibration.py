@@ -1,13 +1,12 @@
 """WebSocket endpoint for the robot zero-pose calibration wizard."""
 
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, WebSocket, status
+from fastapi import APIRouter, WebSocket, status
 from fastapi.responses import Response
 from loguru import logger
 
-from api.dependencies import RobotCatalogServiceDep, RobotClientFactoryDep, get_project_id
+from api.dependencies import RobotCatalogServiceDep, RobotClientFactoryDep
 from workers.robots.robot_zero_calibration_worker import RobotZeroCalibrationWorker
 from workers.transport.websocket_transport import WebSocketTransport
 
@@ -27,7 +26,7 @@ async def robot_zero_calibration_websocket_openapi(project_id: UUID) -> Response
 
 @router.websocket("/zero-calibration/ws")
 async def robot_zero_calibration_websocket(
-    _project_id: Annotated[str, Depends(get_project_id)],
+    project_id: UUID,  # noqa: ARG001
     robot_client_factory: RobotClientFactoryDep,
     catalog_service: RobotCatalogServiceDep,
     websocket: WebSocket,

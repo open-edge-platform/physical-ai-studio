@@ -3,7 +3,7 @@ import { ReactNode, Suspense } from 'react';
 import { Item, Loading, TabList, TabPanels, Tabs } from '@geti-ui/ui';
 import { useMatch } from 'react-router';
 
-import { paths } from '../../router';
+import { paths } from '../../paths';
 import { GeneralSettings } from './general/general-settings';
 import { HotkeysSettings } from './hotkeys/hotkeys-settings';
 import { TrainingTargets } from './training-targets';
@@ -51,18 +51,6 @@ export const SettingsView = () => {
                 </Suspense>
             ),
         },
-        /*{
-            key: 'storage',
-            name: 'Storage',
-            href: paths.settings.storage.pattern,
-            content: <></>,
-        },
-        {
-            key: 'about',
-            name: 'About',
-            href: paths.settings.about.pattern,
-            content: <></>,
-        },*/
     ];
 
     return (

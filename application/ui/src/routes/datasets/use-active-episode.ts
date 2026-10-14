@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react';
 
 import { useNavigate, useParams } from 'react-router';
 
-import { paths } from '../../router';
+import { paths } from '../../paths';
 import { useDataset } from './dataset-provider';
 
 export function useActiveEpisode(): [number | null, (idx: number) => void] {

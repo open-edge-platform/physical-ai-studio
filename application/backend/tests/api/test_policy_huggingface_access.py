@@ -1,6 +1,8 @@
 import subprocess
 import sys
+from importlib import metadata
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -85,6 +87,94 @@ def test_huggingface_access_unknown_policy_is_404(monkeypatch, tmp_path: Path) -
         response = client.get("/api/policies/unknown/huggingface-access")
 
     assert response.status_code == 404
+
+
+def test_backends_skip_policy_with_missing_optional_dependency(monkeypatch, tmp_path: Path) -> None:
+    from physicalai.policies import get_physicalai_policy_class
+
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    def load_policy(name: str):
+        if name == "pi05":
+            raise ModuleNotFoundError("No module named 'diffusers'", name="diffusers")
+        return get_physicalai_policy_class(name)
+
+    with (
+        patch("physicalai.policies.get_physicalai_policy_class", side_effect=load_policy),
+        patch("api.policies.logger") as logger,
+        TestClient(app) as client,
+    ):
+        response = client.get("/api/policies/backends")
+
+    assert response.status_code == 200
+    assert "pi05" not in response.json()
+    assert "act" in response.json()
+    logger.warning.assert_called_once()
+
+
+def test_backends_skip_policy_with_deferred_missing_dependency(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+    installed_version = metadata.version
+
+    def version(name: str) -> str:
+        if name == "num2words":
+            raise metadata.PackageNotFoundError(name)
+        return installed_version(name)
+
+    with (
+        patch("training.policy_catalog.metadata.version", side_effect=version),
+        patch("api.policies.logger") as logger,
+        TestClient(app) as client,
+    ):
+        response = client.get("/api/policies/backends")
+        available = client.get("/api/policies/available")
+
+    assert response.status_code == 200
+    assert "smolvla" not in response.json()
+    assert "smolvla" not in {policy["id"] for policy in available.json()}
+    assert "act" in response.json()
+    assert sum(call.args[1] == "smolvla" for call in logger.warning.call_args_list) == 2
+
+
+def test_available_policies_include_display_and_vram_metadata(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with TestClient(app) as client:
+        response = client.get("/api/policies/available")
+
+    assert response.status_code == 200
+    policies = {policy["id"]: policy for policy in response.json()}
+    assert policies["act"] == {
+        "id": "act",
+        "name": "ACT",
+        "description": "Action Chunking with Transformers, lightweight and fast to train (BSD 3-Clause license)",
+        "min_vram": 2 * 1024**3,
+    }
+
+
+def test_unsupported_library_policies_are_not_selectable(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with (
+        patch("physicalai.policies.list_physicalai_policies", return_value=["act", "cosmos3", "new"]),
+        TestClient(app) as client,
+    ):
+        available = client.get("/api/policies/available")
+        backends = client.get("/api/policies/backends")
+
+    assert [policy["id"] for policy in available.json()] == ["act"]
+    assert set(backends.json()) == {"act"}
+
+
+def test_policy_names_come_from_library(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SETTINGS_FILE", str(tmp_path / "settings.json"))
+
+    with patch("physicalai.policies.list_physicalai_policies", return_value=["act"]), TestClient(app) as client:
+        backends = client.get("/api/policies/backends")
+        unknown = client.get("/api/policies/pi05/huggingface-access")
+
+    assert set(backends.json()) == {"act"}
+    assert unknown.status_code == 404
 
 
 def test_backends_cover_every_selectable_policy(monkeypatch, tmp_path: Path) -> None:

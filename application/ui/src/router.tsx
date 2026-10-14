@@ -3,12 +3,13 @@ import { Suspense } from 'react';
 import { Content, Grid, Heading, IllustratedMessage, Loading, minmax, View } from '@geti-ui/ui';
 import { isObject } from 'lodash-es';
 import { createBrowserRouter, Outlet, redirect } from 'react-router';
-import { path } from 'static-path';
 
 import { queryClient } from '../src/query-client/query-client';
-import { $api, fetchClient } from './api/client';
+import { $api } from './api/client';
 import { ReactComponent as RobotIllustration } from './assets/illustrations/INTEL_08_NO-TESTS.svg';
 import { ErrorPage } from './components/error-page/error-page';
+import { datasetsIndexLoader, recordLastUsedDatasetLoader } from './features/datasets/datasets-index-loader';
+import { paths } from './paths';
 import { AppLayout } from './routes/app/app.layout';
 import { Camera } from './routes/cameras/camera';
 import { Edit as CameraEdit } from './routes/cameras/edit';
@@ -38,76 +39,7 @@ import { StarArmSetup } from './routes/robots/stararm-setup';
 import { TabNavigation as RobotsTabNavigation } from './routes/robots/tab-navigation';
 import { Settings } from './routes/settings';
 
-const root = path('/');
-const settings = root.path('/settings');
-const plugins = root.path('/plugins');
-const projects = root.path('/projects');
-const project = root.path('/projects/:project_id');
-const robots = project.path('robots');
-const robot = robots.path(':robot_id');
-const datasets = project.path('/datasets');
-const dataset = datasets.path(':dataset_id');
-const datasetEpisode = dataset.path('episodes').path(':episode_index');
-const models = project.path('/models');
-const cameras = project.path('cameras');
-const environments = project.path('environments');
-const environment = environments.path(':environment_id');
-
-export const paths = {
-    root,
-    settings: {
-        index: settings,
-        trainingTargets: settings.path('/training-targets'),
-        hotkeys: settings.path('/hotkeys'),
-        storage: settings.path('/storage'),
-        about: settings.path('/about'),
-    },
-    openapi: root.path('/openapi'),
-    plugins: {
-        index: plugins,
-    },
-    projects: {
-        index: projects,
-    },
-    project: {
-        index: project,
-        datasets: {
-            index: datasets,
-            show: dataset,
-            showEpisode: datasetEpisode,
-            record: dataset.path('record'),
-        },
-        robots: {
-            index: robots,
-            new: robots.path('new'),
-            so101Setup: robots.path('new/so101-setup'),
-            rebotRsSetup: robots.path('new/rebot-rs-setup'),
-            stararmSetup: robots.path('new/stararm-setup'),
-            zeroCalibration: robots.path('new/zero-calibration'),
-            edit: robot.path('edit'),
-            show: robot,
-        },
-        cameras: {
-            index: cameras,
-            new: cameras.path('/new'),
-            edit: cameras.path(':camera_id/edit'),
-            show: cameras.path(':camera_id'),
-        },
-        environments: {
-            index: environments,
-            new: environments.path('/new'),
-            edit: environments.path(':environment_id/edit'),
-            show: environments.path(':environment_id'),
-            overview: environment,
-            datasets: environment.path('/datasets'),
-            models: environment.path('/models'),
-        },
-        models: {
-            index: models,
-            inference: models.path('/:model_id/inference/:backend'),
-        },
-    },
-};
+export { paths } from './paths';
 
 const EmptySelection = ({ heading, content }: { heading: string; content: string }) => {
     return (
@@ -192,39 +124,17 @@ export const router = createBrowserRouter([
                         children: [
                             {
                                 index: true,
-                                loader: async ({ params }) => {
-                                    const project_id = params.project_id;
-
-                                    if (project_id === undefined) {
-                                        return redirect(paths.projects.index({}));
-                                    }
-
-                                    const { data: projectData, error } = await fetchClient.GET(
-                                        '/api/projects/{project_id}',
-                                        {
-                                            params: { path: { project_id } },
-                                        }
-                                    );
-
-                                    if (error !== undefined || projectData?.datasets[0]?.id === undefined) {
-                                        return null;
-                                    }
-
-                                    return redirect(
-                                        paths.project.datasets.show({
-                                            project_id,
-                                            dataset_id: projectData.datasets[0].id,
-                                        })
-                                    );
-                                },
+                                loader: datasetsIndexLoader,
                                 element: <Datasets />,
                             },
                             {
                                 path: paths.project.datasets.show.pattern,
+                                loader: recordLastUsedDatasetLoader,
                                 element: <Datasets />,
                             },
                             {
                                 path: paths.project.datasets.showEpisode.pattern,
+                                loader: recordLastUsedDatasetLoader,
                                 element: <Datasets />,
                             },
                         ],

@@ -1,14 +1,12 @@
-from datetime import datetime
-
 from pydantic import Field
 
 from schemas import Dataset
-from schemas.base import BaseIDNameModel
+from schemas.base import BaseIDNameModel, UTCDatetime
 
 
 class Project(BaseIDNameModel):
-    updated_at: datetime | None = Field(None)
-    created_at: datetime | None = Field(None)
+    updated_at: UTCDatetime | None = Field(None)
+    created_at: UTCDatetime | None = Field(None)
     datasets: list[Dataset] = Field([], description="Datasets")
     model_config = {
         "json_schema_extra": {

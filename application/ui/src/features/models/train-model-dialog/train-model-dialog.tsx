@@ -14,7 +14,7 @@ import { supportsLora } from '../shared/peft';
 import { supportsSnapflow } from '../shared/snapflow';
 import { ExportStep } from './export-step';
 import { FeatureMappingStep } from './feature-mapping-step';
-import { formatBytes, MODELS } from './policies';
+import { formatBytes } from './policies';
 import { SetupStep } from './setup-step';
 import { TrainingDeviceInfo } from './training-device-info';
 import { MIN_EPOCHS_FOR_SNAPFLOW, TrainingParameters } from './training-parameters';
@@ -126,6 +126,19 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     const [currentStep, setCurrentStep] = useState<WizardStep>('setup');
     const [selectedPolicy, setSelectedPolicy] = useState<string>(baseModel?.policy ?? 'act');
+    const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
+    const remoteTrainerId =
+        targetId === null || targetId === LOCAL_TARGET_ID ? undefined : targetRawId(String(targetId));
+    const {
+        data: availablePolicies = [],
+        isLoading: isLoadingPolicies,
+        isError: policiesUnavailable,
+    } = $api.useQuery(
+        'get',
+        '/api/policies/available',
+        { params: { query: { remote_trainer_id: remoteTrainerId } } },
+        { staleTime: remoteTrainerId ? 0 : undefined }
+    );
     const { datasets, id: projectId } = useProject();
 
     const [selectedDataset, setSelectedDataset] = useState<Key | null>(defaultDatasetId);
@@ -149,7 +162,6 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [snapflowEnabled, setSnapflowEnabled] = useState<boolean>(false);
     const [snapflowDistillEpochs, setSnapflowDistillEpochs] = useState<number>(DEFAULT_SNAPFLOW_DISTILL_EPOCHS);
     const [augmentImages, setAugmentImages] = useState<boolean>(false);
-    const [targetId, setTargetId] = useState<Key | null>(LOCAL_TARGET_ID);
     const [selectedGpuKey, setSelectedGpuKey] = useState<Key | null>(null);
     const selectedTarget = trainingTargetOptions.find((option) => option.id === targetId) ?? null;
     const isRemoteTarget = selectedTarget?.kind === 'trainer';
@@ -230,7 +242,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
 
     // Which formats the trained model is exported to; the policy decides what is
     // on offer.
-    const exportSelection = useExportBackends(selectedPolicy);
+    const exportSelection = useExportBackends(selectedPolicy, remoteTrainerId);
 
     const trainMutation = $api.useMutation('post', '/api/jobs:train', {
         meta: {
@@ -252,6 +264,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const isSetupIncomplete =
         !selectedDataset ||
         !selectedPolicy ||
+        policiesUnavailable ||
+        isLoadingPolicies ||
+        !availablePolicies.some((policy) => policy.id === selectedPolicy) ||
         targetId === null ||
         remoteUnavailable ||
         selectedGpuUnavailable ||
@@ -274,7 +289,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         // Checked on every step from the mapping on, not just its own: the dataset's
         // cameras can finish loading after Next was pressed and turn the mapping invalid.
         (hasFeatureMapping && activeStep !== 'setup' && featureMapping.error !== null) ||
-        (activeStep === 'export' && exportSelection.error !== null);
+        (activeStep === 'export' && (exportSelection.isLoading || exportSelection.error !== null));
 
     // What the later steps recap: the trainer that runs the job and the device it
     // trains on, plus the dataset and policy the run is about.
@@ -287,7 +302,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
               }`;
     const selectedDatasetName =
         datasets.find((dataset) => dataset.id === selectedDataset?.toString())?.name ?? 'No dataset';
-    const selectedPolicyName = MODELS.find((model) => model.id === selectedPolicy)?.name ?? selectedPolicy;
+    const selectedPolicyName = availablePolicies.find((policy) => policy.id === selectedPolicy)?.name ?? selectedPolicy;
 
     const goToStep = (offset: number) => {
         const nextStep = steps[currentStepIndex + offset];
@@ -311,6 +326,14 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
         setIsSubmitting(true);
         setSubmitError(null);
         try {
+            if (policiesUnavailable || !availablePolicies.some((policy) => policy.id === selectedPolicy)) {
+                setSubmitError('This policy is not available on the selected training target.');
+                return;
+            }
+            if (exportSelection.isLoading) {
+                setSubmitError('Export formats are still loading. Try again in a moment.');
+                return;
+            }
             let submissionDevice = selectedRemoteDevice;
             if (isRemoteTarget) {
                 // Final guard: the remote trainer may have gone offline since the last
@@ -334,7 +357,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 }
             }
 
-            const name = baseModel?.name ?? MODELS.find((policy) => policy.id === selectedPolicy)?.name ?? '';
+            const name = baseModel?.name ?? selectedPolicyName;
 
             const commonPayload = {
                 dataset_id,
@@ -351,8 +374,8 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 // which the training side reads as "keep the order it already has".
                 image_key_reorder_map: hasFeatureMapping ? featureMapping.imageKeyReorderMap : {},
                 num_cameras: hasFeatureMapping ? featureMapping.numCameras : 0,
-                // With no formats on offer (the list failed to load, or is empty) there
-                // was nothing to choose from, so fall back to exporting every supported
+                // With no formats on offer, there was nothing to choose from,
+                // so fall back to exporting every supported
                 // format rather than sending [] and exporting none.
                 export_backends: exportSelection.backends.length > 0 ? exportSelection.selectedBackends : null,
                 lora_enabled: isLoraRequested,
@@ -439,6 +462,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 selectedGpuUnavailable={selectedGpuUnavailable}
                                 remoteUnavailable={remoteUnavailable}
                                 selectedPolicy={selectedPolicy}
+                                availablePolicies={availablePolicies}
+                                policiesUnavailable={policiesUnavailable}
+                                isLoadingPolicies={isLoadingPolicies}
                                 onSelectedPolicyChange={setSelectedPolicy}
                                 isPolicyDisabled={baseModel !== undefined}
                                 activeDevice={activeDevice}
@@ -446,7 +472,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                         )}
 
                         {activeStep === 'feature-mapping' && (
-                            <FeatureMappingStep policy={selectedPolicy} mapping={featureMapping} />
+                            <FeatureMappingStep policyName={selectedPolicyName} mapping={featureMapping} />
                         )}
 
                         {activeStep === 'training-parameters' && (
@@ -487,7 +513,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                             />
                         )}
 
-                        {activeStep === 'export' && <ExportStep policy={selectedPolicy} selection={exportSelection} />}
+                        {activeStep === 'export' && (
+                            <ExportStep policyName={selectedPolicyName} selection={exportSelection} />
+                        )}
                     </View>
                 </Flex>
             </Content>

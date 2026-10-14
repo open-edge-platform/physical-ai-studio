@@ -1,7 +1,7 @@
 import { Flex, Link } from '@geti-ui/ui';
 
 import { ReactComponent as PhysicalAIStudioLogo } from '../../assets/icons/physicalai-studio-logo.svg';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 
 export const AppLogo = () => {
     return (

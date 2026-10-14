@@ -2,7 +2,7 @@ import { Divider, Text, TextField, View } from '@geti-ui/ui';
 
 import { FormHeading } from '../../../components/form-heading/form-heading';
 import { useProjectId } from '../../../features/projects/use-project';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { CameraForm } from './camera-form';
 import { useEnvironmentForm, useSetEnvironmentForm } from './provider';
 import { RobotForm } from './robot-form';

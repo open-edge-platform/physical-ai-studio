@@ -4,7 +4,7 @@ import { Button, Divider, Flex, Form, View } from '@geti-ui/ui';
 import { useNavigate } from 'react-router';
 
 import { $api } from '../../../api/client';
-import { paths } from '../../../router';
+import { paths } from '../../../paths';
 import { useEnvironmentId } from '../use-environment';
 import { EnvironmentFormFields, EnvironmentFormHeading } from './form';
 import { useEnvironmentFormBody } from './provider';

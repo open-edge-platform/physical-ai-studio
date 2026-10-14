@@ -16,7 +16,7 @@ it('updates a named environment with empty robots and cameras', async () => {
         http.get('/api/robots/catalog', () => HttpResponse.json([]))
     );
 
-    const updateEnvironment = vi.fn();
+    const updateEnvironment = rs.fn();
     server.use(
         http.put('/api/projects/{project_id}/environments/{environment_id}', async ({ request }) => {
             updateEnvironment(await request.json());

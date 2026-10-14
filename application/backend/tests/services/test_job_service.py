@@ -5,9 +5,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from exceptions import ResourceInUseError, ResourceNotFoundError
+from exceptions import InvalidResourceError, ResourceInUseError, ResourceNotFoundError
 from schemas.base_job import JobStatus
-from schemas.job import RemoteTrainJobPayload, TrainJob
+from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainJob
 from services import remote_trainer_service as remote_trainer_service_module
 from services.job_service import JobService
 from services.remote_trainer_service import RemoteTrainerService
@@ -31,6 +31,19 @@ def _job(*, status: JobStatus = JobStatus.PENDING) -> TrainJob:
             "base_model_id": None,
         },
     )
+
+
+@pytest.mark.anyio
+async def test_local_submission_rejects_unsupported_policy_before_saving() -> None:
+    payload = LocalTrainJobPayload(project_id=uuid4(), dataset_id=uuid4(), policy="cosmos3", model_name="model")
+    with (
+        patch("services.job_service.JobRepository") as repository_type,
+        patch("services.training_targets.local.available_policy_classes", return_value={"act": (object, [])}),
+    ):
+        service = JobService(MagicMock(spec=AsyncSession))
+        with pytest.raises(InvalidResourceError, match="not available on this machine"):
+            await service.submit_train_job(payload)
+        repository_type.return_value.save.assert_not_called()
 
 
 @pytest.mark.anyio

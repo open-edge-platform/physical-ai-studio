@@ -2,7 +2,7 @@ import { Flex, Item, TabList, Tabs, View } from '@geti-ui/ui';
 import { useLocation } from 'react-router';
 
 import { useProjectId } from '../../features/projects/use-project';
-import { paths } from '../../router';
+import { paths } from '../../paths';
 
 const Header = ({ project_id }: { project_id: string }) => {
     return (

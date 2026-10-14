@@ -1,12 +1,12 @@
+import { rs } from '@rstest/core';
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import useWebSocketWithResponse from './use-websocket-with-response';
 
-const sendJsonMessage = vi.fn();
+const sendJsonMessage = rs.fn();
 let capturedOnMessage: ((event: MessageEvent) => void) | undefined;
 
-vi.mock('react-use-websocket', () => ({
+rs.mock('react-use-websocket', () => ({
     default: (_url: unknown, options: { onMessage?: (event: MessageEvent) => void }) => {
         capturedOnMessage = options.onMessage;
         return { sendJsonMessage, readyState: 1 };
@@ -23,12 +23,12 @@ const SOCKET_URL = 'wss://runtime';
 describe('useWebSocketWithResponse', () => {
     afterEach(() => {
         sendJsonMessage.mockClear();
-        vi.clearAllTimers();
-        vi.useRealTimers();
+        rs.clearAllTimers();
+        rs.useRealTimers();
     });
 
     it('puts request_id on the sent payload', () => {
-        vi.useFakeTimers();
+        rs.useFakeTimers();
         const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
 
         void result.current.sendJsonMessageAndWait({ event: 'load_model' }, () => false);
@@ -107,13 +107,13 @@ describe('useWebSocketWithResponse', () => {
     });
 
     it('rejects after the default timeout', async () => {
-        vi.useFakeTimers();
+        rs.useFakeTimers();
         const { result } = renderHook(() => useWebSocketWithResponse(SOCKET_URL));
         const pending = result.current.sendJsonMessageAndWait({ event: 'load_model' }, () => false);
         const assertion = expect(pending).rejects.toThrow('WebSocket request timed out.');
 
         await act(async () => {
-            vi.advanceTimersByTime(30_000);
+            rs.advanceTimersByTime(30_000);
         });
 
         await assertion;
