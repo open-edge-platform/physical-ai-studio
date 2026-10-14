@@ -118,14 +118,25 @@ Run Studio training, benchmarking, and export from Runtime's `physicalai` CLI; R
 The example configs live in `library/configs`; run these Studio commands from `library/` in a cloned repository:
 
 ```bash
+# From the repository root
 cd library
-physicalai fit --config configs/physicalai/act/pusht/default.yaml
-physicalai benchmark --config configs/benchmark/pusht.yaml \
-  --policy physicalai.policies.ACT \
+
+# Train on PushT
+physicalai fit \
+  --config configs/physicalai/act/pusht/default.yaml
+
+# Benchmark the trained checkpoint
+physicalai benchmark \
+  --config    configs/benchmark/pusht.yaml \
+  --policy    physicalai.policies.ACT \
   --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt
-physicalai export --policy physicalai.policies.ACT \
-  --ckpt_path experiments/lightning_logs/version_0/checkpoints/last.ckpt \
-  --backend openvino --output_dir exports/act
+
+# Export for deployment
+physicalai export \
+  --policy     physicalai.policies.ACT \
+  --ckpt_path  experiments/lightning_logs/version_0/checkpoints/last.ckpt \
+  --backend    openvino \
+  --output_dir exports/act
 ```
 
 From your Runtime project, run a robot policy with:
