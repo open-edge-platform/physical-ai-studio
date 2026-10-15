@@ -392,7 +392,7 @@ One builder, two consumers. Studio builds its own session from the same document
 
 Only the wrapper differs. The robot recipe, calibration, camera recipes, fps, model path, device, execution strategy and task are all shared, so none of them can drift. The export leaves out the multiplexer, since `hold` and mode switching have no meaning in a headless run.
 
-The builder reads Studio's database, never a live runtime, so reconfiguration needs no special handling. Swap a camera and both the export and the rebuilt session read the same updated environment. It assembles plain data instead of exporting a live runtime with `Config.from_instance(...)`: `InferenceModel.__init__` loads weights, and `StudioActionSource` is not config-exportable.
+The builder reads Studio's database, never a live runtime, so reconfiguration needs no special handling. Swap a camera and both the export and the rebuilt session read the same updated environment. It assembles plain data instead of calling `to_config()` on a live runtime, because `InferenceModel.__init__` loads weights and `StudioActionSource` is not config-exportable.
 
 ### Bundle
 
