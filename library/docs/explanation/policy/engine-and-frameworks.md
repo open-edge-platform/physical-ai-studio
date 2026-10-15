@@ -151,7 +151,7 @@ pai train --interpreter /opt/lerobot/bin/python lerobot --config_path=./train_co
 
 The native command receives the original flags, standard streams, help output, and exit status. `--interpreter` is a Physical AI execution option and comes before the framework name; it is not passed to LeRobot.
 
-There is **no generic `pai train --accelerator` option**. The framework's native config or CLI selects the model device—for LeRobot, `policy.device`. The engine uses that setting to select the matching worker environment without altering the native arguments. If the framework device is unspecified, managed environment selection detects available hardware. `pai engine prepare --accelerator` is a separate, explicit environment-management option for pre-provisioning a specific worker profile.
+Device selection stays framework-native. For LeRobot, `--policy.device` passes through to `lerobot-train`; the engine uses its value to select the matching worker environment. If LeRobot does not specify a device, the engine detects available hardware. `pai engine prepare --accelerator` selects a worker profile when pre-provisioning an environment.
 
 ## Worker environments and dependencies
 
