@@ -27,11 +27,11 @@ Metadata:
 Parameters:
   TrainingPolicy:
     Type: String
-    Default: ACT (g4dn.xlarge)
+    Default: ACT (g4dn.2xlarge)
     AllowedValues:
-      - ACT (g4dn.xlarge)
+      - ACT (g4dn.2xlarge)
       - Pi0.5 (g6e.2xlarge)
-      - SmolVLA (g4dn.xlarge)
+      - SmolVLA (g4dn.2xlarge)
       - MolmoAct2 (p5.4xlarge)
     Description: |-
       Select the policy you plan to train. Its recommended GPU instance is shown in parentheses.
@@ -63,12 +63,12 @@ Parameters:
 
 Mappings:
   PolicyInstanceType:
-    ACT (g4dn.xlarge):
-      InstanceType: g4dn.xlarge
+    ACT (g4dn.2xlarge):
+      InstanceType: g4dn.2xlarge
     Pi0.5 (g6e.2xlarge):
       InstanceType: g6e.2xlarge
-    SmolVLA (g4dn.xlarge):
-      InstanceType: g4dn.xlarge
+    SmolVLA (g4dn.2xlarge):
+      InstanceType: g4dn.2xlarge
     MolmoAct2 (p5.4xlarge):
       InstanceType: p5.4xlarge
 

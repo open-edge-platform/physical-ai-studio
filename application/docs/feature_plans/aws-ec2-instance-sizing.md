@@ -8,8 +8,8 @@ largest possible GPU.
 
 | Application policy | Instance type | GPU | GPU memory | Reason |
 | --- | --- | --- | --- | --- |
-| ACT | `g4dn.xlarge` | NVIDIA T4 | 16 GB | Small ResNet and transformer policy |
-| SmolVLA | `g4dn.xlarge` | NVIDIA T4 | 16 GB | 500M backbone with expert-only training by default |
+| ACT | `g4dn.2xlarge` | NVIDIA T4 | 16 GB | 32 GiB host RAM leaves more room for DataLoader workers and batch-size tuning |
+| SmolVLA | `g4dn.2xlarge` | NVIDIA T4 | 16 GB | 32 GiB host RAM leaves more room for DataLoader workers and batch-size tuning |
 | Pi0.5 | `g6e.2xlarge` | NVIDIA L40S | 48 GB | Full fine-tuning is enabled in the application default |
 
 ## Repository evidence
