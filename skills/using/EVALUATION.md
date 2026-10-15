@@ -25,9 +25,3 @@ Run each prompt from an unrelated customer project with the packages installed, 
 1. "Benchmark an ACT checkpoint on PushT for ten episodes using both Python and CLI." Expect success metrics in `results.json` and `results.csv` with consistent settings.
 2. "Compare a checkpoint with its ONNX export on the same environment." Expect two runs, a common baseline, and metric parity rather than only latency.
 3. "Record only failed episodes while benchmarking on Libero." Expect a customer-owned benchmark config and the appropriate optional gym dependency, not a new library Benchmark class.
-
-## `pai-create-robot-plugin`
-
-1. "Create a serial follower robot plugin in my own package." Expect a Runtime protocol driver, SDK payload/entry point, fake-hardware tests, and backend catalog discovery.
-2. "Create a two-arm TCP plugin with follower and leader modes." Expect stable distinct catalog types, ordered joints, and no serial picker in the payload.
-3. "Package URDF meshes for a Studio robot plugin and verify visualization." Expect packaged assets, a `RobotAsset`, tests, and the live URDF endpoint. Do **not** edit Studio's curated plugin manifest.
