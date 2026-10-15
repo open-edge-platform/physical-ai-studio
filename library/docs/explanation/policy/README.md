@@ -4,9 +4,7 @@ Policies are Lightning modules that wrap PyTorch models for training and inferen
 
 ## Native Framework Engines
 
-[`physicalai.engine`](engine-and-frameworks.md) provides the shared `Engine` API and lazy `physicalai.engines` discovery. `physicalai.train.Trainer` remains the Lightning trainer and is also the first-party engine; the standalone LeRobot plugin runs LeRobot's native trainer in a locked worker environment and packages native checkpoints for Runtime. Engine plugins describe training capabilities, while Studio owns policy labels and forms through its separate policy catalog.
-
-The shared worker runner and environment manager are implemented. Applying third-party patch series and concrete OpenVINO, ONNX, or ExecuTorch recipes remain outside this implementation pending SDL review.
+[Engine and Native Frameworks](engine-and-frameworks.md) describes the framework-native plugin architecture and the current LeRobot proof of concept, including its API, CLI, worker environments, Runtime adapter, validation, and follow-up work.
 
 ## Structure
 
