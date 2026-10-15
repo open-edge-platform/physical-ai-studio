@@ -7,8 +7,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable  # noqa: TC003
-from typing import Any
+from collections.abc import Callable, Iterable, Mapping, Sequence  # noqa: TC003
+from pathlib import Path
+from typing import Any, ClassVar
 
 import lightning
 import torch
@@ -17,10 +18,11 @@ from lightning.pytorch.loggers import Logger  # noqa: TC002
 from lightning.pytorch.strategies import DDPStrategy
 from physicalai.config import instantiate
 
+from physicalai.engine import Capabilities, Enablement, Engine, Run, TrainHooks, WorkerEnv
 from physicalai.train.callbacks import PolicyDatasetInteraction
 
 
-class Trainer(lightning.Trainer):
+class Trainer(Engine, lightning.Trainer):
     """Lightning Trainer subclass with physicalai-specific conveniences.
 
     This subclasses Lightning's Trainer to add:
@@ -63,6 +65,11 @@ class Trainer(lightning.Trainer):
         >>> trainer = Trainer(max_epochs=10, logger=logger)
         >>> trainer.fit(policy, datamodule)
     """
+
+    framework: ClassVar[str] = "physicalai"
+    env: ClassVar[WorkerEnv | None] = None
+    enablements: ClassVar[tuple[Enablement, ...]] = ()
+    training_accelerators: ClassVar[tuple[str, ...]] = ("cpu", "cuda", "xpu")
 
     def __init__(  # noqa: PLR0913
         self,
@@ -250,3 +257,167 @@ class Trainer(lightning.Trainer):
             barebones=barebones,
             model_registry=model_registry,
         )
+
+    @classmethod
+    def cli(
+        cls,
+        argv: Sequence[str],
+        *,
+        interpreter: str | Path | None = None,
+    ) -> int:
+        """Alias the first-party native CLI to the existing ``fit`` command.
+
+        Returns:
+            The ``fit`` command's exit code.
+        """
+        del cls, interpreter
+        from physicalai.cli.main import main  # noqa: PLC0415
+
+        return main(["fit", *argv])
+
+    @classmethod
+    def run(
+        cls,
+        settings: Mapping[str, Any],
+        *,
+        dataset: Path,
+        output_dir: Path,
+        device: str,
+        hooks: TrainHooks | None = None,
+        interpreter: str | Path | None = None,
+    ) -> Run:
+        """Keep first-party Studio jobs on their established job runner for now."""
+        del cls, settings, dataset, output_dir, device, hooks, interpreter
+        msg = "First-party Studio training still uses run_training_job(); standalone Engine.run() is not available."
+        raise NotImplementedError(msg)
+
+    @classmethod
+    def export(
+        cls,
+        source: Any,
+        output_path: str | Path,
+        backend: str | None = "openvino",
+        *,
+        policy_class: str | type[Any] | None = None,
+        input_sample: dict[str, torch.Tensor] | None = None,
+        post_export_hooks: list[Callable[[str], None]] | None = None,
+        **export_kwargs: Any,
+    ) -> Path:
+        """Export a first-party policy or checkpoint for Runtime inference.
+
+        Returns:
+            The export destination.
+
+        Raises:
+            TypeError: If the selected policy does not implement ``export()``.
+            ValueError: If a checkpoint is exported without a policy class or the run belongs to another engine.
+        """
+        from physicalai.policies.base.policy import Policy  # noqa: PLC0415
+
+        if isinstance(source, Policy):
+            policy = source
+        else:
+            checkpoint = _checkpoint_path(source, cls.framework)
+            if policy_class is None:
+                msg = "policy_class is required when exporting a checkpoint path."
+                raise ValueError(msg)
+            resolved_class = _resolve_policy_class(policy_class, Policy)
+            # Lightning deserializes checkpoint state, so this path must be a trusted local artifact.
+            policy = resolved_class.load_from_checkpoint(str(checkpoint))
+
+        export_policy = getattr(policy, "export", None)
+        if not callable(export_policy):
+            msg = f"Policy {type(policy).__name__} does not implement export()."
+            raise TypeError(msg)
+        export_policy(
+            output_path,
+            backend or "openvino",
+            input_sample=input_sample,
+            post_export_hooks=post_export_hooks,
+            **export_kwargs,
+        )
+        return Path(output_path)
+
+    @classmethod
+    def policies(cls) -> list[str]:
+        """List first-party policies without importing their model modules.
+
+        Returns:
+            First-party policy identifiers.
+        """
+        from physicalai.policies import list_physicalai_policies  # noqa: PLC0415
+
+        return list_physicalai_policies()
+
+    @classmethod
+    def config_schema(cls, policy: str) -> dict[str, Any]:
+        """Return a JSON Schema for one first-party policy config dataclass.
+
+        Raises:
+            ValueError: If the policy or its config type is unavailable.
+        """
+        from importlib import import_module  # noqa: PLC0415
+
+        from pydantic import TypeAdapter  # noqa: PLC0415
+
+        from physicalai.policies import get_physicalai_policy_class  # noqa: PLC0415
+
+        policy_class = get_physicalai_policy_class(policy)
+        module_name = policy_class.__module__.rsplit(".", maxsplit=1)[0]
+        if not module_name.startswith("physicalai.policies."):
+            msg = f"Policy {policy!r} resolved outside the first-party policy package."
+            raise ValueError(msg)
+        config_module = import_module(f"{module_name}.config")
+        config_class_name = f"{policy_class.__name__}Config"
+        try:
+            config_class = getattr(config_module, config_class_name)
+        except AttributeError as exc:
+            msg = f"Policy {policy!r} does not expose a {config_class_name} config type."
+            raise ValueError(msg) from exc
+        return TypeAdapter(config_class).json_schema()
+
+    @classmethod
+    def capabilities(cls, policy: str) -> Capabilities:
+        """Return accelerators and export formats supported by one first-party policy."""
+        from physicalai.policies import get_physicalai_policy_class  # noqa: PLC0415
+
+        policy_class = get_physicalai_policy_class(policy)
+        get_backends = getattr(policy_class, "get_supported_export_backends", None)
+        export_formats = tuple(sorted(str(backend) for backend in get_backends())) if callable(get_backends) else ()
+        return Capabilities(
+            training_accelerators=cls.training_accelerators,
+            export_formats=export_formats,
+        )
+
+
+def _checkpoint_path(source: object, framework: str) -> Path:
+    if isinstance(source, Run):
+        if source.framework != framework:
+            msg = f"Run belongs to framework {source.framework!r}, not {framework!r}."
+            raise ValueError(msg)
+        if source.checkpoint is None:
+            msg = "Run has no native checkpoint to export."
+            raise ValueError(msg)
+        return source.checkpoint
+    if isinstance(source, (str, Path)):
+        return Path(source)
+    msg = f"Unsupported first-party export source {type(source).__name__}."
+    raise TypeError(msg)
+
+
+def _resolve_policy_class(policy_class: str | type[Any], policy_base: type[Any]) -> type[Any]:
+    from physicalai.policies import get_physicalai_policy_class, list_physicalai_policies  # noqa: PLC0415
+
+    if isinstance(policy_class, type):
+        if not issubclass(policy_class, policy_base):
+            msg = f"policy_class must subclass {policy_base.__name__}."
+            raise TypeError(msg)
+        return policy_class
+
+    for name in list_physicalai_policies():
+        candidate = get_physicalai_policy_class(name)
+        class_path = f"{candidate.__module__}.{candidate.__name__}"
+        if policy_class in {name, class_path}:
+            return candidate
+    msg = f"Unknown first-party policy class {policy_class!r}."
+    raise ValueError(msg)

@@ -31,7 +31,7 @@ dependencies = [
     "pillow",
     "lightning>=2.6.6",
     "lightning-utilities",
-    "lerobot[dataset]==0.6.0",
+    "lerobot[dataset]>=0.6.1,<0.7",
     "gymnasium>=0.29.1",
     "gym-pusht>=0.1.5",
     "pymunk>=6.6.0,<7.0.0",
@@ -41,7 +41,9 @@ dependencies = [
     "onnxscript",
     "peft>=0.20.0,<1.0.0",
     "jsonargparse[signatures]>=4.50,<5", # This could be extra
+    "packaging>=24.0",
     "pydantic",                         # This could be extra
+    "uv>=0.10,<0.11",
     # Provides the `physicalai` CLI host and the `physicalai.cli._spec`
     # SubcommandSpec contract that the studio subcommands plug into. Must be a
     # release that ships the CLI host; older runtimes lack `physicalai.cli`.
@@ -67,6 +69,7 @@ tests = [
 ]
 loggers = ["wandb>=0.22", "tensorboard>=2.20"]
 libero = ["hf-libero>=0.1.3,<0.2.0"]
+lerobot = ["physicalai-lerobot-policy-plugin[train]"]
 diffusion = ["diffusers>=0.38.0"]
 
 # VLA policy dependencies - these are heavy models with specific requirements.
@@ -148,12 +151,11 @@ all = [
     "physicalai-train[tests]",
     "physicalai-train[libero]",
     "physicalai-train[policies]",
+    "physicalai-train[lerobot]",
 ]
 
-# Contribute Torch and ExecuTorch as inference backends to the registry
-# in `physicalai.inference.adapters`.  The target callable performs only
-# lightweight lazy registration — torch/executorch are imported only on
-# first use.
+# Contribute Torch and ExecuTorch as lazy inference adapters. Framework-specific
+# inference adapters are provided by their standalone policy plugin packages.
 [project.entry-points."physicalai.cli.subcommands"]
 fit = "physicalai.cli.fit:register"
 validate = "physicalai.cli.validate:register"
@@ -161,6 +163,11 @@ test = "physicalai.cli.test:register"
 predict = "physicalai.cli.predict:register"
 benchmark = "physicalai.cli.benchmark:register"
 export = "physicalai.cli.export:register"
+train = "physicalai.cli.train:register"
+engine = "physicalai.cli.engine:register"
+
+[project.entry-points."physicalai.engines"]
+physicalai = "physicalai.train.trainer:Trainer"
 
 [project.entry-points."physicalai.inference.adapters"]
 physicalai-train = "physicalai.inference.adapters._register:register"
@@ -178,6 +185,7 @@ dev = [
     "ruff==0.16.7",
     "diffusers>=0.40.0",
     "peft>=0.13.0,<1.0.0",
+    "physicalai-lerobot-policy-plugin[train]",
 ]
 
 
@@ -196,7 +204,7 @@ override-dependencies = [
     # Safe to override because executorch
     # production code does not import pytest at runtime.
     "pytest>=9.0.3",
-    # LeRobot 0.6.0 keeps diffusers in optional extras; keep an explicit floor for CVE-2026-44827 fix
+    # Keep the LeRobot Diffusers resolution above the CVE-2026-44827 fixed release.
     "diffusers>=0.38.0",
     # LeRobot pulls in setuptools with no upper bound; 83.0.0 fixes CVE-2026-59890
     "setuptools>=83.0.0",
@@ -232,6 +240,7 @@ explicit = false
 # PyTorch sources configuration
 [tool.uv.sources]
 physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "f90b3767cfa99e243fc7b277b9faa242c87db213" }
+physicalai-lerobot-policy-plugin = { path = "../plugins/policies/lerobot", editable = true }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },

@@ -2,6 +2,10 @@
 
 ## Overview
 
+The Lightning wrapper described here remains available for existing first-party
+training workflows. For LeRobot's native trainer and isolated worker environment,
+see [`LeRobotEngine`](engine-and-frameworks.md#lerobot-lerobotengine).
+
 PhysicalAI integrates LeRobot policies through a single base class
 (`LeRobotPolicy`) and one thin alias per first-class supported policy
 (`act`, `diffusion`, `groot`, `pi0`, `pi05`, `pi0_fast`, `smolvla`,
