@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -75,20 +76,64 @@ def test_prepare_copies_the_locked_project_and_syncs_the_selected_accelerator(
     )
 
 
-def test_accelerator_auto_prefers_xpu_then_cuda_then_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        _environment,
-        "_torch_accelerators",
-        lambda: {"xpu": False, "cuda": True},
-    )
-    assert _environment.resolve_accelerator("auto") == "cu128"
-    monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": True, "cuda": True})
-    assert _environment.resolve_accelerator("auto") == "xpu"
+def test_accelerator_auto_prefers_xpu_then_cuda_then_cpu_independent_of_host_torch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": False})
+    monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"cuda"})
+    assert _environment.resolve_accelerator("auto") == "cu128"
+
+    monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"xpu", "cuda"})
+    assert _environment.resolve_accelerator("auto") == "xpu"
+
+    monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": True})
+    monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"xpu"})
+    assert _environment.resolve_accelerator("auto") == "cu128"
+
+    monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": False})
+    monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: set())
     assert _environment.resolve_accelerator("auto") == "cpu"
 
     with pytest.raises(ValueError, match="Unsupported accelerator"):
         _environment.resolve_accelerator("mps")
+
+
+def test_hardware_detection_reads_pci_vendor_and_display_class(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def add_device(name: str, *, vendor: str, class_code: str) -> None:
+        device = tmp_path / name
+        device.mkdir()
+        (device / "vendor").write_text(vendor, encoding="ascii")
+        (device / "class").write_text(class_code, encoding="ascii")
+
+    add_device("nvidia", vendor="0x10de", class_code="0x030000")
+    add_device("intel-display", vendor="0x8086", class_code="0x038000")
+    add_device("intel-audio", vendor="0x8086", class_code="0x040000")
+    add_device("amd-display", vendor="0x1002", class_code="0x030000")
+    monkeypatch.setattr(_environment, "_command_reports_gpu", Mock(return_value=False))
+
+    assert _environment._hardware_accelerators(tmp_path) == {"cuda", "xpu"}
+
+
+def test_explicit_cpu_override_is_honored_when_gpu_hardware_is_detected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": False})
+    monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"cuda"})
+
+    assert _environment.resolve_accelerator("cpu") == "cpu"
+
+
+def test_auto_rejects_gpu_hardware_that_engine_environment_cannot_provide(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(_environment, "_torch_accelerators", lambda: {"xpu": False, "cuda": False})
+    monkeypatch.setattr(_environment, "_hardware_accelerators", lambda: {"cuda"})
+
+    with pytest.raises(ValueError, match="Detected CUDA hardware.*supports"):
+        _environment.resolve_accelerator("auto", allowed=("cpu", "xpu"))
 
 
 def test_worker_lock_and_plugin_metadata_are_the_version_sources(

@@ -25,12 +25,6 @@ def build_parser() -> ArgumentParser:
     """
     parser = ArgumentParser(prog="physicalai train", description=HELP, add_help=False)
     parser.add_argument("--interpreter", type=Path, help="Use an existing framework Python environment.")
-    parser.add_argument(
-        "--accelerator",
-        choices=("auto", "cpu", "cuda", "cu128", "xpu"),
-        default="auto",
-        help="Worker environment accelerator (default: auto).",
-    )
     parser.add_argument("framework", help="Installed engine identifier, for example 'lerobot'.")
     parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments forwarded unchanged to the framework.")
     return parser
@@ -44,17 +38,13 @@ def run(parser: ArgumentParser, cfg: Namespace) -> int:
     """
     del parser
     engine_class = Engine.get(cfg.framework)
-    return engine_class.cli(
-        cfg.args,
-        interpreter=cfg.interpreter,
-        accelerator=cfg.accelerator,
-    )
+    return engine_class.cli(cfg.args, interpreter=cfg.interpreter)
 
 
 def print_help(prog: str) -> None:
     """Print lightweight help for ``physicalai train``."""
     print(  # noqa: T201
-        f"usage: {prog} [--interpreter PYTHON] [--accelerator NAME] <framework> [native arguments]\n\n"
+        f"usage: {prog} [--interpreter PYTHON] <framework> [native arguments]\n\n"
         f"{HELP}\n\n"
         "Example: physicalai train lerobot --policy.type=act --dataset.repo_id=lerobot/pusht",
     )

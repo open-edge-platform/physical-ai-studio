@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from tests.integration import _device
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     import numpy as np
@@ -51,8 +53,11 @@ def test_runtime_actions_match_pinned_pretrained_lerobot_policy_after_reset(
     """Compare actual pretrained ACT/Diffusion outputs through LeRobot and Runtime.
 
     Set ``PHYSICALAI_RUN_LEROBOT_PRETRAINED_INFERENCE=1`` to permit Hub access.
-    Checkpoints and datasets are pinned to immutable Hub commit SHAs. The policy
-    Hub repos currently publish native configs and weights but not the processor
+    Device selection defaults to ``PHYSICALAI_LEROBOT_DEVICE=auto``; override it
+    only when intended. Detected GPU hardware that host PyTorch cannot use is an
+    error, not a reason to run the parity test on CPU. Checkpoints and datasets
+    are pinned to immutable Hub commit SHAs. The policy Hub repos currently publish
+    native configs and weights but not the processor
     JSON files; when absent, LeRobot's native factory builds them from the pinned
     dataset statistics and saves them beside the local native checkpoint before
     both inference paths load those saved pipelines.
@@ -184,25 +189,19 @@ def test_runtime_actions_match_pinned_pretrained_lerobot_policy_after_reset(
 
 
 def _requested_device(torch: Any) -> str:
-    """Validate the shared test-device setting and skip unavailable accelerators.
+    """Select the hardware-aware default and reject an unusable GPU runtime.
 
     Returns:
-        The requested CPU, CUDA, or XPU device.
+        LeRobot's native CPU, CUDA, or XPU device string.
 
     Raises:
+        RuntimeError: If selected GPU hardware is unavailable to host PyTorch.
         ValueError: If the environment selects an unsupported device.
     """
-    device = os.environ.get("PHYSICALAI_LEROBOT_DEVICE", "cpu").strip().lower()
-    if device not in {"cpu", "cuda", "xpu"}:
-        raise ValueError(f"PHYSICALAI_LEROBOT_DEVICE must be cpu, cuda, or xpu, got {device!r}.")
-    if device == "cuda" and not torch.cuda.is_available():  # type: ignore[attr-defined]
-        pytest.skip("PHYSICALAI_LEROBOT_DEVICE=cuda was requested, but CUDA is unavailable.")
-    if device == "xpu":
-        xpu = getattr(torch, "xpu", None)
-        is_available = getattr(xpu, "is_available", None)
-        if not callable(is_available) or not is_available():
-            pytest.skip("PHYSICALAI_LEROBOT_DEVICE=xpu was requested, but Intel XPU is unavailable.")
-    return device
+    return _device.select_lerobot_test_device(
+        os.environ.get("PHYSICALAI_LEROBOT_DEVICE", "auto"),
+        torch_module=torch,
+    )
 
 
 def _native_action_sequences(

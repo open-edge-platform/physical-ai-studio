@@ -57,7 +57,6 @@ class Engine(ABC):
         argv: Sequence[str],
         *,
         interpreter: str | Path | None = None,
-        accelerator: str = "auto",
     ) -> int:
         """Run the framework's native CLI and return its exit code."""
 

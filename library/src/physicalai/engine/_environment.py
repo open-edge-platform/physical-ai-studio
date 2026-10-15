@@ -35,6 +35,9 @@ _MARKER = ".physicalai-engine.json"
 _MARKER_VERSION = 1
 _COMPONENT_RE = re.compile(r"[a-zA-Z0-9_.-]{1,128}")
 _ACCELERATOR_ALIASES = {"cpu": "cpu", "cuda": "cu128", "cu128": "cu128", "xpu": "xpu"}
+_PCI_DISPLAY_CLASS = 0x03
+_PCI_VENDOR_INTEL = "0x8086"
+_PCI_VENDOR_NVIDIA = "0x10de"
 
 
 @dataclass(frozen=True)
@@ -59,21 +62,40 @@ def engine_cache_root() -> Path:
 
 
 def resolve_accelerator(accelerator: str, *, allowed: tuple[str, ...] | None = None) -> str:
-    """Resolve ``auto`` or a CUDA alias to one supported uv extra.
+    """Resolve ``auto`` or a device name to one supported worker uv extra.
+
+    Automatic selection checks both the host torch runtime and physical GPU
+    hardware, so a CPU-only host build does not hide an available GPU.
 
     Returns:
         Canonical uv extra name: ``cpu``, ``cu128``, or ``xpu``.
 
     Raises:
-        ValueError: If the requested extra is unknown or unavailable to the engine.
+        ValueError: If the requested extra is unknown, unsupported, or conflicts with detected GPU hardware.
     """
     normalized_allowed = None if allowed is None else {_canonical_accelerator(value) for value in allowed}
-    if accelerator == "auto":
-        detected = _torch_accelerators()
-        preferred = "xpu" if detected.get("xpu") else "cu128" if detected.get("cuda") else "cpu"
-        if normalized_allowed is None or preferred in normalized_allowed:
-            return preferred
-        for fallback in ("xpu", "cu128", "cpu"):
+    if accelerator.strip().lower() == "auto":
+        runtime = _torch_accelerators()
+        hardware = _hardware_accelerators()
+        order = (("xpu", "xpu"), ("cuda", "cu128"))
+        candidates = [extra for device, extra in order if runtime.get(device, False)]
+        if not candidates:
+            candidates = [extra for device, extra in order if device in hardware]
+        if normalized_allowed is None:
+            if candidates:
+                return candidates[0]
+            return "cpu"
+        for candidate in candidates:
+            if candidate in normalized_allowed:
+                return candidate
+        if candidates:
+            detected = ", ".join("XPU" if candidate == "xpu" else "CUDA" for candidate in candidates)
+            supported = ", ".join(sorted(normalized_allowed))
+            msg = f"Detected {detected} hardware, but this engine environment supports only {supported}."
+            raise ValueError(msg)
+        if "cpu" in normalized_allowed:
+            return "cpu"
+        for fallback in ("xpu", "cu128"):
             if fallback in normalized_allowed:
                 return fallback
         msg = "The worker environment does not declare a supported accelerator extra."
@@ -98,14 +120,68 @@ def _canonical_accelerator(accelerator: str) -> str:
 def _torch_accelerators() -> dict[str, bool]:
     try:
         import torch  # ruff: ignore[import-outside-top-level]  # Torch is optional when listing engines.
-    except ImportError:
+    except (ImportError, OSError, RuntimeError):
         return {"xpu": False, "cuda": False}
 
-    xpu = getattr(torch, "xpu", None)
-    cuda = getattr(torch, "cuda", None)
-    xpu_available = xpu is not None and callable(getattr(xpu, "is_available", None)) and xpu.is_available()
-    cuda_available = cuda is not None and callable(getattr(cuda, "is_available", None)) and cuda.is_available()
-    return {"xpu": bool(xpu_available), "cuda": bool(cuda_available)}
+    def available(name: str) -> bool:
+        try:
+            backend = getattr(torch, name, None)
+            is_available = getattr(backend, "is_available", None)
+            return bool(backend is not None and callable(is_available) and is_available())
+        except (AttributeError, OSError, RuntimeError, TypeError):
+            return False
+
+    return {"xpu": available("xpu"), "cuda": available("cuda")}
+
+
+def _hardware_accelerators(pci_devices: Path = Path("/sys/bus/pci/devices")) -> set[str]:
+    detected = _pci_gpu_hardware(pci_devices)
+    if _command_reports_gpu("xpu-smi", ("discovery",), r"\bGPU\s*#?\s*\d+\b"):
+        detected.add("xpu")
+    if _command_reports_gpu("nvidia-smi", ("-L",), r"\bGPU\s+\d+\s*:"):
+        detected.add("cuda")
+    return detected
+
+
+def _pci_gpu_hardware(devices: Path) -> set[str]:
+    detected: set[str] = set()
+    if not devices.is_dir():
+        return detected
+    try:
+        entries = tuple(devices.iterdir())
+    except OSError:
+        return detected
+    for device in entries:
+        try:
+            vendor = (device / "vendor").read_text(encoding="ascii").strip().lower()
+            class_code = int((device / "class").read_text(encoding="ascii").strip(), 16)
+        except (OSError, ValueError):
+            continue
+        if class_code >> 16 != _PCI_DISPLAY_CLASS:
+            continue
+        if vendor == _PCI_VENDOR_INTEL:
+            detected.add("xpu")
+        elif vendor == _PCI_VENDOR_NVIDIA:
+            detected.add("cuda")
+    return detected
+
+
+def _command_reports_gpu(command: str, arguments: tuple[str, ...], pattern: str) -> bool:
+    executable = shutil.which(command)
+    if executable is None:
+        return False
+    try:
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+            [executable, *arguments],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            shell=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and re.search(pattern, result.stdout + result.stderr, re.IGNORECASE) is not None
 
 
 def uv_bin() -> str:

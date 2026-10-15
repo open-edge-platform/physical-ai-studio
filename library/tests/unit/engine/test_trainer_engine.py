@@ -114,10 +114,10 @@ def test_trainer_cli_aliases_the_existing_fit_subcommand(monkeypatch: pytest.Mon
 
     monkeypatch.setattr("physicalai.cli.main.main", fake_main)
 
-    result = Trainer.cli(["--config", "act.yaml"], interpreter=Path("unused"), accelerator="xpu")
+    result = Trainer.cli(["--trainer.accelerator=gpu", "--config", "act.yaml"], interpreter=Path("unused"))
 
     assert result == 9
-    assert calls == [["fit", "--config", "act.yaml"]]
+    assert calls == [["fit", "--trainer.accelerator=gpu", "--config", "act.yaml"]]
 
 
 def test_first_party_engine_exposes_policy_schema_and_capabilities() -> None:

@@ -4,25 +4,27 @@ This plugin connects LeRobot's native trainer and policy format to Physical AI. 
 
 ## Install
 
-For the library development environment, install the CPU variant and LeRobot engine extra from `library/`:
+For library development, install the host torch variant that matches the machine and the LeRobot engine extra from `library/`:
 
 ```bash
-uv sync --extra cpu --extra lerobot
+uv sync --extra cu128 --extra lerobot
 ```
 
-Choose `--extra cu128` or `--extra xpu` for the matching host PyTorch build. The engine itself runs training in a separate, locked worker environment, with its own CPU, CUDA (`cu128`), and XPU torch variants.
+Use `--extra cpu` or `--extra xpu` instead when appropriate. This host extra controls host-side PyTorch and first-party training; it does not select LeRobot's managed worker. The worker has its own locked CPU, CUDA (`cu128`), and XPU torch variants and follows LeRobot's native device selection.
 
 ## Native CLI
 
 `pai train lerobot` passes native arguments to LeRobot's `lerobot-train` command. The worker's standard output, standard error, and exit code are passed through unchanged:
 
 ```bash
-pai train lerobot --policy.type=act --dataset.repo_id=lerobot/pusht --steps=20000
-pai train --accelerator xpu lerobot --policy.type=act --dataset.repo_id=lerobot/pusht
+pai train lerobot --policy.type=act --policy.device=cuda --dataset.repo_id=lerobot/pusht --steps=20000
+pai train lerobot --policy.type=act --policy.device=xpu --dataset.repo_id=lerobot/pusht
 pai train --interpreter /opt/lerobot/bin/python lerobot --help
 ```
 
-Prepare the managed environment before a job (or while building an image), inspect its lock and size, and remove stale environments with:
+LeRobot's native `--policy.device` selects the policy device and matching worker torch extra (`cuda` → `cu128`, `xpu` → `xpu`, `cpu` → `cpu`). If the native config does not specify a device, the engine detects available XPU, then CUDA, then CPU without relying on the host torch build. Native arguments pass through unchanged. `--interpreter` skips managed provisioning; the supplied Python must already have the torch build required by the native device.
+
+Prepare a managed environment ahead of time (or while building an image), inspect its lock and size, and remove stale environments with:
 
 ```bash
 pai engine prepare lerobot --accelerator xpu
@@ -30,7 +32,7 @@ pai engine list
 pai engine prune
 ```
 
-The default interpreter is managed by `physicalai-train` and provisioned with the pinned `uv` package. `--interpreter` skips provisioning and uses the supplied Python. Python config objects passed to `LeRobotEngine.train()` must match the worker's exact LeRobot version; native CLI flags and config files only need to satisfy the plugin's supported version range.
+The default interpreter is managed by `physicalai-train` and provisioned with the pinned `uv` package. `pai engine prepare --accelerator` selects only which worker environment to pre-provision; a later training call still follows its native device setting or automatic hardware detection. Python config objects passed to `LeRobotEngine.train()` must match the worker's exact LeRobot version; native CLI flags and config files only need to satisfy the plugin's supported version range.
 
 ## Python API
 
@@ -43,17 +45,17 @@ from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
 config = TrainPipelineConfig(
     dataset=DatasetConfig(repo_id="lerobot/pusht"),
-    policy=ACTConfig(push_to_hub=False),
+    policy=ACTConfig(push_to_hub=False, device="cuda"),
     steps=20_000,
 )
 
-engine = LeRobotEngine(accelerator="xpu")
-run = engine.train(config)
+engine = LeRobotEngine()
+run = engine.train(config)  # policy.device selects the matching worker torch extra
 package = engine.export(run, "exports/act")
 model = Engine.load(package)
 ```
 
-`Engine.get("lerobot")` returns the class, and `Engine.create("lerobot", accelerator="xpu")` creates an engine instance. `LeRobotEngine.run()` accepts native settings and overrides `dataset.repo_id`, `dataset.root`, `output_dir`, and `policy.device` with its standard inputs.
+`Engine.get("lerobot")` returns the class, and `Engine.create("lerobot")` creates an engine instance. `LeRobotEngine.run()` accepts native settings and overrides `dataset.repo_id`, `dataset.root`, `output_dir`, and `policy.device` with its standard inputs. Its `device` argument selects both the LeRobot device and matching worker torch extra; use `device="auto"` for hardware-aware detection.
 
 LeRobot's worker project and lock ship as plugin package data. The core runner synchronizes that project into a cache keyed by framework, accelerator, and lock hash, checks the worker's version handshake, forwards JSON-lines progress, and propagates cancellation without redirecting native CLI output. The managed progress/cancellation runner currently requires POSIX inherited file descriptors; native CLI passthrough remains platform-native.
 
@@ -76,7 +78,9 @@ Optional public-dataset training checks are gated because they download data and
 
 ```bash
 PHYSICALAI_RUN_LEROBOT_INTEGRATION=1 \
+PHYSICALAI_LEROBOT_DEVICE=auto \
+PHYSICALAI_LEROBOT_TEST_STEPS=5 \
 HF_LEROBOT_HOME=/path/to/lerobot-cache \
-uv run --project library --extra cpu --extra tests --extra lerobot \
-    pytest library/tests/integration/test_engine_lerobot_hf_training.py -s
+uv run --project library --extra cu128 --extra tests --extra lerobot \
+    pytest library/tests/integration/test_engine_lerobot_hf_training.py::test_native_lerobot_training_matches_engine_on_pinned_pusht -s
 ```

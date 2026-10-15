@@ -264,14 +264,13 @@ class Trainer(Engine, lightning.Trainer):
         argv: Sequence[str],
         *,
         interpreter: str | Path | None = None,
-        accelerator: str = "auto",
     ) -> int:
         """Alias the first-party native CLI to the existing ``fit`` command.
 
         Returns:
             The ``fit`` command's exit code.
         """
-        del cls, interpreter, accelerator
+        del cls, interpreter
         from physicalai.cli.main import main  # noqa: PLC0415
 
         return main(["fit", *argv])

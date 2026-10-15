@@ -59,12 +59,14 @@ physicalai fit \
 `physicalai train <framework>` delegates directly to an installed native engine. The Studio options must precede the framework name; every argument after the name is passed through unchanged, including native `--help` and native flags:
 
 ```bash
-physicalai train lerobot --policy.type=act --dataset.repo_id=lerobot/pusht --steps=20000
-physicalai train --accelerator xpu lerobot --policy.type=act --dataset.repo_id=lerobot/pusht
+physicalai train lerobot --policy.type=act --policy.device=cuda --dataset.repo_id=lerobot/pusht --steps=20000
+physicalai train lerobot --policy.type=act --policy.device=xpu --dataset.repo_id=lerobot/pusht
 physicalai train --interpreter /opt/lerobot/bin/python lerobot --help
 ```
 
-The native command keeps its standard streams and exit status. `physicalai train physicalai` aliases `physicalai fit`; first-party Lightning options remain on `fit` (`--trainer.*`, `--model.*`, and `--data.*`).
+`pai train` accepts Studio execution options such as `--interpreter` before the framework name; every argument after the name is passed through unchanged. LeRobot's native `--policy.device` chooses both the training device and the matching managed worker torch extra (`cuda` → `cu128`, `xpu` → `xpu`, `cpu` → `cpu`). When no device is set, the engine auto-detects XPU, then CUDA, then CPU from available hardware, even if the host has a CPU-only torch build. `pai engine prepare --accelerator` below only pre-provisions an environment; it does not override the native training device.
+
+The native command keeps its standard streams and exit status. `--interpreter` skips managed-environment preparation, so the supplied Python must already have the torch build required by the native device. `physicalai train physicalai` aliases `physicalai fit`; first-party Lightning options remain on `fit` (`--trainer.*`, `--model.*`, and `--data.*`), including `--trainer.accelerator`.
 
 Managed worker environments are provisioned by the shared engine manager:
 

@@ -14,6 +14,7 @@ Physical AI should train, package, and deploy policies from other frameworks (Le
 - **Files are the contract.** The input is a LeRobot-format dataset, which Studio already records. The output is a Runtime policy package: `manifest.json` plus the framework's native model folder.
 - **One `Engine` class at the top, one engine per framework.** Each engine has the signatures that suit its framework. `physicalai.train.Trainer` is the first-party engine and stays exactly the Lightning `Trainer`; `LeRobotEngine.train()` takes LeRobot's own `TrainPipelineConfig`. The base class declares only what every framework shares.
 - **The CLI passes native arguments through.** `pai train lerobot …` behaves like `lerobot-train …`: same flags, same output, same exit code.
+- **Native devices select worker torch extras.** LeRobot's `policy.device` (CLI, config, or `Engine.run(device=...)`) chooses both its native device and the matching `cpu`, `cu128`, or `xpu` worker environment. Without a device, core auto-detects XPU, CUDA, then CPU independently of a CPU-only host torch build; `pai engine prepare --accelerator` only pre-provisions an environment.
 - **Plugins expose facts; Studio owns display.** Engines report which policies they can train, their native config schema, and how to run a job. Studio decides what to show and how. Plugins never import Studio code.
 - **Each framework trains in its own locked environment.** A plugin ships a uv project and lock for its worker; `physicalai-train` provisions it into a cache keyed by the lock.
 - **Models are enabled step by step.** A framework plugin enables all of a framework's policies, and a repo plugin enables one model from its repository on day 0 or 1. Enablements add XPU training or optimized export: upstream first, otherwise our own overlay code or another team's patch series by reference. A first-party port is the last step. The plugin's own Runtime adapter runs every package it produces, including the framework's pre- and post-processing.
@@ -89,8 +90,7 @@ class Engine(ABC):
 
     @classmethod
     @abstractmethod
-    def cli(cls, argv: Sequence[str], *, interpreter: str | Path | None = None,
-            accelerator: str = "auto") -> int:
+    def cli(cls, argv: Sequence[str], *, interpreter: str | Path | None = None) -> int:
         """Run the framework's own CLI unchanged and return its exit code."""
 
     @classmethod
@@ -195,21 +195,27 @@ class LeRobotEngine(Engine):
         package="lerobot",
     )
 
-    def __init__(self, *, interpreter: str | Path | None = None, accelerator: str = "auto") -> None: ...
+    def __init__(self, *, interpreter: str | Path | None = None) -> None: ...
 
     def train(self, config: TrainPipelineConfig, hooks: TrainHooks | None = None) -> Run:
         """LeRobot's trainer on a native config object, sent to the worker as train_config.json."""
 
     @classmethod
-    def cli(cls, argv, *, interpreter=None, accelerator="auto") -> int:
-        python = interpreter or prepare(cls.env, accelerator)
+    def cli(cls, argv, *, interpreter=None) -> int:
+        native_device = policy_device_from_flags_or_config(argv) or "auto"
+        worker_extra = resolve_device(native_device).worker_extra
+        python = interpreter or prepare(cls.env, worker_extra)
         return subprocess.call([scripts_dir(python) / "lerobot-train", *argv])  # terminal attached
 
     @classmethod
     def run(cls, settings, *, dataset, output_dir, device, hooks=None, interpreter=None) -> Run:
+        configured_device = settings.get("policy", {}).get("device")
+        requested_device = configured_device if device == "auto" and configured_device else device
+        native_device, worker_extra = resolve_device(requested_device)
         flags = to_flags(settings) + ["--dataset.repo_id=local", f"--dataset.root={dataset}",
-                                      f"--output_dir={output_dir}", f"--policy.device={device}"]
-        return run_worker(cls.env, flags, hooks, device=device, interpreter=interpreter)
+                                      f"--output_dir={output_dir}", f"--policy.device={native_device}"]
+        return run_worker(cls.env, flags, device=native_device, hooks=hooks, accelerator=worker_extra,
+                          interpreter=interpreter)
 
     @classmethod
     def export(cls, source, output_path, backend="native") -> Path:
@@ -222,6 +228,7 @@ class LeRobotEngine(Engine):
     def config_schema(cls, policy) -> dict: ...  # generated from LeRobot's native config classes on request
 ```
 
+- `train(config)` follows `config.policy.device`; `run()` follows its `device` argument, with `settings.policy.device` used when `device="auto"` and the setting is present. These native device choices select both LeRobot's device and the matching worker torch extra.
 - The standard inputs of `run()` (`dataset`, `output_dir`, `device`) override the same native fields in `settings`.
 - `export()` accepts a `Run` or a local native checkpoint folder. Hub repository IDs must be downloaded first.
 - Schemas come from LeRobot's own config classes. The plugin's `config_schema()` specializes `TrainPipelineConfig` with the selected policy config through Pydantic's `TypeAdapter(...).json_schema()`. The schema method imports LeRobot only when called; storing pre-generated schemas in the wheel remains an optimization if a backend later needs schema lookup without the loader dependency.
@@ -235,7 +242,7 @@ class OpenPIEngine(Engine):
     framework = "openpi"
     env = WorkerEnv(...)
 
-    def __init__(self, *, interpreter=None, accelerator="auto"): ...
+    def __init__(self, *, interpreter=None): ...
     def train(self, config: openpi.TrainConfig) -> Run: ...
     def compute_norm_stats(self, config) -> Path: ...  # framework-specific methods are fine
     # plus cli, run, export, policies, config_schema
@@ -244,8 +251,8 @@ class OpenPIEngine(Engine):
 ### Selecting an Engine
 
 ```python
-engine = LeRobotEngine(accelerator="xpu")            # fixed framework: best IDE support
-engine = Engine.create("lerobot", accelerator="xpu")  # framework from a string: same object
+engine = LeRobotEngine()            # fixed framework: best IDE support
+engine = Engine.create("lerobot")  # framework from a string: same object
 EngineCls = Engine.get("lerobot")                     # the class, for cli/run/export/policies
 ```
 
@@ -301,9 +308,10 @@ Training plugins need no Studio entry point. Robot plugins ship a `studio_catalo
 pai train lerobot --policy.type=act --dataset.repo_id=lerobot/pusht --steps=20000  # same as lerobot-train …
 pai train lerobot --help                                                           # lerobot-train's own help
 pai train --interpreter /opt/lerobot/bin/python lerobot --config_path=…/train_config.json --resume=true
-pai train --accelerator xpu lerobot --policy.type=act …
+pai train lerobot --policy.type=act --policy.device=xpu …  # native device selects the XPU worker extra
+pai train lerobot --config_path=act.yaml …                 # absent device: auto-detect XPU, CUDA, then CPU
 
-pai engine prepare lerobot --accelerator xpu  # provision ahead of time (Docker builds, the GUI's preparing step)
+pai engine prepare lerobot --accelerator xpu  # pre-provision only; does not set the later training device
 pai engine list                               # prepared environments: engine, accelerator, lock, size, path
 pai engine prune                              # delete environments whose lock is no longer current
 
@@ -311,14 +319,15 @@ pai fit --config act.yaml                     # first party, unchanged, like val
 ```
 
 ```python
-# pai train [--interpreter PY] [--accelerator NAME] <framework> <native args…>
+# pai train [--interpreter PY] <framework> <native args…>
 def run(parser, cfg) -> int:
-    return Engine.get(cfg.framework).cli(cfg.args, interpreter=cfg.interpreter, accelerator=cfg.accelerator)
+    return Engine.get(cfg.framework).cli(cfg.args, interpreter=cfg.interpreter)
 ```
 
 - **The framework is a positional argument.** Runtime's CLI host treats the first token without a leading dash as the subcommand (`_select_subcommand()` in Runtime `src/physicalai/cli/main.py`), so `pai --framework lerobot …` looks for a subcommand named `lerobot`. `pai train --framework lerobot --policy.type=act` fails with `unrecognized arguments: --policy.type=act` in the CLI's jsonargparse parser. With the positional form, everything after the framework name is forwarded unchanged, including a native `--help` or a native flag that happens to be called `--framework`.
-- **Studio's options come first.** `--interpreter` and `--accelerator` precede the framework name and never reach the framework.
-- **The terminal is attached.** `cli()` runs the framework's own command with inherited standard streams and returns its exit code; the progress protocol is not used in this mode. The POC did not meet this bar:
+- **Studio's options come first.** `--interpreter` precedes the framework name; LeRobot's native device and config flags pass through unchanged. First-party Lightning still receives its accelerator through `pai fit --trainer.accelerator=...`.
+- **Native device and worker environment are separate choices.** `--policy.device`, a native config's `policy.device`, or `Engine.run(device=...)` selects LeRobot's device and its matching torch extra. Without a device, `auto` checks XPU, then CUDA, then CPU using both host torch and detected hardware; CPU-only host torch cannot hide an installed GPU. `pai engine prepare --accelerator` only pre-provisions the requested extra and does not override a later native device choice.
+- **The terminal is attached.** `cli()` runs the framework's own command with inherited standard streams and returns its exit code; the progress protocol is not used in this mode. `--interpreter` skips managed-environment preparation, so that interpreter must already contain the torch build required by the native device. The POC did not meet this bar:
 
   | Command          | `lerobot-train`     | `pai train lerobot` (POC)                                           |
   | ---------------- | ------------------- | ------------------------------------------------------------------- |
@@ -372,7 +381,7 @@ def prepare(env: WorkerEnv, accelerator: str, *, offline: bool = False) -> Path:
     return root / "venv" / "bin" / "python"  # near-instant when the environment is already synced
 ```
 
-- **Accelerator.** `accelerator="auto"` picks `xpu`, `cu128`, or `cpu` from the host's torch; an explicit value overrides it.
+- **Worker torch extra.** `prepare(..., accelerator="auto")` checks both host torch availability and physical GPU hardware, preferring XPU, then CUDA (`cu128`), then CPU. A CPU-only host torch build does not mask detected GPU hardware. `pai engine prepare --accelerator` explicitly pre-provisions an extra; native LeRobot training chooses its extra from `policy.device` or hardware auto-detection instead.
 - **Pinned uv.** `uv_bin()` comes from the `uv` package on PyPI (`find_uv_bin()`), constrained to the release line the Docker images use (0.10.x), instead of whatever `uv` is on `PATH`.
 - **A visible step.** `prepare()` is a separate step: `pai engine prepare`, or a "preparing environment" phase in the GUI. `run()` and `cli()` call it implicitly and log the first-run download.
 - **Images.** The Docker and remote-trainer images run `pai engine prepare` at build time, so jobs never download dependencies. The images set `UV_PYTHON_DOWNLOADS=0`, so the interpreter an environment requires must be present in the image.
@@ -575,7 +584,7 @@ gr00t / n1.7      export  openvino  → intel_ov
 ```
 
 ```bash
-pai train act --accelerator xpu …               # trains in the intel_xpu enablement
+pai train lerobot --policy.device=xpu …         # native device selects the matching worker torch extra
 pai engine prepare gr00t --enablement intel_ov  # explicit, for example when building an image
 ```
 
@@ -641,11 +650,11 @@ from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
 cfg = TrainPipelineConfig(
     dataset=DatasetConfig(repo_id="lerobot/pusht"),
-    policy=ACTConfig(push_to_hub=False),
+    policy=ACTConfig(push_to_hub=False, device="cuda"),
     steps=20_000,
 )
 
-engine = LeRobotEngine()  # managed environment; accelerator detected
+engine = LeRobotEngine()  # managed worker extra follows policy.device
 run = engine.train(cfg)  # LeRobot's own trainer, in the worker
 package = engine.export(run, "exports/act")  # manifest.json plus LeRobot's pretrained_model/
 model = Engine.load(package)  # Runtime InferenceModel

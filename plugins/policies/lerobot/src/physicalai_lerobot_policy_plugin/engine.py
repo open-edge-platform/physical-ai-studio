@@ -54,17 +54,9 @@ class LeRobotEngine(Engine):
     )
     stock_export_formats: ClassVar[tuple[str, ...]] = ("native",)
 
-    def __init__(self, *, interpreter: str | Path | None = None, accelerator: str = "auto") -> None:
-        """Create a LeRobot engine with a managed or explicitly supplied interpreter.
-
-        Raises:
-            ValueError: If *accelerator* is not supported.
-        """
-        if accelerator not in {"auto", "cpu", "cuda", "cu128", "xpu"}:
-            msg = f"Unsupported accelerator {accelerator!r}; choose auto, cpu, cuda, cu128, or xpu."
-            raise ValueError(msg)
+    def __init__(self, *, interpreter: str | Path | None = None) -> None:
+        """Create a LeRobot engine with a managed or explicitly supplied interpreter."""
         self._interpreter = Path(interpreter).expanduser() if interpreter is not None else None
-        self._accelerator = accelerator
 
     def train(self, config: TrainPipelineConfig, hooks: TrainHooks | None = None) -> Run:
         """Serialize a LeRobot config and execute LeRobot's native training CLI.
@@ -79,7 +71,7 @@ class LeRobotEngine(Engine):
         Raises:
             FileNotFoundError: If config serialization does not write ``train_config.json``.
             TypeError: If *config* is not a native serializable LeRobot config.
-            ValueError: If the requested device conflicts with the worker accelerator.
+            ValueError: If the native device is unsupported by the worker environment.
         """
         save_pretrained = getattr(config, "save_pretrained", None)
         if not callable(save_pretrained):
@@ -88,16 +80,8 @@ class LeRobotEngine(Engine):
 
         expected_version = _host_lerobot_version(self.env)
         policy = getattr(config, "policy", None)
-        configured_device = getattr(policy, "device", "cpu")
-        device = configured_device if isinstance(configured_device, str) else "cpu"
-        worker_accelerator = resolve_accelerator(self._accelerator, allowed=self.env.accelerators)
-        requested_accelerator = _accelerator_for_device(device)
-        if requested_accelerator not in {"cpu", "auto"} and requested_accelerator != worker_accelerator:
-            msg = (
-                f"LeRobot policy device {device!r} requires the {requested_accelerator!r} worker, "
-                f"but the engine selected {worker_accelerator!r}."
-            )
-            raise ValueError(msg)
+        configured_device = getattr(policy, "device", None)
+        device, worker_accelerator = _resolve_worker_device(configured_device, allowed=self.env.accelerators)
         with tempfile.TemporaryDirectory(prefix="physicalai-lerobot-config-") as temporary:
             config_dir = Path(temporary)
             save_pretrained(config_dir)
@@ -121,7 +105,6 @@ class LeRobotEngine(Engine):
         argv: Sequence[str],
         *,
         interpreter: str | Path | None = None,
-        accelerator: str = "auto",
     ) -> int:
         """Run ``lerobot-train`` with inherited standard streams and its exact exit code.
 
@@ -130,10 +113,13 @@ class LeRobotEngine(Engine):
 
         Raises:
             RuntimeError: If the engine does not declare a worker environment.
+            ValueError: If the native device has no matching worker extra.
         """
         if cls.env is None:
             msg = "LeRobotEngine requires a worker environment."
             raise RuntimeError(msg)
+        requested_device = _device_from_cli(argv)
+        _, accelerator = _resolve_worker_device(requested_device, allowed=cls.env.accelerators)
         python = interpreter_for(cls.env, accelerator=accelerator, interpreter=interpreter)
         script_name = "lerobot-train.exe" if os.name == "nt" else "lerobot-train"
         executable = scripts_dir(python) / script_name
@@ -160,10 +146,14 @@ class LeRobotEngine(Engine):
 
         Raises:
             RuntimeError: If the engine does not declare a worker environment.
+            ValueError: If the selected native device is unsupported.
         """
         if cls.env is None:
             msg = "LeRobotEngine requires a worker environment."
             raise RuntimeError(msg)
+        settings_device = _settings_device(settings)
+        requested_device = settings_device if device.strip().lower() == "auto" and settings_device is not None else device
+        resolved_device, accelerator = _resolve_worker_device(requested_device, allowed=cls.env.accelerators)
         flattened: dict[str, object] = {}
         _flatten_settings(settings, "", flattened)
         flattened.update(
@@ -171,16 +161,16 @@ class LeRobotEngine(Engine):
                 "dataset.repo_id": "local",
                 "dataset.root": str(dataset),
                 "output_dir": str(output_dir),
-                "policy.device": device,
+                "policy.device": resolved_device,
             },
         )
         flags = [f"--{name}={_native_value(value)}" for name, value in flattened.items()]
         return run_worker(
             cls.env,
             flags,
-            device=device,
+            device=resolved_device,
             hooks=hooks,
-            accelerator=_accelerator_for_device(device),
+            accelerator=accelerator,
             interpreter=interpreter,
         )
 
@@ -286,18 +276,119 @@ def _native_value(value: object) -> str:
     return str(value)
 
 
+def _resolve_worker_device(device: object, *, allowed: tuple[str, ...]) -> tuple[str, str]:
+    if not isinstance(device, str) or not device.strip() or device.strip().lower() == "auto":
+        accelerator = resolve_accelerator("auto", allowed=allowed)
+        return _device_for_accelerator(accelerator), accelerator
+
+    accelerator = _accelerator_for_device(device)
+    selected = resolve_accelerator(accelerator, allowed=allowed)
+    return device, selected
+
+
 def _accelerator_for_device(device: str) -> str:
-    normalized = device.lower()
-    if normalized.startswith("cuda") or normalized == "gpu":
-        return "cu128"
-    if normalized.startswith("xpu"):
-        return "xpu"
-    if normalized.startswith("cpu"):
+    normalized = device.strip().lower()
+    if normalized == "cpu":
         return "cpu"
-    if normalized == "auto":
-        return "auto"
+    if normalized == "xpu" or normalized.startswith("xpu:"):
+        return "xpu"
+    if normalized == "cuda" or normalized.startswith("cuda:"):
+        return "cu128"
     msg = f"Unsupported LeRobot device {device!r}; choose cpu, cuda, xpu, or auto."
     raise ValueError(msg)
+
+
+def _device_for_accelerator(accelerator: str) -> str:
+    return "cuda" if accelerator == "cu128" else accelerator
+
+
+def _settings_device(settings: Mapping[str, Any]) -> str | None:
+    policy = settings.get("policy")
+    if not isinstance(policy, Mapping):
+        return None
+    device = policy.get("device")
+    return device if isinstance(device, str) and device.strip() else None
+
+
+def _device_from_cli(arguments: Sequence[str]) -> str | None:
+    configured_device: str | None = None
+    config_path: str | None = None
+    policy_path: str | None = None
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        options = (("--policy.device", "device"), ("--config_path", "config"), ("--policy.path", "policy"))
+        for option, destination in options:
+            if argument.startswith(f"{option}="):
+                value = argument.partition("=")[2]
+                if destination == "device":
+                    configured_device = value
+                elif destination == "config":
+                    config_path = value
+                else:
+                    policy_path = value
+                break
+            if argument == option and index + 1 < len(arguments):
+                index += 1
+                value = arguments[index]
+                if destination == "device":
+                    configured_device = value
+                elif destination == "config":
+                    config_path = value
+                else:
+                    policy_path = value
+                break
+        index += 1
+    if configured_device is not None:
+        return configured_device
+    return _device_from_config(policy_path, policy_config=True) or _device_from_config(config_path)
+
+
+def _device_from_config(config_path: str | None, *, policy_config: bool = False) -> str | None:
+    if config_path is None:
+        return None
+    path = Path(config_path).expanduser()
+    if path.is_dir():
+        names = ("config.json", "train_config.json") if policy_config else ("train_config.json", "config.json")
+        candidates = tuple(path / name for name in names)
+    elif path.is_file():
+        candidates = (path,)
+    else:
+        return None
+
+    for candidate in candidates:
+        data = _load_native_config(candidate)
+        if not isinstance(data, Mapping):
+            continue
+        policy = data.get("policy")
+        if isinstance(policy, Mapping):
+            device = policy.get("device")
+            if isinstance(device, str) and device.strip():
+                return device
+        device = data.get("device")
+        if isinstance(device, str) and device.strip():
+            return device
+    return None
+
+
+def _load_native_config(path: Path) -> object:
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return None
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        try:
+            import yaml  # noqa: PLC0415  # LeRobot accepts YAML native configs.
+        except ImportError:
+            return None
+        try:
+            return yaml.safe_load(content)
+        except yaml.YAMLError:
+            return None
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return None
 
 
 def _host_lerobot_version(env: WorkerEnv) -> Version:

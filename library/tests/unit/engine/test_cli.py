@@ -15,47 +15,42 @@ from physicalai.cli import train as train_cli
 from physicalai.engine import Engine, WorkerEnv
 
 
-def test_train_parser_keeps_framework_arguments_opaque() -> None:
+def test_train_parser_keeps_native_device_arguments_opaque() -> None:
     cfg = train_cli.build_parser().parse_args(
         [
             "--interpreter",
             "/opt/lerobot/bin/python",
-            "--accelerator",
-            "xpu",
             "lerobot",
             "--help",
-            "--policy.type=act",
-            "--framework=native-value",
+            "--policy.device=cuda",
+            "--accelerator",
+            "native-value",
         ],
     )
 
     assert cfg.framework == "lerobot"
     assert cfg.interpreter == Path("/opt/lerobot/bin/python")
-    assert cfg.accelerator == "xpu"
-    assert cfg.args == ["--help", "--policy.type=act", "--framework=native-value"]
+    assert not hasattr(cfg, "accelerator")
+    assert cfg.args == ["--help", "--policy.device=cuda", "--accelerator", "native-value"]
 
 
 def test_train_dispatch_returns_the_framework_native_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    events: list[tuple[tuple[str, ...], str | Path | None, str]] = []
+    events: list[tuple[tuple[str, ...], str | Path | None]] = []
 
     class _FakeEngine:
         @classmethod
-        def cli(
-            cls,
-            args: list[str],
-            *,
-            interpreter: str | Path | None,
-            accelerator: str,
-        ) -> int:
-            events.append((tuple(args), interpreter, accelerator))
+        def cli(cls, args: list[str], *, interpreter: str | Path | None) -> int:
+            events.append((tuple(args), interpreter))
             return 23
 
     monkeypatch.setattr(Engine, "get", classmethod(lambda cls, name: _FakeEngine))
     parser = train_cli.build_parser()
-    cfg = parser.parse_args(["--interpreter", "python-custom", "--accelerator", "cuda", "lerobot", "--bad"])
+    cfg = parser.parse_args(
+        ["--interpreter", "python-custom", "lerobot", "--policy.device", "cuda", "--steps=2"],
+    )
 
     assert train_cli.run(parser, cfg) == 23
-    assert events == [(("--bad",), Path("python-custom"), "cuda")]
+    assert events == [( ("--policy.device", "cuda", "--steps=2"), Path("python-custom"))]
 
 
 def test_engine_prepare_uses_the_registered_engines_locked_environment(

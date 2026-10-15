@@ -51,9 +51,8 @@ class _FakeEngine(Engine):
         argv: Sequence[str],
         *,
         interpreter: str | Path | None = None,
-        accelerator: str = "auto",
     ) -> int:
-        cls.calls.append(("cli", (list(argv), interpreter, accelerator)))
+        cls.calls.append(("cli", (list(argv), interpreter)))
         return 7
 
     @classmethod
@@ -176,8 +175,8 @@ def test_run_and_cli_are_framework_class_apis(monkeypatch: pytest.MonkeyPatch) -
     )
 
     assert run.framework == "fake"
-    assert Engine.get("fake").cli(["--native", "flag"], accelerator="xpu") == 7
+    assert Engine.get("fake").cli(["--native", "flag"]) == 7
     assert _FakeEngine.calls == [
         ("run", ({"policy": {"type": "tiny"}}, Path("dataset"), Path("output"), "cpu", None, None)),
-        ("cli", (["--native", "flag"], None, "xpu")),
+        ("cli", (["--native", "flag"], None)),
     ]

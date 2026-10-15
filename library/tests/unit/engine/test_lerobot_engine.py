@@ -37,21 +37,126 @@ def test_lerobot_schema_and_policy_catalog_come_from_native_config_types() -> No
     assert schema["properties"]["policy"]["title"] == "ACTConfig"
 
 
-def test_lerobot_cli_inherits_stdio_and_returns_native_exit_code(
+def test_lerobot_cli_uses_native_device_for_worker_extra_and_passes_args_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[list[str], bool]] = []
-    monkeypatch.setattr(lerobot_engine_module, "interpreter_for", lambda *args, **kwargs: Path("/env/bin/python"))
+    prepared: list[str] = []
+
+    def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
+        del env, interpreter
+        prepared.append(accelerator)
+        return Path("/env/bin/python")
+
     def fake_call(command: list[str], *, shell: bool) -> int:
         calls.append((command, shell))
         return 2
 
+    monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
     monkeypatch.setattr(lerobot_engine_module.subprocess, "call", fake_call)
 
-    result = LeRobotEngine.cli(["--help", "--policy.type=act"], accelerator="xpu")
+    argv = ["--help", "--policy.device", "cuda", "--policy.type=act"]
+    result = LeRobotEngine.cli(argv)
 
     assert result == 2
-    assert calls == [(["/env/bin/lerobot-train", "--help", "--policy.type=act"], False)]
+    assert prepared == ["cu128"]
+    assert calls == [(["/env/bin/lerobot-train", *argv], False)]
+
+
+def test_lerobot_cli_auto_selects_worker_extra_when_device_is_unspecified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected: list[str] = []
+
+    def fake_resolve(accelerator: str, *, allowed: tuple[str, ...]) -> str:
+        selected.append(accelerator)
+        assert "cu128" in allowed
+        return "cu128"
+
+    def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
+        del env, interpreter
+        assert accelerator == "cu128"
+        return Path("/env/bin/python")
+
+    monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", fake_resolve)
+    monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, *, shell: 0)
+
+    assert LeRobotEngine.cli(["--steps=2"]) == 0
+    assert selected == ["auto"]
+
+
+def test_lerobot_cli_uses_native_config_device_to_select_worker_extra(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "train_config.json"
+    config.write_text('{"policy":{"device":"xpu"}}', encoding="utf-8")
+    prepared: list[str] = []
+    def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
+        del env, interpreter
+        prepared.append(accelerator)
+        return Path("/env/bin/python")
+
+    monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, *, shell: 0)
+
+    assert LeRobotEngine.cli(["--config_path", str(config)]) == 0
+    assert prepared == ["xpu"]
+
+
+def test_lerobot_cli_uses_policy_path_config_to_select_worker_extra(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    policy_path = tmp_path / "pretrained_model"
+    policy_path.mkdir()
+    (policy_path / "config.json").write_text('{"device":"xpu"}', encoding="utf-8")
+    prepared: list[str] = []
+
+    def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
+        del env, interpreter
+        prepared.append(accelerator)
+        return Path("/env/bin/python")
+
+    monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", lambda command, *, shell: 0)
+
+    assert LeRobotEngine.cli(["--policy.path", str(policy_path)]) == 0
+    assert prepared == ["xpu"]
+
+
+def test_lerobot_cli_native_flag_overrides_device_in_config_without_rewriting_argv(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "train_config.json"
+    config.write_text('{"policy":{"device":"xpu"}}', encoding="utf-8")
+    prepared: list[str] = []
+    calls: list[list[str]] = []
+
+    def fake_interpreter_for(env: object, *, accelerator: str, interpreter: str | Path | None) -> Path:
+        del env, interpreter
+        prepared.append(accelerator)
+        return Path("/env/bin/python")
+
+    def fake_call(command: list[str], *, shell: bool) -> int:
+        del shell
+        calls.append(command)
+        return 0
+
+    monkeypatch.setattr(lerobot_engine_module, "interpreter_for", fake_interpreter_for)
+    monkeypatch.setattr(lerobot_engine_module.subprocess, "call", fake_call)
+    argv = [f"--config_path={config}", "--policy.device=cuda"]
+
+    assert LeRobotEngine.cli(argv) == 0
+    assert prepared == ["cu128"]
+    assert calls == [["/env/bin/lerobot-train", *argv]]
+
+
+def test_lerobot_constructor_no_longer_accepts_worker_accelerator() -> None:
+    with pytest.raises(TypeError, match="accelerator"):
+        LeRobotEngine(accelerator="xpu")
 
 
 def test_lerobot_train_serializes_native_config_and_checks_exact_worker_version(
@@ -91,13 +196,56 @@ def test_lerobot_train_serializes_native_config_and_checks_exact_worker_version(
     monkeypatch.setattr(lerobot_engine_module, "_host_lerobot_version", lambda env: Version("0.6.1"))
     monkeypatch.setattr(lerobot_engine_module, "run_worker", fake_run_worker)
 
-    result = LeRobotEngine(accelerator="xpu").train(_Config(), hooks=hooks)  # type: ignore[arg-type]
+    result = LeRobotEngine().train(_Config(), hooks=hooks)  # type: ignore[arg-type]
 
     assert result is expected_run
     assert events[0][0] == "saved"
     assert events[1][0] == "run"
     assert events[1][3:] == ("xpu", hooks, "xpu", None, Version("0.6.1"))
     assert not config_file.exists()
+
+
+def test_lerobot_train_auto_selects_a_matching_worker_for_unspecified_policy_device(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    events: list[tuple[str, str]] = []
+
+    class _Policy:
+        device = None
+
+    class _Config:
+        policy = _Policy()
+
+        def save_pretrained(self, directory: Path) -> None:
+            (directory / "train_config.json").write_text("{}", encoding="utf-8")
+
+    def fake_run_worker(
+        env: object,
+        args: list[str],
+        *,
+        device: str,
+        hooks: TrainHooks | None,
+        accelerator: str,
+        interpreter: Path | None,
+        expected_version: Version,
+    ) -> Run:
+        del env, args, hooks, interpreter, expected_version
+        events.append((device, accelerator))
+        return Run(framework="lerobot", output_dir=tmp_path / "run", checkpoint=None)
+
+    def fake_resolve(requested: str, *, allowed: tuple[str, ...]) -> str:
+        assert requested == "auto"
+        assert "cu128" in allowed
+        return "cu128"
+
+    monkeypatch.setattr(lerobot_engine_module, "_host_lerobot_version", lambda env: Version("0.6.1"))
+    monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", fake_resolve)
+    monkeypatch.setattr(lerobot_engine_module, "run_worker", fake_run_worker)
+
+    LeRobotEngine().train(_Config())  # type: ignore[arg-type]
+
+    assert events == [("cuda", "cu128")]
 
 
 def test_lerobot_run_overrides_dataset_output_and_device_settings(
@@ -138,6 +286,64 @@ def test_lerobot_run_overrides_dataset_output_and_device_settings(
     assert not any("hub/repo" in value or "wrong" in value or "cuda" in value for value in args)
     assert calls[0][1]["accelerator"] == "cpu"
     assert calls[0][1]["interpreter"] == Path("/custom/python")
+
+
+def test_lerobot_run_auto_selects_device_and_matching_worker_extra(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    expected_run = Run(framework="lerobot", output_dir=tmp_path / "run", checkpoint=None)
+
+    def fake_run_worker(env: object, args: list[str], **kwargs: object) -> Run:
+        del env
+        calls.append((args, kwargs))
+        return expected_run
+
+    monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", lambda *_args, **_kwargs: "cu128")
+    monkeypatch.setattr(lerobot_engine_module, "run_worker", fake_run_worker)
+
+    result = LeRobotEngine.run(
+        {"policy": {"type": "act"}},
+        dataset=tmp_path / "snapshot",
+        output_dir=tmp_path / "output",
+        device="auto",
+    )
+
+    assert result is expected_run
+    assert "--policy.device=cuda" in calls[0][0]
+    assert calls[0][1]["device"] == "cuda"
+    assert calls[0][1]["accelerator"] == "cu128"
+
+
+def test_lerobot_run_auto_uses_native_settings_device_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_run_worker(env: object, args: list[str], **kwargs: object) -> Run:
+        del env, args
+        calls.append(kwargs)
+        return Run(framework="lerobot", output_dir=tmp_path / "run", checkpoint=None)
+
+    def fake_resolve(requested: str, *, allowed: tuple[str, ...]) -> str:
+        assert requested == "cu128"
+        assert "cu128" in allowed
+        return "cu128"
+
+    monkeypatch.setattr(lerobot_engine_module, "resolve_accelerator", fake_resolve)
+    monkeypatch.setattr(lerobot_engine_module, "run_worker", fake_run_worker)
+
+    LeRobotEngine.run(
+        {"policy": {"type": "act", "device": "cuda"}},
+        dataset=tmp_path / "snapshot",
+        output_dir=tmp_path / "output",
+        device="auto",
+    )
+
+    assert calls[0]["device"] == "cuda"
+    assert calls[0]["accelerator"] == "cu128"
 
 
 def test_native_settings_are_flattened_without_shell_interpretation() -> None:
