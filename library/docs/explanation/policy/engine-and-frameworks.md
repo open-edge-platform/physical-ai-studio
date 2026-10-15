@@ -138,6 +138,63 @@ class AcmeEngine(Engine):
 
 Plugins register their engine class through the `physicalai.engines` entry-point group. The plugin's base install registers its Runtime adapter; installing `physicalai-train` is needed only for training-side Engine discovery and execution.
 
+## Model enablement
+
+The goal is to make a new model usable early without permanently taking ownership of its implementation. Enablement proceeds in stages; a project can stop at any stage that meets its requirements.
+
+| Stage              | Scope                                              | Typical use                                                                                           |
+| ------------------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Framework plugin   | Multiple policies provided by one framework        | Use LeRobot's native trainer and policies through one `LeRobotEngine`.                                |
+| Repository plugin  | One model or family from an independent repository | Support a newly released repo on day 0 or 1, before considering a first-party port.                   |
+| Enablement         | An additional capability for selected policies     | Add XPU training or an optimized export to a framework or repository plugin.                          |
+| First-party policy | A policy implemented and maintained in Studio      | Use when an external integration cannot meet reliability, compatibility, or performance requirements. |
+
+### Upstream-first maintenance
+
+Changes that make a framework work with a device or export format should be contributed upstream and maintained there whenever possible. A plugin then selects the upstream release or commit that contains the capability. A downstream enablement is a bridge while upstream work is pending; once accepted, it should be reduced to an upstream version update and the downstream workaround removed.
+
+If an upstream contribution is not accepted or cannot land in time, an enablement can provide the capability without changing the default framework plugin. The preferred fallback is our own overlay code (for example, a wrapper or a scoped export-time adaptation). A published downstream patch series from another team may also be referenced, subject to SDL approval. The plugin should identify the source repository, exact revision, selected patch files, and checksums; it should not copy the patch series into the plugin or maintain a fork as the normal path. If applying another team's patches is not approved, use upstream changes or our own overlay code instead.
+
+[Robotics AI Suite's model pipelines](https://github.com/open-edge-platform/robotics-ai-suite/tree/main/src/pipelines) illustrate both approaches: some wrap an unmodified framework for conversion, while others pin an upstream repository and apply downstream patch series. They are examples of the enablement pattern, not dependencies of this project.
+
+### Enablement declaration and selection
+
+An Engine may declare which additional capabilities have been validated for each policy. The current `Enablement` type records a name, upstream reference, and per-policy capabilities:
+
+```python
+Enablement(
+    name="intel-xpu",
+    upstream="acme-policy@<commit>",
+    provides={"act": {"train": ("xpu",)}},
+)
+
+engine.capabilities("act")
+# Capabilities(training_accelerators=("cpu", "xpu"), ...)
+```
+
+The declaration is evidence about tested support, not an automatic promise that every policy in the framework supports that backend. A capability should be offered only after a corresponding test passes. For training, that means the native run uses the expected device and recipe. For export, it includes loading the generated package through the plugin's Runtime adapter and comparing its actions with the native model on the same observations.
+
+Each enablement that needs different framework code or dependencies should use its own pinned worker project and lock. The environment identity should include the upstream revision, patch-set reference (when approved), accelerator profile, and lock hash. If an enablement uses a different framework revision than training did, checkpoint compatibility must be tested; otherwise, train and export in the same enablement environment.
+
+The framework continues to own model-device settings. For LeRobot, `policy.device` determines the selected worker profile; `pai engine prepare --accelerator` is only an explicit environment pre-provisioning override. The Engine must not rewrite the framework's native training arguments.
+
+### Runtime boundary
+
+The installed plugin's Runtime adapter owns the full inference path for its package, including the framework's preprocessing, inference, postprocessing, action queues, and reset behavior. Runtime-specific processors are not required for a plugin package. The exported package contains model data and provenance; executable code remains in the installed, registered plugin.
+
+If an enablement changes preprocessing or postprocessing, the robot needs the matching plugin/framework version. The package should record the enablement and upstream revision, and parity tests should exercise the same adapter and dependency version that deployment will use. Framework/runtime dependency conflicts remain an inference-isolation concern; an optimized model does not remove the plugin's framework dependencies if its adapter still uses them for preprocessing.
+
+### Current implementation boundary
+
+| Capability                                                    | Status in this POC                                                                                       |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Engine-level `Enablement` metadata and `capabilities(policy)` | Implemented; used to report declared support.                                                            |
+| Native LeRobot training, export, and Runtime adapter          | Implemented and validated for selected ACT/Diffusion paths.                                              |
+| Automatic worker profile from native device or hardware       | Implemented for LeRobot; explicit pre-provisioning is available with `pai engine prepare --accelerator`. |
+| Separate locked environment for each enablement               | Design direction; not yet implemented.                                                                   |
+| Downloading and applying another team's patch series          | Not implemented; requires SDL approval.                                                                  |
+| Concrete OpenVINO/ONNX/ExecuTorch enablement recipes          | Not implemented in this PR.                                                                              |
+
 ## CLI
 
 First-party commands such as `pai fit`, `pai validate`, `pai test`, `pai predict`, `pai export`, and `pai benchmark` remain. The native-framework command passes everything after the framework identifier to that framework's CLI:
