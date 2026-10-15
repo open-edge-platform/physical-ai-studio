@@ -1,18 +1,92 @@
 # Enable hardware acceleration for video encoding on Intel devices
 
-Intel supports hardware acceleration for video encoding on Intel devices using **oneVPL**.
-pyAV is used as video backend. pyAV uses libav / ffmpeg.
+Intel supports hardware acceleration for video encoding using **oneVPL**. pyAV is used
+as the video backend. pyAV uses libav / FFmpeg.
 
 For **QSV / oneVPL**, the right path is:
 
-1. build/install **oneVPL**
-2. build **FFmpeg** with `--enable-libvpl`
+1. have **oneVPL** available (dispatcher + headers, plus a runtime implementation for
+   your Intel GPU)
+2. have an **FFmpeg built with `--enable-libvpl`**
 3. build **PyAV from source** against that FFmpeg
 
-Intel’s FFmpeg guidance says to enable VPL is to simply compile with `--enable-libvpl`, and that this enables the `*_qsv` codecs such as `h264_qsv` and `hevc_qsv`.
-It also notes that FFmpeg’s `*_qsv` codecs are implemented on top of VPL.
+> **Important — PyAV links the *system* FFmpeg, not a bundled one.**
+> PyAV v15 builds against the system FFmpeg via `pkg-config` when installed from
+> source (`pip install --no-binary av av`). The prebuilt PyPI wheel bundles its own
+> FFmpeg that was compiled *without* `--enable-libvpl`/`--enable-vaapi`, so the
+> `*_qsv` and `*_vaapi` codecs are **not** available from the wheel even if your
+> system has the oneVPL runtime installed. Rebuilding PyAV from source only gives
+> hardware codecs if the FFmpeg development libraries it links against were built
+> with the right flags.
 
-One important detail: Intel’s `libvpl` repo is only the **dispatcher + headers + samples**. You also need an **implementation** installed, such as `oneVPL-intel-gpu` for newer Intel Xe and newer hardware, or Media SDK for legacy graphics.
+---
+
+## 0) Check what your FFmpeg already supports
+
+Run the packaged FFmpeg first. If QSV is already built in, you can use the quick path
+below; otherwise use the from-source path.
+
+```bash
+ffmpeg -encoders | grep qsv
+```
+
+- If you see `h264_qsv`, `hevc_qsv`, etc., your system FFmpeg has QSV. Use
+  **Path A (fast)**.
+- If nothing shows up, your distro FFmpeg was built without `--enable-libvpl`. Use
+  **Path B (from source)**.
+
+---
+
+## Path A — Fast path (distro FFmpeg already has QSV)
+
+Some recent distributions ship FFmpeg with `--enable-libvpl` (e.g. Debian 13
+“trixie”, which also provides `libvpl-dev`). In that case you only need the FFmpeg
+development packages plus a source rebuild of PyAV.
+
+On Debian/Ubuntu:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  pkg-config \
+  libvpl-dev \
+  libavcodec-dev \
+  libavformat-dev \
+  libavutil-dev \
+  libswscale-dev \
+  libswresample-dev \
+  libavdevice-dev \
+  libavfilter-dev
+```
+
+Then rebuild PyAV from source inside your uv environment. Pin the version to match
+your lockfile (here `av==15.1.0`):
+
+```bash
+uv pip uninstall --python .venv/bin/python av
+uv pip install --python .venv/bin/python --no-binary av --no-cache av==15.1.0
+```
+
+Verify the codecs are now visible to PyAV:
+
+```bash
+python -c "import av; print('h264_qsv' in av.codecs_available)"
+```
+
+> The FFmpeg development packages must match the FFmpeg runtime libraries your
+> system uses. On Debian 13 the `libav*-dev` packages and the `ffmpeg` binary both
+> ship FFmpeg 7.1 (libavcodec 61), so a source-built PyAV links the system
+> `libavcodec61` at runtime.
+
+---
+
+## Path B — From source (distro FFmpeg lacks QSV)
+
+Follow this when your distro’s FFmpeg has no `*_qsv` encoders.
+
+One important detail: Intel’s `libvpl` repo is only the **dispatcher + headers +
+samples**. You also need an **implementation** installed, such as `oneVPL-intel-gpu`
+for newer Intel Xe and newer hardware, or Media SDK for legacy graphics.
 
 ### 1) Install build dependencies
 
@@ -46,17 +120,22 @@ export PKG_CONFIG_PATH="$VPL_INSTALL_DIR/lib/pkgconfig:$VPL_INSTALL_DIR/lib64/pk
 export LD_LIBRARY_PATH="$VPL_INSTALL_DIR/lib:$VPL_INSTALL_DIR/lib64:$LD_LIBRARY_PATH"
 ```
 
-That environment setup is necessary when `libvpl` is not installed to a standard location.
+That environment setup is necessary when `libvpl` is not installed to a standard
+location.
 
 ### 3) Make sure the Intel GPU runtime is installed
 
-This is separate from the dispatcher. Without the runtime/implementation, FFmpeg may build but QSV will fail at runtime. [Intel’s install docs](https://github.com/intel/libvpl/blob/main/INSTALL.md) say the base package alone is not enough and you need an implementation as well.
+This is separate from the dispatcher. Without the runtime/implementation, FFmpeg may
+build but QSV will fail at runtime. [Intel’s install docs](https://github.com/intel/libvpl/blob/main/INSTALL.md)
+say the base package alone is not enough and you need an implementation as well.
 
 ### 4) Install dependencies for SW encoders
-If the hardware accelerator is not available, you might want to fall back on SW encoders.
-You can skip this step if you do not want to enable these encoders.
+
+If the hardware accelerator is not available, you might want to fall back on SW
+encoders. You can skip this step if you do not want to enable these encoders.
 
 For libopenh264:
+
 ```bash
 git clone https://github.com/cisco/openh264.git
 make -j"$(nproc)"
@@ -64,6 +143,7 @@ sudo make install
 ```
 
 For SVT-AV1:
+
 ```bash
 git clone https://gitlab.com/AOMediaCodec/SVT-AV1.git
 cd SVT-AV1
@@ -99,6 +179,7 @@ make install
 ```
 
 You can remove these lines if you did skip step 4:
+
 ```bash
 --enable-libsvtav1 \
 --enable-libopenh264
@@ -119,13 +200,31 @@ ffmpeg -encoders | grep qsv
 ffmpeg -h encoder=h264_qsv
 ```
 
-You should see `h264_qsv`. Intel documents that `h264_qsv`, `hevc_qsv`, and other `*_qsv` codecs are the FFmpeg-facing names when using VPL-backed QSV.
+You should see `h264_qsv`. Intel documents that `h264_qsv`, `hevc_qsv`, and other
+`*_qsv` codecs are the FFmpeg-facing names when using VPL-backed QSV.
 
-### 7) Install PyAV from source
+### 7) Install PyAV from source against that FFmpeg
 
-Inside your uv environment:
+Inside your uv environment, with the environment variables from steps 2 and 5
+exported **in the same shell**, rebuild PyAV from source. PyAV’s `setup.py` resolves
+the FFmpeg libraries through `pkg-config`, so `PKG_CONFIG_PATH` must point at your
+custom FFmpeg install. Pin the version to match your lockfile (here `av==15.1.0`):
 
 ```bash
-uv pip uninstall av
-uv pip install --no-binary av av
+uv pip uninstall --python .venv/bin/python av
+uv pip install --python .venv/bin/python --no-binary av --no-cache av==15.1.0
 ```
+
+Verify the codecs are visible to PyAV:
+
+```bash
+python -c "import av; print('h264_qsv' in av.codecs_available)"
+```
+
+---
+
+## Recording and training
+
+These steps configure the encoder used when **recording new datasets**. They
+do not change model training: training decodes the videos already stored in a
+dataset and is independent of the encoder selected for future recordings.

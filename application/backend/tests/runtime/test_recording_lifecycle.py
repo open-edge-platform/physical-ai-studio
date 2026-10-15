@@ -4,12 +4,21 @@ import asyncio
 import queue
 import threading
 import time
+from unittest.mock import MagicMock, patch
+from uuid import UUID
 
 import pytest
 
 from runtime.callbacks.recording import RecordingState
 from runtime.command_thread import CommandWorker, _Job
-from runtime.contract import AckData, DiscardEpisodeCommand, QueueEventSink, SaveEpisodeCommand, StateEvent
+from runtime.contract import (
+    AckData,
+    DiscardEpisodeCommand,
+    LoadDatasetCommand,
+    QueueEventSink,
+    SaveEpisodeCommand,
+    StateEvent,
+)
 from runtime.hosts.session_worker import _watch_subscribers
 from runtime.session import RuntimeSession
 from tests.runtime.test_session import _document, _document_with_cameras
@@ -451,3 +460,28 @@ def test_abandonment_discards_an_open_episode_before_finalizing() -> None:
     state = _last_state(sink)
     assert state is not None
     assert state.data.is_recording is False
+
+
+def test_load_dataset_uses_configured_video_recording_settings() -> None:
+    session = RuntimeSession(_document(), event_sink=QueueEventSink())
+    follower = MagicMock()
+    follower.joint_names = ["joint"]
+    session._follower = follower
+    session._follower_name = "fake"
+
+    settings = MagicMock()
+    settings.video_recording.preset = "cpu-h264"
+
+    dataset = MagicMock()
+    dataset.start_recording_mutation.return_value = _FakeMutation()
+
+    with (
+        patch("runtime.session.get_settings", return_value=settings),
+        patch("runtime.session.resolve_video_encoding_settings") as resolve_preset,
+        patch("runtime.session.InternalLeRobotDataset", return_value=dataset) as dataset_class,
+        patch.object(session, "_wait_until_devices_ready"),
+    ):
+        session._load_dataset(LoadDatasetCommand(dataset_id=UUID("e8454e0c-f962-492e-878c-f7367f5ae73f")))
+
+    resolve_preset.assert_called_once_with("cpu-h264")
+    assert dataset_class.call_args.kwargs["recording_video_encoding_settings"] is resolve_preset.return_value

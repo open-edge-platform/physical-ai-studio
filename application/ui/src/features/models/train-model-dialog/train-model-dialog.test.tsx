@@ -64,6 +64,9 @@ const mockProjectWithRemoteTrainer = () => {
         http.get('/api/jobs', () => HttpResponse.json([])),
         http.get('/api/settings', () =>
             HttpResponse.json({
+                video_recording: {
+                    preset: null,
+                },
                 trainer: {
                     request_timeout_s: 30,
                     download_read_timeout_s: 120,

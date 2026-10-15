@@ -1,10 +1,11 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+from unittest.mock import MagicMock
 
 from fastapi import BackgroundTasks
 from fastapi.testclient import TestClient
 
-from api.system import request_graceful_restart, restart_server
+from api.system import get_video_recording_presets, request_graceful_restart, restart_server
 from main import app
 from services.health_service import HealthService
 from settings import get_settings
@@ -38,3 +39,11 @@ async def test_restart_server_marks_restart_required_and_schedules_shutdown() ->
     assert health_service.plugin_restart_required is True
     assert len(background_tasks.tasks) == 1
     assert background_tasks.tasks[0].func is request_graceful_restart
+
+
+async def test_get_video_recording_presets_uses_system_service() -> None:
+    service = MagicMock()
+    expected = MagicMock()
+    service.get_video_recording_presets.return_value = expected
+
+    assert await get_video_recording_presets(service) is expected

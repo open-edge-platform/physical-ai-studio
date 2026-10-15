@@ -29,6 +29,7 @@ describe('SshSettingsForm', () => {
             http.patch('/api/settings', async ({ request }) => {
                 patchedBody = await request.json();
                 return HttpResponse.json({
+                    video_recording: { preset: null },
                     trainer: {
                         request_timeout_s: 30,
                         download_read_timeout_s: 120,
@@ -61,6 +62,7 @@ describe('SshSettingsForm', () => {
             http.patch('/api/settings', async ({ request }) => {
                 patchedBody = await request.json();
                 return HttpResponse.json({
+                    video_recording: { preset: null },
                     trainer: {
                         request_timeout_s: 30,
                         download_read_timeout_s: 120,
