@@ -8,7 +8,7 @@ license: Apache-2.0
 
 Build the Physical AI robot driver independently before adding Studio support. A plugin owns its driver, device integration, Pydantic payloads, catalog definitions, and optional assets. Studio owns project persistence, generated configuration forms, runtime orchestration, and the curated Plugins page.
 
-Read the [Studio robot plugin guide](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/robot-plugins.md) and the [`physicalai-studio-plugin` SDK README](https://github.com/openvinotoolkit/physicalai/blob/main/packages/physicalai-studio-plugin/README.md) before editing. For complete plugin examples, use the packages under [`openvinotoolkit/physicalai/packages`](https://github.com/openvinotoolkit/physicalai/tree/main/packages), including [`physicalai-rebot-b601-plugin`](https://github.com/openvinotoolkit/physicalai/tree/main/packages/physicalai-rebot-b601-plugin). Use Studio's [built-in network robot definition](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/backend/src/robots/catalog/widowxai.py) as a schema example.
+Read the [Studio robot plugin guide](https://github.com/open-edge-platform/physical-ai-studio/blob/main/application/docs/robot-plugins.md) and the [`physicalai-studio-plugin` SDK README](https://github.com/openvinotoolkit/physicalai/blob/main/packages/physicalai-studio-plugin/README.md) before editing. For complete plugin examples, use the packages under [`openvinotoolkit/physicalai/packages`](https://github.com/openvinotoolkit/physicalai/tree/main/packages), including [`physicalai-rebot-b601-plugin`](https://github.com/openvinotoolkit/physicalai/tree/main/packages/physicalai-rebot-b601-plugin).
 
 ## Workflow
 
@@ -71,30 +71,31 @@ Read the [Studio robot plugin guide](https://github.com/open-edge-platform/physi
    - Test payload defaults, required-field and cross-field validation, `model_rebuild`, and `validate_robot_payload_ui(...)`.
    - Test each builder with fake payload containers and a fake `CatalogRobotFactory`, including both a resolved connection and a missing-device error.
    - Test `RobotAsset.root_resolver()` and the URDF path when assets are supplied.
-   - Run the package's focused tests from its own repository, for example:
+   - Run the package's tests from its own repository, for example:
 
    ```bash
-   uv run pytest tests/
+   uv run pytest packages/physicalai-acme-arm-plugin/tests/
    ```
 
    - Done when: driver and catalog tests pass without physical hardware.
 
-7. **Install locally and restart Studio for catalog discovery.** Show the exact install command and obtain approval before changing the running backend environment. Install the plugin into the _running backend's_ Python environment, not into an unrelated shell environment. For a checkout-based backend, you can use an editable install from your plugin repository:
+7. **Install locally and restart Studio for catalog discovery.** From `application/backend/`, add the plugin to the backend environment using an editable dependency, then sync and restart the backend:
 
    ```bash
-   uv pip install --python /path/to/studio-backend/.venv/bin/python --editable .
+   cd /path/to/physical-ai-studio/application/backend
+   uv add --editable /path/to/physicalai-acme-arm-plugin
+   uv sync
    ```
 
-   - Entry points and catalog schemas load only at backend startup. An editable install made with `uv pip` may need repeating after Studio's own `uv sync`; restart the backend after changing entry points, payload models, or `studio_catalog.py`.
-   - Use your running Studio deployment's base URL. In a Studio development checkout, `npm run start` from `application/ui/` proxies `/api` on port 3000; a checkout is not required to use the plugin.
-   - Done when: the backend starts without catalog registration errors and the plugin type is available from the live catalog.
+   - Entry points and catalog schemas load only at backend startup. Restart the backend after changing entry points, payload models, or `studio_catalog.py`.
+   - Done when: the locally running backend starts without catalog registration errors and the plugin type is available from its catalog.
 
-8. **Debug through the live catalog APIs before debugging the UI.** Set `STUDIO_URL` to the base URL of your running Studio (for example `http://localhost:3000` in a dev checkout) and use the browser or `curl`:
+8. **Debug through the live catalog APIs before debugging the UI.** Use the browser or `curl` against the local Studio instance:
 
    ```bash
-   curl --fail "${STUDIO_URL}/api/robots/catalog"
-   curl --fail "${STUDIO_URL}/api/robots/catalog/Trossen_Bimanual_WidowXAI_Follower/schema"
-   curl --fail "${STUDIO_URL}/api/robots/catalog/AcmeArm_Follower/schema"
+   curl --fail http://localhost:3000/api/robots/catalog
+   curl --fail http://localhost:3000/api/robots/catalog/Trossen_Bimanual_WidowXAI_Follower/schema
+   curl --fail http://localhost:3000/api/robots/catalog/AcmeArm_Follower/schema
    ```
 
    - Treat `Trossen_Bimanual_WidowXAI_Follower/schema` as the known-good reference for a network bimanual payload. Compare your schema's `properties`, required fields, defaults, descriptions, nested `$defs`, and `x-physicalai-ui` metadata against the desired form.
@@ -104,11 +105,16 @@ Read the [Studio robot plugin guide](https://github.com/open-edge-platform/physi
    - If visualization fails, request `/{robot_type}/urdf` and verify the asset root resolver, relative URDF path, package map, and joint map.
    - Done when: catalog and schema endpoints return the expected definition and JSON Schema, and the generated Studio form reflects it without duplicate or missing fields.
 
-A plugin works after installation without a curated Plugins-page entry. A curated listing is a separate Studio-maintainer change to `application/backend/src/plugins/manifest.json`; request it after the plugin package and entry point are published and reviewed.
+9. **Add curated UI installation after the package is installable.** When the plugin should appear on Studio's Plugins page, add a reviewed entry to `application/backend/src/plugins/manifest.json`.
+   - `id` must equal the Python distribution name. `install_source` must be a reviewed package, Git, or path requirement accepted by `uv pip install`. Add user-facing metadata and known robot types under `robots`.
+   - The manifest controls what the UI may install; it does not replace the package entry point that registers the actual robot definitions.
+   - Test the plugin in a local Studio checkout, including installing it from that checkout. Human review determines whether it should be included in the curated list.
+   - Restart the backend after a manifest change.
+   - Done when: the Plugins page lists the plugin before installation, installs the reviewed source, prompts for restart, and the restarted backend exposes the registered types through `/api/robots/catalog`.
 
 ## Verify
 
-Run the plugin's driver and catalog tests in its own repository, then install it in the Studio backend environment and check `/api/robots/catalog` and `/{type}/schema`. Use fake hardware for automated tests; ask before connecting to or commanding a real robot.
+Run the plugin's driver and catalog tests in its own repository, then install it in a local Studio checkout and check `/api/robots/catalog` and `/{type}/schema`. Use fake hardware for automated tests; ask before connecting to or commanding a real robot.
 
 ## References
 
