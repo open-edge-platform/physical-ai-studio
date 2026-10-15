@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from physicalai.engine import _integration
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from pathlib import Path
@@ -23,7 +25,7 @@ if TYPE_CHECKING:
 _DEFAULT_STEPS = 1
 _STEP_ENV = "PHYSICALAI_LEROBOT_TEST_STEPS"
 _DEVICE_ENV = "PHYSICALAI_LEROBOT_DEVICE"
-_ALLOWED_DEVICES = {"cpu", "cuda", "xpu"}
+_ALLOWED_DEVICES = {"auto", "cpu", "cuda", "xpu"}
 
 _DATASETS = [
     pytest.param(
@@ -54,6 +56,7 @@ def _training_options() -> tuple[int, str]:
         Requested optimization steps and device.
 
     Raises:
+        RuntimeError: If detected GPU hardware is unusable by the host interpreter.
         ValueError: If a test option is invalid.
     """
     raw_steps = os.environ.get(_STEP_ENV, str(_DEFAULT_STEPS))
@@ -66,29 +69,24 @@ def _training_options() -> tuple[int, str]:
         msg = f"{_STEP_ENV} must be a positive integer, got {steps}."
         raise ValueError(msg)
 
-    device = os.environ.get(_DEVICE_ENV, "cpu").strip().lower()
-    if device not in _ALLOWED_DEVICES:
-        msg = f"{_DEVICE_ENV} must be one of {sorted(_ALLOWED_DEVICES)}, got {device!r}."
+    requested_device = os.environ.get(_DEVICE_ENV, "auto").strip().lower()
+    if requested_device not in _ALLOWED_DEVICES:
+        msg = f"{_DEVICE_ENV} must be one of {sorted(_ALLOWED_DEVICES)}, got {requested_device!r}."
         raise ValueError(msg)
-    return steps, device
-
-
-def _require_training_device(device: str) -> None:
-    """Skip an explicitly requested accelerator when PyTorch cannot use it."""
-    if device == "cpu":
-        return
-
-    import torch
-
-    if device == "cuda" and not torch.cuda.is_available():
-        pytest.skip(f"{_DEVICE_ENV}=cuda was requested, but CUDA is unavailable in this PyTorch environment.")
-    xpu_backend = getattr(torch, "xpu", None)
-    if device == "xpu" and (
-        xpu_backend is None
-        or not callable(getattr(xpu_backend, "is_available", None))
-        or not xpu_backend.is_available()
-    ):
-        pytest.skip(f"{_DEVICE_ENV}=xpu was requested, but Intel XPU is unavailable in this PyTorch environment.")
+    hardware = _integration.detect_gpu_hardware()
+    torch_devices = _integration.probe_torch_devices(sys.executable)
+    target = _integration.select_integration_target(
+        requested_device,
+        detected_hardware=hardware,
+        torch_devices=torch_devices.as_mapping(),
+    )
+    _integration.require_torch_device(
+        target,
+        torch_devices=torch_devices,
+        detected_hardware=hardware,
+        interpreter=sys.executable,
+    )
+    return steps, target.device
 
 
 def _make_training_config(
@@ -215,20 +213,48 @@ def test_native_parity_config_can_enable_cudnn_determinism(tmp_path: Path) -> No
     assert config.cudnn_deterministic is True
 
 
+def _mock_host_accelerators(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    hardware: set[str],
+    cuda: bool,
+    xpu: bool,
+) -> None:
+    def detect_hardware() -> frozenset[str]:
+        return frozenset(hardware)
+
+    def probe_devices(_interpreter: str | Path) -> _integration.TorchDeviceAvailability:
+        return _integration.TorchDeviceAvailability(cuda=cuda, xpu=xpu)
+
+    monkeypatch.setattr(_integration, "detect_gpu_hardware", detect_hardware)
+    monkeypatch.setattr(_integration, "probe_torch_devices", probe_devices)
+
+
 def test_training_options_come_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Allow developers to extend the smoke run and select its training device."""
     monkeypatch.setenv(_STEP_ENV, "25")
     monkeypatch.setenv(_DEVICE_ENV, "cuda")
+    _mock_host_accelerators(monkeypatch, hardware={"cuda"}, cuda=True, xpu=False)
 
     assert _training_options() == (25, "cuda")
 
 
-def test_training_options_default_to_one_cpu_step(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep ordinary opt-in runs small and hardware-independent."""
+def test_training_options_honor_explicit_cpu_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Allow developers to keep a GPU-equipped host on CPU intentionally."""
     monkeypatch.delenv(_STEP_ENV, raising=False)
-    monkeypatch.delenv(_DEVICE_ENV, raising=False)
+    monkeypatch.setenv(_DEVICE_ENV, "cpu")
+    _mock_host_accelerators(monkeypatch, hardware={"cuda"}, cuda=False, xpu=False)
 
     assert _training_options() == (1, "cpu")
+
+
+def test_training_options_auto_prefers_usable_xpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Auto mode chooses usable XPU before CUDA and doesn't default to CPU."""
+    monkeypatch.delenv(_STEP_ENV, raising=False)
+    monkeypatch.delenv(_DEVICE_ENV, raising=False)
+    _mock_host_accelerators(monkeypatch, hardware={"xpu", "cuda"}, cuda=True, xpu=True)
+
+    assert _training_options() == (1, "xpu")
 
 
 @pytest.mark.parametrize(("steps", "device"), [("0", "cpu"), ("many", "cpu"), ("1", "mps")])
@@ -246,20 +272,16 @@ def test_training_options_reject_invalid_values(
 
 
 @pytest.mark.parametrize("device", ["cuda", "xpu"])
-def test_unavailable_accelerator_request_skips_with_reason(
+def test_unavailable_accelerator_request_fails_with_setup_guidance(
     monkeypatch: pytest.MonkeyPatch,
     device: str,
 ) -> None:
-    """Explain why an unavailable accelerator cannot run this test."""
-    import sys
-    from types import SimpleNamespace
+    """Fail clearly instead of silently selecting CPU when GPU use is unavailable."""
+    monkeypatch.setenv(_DEVICE_ENV, device)
+    _mock_host_accelerators(monkeypatch, hardware={device}, cuda=False, xpu=False)
 
-    backend = SimpleNamespace(is_available=lambda: False)
-    fake_torch = SimpleNamespace(cuda=backend, xpu=backend)
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
-
-    with pytest.raises(pytest.skip.Exception, match="PHYSICALAI_LEROBOT_DEVICE=.*unavailable"):
-        _require_training_device(device)
+    with pytest.raises(RuntimeError, match="host interpreter.*cannot use torch"):
+        _training_options()
 
 
 @pytest.mark.integration
@@ -274,10 +296,12 @@ def test_engine_trains_public_lerobot_dataset_and_packages_checkpoint(
 ) -> None:
     """Train a configurable seeded run from a public dataset and package its checkpoint.
 
-    Set ``PHYSICALAI_RUN_LEROBOT_INTEGRATION=1`` to run the cases. The defaults
-    are one CPU update; set ``PHYSICALAI_LEROBOT_TEST_STEPS`` and
-    ``PHYSICALAI_LEROBOT_DEVICE`` for longer or accelerator-backed runs. The
-    pinned public dataset may be downloaded on first use.
+    Set ``PHYSICALAI_RUN_LEROBOT_INTEGRATION=1`` to run the cases. The default
+    budget is one update, and ``PHYSICALAI_LEROBOT_DEVICE=auto`` selects usable
+    XPU, then CUDA, then CPU from the host torch runtime. Set
+    ``PHYSICALAI_LEROBOT_TEST_STEPS`` for a longer run and override the device
+    explicitly only when intended. A detected but unusable GPU fails with setup
+    guidance instead of falling back to CPU. The pinned dataset may be downloaded.
     """
     if os.environ.get("PHYSICALAI_RUN_LEROBOT_INTEGRATION") != "1":
         pytest.skip("Set PHYSICALAI_RUN_LEROBOT_INTEGRATION=1 to run public-dataset training tests.")
@@ -286,7 +310,6 @@ def test_engine_trains_public_lerobot_dataset_and_packages_checkpoint(
     from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
     requested_steps, device = _training_options()
-    _require_training_device(device)
     output_dir = tmp_path / f"{policy_type}-{repo_id.rsplit('/', maxsplit=1)[-1]}"
     config = _make_training_config(
         policy_type,
@@ -337,7 +360,6 @@ def test_native_lerobot_training_matches_engine_on_pinned_pusht(
     from physicalai_lerobot_policy_plugin.engine import LeRobotEngine
 
     requested_steps, device = _training_options()
-    _require_training_device(device)
     dataset_repo = "lerobot/pusht"
     dataset_revision = "b1c3ecbae7f244acc039a3dbc255a00dad1372b9"
     native_output = tmp_path / "native-output"
