@@ -1,0 +1,212 @@
+name: Simulation library E2E
+
+on:
+  schedule:
+    - cron: "0 19 * * 5" # Weekly, Friday at 19:00 UTC
+  workflow_dispatch:
+    inputs:
+      record_video:
+        description: Save a video of the policy-driven rollout
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: simulation-library-e2e
+  cancel-in-progress: false
+
+jobs:
+  train-and-rollout:
+    name: Simulation ${{ matrix.policy }} / ${{ matrix.scene }}
+    runs-on: [self-hosted, Linux, X64, gpu]
+    timeout-minutes: 7200
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - { policy: act, scene: conveyor_sort }
+          - { policy: molmoact2, scene: conveyor_sort }
+          - { policy: pi05, scene: conveyor_sort }
+          - { policy: rldx1, scene: conveyor_sort }
+          - { policy: smolvla, scene: conveyor_sort }
+          - { policy: xr0, scene: conveyor_sort }
+    env:
+      MUJOCO_GL: osmesa
+      PYOPENGL_PLATFORM: osmesa
+      SIM_E2E_ACCELERATOR: auto
+      SIM_E2E_ROLLOUTS: 5
+      SIM_E2E_RECORD_VIDEO: ${{ inputs.record_video || false }}
+      SIM_E2E_POLICY: ${{ matrix.policy }}
+      SIM_E2E_SCENE: ${{ matrix.scene }}
+      SIM_E2E_OWNER: sim-ci-${{ matrix.policy }}-${{ matrix.scene }}
+      SIM_E2E_HTTP_URL: http://127.0.0.1:8080
+      SIM_E2E_CAMERA_MAP: '{"gripper":"wrist"}'
+      DATASET_REPO: ${{ matrix.scene == 'conveyor_sort' && (vars.SIM_E2E_HF_REPO_CONVEYOR || 'Albertvh97/conveyor-sort-sim-demos') || (vars.SIM_E2E_HF_REPO_PICK_PLACE || 'TEMP_HF_ORG/single-pick-place') }}
+      DATASET_REV: ${{ matrix.scene == 'conveyor_sort' && (vars.SIM_E2E_HF_REV_CONVEYOR || '6a949360761fee17089fbaaf8bc53f59715cb575') || (vars.SIM_E2E_HF_REV_PICK_PLACE || 'TEMP_REVISION') }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            cas-server.xethub.hf.co:443
+            download.pytorch.org:443
+            download-r2.pytorch.org:443
+            files.pythonhosted.org:443
+            github.com:443
+            huggingface.co:443
+            pypi.org:443
+            release-assets.githubusercontent.com:443
+            releases.astral.sh:443
+            transfer.xethub.hf.co:443
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Isolate data and output paths
+        run: |
+          {
+            echo "HF_HOME=$RUNNER_TEMP/hf-$SIM_E2E_POLICY-$SIM_E2E_SCENE"
+            echo "SIM_E2E_OUTPUT_DIR=$RUNNER_TEMP/simulation-results"
+            echo "SIM_E2E_DATASET_DIR=$RUNNER_TEMP/scenario-dataset"
+          } >> "$GITHUB_ENV"
+
+      - name: Check published dataset settings
+        run: |
+          if [[ ! "$DATASET_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ || ! "$DATASET_REV" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Set SIM_E2E_HF_REPO_* and SIM_E2E_HF_REV_* to published datasets and immutable commit SHAs.' >&2
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: library/.python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.10.4"
+
+      - name: Install headless rendering support
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libosmesa6 libosmesa6-dev
+
+      - name: Install video encoder
+        if: inputs.record_video
+        run: sudo apt-get install -y ffmpeg
+
+      - name: Install library and MuJoCo plugin
+        working-directory: library
+        run: uv sync --frozen --extra tests --extra policies --extra sim-e2e --extra cu128
+
+      - name: Fetch pinned LeRobot recording
+        working-directory: library
+        run: |
+          uv run --no-sync hf download "$DATASET_REPO" --repo-type dataset --revision "$DATASET_REV" \
+            --local-dir "$SIM_E2E_DATASET_DIR" --include 'simulation.json' --include 'meta/*' --include 'data/*' --include 'videos/*'
+          test -f "$SIM_E2E_DATASET_DIR/meta/info.json"
+
+      - name: Start MuJoCo owner
+        working-directory: library
+        run: |
+          uv run --no-sync physicalai-mujoco prefetch
+          uv run --no-sync physicalai-mujoco start --scene "$SIM_E2E_SCENE" \
+            --name "$SIM_E2E_OWNER" --http-port 8080 --no-gui \
+            > "$RUNNER_TEMP/simulation-owner.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/simulation-owner.pid"
+          for ((attempt=1; attempt<=120; attempt++)); do
+            if curl --silent --fail "$SIM_E2E_HTTP_URL/health" > /dev/null; then exit 0; fi
+            if ! kill -0 "$(< "$RUNNER_TEMP/simulation-owner.pid")" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          echo 'MuJoCo owner did not become healthy' >&2
+          exit 1
+
+      - name: Match recorded conveyor belt speed
+        if: matrix.scene == 'conveyor_sort'
+        run: |
+          speed=$(jq -er '.belt_speed | select(type == "number" and . > 0 and . <= 0.1)' "$SIM_E2E_DATASET_DIR/simulation.json")
+          curl --fail --silent --show-error -X POST "$SIM_E2E_HTTP_URL/conveyor/belt-speed" \
+            -H 'content-type: application/json' -d "{\"speed\":$speed}"
+          for ((attempt=1; attempt<=20; attempt++)); do
+            if curl --silent --fail "$SIM_E2E_HTTP_URL/health" | jq -e --argjson speed "$speed" '.episode.belt_speed == $speed' > /dev/null; then exit 0; fi
+            sleep 0.2
+          done
+          echo 'Conveyor belt did not reach the recorded speed' >&2
+          exit 1
+
+      - name: Train, export and score live inference
+        working-directory: library
+        run: |
+          mkdir -p "$SIM_E2E_OUTPUT_DIR"
+          uv run --no-sync pytest tests/integration/test_simulation_training_e2e.py \
+            -k "$SIM_E2E_SCENE" -v --junitxml="$SIM_E2E_OUTPUT_DIR/junit.xml"
+
+      - name: Pin export contents for Studio inference
+        run: |
+          cd "$SIM_E2E_OUTPUT_DIR"
+          find export -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+          printf '{"policy":"%s","scenario":"%s","dataset_revision":"%s","source_sha":"%s"}\n' \
+            "$SIM_E2E_POLICY" "$SIM_E2E_SCENE" "$DATASET_REV" "$GITHUB_SHA" > provenance.json
+
+      - name: Stop simulation
+        if: always()
+        run: |
+          curl --silent --max-time 3 -X POST "$SIM_E2E_HTTP_URL/shutdown" || true
+          if test -f "$RUNNER_TEMP/simulation-owner.pid"; then
+            kill "$(< "$RUNNER_TEMP/simulation-owner.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sim-${{ matrix.policy }}-${{ matrix.scene }}
+          path: |
+            ${{ runner.temp }}/simulation-results/
+            ${{ runner.temp }}/simulation-owner.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+  report:
+    name: Weekly policy report
+    if: always()
+    needs: train-and-rollout
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download policy results
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: sim-*-conveyor_sort
+          path: results
+      - name: Summarize training and inference
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          print('## Conveyor policy E2E (train once, then five inference trials per policy)')
+          print('| Policy | Train steps | Train time (h) | Final train loss | Inference scores | Mean score |')
+          print('| --- | ---: | ---: | ---: | --- | ---: |')
+          for policy in ('act', 'molmoact2', 'pi05', 'rldx1', 'smolvla', 'xr0'):
+              path = Path('results') / f'sim-{policy}-conveyor_sort' / 'result.json'
+              if not path.is_file():
+                  print(f'| {policy} | — | — | — | No result (see job logs) | — |')
+                  continue
+              result = json.loads(path.read_text())
+              loss = '—' if result['train_loss'] is None else f"{result['train_loss']:.4f}"
+              scores = ', '.join(f"{rollout['score']:.1%}" for rollout in result['rollouts'])
+              print(f"| {policy} | {result['training_steps']} | {result['training_seconds'] / 3600:.2f} | {loss} | {scores} | {result['score']:.1%} |")
+          PY
