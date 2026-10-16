@@ -125,8 +125,24 @@ export const RemoteTrainerDetail = ({ remoteTrainer, health, isChecking }: Remot
                                 {connectionModeLabel(remoteTrainer.connection_mode)}
                             </Badge>
                         </dd>
-                        <dt>Trainer URL</dt>
-                        <dd className={classes.definitionListMono}>{remoteTrainer.url}</dd>
+                        {remoteTrainer.url && (
+                            <>
+                                <dt>Trainer URL</dt>
+                                <dd className={classes.definitionListMono}>{remoteTrainer.url}</dd>
+                            </>
+                        )}
+                        {remoteTrainer.connection.connection_mode === 'aws_batch' && (
+                            <>
+                                <dt>Region</dt>
+                                <dd className={classes.definitionListMono}>{remoteTrainer.connection.region}</dd>
+                                <dt>Bucket</dt>
+                                <dd className={classes.definitionListMono}>{remoteTrainer.connection.bucket}</dd>
+                                <dt>Instance types</dt>
+                                <dd className={classes.definitionListMono}>
+                                    {Object.keys(remoteTrainer.connection.targets).join(', ')}
+                                </dd>
+                            </>
+                        )}
                         {sshHost !== undefined && (
                             <>
                                 <dt>SSH host</dt>

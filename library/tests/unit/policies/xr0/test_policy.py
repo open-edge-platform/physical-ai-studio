@@ -296,4 +296,3 @@ class TestXR0DeltaMode:
             # left as ``None`` (not overwritten with the mirrored lists).
             assert policy.hparams["action_delta_mean"] is None
             assert policy.hparams["action_delta_std"] is None
-

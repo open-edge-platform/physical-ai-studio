@@ -31,6 +31,8 @@ class RemoteTrainingTargetHandler:
         if payload.base_model_id is not None:
             raise RemoteResumeUnsupportedError
         remote_trainer = await self.remote_trainer_service.get_remote_trainer(payload.remote_trainer_id)
+        if remote_trainer.url is None:
+            raise ValueError(f"Training on {remote_trainer.connection_mode.value} trainers is not available yet")
         catalog = await self.remote_trainer_service.get_policy_catalog(payload.remote_trainer_id)
         if payload.policy not in {policy.id for policy in catalog.available}:
             raise InvalidResourceError("policy", f"{payload.policy!r} is not available on the selected trainer")

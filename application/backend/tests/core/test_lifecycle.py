@@ -14,7 +14,7 @@ from loguru import logger
 
 from core import lifecycle as lifecycle_module
 from core.security import get_ssh_feature_availability
-from schemas.remote_trainer import RemoteTrainer, RemoteTrainerConnectionMode
+from schemas.remote_trainer import RemoteTrainer, SshConnection
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -54,13 +54,7 @@ async def _run_startup_and_capture_logs(app: FastAPI) -> list[str]:
 
 @pytest.mark.anyio
 async def test_startup_restores_persistent_ssh_trainers_as_well_as_tunnels() -> None:
-    trainer = RemoteTrainer(
-        id=uuid4(),
-        name="gpu",
-        url="http://127.0.0.1:8001",
-        connection_mode=RemoteTrainerConnectionMode.SSH,
-        ssh_host_alias="gpu-box",
-    )
+    trainer = RemoteTrainer(id=uuid4(), name="gpu", connection=SshConnection(ssh_host_alias="gpu-box"))
     service = MagicMock()
     service.list_remote_trainers = AsyncMock(return_value=[trainer])
     db = MagicMock()

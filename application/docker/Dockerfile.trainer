@@ -290,12 +290,16 @@ COPY --link --chown=${TRAINER_UID}:${TRAINER_GID} application/backend/src/traini
 # console script. Installing the studio package would additionally require its
 # compiled UI and robot assets, which this image deliberately excludes.
 RUN printf '#!/bin/sh\nexec python -m trainer.cli "$@"\n' > /usr/local/bin/physicalai-trainer \
-    && chmod 755 /usr/local/bin/physicalai-trainer
+    && chmod 755 /usr/local/bin/physicalai-trainer \
+    && printf '#!/bin/sh\nexec python -m trainer.batch "$@"\n' > /usr/local/bin/physicalai-trainer-batch \
+    && chmod 755 /usr/local/bin/physicalai-trainer-batch
 
 EXPOSE 8001
 USER trainer
 WORKDIR /var/lib/physicalai-trainer
-ENTRYPOINT ["physicalai-trainer"]
+# Starts the HTTP service by default. Pass `physicalai-trainer-batch` as the
+# container command to run a single training job and exit instead.
+CMD ["physicalai-trainer"]
 
 FROM runtime-base AS runtime-xpu
 

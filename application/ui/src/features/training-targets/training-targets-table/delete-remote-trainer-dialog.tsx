@@ -38,19 +38,16 @@ export const DeleteRemoteTrainerDialog = ({ remoteTrainer, onDeleted, onCancel }
 
     return (
         <AlertDialog
-            title='Delete remote trainer'
+            title='Remove training target'
             variant='warning'
-            primaryActionLabel='Delete'
-            cancelLabel='Close'
+            primaryActionLabel='Remove'
+            cancelLabel='Cancel'
             onCancel={onCancel}
             onPrimaryAction={remove}
             isPrimaryActionDisabled={deleteMutation.isPending}
         >
             <Flex direction='column' gap='size-150'>
-                <Text>
-                    Delete {remoteTrainer.name}? Submitted remote jobs retain their pinned endpoint URL and are not
-                    changed.
-                </Text>
+                <Text>Remove {remoteTrainer.name}?</Text>
                 {error && <Text UNSAFE_className={classes.errorMessage}>{error}</Text>}
             </Flex>
         </AlertDialog>

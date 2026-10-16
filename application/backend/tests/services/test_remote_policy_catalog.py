@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from exceptions import InvalidResourceError
 from schemas.job import RemoteTrainJobPayload
-from schemas.remote_trainer import RemoteTrainer
+from schemas.remote_trainer import DirectConnection, RemoteTrainer
 from services.remote_trainer_service import RemoteTrainerService
 from services.training_targets.remote import RemoteTrainingTargetHandler
 from trainer.main import app as trainer_app
@@ -22,7 +22,7 @@ async def test_remote_catalog_and_submission_do_not_depend_on_local_policy_extra
     trainer_id = uuid4()
     service = RemoteTrainerService.__new__(RemoteTrainerService)
     service.get_remote_trainer = AsyncMock(
-        return_value=RemoteTrainer(id=trainer_id, name="gpu", url="https://trainer.test")
+        return_value=RemoteTrainer(id=trainer_id, name="gpu", connection=DirectConnection(url="https://trainer.test"))
     )
     catalog = PolicyCatalog(
         available=[AvailablePolicy(id="pi05", name="Pi0.5", description="remote", min_vram=None)],
@@ -46,7 +46,7 @@ async def test_unreachable_remote_catalog_fails_closed(monkeypatch) -> None:
     trainer_id = uuid4()
     service = RemoteTrainerService.__new__(RemoteTrainerService)
     service.get_remote_trainer = AsyncMock(
-        return_value=RemoteTrainer(id=trainer_id, name="gpu", url="https://trainer.test")
+        return_value=RemoteTrainer(id=trainer_id, name="gpu", connection=DirectConnection(url="https://trainer.test"))
     )
     original_client = httpx.AsyncClient
 
@@ -66,7 +66,9 @@ async def test_unreachable_remote_catalog_fails_closed(monkeypatch) -> None:
 async def test_remote_submission_rechecks_policy_before_saving() -> None:
     trainer_id = uuid4()
     service = AsyncMock()
-    service.get_remote_trainer.return_value = RemoteTrainer(id=trainer_id, name="gpu", url="https://trainer.test")
+    service.get_remote_trainer.return_value = RemoteTrainer(
+        id=trainer_id, name="gpu", connection=DirectConnection(url="https://trainer.test")
+    )
     service.get_policy_catalog.return_value = PolicyCatalog(available=[], backends={})
     payload = RemoteTrainJobPayload(
         remote_trainer_id=trainer_id, project_id=uuid4(), dataset_id=uuid4(), policy="pi05", model_name="model"

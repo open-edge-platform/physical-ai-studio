@@ -1,10 +1,11 @@
 import { useState } from 'react';
 
-import { Button, DialogContainer, Flex, Icon, Text, View } from '@geti-ui/ui';
-import { Add } from '@geti-ui/ui/icons';
+import { DialogContainer, Heading, Text, View } from '@geti-ui/ui';
+import { Deployments, Lock } from '@geti-ui/ui/icons';
 
 import { $api } from '../../api/client';
-import { TrainingTargetForm } from './training-target-form/training-target-form';
+import { ReactComponent as AwsIcon } from '../../assets/icons/aws-icon.svg';
+import { CloudProviderForm } from './training-target-form/cloud-provider-form';
 import { DeleteRemoteTrainerDialog } from './training-targets-table/delete-remote-trainer-dialog';
 import { InstallPrerequisitesDialog } from './training-targets-table/install-prerequisites-dialog';
 import { RemoteTrainerForm } from './training-targets-table/remote-trainer-form/remote-trainer-form';
@@ -12,13 +13,13 @@ import {
     SshHostKeyConfirmation,
     SshHostKeyConfirmationDialog,
 } from './training-targets-table/ssh-host-key-confirmation-dialog';
-import { TrainingTargetRow } from './training-targets-table/training-target-row';
+import { INSTANCE_TYPES, InstanceType, TrainingTargetRow } from './training-targets-table/training-target-row';
 import { TrainingTargetsTable } from './training-targets-table/training-targets-table';
 
 import classes from './training-targets-page.module.css';
 
 type TrainingTargetAction =
-    | { type: 'create' }
+    | { type: 'create'; instanceType: InstanceType }
     | { type: 'edit'; row: TrainingTargetRow }
     | { type: 'delete'; row: TrainingTargetRow }
     | { type: 'setup'; row: TrainingTargetRow; reboot: boolean }
@@ -48,20 +49,30 @@ export const TrainingTargetsPage = () => {
 
     return (
         <View padding='size-400' height='100%' maxWidth='240ch' marginX='auto'>
-            <Flex marginBottom={'size-250'} justifyContent={'space-between'} alignItems={'center'}>
-                <Text>Configure and monitor where training jobs run.</Text>
-
-                <Button
-                    variant='secondary'
-                    UNSAFE_className={classes.addButton}
-                    onPress={() => setAction({ type: 'create' })}
-                >
-                    <Icon marginEnd='size-50'>
-                        <Add />
-                    </Icon>
-                    New training target
-                </Button>
-            </Flex>
+            <Heading level={2}>Add a training target</Heading>
+            <div className={classes.creationGrid}>
+                {INSTANCE_TYPES.map(({ id, label, description }) => (
+                    <button
+                        key={id}
+                        type='button'
+                        className={classes.creationCard}
+                        aria-label={`Add training target: ${label}`}
+                        aria-describedby={`training-target-${id}-description`}
+                        disabled={id === 'ssh' && !sshAvailable}
+                        onClick={() => setAction({ type: 'create', instanceType: id })}
+                    >
+                        <span className={classes.typeIcon} aria-hidden='true'>
+                            {id === 'direct' ? <Deployments /> : id === 'ssh' ? <Lock /> : <AwsIcon />}
+                        </span>
+                        <span className={classes.typeCopy}>
+                            <span className={classes.typeName}>{label}</span>
+                            <span id={`training-target-${id}-description`} className={classes.typeDescription}>
+                                {description}
+                            </span>
+                        </span>
+                    </button>
+                ))}
+            </div>
 
             {sshFeature?.network_exposed && (
                 <Text UNSAFE_className={classes.notice}>
@@ -69,29 +80,40 @@ export const TrainingTargetsPage = () => {
                 </Text>
             )}
 
+            <Heading level={2}>Training targets</Heading>
             {rows.length === 0 ? (
                 <View UNSAFE_className={classes.container}>
-                    <Text UNSAFE_className={classes.emptyList}>No training targets are configured.</Text>
+                    <Text UNSAFE_className={classes.emptyList}>No training targets added</Text>
                 </View>
             ) : (
-                <TrainingTargetsTable
-                    rows={rows}
-                    onEdit={(row) => setAction({ type: 'edit', row })}
-                    onDelete={(row) => setAction({ type: 'delete', row })}
-                    onSetup={sshAvailable ? (row, reboot) => setAction({ type: 'setup', row, reboot }) : undefined}
-                />
+                <div className={classes.tableScroll}>
+                    <TrainingTargetsTable
+                        rows={rows}
+                        onEdit={(row) => setAction({ type: 'edit', row })}
+                        onDelete={(row) => setAction({ type: 'delete', row })}
+                        onSetup={sshAvailable ? (row, reboot) => setAction({ type: 'setup', row, reboot }) : undefined}
+                    />
+                </div>
             )}
 
             <DialogContainer onDismiss={closeForm}>
-                {action?.type === 'create' && (
-                    <TrainingTargetForm
+                {action?.type === 'create' && action.instanceType === 'aws_batch' && (
+                    <CloudProviderForm close={closeForm} />
+                )}
+                {action?.type === 'create' && action.instanceType !== 'aws_batch' && (
+                    <RemoteTrainerForm
+                        instanceType={action.instanceType}
                         close={closeForm}
                         requestHostKeyConfirmation={setHostKeyConfirmation}
                         sshAvailable={sshAvailable}
                     />
                 )}
-                {action?.type === 'edit' && action.row.kind === 'direct-url' && (
+                {action?.type === 'edit' && action.row.trainer.connection_mode === 'aws_batch' && (
+                    <CloudProviderForm remoteTrainer={action.row.trainer} close={closeForm} />
+                )}
+                {action?.type === 'edit' && action.row.trainer.connection_mode !== 'aws_batch' && (
                     <RemoteTrainerForm
+                        instanceType={action.row.trainer.connection_mode}
                         remoteTrainer={action.row.trainer}
                         close={closeForm}
                         requestHostKeyConfirmation={setHostKeyConfirmation}
