@@ -188,6 +188,13 @@ async def start(remote_trainer: RemoteTrainer, accepted_host_key_fingerprint: st
         _launch_phase.pop(remote_trainer.id, None)
 
 
+def clear_launch_state(remote_trainer_id: UUID) -> None:
+    """Drop local launch state without contacting the SSH host."""
+    _launch_phase.pop(remote_trainer_id, None)
+    _launch_started_at.pop(remote_trainer_id, None)
+    _launch_failure.pop(remote_trainer_id, None)
+
+
 async def stop(remote_trainer: RemoteTrainer, *, remove_volume: bool = True) -> None:
     """Remove the container, retaining its volume when reconfiguring a trainer."""
     if remote_trainer.connection_mode.value != "ssh":
@@ -199,6 +206,4 @@ async def stop(remote_trainer: RemoteTrainer, *, remove_volume: bool = True) -> 
         )
         if remove_volume:
             await docker_ops.remove_volume(transport, docker_ops.data_volume_name(str(remote_trainer.id)))
-    _launch_phase.pop(remote_trainer.id, None)
-    _launch_started_at.pop(remote_trainer.id, None)
-    _launch_failure.pop(remote_trainer.id, None)
+    clear_launch_state(remote_trainer.id)

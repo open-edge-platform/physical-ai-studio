@@ -64,15 +64,25 @@ async def interrupt_job(
     if job is None:
         raise ResourceNotFoundError(ResourceType.JOB, job_id)
 
+    if isinstance(job, TrainJob):
+        if job.status == JobStatus.PENDING:
+            if await job_service.transition_pending_train_job(job_id, JobStatus.CANCELED):
+                if isinstance(job.payload, RemoteTrainJobPayload) and job.payload.remote_job_id:
+                    from services.training_backends.remote import RemoteTrainingBackend
+
+                    if job.payload.remote_trainer_url:
+                        await RemoteTrainingBackend(job.payload.remote_trainer_url).cancel(job.payload.remote_job_id)
+                return
+            job = await job_service.get_job_by_id(job_id)
+        if job.status == JobStatus.RUNNING:
+            # Keep the job RUNNING until the worker has stopped and flushed progress.
+            # Otherwise Delete can remove it while the worker still owns it.
+            scheduler.job_interrupt_flags[str(job_id)] = True
+            return
     if job.status == JobStatus.CANCELED:
         return
     if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
         raise InvalidJobStateError("Cannot stop a finished job")
-    if job.status == JobStatus.RUNNING and isinstance(job, TrainJob):
-        # Keep the job RUNNING until the worker has stopped and flushed progress.
-        # Otherwise Delete can remove it while the worker still owns it.
-        scheduler.job_interrupt_flags[str(job_id)] = True
-        return
     await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
 
 

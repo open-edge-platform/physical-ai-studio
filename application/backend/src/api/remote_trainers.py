@@ -73,6 +73,10 @@ async def update_remote_trainer(
 async def delete_remote_trainer(
     remote_trainer_id: UUID,
     remote_trainer_service: Annotated[RemoteTrainerService, Depends(get_remote_trainer_service)],
+    forget_locally: bool = False,
 ) -> None:
-    """Delete a trainer with no queued or running managed SSH jobs."""
-    await remote_trainer_service.delete_remote_trainer(remote_trainer_id)
+    """Delete a trainer with no queued or running managed SSH jobs.
+
+    Forget locally skips remote container and volume cleanup when the SSH host is gone.
+    """
+    await remote_trainer_service.delete_remote_trainer(remote_trainer_id, forget_locally=forget_locally)

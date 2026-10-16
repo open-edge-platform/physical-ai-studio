@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from exceptions import InvalidResourceError, ResourceInUseError, ResourceNotFoundError
 from schemas.base_job import JobStatus
@@ -168,6 +169,38 @@ async def test_get_job_by_id_raises_when_missing() -> None:
             await service.get_job_by_id(job_id)
 
     repository_type.return_value.get_by_id.assert_awaited_once_with(job_id)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("first", [JobStatus.RUNNING, JobStatus.CANCELED])
+async def test_only_one_pending_train_job_transition_wins(first: JobStatus) -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    job_id = uuid4()
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                "CREATE TABLE jobs (id TEXT, type TEXT, status TEXT, message TEXT, "
+                "start_time DATETIME, end_time DATETIME)"
+            )
+        )
+        await connection.execute(
+            text("INSERT INTO jobs (id, type, status) VALUES (:id, 'training', 'pending')"), {"id": str(job_id)}
+        )
+    try:
+        async with AsyncSession(engine) as session:
+            service = JobService(session)
+            other = JobStatus.CANCELED if first is JobStatus.RUNNING else JobStatus.RUNNING
+            assert await service.transition_pending_train_job(job_id, first)
+            assert not await service.transition_pending_train_job(job_id, other)
+            result = await session.execute(
+                text("SELECT status, start_time, end_time FROM jobs WHERE id = :id"), {"id": str(job_id)}
+            )
+            status, start_time, end_time = result.one()
+            assert status == first.value
+            assert bool(start_time) == (first is JobStatus.RUNNING)
+            assert bool(end_time) == (first is JobStatus.CANCELED)
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.anyio

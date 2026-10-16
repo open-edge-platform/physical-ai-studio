@@ -215,7 +215,7 @@ export const TrainingRow = ({
             <Text data-testid='environment-cell'>{environment?.name ?? '-'}</Text>
             <TrainerCell payload={trainJob.payload} />
             <div onClick={(e) => e.stopPropagation()}>
-                {trainJob.status === 'running' && (
+                {(trainJob.status === 'running' || trainJob.status === 'pending') && (
                     <DialogTrigger>
                         <Button variant='secondary'>Stop</Button>
                         <AlertDialog
@@ -228,7 +228,12 @@ export const TrainingRow = ({
                             Stop training for {trainJob.payload.model_name}?
                             <br />
                             <br />
-                            Your model checkpoint will be saved at the current step. You cannot resume this run.
+                            {trainJob.status === 'pending' &&
+                            (trainJob.payload.training_target !== 'remote' || !trainJob.payload.remote_job_id)
+                                ? 'This job will not start.'
+                                : trainJob.payload.training_target === 'remote'
+                                  ? 'Studio will request cancellation; unreachable remote work may continue.'
+                                  : 'Your checkpoint will be saved at the current step. You cannot resume.'}
                         </AlertDialog>
                     </DialogTrigger>
                 )}

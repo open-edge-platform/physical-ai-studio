@@ -1,6 +1,7 @@
 import asyncio
 import errno
 import socket
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -746,10 +747,44 @@ async def test_delete_rejects_ssh_trainer_with_running_or_queued_job() -> None:
         patch(f"{MODULE}.persistent_trainer.stop", new_callable=AsyncMock) as stop,
         pytest.raises(ResourceInUseError),
     ):
-        await RemoteTrainerService(session).delete_remote_trainer(trainer.id)
+        await RemoteTrainerService(session).delete_remote_trainer(trainer.id, forget_locally=True)
 
     stop.assert_not_awaited()
     repository.delete_by_id.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_forget_offline_ssh_trainer_keeps_remote_resources_untouched() -> None:
+    session = _session()
+    session.execute.return_value = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = None
+    trainer = RemoteTrainer(
+        id=uuid4(),
+        name="offline-gpu",
+        url="http://127.0.0.1:8001",
+        connection_mode=RemoteTrainerConnectionMode.SSH,
+        ssh_host_alias="deleted-host",
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=trainer)
+    repository.delete_by_id = AsyncMock()
+
+    with (
+        patch(f"{MODULE}.RemoteTrainerRepository", return_value=repository),
+        patch(f"{MODULE}.persistent_trainer.stop", new_callable=AsyncMock) as stop,
+        patch(f"{MODULE}.remote_trainer_tunnel_manager.stop_tunnel", new_callable=AsyncMock) as stop_tunnel,
+        patch.dict(persistent_trainer._launch_started_at, {trainer.id: datetime.now(UTC)}),
+    ):
+        persistent_trainer.set_install_phase(trainer.id, "Starting trainer")
+        persistent_trainer.set_install_failure(trainer.id, "host_unreachable")
+        await RemoteTrainerService(session).delete_remote_trainer(trainer.id, forget_locally=True)
+        assert persistent_trainer.get_launch_phase(trainer.id) is None
+        assert persistent_trainer.get_launch_failure(trainer.id) is None
+        assert not persistent_trainer.is_within_startup_grace_period(trainer.id)
+
+    stop.assert_not_awaited()
+    stop_tunnel.assert_awaited_once_with(trainer.id)
+    repository.delete_by_id.assert_awaited_once_with(trainer.id)
 
 
 @pytest.mark.anyio

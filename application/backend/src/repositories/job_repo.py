@@ -95,6 +95,23 @@ class JobRepository(BaseRepository):
 
         return await self.get_by_id(job_id)
 
+    async def transition_pending_train_job(self, job_id: UUID, status: JobStatus) -> bool:
+        """Atomically claim or cancel a pending training job."""
+        now = datetime.datetime.now(tz=datetime.UTC)
+        values = {
+            "status": status,
+            "message": "Training started" if status is JobStatus.RUNNING else "Training canceled",
+            "start_time" if status is JobStatus.RUNNING else "end_time": now,
+        }
+        result = await self.db.execute(
+            update(JobDB)
+            .where(JobDB.id == str(job_id), JobDB.type == JobType.TRAINING, JobDB.status == JobStatus.PENDING)
+            .values(**values)
+            .returning(JobDB.id)
+        )
+        await self.db.commit()
+        return result.scalar_one_or_none() is not None
+
     async def get_jobs_by_type(self, project_id: UUID, job_type: JobType) -> list[Job]:
         return await self.get_all(
             extra_filters={"project_id": self._id_to_str(project_id), "type": job_type},

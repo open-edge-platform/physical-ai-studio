@@ -98,6 +98,9 @@ class JobService:
 
         return await self.repo.update(job, updates)
 
+    async def transition_pending_train_job(self, job_id: UUID, status: JobStatus) -> bool:
+        return await self.repo.transition_pending_train_job(job_id, status)
+
     async def update_job_status(
         self,
         job_id: UUID,

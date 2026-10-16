@@ -300,6 +300,7 @@ class TestTraining:
 
             await worker._train_model(job, model, snapshot, payload, base_model=None)
 
+            backend.train.assert_not_awaited()
             model_service.create_model.assert_not_called()
             assert job_service.update_job_status.call_args_list[0].kwargs["status"] == JobStatus.CANCELED
 
@@ -513,6 +514,7 @@ class TestTraining:
             patch(f"{MODULE}.DatasetService") as MockDatasetService,
             patch(f"{MODULE}.SnapshotService") as MockSnapshotService,
             patch.object(worker, "_train_model", side_effect=_capture),
+            patch(f"{MODULE}.JobService.transition_pending_train_job", AsyncMock(return_value=True)),
         ):
             MockDatasetService.return_value.get_dataset_by_id = AsyncMock(return_value=dataset)
             MockSnapshotService.generate_snapshot_folder_name = MagicMock(return_value="snap")
@@ -527,6 +529,25 @@ class TestTraining:
         }
         assert captured["model"].lora_enabled is lora_enabled
         assert captured["model"].lora_use_dora is lora_use_dora
+
+
+@pytest.mark.anyio
+async def test_canceled_pending_job_is_not_started(worker, tmp_path) -> None:
+    payload = _make_payload()
+    job = _make_job(payload)
+    with (
+        patch(f"{MODULE}.get_settings", return_value=_make_settings(tmp_path)),
+        patch(f"{MODULE}.DatasetService") as dataset_service,
+        patch(f"{MODULE}.SnapshotService") as snapshot_service,
+        patch(f"{MODULE}.JobService.transition_pending_train_job", AsyncMock(return_value=False)) as claim,
+        patch.object(worker, "_train_model", new_callable=AsyncMock) as train,
+    ):
+        dataset_service.return_value.get_dataset_by_id = AsyncMock()
+        snapshot_service.return_value.create_snapshot_for_dataset = AsyncMock(return_value=_make_snapshot(tmp_path))
+        await worker._run_training_job(job, payload)
+
+    claim.assert_awaited_once_with(job.id, JobStatus.RUNNING)
+    train.assert_not_awaited()
 
 
 class TestTargetKey:
@@ -647,6 +668,7 @@ class TestSnapFlowProvenance:
             patch(f"{MODULE}.DatasetService") as MockDatasetService,
             patch(f"{MODULE}.SnapshotService") as MockSnapshotService,
             patch.object(type(worker), "_train_model", train),
+            patch(f"{MODULE}.JobService.transition_pending_train_job", AsyncMock(return_value=True)),
         ):
             MockDatasetService.return_value.get_dataset_by_id = AsyncMock()
             snapshot_service = MockSnapshotService.return_value

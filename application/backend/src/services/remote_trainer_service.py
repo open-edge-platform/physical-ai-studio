@@ -598,8 +598,8 @@ class RemoteTrainerService:
         self._start_persistent_trainer_in_background(saved, accepted_host_key_fingerprint)
         return saved
 
-    async def delete_remote_trainer(self, remote_trainer_id: UUID) -> None:
-        """Delete a trainer unless its managed container has queued or running jobs."""
+    async def delete_remote_trainer(self, remote_trainer_id: UUID, *, forget_locally: bool = False) -> None:
+        """Delete a trainer; optionally leave unreachable SSH resources untouched."""
         remote_trainer = await self.repo.get_by_id(remote_trainer_id)
         if remote_trainer is None:
             raise ResourceNotFoundError(ResourceType.REMOTE_TRAINER, str(remote_trainer_id))
@@ -608,7 +608,10 @@ class RemoteTrainerService:
         if remote_trainer.connection_mode is RemoteTrainerConnectionMode.SSH:
             await self._require_no_active_jobs(remote_trainer_id)
         await self._cancel_launch(remote_trainer_id)
-        await persistent_trainer.stop(remote_trainer)
+        if forget_locally:
+            persistent_trainer.clear_launch_state(remote_trainer_id)
+        else:
+            await persistent_trainer.stop(remote_trainer)
         await remote_trainer_tunnel_manager.stop_tunnel(remote_trainer_id)
         await self.repo.delete_by_id(remote_trainer_id)
 

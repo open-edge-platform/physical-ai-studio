@@ -399,6 +399,21 @@ class TestRemoteTrainingBackend:
         assert controller.cancelled is True
 
     @pytest.mark.anyio
+    async def test_reattachment_cancel_before_remote_upload(self, tmp_path):
+        from services.training_backends.base import TrainingCanceledError
+
+        settings = _settings()
+        remote_job_id = uuid4()
+        context = _context(tmp_path, remote_job_id=remote_job_id, should_cancel_job=True)
+        backend = _backend(settings)
+        with (
+            patch.object(backend, "cancel", new_callable=AsyncMock) as cancel,
+            pytest.raises(TrainingCanceledError),
+        ):
+            await backend.train(context)
+        cancel.assert_awaited_once_with(remote_job_id)
+
+    @pytest.mark.anyio
     async def test_remote_failure_raises(self, tmp_path):
         settings = _settings()
         context = _context(tmp_path)
