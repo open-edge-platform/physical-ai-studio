@@ -7,7 +7,6 @@ import { NavLink, useNavigate, useParams } from 'react-router';
 import { $api } from '../../api/client';
 import { getApiErrorMessage, isResourceInUseError, isRuntimeSessionBusyError } from '../../api/errors';
 import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
-import { AddResourceButton } from '../../components/add-resource-button/add-resource-button';
 import { paths } from '../../paths';
 import { useProjectId } from '../projects/use-project';
 import {
@@ -263,8 +262,6 @@ export const RobotsList = () => {
 
     return (
         <Flex direction='column' gap='size-200'>
-            <AddResourceButton to={paths.project.robots.new({ project_id })}>Configure new robot</AddResourceButton>
-
             {projectRobots.map((robot) => {
                 const onlineRobot = onlineProjectRobots?.find((r) => r.id === robot.id);
 
