@@ -40,6 +40,8 @@ state is consistent across episodes. There's a second, less obvious reason this
 matters for some policies — see [Why cyclic episodes matter](#why-cyclic-episodes-matter-technical-detail)
 at the end of this guide.
 
+> **Note:** Goal-conditioned policies (e.g. Patch Policy) may differ see [Goal Conditioning](../../explanation/data/goal-conditioning.md).
+
 ---
 
 ## Before you record

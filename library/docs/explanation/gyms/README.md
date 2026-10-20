@@ -11,6 +11,7 @@ Simulation environments for policy evaluation.
 - [pusht.py](pusht.md) — PushT environment wrapper
 - [types.py](types.md) — shared type aliases
 - [step_limit.py](step_limit.md) — termination wrapper
+- [goal.py](goal.md) — goal-conditioning wrapper
 
 ## Structure
 
@@ -18,6 +19,7 @@ Simulation environments for policy evaluation.
 src/physicalai/gyms/
 ├── __init__.py
 ├── base.py
+├── goal.py
 ├── gymnasium_gym.py
 ├── libero.py
 ├── robocasa.py

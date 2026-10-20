@@ -9,7 +9,7 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from huggingface_hub import hf_hub_download
 from lerobot.utils.constants import HF_LEROBOT_HOME
@@ -20,6 +20,7 @@ from physicalai.data import DataModule
 
 from .converters import DataFormat
 from .dataset import _LeRobotDatasetAdapter
+from .goal import EpisodeGoalFrames, GoalSource, LeRobotGoalConditionedDataset, TaskGoalEpisodes
 from .utils.quantile_stats import augment_dataset_quantile_stats, has_quantile_stats
 
 if TYPE_CHECKING:
@@ -111,7 +112,19 @@ class LeRobotDataModule(DataModule):
         ...     data_format=DataFormat.LEROBOT
         ... )
 
-        >>> # 4. Instantiate from an existing LeRobotDataset object
+        >>> # 4. Attach the canonical task goal to every sample
+        >>> datamodule = LeRobotDataModule(
+        ...     repo_id="lerobot/libero",
+        ...     train_batch_size=32,
+        ...     goal_source="task"
+        ... )
+
+        >>> # 5. Or wrap the dataset yourself
+        >>> from physicalai.data.lerobot import LeRobotGoalConditionedDataset
+        >>> dataset = LeRobotGoalConditionedDataset(LeRobotDataset("lerobot/libero"))
+        >>> datamodule = LeRobotDataModule(dataset=dataset, train_batch_size=32)
+
+        >>> # 6. Instantiate from an existing LeRobotDataset object
         >>> from lerobot.datasets import LeRobotDataset
         >>> raw_dataset = LeRobotDataset("lerobot/aloha_sim_transfer_cube_human")
         >>> datamodule = LeRobotDataModule(
@@ -121,11 +134,11 @@ class LeRobotDataModule(DataModule):
         ... )
     """
 
-    def __init__(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    def __init__(  # noqa: C901, PLR0912, PLR0913, PLR0914, PLR0915
         self,
         *,
         repo_id: str | None = None,
-        dataset: LeRobotDataset | None = None,
+        dataset: LeRobotDataset | LeRobotGoalConditionedDataset | None = None,
         root: str | Path | None = None,
         episodes: list[int] | None = None,
         train_batch_size: int = 16,
@@ -139,6 +152,9 @@ class LeRobotDataModule(DataModule):
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
         data_format: Literal["physicalai", "lerobot"] | DataFormat = "physicalai",
+        goal_source: GoalSource | None = None,
+        episode_goal_frames: EpisodeGoalFrames | None = None,
+        task_goal_episodes: TaskGoalEpisodes | None = None,
         state_columns: list[str] | None = None,
         action_columns: list[str] | None = None,
         # Eval-loss validation
@@ -161,7 +177,8 @@ class LeRobotDataModule(DataModule):
             repo_id (str | None, optional): Repository ID for the LeRobot dataset.
                 Required if `dataset` is not provided.
                 Defaults to `None`.
-            dataset (LeRobotDataset | None, optional): Pre-initialized LeRobotDataset instance.
+            dataset (LeRobotDataset | LeRobotGoalConditionedDataset | None, optional): Pre-initialized
+                LeRobotDataset instance, or one already wrapped with goals.
                 Defaults to `None`.
             root (str | Path | None, optional): Local directory for caching dataset files.
                 Defaults to `None`.
@@ -192,6 +209,10 @@ class LeRobotDataModule(DataModule):
                 Output format for the data. Use "physicalai" for the native `Observation` format,
                 or "lerobot" for LeRobot's original dict format.
                 Defaults to "physicalai".
+            goal_source (Literal["task", "episode"] | None, optional): Attach a split-local task
+                or episode goal to each sample. Requires ``data_format="physicalai"``.
+            episode_goal_frames: Optional episode-index-to-frame-offset mapping or JSON path.
+            task_goal_episodes: Optional task-description-to-representative-episode mapping.
             state_columns (list[str] | None, optional): Ordered LeRobot sub-column keys to concatenate
                 into a single ``observation.state`` tensor (e.g. DROID's
                 ``["observation.state.joint_positions", "observation.state.gripper_position"]``). Only used
@@ -265,6 +286,21 @@ class LeRobotDataModule(DataModule):
         self._state_columns = state_columns
         self._action_columns = action_columns
 
+        conditioned_dataset = dataset if isinstance(dataset, LeRobotGoalConditionedDataset) else None
+        if goal_source not in {None, "task", "episode"}:
+            msg = f"Unknown goal source '{goal_source}', expected 'task' or 'episode'."
+            raise ValueError(msg)
+        selection_configured = episode_goal_frames is not None or task_goal_episodes is not None
+        if goal_source is None and selection_configured:
+            msg = "'episode_goal_frames' and 'task_goal_episodes' require an explicit goal_source."
+            raise ValueError(msg)
+        goal_requested = goal_source is not None
+        if (goal_requested or conditioned_dataset is not None) and self.data_format != DataFormat.PHYSICALAI:
+            msg = "Goal conditioning requires data_format='physicalai'."
+            raise ValueError(msg)
+        if conditioned_dataset is not None and (goal_source is not None or selection_configured):
+            msg = "'dataset' already carries goals; do not also pass goal selection arguments."
+            raise ValueError(msg)
         # Split episodes into train / val based on val_split
         train_episodes = episodes
         val_episodes: list[int] | None = None
@@ -290,7 +326,15 @@ class LeRobotDataModule(DataModule):
 
         # Create the appropriate dataset based on format
         val_eval_dataset = None
-        if dataset is not None:
+        if conditioned_dataset is not None:
+            # Set up the inner dataset like any other; the goal wrapper is restored below.
+            train_dataset = cast("_LeRobotDatasetAdapter", conditioned_dataset.dataset)
+            if state_columns is not None:
+                train_dataset._state_columns = state_columns  # noqa: SLF001
+            if action_columns is not None:
+                train_dataset._action_columns = action_columns  # noqa: SLF001
+
+        elif dataset is not None:
             if LeRobotDataset is None:
                 msg = "LeRobotDataset is not available. Install lerobot with: uv pip install lerobot."
                 raise ImportError(msg)
@@ -368,7 +412,7 @@ class LeRobotDataModule(DataModule):
         if data_format == DataFormat.PHYSICALAI:
             if repo_id is not None:
                 self._ensure_quantile_stats(
-                    train_dataset,
+                    cast("_LeRobotDatasetAdapter", train_dataset),
                     val_eval_dataset,
                     repo_id=repo_id,
                     root=root,
@@ -383,6 +427,31 @@ class LeRobotDataModule(DataModule):
                 if not has_quantile_stats(lr_ds):
                     logger.info("Pre-built dataset lacks quantile stats — computing")
                     augment_dataset_quantile_stats(lr_ds)
+
+        if conditioned_dataset is not None:
+            train_dataset = conditioned_dataset
+            val_gym = self._wrap_gym(val_gym, conditioned_dataset)
+            test_gym = self._wrap_gym(test_gym, conditioned_dataset)
+        elif goal_requested:
+            train_dataset = LeRobotGoalConditionedDataset(
+                cast("_LeRobotDatasetAdapter", train_dataset),
+                goal_source=goal_source,
+                episode_goal_frames=episode_goal_frames,
+                task_goal_episodes=task_goal_episodes,
+            )
+            if val_eval_dataset is not None:
+                val_eval_dataset = LeRobotGoalConditionedDataset(
+                    val_eval_dataset,
+                    goal_source=goal_source,
+                    episode_goal_frames=episode_goal_frames,
+                    task_goal_episodes=task_goal_episodes if goal_source != "task" else None,
+                    task_goal_source=(
+                        cast("LeRobotGoalConditionedDataset", train_dataset) if goal_source == "task" else None
+                    ),
+                )
+
+            val_gym = self._wrap_gym(val_gym, train_dataset)
+            test_gym = self._wrap_gym(test_gym, train_dataset)
 
         # Pass the dataset to the parent class
         super().__init__(
@@ -425,6 +494,19 @@ class LeRobotDataModule(DataModule):
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers,
         )
+
+    @staticmethod
+    def _wrap_gym(gym: Gym | None, goal_dataset: LeRobotGoalConditionedDataset) -> Gym | None:
+        """Wrap a raw gym in `GoalConditionedGym` so rollouts carry goals; leave wrapped gyms as-is.
+
+        Returns:
+            The gym, wrapped in `GoalConditionedGym` when it does not already carry goals.
+        """
+        from physicalai.gyms import GoalConditionedGym  # noqa: PLC0415
+
+        if gym is None or isinstance(gym, GoalConditionedGym):
+            return gym
+        return GoalConditionedGym(gym, goal_dataset)
 
     @staticmethod
     def _ensure_quantile_stats(

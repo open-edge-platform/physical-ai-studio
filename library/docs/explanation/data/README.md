@@ -10,10 +10,12 @@ data/
 ├── observation.py   # Observation dataclass and Feature types
 ├── datamodules.py   # Lightning DataModule implementations
 ├── gym.py           # Gym environment as dataset wrapper
+├── goal.py          # Goal-conditioned dataset base class
 └── lerobot/         # LeRobot dataset integration
     ├── dataset.py   # LeRobotDataset wrapper
     ├── datamodule.py
-    └── converters.py
+    ├── converters.py
+    └── goal.py      # Goal-conditioned LeRobot dataset
 ```
 
 ## Architecture
@@ -114,6 +116,12 @@ The `LeRobotDataset` automatically:
 - Provides normalization statistics
 - Handles delta timestamps for temporal data
 
+## Goal Conditioning
+
+Goal-conditioned datasets attach images of the state a policy should reach to every
+sample (`Observation.goal_images`), and `GoalConditionedGym` does the same during
+rollouts. See [Goal Conditioning](goal-conditioning.md).
+
 ## Feature Types
 
 ```python
@@ -158,4 +166,5 @@ sequenceDiagram
 
 - [LeRobot Integration](lerobot.md) - HuggingFace dataset details
 - [Observation Format](observation.md) - Data representation
+- [Goal Conditioning](goal-conditioning.md) - Goals for goal-conditioned policies
 - [Gym Design](../gyms/overview.md) - Environment wrappers

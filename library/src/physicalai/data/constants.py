@@ -21,6 +21,9 @@ from physicalai.inference.constants import (
     TOKENIZED_PROMPT_MASK,
 )
 
+# Goal conditioning fields
+GOAL_IMAGES = "goal_images"
+
 # Optional RL & metadata fields
 NEXT_REWARD = "next_reward"
 NEXT_SUCCESS = "next_success"
@@ -37,6 +40,7 @@ __all__ = [
     "EPISODE_INDEX",
     "EXTRA",
     "FRAME_INDEX",
+    "GOAL_IMAGES",
     "IMAGES",
     "IMAGE_MASKS",
     "INDEX",
