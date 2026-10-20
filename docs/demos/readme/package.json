@@ -1,0 +1,20 @@
+{
+  "name": "physical-ai-studio-readme-demos",
+  "private": true,
+  "description": "Source files for the Python API and Studio UI demos on the Physical AI Studio README.",
+  "scripts": {
+    "preview": "remotion studio src/index.ts",
+    "render:api": "remotion render src/index.ts ApiDemo out/api-demo.mp4 --codec h264 --crf 18 --log=error && ./scripts/to-gif.sh out/api-demo.mp4 ../../assets/readme/api-demo.gif",
+    "render:gui": "remotion render src/index.ts GuiDemo --public-dir=public out/gui-demo.mp4 --codec h264 --crf 18 --log=error && GIF_FPS=8 GIF_WIDTH=900 ./scripts/to-gif.sh out/gui-demo.mp4 ../../assets/readme/gui-demo.gif",
+    "render": "npm run render:api && npm run render:gui"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.528",
+    "@types/react": "^19.3.0",
+    "prism-react-renderer": "^2.4.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "remotion": "^4.0.528",
+    "typescript": "^7.0.2"
+  }
+}

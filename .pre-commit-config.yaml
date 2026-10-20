@@ -24,7 +24,8 @@ repos:
         exclude: ^(\.claude/skills/|\.agents/skills/)
       - id: check-yaml
       - id: check-added-large-files
-        exclude: uv\.lock$
+        # Generated README demo GIFs are intentionally larger than the generic limit.
+        exclude: ^docs/assets/readme/(api-demo|gui-demo)\.gif$|uv\.lock$
       - id: detect-private-key
       - id: check-merge-conflict
       - id: check-case-conflict
