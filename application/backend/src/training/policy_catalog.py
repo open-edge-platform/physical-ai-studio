@@ -52,6 +52,12 @@ _STUDIO_POLICIES = {
         description="Small Vision-Language-Action model based on SmolVLM2-500M (Apache 2.0 license)",
         min_vram=3 * 1024**3,
     ),
+    "vla_jepa": AvailablePolicy(
+        id="vla_jepa",
+        name="VLA-JEPA",
+        description="Pretrained Qwen3-VL policy with flow-matching actions (Apache 2.0 license)",
+        min_vram=None,
+    ),
     "xr0": AvailablePolicy(
         id="xr0",
         name="XR0",

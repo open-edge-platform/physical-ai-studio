@@ -158,6 +158,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [autoScaleBatchSize, setAutoScaleBatchSize] = useState<boolean>(false);
     const [precision, setPrecision] = useState<Key | null>(bestDevice?.type === 'cuda' ? 'bf16-mixed' : '32-true');
     const [compileModel, setCompileModel] = useState<boolean>(false);
+    const [enableWorldModel, setEnableWorldModel] = useState(true);
     const [loraEnabled, setLoraEnabled] = useState<boolean>(false);
     const [loraRank, setLoraRank] = useState<number>(32);
     const [loraAlpha, setLoraAlpha] = useState<number | null>(null);
@@ -169,6 +170,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
     const [selectedGpuKey, setSelectedGpuKey] = useState<Key | null>(null);
     const selectedTarget = trainingTargetOptions.find((option) => option.id === targetId) ?? null;
     const isRemoteTarget = selectedTarget?.kind === 'trainer';
+    const isJepaSupported = selectedPolicy === 'vla_jepa' && baseModel === undefined;
     const isLoraSupported = supportsLora(selectedPolicy);
     const isLoraRequested = isLoraSupported && loraEnabled;
     const isSnapflowSupported = supportsSnapflow(selectedPolicy);
@@ -400,6 +402,7 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                 snapflow_enabled: isSnapflowRequested,
                 snapflow_distill_epochs: snapflowDistillEpochs,
                 augment_images: augmentImages,
+                ...(isJepaSupported ? { enable_world_model: enableWorldModel } : {}),
                 val_split: TRAINING_VAL_SPLIT,
                 ...extraPayload,
             } as const;
@@ -517,6 +520,9 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onAugmentImagesChange={setAugmentImages}
                                 isAutoScaleBatchDisabled={activeDevice?.type !== 'cuda'}
                                 deviceType={activeDevice?.type}
+                                isJepaSupported={isJepaSupported}
+                                enableWorldModel={enableWorldModel}
+                                onEnableWorldModelChange={setEnableWorldModel}
                                 isLoraSupported={isLoraSupported}
                                 loraEnabled={loraEnabled}
                                 onLoraEnabledChange={setLoraEnabled}
@@ -535,6 +541,14 @@ export const TrainModelDialog = ({ baseModel, close, defaultMaxEpochs = 5 }: Tra
                                 onSnapflowDistillEpochsChange={setSnapflowDistillEpochs}
                             />
                         )}
+
+                        {activeStep === 'training-parameters' &&
+                            baseModel !== undefined &&
+                            selectedPolicy === 'vla_jepa' && (
+                                <Text>
+                                    Continuing training keeps the JEPA or action-only mode saved in the checkpoint.
+                                </Text>
+                            )}
 
                         {activeStep === 'export' && (
                             <ExportStep policyName={selectedPolicyName} selection={exportSelection} />

@@ -89,6 +89,7 @@ const mockProjectWithRemoteTrainer = (datasets = [testDataset, otherDataset]) =>
                 { id: 'pi05', name: 'Pi0.5', description: 'Pi0.5 policy', min_vram: 40 * 1024 ** 3 },
                 { id: 'rldx1', name: 'RLDX-1', description: 'RLDX-1 policy', min_vram: 40 * 1024 ** 3 },
                 { id: 'xr0', name: 'XR0', description: 'XR0 policy', min_vram: 60 * 1024 ** 3 },
+                { id: 'vla_jepa', name: 'VLA-JEPA', description: 'VLA-JEPA policy', min_vram: null },
             ])
         ),
         http.get('/api/policies/backends', () =>
@@ -97,6 +98,7 @@ const mockProjectWithRemoteTrainer = (datasets = [testDataset, otherDataset]) =>
                 smolvla: ['torch', 'openvino'],
                 pi05: ['torch', 'openvino'],
                 xr0: ['torch', 'openvino'],
+                vla_jepa: ['torch'],
             })
         ),
         http.get('/api/dataset/{dataset_id}/episodes', () =>
@@ -120,7 +122,7 @@ const mockProjectWithRemoteTrainer = (datasets = [testDataset, otherDataset]) =>
             const policy = params.policy;
             return HttpResponse.json({
                 requirements:
-                    policy === 'act'
+                    policy === 'act' || policy === 'vla_jepa'
                         ? []
                         : [
                               {
@@ -528,6 +530,100 @@ describe('TrainModelDialog', () => {
             lora_enabled: false,
             snapflow_enabled: false,
         });
+    });
+
+    it.each([
+        { enabled: true, remote: false },
+        { enabled: false, remote: false },
+        { enabled: true, remote: true },
+        { enabled: false, remote: true },
+    ])('submits VLA-JEPA mode $enabled with remote=$remote', async ({ enabled, remote }) => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.get('/api/remote-trainers/{remote_trainer_id}/health', () => HttpResponse.json(healthyRemoteTrainer)),
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(await screen.findByLabelText('Select VLA-JEPA policy'));
+        if (remote) {
+            await user.click(screen.getByRole('button', { name: /this machine \(local\)/i }));
+            await user.click(await screen.findByRole('option', { name: remoteTrainer.name }));
+            await screen.findByText('Remote trainer selected');
+        }
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        await user.click(await screen.findByRole('checkbox', { name: 'LoRA fine-tuning' }));
+        expect(await screen.findByText('LoRA rank')).toBeInTheDocument();
+        const checkbox = await screen.findByRole('checkbox', { name: 'JEPA-assisted fine-tuning' });
+        expect(checkbox).toBeChecked();
+        if (!enabled) {
+            await user.click(checkbox);
+            expect(checkbox).not.toBeChecked();
+        }
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).toMatchObject({
+            policy: 'vla_jepa',
+            enable_world_model: enabled,
+            lora_enabled: true,
+            training_target: remote ? 'remote' : 'local',
+        });
+    });
+
+    it('does not leak JEPA options when switching to another policy', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+        renderDialog();
+        await user.click(await screen.findByRole('button', { name: /select…/i }));
+        await user.click(await screen.findByRole('option', { name: 'Test dataset' }));
+        await user.click(screen.getByLabelText('Select VLA-JEPA policy'));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        await user.click(await screen.findByRole('checkbox', { name: 'JEPA-assisted fine-tuning' }));
+        await user.click(screen.getByRole('button', { name: 'Back' }));
+        await user.click(screen.getByLabelText('Select ACT policy'));
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(screen.queryByRole('checkbox', { name: 'JEPA-assisted fine-tuning' })).not.toBeInTheDocument();
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).not.toHaveProperty('enable_world_model');
+    });
+
+    it('preserves the saved VLA-JEPA mode when continuing training', async () => {
+        const user = userEvent.setup();
+        mockProjectWithRemoteTrainer();
+        let submitted: Record<string, unknown> | undefined;
+        server.use(
+            http.post('/api/jobs:train', async ({ request }) => {
+                submitted = (await request.json()) as Record<string, unknown>;
+                return HttpResponse.json({}, { status: 201 });
+            })
+        );
+        renderDialog({ baseModel: { ...baseModel, policy: 'vla_jepa' } });
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+        await user.click(screen.getByRole('button', { name: 'Next' }));
+        expect(await screen.findByText(/keeps the JEPA or action-only mode saved/i)).toBeInTheDocument();
+        expect(screen.queryByRole('checkbox', { name: 'JEPA-assisted fine-tuning' })).not.toBeInTheDocument();
+        await goToLastStep(user);
+        await user.click(screen.getByRole('button', { name: 'Train' }));
+        await waitFor(() => expect(submitted).toBeDefined());
+        expect(submitted).not.toHaveProperty('enable_world_model');
     });
 
     it('blocks Pi0.5 training when the token lacks gated-model access', async () => {

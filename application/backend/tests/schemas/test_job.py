@@ -78,6 +78,21 @@ class TestCameraMapping:
         assert payload.image_key_reorder_map == {"gripper": 1, "overhead": 0}
 
 
+class TestJepaMode:
+    @pytest.mark.parametrize("target", [LocalTrainJobPayload, RemoteTrainJobPayload])
+    @pytest.mark.parametrize("enabled", [None, True, False])
+    def test_mode_is_accepted_for_vla_jepa(self, target, enabled) -> None:
+        kwargs = {**_base_kwargs(), "policy": "vla_jepa", "enable_world_model": enabled}
+        if target is RemoteTrainJobPayload:
+            kwargs["remote_trainer_id"] = uuid4()
+        assert target(**kwargs).enable_world_model is enabled
+
+    @pytest.mark.parametrize("enabled", [True, False])
+    def test_mode_is_rejected_for_other_policies(self, enabled) -> None:
+        with pytest.raises(ValidationError, match="only supported"):
+            LocalTrainJobPayload(**_base_kwargs(), enable_world_model=enabled)
+
+
 class TestLoraFields:
     def test_lora_disabled_by_default(self) -> None:
         payload = LocalTrainJobPayload(**_base_kwargs())
@@ -90,8 +105,9 @@ class TestLoraFields:
             False,
         )
 
-    def test_lora_is_accepted_for_a_peft_capable_policy(self) -> None:
-        payload = LocalTrainJobPayload(**{**_base_kwargs(), "policy": "pi05"}, lora_enabled=True, lora_use_dora=True)
+    @pytest.mark.parametrize("policy", ["pi05", "molmoact2", "vla_jepa"])
+    def test_lora_is_accepted_for_a_peft_capable_policy(self, policy: str) -> None:
+        payload = LocalTrainJobPayload(**{**_base_kwargs(), "policy": policy}, lora_enabled=True, lora_use_dora=True)
 
         assert (payload.lora_enabled, payload.lora_use_dora) == (True, True)
 
