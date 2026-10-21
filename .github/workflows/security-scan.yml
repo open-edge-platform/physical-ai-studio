@@ -95,6 +95,7 @@ jobs:
             files.pythonhosted.org:443
             github.com:443
             pypi.org:443
+            release-assets.githubusercontent.com:443
 
       - *checkout
 
