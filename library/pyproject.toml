@@ -76,7 +76,7 @@ diffusion = ["diffusers>=0.38.0"]
 pi05 = [
     "transformers>=5.15.1,<5.16.0",
     "safetensors>=0.4.3,<1.0.0",
-    "Pillow>=10.0.0,<13.0.0",
+    "Pillow>=13.0.0,<13.1.0",
     "sentencepiece<=0.2.1",
 ]
 
@@ -99,7 +99,7 @@ molmoact2 = [
 rldx1 = [
     "transformers>=5.15.1,<5.16.0",
     "safetensors>=0.4.3,<1.0.0",
-    "Pillow>=10.0.0,<13.0.0",
+    "Pillow>=13.0.0,<13.1.0",
     "scipy>=1.11.0,<2.0.0",
     "peft>=0.13.0,<1.0.0",
     "diffusers>=0.38.0",
@@ -111,7 +111,7 @@ cosmos3 = [
     "transformers>=5.15.1,<5.16.0",
     "peft>=0.13.0,<1.0.0",
     "safetensors>=0.4.3,<1.0.0",
-    "Pillow>=10.0.0,<13.0.0",
+    "Pillow>=13.0.0,<13.1.0",
 ]
 # Neural Network Compression Framework (optional, for post-export quantization hooks)
 nncf = ["nncf>=3.0.0"]
@@ -121,7 +121,7 @@ nncf = ["nncf>=3.0.0"]
 xr0 = [
     "transformers>=5.15.0,<=5.15.1",
     "safetensors>=0.4.3,<1.0.0",
-    "Pillow>=10.0.0,<13.0.0",
+    "Pillow>=13.0.0,<13.1.0",
 ]
 
 # ExecuTorch runtime for edge/mobile deployment
