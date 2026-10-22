@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { $api } from '../../../api/client';
+import { $api } from '../../api/client';
 
 /** LeRobot prefixes every camera feature with this. */
 export const IMAGE_KEY_PREFIX = 'observation.images.';
