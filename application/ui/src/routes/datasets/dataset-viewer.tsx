@@ -39,7 +39,12 @@ export const DatasetViewer = () => {
     const { deleteEpisodes, isPending } = useDeleteEpisodeQuery(dataset.id!);
     const [activeEpisodeIndex, setActiveEpisodeIndex] = useActiveEpisode();
     const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
-    const { cameras, thumbnailCamera, selectedCameraKey, changeThumbnailCamera } = useThumbnailCamera(dataset.id!);
+    const {
+        cameras,
+        thumbnailCamera,
+        isLoading: isThumbnailCameraLoading,
+        changeThumbnailCamera,
+    } = useThumbnailCamera(dataset.id!);
 
     const { data: environment } = $api.useSuspenseQuery(
         'get',
@@ -144,7 +149,7 @@ export const DatasetViewer = () => {
                         <Flex alignItems='center'>
                             <ThumbnailCameraMenu
                                 cameras={cameras}
-                                selectedKey={selectedCameraKey}
+                                selectedKey={thumbnailCamera}
                                 onChange={changeThumbnailCamera}
                             />
                             <ActionButton
@@ -162,6 +167,7 @@ export const DatasetViewer = () => {
                         currentEpisode={activeEpisodeIndex}
                         sortOrder={sortOrder}
                         thumbnailCamera={thumbnailCamera}
+                        isThumbnailCameraLoading={isThumbnailCameraLoading}
                     />
                 </Panel>
             </Group>

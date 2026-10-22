@@ -43,7 +43,7 @@ describe('useThumbnailCamera', () => {
         localStorage.clear();
     });
 
-    it('returns the stored key on first render, before cameras have loaded', () => {
+    it('uses a stored key before cameras have loaded and keeps it once they have', async () => {
         localStorage.setItem(`${STORAGE_PREFIX}dataset-1`, WRIST);
         mockDatasetCameras('dataset-1', [TOP, WRIST]);
 
@@ -51,25 +51,6 @@ describe('useThumbnailCamera', () => {
 
         expect(result.current.cameras).toEqual([]);
         expect(result.current.thumbnailCamera).toBe(WRIST);
-        expect(result.current.selectedCameraKey).toBe(WRIST);
-    });
-
-    it('leaves thumbnailCamera undefined and selects the first camera when nothing is stored', async () => {
-        mockDatasetCameras('dataset-1', [TOP, WRIST]);
-
-        const { result } = renderHook(() => useThumbnailCamera('dataset-1'));
-
-        await waitFor(() => expect(result.current.cameras).toHaveLength(2));
-
-        expect(result.current.thumbnailCamera).toBeUndefined();
-        expect(result.current.selectedCameraKey).toBe(TOP);
-    });
-
-    it('keeps a stored key that is among the loaded cameras', async () => {
-        localStorage.setItem(`${STORAGE_PREFIX}dataset-1`, WRIST);
-        mockDatasetCameras('dataset-1', [TOP, WRIST]);
-
-        const { result } = renderHook(() => useThumbnailCamera('dataset-1'));
 
         await waitFor(() => expect(result.current.cameras).toHaveLength(2));
 
@@ -77,44 +58,61 @@ describe('useThumbnailCamera', () => {
         expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBe(WRIST);
     });
 
-    it('clears a stored key that is not among the loaded cameras', async () => {
-        localStorage.setItem(`${STORAGE_PREFIX}dataset-1`, 'observation.images.gone');
+    it('falls back to the first camera when nothing is stored and persists a selection', async () => {
         mockDatasetCameras('dataset-1', [TOP, WRIST]);
 
         const { result } = renderHook(() => useThumbnailCamera('dataset-1'));
 
+        expect(result.current.isLoading).toBe(true);
+        expect(result.current.thumbnailCamera).toBeUndefined();
+
         await waitFor(() => expect(result.current.cameras).toHaveLength(2));
 
-        expect(result.current.thumbnailCamera).toBeUndefined();
-        expect(result.current.selectedCameraKey).toBe(TOP);
-        await waitFor(() => expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBeNull());
+        expect(result.current.isLoading).toBe(false);
+        expect(result.current.thumbnailCamera).toBe(TOP);
+
+        act(() => {
+            result.current.changeThumbnailCamera(WRIST);
+        });
+
+        expect(result.current.thumbnailCamera).toBe(WRIST);
+        expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBe(WRIST);
     });
 
-    it('does not clear a stored key while cameras are still loading', async () => {
+    it('stays undefined when the dataset has no cameras', async () => {
+        mockDatasetCameras('dataset-1', []);
+
+        const { result } = renderHook(() => useThumbnailCamera('dataset-1'));
+
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        expect(result.current.cameras).toEqual([]);
+        expect(result.current.thumbnailCamera).toBeUndefined();
+    });
+
+    it('keeps a stale key while cameras load, then clears it and falls back to the first camera', async () => {
         localStorage.setItem(`${STORAGE_PREFIX}dataset-1`, 'observation.images.gone');
-        let resolveEpisodes: () => void = () => {};
-        const episodesGate = new Promise<void>((resolve) => {
-            resolveEpisodes = resolve;
-        });
+        const { promise: episodesGate, resolve: resolveEpisodes } = Promise.withResolvers();
+
+        mockDatasetCameras('dataset-1', [TOP, WRIST]);
         server.use(
             http.get('/api/dataset/{dataset_id}/episodes', async () => {
                 await episodesGate;
                 return HttpResponse.json(getMockedEpisodes());
-            }),
-            http.get('/api/dataset/{dataset_id}/episodes/{episode_index}', () =>
-                HttpResponse.json(getMockedEpisodeDetail({ videos: {} }))
-            )
+            })
         );
 
         const { result } = renderHook(() => useThumbnailCamera('dataset-1'));
 
-        // Give the effects a chance to run while the request is pending.
-        await act(async () => {});
-
         expect(result.current.thumbnailCamera).toBe('observation.images.gone');
         expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBe('observation.images.gone');
 
-        resolveEpisodes();
+        resolveEpisodes(0);
+
+        await waitFor(() => expect(result.current.cameras).toHaveLength(2));
+
+        expect(result.current.thumbnailCamera).toBe(TOP);
+        await waitFor(() => expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBeNull());
     });
 
     it('does not clear a stored key when the dataset has no episodes', async () => {
@@ -124,28 +122,12 @@ describe('useThumbnailCamera', () => {
         const { result } = renderHook(() => useThumbnailCamera('dataset-1'));
 
         await waitFor(() => expect(result.current.cameras).toEqual([]));
-        await act(async () => {});
 
         expect(result.current.thumbnailCamera).toBe(WRIST);
         expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBe(WRIST);
     });
 
-    it('persists the key and updates thumbnailCamera when one is selected', async () => {
-        mockDatasetCameras('dataset-1', [TOP, WRIST]);
-
-        const { result } = renderHook(() => useThumbnailCamera('dataset-1'));
-        await waitFor(() => expect(result.current.cameras).toHaveLength(2));
-
-        act(() => {
-            result.current.changeThumbnailCamera(WRIST);
-        });
-
-        expect(result.current.thumbnailCamera).toBe(WRIST);
-        expect(result.current.selectedCameraKey).toBe(WRIST);
-        expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBe(WRIST);
-    });
-
-    it('re-reads storage for the new dataset when datasetId changes without remounting', async () => {
+    it('re-reads storage when datasetId changes without remounting and writes selections to the new dataset', () => {
         localStorage.setItem(`${STORAGE_PREFIX}dataset-1`, TOP);
         localStorage.setItem(`${STORAGE_PREFIX}dataset-2`, WRIST);
         mockDatasetCameras('dataset-1', [TOP, WRIST]);
@@ -166,28 +148,17 @@ describe('useThumbnailCamera', () => {
 
         expect(result.current.thumbnailCamera).toBeUndefined();
 
-        datasetId = 'dataset-1';
-        rerender();
-
-        expect(result.current.thumbnailCamera).toBe(TOP);
-    });
-
-    it('writes a selection to the current dataset after datasetId changes', async () => {
-        mockDatasetCameras('dataset-1', [TOP, WRIST]);
-        mockDatasetCameras('dataset-2', [TOP, WRIST]);
-
-        let datasetId = 'dataset-1';
-        const { result, rerender } = renderHook(() => useThumbnailCamera(datasetId));
-
-        datasetId = 'dataset-2';
-        rerender();
-
         act(() => {
             result.current.changeThumbnailCamera(WRIST);
         });
 
-        expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-2`)).toBe(WRIST);
-        expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBeNull();
         expect(result.current.thumbnailCamera).toBe(WRIST);
+        expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-3`)).toBe(WRIST);
+        expect(localStorage.getItem(`${STORAGE_PREFIX}dataset-1`)).toBe(TOP);
+
+        datasetId = 'dataset-1';
+        rerender();
+
+        expect(result.current.thumbnailCamera).toBe(TOP);
     });
 });

@@ -13,10 +13,8 @@ interface ThumbnailCameraState {
 
 interface UseThumbnailCameraResult {
     cameras: DatasetCamera[];
-    /** The stored camera key, or `undefined` to let the backend pick its default. Used for thumbnail URLs. */
     thumbnailCamera: string | undefined;
-    /** The camera shown as selected in the menu: the stored key, falling back to the first camera. */
-    selectedCameraKey: string | undefined;
+    isLoading: boolean;
     changeThumbnailCamera: (cameraKey: string) => void;
 }
 
@@ -45,8 +43,8 @@ export const useThumbnailCamera = (datasetId: string): UseThumbnailCameraResult 
         setState({ datasetId, cameraKey: undefined });
     }, [isStale, datasetId]);
 
-    const thumbnailCamera = isStale ? undefined : state.cameraKey;
-    console.log({ thumbnailCamera });
+    const storedCamera = isStale ? undefined : state.cameraKey;
+    const thumbnailCamera = storedCamera ?? cameras.at(0)?.key;
 
     const changeThumbnailCamera = useCallback(
         (cameraKey: string) => {
@@ -58,8 +56,8 @@ export const useThumbnailCamera = (datasetId: string): UseThumbnailCameraResult 
 
     return {
         cameras,
+        isLoading,
         thumbnailCamera,
-        selectedCameraKey: thumbnailCamera ?? cameras.at(0)?.key,
         changeThumbnailCamera,
     };
 };

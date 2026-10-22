@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import { Checkbox, Flex, Size, View, type Selection } from '@geti-ui/ui';
+import { Checkbox, Flex, Loading, Size, View, type Selection } from '@geti-ui/ui';
 import { clsx } from 'clsx';
 
 import { fetchClient } from '../../api/client';
@@ -16,17 +16,27 @@ interface EpisodeListProps {
     currentEpisode: number | null;
     sortOrder: 'newest' | 'oldest';
     thumbnailCamera?: string;
+    isThumbnailCameraLoading?: boolean;
 }
 
 interface EpisodeThumbnailProps {
-    src: string;
+    src: string | undefined;
     alt: string;
+    isLoading: boolean;
 }
 
-const EpisodeThumbnail = ({ src, alt }: EpisodeThumbnailProps) => {
+const EpisodeThumbnail = ({ src, alt, isLoading }: EpisodeThumbnailProps) => {
     const [failed, setFailed] = useState(false);
 
-    if (failed) {
+    if (src === undefined && isLoading) {
+        return (
+            <div className={classes.episodeImagePlaceholder}>
+                <Loading isIndeterminate size='S' aria-label='Loading thumbnail' />
+            </div>
+        );
+    }
+
+    if (src === undefined || failed) {
         return (
             <div role='img' aria-label={alt} className={classes.episodeImagePlaceholder}>
                 No preview
@@ -44,7 +54,14 @@ const episodeGridLayoutOptions = {
     minSpace: new Size(12, 12),
 };
 
-export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder, thumbnailCamera }: EpisodeListProps) => {
+export const EpisodeList = ({
+    episodes,
+    onSelect,
+    currentEpisode,
+    sortOrder,
+    thumbnailCamera,
+    isThumbnailCameraLoading = false,
+}: EpisodeListProps) => {
     const { dataset_id, selectedEpisodes, setSelectedEpisodes } = useDataset();
     const sortedEpisodes = useMemo(
         () =>
@@ -85,22 +102,15 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder, thu
                     selectedKeys={selectedKeys}
                     onSelectionChange={handleSelectionChange}
                     renderItem={(episode) => {
-                        const thumbnailSrc = fetchClient.PATH(
-                            '/api/dataset/{dataset_id}/episodes/{episode_index}/thumbnail',
-                            {
-                                params: {
-                                    path: {
-                                        dataset_id,
-                                        episode_index: episode.episode_index,
-                                    },
-                                    query: {
-                                        height: 240,
-                                        width: 320,
-                                        ...(thumbnailCamera !== undefined && { camera: thumbnailCamera }),
-                                    },
-                                },
-                            }
-                        );
+                        const thumbnailSrc =
+                            thumbnailCamera === undefined
+                                ? undefined
+                                : fetchClient.PATH('/api/dataset/{dataset_id}/episodes/{episode_index}/thumbnail', {
+                                      params: {
+                                          path: { dataset_id, episode_index: episode.episode_index },
+                                          query: { height: 240, width: 320, camera: thumbnailCamera },
+                                      },
+                                  });
 
                         return (
                             <View
@@ -109,9 +119,10 @@ export const EpisodeList = ({ episodes, onSelect, currentEpisode, sortOrder, thu
                                 })}
                             >
                                 <EpisodeThumbnail
-                                    key={thumbnailSrc}
+                                    key={thumbnailSrc ?? 'pending'}
                                     alt={`Camera frame of ${episode.episode_index}`}
                                     src={thumbnailSrc}
+                                    isLoading={isThumbnailCameraLoading}
                                 />
                                 <Flex
                                     alignItems={'center'}
