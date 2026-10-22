@@ -9,12 +9,20 @@ Metadata:
       - Label:
           default: Job limits
         Parameters:
+          - ParallelTrainersPerPool
           - JobTimeoutSeconds
     ParameterLabels:
+      ParallelTrainersPerPool:
+        default: Parallel trainers per EC2 pool
       JobTimeoutSeconds:
         default: Maximum job duration (seconds)
 
 Parameters:
+  ParallelTrainersPerPool:
+    Type: Number
+    Default: 1
+    AllowedValues: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    Description: Maximum concurrent trainers in each EC2 pool. ACT and SmolVLA share a pool; excess jobs wait in AWS Batch.
   JobTimeoutSeconds:
     Type: Number
     Default: 86400
@@ -23,6 +31,25 @@ Parameters:
     Description: >-
       AWS Batch terminates a job that runs longer than this (default 24 hours), so a hung
       run cannot accrue charges indefinitely.
+
+Mappings:
+  PoolCapacity:
+    "1": { Small: 8, Large: 32 }
+    "2": { Small: 16, Large: 64 }
+    "3": { Small: 24, Large: 96 }
+    "4": { Small: 32, Large: 128 }
+    "5": { Small: 40, Large: 160 }
+    "6": { Small: 48, Large: 192 }
+    "7": { Small: 56, Large: 224 }
+    "8": { Small: 64, Large: 256 }
+    "9": { Small: 72, Large: 288 }
+    "10": { Small: 80, Large: 320 }
+    "11": { Small: 88, Large: 352 }
+    "12": { Small: 96, Large: 384 }
+    "13": { Small: 104, Large: 416 }
+    "14": { Small: 112, Large: 448 }
+    "15": { Small: 120, Large: 480 }
+    "16": { Small: 128, Large: 512 }
 
 Rules:
   SupportedRegion:
@@ -295,7 +322,7 @@ Resources:
         AllocationStrategy: BEST_FIT
         MinvCpus: 0
         DesiredvCpus: 0
-        MaxvCpus: 8
+        MaxvCpus: !FindInMap [PoolCapacity, !Ref ParallelTrainersPerPool, Small]
         InstanceTypes:
           - g4dn.2xlarge
         Ec2Configuration:
@@ -321,7 +348,7 @@ Resources:
         AllocationStrategy: BEST_FIT
         MinvCpus: 0
         DesiredvCpus: 0
-        MaxvCpus: 8
+        MaxvCpus: !FindInMap [PoolCapacity, !Ref ParallelTrainersPerPool, Small]
         InstanceTypes:
           - g6e.2xlarge
         Ec2Configuration:
@@ -347,7 +374,7 @@ Resources:
         AllocationStrategy: BEST_FIT
         MinvCpus: 0
         DesiredvCpus: 0
-        MaxvCpus: 32
+        MaxvCpus: !FindInMap [PoolCapacity, !Ref ParallelTrainersPerPool, Large]
         InstanceTypes:
           - g7e.8xlarge
         Ec2Configuration:
@@ -591,6 +618,8 @@ Resources:
                   else:
                       configuration = event["ResourceProperties"]["Configuration"]
                       configuration["schema_version"] = int(configuration["schema_version"])
+                      for target in configuration["targets"].values():
+                          target["max_trainers"] = int(target["max_trainers"])
                       boto3.client("s3").put_object(
                           Bucket=event["ResourceProperties"]["BucketName"],
                           Key="studio-config.json",
@@ -614,12 +643,15 @@ Resources:
         bucket: !Ref JobsBucket
         targets:
           g4dn.2xlarge:
+            max_trainers: !Ref ParallelTrainersPerPool
             queue: !Ref G4dnJobQueue
             job_definition: !Ref G4dnJobDefinition
           g6e.2xlarge:
+            max_trainers: !Ref ParallelTrainersPerPool
             queue: !Ref G6eJobQueue
             job_definition: !Ref G6eJobDefinition
           g7e.8xlarge:
+            max_trainers: !Ref ParallelTrainersPerPool
             queue: !Ref G7eJobQueue
             job_definition: !Ref G7eJobDefinition
 

@@ -148,6 +148,26 @@ async def test_schedules_training_per_target_alongside_one_import(scheduler, ser
         scheduler._shutdown_processes()
 
 
+@pytest.mark.anyio
+async def test_same_policy_batch_jobs_start_independently_without_duplicate_starts(scheduler, services):
+    trainer_id = uuid4()
+    pending = [_training_job(trainer_id=trainer_id), _training_job(trainer_id=trainer_id)]
+    for job in pending:
+        job.payload.remote_trainer_url = "aws-batch://us-east-1/jobs-bucket"
+    services[0].get_pending_train_jobs.return_value = [*pending, pending[0]]
+
+    with patch(f"{MODULE}.mp.Process") as process:
+        await scheduler._schedule_jobs()
+        await scheduler._schedule_jobs()
+
+        assert process.call_count == 2
+        assert {job.id for _, job in scheduler.processes.values()} == {job.id for job in pending}
+        scheduler.cancel_job(pending[0].id)
+        assert scheduler._cancel_events[pending[0].id].is_set()
+        assert not scheduler._cancel_events[pending[1].id].is_set()
+        scheduler._shutdown_processes()
+
+
 def test_cancellation_signals_only_the_assigned_training_process(scheduler):
     first, second = _training_job(), _training_job(trainer_id=uuid4())
     with patch(f"{MODULE}.mp.Process") as process:

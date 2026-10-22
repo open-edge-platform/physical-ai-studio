@@ -2,6 +2,17 @@ import { SchemaRemoteTrainer } from '../../api/openapi-spec';
 
 type ConnectionMode = SchemaRemoteTrainer['connection_mode'];
 
+export const configuredCapacity = ({ connection }: SchemaRemoteTrainer): string => {
+    if (connection.connection_mode !== 'aws_batch') return '—';
+    return Object.entries(connection.targets)
+        .map(([instanceType, target]) =>
+            target.max_trainers == null
+                ? `${instanceType}: Not reported`
+                : `${instanceType}: up to ${target.max_trainers} trainer${target.max_trainers === 1 ? '' : 's'}`
+        )
+        .join(' · ');
+};
+
 /** Label trainers by who maintains them: Studio, AWS, or the user. */
 export const connectionModeLabel = (connectionMode: ConnectionMode): string => {
     switch (connectionMode) {

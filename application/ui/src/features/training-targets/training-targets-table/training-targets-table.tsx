@@ -5,6 +5,7 @@ import { MoreMenu } from '@geti-ui/ui/icons';
 
 import { SchemaRemoteTrainer } from '../../../api/openapi-spec';
 import { Table, TableColumn } from '../../../components/table/table';
+import { configuredCapacity } from '../remote-trainer-connection-utils';
 import { getDisplayHealth } from '../remote-trainer-health-utils';
 import { RemoteTrainerDetail } from './remote-trainer-detail/remote-trainer-detail';
 import { instanceTypeLabel, TrainingTargetRow, trainingTargetRowId } from './training-target-row';
@@ -16,6 +17,7 @@ export const TRAINING_TARGET_COLUMNS: TableColumn[] = [
     { width: 'max-content' },
     { width: 'minmax(120px, 1fr)', header: 'Name' },
     { width: 'minmax(140px, 1fr)', header: 'Type' },
+    { width: 'minmax(180px, 2fr)', header: 'Configured capacity' },
     { width: 'auto', header: 'Actions', align: 'end' },
 ];
 
@@ -79,6 +81,7 @@ const TargetMenuActions = ({
 type TargetRowContentProps = {
     name: string;
     connectionModeText: string;
+    capacity: string;
     isStarting: boolean;
     isChecking: boolean;
     onCheck?: () => void;
@@ -91,6 +94,7 @@ type TargetRowContentProps = {
 const targetRowCells = ({
     name,
     connectionModeText,
+    capacity,
     isStarting,
     isChecking,
     onCheck,
@@ -106,6 +110,9 @@ const targetRowCells = ({
         {connectionModeText}
     </Text>,
 
+    <Text key='capacity' UNSAFE_className={classes.cellText}>
+        {capacity}
+    </Text>,
     <div key='actions' onClick={(event) => event.stopPropagation()}>
         <Flex gap='size-100' alignItems='center'>
             <ActionButton aria-label={`Edit ${name}`} onPress={onEdit}>
@@ -165,6 +172,7 @@ const DirectUrlTargetRow = ({
             {targetRowCells({
                 name: trainer.name,
                 connectionModeText: instanceTypeLabel(trainer.connection_mode),
+                capacity: configuredCapacity(trainer),
                 isStarting: displayHealth?.status === 'starting',
                 isChecking,
                 onCheck: () => {

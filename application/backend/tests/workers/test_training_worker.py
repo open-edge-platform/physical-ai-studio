@@ -103,6 +103,7 @@ def _make_settings(tmp_path: Path) -> MagicMock:
     settings = MagicMock()
     settings.models_dir = tmp_path / "models"
     settings.cache_dir = tmp_path / "cache"
+    settings.snapshot_dir = tmp_path / "snapshots"
     return settings
 
 
@@ -521,11 +522,14 @@ class TestTraining:
             patch.object(worker, "_train_model", side_effect=_capture),
         ):
             MockDatasetService.return_value.get_dataset_by_id = AsyncMock(return_value=dataset)
-            MockSnapshotService.generate_snapshot_folder_name = MagicMock(return_value="snap")
+            MockSnapshotService.generate_snapshot_folder_name = MagicMock(return_value=f"snap_{job.id}")
             MockSnapshotService.return_value.create_snapshot_for_dataset = AsyncMock(return_value=snapshot)
 
             await worker._run_training_job(job, payload)
 
+        MockSnapshotService.return_value.create_snapshot_for_dataset.assert_awaited_once_with(
+            dataset, destination=tmp_path / "snapshots" / f"snap_{job.id}"
+        )
         assert captured["model"].properties == {
             "lora_enabled": lora_enabled,
             "lora_use_dora": lora_use_dora,

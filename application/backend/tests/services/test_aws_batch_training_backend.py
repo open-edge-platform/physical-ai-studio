@@ -1,5 +1,7 @@
 """Exercise the Batch execution path with mocked AWS clients."""
 
+import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -185,6 +187,30 @@ async def test_reattach_does_not_resubmit_or_upload(context, aws, monkeypatch) -
     batch.submit_job.assert_not_called()
     s3.upload_file.assert_not_called()
     s3.put_object.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_parallel_jobs_use_isolated_s3_paths(context, aws, monkeypatch, tmp_path) -> None:
+    batch, s3 = aws
+    other = replace(context, job=MagicMock(id=uuid4(), progress=0))
+    archive = tmp_path / "dataset.zip"
+    archive.write_bytes(b"dataset")
+    monkeypatch.setattr(f"{MODULE}.DatasetDownloadService.create_dataset_archive", lambda self, path: archive)
+    monkeypatch.setattr(f"{MODULE}.build_spec", lambda context: TrainingJobSpec(policy="act"))
+    monkeypatch.setattr(f"{MODULE}.cleanup_staged_archive", lambda path: None)
+    monkeypatch.setattr(AwsBatchTrainingBackend, "_extract", MagicMock())
+
+    await asyncio.gather(
+        (await get_training_backend(context.payload)).train(context),
+        (await get_training_backend(other.payload)).train(other),
+    )
+
+    prefixes = {f"jobs/{job.job.id}" for job in (context, other)}
+    assert {args.kwargs["parameters"]["job_prefix"] for args in batch.submit_job.call_args_list} == prefixes
+    assert {args.args[2] for args in s3.upload_file.call_args_list} == {f"{p}/dataset.zip" for p in prefixes}
+    assert {args.kwargs["Key"] for args in s3.put_object.call_args_list} == {f"{p}/spec.json" for p in prefixes}
+    assert {args.kwargs["Key"] for args in s3.get_object.call_args_list} == {f"{p}/status.json" for p in prefixes}
+    assert {args.args[1] for args in s3.download_file.call_args_list} == {f"{p}/artifact.zip" for p in prefixes}
 
 
 @pytest.mark.asyncio

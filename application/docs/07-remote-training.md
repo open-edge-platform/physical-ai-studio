@@ -95,6 +95,8 @@ For cloud-based remote training, the Hugging Face token may be exposed in logs d
 
 The supplied stack scales compute to zero when idle. Keep it deployed for future training jobs; storage charges still apply.
 
+You can train multiple models at the same time. When deploying the AWS stack, increase **Parallel trainers per EC2 pool** (1–16, default 1) to allow more training jobs to run simultaneously. Jobs beyond the configured capacity wait automatically until a running job finishes.
+
 1. Open **Settings**, then **Training Targets**, and select **AWS Provider**.
 2. In **Deploy and configure AWS stack**, deploy the linked CloudFormation stack in **US East (N. Virginia)** (`us-east-1`), or use an existing deployment. Wait for stack creation to complete and copy `ConfigurationUri` from its **Outputs** tab.
 3. Paste that output into **S3 configuration file URI**, then select **Next**. Use the configuration file URI, not just the bucket URL.
@@ -140,13 +142,16 @@ Terraform and other provisioning tools can publish the same JSON document to an 
   "targets": {
     "g4dn.xlarge": {
       "queue": "my-training-queue",
-      "job_definition": "my-training-definition:1"
+      "job_definition": "my-training-definition:1",
+      "max_trainers": 4
     }
   }
 }
 ```
 
 `bucket` identifies the bucket for datasets, progress, and model artifacts. Each `targets` entry associates an instance type with its Batch queue and job definition. The provisioned compute environment and job definition must match that entry. At least one target is required; documents are limited to 64 KiB and schema version 1.
+
+The optional positive integer `max_trainers` reports the pool's configured maximum concurrent trainers for display; AWS enforces capacity through the compute environment. Older configurations without it display **Not reported**. Each training job stores its inputs and outputs under its own `jobs/<studio-job-id>/` S3 prefix, isolating parallel runs.
 
 Studio stores the resolved resource configuration with the training target. After provisioning changes, open **Edit** and select **Save changes** to reload the S3 document. Existing AWS Batch registrations without a configuration URI require one when edited. An upgrade rejects databases containing multiple AWS providers; remove the extra registrations before upgrading.
 

@@ -43,7 +43,7 @@ describe('TrainingTargetsTable', () => {
         server.use(http.get(REMOTE_TRAINER_HEALTH_PATH, () => HttpResponse.json(healthyTrainer)));
     });
 
-    it('shows Batch compute configuration and S3 storage without missing-host warnings', async () => {
+    it.each([4, undefined])('shows configured Batch capacity %s with no running instances', async (capacity) => {
         const batchTrainer = getMockedRemoteTrainer({
             name: 'AWS Provider',
             connection_mode: 'aws_batch',
@@ -55,7 +55,7 @@ describe('TrainingTargetsTable', () => {
                 region: 'us-east-1',
                 studio_role_arn: 'arn:aws:iam::123:role/studio',
                 bucket: 'training-jobs',
-                targets: { 'g4dn.2xlarge': { queue: 'queue', job_definition: 'definition' } },
+                targets: { 'g4dn.2xlarge': { queue: 'queue', job_definition: 'definition', max_trainers: capacity } },
             },
         });
         server.use(
@@ -74,7 +74,13 @@ describe('TrainingTargetsTable', () => {
 
         expect(await screen.findByText('responded in 24 ms and is ready for training requests')).toBeInTheDocument();
         expect(screen.getByText('Batch service')).toBeInTheDocument();
-        expect(screen.getByText('g4dn.2xlarge · allocated per job')).toBeInTheDocument();
+        const capacityText = capacity ? 'g4dn.2xlarge: up to 4 trainers' : 'g4dn.2xlarge: Not reported';
+        expect(screen.getByText('Configured capacity')).toBeInTheDocument();
+        expect(screen.getAllByText(capacityText)).toHaveLength(2);
+        const user = userEvent.setup();
+        await user.click(screen.getByRole('button', { name: 'Show details for AWS Provider' }));
+        expect(screen.getByText(capacityText)).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Show details for AWS Provider' }));
         expect(screen.getByText('On demand')).toBeInTheDocument();
         expect(screen.getByText('s3://training-jobs')).toBeInTheDocument();
         expect(screen.queryByText('Unknown')).not.toBeInTheDocument();

@@ -14,7 +14,7 @@ const AWS_STACK_URL =
     'https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1' +
     '#/stacks/create/review?templateURL=' +
     encodeURIComponent(
-        'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/aws-cf-templates/aws-batch-trainer.yaml'
+        'https://physical-ai-studio.s3.eu-west-1.amazonaws.com/aws-cf-templates/aws-batch-trainer/v1/aws-batch-trainer.yaml'
     ) +
     '&stackName=physical-ai-studio-batch-trainer';
 

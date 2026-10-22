@@ -103,6 +103,8 @@ class Scheduler:
             jobs = await JobService(session).get_pending_train_jobs()
         for job in jobs:
             target = target_key(TrainJobPayloadAdapter.validate_python(job.payload))
+            if target.startswith("batch:"):
+                target = f"{target}:{job.id}"
             if not self._target_is_busy(target, self.processes):
                 self._start_job(target, job)
 

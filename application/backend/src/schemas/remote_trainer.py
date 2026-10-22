@@ -105,6 +105,9 @@ class AwsBatchTarget(BaseModel):
         max_length=2048,
         pattern=rf"^{AWS_BATCH_ARN_PREFIX}job-definition/[a-zA-Z0-9_-]{{1,128}}(:[1-9][0-9]*)?$",
     )
+    max_trainers: int | None = Field(
+        default=None, gt=0, description="Configured maximum concurrent trainers in this pool."
+    )
 
 
 class AwsBatchProviderConfiguration(AwsCredentialSelection):
