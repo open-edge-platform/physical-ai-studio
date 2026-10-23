@@ -562,6 +562,14 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
 
         return config, dataset_stats, weights_file
 
+    def on_load_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Migrate vision-tower keys from checkpoints saved before Transformers 5.15."""
+        super().on_load_checkpoint(checkpoint)
+        checkpoint["state_dict"] = {
+            key.replace(".vision_tower.vision_model.", ".vision_tower."): value
+            for key, value in checkpoint["state_dict"].items()
+        }
+
     def setup(self, stage: str) -> None:
         """Set up model from datamodule (lazy or fine-tuning path).
 
