@@ -708,6 +708,8 @@ class ACT(ExportablePolicyMixin, Policy):
             )
 
         preproc_specs = [
+            # Resize float pixels like training, avoiding OpenCV's uint8 interpolation rounding.
+            ComponentSpec(type="to_float_tensor"),
             ComponentSpec(
                 type="resize",
                 image_resolution=self.config.image_size,

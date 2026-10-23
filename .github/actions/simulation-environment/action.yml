@@ -1,0 +1,35 @@
+name: Simulation application environment
+description: Install the pinned Studio backend and recorded conveyor dataset
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version-file: application/backend/.python-version
+    - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      with:
+        version: "0.10.4"
+    - name: Install pinned dependencies
+      shell: bash
+      working-directory: application/backend
+      run: |
+        uv sync --frozen --extra tests --extra sim-e2e --extra cuda
+        uv run --no-sync python -c 'from tests.integration.simulation_e2e import attest_runtime; print(attest_runtime())'
+    - name: Fetch pinned recording
+      shell: bash
+      working-directory: application/backend
+      run: |
+        uv run --no-sync python - <<'PY'
+        import json
+        import os
+        from pathlib import Path
+        from huggingface_hub import snapshot_download
+        from tests.integration.simulation_e2e import dataset_entry
+        entry = dataset_entry()
+        root = Path(os.environ['SIM_E2E_DATASET_DIR'])
+        snapshot_download(entry['repo_id'], repo_type='dataset', revision=entry['revision'], local_dir=root,
+                          allow_patterns=['simulation.json', 'meta/*', 'data/*', 'videos/*'])
+        metadata = json.loads((root / 'meta/info.json').read_text())
+        if metadata['total_episodes'] != entry['episodes']:
+            raise ValueError('Recording episode count does not match selected dataset')
+        PY
