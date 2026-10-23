@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Physical AI Studio README demos</title>
+    <link rel="stylesheet" href="/demo.css" />
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #070a13;
+        color: white;
+        font-family: "Inter Variable", sans-serif;
+      }
+      #root {
+        position: absolute;
+        transform-origin: top left;
+      }
+      #controls {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 0 24px;
+        background: #151c30;
+      }
+      #controls input {
+        flex: 1;
+      }
+      #controls output {
+        width: 72px;
+      }
+    </style>
+    <script type="module" src="/demo.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
