@@ -18,6 +18,29 @@ def test_defaults() -> None:
     assert cfg.n_action_steps == 30
     assert cfg.max_action_dim == 32
     assert cfg.dit_num_layers == 16
+    assert cfg.dtype == "float32"
+    assert cfg.image_key_view_map == {}
+    assert cfg.optimizer_type == "adamw4bit"
+    assert cfg.optimizer_lr == 1e-4
+
+
+def test_image_key_view_map_is_independent() -> None:
+    """Changing one config's view map does not change another's."""
+    first, second = XR0Config(), XR0Config()
+    first.image_key_view_map["images.top_camera"] = "ego"
+    assert second.image_key_view_map == {}
+
+
+@pytest.mark.parametrize("optimizer_type", ["adamw", "adamw4bit", "adamw8bit"])
+def test_optimizer_type(optimizer_type: str) -> None:
+    """All supported optimizer variants can be selected."""
+    assert XR0Config(optimizer_type=optimizer_type).optimizer_type == optimizer_type
+
+
+def test_invalid_optimizer_type() -> None:
+    """Unsupported optimizers fail during config validation."""
+    with pytest.raises(ValueError, match="optimizer_type"):
+        XR0Config(optimizer_type="sgd")
 
 
 def test_dict_roundtrip() -> None:

@@ -25,7 +25,12 @@ from physicalai.train.utils import reformat_dataset_to_match_policy
 from .config import XR0Config
 from .model import XR0Model
 from .preprocessor import make_xr0_preprocessors
-from .pretrained_utils import extract_xr0_dataset_stats, load_xr0_pretrained_weights, resolve_pretrained_path
+from .pretrained_utils import (
+    compute_action_chunk_stats,
+    extract_xr0_dataset_stats,
+    load_xr0_pretrained_weights,
+    resolve_pretrained_path,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -39,6 +44,58 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DTYPES: dict[str, torch.dtype] = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
+
+
+def _build_optimizer(config: XR0Config, param_groups: list[dict[str, Any]]) -> torch.optim.Optimizer:
+    """Build the AdamW variant selected by ``config.optimizer_type``.
+
+    torchao's low-bit variants hold the Adam moments in int4/int8 blocks of 128
+    elements, cutting optimizer memory roughly 4x/2x versus fp32 moments.
+    Parameters whose element count is not a multiple of the block size keep
+    plain fp32 moments.
+
+    The stochastic rounding of the bf16 parameter update is also enabled when
+    the weights are bf16 to prevent gradient update uderflow.
+
+    Args:
+        config: Policy config supplying the optimizer hyperparameters.
+        param_groups: Parameter groups carrying their weight-decay overrides.
+
+    Returns:
+        The configured optimizer.
+
+    Raises:
+        ImportError: If a low-bit optimizer is requested but torchao is missing.
+    """
+    if config.optimizer_type == "adamw":
+        return torch.optim.AdamW(
+            param_groups,
+            lr=config.optimizer_lr,
+            betas=config.optimizer_betas,
+            eps=config.optimizer_eps,
+        )
+
+    # torchao ships only with the `cu128` / `xpu` extras, so import it lazily to
+    # keep CPU-only installs working.
+    try:
+        from torchao.optim import AdamW4bit, AdamW8bit  # noqa: PLC0415  # pyrefly: ignore[missing-import]
+    except ImportError as exc:
+        msg = (
+            f"optimizer_type={config.optimizer_type!r} requires the 'torchao' package. "
+            "Install a hardware extra that provides it (`uv sync --extra cu128` or "
+            "`uv sync --extra xpu`), or set optimizer_type='adamw'."
+        )
+        raise ImportError(msg) from exc
+
+    # Explicit mapping rather than getattr(): no dynamic attribute lookup.
+    optimizer_cls = AdamW4bit if config.optimizer_type == "adamw4bit" else AdamW8bit
+    return optimizer_cls(
+        param_groups,
+        lr=config.optimizer_lr,
+        betas=config.optimizer_betas,
+        eps=config.optimizer_eps,
+        bf16_stochastic_round=config.dtype == "bfloat16",
+    )
 
 
 class XR0ExportablePolicyMixin(ExportablePolicyMixin):
@@ -203,6 +260,10 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         image_resolution: Target image resolution (unused placeholder kept for
             config parity; the Qwen3-VL processor performs area-based resizing).
         tokenizer_max_length: Maximum tokenizer length.
+        image_key_view_map: Mapping from dataset image key to canonical XR0 view
+            name (``"ego"``, ``"base"``, ``"wrist_left"`` or ``"wrist_right"``).
+            Keys must match the flattened batch image keys (e.g.
+            ``"images.top_camera"``). The prompt uses canonical view order.
         gradient_checkpointing: Enable gradient checkpointing.
         compile_model: Whether to use torch.compile.
         compile_mode: Torch compile mode.
@@ -216,12 +277,15 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         action_mode: ``"absolute"`` (default) predicts the raw action;
             ``"delta"`` predicts ``action[t] - state`` and re-adds the state at
             inference, matching the pretrained flow head's delta prior.
-        action_delta_mean: Per-timestep delta-action mean
-            (``(chunk_size, max_action_dim)``) used when ``action_mode="delta"``;
-            compute it with :func:`compute_delta_action_stats`.
-        action_delta_std: Per-timestep delta-action std, same shape as
-            ``action_delta_mean``.
+        action_mean: Optional explicit per-timestep action mean
+            (``(chunk_size, max_action_dim)``). Training computes it from the
+            chunked dataset when omitted. Applies to both action modes.
+        action_std: Per-timestep action std, same shape as ``action_mean``.
+        action_stats_max_batches: Optional cap on training batches scanned for
+            action stats. ``None`` scans the full training dataset.
         normalization_mode: Normalization method for state/action features.
+        optimizer_type: AdamW implementation: ``"adamw4bit"`` (default),
+            ``"adamw8bit"`` or ``"adamw"``. The low-bit variants need torchao.
         optimizer_lr: Learning rate.
         optimizer_betas: Adam beta coefficients.
         optimizer_eps: Optimizer epsilon.
@@ -250,7 +314,7 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         pretrained_name_or_path: str | Path | None = None,
         vlm_model_id: str = "Qwen/Qwen3-VL-4B-Instruct",
         vlm_attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "sdpa",
-        dtype: Literal["bfloat16", "float16", "float32"] = "bfloat16",
+        dtype: Literal["bfloat16", "float16", "float32"] = "float32",
         n_obs_steps: int = 1,
         chunk_size: int = 30,
         n_action_steps: int = 30,
@@ -273,16 +337,20 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         async_train: bool = False,
         image_resolution: tuple[int, int] = (256, 256),
         tokenizer_max_length: int = 256,
+        image_key_view_map: dict[str, str] | None = None,
         gradient_checkpointing: bool = True,
         compile_model: bool = False,
         compile_mode: str = "max-autotune",
         freeze_vision_encoder: bool = False,
         freeze_input_embeddings: bool = True,
         normalize_state: bool = False,
+        augment_images: bool = False,
         action_mode: Literal["absolute", "delta"] = "absolute",
-        action_delta_mean: Sequence[float] | torch.Tensor | None = None,
-        action_delta_std: Sequence[float] | torch.Tensor | None = None,
+        action_mean: Sequence[float] | torch.Tensor | None = None,
+        action_std: Sequence[float] | torch.Tensor | None = None,
+        action_stats_max_batches: int | None = None,
         normalization_mode: Literal["MEAN_STD", "QUANTILES"] = "QUANTILES",
+        optimizer_type: Literal["adamw", "adamw4bit", "adamw8bit"] = "adamw4bit",
         optimizer_lr: float = 1.0e-4,
         optimizer_betas: tuple[float, float] = (0.9, 0.95),
         optimizer_eps: float = 1e-8,
@@ -332,6 +400,7 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             async_train=async_train,
             image_resolution=image_resolution,
             tokenizer_max_length=tokenizer_max_length,
+            image_key_view_map=image_key_view_map or {},
             gradient_checkpointing=gradient_checkpointing,
             compile_model=compile_model,
             compile_mode=compile_mode,
@@ -340,6 +409,7 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             normalize_state=normalize_state,
             action_mode=action_mode,
             normalization_mode=normalization_mode,
+            optimizer_type=optimizer_type,
             optimizer_lr=optimizer_lr,
             optimizer_betas=optimizer_betas,
             optimizer_eps=optimizer_eps,
@@ -352,19 +422,21 @@ class XR0(XR0ExportablePolicyMixin, Policy):
 
         self.save_hyperparameters(ignore=["config", "compile_model", "pretrained_name_or_path"])
         self._set_hparam_keys()
+        self.augment_images = augment_images
+        self.action_stats_max_batches = action_stats_max_batches
 
-        # Per-timestep delta-action stats (only used when action_mode="delta").
+        # Per-timestep action stats overriding the dataset-derived ones.
         # Stored as tensors for the preprocessors and mirrored into hparams as
         # plain lists so they round-trip through Lightning checkpoints.
-        self._action_delta_mean: torch.Tensor | None = (
-            None if action_delta_mean is None else torch.as_tensor(action_delta_mean, dtype=torch.float32)
+        self._action_mean: torch.Tensor | None = (
+            None if action_mean is None else torch.as_tensor(action_mean, dtype=torch.float32)
         )
-        self._action_delta_std: torch.Tensor | None = (
-            None if action_delta_std is None else torch.as_tensor(action_delta_std, dtype=torch.float32)
+        self._action_std: torch.Tensor | None = (
+            None if action_std is None else torch.as_tensor(action_std, dtype=torch.float32)
         )
-        if self._action_delta_mean is not None and self._action_delta_std is not None:
-            self.hparams["action_delta_mean"] = self._action_delta_mean.tolist()
-            self.hparams["action_delta_std"] = self._action_delta_std.tolist()
+        if self._action_mean is not None and self._action_std is not None:
+            self.hparams["action_mean"] = self._action_mean.tolist()
+            self.hparams["action_std"] = self._action_std.tolist()
 
         self.model: XR0Model | None = None
         self._preprocessor: XR0Preprocessor | None = None
@@ -390,7 +462,7 @@ class XR0(XR0ExportablePolicyMixin, Policy):
         # recover the action-normalization stats from the checkpoint so the
         # policy is usable for standalone inference (no training dataset).
         if dataset_stats is None and pretrained_name_or_path is not None:
-            dataset_stats = extract_xr0_dataset_stats(pretrained_name_or_path)
+            dataset_stats = extract_xr0_dataset_stats(pretrained_name_or_path, chunk_size=chunk_size)
             self._dataset_stats = dataset_stats
 
         if dataset_stats is not None:
@@ -436,11 +508,14 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             max_state_dim=cfg.max_state_dim,
             max_action_dim=cfg.max_action_dim,
             stats=dataset_stats,
+            chunk_size=cfg.chunk_size,
+            state_len=cfg.state_len,
             processor_name=cfg.vlm_model_id,
+            image_key_view_map=cfg.image_key_view_map,
             normalize_state=cfg.normalize_state,
             action_mode=cfg.action_mode,
-            action_delta_mean=self._action_delta_mean,
-            action_delta_std=self._action_delta_std,
+            action_mean=self._action_mean,
+            action_std=self._action_std,
         )
         self._dataset_stats = dataset_stats
 
@@ -461,13 +536,21 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             max_state_dim=cfg.max_state_dim,
             max_action_dim=cfg.max_action_dim,
             stats=dataset_stats,
+            chunk_size=cfg.chunk_size,
+            state_len=cfg.state_len,
             processor_name=cfg.vlm_model_id,
+            image_key_view_map=cfg.image_key_view_map,
             normalize_state=cfg.normalize_state,
             action_mode=cfg.action_mode,
-            action_delta_mean=self._action_delta_mean,
-            action_delta_std=self._action_delta_std,
+            action_mean=self._action_mean,
+            action_std=self._action_std,
         )
         self._dataset_stats = dataset_stats
+
+    @property
+    def action_delta_indices(self) -> list[int]:
+        """Expose the action horizon before the model is initialized."""
+        return list(range(self.config.chunk_size))
 
     def _load_pretrained_weights(self, pretrained_path: Path) -> None:
         """Load remapped pretrained weights into ``self.model`` (non-strict).
@@ -499,6 +582,8 @@ class XR0(XR0ExportablePolicyMixin, Policy):
 
         Raises:
             TypeError: If the train dataset is not a physicalai Dataset.
+            ValueError: If the action feature is missing, not flat, or exceeds
+                ``max_action_dim``.
         """
         datamodule = self.trainer.datamodule  # type: ignore[attr-defined]
         train_dataset = datamodule.train_dataset
@@ -515,7 +600,35 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             self.hparams["input_features"] = input_features
             self.hparams["output_features"] = output_features
 
-        stats_dict = train_dataset.stats
+        # Chunk before scanning stats (and before lazy model initialization).
+        # Dataset.stats holds frame-level LeRobot stats, not XR0's per-timestep
+        # action targets; delta mode also needs to subtract the current state.
+        reformat_dataset_to_match_policy(self, datamodule)
+        stats_dict = dict(train_dataset.stats)
+        if self._action_mean is None and self._action_std is None:
+            action_feature = train_dataset.action_features.get(ACTION)
+            if action_feature is None or action_feature.shape is None or len(action_feature.shape) != 1:
+                msg = "XR0 requires a flat action feature named 'action'"
+                raise ValueError(msg)
+            action_dim = int(action_feature.shape[0])
+            if action_dim > self.config.max_action_dim:
+                msg = f"action width {action_dim} exceeds max_action_dim={self.config.max_action_dim}"
+                raise ValueError(msg)
+            mean, std = compute_action_chunk_stats(
+                datamodule,
+                chunk_size=self.config.chunk_size,
+                action_dim=action_dim,
+                max_action_dim=self.config.max_action_dim,
+                action_mode=self.config.action_mode,
+                max_batches=self.action_stats_max_batches,
+                setup_stage=None,
+                device="cpu",
+            )
+            stats_dict[ACTION] = {
+                **stats_dict[ACTION],
+                "mean": mean[:, :action_dim].tolist(),
+                "std": std[:, :action_dim].tolist(),
+            }
         self.hparams["dataset_stats"] = stats_dict
         if self.model is None:
             self._initialize_model(stats_dict)
@@ -528,8 +641,6 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             # target explodes. Rebuild the pre/post-processors from the datamodule
             # stats while keeping the already-loaded model weights.
             self._rebuild_preprocessors(stats_dict)
-
-        reformat_dataset_to_match_policy(self, datamodule)
 
         # The Qwen3-VL backbone is built via ``from_pretrained``, which returns an
         # eval-mode module, and Lightning does not implicitly flip module
@@ -553,7 +664,7 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             if self.model is None or self._preprocessor is None:
                 msg = "Model is not initialized"
                 raise ValueError(msg)
-            processed = self._preprocessor(batch.to_dict())
+            processed = self._preprocessor(batch.to_dict(), augment_images=self.augment_images)
             return self.model(processed)
         return self.predict_action_chunk(batch)
 
@@ -622,14 +733,12 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             else:
                 decay_params.append(param)
 
-        optimizer = torch.optim.AdamW(
+        optimizer = _build_optimizer(
+            self.config,
             [
                 {"params": decay_params, "weight_decay": self.config.optimizer_weight_decay},
                 {"params": no_decay_params, "weight_decay": 0.0},
             ],
-            lr=self.config.optimizer_lr,
-            betas=self.config.optimizer_betas,
-            eps=self.config.optimizer_eps,
         )
 
         num_training_steps = int(self.trainer.estimated_stepping_batches)
@@ -976,6 +1085,9 @@ class XR0(XR0ExportablePolicyMixin, Policy):
                 patch_size=int(image_processor.patch_size),
                 merge_size=int(image_processor.merge_size),
                 temporal_patch_size=int(image_processor.temporal_patch_size),
+                # Bake the camera-view renaming so the exported prompt carries the
+                # same view titles, in the same order, as at training time.
+                image_key_view_map=dict(cfg.image_key_view_map),
                 # Bake the state normalization so the exported graph applies
                 # the exact transform used at training time (identity when
                 # ``normalize_state`` is disabled -> raw-state parity).
@@ -985,8 +1097,9 @@ class XR0(XR0ExportablePolicyMixin, Policy):
             )
             ov_postproc = ComponentSpec(
                 type="xr0_denormalize",
-                # In ``action_mode="delta"`` the baked ``action_mean``/``action_std``
-                # are per-timestep ``(chunk_size, max_action_dim)`` delta stats and
+                # The baked ``action_mean``/``action_std`` are always per-timestep
+                # ``(chunk_size, max_action_dim)`` stats, which broadcast over the
+                # ``(B, chunk_size, max_action_dim)`` graph output at runtime.
                 action_mode=self._postprocessor.action_mode,
                 action_mean=self._postprocessor.action_mean.tolist(),
                 action_std=self._postprocessor.action_std.tolist(),

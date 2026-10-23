@@ -230,8 +230,8 @@ def _write_preprocessor_config(tmp_path, mean_row, std_row, *, time_steps=10) ->
 class TestExtractStats:
     """Extraction of action-normalization stats from the processor config."""
 
-    def test_reduces_time_and_trims_padding(self, tmp_path) -> None:  # noqa: ANN001
-        """Time-invariant (T, 32) stats collapse to the active leading dims."""
+    def test_keeps_time_and_trims_padding(self, tmp_path) -> None:  # noqa: ANN001
+        """(T, 32) stats keep their time axis and lose only the padding columns."""
         mean = [0.1, -0.2, 0.3, 0.0, 0.0, 0.0, -0.5] + [0.0] * 25
         std = [0.3, 0.4, 0.44, 0.04, 0.06, 0.08, 0.99] + [1e-6] * 25
         _write_preprocessor_config(tmp_path, mean, std)
@@ -239,9 +239,59 @@ class TestExtractStats:
         stats = extract_xr0_dataset_stats(tmp_path)
         assert stats is not None
         action = stats["action"]
+        # ``shape`` describes the action feature width; mean/std carry the time axis.
         assert action["shape"] == (7,)  # padding dims (std <= 1e-5) trimmed
-        assert action["mean"] == mean[:7]
-        assert action["std"] == std[:7]
+        assert len(action["mean"]) == 10
+        assert len(action["std"]) == 10
+        assert action["mean"] == [mean[:7]] * 10
+        assert action["std"] == [std[:7]] * 10
+
+    def test_expands_time_invariant_stats_to_chunk_size(self, tmp_path) -> None:  # noqa: ANN001
+        """Published T=10 stats are repeated to the policy's chunk length."""
+        mean = [0.1, -0.2, 0.3, 0.0, 0.0, 0.0, -0.5] + [0.0] * 25
+        std = [0.3, 0.4, 0.44, 0.04, 0.06, 0.08, 0.99] + [1e-6] * 25
+        _write_preprocessor_config(tmp_path, mean, std)
+
+        stats = extract_xr0_dataset_stats(tmp_path, chunk_size=30)
+        assert stats is not None
+        action = stats["action"]
+        assert action["mean"] == [mean[:7]] * 30
+        assert action["std"] == [std[:7]] * 30
+
+    @pytest.mark.parametrize("varying_stat", ["mean", "std"])
+    def test_time_varying_stats_cannot_be_expanded(self, tmp_path, varying_stat: str) -> None:  # noqa: ANN001
+        """Neither changing mean nor changing std may be tiled to a longer chunk."""
+        mean = [0.1, -0.2, 0.3, 0.0, 0.0, 0.0, -0.5] + [0.0] * 25
+        std = [0.3, 0.4, 0.44, 0.04, 0.06, 0.08, 0.99] + [1e-6] * 25
+        _write_preprocessor_config(tmp_path, mean, std, time_steps=2)
+        config = json.loads((tmp_path / "preprocessor_config.json").read_text(encoding="utf-8"))
+        config["action_config"]["libero_all"][varying_stat][1][0] = 0.9
+        (tmp_path / "preprocessor_config.json").write_text(json.dumps(config), encoding="utf-8")
+
+        with pytest.raises(ValueError, match="vary over time"):
+            extract_xr0_dataset_stats(tmp_path, chunk_size=30)
+
+    def test_matching_chunk_keeps_time_varying_rows(self, tmp_path) -> None:  # noqa: ANN001
+        """Keep distinct rows and dimensions active only at later timesteps."""
+        config = {
+            "action_config": {
+                "libero_all": {
+                    "mean": [[1, 2, 9], [3, 4, 9]],
+                    "std": [[0.5, 0.0, 0.0], [0.25, 0.75, 0.0]],
+                },
+            },
+        }
+        (tmp_path / "preprocessor_config.json").write_text(json.dumps(config), encoding="utf-8")
+
+        stats = extract_xr0_dataset_stats(tmp_path, chunk_size=2)
+        assert stats == {
+            "action": {
+                "name": "action",
+                "shape": (2,),
+                "mean": [[1.0, 2.0], [3.0, 4.0]],
+                "std": [[0.5, 0.0], [0.25, 0.75]],
+            },
+        }
 
     def test_returns_none_without_action_config(self, tmp_path) -> None:  # noqa: ANN001
         """Missing ``action_config`` / config yields ``None`` (lazy fallback)."""
@@ -249,19 +299,22 @@ class TestExtractStats:
         assert extract_xr0_dataset_stats(tmp_path) is None
         assert extract_xr0_dataset_stats(tmp_path / "missing") is None
 
-    def test_flat_stats_pass_through(self, tmp_path) -> None:  # noqa: ANN001
-        """Already time-reduced 1D stats are used as-is (no reshape)."""
+    @pytest.mark.parametrize(("chunk_size", "expected_rows"), [(None, 1), (1, 1), (4, 4)])
+    def test_flat_stats_are_promoted_to_one_timestep(
+        self, tmp_path, chunk_size: int | None, expected_rows: int
+    ) -> None:  # noqa: ANN001
+        """1D stats gain a time axis and repeat only when requested."""
         mean = [0.1, -0.2, 0.3, 0.0, 0.0, 0.0, -0.5] + [0.0] * 25
         std = [0.3, 0.4, 0.44, 0.04, 0.06, 0.08, 0.99] + [1e-6] * 25
         config = {"action_config": {"libero_all": {"mean": mean, "std": std}}}
         (tmp_path / "preprocessor_config.json").write_text(json.dumps(config), encoding="utf-8")
 
-        stats = extract_xr0_dataset_stats(tmp_path)
+        stats = extract_xr0_dataset_stats(tmp_path, chunk_size=chunk_size)
         assert stats is not None
         action = stats["action"]
         assert action["shape"] == (7,)
-        assert action["mean"] == mean[:7]
-        assert action["std"] == std[:7]
+        assert action["mean"] == [mean[:7]] * expected_rows
+        assert action["std"] == [std[:7]] * expected_rows
 
     def test_stats_drive_postprocessor_action_dim(self, tmp_path) -> None:  # noqa: ANN001
         """Extracted stats make the postprocessor emit the true action size."""
@@ -269,7 +322,7 @@ class TestExtractStats:
         std = [0.3, 0.4, 0.44, 0.04, 0.06, 0.08, 0.99] + [1e-6] * 25
         _write_preprocessor_config(tmp_path, mean, std)
 
-        stats = extract_xr0_dataset_stats(tmp_path)
-        _, postprocessor = make_xr0_preprocessors(max_action_dim=32, stats=stats)
+        stats = extract_xr0_dataset_stats(tmp_path, chunk_size=4)
+        _, postprocessor = make_xr0_preprocessors(max_action_dim=32, stats=stats, chunk_size=4)
         out = postprocessor({"action": torch.zeros(1, 4, 32)})
         assert out["action"].shape == (1, 4, 7)

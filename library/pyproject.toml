@@ -33,7 +33,7 @@ dependencies = [
     "lightning-utilities",
     "lerobot[dataset]==0.6.0",
     "gymnasium>=0.29.1",
-    "gym-pusht>=0.1.5",
+    "gym-pusht>=0.1.5,<=0.1.8",
     "pymunk>=6.6.0,<7.0.0",
     "onnx",
     "openvino>=2026.4",
@@ -51,10 +51,16 @@ dependencies = [
 [project.optional-dependencies]
 # PyTorch dependency groups
 cpu = ["torch", "torchvision"]
-cu128 = ["torch", "torchvision"]
+# torchao must come from the pytorch-cu128 index: the PyPI wheels for 0.18+ are
+# built against CUDA 13 (`libcudart.so.13`) and fail to dlopen next to a cu128
+# torch. See [tool.uv.sources] for the index pin.
+cu128 = ["torch", "torchvision", "torchao>=0.17.0,<0.18.0"]
 xpu = [
     "torch",
     "torchvision",
+    # The XPU channel ships torchao as a pure-Python wheel (py3-none-any), so
+    # there is no CUDA-major constraint here and 0.18 is fine.
+    "torchao>=0.17.0",
 ]
 # Testing dependencies
 tests = [
@@ -231,7 +237,7 @@ explicit = false
 
 # PyTorch sources configuration
 [tool.uv.sources]
-physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "1cc910b451508ce40cd7319ece2a29283fadfcfb" }
+physicalai = { git = "https://github.com/openvinotoolkit/physicalai.git", rev = "b4cc2cf569c24f92424001dde7aca4081096ebd1" }
 torch = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu128", extra = "cu128" },
@@ -239,6 +245,13 @@ torch = [
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu128", extra = "cu128" },
+    { index = "pytorch-xpu", extra = "xpu" },
+]
+# Without this pin uv resolves torchao to the `+xpu` build even under
+# `--extra cu128`, because the pytorch-xpu index is non-explicit and
+# index-strategy is unsafe-best-match.
+torchao = [
     { index = "pytorch-cu128", extra = "cu128" },
     { index = "pytorch-xpu", extra = "xpu" },
 ]
