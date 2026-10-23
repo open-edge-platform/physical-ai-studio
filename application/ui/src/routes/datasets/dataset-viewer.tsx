@@ -18,6 +18,7 @@ import { keepPreviousData } from '@tanstack/react-query';
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
 
 import { $api } from '../../api/client';
+import { EpisodeViewer } from '../../features/datasets/episodes/episode-viewer';
 import { useDeleteEpisodeQuery, useOptimizeDatasetQuery } from '../../features/datasets/episodes/use-episodes';
 import { useProjectId } from '../../features/projects/use-project';
 import { paths } from '../../paths';
@@ -25,7 +26,6 @@ import { pluralize } from '../../utils';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { useDataset } from './dataset-provider';
 import { EpisodeList } from './episode-list';
-import { EpisodeViewer } from './episode-viewer';
 import { useActiveEpisode } from './use-active-episode';
 
 import classes from './dataset-viewer.module.css';

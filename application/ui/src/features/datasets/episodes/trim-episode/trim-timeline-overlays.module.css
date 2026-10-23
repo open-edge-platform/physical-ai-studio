@@ -1,0 +1,63 @@
+.dimmed {
+    background-color: rgba(from var(--spectrum-global-color-gray-50) r g b / 0.8);
+    pointer-events: none;
+}
+
+.playhead {
+    border-left: var(--spectrum-alias-border-size-thick) solid #fff;
+    pointer-events: none;
+}
+
+.hoverLine {
+    border-left: var(--spectrum-alias-border-size-thin) dashed #5ac3f8;
+    pointer-events: none;
+}
+
+.tooltip {
+    background-color: var(--spectrum-global-color-gray-50);
+    font-size: var(--spectrum-global-dimension-font-size-50);
+}
+
+.mono {
+    font-family: var(--spectrum-global-font-family-code);
+    color: var(--spectrum-global-color-gray-700);
+    white-space: nowrap;
+}
+
+.handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: var(--spectrum-global-dimension-size-175);
+    margin-left: calc(var(--spectrum-global-dimension-size-175) / -2);
+    cursor: ew-resize;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
+}
+
+.handle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: var(--spectrum-alias-border-size-thick) solid var(--brand-daisy);
+}
+
+.handle[data-active='true']::before,
+.handle:hover::before {
+    border-left-width: var(--spectrum-alias-border-size-thicker);
+}
+
+.knob {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: var(--spectrum-global-dimension-size-100);
+    height: var(--spectrum-global-dimension-size-325);
+    border-radius: var(--spectrum-global-dimension-size-40);
+    background: var(--daisy-shade);
+    box-shadow: 0 0 0 var(--spectrum-alias-border-size-thin) rgba(0, 0, 0, 0.5);
+}

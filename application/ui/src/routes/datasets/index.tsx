@@ -72,7 +72,7 @@ const Datasets = ({ datasets }: DatasetsProps) => {
                         marginTop: 'var(--spectrum-global-dimension-size-200)',
                     }}
                 >
-                    <Flex height='100%' flex>
+                    <Flex height='100%' flex minWidth={0}>
                         {dataset_id === undefined ? (
                             <Text>No datasets yet...</Text>
                         ) : (

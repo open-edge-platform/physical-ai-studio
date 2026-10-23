@@ -1,0 +1,47 @@
+.filmstrip {
+    overflow: hidden;
+    background: #000;
+}
+
+.legendItem {
+    white-space: nowrap;
+}
+
+.filmstrip img {
+    pointer-events: none;
+}
+
+.ruler {
+    font-size: var(--spectrum-global-dimension-font-size-25);
+    color: var(--spectrum-global-color-gray-600);
+}
+
+.tick {
+    position: absolute;
+    top: var(--spectrum-global-dimension-size-25);
+    padding-left: var(--spectrum-global-dimension-size-40);
+    border-left: var(--spectrum-alias-border-size-thin) solid var(--spectrum-global-color-gray-400);
+    line-height: var(--spectrum-global-dimension-size-150);
+}
+
+.trackLabel {
+    position: absolute;
+    top: var(--spectrum-global-dimension-size-25);
+    left: var(--spectrum-global-dimension-size-50);
+    font-size: var(--spectrum-global-dimension-font-size-25);
+    color: var(--spectrum-global-color-gray-600);
+    pointer-events: none;
+    z-index: 1;
+}
+
+.trackSvg {
+    position: absolute;
+    inset: var(--spectrum-global-dimension-size-175) 0 var(--spectrum-global-dimension-size-50) 0;
+    width: 100%;
+    height: calc(100% - var(--spectrum-global-dimension-size-225));
+    pointer-events: none;
+}
+
+.motion {
+    fill: rgba(220, 220, 220, 0.55);
+}

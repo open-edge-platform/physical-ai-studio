@@ -1,0 +1,13 @@
+.readout {
+    font-family: var(--spectrum-global-font-family-code);
+    font-size: var(--spectrum-global-dimension-font-size-75);
+    color: var(--spectrum-global-color-gray-700);
+    white-space: nowrap;
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--spectrum-global-dimension-size-50);
+}
+
+.removed {
+    color: var(--daisy-shade);
+}
