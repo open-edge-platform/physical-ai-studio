@@ -36,8 +36,9 @@ export const useSynchronizeModelJoints = (joints: JointsState, robotType: Schema
     }, [model, joints, jointMap]);
 };
 
-// Mirrors runtime.contract.FollowerSource. Inference uses 'policy'.
-export type FollowerSource = 'hold' | 'teleop' | 'policy';
+// Mirrors runtime.contract.FollowerSource. Inference uses 'policy'. 'observe'
+// sends nothing: another controller drives the follower while Studio records.
+export type FollowerSource = 'hold' | 'teleop' | 'policy' | 'observe';
 
 const RECOVERABLE_ERROR_CODES = new Set(['leader_connection_lost']);
 const EMPTY_CAMERA_IDS: string[] = [];

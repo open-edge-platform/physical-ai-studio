@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from loguru import logger
@@ -16,6 +16,12 @@ if TYPE_CHECKING:
     from physicalai.runtime import TickEvent
 
     from runtime.contract import FollowerSource
+
+# What the action column of an episode means. ``sent``: the command Studio sent
+# on that tick (teleop, policy). ``observed``: Studio sent nothing and another
+# controller drove the arm, so the action is the joint positions measured on
+# the next tick. One episode never mixes the two.
+ActionKind = Literal["sent", "observed"]
 
 
 class RecordingState:
@@ -33,6 +39,10 @@ class RecordingState:
         self._task: str | None = None
         self._mutation: RecordingMutation | None = None
         self._closed = False
+        self._episode_action_kind: ActionKind | None = None
+        # Observed frames wait one tick for their action (the next measured
+        # positions). Only ever holds the latest such frame.
+        self._pending_observation: dict[str, Any] | None = None
 
     @property
     def dataset_loaded(self) -> bool:
@@ -49,11 +59,24 @@ class RecordingState:
         with self._lock:
             return self._episodes_recorded
 
+    @property
+    def episode_action_kind(self) -> ActionKind | None:
+        """Return the action kind the open episode has written, or None if it has written nothing."""
+        with self._lock:
+            return self._episode_action_kind if self._is_recording else None
+
+    def _end_episode_locked(self) -> None:
+        # A buffered observed frame has no next state once the episode ends, so
+        # it is dropped rather than written with a made-up action.
+        self._pending_observation = None
+        self._episode_action_kind = None
+
     def start(self, task: str) -> bool:
         """Begin an episode. Return False when no dataset is loaded."""
         with self._lock:
             if self._mutation is None or self._closed:
                 return False
+            self._end_episode_locked()
             self._task = task
             self._is_recording = True
             return True
@@ -63,22 +86,59 @@ class RecordingState:
             self._mutation = mutation
             self._dataset_loaded = True
             self._is_recording = False
+            self._end_episode_locked()
 
     def mark_saved(self) -> None:
         with self._lock:
             self._is_recording = False
+            self._end_episode_locked()
             self._episodes_recorded += 1
 
     def mark_discarded(self) -> None:
         with self._lock:
             self._is_recording = False
+            self._end_episode_locked()
 
     def add_frame(self, observation: dict[str, Any], action: dict[str, float]) -> None:
         """Write one tick under the state lock so save/discard cannot interleave."""
         with self._lock:
-            if self._closed or not self._is_recording or self._mutation is None or self._task is None:
+            if not self._accepts_locked("sent"):
+                return
+            if self._mutation is None or self._task is None:
                 return
             self._mutation.add_frame(observation, action, self._task)
+
+    def add_observed_frame(self, observation: dict[str, Any], measured_positions: dict[str, float]) -> None:
+        """Record a tick on which Studio sent nothing.
+
+        There is no sent action to store, so the action of a frame is the joint
+        positions measured on the tick after it. Buffer this tick's frame, and
+        write the buffered one with ``measured_positions`` (this tick's state)
+        as its action.
+        """
+        with self._lock:
+            if not self._accepts_locked("observed"):
+                return
+            if self._mutation is None or self._task is None:
+                return
+            previous = self._pending_observation
+            self._pending_observation = observation
+            if previous is not None:
+                self._mutation.add_frame(previous, measured_positions, self._task)
+
+    def drop_pending_observation(self) -> None:
+        """Forget a buffered observed frame whose next tick will not be recorded."""
+        with self._lock:
+            self._pending_observation = None
+
+    def _accepts_locked(self, kind: ActionKind) -> bool:
+        if self._closed or not self._is_recording or self._mutation is None or self._task is None:
+            return False
+        if self._episode_action_kind is None:
+            self._episode_action_kind = kind
+        # The action source refuses switches that would mix kinds in an open
+        # episode; this guards the tick that races such a switch.
+        return self._episode_action_kind == kind
 
     def stop_episode(self) -> RecordingMutation:
         """Clear the recording flag so ticks skip, then return the mutation.
@@ -91,6 +151,7 @@ class RecordingState:
             if not self._is_recording or self._mutation is None:
                 raise RuntimeError("No episode is being recorded.")
             self._is_recording = False
+            self._end_episode_locked()
             return self._mutation
 
     def current_mutation(self) -> RecordingMutation | None:
@@ -102,6 +163,7 @@ class RecordingState:
         """
         with self._lock:
             self._is_recording = False
+            self._end_episode_locked()
             return self._mutation
 
     def take_mutation(self) -> RecordingMutation | None:
@@ -119,6 +181,7 @@ class RecordingState:
             self._dataset_loaded = False
             self._task = None
             self._episodes_recorded = 0
+            self._end_episode_locked()
             return mutation
 
     def close(self) -> None:
@@ -154,21 +217,41 @@ class RecordingCallback:
             self._joint_names = list(event.metadata["joint_names"])
 
     def on_tick(self, event: TickEvent) -> None:
-        if self._follower_source() == "hold":
+        if not self._joint_names:
             return
-        if event.action_sent is None or not self._joint_names:
-            return
-        observation: dict[str, Any] = dict(
-            observation_to_dict(
-                self._joint_names,
-                event.robot_state,
+        if event.action_sent is None:
+            # Observe mode: another controller drove the arm on this tick.
+            self._write(
+                self._recording.add_observed_frame,
+                self._observation(event),
+                action_to_dict(self._joint_names, event.robot_state.joint_positions),
             )
+            return
+        if self._follower_source() == "hold":
+            # Hold ticks are not recorded, so a buffered observed frame would
+            # otherwise take the state after the gap as its action.
+            self._recording.drop_pending_observation()
+            return
+        self._write(
+            self._recording.add_frame,
+            self._observation(event),
+            action_to_dict(self._joint_names, event.action_sent),
         )
+
+    def _observation(self, event: TickEvent) -> dict[str, Any]:
+        observation: dict[str, Any] = dict(observation_to_dict(self._joint_names, event.robot_state))
         for key, frame in event.camera_frames.items():
             observation[key] = np.array(frame.data, copy=True)
-        action = action_to_dict(self._joint_names, event.action_sent)
+        return observation
+
+    @staticmethod
+    def _write(
+        write: Callable[[dict[str, Any], dict[str, float]], None],
+        observation: dict[str, Any],
+        action: dict[str, float],
+    ) -> None:
         try:
-            self._recording.add_frame(observation, action)
+            write(observation, action)
         except Exception:
             logger.exception("Failed to write a recording frame")
 

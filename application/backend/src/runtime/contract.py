@@ -13,7 +13,9 @@ from schemas import InferenceDevice
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-FollowerSource = Literal["hold", "teleop", "policy"]
+# ``observe`` sends nothing: another controller drives the follower while the
+# runtime only reads it and its cameras (and records, when an episode is open).
+FollowerSource = Literal["hold", "teleop", "policy", "observe"]
 
 
 class CommandBase(BaseModel):

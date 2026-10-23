@@ -115,7 +115,7 @@ class StudioActionSource:
         robot_state: RobotObservation,
         camera_frames: Mapping[str, Frame],
         step: int,
-    ) -> np.ndarray:
+    ) -> np.ndarray | None:
         self._last_robot_state = robot_state
         self._last_camera_frames = camera_frames
         self._drain_commands(robot_state)
@@ -125,6 +125,12 @@ class StudioActionSource:
         leader_action = self._read_leader(robot_state) if self._leader_reads_enabled else self._last_leader_action
         policy_action = self._policy_action(robot_state, camera_frames, step)
 
+        if self._follower_source == "observe":
+            # Another controller drives the arm: send nothing, and track where
+            # it is so leaving observe holds this pose, not the one from when
+            # observing started.
+            self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
+            return None
         if self._follower_source == "teleop" and leader_action is not None:
             return leader_action
         if self._follower_source == "policy" and policy_action is not None:
@@ -267,6 +273,8 @@ class StudioActionSource:
         )
 
     def _handle_start_task(self, command: StartTaskCommand) -> None:
+        if not self._recording_allows("policy"):
+            return
         if not self._arm_policy(task=command.task):
             return
         self._emit_state()
@@ -290,8 +298,30 @@ class StudioActionSource:
             return
         self._emit_state()
 
+    def _recording_allows(self, requested: FollowerSource) -> bool:
+        """Refuse a switch that would mix sent and observed actions in the open episode.
+
+        Hold is always allowed: it records nothing and is the safe stop.
+        """
+        recording = self._recording
+        if requested == "hold" or recording is None:
+            return True
+        kind = recording.episode_action_kind
+        wanted = "observed" if requested == "observe" else "sent"
+        if kind is None or kind == wanted:
+            return True
+        self._event_sink.emit(
+            ErrorEvent(
+                message="Save or discard the episode before switching between external control and Studio control.",
+                error_code="recording_source_conflict",
+            )
+        )
+        return False
+
     def _handle_set_follower_source(self, command: SetFollowerSourceCommand, robot_state: RobotObservation) -> None:
         requested = command.follower_source
+        if not self._recording_allows(requested):
+            return
         if requested == "teleop" and self._leader is None:
             self._event_sink.emit(
                 ErrorEvent(
@@ -449,6 +479,18 @@ class StudioActionSource:
     def _disable_failed_leader(self, robot_state: RobotObservation) -> None:
         self._leader_reads_enabled = False
         self._hold_target = np.array(robot_state.joint_positions, dtype=np.float32, copy=True)
+        if self._follower_source == "observe":
+            # Studio is not driving the arm, so do not take it over from the
+            # controller that is; just stop reading the leader.
+            logger.error("Leader failed for {} consecutive ticks; disabling leader reads", self._leader_failures)
+            self._emit_state()
+            self._event_sink.emit(
+                ErrorEvent(
+                    message="The leader robot stopped responding.",
+                    error_code="leader_connection_lost",
+                )
+            )
+            return
         changed = self._follower_source != "hold"
         self._follower_source = "hold"
         logger.error("Leader failed for {} consecutive ticks; switching to hold", self._leader_failures)

@@ -122,6 +122,9 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
     const [dataset, setDataset] = useState<SchemaDatasetOutput | undefined>(props.dataset);
     const devices = handshakeDevices(props.environment);
     const invalidateEpisodesQuery = useRefreshEpisodes(dataset?.id);
+    // The source a recording session asks for when the socket (re)opens: the
+    // leader when there is one, or whatever the user picked since.
+    const recordingSource = useRef<FollowerSource>(devices.leader_id !== undefined ? 'teleop' : 'hold');
 
     const onOpen = () => {
         socket.sendJsonMessage({
@@ -134,7 +137,9 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
         }
         if (props.dataset) {
             loadDataset.mutate(props.dataset);
-            setFollowerSource.mutate('teleop');
+            if (recordingSource.current !== 'hold') {
+                setFollowerSource.mutate(recordingSource.current);
+            }
         }
     };
 
@@ -223,11 +228,15 @@ export const RuntimeSessionProvider = (props: RuntimeSessionProviderProps) => {
 
     const setFollowerSource = useMutation({
         meta: { skipInvalidation: true },
-        mutationFn: async (follower_source: FollowerSource) =>
-            socket.sendJsonMessageAndWait<RuntimeApiJsonResponse>(
+        mutationFn: async (follower_source: FollowerSource) => {
+            if (follower_source === 'teleop' || follower_source === 'observe') {
+                recordingSource.current = follower_source;
+            }
+            return socket.sendJsonMessageAndWait<RuntimeApiJsonResponse>(
                 { event: 'set_follower_source', data: { follower_source } },
                 ({ event, data }) => event === 'state' && data?.follower_source === follower_source
-            ),
+            );
+        },
     });
 
     const startEpisode = useMutation({

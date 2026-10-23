@@ -11,6 +11,7 @@ import {
     Keyboard,
     ProgressCircle,
     StatusLight,
+    Switch,
     Text,
 } from '@geti-ui/ui';
 
@@ -66,6 +67,7 @@ export const RecordingViewer = () => {
         startEpisode,
         discardEpisode,
         saveEpisode,
+        setFollowerSource,
         readyForRecording,
         environment,
         observation,
@@ -95,6 +97,13 @@ export const RecordingViewer = () => {
         () => discardEpisode.mutate(),
         state.is_recording && !saveEpisode.isPending
     );
+
+    // External control: another controller drives the follower and Studio only
+    // records. The backend keeps one action kind per episode, so the choice is
+    // locked while an episode is open.
+    const isExternalControl = state.follower_source === 'observe';
+    const onExternalControlChange = (enabled: boolean) =>
+        setFollowerSource.mutate(enabled ? 'observe' : state.has_leader ? 'teleop' : 'hold');
 
     const onStart = (e: FormEvent) => {
         e.preventDefault();
@@ -144,6 +153,14 @@ export const RecordingViewer = () => {
                         >
                             <Item key={dataset.default_task}>{dataset.default_task}</Item>
                         </ComboBox>
+                        <Switch
+                            isEmphasized
+                            isSelected={isExternalControl}
+                            isDisabled={state.is_recording || setFollowerSource.isPending}
+                            onChange={onExternalControlChange}
+                        >
+                            External control
+                        </Switch>
                         {state.is_recording && <ToolbarRecordingStatus />}
                         {state.is_recording ? (
                             <ButtonGroup>
