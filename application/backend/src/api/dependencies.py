@@ -32,6 +32,7 @@ from services.job_service import JobService
 from services.log_service import LogService
 from services.robot_catalog_service import RobotCatalogService
 from services.runtime_session_service import RuntimeSessionService
+from services.simulation_manager import SimulationManager
 from services.snapshot_service import SnapshotService
 from services.system_service import SystemService
 from settings import Settings, get_settings
@@ -282,3 +283,14 @@ def get_camera_claim_registry(request: HTTPConnection) -> CameraClaimRegistry:
 
 
 CameraClaimRegistryDep = Annotated[CameraClaimRegistry, Depends(get_camera_claim_registry)]
+
+
+def get_simulation_manager(request: HTTPConnection) -> SimulationManager:
+    """Return the process-wide simulation manager."""
+    manager = getattr(request.app.state, "simulation_manager", None)
+    if manager is None:
+        raise RuntimeError("Simulation manager is not initialized")
+    return cast("SimulationManager", manager)
+
+
+SimulationManagerDep = Annotated[SimulationManager, Depends(get_simulation_manager)]

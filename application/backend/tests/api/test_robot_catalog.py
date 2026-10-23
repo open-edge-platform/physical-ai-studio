@@ -40,6 +40,7 @@ def test_list_robot_catalog_returns_definitions_without_internal_fields() -> Non
         "package_map",
         "joint_map",
         "zero_calibration",
+        "simulation",
     }
     assert "urdf_relative_path" not in first
 
@@ -48,6 +49,7 @@ def test_list_robot_catalog_returns_definitions_without_internal_fields() -> Non
     assert so101["package_map"] == {"SO101": "/api/robots/catalog/SO101_Follower"}
     # SO101 calibrates through its own setup wizard, not the plugin zero-pose calibration.
     assert so101["zero_calibration"] is None
+    assert so101["simulation"] is None
 
 
 def test_get_robot_catalog_schema_returns_pydantic_schema() -> None:

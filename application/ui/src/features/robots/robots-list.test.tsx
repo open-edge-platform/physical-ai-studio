@@ -247,4 +247,81 @@ describe('RobotsList runtime sessions', () => {
         await screen.findByText(so101Robot.name);
         expect(screen.queryByText(/Session ·/)).not.toBeInTheDocument();
     });
+
+    describe('simulated robots', () => {
+        const mockSimulatedCatalog = () =>
+            server.use(
+                http.get('/api/robots/catalog', () =>
+                    HttpResponse.json([
+                        {
+                            type: 'SO101_Follower',
+                            display_name: 'SO101 Follower',
+                            role: 'follower',
+                            urdf_path: '',
+                            package_map: {},
+                            joint_map: {},
+                            zero_calibration: null,
+                            simulation: {
+                                scenes: [{ id: 'single_pick_place', display_name: 'Pick & place', description: '' }],
+                                default_scene: 'single_pick_place',
+                                max_seed: null,
+                                labels: ['1 arm'],
+                            },
+                        },
+                    ])
+                ),
+                http.get(ROBOTS_PATH, () => HttpResponse.json([so101Robot]))
+            );
+
+        it('shows a running Studio simulation with its chips and a Stop action', async () => {
+            mockSimulatedCatalog();
+            server.use(
+                http.get(ONLINE_ROBOTS_PATH, () =>
+                    HttpResponse.json([{ ...so101Robot, connection_status: 'online' as const }])
+                ),
+                http.get('/api/simulation', () =>
+                    HttpResponse.json({ status: 'running', robot_id: ROBOT_ID, cameras: [] })
+                )
+            );
+            const user = userEvent.setup();
+            renderRobotsList();
+
+            expect(await screen.findByText('Running · Studio')).toBeInTheDocument();
+            expect(screen.getByText('Simulation')).toBeInTheDocument();
+            expect(screen.getByText('1 arm')).toBeInTheDocument();
+            await openRobotMenu(user);
+            expect(await screen.findByText('Stop simulation', { selector: '[role] *' })).toBeInTheDocument();
+            expect(screen.queryByText('Start simulation…')).not.toBeInTheDocument();
+        });
+
+        it('shows an offline simulated robot with a Start action', async () => {
+            mockSimulatedCatalog();
+            server.use(
+                http.get(ONLINE_ROBOTS_PATH, () =>
+                    HttpResponse.json([{ ...so101Robot, connection_status: 'offline' as const }])
+                ),
+                http.get('/api/simulation', () => HttpResponse.json({ status: 'idle', cameras: [] }))
+            );
+            const user = userEvent.setup();
+            renderRobotsList();
+
+            expect(await screen.findByText('Offline')).toBeInTheDocument();
+            await openRobotMenu(user);
+            await user.click(await screen.findByText('Start simulation…'));
+            expect(await screen.findByRole('heading', { name: 'Start simulation' })).toBeInTheDocument();
+        });
+
+        it('shows a simulation started outside Studio as external', async () => {
+            mockSimulatedCatalog();
+            server.use(
+                http.get(ONLINE_ROBOTS_PATH, () =>
+                    HttpResponse.json([{ ...so101Robot, connection_status: 'online' as const }])
+                ),
+                http.get('/api/simulation', () => HttpResponse.json({ status: 'idle', cameras: [] }))
+            );
+            renderRobotsList();
+
+            expect(await screen.findByText('Running · external')).toBeInTheDocument();
+        });
+    });
 });

@@ -1,4 +1,4 @@
-import { createRef } from 'react';
+import { createRef, ReactNode } from 'react';
 
 import { rs } from '@rstest/core';
 import { screen } from '@testing-library/react';
@@ -12,6 +12,14 @@ import { InferenceViewer } from './inference-viewer';
 
 rs.mock('../../robots/runtime-session-provider', () => ({
     useRuntimeSession: rs.fn(),
+}));
+
+rs.mock('../../simulation/session-simulation-not-running', () => ({
+    SessionSimulationNotRunning: ({ robot, children }: { robot: { name: string }; children: ReactNode }) => (
+        <div>
+            {robot.name} simulation not running{children}
+        </div>
+    ),
 }));
 
 rs.mock('../../robots/robot-control/robot-control-view', () => ({
@@ -64,10 +72,12 @@ const mockSession = ({
     followerSource = 'hold',
     hasLeader = true,
     readyForInference = true,
+    waitingForSimulation = false,
 }: {
     followerSource?: 'hold' | 'teleop' | 'policy';
     hasLeader?: boolean;
     readyForInference?: boolean;
+    waitingForSimulation?: boolean;
 } = {}) => {
     const startTask = mutation();
     const stopTask = mutation();
@@ -76,6 +86,7 @@ const mockSession = ({
     rs.mocked(useRuntimeSession).mockReturnValue({
         model,
         readyForInference,
+        waitingForSimulation,
         state: {
             connected: true,
             follower_source: followerSource,
@@ -106,6 +117,25 @@ const renderViewer = (tasks: string[] = ['pick the cube']) =>
 describe('InferenceViewer', () => {
     beforeEach(() => {
         rs.clearAllMocks();
+    });
+
+    it('offers to start the follower simulation while the session waits for it', async () => {
+        mockSession({ readyForInference: false, waitingForSimulation: true });
+
+        renderViewer();
+
+        expect(await screen.findByText('Follower simulation not running')).toBeInTheDocument();
+        expect(screen.getByText('Cancel')).toBeInTheDocument();
+        expect(screen.queryByText('Initializing')).not.toBeInTheDocument();
+    });
+
+    it('shows its progress while the session initializes', async () => {
+        mockSession({ readyForInference: false });
+
+        renderViewer();
+
+        expect(await screen.findByText('Initializing')).toBeInTheDocument();
+        expect(screen.queryByText(/simulation not running/)).not.toBeInTheDocument();
     });
 
     it('enables the teleoperate toggle when the session has a leader robot', async () => {

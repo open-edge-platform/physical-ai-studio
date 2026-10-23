@@ -8,12 +8,14 @@ import { useJobUpdates } from '../../features/jobs/use-job-updates';
 import { LogsDialog } from '../../features/logs/logs-dialog';
 import { useOptionalProjectId } from '../../features/projects/use-project';
 import { RuntimeSessionStatus } from '../../features/runtime-sessions/runtime-sessions';
+import { useSimulationUpdates } from '../../features/simulation/use-simulation';
 import { RestartRequiredBanner } from '../../features/system/restart-required-banner';
 
 export const AppFooter = ({ gridArea = 'footer' }: { gridArea?: string }) => {
     const { project_id } = useOptionalProjectId();
 
     useJobUpdates(project_id);
+    useSimulationUpdates();
 
     return (
         <View

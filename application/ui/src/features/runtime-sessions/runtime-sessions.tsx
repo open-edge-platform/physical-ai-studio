@@ -23,6 +23,8 @@ import { Close, Pin } from '@geti-ui/ui/icons';
 import { getApiErrorMessage } from '../../api/errors';
 import { SchemaRuntimeSessionInfo } from '../../api/openapi-spec';
 import { Table, TableColumn } from '../../components/table/table';
+import { SimulationsSection } from '../simulation/simulations-section';
+import { useFooterSimulations } from '../simulation/use-footer-simulations';
 import {
     idleSecondsRemaining,
     sessionActivity,
@@ -345,6 +347,7 @@ export const RuntimeSessionsDialog = ({
                         ))}
                     </Table>
                 )}
+                <SimulationsSection />
             </Content>
         </Dialog>
     );
@@ -357,9 +360,20 @@ export const RuntimeSessionsDialog = ({
  * count rather than the list: this is mounted on every page, and the count is a
  * directory read while the list opens a transport session per runtime session.
  */
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+const statusLabel = (sessions: number, simulations: number) =>
+    [
+        sessions > 0 || simulations === 0 ? plural(sessions, 'session') : null,
+        simulations > 0 ? plural(simulations, 'simulation') : null,
+    ]
+        .filter(Boolean)
+        .join(' · ');
+
 export const RuntimeSessionStatus = () => {
     const { data } = useRuntimeSessionCount();
     const count = data?.count ?? 0;
+    const simulationCount = useFooterSimulations().length;
     const [isOpen, setIsOpen] = useState(false);
     const [isPinned, setIsPinned] = useState(false);
     const isPinnedRef = useRef(false);
@@ -396,7 +410,7 @@ export const RuntimeSessionStatus = () => {
     // the popover with it, so stopping your last session used to yank the panel
     // away mid-interaction -- and a pinned one closing is the opposite of what
     // pinning asks for. It also left the empty state unreachable from here.
-    if (count === 0 && !isOpen) {
+    if (count === 0 && simulationCount === 0 && !isOpen) {
         return null;
     }
 
@@ -442,7 +456,7 @@ export const RuntimeSessionStatus = () => {
             <ActionButton isQuiet aria-label='Runtime sessions'>
                 <Flex alignItems='center' gap='size-50'>
                     <StatusLight variant='positive' marginEnd='size-0' />
-                    <Text>{count === 1 ? '1 session' : `${count} sessions`}</Text>
+                    <Text>{statusLabel(count, simulationCount)}</Text>
                 </Flex>
             </ActionButton>
             {() => (

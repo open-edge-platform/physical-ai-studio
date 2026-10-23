@@ -8,6 +8,8 @@ import { useCatalogIdentifyMutation } from '../../features/robots/robot-catalog.
 import { RobotModelsProvider } from '../../features/robots/robot-models-context';
 import { AvailableSchemaRobot, isUnavailableRobot } from '../../features/robots/robot-types';
 import { useRobot } from '../../features/robots/use-robot';
+import { useRobotSimulationLaunch } from '../../features/simulation/robot-simulation';
+import { SimulationViewer } from '../../features/simulation/simulation-viewer';
 
 export const Robot = () => {
     const robot = useRobot();
@@ -19,6 +21,27 @@ export const Robot = () => {
 };
 
 const AvailableRobot = ({ robot }: { robot: AvailableSchemaRobot }) => {
+    const isSimulated = useRobotSimulationLaunch(robot.type) !== null;
+
+    return isSimulated ? <SimulatedRobot robot={robot} /> : <ConnectableRobot robot={robot} />;
+};
+
+/** A simulated robot shows its simulation's own viewer; the joint state stays below it. */
+const SimulatedRobot = ({ robot }: { robot: AvailableSchemaRobot }) => {
+    const [isConnected, setIsConnected] = useState(false);
+
+    return (
+        <View height='100%' minHeight='0'>
+            <RobotModelsProvider>
+                <SimulationViewer robot={robot}>
+                    <JointControls isConnected={isConnected} setIsConnected={setIsConnected} />
+                </SimulationViewer>
+            </RobotModelsProvider>
+        </View>
+    );
+};
+
+const ConnectableRobot = ({ robot }: { robot: AvailableSchemaRobot }) => {
     const identifyMutation = useCatalogIdentifyMutation();
 
     const onIdentify = identifyMutation.isPending

@@ -4,6 +4,8 @@ import { View } from '@geti-ui/ui';
 
 import { SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { useInterval } from '../../../routes/datasets/use-interval';
+import { useSimulatedRobotTypes } from '../../simulation/robot-simulation';
+import { SimulationViewer } from '../../simulation/simulation-viewer';
 import { RobotViewer, UnavailableRobotViewer } from '../controller/robot-viewer';
 import { RobotModelsProvider } from '../robot-models-context';
 import { isUnavailableRobot } from '../robot-types';
@@ -18,19 +20,29 @@ export const RobotCell = ({
     joints: RefObject<Record<string, number> | undefined>;
 }) => {
     const [current, setCurrent] = useState<Record<string, number>>();
-    useInterval(() => {
-        setCurrent(joints.current === undefined ? undefined : { ...joints.current });
-    }, 1000 / 30);
+    const simulatedTypes = useSimulatedRobotTypes();
+    const environmentRobot = environment.robots?.find((robot) => robot.robot.id === robot_id)?.robot;
+    const isSimulated = environmentRobot !== undefined && simulatedTypes.has(environmentRobot.type);
+    // A simulated robot shows the simulation's own viewer, which needs no joint values.
+    useInterval(
+        () => {
+            setCurrent(joints.current === undefined ? undefined : { ...joints.current });
+        },
+        isSimulated ? null : 1000 / 30
+    );
 
     if (environment.robots === undefined) {
         return <></>;
     }
 
-    const environmentRobot = environment.robots.find((robot) => robot.robot.id === robot_id)?.robot;
     if (environmentRobot === undefined) return <></>;
 
     if (isUnavailableRobot(environmentRobot)) {
         return <UnavailableRobotViewer robotType={environmentRobot.type} />;
+    }
+
+    if (isSimulated) {
+        return <SimulationViewer robot={environmentRobot} compact />;
     }
 
     const action_values = current === undefined ? undefined : Object.values(current);
