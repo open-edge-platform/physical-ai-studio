@@ -11,6 +11,8 @@ from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import DatasetImportFinalizeInput, DatasetImportJobPayload, ImportStep
 from schemas.job import DatasetImportJob
 from services.dataset_import.staging import generate_staging_id, resolve_payload_archive_path
+from services.job_handlers import get_job_handler
+from services.job_service import JobService
 from services.staged_archive import cleanup_staged_archive
 
 
@@ -84,7 +86,15 @@ class DatasetImportService:
         return await self.repo.update(job, updates)
 
     async def claim_pending_dataset_import_job(self) -> Job | None:
-        return await self.repo.claim_pending_dataset_import_job()
+        """Claim the oldest runnable import step, excluding upload and review waits."""
+        handler = get_job_handler(JobType.DATASET_IMPORT)
+        service = JobService(self.session)
+        for job in await service.get_pending_jobs(JobType.DATASET_IMPORT):
+            if handler.is_runnable(job):
+                claimed = await handler.claim(job.id, service)
+                if claimed is not None:
+                    return claimed
+        return None
 
     async def finalize_dataset_import_job(
         self,

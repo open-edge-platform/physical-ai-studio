@@ -8,9 +8,7 @@ from sse_starlette import EventSourceResponse
 
 from api.dependencies import get_event_processor_ws, get_job_service, get_model_metrics_service, get_scheduler
 from core.scheduler import Scheduler
-from exceptions import InvalidJobStateError, ResourceNotFoundError, ResourceType
 from schemas import Job
-from schemas.base_job import JobStatus
 from schemas.job import RemoteTrainJobPayload, TrainJob, TrainJobPayload
 from services import JobService, ModelMetricsService
 from services.event_processor import EventProcessor, EventType
@@ -59,22 +57,8 @@ async def interrupt_job(
     job_service: Annotated[JobService, Depends(get_job_service)],
     scheduler: Annotated[Scheduler, Depends(get_scheduler)],
 ) -> None:
-    """Endpoint to interrupt job"""
-    job = await job_service.get_job_by_id(job_id)
-    if job is None:
-        raise ResourceNotFoundError(ResourceType.JOB, job_id)
-
-    if job.status == JobStatus.CANCELED:
-        return
-    if job.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
-        raise InvalidJobStateError("Cannot stop a finished job")
-    if isinstance(job, TrainJob):
-        # Claiming and queued cancellation compete atomically. Once claimed,
-        # keep RUNNING until the worker releases its files and flushes progress.
-        if await job_service.cancel_pending_train_job(job_id) is None:
-            scheduler.cancel_job(job_id)
-        return
-    await job_service.update_job_status(job_id, status=JobStatus.CANCELED)
+    """Request interruption using the job type's supported cancellation policy."""
+    await job_service.interrupt_job(job_id, scheduler.cancel_job)
 
 
 @router.get("/{job_id}/model_metrics")

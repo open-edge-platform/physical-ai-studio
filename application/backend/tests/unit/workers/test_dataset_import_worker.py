@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 
-from schemas.base_job import JobStatus
+from schemas.base_job import JobStatus, JobType
 from schemas.dataset_import_job import DatasetImportJobPayload, ImportStep
 from schemas.job import DatasetImportJob
 from workers.dataset_import_worker import DatasetImportWorker
@@ -32,11 +32,14 @@ async def test_worker_executes_only_assigned_claimed_import(status):
 
     with (
         patch("workers.dataset_import_worker.get_async_db_session_ctx", session_scope),
-        patch("workers.dataset_import_worker.JobService.get_job_by_id", AsyncMock(return_value=job)) as get_job,
+        patch(
+            "workers.dataset_import_worker.JobService.claim_pending_job",
+            AsyncMock(return_value=job if status == JobStatus.RUNNING else None),
+        ) as claim_job,
     ):
         await worker.run_loop()
 
-    get_job.assert_awaited_once_with(job.id)
+    claim_job.assert_awaited_once_with(job.id, JobType.DATASET_IMPORT)
     if status == JobStatus.RUNNING:
         worker._process_job.assert_awaited_once_with(job)
     else:

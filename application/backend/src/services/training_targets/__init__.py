@@ -8,7 +8,7 @@
 `services.ssh.persistent_trainer`) and computes the worker key that keeps two
 jobs on the same target from running concurrently. `JobService.submit_train_job`
 uses `get_training_target_handler(...).prepare` at submission time;
-`Scheduler` uses `target_key` to serialize scheduling. Adding a target
+`TrainingJobHandler` uses `target_key` for resource reservations. Adding a target
 means adding one handler class here, not another branch in each caller.
 """
 

@@ -11,49 +11,31 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from db import get_async_db_session_ctx
-from schemas.base_job import JobStatus, JobType
-from schemas.job import DatasetImportJob, RemoteTrainJobPayload, TrainJobPayloadAdapter
-from services.dataset_import.service import DatasetImportService
+from schemas.base_job import JobStatus
 from services.event_processor import EventType
+from services.job_handlers import get_job_handler
 from services.job_service import JobService
-from services.remote_trainer_service import RemoteTrainerService
-from services.training_service import TrainingService
-from services.training_targets import target_key
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from multiprocessing.synchronize import Event as EventClass
     from uuid import UUID
 
     from schemas import Job
-    from workers.base import BaseProcessWorker
+    from schemas.base_job import JobType
 
 
 def _run_job(
     job_type: JobType, job_id: UUID, stop_event: EventClass, cancel_event: EventClass | None, queue: mp.Queue
 ) -> None:
-    """Import and run the assigned worker only inside its child process."""
-    worker: BaseProcessWorker
-    if job_type == JobType.TRAINING:
-        from workers.training_worker import TrainingWorker
-
-        if cancel_event is None:
-            raise ValueError("Training jobs require a cancellation event")
-        worker = TrainingWorker(job_id=job_id, stop_event=stop_event, cancel_event=cancel_event, event_queue=queue)
-    elif job_type == JobType.DATASET_IMPORT:
-        from workers.dataset_import_worker import DatasetImportWorker
-
-        worker = DatasetImportWorker(job_id=job_id, stop_event=stop_event, event_queue=queue)
-    else:
-        raise ValueError(f"Unsupported job type: {job_type}")
-    worker.run()
+    """Construct and execute the assigned worker only inside its child process."""
+    get_job_handler(job_type).create_worker(job_id, stop_event, cancel_event, queue).run()
 
 
 class Scheduler:
-    """Poll jobs in a thread and own the short-lived processes that execute them.
+    """Own short-lived processes; delegate job-specific lifecycle rules to handlers.
 
-    Local training is exclusive; remote training retains per-trainer/GPU
-    reservations. One dataset import can run alongside training.
+    Runnable candidates are considered in submission order. Handlers define their
+    resource reservations, cancellation support, and abandoned-job recovery.
     """
 
     def __init__(self) -> None:
@@ -64,7 +46,7 @@ class Scheduler:
         self._thread = threading.Thread(target=self._run, name="JobScheduler")
 
     def start_workers(self) -> None:
-        """Start polling without launching training or import processes."""
+        """Start polling without launching any job processes."""
         self._thread.start()
 
     def _run(self) -> None:
@@ -91,36 +73,28 @@ class Scheduler:
             except Exception:
                 logger.exception("Shutdown recovery failed; abandoned jobs will be reconciled on the next startup")
 
-    @staticmethod
-    def _target_is_busy(target: str, active: Mapping[str, object]) -> bool:
-        return target in active or (
-            target.startswith("remote:")
-            and any(key.startswith(f"{target}:") or target.startswith(f"{key}:") for key in active)
-        )
-
     async def _schedule_jobs(self) -> None:
         async with get_async_db_session_ctx() as session:
-            jobs = await JobService(session).get_pending_train_jobs()
+            jobs = await JobService(session).get_pending_jobs()
         for job in jobs:
-            target = target_key(TrainJobPayloadAdapter.validate_python(job.payload))
-            if not self._target_is_busy(target, self.processes):
-                self._start_job(target, job)
-
-        if "dataset_import" not in self.processes and not self.mp_stop_event.is_set():
-            async with get_async_db_session_ctx() as session:
-                job = await DatasetImportService(session).claim_pending_dataset_import_job()
-            if isinstance(job, DatasetImportJob):
-                self._start_job("dataset_import", job)
+            if self.mp_stop_event.is_set():
+                break
+            handler = get_job_handler(job.type)
+            if not handler.is_runnable(job):
+                continue
+            resource = handler.resource_key(job)
+            if not handler.resource_is_busy(resource, self.processes):
+                self._start_job(resource, job)
 
     def cancel_job(self, job_id: UUID) -> None:
         """Signal this job, retaining requests until a remote worker can reattach."""
         self._cancel_events.setdefault(job_id, mp.Event()).set()
 
-    def _start_job(self, target: str, job: Job) -> None:
+    def _start_job(self, resource: str, job: Job) -> None:
         if self.mp_stop_event.is_set():
             return
         cancel_event = None
-        if job.type == JobType.TRAINING:
+        if get_job_handler(job.type).supports_running_cancel:
             cancel_event = self._cancel_events.setdefault(job.id, mp.Event())
         process = mp.Process(
             target=_run_job,
@@ -129,43 +103,32 @@ class Scheduler:
             daemon=False,
         )
         # Keep the reservation even if start fails so the next reap reconciles the job.
-        self.processes[target] = (process, job)
+        self.processes[resource] = (process, job)
         process.start()
 
     async def _reap_processes(self) -> None:
-        for target, (process, job) in list(self.processes.items()):
+        for resource, (process, job) in list(self.processes.items()):
             if process.is_alive():
                 continue
             if process.pid is not None:
                 process.join()
-            reattaching = False
-            # Startup failures can leave training PENDING before the worker claims it.
-            if job.type == JobType.TRAINING:
-                async with get_async_db_session_ctx() as session:
-                    service = JobService(session)
-                    current_jobs = await service.get_jobs_by_ids([job.id])
-                    if current_jobs:
-                        current = current_jobs[0]
-                        reattaching = (
-                            current.status in {JobStatus.PENDING, JobStatus.RUNNING}
-                            and isinstance(current.payload, RemoteTrainJobPayload)
-                            and current.payload.remote_job_id is not None
-                        )
-                    if (
-                        current_jobs
-                        and current_jobs[0].status == JobStatus.PENDING
-                        and not reattaching
-                        and not self.mp_stop_event.is_set()
+            async with get_async_db_session_ctx() as session:
+                service = JobService(session)
+                current_jobs = await service.get_jobs_by_ids([job.id])
+                current = current_jobs[0] if current_jobs else None
+                if current is not None:
+                    handler = get_job_handler(current.type)
+                    if handler.needs_exit_recovery(job, current) and (
+                        current.status == JobStatus.RUNNING or not self.mp_stop_event.is_set()
                     ):
-                        failed = await service.update_job_status(
-                            job.id, JobStatus.FAILED, message="Training worker exited before completing the job"
-                        )
-                        self.event_queue.put((EventType.JOB_UPDATE, failed))
-            if not reattaching:
+                        current = await handler.recover(current, service)
+                    # Reconcile committed state even if the worker exited before sending its event.
+                    self.event_queue.put((EventType.JOB_UPDATE, current))
+            if current is None or current.status not in {JobStatus.PENDING, JobStatus.RUNNING}:
                 self._cancel_events.pop(job.id, None)
             if process.pid is not None:
                 process.close()
-            del self.processes[target]
+            del self.processes[resource]
             await self._recover_jobs()
 
         unassigned = set(self._cancel_events.copy()) - {job.id for _, job in self.processes.values()}
@@ -177,22 +140,15 @@ class Scheduler:
                 self._cancel_events.pop(job_id, None)
 
     async def _recover_jobs(self) -> None:
-        """Reconcile abandoned jobs without touching any live worker's job."""
+        """Reconcile abandoned executions without touching any live worker's job."""
         active_ids = frozenset(job.id for _, job in self.processes.values())
         async with get_async_db_session_ctx() as session:
-            service = JobService(session, RemoteTrainerService(session))
-            recovered = await TrainingService.abort_orphan_jobs(service, exclude_job_ids=active_ids)
-            for job in recovered:
-                self.event_queue.put((EventType.JOB_UPDATE, job))
-            imports = await service.get_job_list(
-                extra_filters={"status": JobStatus.RUNNING, "type": JobType.DATASET_IMPORT}
-            )
-            for job in imports:
+            service = JobService(session)
+            jobs = await service.get_job_list(extra_filters={"status": JobStatus.RUNNING})
+            for job in jobs:
                 if job.id not in active_ids:
-                    failed = await service.update_job_status(
-                        job.id, JobStatus.FAILED, message="Dataset import worker stopped before completing the job"
-                    )
-                    self.event_queue.put((EventType.JOB_UPDATE, failed))
+                    updated = await get_job_handler(job.type).recover(job, service)
+                    self.event_queue.put((EventType.JOB_UPDATE, updated))
 
     def _shutdown_processes(self) -> None:
         for process, _ in self.processes.values():

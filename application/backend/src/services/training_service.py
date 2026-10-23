@@ -60,16 +60,7 @@ class TrainingTrackingDispatcher(BaseThreadWorker):
 
 
 class TrainingService:
-    """
-    Service for managing model training jobs.
-
-    Handles the complete training pipeline including job fetching, model training,
-    status updates, and error handling. Currently, using asyncio.to_thread for
-    CPU-intensive training to maintain event loop responsiveness.
-
-    Note: asyncio.to_thread is used assuming single concurrent training job.
-    For true parallelism with multiple training jobs, consider ProcessPoolExecutor.
-    """
+    """Reconcile abandoned training executions, preserving remote reattachment."""
 
     @staticmethod
     async def abort_orphan_jobs(
@@ -78,8 +69,9 @@ class TrainingService:
         """
         Reconcile RUNNING training jobs left behind by a previous process.
 
-        Called by the scheduler on startup, worker exit, and shutdown. Remote trainers run
-        independently of Studio, so a RUNNING job that
+        Bulk recovery helper; the scheduler uses the training job handler's
+        per-job recovery instead. Remote trainers run independently of Studio,
+        so a RUNNING job that
         already recorded its ``remote_job_id`` is requeued (back to PENDING) to
         reattach and mirror progress on the next pickup -- this is what lets a run
         survive the studio restarting (e.g. the laptop was closed overnight). Any
@@ -99,28 +91,30 @@ class TrainingService:
         for job in running_jobs:
             if job.id in excluded:
                 continue
-            remote_job_id = TrainingService._reattachable_remote_job_id(job)
-            if remote_job_id is not None:
-                logger.info(
-                    "Requeuing remote training job {} to reattach to trainer job {}",
-                    job.id,
-                    remote_job_id,
-                )
-                updated_job = await job_service.update_job_status(
-                    job_id=job.id,
-                    status=JobStatus.PENDING,
-                    message="Reconnecting to remote training job after restart",
-                )
-                reconciled.append(updated_job)
-                continue
-            logger.warning(f"Aborting orphan training job with id: {job.id}")
-            updated_job = await job_service.update_job_status(
-                job_id=job.id,
-                status=JobStatus.FAILED,
-                message="Job aborted due to application shutdown",
-            )
-            reconciled.append(updated_job)
+            reconciled.append(await TrainingService.recover_orphan_job(job, job_service))
         return reconciled
+
+    @staticmethod
+    async def recover_orphan_job(job: Job, job_service: JobService) -> Job:
+        """Reattach a persisted remote execution or fail abandoned local training."""
+        remote_job_id = TrainingService._reattachable_remote_job_id(job)
+        if remote_job_id is not None:
+            logger.info("Requeuing training job {} to reattach to remote job {}", job.id, remote_job_id)
+            return await job_service.update_job_status(
+                job_id=job.id,
+                status=JobStatus.PENDING,
+                message="Reconnecting to remote training job after restart",
+            )
+        logger.warning("Aborting orphan training job {}", job.id)
+        return await job_service.update_job_status(
+            job_id=job.id,
+            status=JobStatus.FAILED,
+            message=(
+                "Training worker exited before completing the job"
+                if job.status == JobStatus.PENDING
+                else "Job aborted due to application shutdown"
+            ),
+        )
 
     # Targets whose trainer keeps running independently of the studio process,
     # and so can be reattached to after a restart via their remote_job_id.

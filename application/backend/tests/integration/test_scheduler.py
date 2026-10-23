@@ -135,14 +135,14 @@ async def test_cancellation_with_stale_pending_read_signals_claimed_worker(migra
         await session.commit()
         service = JobService(session)
         await service.create_job(job)
-        original_cancel = service.cancel_pending_train_job
+        original_cancel = service.cancel_pending_job
 
-        async def claim_before_cancellation(job_id):
+        async def claim_before_cancellation(job_id, job_type):
             async with get_async_db_session_ctx() as worker_session:
                 assert await JobService(worker_session).claim_pending_train_job(job_id) is not None
-            return await original_cancel(job_id)
+            return await original_cancel(job_id, job_type)
 
-        monkeypatch.setattr(service, "cancel_pending_train_job", claim_before_cancellation)
+        monkeypatch.setattr(service, "cancel_pending_job", claim_before_cancellation)
         scheduler = Scheduler()
         cancel_event = mp.Event()
         scheduler._cancel_events[job.id] = cancel_event
@@ -320,14 +320,14 @@ async def test_killed_remote_worker_reattaches_without_resubmitting(migrated_db,
         await asyncio.to_thread(process.join, 10)
         async with get_async_db_session_ctx() as session:
             service = JobService(session)
-            original_cancel = service.cancel_pending_train_job
+            original_cancel = service.cancel_pending_job
 
-            async def recover_before_cancellation(job_id):
+            async def recover_before_cancellation(job_id, job_type):
                 # Reproduce a RUNNING API read followed by crash recovery to PENDING.
                 await scheduler._reap_processes()
-                return await original_cancel(job_id)
+                return await original_cancel(job_id, job_type)
 
-            monkeypatch.setattr(service, "cancel_pending_train_job", recover_before_cancellation)
+            monkeypatch.setattr(service, "cancel_pending_job", recover_before_cancellation)
             await interrupt_job(job.id, service, scheduler)
             recovered = await service.get_job_by_id(job.id)
             assert recovered.status == JobStatus.PENDING

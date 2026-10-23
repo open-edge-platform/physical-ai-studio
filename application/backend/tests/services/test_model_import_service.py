@@ -216,6 +216,72 @@ async def test_import_model_directory_accepts_exports_directory_without_checkpoi
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("exports_root", [True, False])
+async def test_import_restores_optimization_without_requiring_a_checkpoint(
+    tmp_path, project_id, dataset_id, settings, dataset, exports_root
+):
+    metadata = {"source_model_id": str(uuid4()), "mode": "int8_sym"}
+    manifest = _make_manifest("act", "act.xml", "openvino")
+    manifest["studio"] = {"optimization": metadata}
+    prefix = "openvino" if exports_root else "exports/openvino"
+    source_dir = _create_model_directory(
+        tmp_path, {f"{prefix}/manifest.json": json.dumps(manifest), f"{prefix}/act.xml": "INT8 graph"}
+    )
+    with _mock_services(settings, dataset) as service:
+        model = await service.import_model_directory(
+            source_dir=source_dir, project_id=project_id, dataset_id=dataset_id, model_name="Imported INT8"
+        )
+    assert model.optimization is not None
+    assert model.optimization.model_dump(mode="json") == metadata
+    assert model.properties["optimization"] == metadata
+    assert not (Path(model.path) / "model.ckpt").exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "studio",
+    [
+        "invalid",
+        {"optimization": None},
+        {"optimization": {}},
+        {"optimization": "int8_sym"},
+        {"optimization": {"source_model_id": "invalid"}},
+        {"optimization": {"source_model_id": str(uuid4()), "mode": "int4"}},
+    ],
+)
+async def test_import_rejects_invalid_optimization_metadata(
+    tmp_path, project_id, dataset_id, settings, dataset, studio
+):
+    manifest = _make_manifest("act", "act.xml", "openvino")
+    manifest["studio"] = studio
+    source_dir = _create_model_directory(
+        tmp_path, {"openvino/manifest.json": json.dumps(manifest), "openvino/act.xml": "graph"}
+    )
+    with _mock_services(settings, dataset) as service, pytest.raises(InvalidArchiveError, match=r"studio|optimization"):
+        await service.import_model_directory(
+            source_dir=source_dir, project_id=project_id, dataset_id=dataset_id, model_name="Invalid INT8"
+        )
+    assert source_dir.is_dir()
+    assert not settings.models_dir.exists()
+    service._persist_import.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_unmarked_full_model_still_requires_checkpoint(tmp_path, project_id, dataset_id, settings, dataset):
+    source_dir = _create_model_directory(
+        tmp_path,
+        {
+            "exports/openvino/manifest.json": json.dumps(_make_manifest("act", "act.xml", "openvino")),
+            "exports/openvino/act.xml": "graph",
+        },
+    )
+    with _mock_services(settings, dataset) as service, pytest.raises(InvalidArchiveError, match=r"model\.ckpt"):
+        await service.import_model_directory(
+            source_dir=source_dir, project_id=project_id, dataset_id=dataset_id, model_name="Missing checkpoint"
+        )
+
+
+@pytest.mark.anyio
 async def test_import_model_directory_rejects_nonexistent(tmp_path, project_id, dataset_id):
     service = ModelImportService(get_dataset=AsyncMock(), persist_import=AsyncMock())
     with pytest.raises(InvalidArchiveError, match="does not exist"):

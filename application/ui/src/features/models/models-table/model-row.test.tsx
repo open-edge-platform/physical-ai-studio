@@ -8,6 +8,7 @@ import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
 import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
+import { getMockedModel } from '../../../test-utils/mocks/mock-model';
 import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
 import { durationBetween } from '../shared/duration';
@@ -32,24 +33,7 @@ class ImmediatelyClosingEventSource {
     close() {}
 }
 
-const model: SchemaModel = {
-    id: 'model-1',
-    name: 'pick-and-place',
-    path: '/models/pick-and-place',
-    policy: 'act',
-    properties: {},
-    project_id: 'project-1',
-    dataset_id: null,
-    snapshot_id: null,
-    train_job_id: 'job-1',
-    parent_model_id: null,
-    version: 1,
-    created_at: '2026-07-14T12:00:00Z',
-    available_backends: [],
-    lora_enabled: false,
-    lora_use_dora: false,
-    snapflow_enabled: false,
-};
+const model = getMockedModel({ available_backends: [] });
 
 const trainingJob: SchemaTrainJob = {
     id: 'job-1',
@@ -284,6 +268,25 @@ describe('ModelRow', () => {
             'aria-disabled',
             'true'
         );
+    });
+
+    it('labels optimized models and disables retraining without disabling inference', async () => {
+        const user = userEvent.setup();
+        const onRetrain = rs.fn();
+        renderModelRow({
+            modelOverride: {
+                train_job_id: null,
+                optimization: { source_model_id: 'source-model', mode: 'int8_sym' },
+            },
+            onRetrain,
+        });
+
+        expect(screen.getByText('INT8 symmetric weights')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Run model' })).toBeEnabled();
+        await user.click(screen.getByRole('button', { name: 'options' }));
+        expect(screen.getByRole('menuitem', { name: 'Retrain' })).toHaveAttribute('aria-disabled', 'true');
+        await user.click(screen.getByRole('menuitem', { name: 'Retrain' }));
+        expect(onRetrain).not.toHaveBeenCalled();
     });
 
     it('renders the Run model button', () => {

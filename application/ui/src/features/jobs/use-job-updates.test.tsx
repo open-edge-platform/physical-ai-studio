@@ -6,6 +6,7 @@ import { act } from '@testing-library/react';
 
 import { createQueryClient } from '../../query-client/query-client';
 import { getMockedDatasetImportJob } from '../../test-utils/mocks/mock-dataset-import-job';
+import { getMockedOptimizeModelJob } from '../../test-utils/mocks/mock-optimize-model-job';
 import { getMockedTrainJob } from '../../test-utils/mocks/mock-train-job';
 import { renderHook } from '../../test-utils/render';
 import { JOBS_QUERY_KEY, SchemaJob } from './use-job-cache';
@@ -148,6 +149,76 @@ describe('useJobUpdates', () => {
 
         expect(queryClient.getQueryState(otherProjectModels)?.isInvalidated).toBe(true);
         expect(queryClient.getQueryState(currentProjectModels)?.isInvalidated).toBe(false);
+    });
+
+    it('invalidates the optimization project list, source details and new model details on completion', () => {
+        const queryClient = createQueryClient();
+        const job = getMockedOptimizeModelJob({ project_id: OTHER_PROJECT_ID, status: 'running' });
+        const sourceDetails = [
+            'get',
+            '/api/models/{model_id}',
+            { params: { path: { model_id: job.payload.model_id } } },
+        ];
+        const resultDetails = ['get', '/api/models/{model_id}', { params: { path: { model_id: job.id } } }];
+        const unrelatedDetails = ['get', '/api/models/{model_id}', { params: { path: { model_id: 'unrelated' } } }];
+        const affected = [modelsQueryKey(OTHER_PROJECT_ID), sourceDetails, resultDetails];
+        const unaffected = [modelsQueryKey(PROJECT_ID), unrelatedDetails];
+        for (const queryKey of [...affected, ...unaffected]) {
+            queryClient.setQueryData(queryKey, {});
+        }
+        queryClient.setQueryData<SchemaJob[]>(JOBS_QUERY_KEY, [job]);
+        renderHook(() => useJobUpdates(PROJECT_ID), { queryClient });
+
+        const completed = { ...job, status: 'completed' as const, progress: 100 };
+        deliver(completed);
+
+        for (const queryKey of affected) {
+            expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
+        }
+        for (const queryKey of unaffected) {
+            expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(false);
+        }
+        expect(queryClient.getQueryData(JOBS_QUERY_KEY)).toEqual([completed]);
+    });
+
+    it.each(['failed', 'canceled'] as const)('updates %s optimization jobs without invalidating models', (status) => {
+        const queryClient = createQueryClient();
+        queryClient.setQueryData<SchemaJob[]>(JOBS_QUERY_KEY, []);
+        queryClient.setQueryData(modelsQueryKey(PROJECT_ID), []);
+        renderHook(() => useJobUpdates(PROJECT_ID), { queryClient });
+        const job = getMockedOptimizeModelJob({ status });
+
+        deliver(job);
+
+        expect(queryClient.getQueryData(JOBS_QUERY_KEY)).toEqual([job]);
+        expect(queryClient.getQueryState(modelsQueryKey(PROJECT_ID))?.isInvalidated).toBe(false);
+    });
+
+    it('refreshes models on reconnect when an optimization completion event was missed', () => {
+        const queryClient = createQueryClient();
+        const job = getMockedOptimizeModelJob({ project_id: OTHER_PROJECT_ID, status: 'running' });
+        const sourceDetails = [
+            'get',
+            '/api/models/{model_id}',
+            { params: { path: { model_id: job.payload.model_id } } },
+        ];
+        const resultDetails = ['get', '/api/models/{model_id}', { params: { path: { model_id: job.id } } }];
+        const modelQueries = [modelsQueryKey(OTHER_PROJECT_ID), sourceDetails, resultDetails];
+        for (const queryKey of modelQueries) {
+            queryClient.setQueryData(queryKey, {});
+        }
+        queryClient.setQueryData<SchemaJob[]>(JOBS_QUERY_KEY, [job]);
+        renderHook(() => useJobUpdates(PROJECT_ID), { queryClient });
+
+        // No completion event arrives; reconnect must recover both caches.
+        act(() => {
+            capturedOnOpen?.();
+        });
+
+        expect(queryClient.getQueryState(JOBS_QUERY_KEY)?.isInvalidated).toBe(true);
+        for (const queryKey of modelQueries) {
+            expect(queryClient.getQueryState(queryKey)?.isInvalidated).toBe(true);
+        }
     });
 
     it('refetches jobs whenever the socket (re)connects', () => {

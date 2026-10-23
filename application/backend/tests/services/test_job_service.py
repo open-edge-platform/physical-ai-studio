@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from exceptions import InvalidResourceError, ResourceInUseError, ResourceNotFoundError
 from schemas.base_job import JobStatus
 from schemas.job import LocalTrainJobPayload, RemoteTrainJobPayload, TrainJob
+from schemas.model import Model
 from services import remote_trainer_service as remote_trainer_service_module
 from services.job_service import JobService
 from services.remote_trainer_service import RemoteTrainerService
@@ -45,6 +46,42 @@ async def test_local_submission_rejects_unsupported_policy_before_saving() -> No
         with pytest.raises(InvalidResourceError, match="not available on this machine"):
             await service.submit_train_job(payload)
         repository_type.return_value.save.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("optimized", [False, True])
+async def test_local_submission_validates_optimized_base_model_before_saving(optimized, tmp_path):
+    project_id = uuid4()
+    base = Model(
+        project_id=project_id,
+        name="base",
+        policy="act",
+        path=str(tmp_path),
+        properties={"optimization": {"source_model_id": str(uuid4()), "mode": "int8_sym"}} if optimized else {},
+    )
+    payload = LocalTrainJobPayload(
+        project_id=project_id, dataset_id=uuid4(), policy="act", model_name="retrain", base_model_id=base.id
+    )
+    with (
+        patch("services.job_service.JobRepository") as repository_type,
+        patch("services.job_service.ModelService") as model_service,
+        patch("services.training_targets.local.available_policy_classes", return_value={"act": (object, [])}),
+    ):
+        model_service.return_value.get_model_by_id = AsyncMock(return_value=base)
+        repository = repository_type.return_value
+        repository.is_job_duplicate = AsyncMock(return_value=False)
+        repository.save = AsyncMock(side_effect=lambda job: job)
+        service = JobService(MagicMock(spec=AsyncSession))
+        if optimized:
+            with pytest.raises(InvalidResourceError, match="inference-only"):
+                await service.submit_train_job(payload)
+            repository.save.assert_not_awaited()
+            repository.is_job_duplicate.assert_not_awaited()
+        else:
+            job = await service.submit_train_job(payload)
+            assert job.payload.base_model_id == base.id
+            repository.save.assert_awaited_once()
+        model_service.return_value.get_model_by_id.assert_awaited_once_with(base.id)
 
 
 @pytest.mark.anyio

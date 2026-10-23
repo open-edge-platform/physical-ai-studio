@@ -403,10 +403,24 @@ class DatasetImportJob(BaseJob):
     payload: DatasetImportJobPayload
 
 
-JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | DatasetImportJobPayload
+class OptimizeModelJobPayload(BaseModel):
+    """Optimize an existing OpenVINO export without changing the source model."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: UUID
+    mode: Literal["int8_sym"] = "int8_sym"
+
+
+class OptimizeModelJob(BaseJob):
+    type: Literal[JobType.OPTIMIZE_MODEL] = JobType.OPTIMIZE_MODEL  # type: ignore[valid-type]
+    payload: OptimizeModelJobPayload
+
+
+JobPayload = LocalTrainJobPayload | RemoteTrainJobPayload | DatasetImportJobPayload | OptimizeModelJobPayload
 
 Job = Annotated[
-    TrainJob | DatasetImportJob,
+    TrainJob | DatasetImportJob | OptimizeModelJob,
     Field(discriminator="type"),
 ]
 

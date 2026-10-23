@@ -38,6 +38,7 @@ const baseModel = {
     name: 'Test model',
     dataset_id: datasetId,
     policy: 'act',
+    optimization: null,
 } as SchemaModel;
 
 const mockProjectWithRemoteTrainer = () => {

@@ -11,7 +11,7 @@ class ModelMapper(IBaseMapper):
         return ModelDB(
             **db_schema.model_dump(
                 mode="json",
-                exclude={"available_backends", "lora_enabled", "lora_use_dora", "snapflow_enabled"},
+                exclude={"available_backends", "lora_enabled", "lora_use_dora", "snapflow_enabled", "optimization"},
             )
         )
 
