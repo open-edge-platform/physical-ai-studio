@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .act import ACT, ACTConfig, ACTModel  # noqa: F401
     from .cosmos3 import Cosmos3, Cosmos3Config, Cosmos3Model  # noqa: F401
     from .molmoact2 import MolmoAct2, MolmoAct2Config, MolmoAct2Model  # noqa: F401
+    from .patch_policy import PatchPolicy, PatchPolicyConfig, PatchPolicyModel  # noqa: F401
     from .pi05 import Pi05, Pi05Config, Pi05Model  # noqa: F401
     from .rldx1 import Rldx1, Rldx1Config, Rldx1Model  # noqa: F401
     from .smolvla import SmolVLA, SmolVLAConfig, SmolVLAModel  # noqa: F401

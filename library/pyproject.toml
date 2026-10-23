@@ -68,6 +68,7 @@ tests = [
 loggers = ["wandb>=0.22", "tensorboard>=2.20"]
 libero = ["hf-libero>=0.1.3,<0.2.0"]
 diffusion = ["diffusers>=0.38.0"]
+patch_policy = ["timm>=1.0.24,<2.0.0"]
 
 # VLA policy dependencies - these are heavy models with specific requirements.
 
@@ -133,6 +134,7 @@ executorch-openvino = ["executorch>=1.1.0", "physicalai-train[nncf]"]
 # All policy dependencies (foundation models and diffusion action heads)
 policies = [
     "physicalai-train[diffusion]",
+    "physicalai-train[patch_policy]",
     "physicalai-train[pi05]",
     "physicalai-train[smolvla]",
     "physicalai-train[molmoact2]",
@@ -308,6 +310,17 @@ ignore = [
     "non-empty-init-module",
     "noqa-comments",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"src/physicalai/policies/patch_policy/config.py" = ["DOC501", "EM101", "EM102", "TRY003"]
+"src/physicalai/policies/patch_policy/encoder.py" = ["D107", "DOC201", "DOC501", "EM101", "EM102", "PLR2004", "TRY003"]
+"src/physicalai/policies/patch_policy/gpt.py" = ["D102", "D107", "DOC201", "DOC501"]
+"src/physicalai/policies/patch_policy/model.py" = ["D102", "D107"]
+"src/physicalai/policies/patch_policy/policy.py" = ["D102", "D107", "DOC201", "DOC501", "EM101", "EM102", "TRY003"]
+"src/physicalai/policies/patch_policy/processors.py" = ["D102", "D107", "DOC201", "EM101", "EM102", "PLR2004", "TRY003"]
+"src/physicalai/policies/patch_policy/heads/behavior_transformer.py" = ["D102", "D107", "DOC201", "EM102", "PLR0913", "TRY003"]
+"src/physicalai/policies/patch_policy/heads/diffusion.py" = ["D107", "DOC201"]
+"tests/unit/policies/patch_policy/test_policy.py" = ["DOC201", "S101"]
 
 
 # ============================================================================ #

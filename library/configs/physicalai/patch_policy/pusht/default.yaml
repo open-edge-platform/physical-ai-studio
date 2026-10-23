@@ -1,0 +1,35 @@
+# Patch Policy training configuration for PushT.
+model:
+  class_path: physicalai.policies.PatchPolicy
+  init_args:
+    encoder_name: resnet18
+    encoder_output: average
+    encoder_pretrained: true
+    freeze_encoder: true
+    action_head: diffusion
+    n_obs_steps: 2
+    chunk_size: 16
+    n_action_steps: 8
+    hidden_dim: 256
+    num_layers: 4
+    num_heads: 4
+    num_train_timesteps: 100
+    num_inference_steps: 20
+    optimizer_lr: 1e-4
+
+data:
+  class_path: physicalai.data.lerobot.LeRobotDataModule
+  init_args:
+    repo_id: lerobot/pusht
+    train_batch_size: 32
+    data_format: physicalai
+    val_gym:
+      class_path: physicalai.gyms.pusht.PushTGym
+
+trainer:
+  max_steps: 70000
+  accelerator: gpu
+  devices: 1
+  precision: 32
+  log_every_n_steps: 100
+  check_val_every_n_epoch: 10
