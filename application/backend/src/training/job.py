@@ -555,11 +555,13 @@ def resolve_checkpoint(model_dir: Path | str) -> Path:
 
 
 def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> Policy:
-    """Return the policy to export: reloaded from disk when that changes what gets exported.
+    """Return the selected checkpoint reloaded for export, when possible.
 
-    For SnapFlow runs, export reloads the distilled checkpoint so the exported
-    artifact matches what ``resolve_checkpoint`` (and therefore resume/download)
-    picks, rather than the final-epoch weights left in memory.
+    Export must match ``resolve_checkpoint`` (and therefore resume/download),
+    rather than the final-epoch weights left in memory.  This matters for every
+    policy: an ordinary ``ModelCheckpoint`` selects the best validation epoch,
+    while the live policy contains the final epoch.  For SnapFlow,
+    ``resolve_checkpoint`` additionally selects the distilled checkpoint.
 
     Falls back to the trained policy if the reload fails — a failed export is
     better than a failed job.
@@ -567,16 +569,13 @@ def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> P
     Returns:
         The policy instance to hand to the export backends.
     """
-    resolved = resolve_checkpoint(output_dir)
-    if resolved.name != SNAPFLOW_CHECKPOINT_NAME:
-        return policy
-
     try:
-        logger.info("Reloading policy from %s for export", resolved.name)
+        resolved = resolve_checkpoint(output_dir)
+        logger.info("Reloading selected checkpoint %s for export", resolved.name)
         uncompiled = spec.model_copy(update={"compile_model": False})
         return _load_policy_from_checkpoint(uncompiled, resolved)
     except Exception:  # reload is best-effort; the trained policy is a valid fallback
-        logger.warning("Failed to reload policy for export; using trained policy", exc_info=True)
+        logger.warning("Failed to reload selected checkpoint for export; using trained policy", exc_info=True)
         return policy
 
 

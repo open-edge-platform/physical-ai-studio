@@ -549,14 +549,17 @@ class TestRunTrainingJob:
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
     @pytest.mark.parametrize("policy_name", ["act", "smolvla", "pi05"])
-    def test_compiled_policy_exports_without_reloading(self, policy_name: str, tmp_path: Path) -> None:
-        """Compiled policies are traced directly by the library; no checkpoint reload is needed."""
+    def test_compiled_policy_reloads_the_selected_checkpoint_for_export(self, policy_name: str, tmp_path: Path) -> None:
+        """Exports must use the selected checkpoint even when training was compiled."""
         policy = _ExportablePolicy([ExportBackend.OPENVINO])
 
         with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
+            reload.return_value = policy
             _run(TrainingJobSpec(policy=policy_name, compile_model=True), tmp_path, policy=policy)
 
-        reload.assert_not_called()
+        reload.assert_called_once()
+        assert reload.call_args.args[1] == tmp_path / "model" / CHECKPOINT_NAME
+        assert reload.call_args.args[0].compile_model is False
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
     def test_trainer_and_datamodule_are_released_before_export(self, tmp_path: Path) -> None:
@@ -576,6 +579,7 @@ class TestRunTrainingJob:
             patch("physicalai.data.LeRobotDataModule") as datamodule_class,
             patch(f"{JOB}.build_policy", return_value=policy),
             patch("physicalai.train.trainer.Trainer") as trainer_class,
+            patch(f"{JOB}._load_policy_from_checkpoint", return_value=policy),
         ):
             trainer_instance = trainer_class.return_value
             datamodule_instance = datamodule_class.return_value
@@ -677,13 +681,15 @@ class TestSnapFlowDistillation:
         reload.assert_called_once()
         assert reload.call_args.args[1] == tmp_path / "model" / SNAPFLOW_CHECKPOINT_NAME
 
-    def test_a_flow_matching_run_exports_the_live_policy_without_reloading(self, tmp_path: Path) -> None:
+    def test_a_flow_matching_run_reloads_the_selected_checkpoint_for_export(self, tmp_path: Path) -> None:
         policy = _ExportablePolicy([ExportBackend.OPENVINO])
 
         with patch(f"{JOB}._load_policy_from_checkpoint") as reload:
+            reload.return_value = policy
             _run(TrainingJobSpec(policy="pi05"), tmp_path, policy=policy)
 
-        reload.assert_not_called()
+        reload.assert_called_once()
+        assert reload.call_args.args[1] == tmp_path / "model" / CHECKPOINT_NAME
         assert [backend for _, backend in policy.exported] == [ExportBackend.OPENVINO]
 
 
