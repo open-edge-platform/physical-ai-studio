@@ -10,7 +10,7 @@ import { SidebarSection } from './sidebar-section';
 import classes from './recording-sidebar.module.css';
 
 export const EpisodeControls = () => {
-    const { state, startEpisode, saveEpisode } = useRuntimeSession();
+    const { state, startEpisode, saveEpisode, discardEpisode } = useRuntimeSession();
     const {
         task,
         startEpisode: startRecording,
@@ -38,7 +38,12 @@ export const EpisodeControls = () => {
                 <>
                     {timerRow}
                     <Flex wrap gap='size-100'>
-                        <Button variant='accent' isPending={saveEpisode.isPending} onPress={saveRecording}>
+                        <Button
+                            variant='accent'
+                            isPending={saveEpisode.isPending}
+                            isDisabled={discardEpisode.isPending}
+                            onPress={saveRecording}
+                        >
                             <Checkmark />
                             <Text>Save episode</Text>
                         </Button>
