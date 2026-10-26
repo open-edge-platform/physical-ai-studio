@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useState } from 'react';
+import { createContext, ReactNode, useContext, useLayoutEffect, useRef, useState } from 'react';
 
 import { $api } from '../../../api/client';
 import { HotkeyActionId } from '../../hotkeys/hotkey-actions';
@@ -10,17 +10,30 @@ interface RecordingContextValue {
     defaultTask: string;
     task: string;
     setTask: (task: string) => void;
-    recordingStartedAt: number | null;
-    startEpisode: () => void;
-    saveEpisode: () => void;
-    discardEpisode: () => void;
     bindings: Record<HotkeyActionId, string>;
+    recordingStartedAt: number | null;
 }
 
 const RecordingContext = createContext<RecordingContextValue | null>(null);
 
+const useRecordingStartedAt = (isRecording: boolean): number | null => {
+    const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+    const wasRecording = useRef(isRecording);
+
+    useLayoutEffect(() => {
+        if (wasRecording.current === isRecording) {
+            return;
+        }
+
+        wasRecording.current = isRecording;
+        setRecordingStartedAt(isRecording ? Date.now() : null);
+    }, [isRecording]);
+
+    return recordingStartedAt;
+};
+
 export const RecordingProvider = ({ children }: { children: ReactNode }) => {
-    const { dataset, state, startEpisode: startEpisodeMutation, saveEpisode, discardEpisode } = useRuntimeSession();
+    const { dataset, state, startEpisode, saveEpisode, discardEpisode } = useRuntimeSession();
 
     if (dataset === undefined) {
         throw new Error('Cannot record episodes without a dataset.');
@@ -29,46 +42,20 @@ export const RecordingProvider = ({ children }: { children: ReactNode }) => {
     const defaultTask = dataset.default_task;
     const [customTask, setCustomTask] = useState<string | null>(null);
     const task = customTask ?? defaultTask;
-    const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
+    const recordingStartedAt = useRecordingStartedAt(state.is_recording);
 
     const { data: settings } = $api.useSuspenseQuery('get', '/api/settings');
     const bindings = getEffectiveBindings(settings.hotkeys.bindings);
 
-    const startEpisode = () => {
-        startEpisodeMutation.mutate(task, {
-            onSuccess: () => setRecordingStartedAt(Date.now()),
-            onError: () => setRecordingStartedAt(null),
-        });
-    };
+    const canStart = !state.is_recording && !startEpisode.isPending && task !== '';
+    const canFinish = state.is_recording && !saveEpisode.isPending && !discardEpisode.isPending;
 
-    const saveEpisodeAndResetTimer = () => {
-        saveEpisode.mutate(undefined, { onSettled: () => setRecordingStartedAt(null) });
-    };
-
-    const discardEpisodeAndResetTimer = () => {
-        discardEpisode.mutate(undefined, { onSettled: () => setRecordingStartedAt(null) });
-    };
-
-    const canStart = !state.is_recording && !startEpisodeMutation.isPending && task !== '';
-    const canFinish = state.is_recording && !saveEpisode.isPending;
-
-    useHotkey(bindings['recording.start_episode'], startEpisode, canStart);
-    useHotkey(bindings['recording.accept_episode'], saveEpisodeAndResetTimer, canFinish);
-    useHotkey(bindings['recording.discard_episode'], discardEpisodeAndResetTimer, canFinish);
+    useHotkey(bindings['recording.start_episode'], () => startEpisode.mutate(task), canStart);
+    useHotkey(bindings['recording.accept_episode'], () => saveEpisode.mutate(undefined), canFinish);
+    useHotkey(bindings['recording.discard_episode'], () => discardEpisode.mutate(undefined), canFinish);
 
     return (
-        <RecordingContext.Provider
-            value={{
-                defaultTask,
-                task,
-                setTask: setCustomTask,
-                recordingStartedAt,
-                startEpisode,
-                saveEpisode: saveEpisodeAndResetTimer,
-                discardEpisode: discardEpisodeAndResetTimer,
-                bindings,
-            }}
-        >
+        <RecordingContext.Provider value={{ defaultTask, task, setTask: setCustomTask, bindings, recordingStartedAt }}>
             {children}
         </RecordingContext.Provider>
     );

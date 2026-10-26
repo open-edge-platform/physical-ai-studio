@@ -11,19 +11,11 @@ import classes from './recording-sidebar.module.css';
 
 export const EpisodeControls = () => {
     const { state, startEpisode, saveEpisode, discardEpisode } = useRuntimeSession();
-    const {
-        task,
-        startEpisode: startRecording,
-        saveEpisode: saveRecording,
-        discardEpisode: discardRecording,
-        bindings,
-    } = useRecording();
+    const { task, bindings } = useRecording();
 
     const startKey = formatKeyCombo(bindings['recording.start_episode']);
     const saveKey = formatKeyCombo(bindings['recording.accept_episode']);
     const discardKey = formatKeyCombo(bindings['recording.discard_episode']);
-
-    const canStart = !state.is_recording && !startEpisode.isPending && task !== '';
 
     const timerRow = (
         <Flex alignItems='center' gap='size-150'>
@@ -42,12 +34,16 @@ export const EpisodeControls = () => {
                             variant='accent'
                             isPending={saveEpisode.isPending}
                             isDisabled={discardEpisode.isPending}
-                            onPress={saveRecording}
+                            onPress={() => saveEpisode.mutate(undefined)}
                         >
                             <Checkmark />
                             <Text>Save episode</Text>
                         </Button>
-                        <Button variant='secondary' isDisabled={saveEpisode.isPending} onPress={discardRecording}>
+                        <Button
+                            variant='secondary'
+                            isDisabled={saveEpisode.isPending}
+                            onPress={() => discardEpisode.mutate(undefined)}
+                        >
                             <Delete />
                             <Text>Discard</Text>
                         </Button>
@@ -59,8 +55,8 @@ export const EpisodeControls = () => {
                         variant='accent'
                         width='100%'
                         isPending={startEpisode.isPending}
-                        isDisabled={!canStart && !startEpisode.isPending}
-                        onPress={startRecording}
+                        isDisabled={!startEpisode.isPending && task === ''}
+                        onPress={() => startEpisode.mutate(task)}
                     >
                         <Text>Start episode</Text>
                     </Button>

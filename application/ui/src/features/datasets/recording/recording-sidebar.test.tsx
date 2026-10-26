@@ -37,6 +37,7 @@ interface Session {
     episodesRecorded?: number;
     startPending?: boolean;
     savePending?: boolean;
+    discardPending?: boolean;
     defaultTask?: string;
 }
 
@@ -49,13 +50,14 @@ const buildSession = ({
     episodesRecorded = 0,
     startPending = false,
     savePending = false,
+    discardPending = false,
     defaultTask = 'pick the cube',
 }: Session): SessionOverrides => ({
     dataset: getMockedDataset({ id: DATASET_ID, project_id: PROJECT_ID, default_task: defaultTask }),
     state: getMockedRuntimeSessionState({ is_recording: isRecording, episodes_recorded: episodesRecorded }),
     startEpisode: { ...startEpisode, isPending: startPending },
     saveEpisode: { ...saveEpisode, isPending: savePending },
-    discardEpisode,
+    discardEpisode: { ...discardEpisode, isPending: discardPending },
 });
 
 const applySession = (session: Session) => {
@@ -206,7 +208,7 @@ describe('RecordingSidebar', () => {
             await user.click(screen.getByRole('button', { name: /start episode/i }));
 
             expect(startEpisode.mutate).toHaveBeenCalledTimes(1);
-            expect(startEpisode.mutate).toHaveBeenCalledWith('wipe the table', expect.anything());
+            expect(startEpisode.mutate).toHaveBeenCalledWith('wipe the table');
         });
 
         it('offers only start, not save or discard', async () => {
@@ -286,7 +288,7 @@ describe('RecordingSidebar', () => {
 
             fireEvent.keyDown(document.body, { key: ' ' });
 
-            expect(startEpisode.mutate).toHaveBeenCalledWith('pick the cube', expect.anything());
+            expect(startEpisode.mutate).toHaveBeenCalledWith('pick the cube');
         });
 
         it('does not start with Space when the task is empty', async () => {
@@ -351,6 +353,17 @@ describe('RecordingSidebar', () => {
             expect(discardEpisode.mutate).not.toHaveBeenCalled();
         });
 
+        it('does not save or discard while the discard request is pending', async () => {
+            renderSidebar({ isRecording: true, discardPending: true });
+            await screen.findByText('E1');
+
+            fireEvent.keyDown(document.body, { key: 'Enter' });
+            fireEvent.keyDown(document.body, { key: 'Backspace' });
+
+            expect(saveEpisode.mutate).not.toHaveBeenCalled();
+            expect(discardEpisode.mutate).not.toHaveBeenCalled();
+        });
+
         it('edits the task text instead of discarding when Backspace is pressed in the task field', async () => {
             const user = userEvent.setup();
             renderSidebar({ defaultTask: 'pick the cube' });
@@ -385,50 +398,80 @@ describe('RecordingSidebar', () => {
     });
 
     describe('timer', () => {
+        const startRecording = async () => {
+            fireEvent.click(screen.getByRole('button', { name: /start episode/i }));
+            fireEvent.click(screen.getByRole('button', { name: 'simulate recording started' }));
+            await screen.findByRole('button', { name: /save episode/i });
+        };
+
+        const advance = (ms: number) =>
+            act(async () => {
+                rs.advanceTimersByTime(ms);
+            });
+
         it('shows 00:00 when idle', async () => {
             renderSidebar();
 
             expect(await screen.findByText('00:00')).toBeInTheDocument();
         });
 
-        it('counts the elapsed time while recording', async () => {
+        it('counts the elapsed time from when the episode was started', async () => {
             renderSidebar();
             await screen.findByText('00:00');
             rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
 
-            fireEvent.click(screen.getByRole('button', { name: 'simulate recording started' }));
-            await act(async () => {
-                rs.advanceTimersByTime(3_000);
-            });
+            await startRecording();
+            await advance(3_000);
 
             expect(screen.getByText('00:03')).toBeInTheDocument();
         });
 
-        it('keeps counting when the recording was already running when the page opened', async () => {
+        it('does not start counting until the backend confirms the recording', async () => {
+            renderSidebar();
+            await screen.findByText('00:00');
+            rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+
+            fireEvent.click(screen.getByRole('button', { name: /start episode/i }));
+            await advance(3_000);
+
+            expect(screen.getByText('00:00')).toBeInTheDocument();
+        });
+
+        it('shows an unknown time when the recording was already running when the page opened', async () => {
             rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
             renderSidebar({ isRecording: true });
             await screen.findByRole('button', { name: /save episode/i });
 
-            await act(async () => {
-                rs.advanceTimersByTime(5_000);
-            });
+            await advance(5_000);
 
-            expect(screen.getByText('00:05')).toBeInTheDocument();
+            expect(screen.getByText('--:--')).toBeInTheDocument();
         });
 
         it('resets to 00:00 once the recording stops', async () => {
             renderSidebar();
             await screen.findByText('00:00');
             rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
-            fireEvent.click(screen.getByRole('button', { name: 'simulate recording started' }));
-            await act(async () => {
-                rs.advanceTimersByTime(4_000);
-            });
+            await startRecording();
+            await advance(4_000);
             expect(screen.getByText('00:04')).toBeInTheDocument();
 
             fireEvent.click(screen.getByRole('button', { name: 'simulate recording stopped' }));
 
             expect(screen.getByText('00:00')).toBeInTheDocument();
+        });
+
+        it('keeps counting when saving fails and the recording continues', async () => {
+            renderSidebar();
+            await screen.findByText('00:00');
+            rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+            await startRecording();
+            await advance(2_000);
+
+            fireEvent.click(screen.getByRole('button', { name: /save episode/i }));
+            await advance(1_000);
+
+            expect(saveEpisode.mutate).toHaveBeenCalledTimes(1);
+            expect(screen.getByText('00:03')).toBeInTheDocument();
         });
     });
 });

@@ -11,19 +11,19 @@ export const EpisodeSection = () => {
     const { state, saveEpisode } = useRuntimeSession();
     const { nextEpisodeNumber } = useRecordingEpisodes();
 
-    const label = saveEpisode.isPending ? 'Saving…' : state.is_recording ? null : 'Next episode';
-
     return (
         <SidebarSection label='Episode'>
             <View>
                 <EpisodeTag indicator={nextEpisodeNumber}>
-                    {state.is_recording ? (
+                    {saveEpisode.isPending ? (
+                        'Saving…'
+                    ) : state.is_recording ? (
                         <Flex alignItems='center' gap='size-50' UNSAFE_className={classes.recordingLabel}>
                             <View UNSAFE_className={classes.recordingDot} />
                             Recording
                         </Flex>
                     ) : (
-                        label
+                        'Next episode'
                     )}
                 </EpisodeTag>
             </View>
