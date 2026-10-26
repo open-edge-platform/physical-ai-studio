@@ -1,6 +1,6 @@
-import { Button, Flex, Icon, Text, View } from '@geti-ui/ui';
+import { ActionButton, Content, ContextualHelp, Flex, Footer, Heading, Icon, Link, Text, View } from '@geti-ui/ui';
 import { ChevronLeft } from '@geti-ui/ui/icons';
-import { Link, useNavigate } from 'react-router';
+import { Link as RouterLink, useNavigate } from 'react-router';
 
 import { paths } from '../../../paths';
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
@@ -49,15 +49,26 @@ export const RecordingTopBar = () => {
                         <BackContent subtitle={subtitle} />
                     </span>
                 ) : (
-                    <Link to={datasetUrl} className={classes.headerLink} aria-label='Back to dataset'>
+                    <RouterLink to={datasetUrl} className={classes.headerLink} aria-label='Back to dataset'>
                         <BackContent subtitle={subtitle} />
-                    </Link>
+                    </RouterLink>
                 )}
                 <Flex alignItems='center' gap='size-200'>
                     {counts !== null && <Text UNSAFE_className={classes.episodesText}>{counts}</Text>}
-                    <Button variant='secondary' onPress={handleDone} isDisabled={state.is_recording}>
+                    <ContextualHelp variant='info'>
+                        <Heading>Recommended amount of episodes</Heading>
+                        <Content>
+                            <Text>We recommend recording at least 50 episodes before training your first model.</Text>
+                        </Content>
+                        <Footer>
+                            <Link href='https://github.com/open-edge-platform/physical-ai-studio/issues/358'>
+                                Learn more about recommended dataset sizes
+                            </Link>
+                        </Footer>
+                    </ContextualHelp>
+                    <ActionButton isQuiet onPress={handleDone} isDisabled={state.is_recording}>
                         Done
-                    </Button>
+                    </ActionButton>
                 </Flex>
             </Flex>
         </View>
