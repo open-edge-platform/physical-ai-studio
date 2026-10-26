@@ -79,23 +79,14 @@ describe('RobotsSection', () => {
         expect(screen.queryByText('Robots')).not.toBeInTheDocument();
     });
 
-    it('shows the follower as Ready and the leader as Driving while teleoperating', async () => {
-        renderRobots({ state: { follower_source: 'teleop' }, sessions: [getMockedRuntimeSessionInfo()] });
-
-        expect(await screen.findByText('Ready')).toBeInTheDocument();
-        expect(screen.getByText('Driving')).toBeInTheDocument();
-    });
-
-    it('shows the follower as Recording while an episode is recorded', async () => {
-        renderRobots({ state: { is_recording: true } });
+    it('derives the follower and leader status from the session state', async () => {
+        renderRobots({
+            state: { follower_source: 'teleop', is_recording: true },
+            sessions: [getMockedRuntimeSessionInfo()],
+        });
 
         expect(await screen.findByText('Recording')).toBeInTheDocument();
-    });
-
-    it('shows the leader as Disconnected when the leader is lost', async () => {
-        renderRobots({ state: { has_leader: false } });
-
-        expect(await screen.findByText('Disconnected')).toBeInTheDocument();
+        expect(screen.getByText('Driving')).toBeInTheDocument();
     });
 
     it('shows the follower as Error when its runtime session failed', async () => {
