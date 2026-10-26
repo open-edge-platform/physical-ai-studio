@@ -2,12 +2,17 @@ import { useEffect, useState } from 'react';
 
 import { Text } from '@geti-ui/ui';
 
+import { useRuntimeSession } from '../../robots/runtime-session-provider';
 import { formatElapsed } from './format';
 import { useRecording } from './recording-provider';
 
 import classes from './recording-sidebar.module.css';
 
+/** Shown while recording when the start time is unknown, e.g. after attaching to a running recording. */
+const UNKNOWN_ELAPSED = '--:--';
+
 export const RecordingTimer = () => {
+    const { state } = useRuntimeSession();
     const { recordingStartedAt } = useRecording();
     const [now, setNow] = useState(() => Date.now());
 
@@ -22,7 +27,12 @@ export const RecordingTimer = () => {
         return () => window.clearInterval(timer);
     }, [recordingStartedAt]);
 
-    const elapsed = recordingStartedAt === null ? 0 : now - recordingStartedAt;
+    const label =
+        state.is_recording && recordingStartedAt !== null
+            ? formatElapsed(now - recordingStartedAt)
+            : state.is_recording
+              ? UNKNOWN_ELAPSED
+              : formatElapsed(0);
 
-    return <Text UNSAFE_className={classes.timer}>{formatElapsed(elapsed)}</Text>;
+    return <Text UNSAFE_className={classes.timer}>{label}</Text>;
 };

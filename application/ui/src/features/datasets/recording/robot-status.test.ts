@@ -21,7 +21,7 @@ describe('getFollowerStatus', () => {
     });
 
     it('reports Error even while recording', () => {
-        expect(getFollowerStatus({ connected: true, is_recording: true }, session('error')).label).toEqual({
+        expect(getFollowerStatus({ connected: true, is_recording: true }, session('error'))).toEqual({
             label: 'Error',
             variant: 'negative',
         });
