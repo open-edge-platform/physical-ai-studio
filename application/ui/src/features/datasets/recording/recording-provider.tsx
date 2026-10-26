@@ -42,11 +42,11 @@ export const RecordingProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const saveEpisodeAndResetTimer = () => {
-        saveEpisode.mutate(undefined, { onSuccess: () => setRecordingStartedAt(null) });
+        saveEpisode.mutate(undefined, { onSettled: () => setRecordingStartedAt(null) });
     };
 
     const discardEpisodeAndResetTimer = () => {
-        discardEpisode.mutate(undefined, { onSuccess: () => setRecordingStartedAt(null) });
+        discardEpisode.mutate(undefined, { onSettled: () => setRecordingStartedAt(null) });
     };
 
     const canStart = !state.is_recording && !startEpisodeMutation.isPending && task !== '';

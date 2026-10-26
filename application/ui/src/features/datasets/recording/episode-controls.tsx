@@ -1,4 +1,4 @@
-import { Button, Flex, Keyboard, Text, View } from '@geti-ui/ui';
+import { Button, Flex, Keyboard, Text } from '@geti-ui/ui';
 import { Checkmark, Delete } from '@geti-ui/ui/icons';
 
 import { formatKeyCombo } from '../../hotkeys/key-combo';
