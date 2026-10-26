@@ -1,0 +1,80 @@
+.sectionLabel {
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.episodeLabel {
+    font-weight: 500;
+}
+
+.timer {
+    font-size: var(--spectrum-global-dimension-font-size-600);
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    color: var(--spectrum-global-color-gray-900);
+}
+
+.hotkey {
+    background-color: var(--spectrum-global-color-gray-50);
+    border-radius: 4px;
+    padding: var(--spectrum-global-dimension-size-10) var(--spectrum-global-dimension-size-75);
+}
+
+.helper {
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    color: var(--spectrum-global-color-gray-700);
+}
+
+.recordingLabel {
+    color: var(--spectrum-global-color-red-600);
+    font-weight: 500;
+}
+
+.recordingDot {
+    display: inline-block;
+    flex: none;
+    width: var(--spectrum-global-dimension-size-100);
+    height: var(--spectrum-global-dimension-size-100);
+    background: var(--spectrum-global-color-red-600);
+    border: var(--spectrum-alias-border-size-thick) solid var(--spectrum-global-color-red-600);
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgb(211 21 16 / 55%);
+    animation: recordingPulse 1.6s ease-out infinite;
+}
+
+@keyframes recordingPulse {
+    70% {
+        box-shadow: 0 0 0 8px rgb(211 21 16 / 0%);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgb(211 21 16 / 0%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .recordingDot {
+        animation: none;
+    }
+}
+
+.robotName {
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--spectrum-global-color-gray-900);
+}
+
+.robotSubtitle {
+    overflow: hidden;
+    font-size: var(--spectrum-global-dimension-font-size-50);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--spectrum-global-color-gray-700);
+}

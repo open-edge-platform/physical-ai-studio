@@ -6,6 +6,7 @@
 
 .dockviewThemePhysicalAi {
     border: 1px solid var(--spectrum-global-color-gray-300);
+    overflow: hidden;
 
     /* Layout & Spacing */
     --dv-border-radius: var(--spectrum-alias-border-radius-regular);
