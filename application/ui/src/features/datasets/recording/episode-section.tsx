@@ -1,6 +1,7 @@
-import { Badge, Flex, Text, View } from '@geti-ui/ui';
+import { Flex, View } from '@geti-ui/ui';
 
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
+import { EpisodeTag } from '../episodes/episode-tag';
 import { SidebarSection } from './sidebar-section';
 import { useRecordingEpisodes } from './use-recording-episodes';
 
@@ -15,16 +16,16 @@ export const EpisodeSection = () => {
     return (
         <SidebarSection label='Episode'>
             <View>
-                <Flex alignItems='baseline' gap='size-125'>
-                    <Badge variant='yellow'>{`E${nextEpisodeNumber}`}</Badge>
-                    {label && !state.is_recording && <Text UNSAFE_className={classes.episodeLabel}>{label}</Text>}
-                    {state.is_recording && (
-                        <Flex alignItems={'center'} gap={'size-50'} UNSAFE_className={classes.recordingLabel}>
+                <EpisodeTag indicator={nextEpisodeNumber}>
+                    {state.is_recording ? (
+                        <Flex alignItems='center' gap='size-50' UNSAFE_className={classes.recordingLabel}>
                             <View UNSAFE_className={classes.recordingDot} />
-                            <Text>Recording</Text>
+                            Recording
                         </Flex>
+                    ) : (
+                        label
                     )}
-                </Flex>
+                </EpisodeTag>
             </View>
         </SidebarSection>
     );

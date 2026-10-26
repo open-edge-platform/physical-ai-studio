@@ -1,6 +1,6 @@
 import { Button, Flex, Icon, Text, View } from '@geti-ui/ui';
 import { ChevronLeft } from '@geti-ui/ui/icons';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { paths } from '../../../paths';
 import { useRuntimeSession } from '../../robots/runtime-session-provider';
@@ -30,9 +30,15 @@ export const RecordingTopBar = () => {
     if (dataset?.id === undefined) {
         throw new Error('Cannot render the recording top bar without a dataset.');
     }
+    const navigate = useNavigate();
 
     const datasetUrl = paths.project.datasets.show({ project_id: dataset.project_id, dataset_id: dataset.id });
-    const subtitle = [dataset.name, task, environment.name].filter((part) => part !== '').join(' · ');
+
+    const handleDone = () => {
+        navigate(datasetUrl);
+    };
+
+    const subtitle = [environment.name, dataset.name, task].filter((part) => part !== '').join(' | ');
     const counts = formatEpisodeCounts(episodesInDataset, episodesThisSession);
 
     return (
@@ -49,7 +55,7 @@ export const RecordingTopBar = () => {
                 )}
                 <Flex alignItems='center' gap='size-200'>
                     {counts !== null && <Text UNSAFE_className={classes.episodesText}>{counts}</Text>}
-                    <Button variant='secondary' href={datasetUrl} isDisabled={state.is_recording}>
+                    <Button variant='secondary' onPress={handleDone} isDisabled={state.is_recording}>
                         Done
                     </Button>
                 </Flex>

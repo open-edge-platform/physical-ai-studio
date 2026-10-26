@@ -6,10 +6,6 @@
     color: var(--spectrum-global-color-gray-700);
 }
 
-.episodeLabel {
-    font-weight: 500;
-}
-
 .timer {
     font-size: var(--spectrum-global-dimension-font-size-600);
     font-variant-numeric: tabular-nums;
@@ -33,6 +29,7 @@
 .recordingLabel {
     color: var(--spectrum-global-color-red-600);
     font-weight: 500;
+    line-height: normal;
 }
 
 .recordingDot {
