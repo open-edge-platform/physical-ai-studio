@@ -119,20 +119,22 @@ describe('RecordingSidebar', () => {
     });
 
     describe('episode section', () => {
-        it('shows the next episode number after the episodes already in the dataset and this session', async () => {
+        it.each([
+            { name: 'starts at E1 for an empty dataset', recorded: 0, indices: [], expected: 'E1' },
+            {
+                name: 'continues after the episodes already in the dataset and this session',
+                recorded: 2,
+                indices: [0, 1],
+                expected: 'E5',
+            },
+        ])('$name', async ({ recorded, indices, expected }) => {
             renderSidebar(
-                { episodesRecorded: 2 },
-                { episodes: getMockedEpisodes([{ episode_index: 0 }, { episode_index: 1 }]) }
+                { episodesRecorded: recorded },
+                { episodes: getMockedEpisodes(indices.map((episode_index) => ({ episode_index }))) }
             );
 
-            expect(await screen.findByText('E5')).toBeInTheDocument();
+            expect(await screen.findByText(expected)).toBeInTheDocument();
             expect(screen.getByText('Next episode')).toBeInTheDocument();
-        });
-
-        it('starts at E1 for an empty dataset', async () => {
-            renderSidebar();
-
-            expect(await screen.findByText('E1')).toBeInTheDocument();
         });
 
         it('labels the episode as recording while recording', async () => {
@@ -227,22 +229,6 @@ describe('RecordingSidebar', () => {
             ).toBeInTheDocument();
             expect(screen.getByText('Space')).toBeInTheDocument();
         });
-
-        it('reflects custom hotkey bindings', async () => {
-            renderSidebar(
-                {},
-                {
-                    bindings: {
-                        'recording.start_episode': 'S',
-                        'recording.accept_episode': 'Shift+ArrowRight',
-                        'recording.discard_episode': 'D',
-                    },
-                }
-            );
-
-            expect(await screen.findByText('After the episode: Save (Shift+→) or Discard (D).')).toBeInTheDocument();
-            expect(screen.getByText('S')).toBeInTheDocument();
-        });
     });
 
     describe('recording controls', () => {
@@ -254,24 +240,17 @@ describe('RecordingSidebar', () => {
             expect(screen.queryByRole('button', { name: /start episode/i })).not.toBeInTheDocument();
         });
 
-        it('saves the episode', async () => {
+        it.each([
+            { action: 'save', button: /save episode/i, called: saveEpisode, other: discardEpisode },
+            { action: 'discard', button: /discard/i, called: discardEpisode, other: saveEpisode },
+        ])('the $action button sends only the $action request', async ({ button, called, other }) => {
             const user = userEvent.setup();
             renderSidebar({ isRecording: true });
 
-            await user.click(await screen.findByRole('button', { name: /save episode/i }));
+            await user.click(await screen.findByRole('button', { name: button }));
 
-            expect(saveEpisode.mutate).toHaveBeenCalledTimes(1);
-            expect(discardEpisode.mutate).not.toHaveBeenCalled();
-        });
-
-        it('discards the episode', async () => {
-            const user = userEvent.setup();
-            renderSidebar({ isRecording: true });
-
-            await user.click(await screen.findByRole('button', { name: /discard/i }));
-
-            expect(discardEpisode.mutate).toHaveBeenCalledTimes(1);
-            expect(saveEpisode.mutate).not.toHaveBeenCalled();
+            expect(called.mutate).toHaveBeenCalledTimes(1);
+            expect(other.mutate).not.toHaveBeenCalled();
         });
 
         it('disables discard while saving', async () => {
@@ -311,24 +290,17 @@ describe('RecordingSidebar', () => {
             expect(startEpisode.mutate).not.toHaveBeenCalled();
         });
 
-        it('saves with Enter while recording', async () => {
+        it.each([
+            { key: 'Enter', action: 'saves', called: saveEpisode, other: discardEpisode },
+            { key: 'Backspace', action: 'discards', called: discardEpisode, other: saveEpisode },
+        ])('$action with $key while recording', async ({ key, called, other }) => {
             renderSidebar({ isRecording: true });
             await screen.findByRole('button', { name: /save episode/i });
 
-            fireEvent.keyDown(document.body, { key: 'Enter' });
+            fireEvent.keyDown(document.body, { key });
 
-            expect(saveEpisode.mutate).toHaveBeenCalledTimes(1);
-            expect(discardEpisode.mutate).not.toHaveBeenCalled();
-        });
-
-        it('discards with Backspace while recording', async () => {
-            renderSidebar({ isRecording: true });
-            await screen.findByRole('button', { name: /save episode/i });
-
-            fireEvent.keyDown(document.body, { key: 'Backspace' });
-
-            expect(discardEpisode.mutate).toHaveBeenCalledTimes(1);
-            expect(saveEpisode.mutate).not.toHaveBeenCalled();
+            expect(called.mutate).toHaveBeenCalledTimes(1);
+            expect(other.mutate).not.toHaveBeenCalled();
         });
 
         it('does not save or discard when not recording', async () => {
@@ -342,27 +314,19 @@ describe('RecordingSidebar', () => {
             expect(discardEpisode.mutate).not.toHaveBeenCalled();
         });
 
-        it('does not save or discard while the save request is pending', async () => {
-            renderSidebar({ isRecording: true, savePending: true });
-            await screen.findByText('E1');
+        it.each([{ pending: 'savePending' }, { pending: 'discardPending' }] as const)(
+            'does not save or discard while $pending',
+            async ({ pending }) => {
+                renderSidebar({ isRecording: true, [pending]: true });
+                await screen.findByText('E1');
 
-            fireEvent.keyDown(document.body, { key: 'Enter' });
-            fireEvent.keyDown(document.body, { key: 'Backspace' });
+                fireEvent.keyDown(document.body, { key: 'Enter' });
+                fireEvent.keyDown(document.body, { key: 'Backspace' });
 
-            expect(saveEpisode.mutate).not.toHaveBeenCalled();
-            expect(discardEpisode.mutate).not.toHaveBeenCalled();
-        });
-
-        it('does not save or discard while the discard request is pending', async () => {
-            renderSidebar({ isRecording: true, discardPending: true });
-            await screen.findByText('E1');
-
-            fireEvent.keyDown(document.body, { key: 'Enter' });
-            fireEvent.keyDown(document.body, { key: 'Backspace' });
-
-            expect(saveEpisode.mutate).not.toHaveBeenCalled();
-            expect(discardEpisode.mutate).not.toHaveBeenCalled();
-        });
+                expect(saveEpisode.mutate).not.toHaveBeenCalled();
+                expect(discardEpisode.mutate).not.toHaveBeenCalled();
+            }
+        );
 
         it('edits the task text instead of discarding when Backspace is pressed in the task field', async () => {
             const user = userEvent.setup();
@@ -385,12 +349,25 @@ describe('RecordingSidebar', () => {
             expect(startEpisode.mutate).not.toHaveBeenCalled();
         });
 
-        it('keeps using the overridden bindings', async () => {
-            renderSidebar({ isRecording: true }, { bindings: { 'recording.accept_episode': 'S' } });
-            await screen.findByRole('button', { name: /save episode/i });
+        it('shows and uses custom bindings', async () => {
+            renderSidebar(
+                { isRecording: true },
+                {
+                    bindings: {
+                        'recording.start_episode': 'X',
+                        'recording.accept_episode': 'S',
+                        'recording.discard_episode': 'Shift+ArrowRight',
+                    },
+                }
+            );
+
+            expect(await screen.findByText('After the episode: Save (S) or Discard (Shift+→).')).toBeInTheDocument();
+            expect(screen.getByText('X')).toBeInTheDocument();
 
             fireEvent.keyDown(document.body, { key: 'Enter' });
+            fireEvent.keyDown(document.body, { key: 'Backspace' });
             expect(saveEpisode.mutate).not.toHaveBeenCalled();
+            expect(discardEpisode.mutate).not.toHaveBeenCalled();
 
             fireEvent.keyDown(document.body, { key: 's' });
             expect(saveEpisode.mutate).toHaveBeenCalledTimes(1);
@@ -415,26 +392,18 @@ describe('RecordingSidebar', () => {
             expect(await screen.findByText('00:00')).toBeInTheDocument();
         });
 
-        it('counts the elapsed time from when the episode was started', async () => {
-            renderSidebar();
-            await screen.findByText('00:00');
-            rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
-
-            await startRecording();
-            await advance(3_000);
-
-            expect(screen.getByText('00:03')).toBeInTheDocument();
-        });
-
-        it('does not start counting until the backend confirms the recording', async () => {
+        it('counts only from when the backend confirms the recording', async () => {
             renderSidebar();
             await screen.findByText('00:00');
             rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
 
             fireEvent.click(screen.getByRole('button', { name: /start episode/i }));
             await advance(3_000);
-
             expect(screen.getByText('00:00')).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: 'simulate recording started' }));
+            await advance(3_000);
+            expect(screen.getByText('00:03')).toBeInTheDocument();
         });
 
         it('shows an unknown time when the recording was already running when the page opened', async () => {

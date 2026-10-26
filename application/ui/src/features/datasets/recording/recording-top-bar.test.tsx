@@ -79,7 +79,8 @@ describe('RecordingTopBar', () => {
         Object.defineProperty(window.screen, 'width', { configurable: true, value: 0 });
     });
 
-    it('shows the title with the dataset, task and environment in the subtitle', async () => {
+    it('shows the title with the dataset, task and environment, and updates the task live', async () => {
+        const user = userEvent.setup();
         renderTopBar();
 
         const link = await screen.findByRole('link');
@@ -87,13 +88,8 @@ describe('RecordingTopBar', () => {
         expect(link).toHaveTextContent('Kitchen dataset');
         expect(link).toHaveTextContent('pick the cube');
         expect(link).toHaveTextContent('Kitchen setup');
-    });
 
-    it('updates the subtitle live as the task is edited', async () => {
-        const user = userEvent.setup();
-        renderTopBar();
-
-        const task = await screen.findByRole('combobox', { name: /task/i });
+        const task = screen.getByRole('combobox', { name: /task/i });
         await user.clear(task);
         await user.type(task, 'wipe the table');
         await user.keyboard('{Escape}');
@@ -110,16 +106,13 @@ describe('RecordingTopBar', () => {
             expect(screen.queryByText(/in dataset/)).not.toBeInTheDocument();
         });
 
-        it('shows the dataset total without a session part when nothing was recorded yet', async () => {
-            renderTopBar({ episodesInDataset: 12 });
+        it.each([
+            { inDataset: 12, recorded: 0, expected: '12 episodes in dataset' },
+            { inDataset: 12, recorded: 3, expected: '15 episodes in dataset · 3 this session' },
+        ])('shows "$expected"', async ({ inDataset, recorded, expected }) => {
+            renderTopBar({ episodesInDataset: inDataset, episodesRecorded: recorded });
 
-            expect(await screen.findByText('12 episodes in dataset')).toBeInTheDocument();
-        });
-
-        it('adds this session recordings to the dataset total', async () => {
-            renderTopBar({ episodesInDataset: 12, episodesRecorded: 3 });
-
-            expect(await screen.findByText('15 episodes in dataset · 3 this session')).toBeInTheDocument();
+            expect(await screen.findByText(expected)).toBeInTheDocument();
         });
     });
 
@@ -140,17 +133,13 @@ describe('RecordingTopBar', () => {
         });
 
         it('disables Done and the back link while recording', async () => {
+            const user = userEvent.setup();
             renderTopBar({ isRecording: true });
 
             expect(await screen.findByRole('button', { name: 'Done' })).toBeDisabled();
             expect(screen.queryByRole('link')).not.toBeInTheDocument();
-        });
 
-        it('does not navigate when the back area is pressed while recording', async () => {
-            const user = userEvent.setup();
-            renderTopBar({ isRecording: true });
-
-            await user.click(await screen.findByText('Recording episode'));
+            await user.click(screen.getByText('Recording episode'));
 
             expect(screen.getByLabelText('location')).toHaveTextContent(`${DATASET_URL}/record`);
         });
