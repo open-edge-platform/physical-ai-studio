@@ -9,9 +9,9 @@
     height: 100%;
     min-height: 0;
     width: var(--sidebar-expanded-width);
-    padding-block-start: var(--sidebar-padding-y);
+    padding-block: var(--sidebar-padding-y);
     padding-inline: var(--sidebar-padding-x);
-    overflow-x: hidden;
+    overflow: hidden;
     background-color: var(--spectrum-global-color-gray-100);
 }
 
@@ -33,5 +33,4 @@
 .content {
     box-sizing: border-box;
     width: calc(var(--sidebar-expanded-width) - 2 * var(--sidebar-padding-x));
-    margin-block-start: var(--spectrum-global-dimension-size-200);
 }
