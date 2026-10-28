@@ -86,7 +86,7 @@ AGGREGATE METRICS:
   Success Rate: XX.X%
   Avg Reward: X.XXXX
   Avg Episode Length: XXX.X
-  Avg FPS: XX.X
+  Avg gym speed: XX.X
 
 PER-TASK RESULTS:
   libero_10_0: success=XX.X%, reward=X.XXXX, steps=XXX.X
@@ -103,7 +103,7 @@ PER-TASK RESULTS:
 | **Success Rate**       | % of episodes where the task was completed  |
 | **Avg Reward**         | Average cumulative reward across episodes   |
 | **Avg Episode Length** | Average number of steps per episode         |
-| **Avg FPS**            | Average frames per second during evaluation |
+| **Avg gym speed**      | Average env steps per second (policy + sim) |
 
 ### Save Results
 
