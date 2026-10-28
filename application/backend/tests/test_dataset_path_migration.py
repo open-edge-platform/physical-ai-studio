@@ -55,7 +55,6 @@ def _seed(settings: Settings, datasets: list[tuple[str, str]]) -> None:
                     name=dataset_id,
                     path=path,
                     project_id="project-1",
-                    environment_id="environment-1",
                     default_task="",
                 )
                 for dataset_id, path in datasets

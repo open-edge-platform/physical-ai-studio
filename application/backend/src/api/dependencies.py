@@ -30,6 +30,7 @@ from services.event_processor import EventProcessor
 from services.health_service import HealthService
 from services.job_service import JobService
 from services.log_service import LogService
+from services.recording_environment_service import RecordingEnvironmentService
 from services.robot_catalog_service import RobotCatalogService
 from services.runtime_session_service import RuntimeSessionService
 from services.snapshot_service import SnapshotService
@@ -160,6 +161,11 @@ EnvironmentServiceDep = Annotated[EnvironmentService, Depends(get_environment_se
 def get_dataset_service(session: AsyncSessionDep) -> DatasetService:
     """Provides a DatasetService instance for managing datasets."""
     return DatasetService(session)
+
+
+def get_recording_environment_service(session: AsyncSessionDep) -> RecordingEnvironmentService:
+    """Provide a request-scoped service for dataset recording environments."""
+    return RecordingEnvironmentService(session)
 
 
 DatasetServiceDep = Annotated[DatasetService, Depends(get_dataset_service)]

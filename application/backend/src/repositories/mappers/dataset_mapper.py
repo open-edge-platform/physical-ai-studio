@@ -15,7 +15,6 @@ class DatasetMapper(IBaseMapper):
             path=db_schema.path,
             default_task=db_schema.default_task,
             project_id=str(db_schema.project_id),
-            environment_id=str(db_schema.environment_id),
         )
 
     @staticmethod

@@ -17,9 +17,12 @@ import {
     View,
 } from '@geti-ui/ui';
 import { ChevronLeft } from '@geti-ui/ui/icons';
+import { useNavigate } from 'react-router';
 
 import { $api } from '../../../api/client';
+import { SchemaRecordingEnvironment } from '../../../api/openapi-spec';
 import { AppFooter } from '../../../components/app-footer/app-footer';
+import { RecordingEnvironmentGate } from '../../../features/datasets/recording-environments/recording-environment-gate';
 import { useDatasetId } from '../../../features/datasets/use-dataset';
 import { RuntimeSessionProvider, useRuntimeSession } from '../../../features/robots/runtime-session-provider';
 import { paths } from '../../../paths';
@@ -67,7 +70,7 @@ const TotalRecordedEpisodes = () => {
     );
 };
 
-const RecordingPage = () => {
+const RecordingSession = ({ recordingEnvironment }: { recordingEnvironment: SchemaRecordingEnvironment }) => {
     const { project_id, dataset_id } = useDatasetId();
 
     const { data: dataset } = $api.useSuspenseQuery('get', '/api/dataset/{dataset_id}', {
@@ -81,14 +84,7 @@ const RecordingPage = () => {
     const { data: environment } = $api.useSuspenseQuery(
         'get',
         '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: {
-                path: {
-                    environment_id: dataset.environment_id,
-                    project_id,
-                },
-            },
-        }
+        { params: { path: { project_id, environment_id: recordingEnvironment.environment_id } } }
     );
     return (
         <RuntimeSessionProvider environment={environment} dataset={dataset} onError={ToastQueue.negative}>
@@ -144,9 +140,18 @@ const RecordingPage = () => {
 };
 
 export const Index = () => {
+    const { project_id, dataset_id } = useDatasetId();
+    const navigate = useNavigate();
+
     return (
         <Suspense fallback={<Loading mode='overlay' />}>
-            <RecordingPage />
+            <RecordingEnvironmentGate
+                project_id={project_id}
+                dataset_id={dataset_id}
+                onCancel={() => navigate(paths.project.datasets.show({ project_id, dataset_id }))}
+            >
+                {(recordingEnvironment) => <RecordingSession recordingEnvironment={recordingEnvironment} />}
+            </RecordingEnvironmentGate>
         </Suspense>
     );
 };

@@ -52,7 +52,6 @@ const mockProjectWithRemoteTrainer = () => {
                         name: 'Test dataset',
                         default_task: 'test',
                         project_id: projectId,
-                        environment_id: 'ad5c311d-bdd7-4a1c-ad27-26c2775901e9',
                     },
                 ],
             })

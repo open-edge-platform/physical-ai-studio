@@ -114,9 +114,10 @@ class ProjectEnvironmentDB(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
     project: Mapped["ProjectDB"] = relationship(back_populates="environments")
-    datasets: Mapped[list["DatasetDB"]] = relationship(
-        "DatasetDB",
+    recording_datasets: Mapped[list["DatasetRecordingEnvironmentDB"]] = relationship(
+        "DatasetRecordingEnvironmentDB",
         back_populates="environment",
+        cascade="all, delete-orphan",
     )
     robot_links: Mapped[list["EnvironmentRobotDB"]] = relationship(
         "EnvironmentRobotDB",
@@ -180,11 +181,14 @@ class DatasetDB(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"))
-    environment_id: Mapped[str] = mapped_column(ForeignKey("project_environments.id"))
     default_task: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
-    environment: Mapped["ProjectEnvironmentDB"] = relationship("ProjectEnvironmentDB", back_populates="datasets")
     project: Mapped["ProjectDB"] = relationship("ProjectDB", back_populates="datasets")
+    recording_environments: Mapped[list["DatasetRecordingEnvironmentDB"]] = relationship(
+        "DatasetRecordingEnvironmentDB",
+        back_populates="dataset",
+        cascade="all, delete-orphan",
+    )
     models: Mapped[list["ModelDB"]] = relationship(
         "ModelDB",
         back_populates="dataset",
@@ -196,6 +200,26 @@ class DatasetDB(Base):
         back_populates="dataset",
         cascade="all, delete-orphan",
         lazy="selectin",
+    )
+
+
+class DatasetRecordingEnvironmentDB(Base):
+    """Configuration for recording a dataset from a project environment."""
+
+    __tablename__ = "dataset_recording_environments"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True, default=lambda: str(uuid4()))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False)
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("project_environments.id", ondelete="CASCADE"), nullable=False
+    )
+    mappings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    dataset: Mapped["DatasetDB"] = relationship("DatasetDB", back_populates="recording_environments")
+    environment: Mapped["ProjectEnvironmentDB"] = relationship(
+        "ProjectEnvironmentDB", back_populates="recording_datasets"
     )
 
 

@@ -17,14 +17,12 @@ const datasets: SchemaDatasetOutput[] = [
         name: 'First dataset',
         default_task: 'first task',
         project_id: PROJECT_ID,
-        environment_id: 'first-environment-id',
     },
     {
         id: SECOND_DATASET_ID,
         name: 'Second dataset',
         default_task: 'second task',
         project_id: PROJECT_ID,
-        environment_id: 'second-environment-id',
     },
 ];
 

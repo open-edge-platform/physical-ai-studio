@@ -16,14 +16,12 @@ def datasets() -> None:
 @datasets.command("import-dir")
 @click.option("--source-dir", required=True, type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.option("--project-id", required=True, type=click.UUID)
-@click.option("--environment-id", required=True, type=click.UUID)
 @click.option("--dataset-name", required=True, type=str)
 @click.option("--default-task", type=str, default="", show_default=True)
 @click.option("--move/--copy", default=False, show_default=True)
 def import_dir(
     source_dir: Path,
     project_id: UUID,
-    environment_id: UUID,
     dataset_name: str,
     default_task: str,
     move: bool,
@@ -50,7 +48,6 @@ def import_dir(
         dataset = await service.import_dataset_directory(
             source_dir=source_dir,
             project_id=project_id,
-            environment_id=environment_id,
             dataset_name=dataset_name,
             default_task=default_task,
             move=move,

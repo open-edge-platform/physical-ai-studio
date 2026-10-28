@@ -19,12 +19,17 @@ export const InferencePage = () => {
         params: { path: { dataset_id: model.dataset_id! } },
     });
 
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
+        params: { path: { project_id } },
+    });
+    const environmentId = environments[0]?.id;
+    if (environmentId === undefined) {
+        throw new Error('Cannot start inference without an environment.');
+    }
     const { data: initialEnvironment } = $api.useSuspenseQuery(
         'get',
         '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: { path: { project_id, environment_id: dataset.environment_id } },
-        }
+        { params: { path: { project_id, environment_id: environmentId } } }
     );
 
     const { data: tasks } = $api.useSuspenseQuery('get', '/api/models/{model_id}/tasks', {

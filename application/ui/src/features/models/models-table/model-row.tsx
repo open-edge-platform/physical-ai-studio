@@ -31,7 +31,7 @@ export const ModelRow = ({
 }) => {
     const [isDownloadDialogOpen, setDownloadDialogOpen] = useState(false);
     const { data: dataset } = useDatasetQuery(model.dataset_id);
-    const { data: environment } = useEnvironmentQuery(model.project_id, dataset?.environment_id);
+    const { data: environment } = useEnvironmentQuery(model.project_id, undefined);
 
     const trainer = getTrainerLabel(trainingJob?.payload);
 

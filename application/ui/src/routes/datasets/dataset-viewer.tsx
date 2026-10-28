@@ -3,7 +3,6 @@ import { useState } from 'react';
 import {
     ActionButton,
     AlertDialog,
-    Button,
     Content,
     DialogTrigger,
     Flex,
@@ -19,10 +18,10 @@ import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panel
 
 import { $api } from '../../api/client';
 import { useDeleteEpisodeQuery } from '../../features/datasets/episodes/use-episodes';
+import { RecordDatasetButton } from '../../features/datasets/recording-environments/record-dataset-button';
 import { ThumbnailCameraMenu } from '../../features/datasets/thumbnail-camera/thumbnail-camera-menu';
 import { useThumbnailCamera } from '../../features/datasets/thumbnail-camera/use-thumbnail-camera';
 import { useProjectId } from '../../features/projects/use-project';
-import { paths } from '../../paths';
 import { pluralize } from '../../utils';
 import { ReactComponent as EmptyIllustration } from './../../assets/illustration.svg';
 import { useDataset } from './dataset-provider';
@@ -46,12 +45,15 @@ export const DatasetViewer = () => {
         changeThumbnailCamera,
     } = useThumbnailCamera(dataset.id!);
 
-    const { data: environment } = $api.useSuspenseQuery(
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
+        params: { path: { project_id } },
+    });
+    const environmentId = environments[0]?.id;
+    const { data: environment } = $api.useQuery(
         'get',
         '/api/projects/{project_id}/environments/{environment_id}',
-        {
-            params: { path: { project_id, environment_id: dataset.environment_id } },
-        }
+        { params: { path: { project_id, environment_id: environmentId ?? '' } } },
+        { enabled: environmentId !== undefined }
     );
 
     const { data: selectedEpisode, isLoading: isEpisodeLoading } = $api.useQuery(
@@ -71,8 +73,6 @@ export const DatasetViewer = () => {
         }
     );
 
-    const recordPath = paths.project.datasets.record({ project_id: dataset.project_id, dataset_id: dataset.id! });
-
     const { defaultLayout, onLayoutChanged } = useDefaultLayout({
         id: 'dataset-viewer',
         onlySaveAfterUserInteractions: true,
@@ -87,9 +87,9 @@ export const DatasetViewer = () => {
                     <Text>It&apos;s time to begin recording a dataset. </Text>
                     <Heading>No episodes yet</Heading>
                     <View margin={'size-100'}>
-                        <Button href={recordPath} alignSelf='end' marginBottom={'size-200'}>
+                        <RecordDatasetButton project_id={dataset.project_id} dataset_id={dataset.id!}>
                             <Text>Start recording</Text>
-                        </Button>
+                        </RecordDatasetButton>
                     </View>
                 </IllustratedMessage>
             </Flex>
@@ -107,6 +107,11 @@ export const DatasetViewer = () => {
                 <Panel id='episode-viewer' minSize='30%' className={classes.viewerPanel}>
                     {isEpisodeLoading || !selectedEpisode ? (
                         <Loading />
+                    ) : environment === undefined ? (
+                        <IllustratedMessage>
+                            <Heading>No environment available</Heading>
+                            <Content>Create an environment to view robot overlays for this episode.</Content>
+                        </IllustratedMessage>
                     ) : (
                         <EpisodeViewer episode={selectedEpisode} dataset={dataset} environment={environment} />
                     )}
@@ -115,10 +120,10 @@ export const DatasetViewer = () => {
                 <Panel id='episode-list' defaultSize='35%' minSize='250px' maxSize='70%' className={classes.listPanel}>
                     <Flex justifyContent='space-between' alignItems='center' gap='size-100' marginBottom='size-200'>
                         {selectedEpisodes.length === 0 ? (
-                            <Button href={recordPath} variant='secondary'>
+                            <RecordDatasetButton project_id={dataset.project_id} dataset_id={dataset.id!}>
                                 <Add fill='white' style={{ marginRight: '4px' }} />
                                 <Text>Add Episode</Text>
-                            </Button>
+                            </RecordDatasetButton>
                         ) : (
                             <Flex gap='size-200' justifyContent='end'>
                                 <ActionButton onPress={() => setSelectedEpisodes([])}>

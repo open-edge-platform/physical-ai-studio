@@ -153,7 +153,7 @@ def test_dataset_upload_train_export_infer_e2e(
 
     response = client.post(
         f"/api/projects/{project_id}/imports/datasets/{import_job_id}:finalize",
-        json={"environment_id": str(environment_id), "default_task": "do the thing"},
+        json={"default_task": "do the thing"},
     )
     assert response.status_code == 202, response.text
 

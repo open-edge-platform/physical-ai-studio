@@ -167,7 +167,7 @@ async def test_finalize_raises_resource_not_found_when_job_not_found() -> None:
     """Ownership check: job is None -> ResourceNotFoundError."""
     project_id = uuid4()
     stub = _StubJobRepository(job=None)
-    finalize_input = DatasetImportFinalizeInput(environment_id=uuid4())
+    finalize_input = DatasetImportFinalizeInput()
 
     with _patch_db(), _patch_repo(stub), pytest.raises(ResourceNotFoundError):
         await DatasetImportService(MagicMock()).finalize_dataset_import_job(
@@ -184,7 +184,7 @@ async def test_finalize_raises_resource_not_found_when_project_mismatch() -> Non
     other_project_id = uuid4()
     job = _make_job(project_id=other_project_id, step=ImportStep.AWAITING_USER_REVIEW)
     stub = _StubJobRepository(job=job)
-    finalize_input = DatasetImportFinalizeInput(environment_id=uuid4())
+    finalize_input = DatasetImportFinalizeInput()
 
     with _patch_db(), _patch_repo(stub), pytest.raises(ResourceNotFoundError):
         await DatasetImportService(MagicMock()).finalize_dataset_import_job(
@@ -200,7 +200,7 @@ async def test_finalize_raises_invalid_job_state_when_wrong_step() -> None:
     project_id = uuid4()
     job = _make_job(project_id=project_id, step=ImportStep.AWAITING_ARCHIVE_UPLOAD)
     stub = _StubJobRepository(job=job)
-    finalize_input = DatasetImportFinalizeInput(environment_id=uuid4())
+    finalize_input = DatasetImportFinalizeInput()
 
     with _patch_db(), _patch_repo(stub), pytest.raises(InvalidJobStateError):
         await DatasetImportService(MagicMock()).finalize_dataset_import_job(
@@ -228,7 +228,7 @@ async def test_finalize_raises_invalid_job_state_for_every_non_waiting_step(bad_
     project_id = uuid4()
     job = _make_job(project_id=project_id, step=bad_step)
     stub = _StubJobRepository(job=job)
-    finalize_input = DatasetImportFinalizeInput(environment_id=uuid4())
+    finalize_input = DatasetImportFinalizeInput()
 
     with _patch_db(), _patch_repo(stub), pytest.raises(InvalidJobStateError):
         await DatasetImportService(MagicMock()).finalize_dataset_import_job(
@@ -242,10 +242,9 @@ async def test_finalize_raises_invalid_job_state_for_every_non_waiting_step(bad_
 async def test_finalize_succeeds_when_step_is_waiting_for_user_input() -> None:
     """Happy path: AWAITING_USER_REVIEW -> step advanced to QUEUED_FOR_IMPORT."""
     project_id = uuid4()
-    environment_id = uuid4()
     job = _make_job(project_id=project_id, step=ImportStep.AWAITING_USER_REVIEW)
     stub = _StubJobRepository(job=job)
-    finalize_input = DatasetImportFinalizeInput(environment_id=environment_id)
+    finalize_input = DatasetImportFinalizeInput()
 
     with _patch_db(), _patch_repo(stub):
         result = await DatasetImportService(MagicMock()).finalize_dataset_import_job(
@@ -365,8 +364,7 @@ def test_dataset_manifest_identity_slim_shape_has_no_default_task() -> None:
 
 def test_finalize_input_slim_shape_no_user_overrides() -> None:
     """DatasetImportFinalizeInput no longer carries dataset_name or user_overrides; default_task must be present."""
-    env_id = uuid4()
-    finalize_input = DatasetImportFinalizeInput(environment_id=env_id)
+    finalize_input = DatasetImportFinalizeInput()
     dumped = finalize_input.model_dump(mode="json")
 
     assert "user_overrides" not in dumped
@@ -464,10 +462,9 @@ async def test_attach_archive_does_not_set_end_time_for_pending_status() -> None
 async def test_finalize_does_not_set_end_time_for_pending_status() -> None:
     """Transitioning to PENDING (finalize) must not populate end_time."""
     project_id = uuid4()
-    environment_id = uuid4()
     job = _make_job(project_id=project_id, step=ImportStep.AWAITING_USER_REVIEW)
     stub = _StubJobRepository(job=job)
-    finalize_input = DatasetImportFinalizeInput(environment_id=environment_id)
+    finalize_input = DatasetImportFinalizeInput()
 
     with _patch_db(), _patch_repo(stub):
         await DatasetImportService(MagicMock()).finalize_dataset_import_job(

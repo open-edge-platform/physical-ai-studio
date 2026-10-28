@@ -38,7 +38,7 @@ def test_worker_run_commit_raises_when_datasets_dir_has_insufficient_space(tmp_p
         archive_staging_id=staging_id,
         dataset_name="tmp",
         dataset_manifest_draft=DatasetManifest(source_type=DatasetImportSource.LEROBOT_V3),
-        finalize_input=DatasetImportFinalizeInput(environment_id=uuid4()),
+        finalize_input=DatasetImportFinalizeInput(),
     )
     worker = DatasetImportWorker(job_id=uuid4(), stop_event=mp.Event(), event_queue=mp.Queue())
     worker.queue = MagicMock()

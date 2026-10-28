@@ -94,12 +94,7 @@ class DatasetManifest(BaseModel):
 
 
 class DatasetImportFinalizeInput(BaseModel):
-    environment_id: UUID
     default_task: str = ""
-
-    @field_serializer("environment_id")
-    def serialize_environment_id(self, environment_id: UUID, _info: SerializationInfo) -> str:
-        return str(environment_id)
 
 
 class DatasetImportJobPayload(BaseModel):

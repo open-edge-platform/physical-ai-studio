@@ -1,16 +1,4 @@
-import {
-    Button,
-    ButtonGroup,
-    ComboBox,
-    Content,
-    Flex,
-    Heading,
-    InlineAlert,
-    Item,
-    Picker,
-    Text,
-    View,
-} from '@geti-ui/ui';
+import { Button, ButtonGroup, ComboBox, Content, Flex, Heading, InlineAlert, Item, Text, View } from '@geti-ui/ui';
 import { isNumber } from 'lodash-es';
 
 import { $api } from '../../../api/client';
@@ -108,30 +96,19 @@ export const ImportStepUserReview = ({
     onFieldsChange,
 }: ImportStepUserReviewProps) => {
     const tasks = importJob.payload?.dataset_manifest_draft?.dataset_schema?.tasks ?? [];
-    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
-        params: { path: { project_id } },
-    });
     const defaultTask = fields.defaultTask ?? tasks.at(0) ?? '';
-    const environmentId = fields.environmentId ?? (environments.length === 1 ? environments[0].id : undefined);
 
     const finalizeMutation = $api.useMutation('post', '/api/projects/{project_id}/imports/datasets/{job_id}:finalize', {
         meta: {
             invalidates: [['get', '/api/jobs/{job_id}', { params: { path: { job_id: importJob.id! } } }]],
         },
     });
-    const canFinalize = environmentId !== undefined;
-
     const onFinalize = () => {
-        if (!canFinalize || environmentId === undefined) {
-            return;
-        }
-
         finalizeMutation.mutate({
             params: {
                 path: { project_id, job_id: importJob.id! },
             },
             body: {
-                environment_id: environmentId,
                 default_task: defaultTask,
             },
         });
@@ -152,8 +129,8 @@ export const ImportStepUserReview = ({
 
                 <View marginY='size-100'>
                     <Text>
-                        Analysis complete. Review the metadata above, then provide environment and optional task to
-                        finalize the import.
+                        Analysis complete. Review the metadata above, then provide an optional task to finalize the
+                        import.
                     </Text>
                     {finalizeMutation.isError ? (
                         <InlineAlert variant='negative'>
@@ -164,21 +141,6 @@ export const ImportStepUserReview = ({
                 </View>
 
                 <Flex direction='column' gap='size-100'>
-                    <Picker
-                        label='Recording environment'
-                        width='100%'
-                        items={environments}
-                        selectedKey={environmentId}
-                        onSelectionChange={(value) =>
-                            onFieldsChange({
-                                ...fields,
-                                environmentId: value === null ? undefined : value.toString(),
-                            })
-                        }
-                    >
-                        {(item) => <Item key={item.id}>{item.name}</Item>}
-                    </Picker>
-
                     <ComboBox
                         width='100%'
                         label='Task'
@@ -197,12 +159,7 @@ export const ImportStepUserReview = ({
                 <Button variant='secondary' onPress={onClose} isDisabled={finalizeMutation.isPending}>
                     Cancel
                 </Button>
-                <Button
-                    variant='accent'
-                    onPress={onFinalize}
-                    isPending={finalizeMutation.isPending}
-                    isDisabled={!canFinalize}
-                >
+                <Button variant='accent' onPress={onFinalize} isPending={finalizeMutation.isPending}>
                     Finalize import
                 </Button>
             </ButtonGroup>

@@ -49,7 +49,6 @@ class DatasetImportDirService:
         *,
         source_dir: Path,
         project_id: UUID,
-        environment_id: UUID,
         dataset_name: str,
         default_task: str = "",
         move: bool = False,
@@ -76,7 +75,6 @@ class DatasetImportDirService:
                 name=dataset_name,
                 default_task=default_task,
                 project_id=project_id,
-                environment_id=environment_id,
             )
             return await self._persist_dataset(dataset)
         except Exception:

@@ -148,7 +148,6 @@ def test_migration_rewrites_database_paths(tmp_path: Path, monkeypatch: pytest.M
                     name="Dataset",
                     path=str(old_storage / "datasets" / "dataset-1"),
                     project_id="project-1",
-                    environment_id="environment-1",
                     default_task="",
                 ),
                 DatasetDB(
@@ -156,7 +155,6 @@ def test_migration_rewrites_database_paths(tmp_path: Path, monkeypatch: pytest.M
                     name="External Dataset",
                     path=str(tmp_path / "external" / "dataset-2"),
                     project_id="project-1",
-                    environment_id="environment-1",
                     default_task="",
                 ),
                 ModelDB(

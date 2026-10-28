@@ -329,15 +329,13 @@ class LeRobotV3Adapter(DatasetImportAdapter):
                 name=payload.dataset_name or "Imported Dataset",
                 default_task=payload.finalize_input.default_task,
                 project_id=project_id,
-                environment_id=payload.finalize_input.environment_id,
             )
 
             saved = await persist_dataset(dataset)
             logger.info(
-                "LeRobotV3Adapter dataset persisted: dataset_id='{}', project_id='{}', environment_id='{}', path='{}'",
+                "LeRobotV3Adapter dataset persisted: dataset_id='{}', project_id='{}', path='{}'",
                 saved.id,
                 saved.project_id,
-                saved.environment_id,
                 saved.path,
             )
 
