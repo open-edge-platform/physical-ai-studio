@@ -19,6 +19,7 @@ import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panel
 import { $api } from '../../api/client';
 import { useDeleteEpisodeQuery } from '../../features/datasets/episodes/use-episodes';
 import { RecordDatasetButton } from '../../features/datasets/recording-environments/record-dataset-button';
+import { useDatasetEnvironmentQuery } from '../../features/datasets/recording-environments/use-dataset-environment';
 import { ThumbnailCameraMenu } from '../../features/datasets/thumbnail-camera/thumbnail-camera-menu';
 import { useThumbnailCamera } from '../../features/datasets/thumbnail-camera/use-thumbnail-camera';
 import { useProjectId } from '../../features/projects/use-project';
@@ -45,16 +46,7 @@ export const DatasetViewer = () => {
         changeThumbnailCamera,
     } = useThumbnailCamera(dataset.id!);
 
-    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
-        params: { path: { project_id } },
-    });
-    const environmentId = environments[0]?.id;
-    const { data: environment } = $api.useQuery(
-        'get',
-        '/api/projects/{project_id}/environments/{environment_id}',
-        { params: { path: { project_id, environment_id: environmentId ?? '' } } },
-        { enabled: environmentId !== undefined }
-    );
+    const { data: environment } = useDatasetEnvironmentQuery(project_id, dataset.id);
 
     const {
         data: selectedEpisode,
@@ -111,11 +103,6 @@ export const DatasetViewer = () => {
                 <Panel id='episode-viewer' minSize='30%' className={classes.viewerPanel}>
                     {isEpisodeLoading || !selectedEpisode ? (
                         <Loading />
-                    ) : environment === undefined ? (
-                        <IllustratedMessage>
-                            <Heading>No environment available</Heading>
-                            <Content>Create an environment to view robot overlays for this episode.</Content>
-                        </IllustratedMessage>
                     ) : (
                         <EpisodeViewer
                             episode={selectedEpisode}

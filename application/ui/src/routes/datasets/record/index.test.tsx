@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { HttpResponse } from 'msw';
 import { useLocation } from 'react-router';
 
+import { SchemaEnvironmentWithRelations } from '../../../api/openapi-spec';
 import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
@@ -14,14 +15,17 @@ import { getMockedRecordingEnvironment } from '../../../test-utils/mocks/mock-re
 import { render } from '../../../test-utils/render';
 import { Index } from './index';
 
-rs.mock('../../../features/robots/runtime-session-provider', () => ({
+rs.mock('../../../features/runtime-session/runtime-session-provider', () => ({
+    environmentDraft: (environment: SchemaEnvironmentWithRelations) => environment,
     RuntimeSessionProvider: ({ children }: { children: ReactNode }) => (
         <div data-testid='runtime-session'>{children}</div>
     ),
     useRuntimeSession: () => ({ state: { episodes_recorded: 0 } }),
 }));
 
-rs.mock('./recording-viewer', () => ({ RecordingViewer: () => <div>Recording viewer</div> }));
+rs.mock('../../../features/runtime-session/workspace/session-workspace', () => ({
+    SessionWorkspace: () => <div>Recording viewer</div>,
+}));
 rs.mock('../../../components/app-footer/app-footer', () => ({ AppFooter: () => null }));
 
 const TestPage = () => {

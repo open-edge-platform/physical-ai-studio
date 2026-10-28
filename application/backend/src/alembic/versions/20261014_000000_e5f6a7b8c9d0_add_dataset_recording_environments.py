@@ -84,12 +84,32 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Restore the legacy environment column and remove recording associations."""
-    with op.batch_alter_table("datasets") as batch_op:
-        batch_op.add_column(sa.Column("environment_id", sa.Text(), nullable=True))
-    op.execute(
-        sa.text(
-            "UPDATE datasets SET environment_id = (SELECT environment_id FROM dataset_recording_environments "
-            "WHERE dataset_recording_environments.dataset_id = datasets.id ORDER BY created_at, id LIMIT 1)"
+    connection = op.get_bind()
+    is_sqlite = connection.dialect.name == "sqlite"
+    if is_sqlite:
+        # SQLite ignores this PRAGMA inside a transaction. Disable enforcement before
+        # the batch rebuild so dropping datasets cannot delete or reject dependent rows.
+        with op.get_context().autocommit_block():
+            connection.execute(sa.text("PRAGMA foreign_keys = OFF"))
+
+    try:
+        op.add_column("datasets", sa.Column("environment_id", sa.Text(), nullable=True))
+        op.execute(
+            sa.text(
+                "UPDATE datasets SET environment_id = (SELECT environment_id FROM dataset_recording_environments "
+                "WHERE dataset_recording_environments.dataset_id = datasets.id "
+                "ORDER BY is_default DESC, created_at, id LIMIT 1)"
+            )
         )
-    )
-    op.drop_table("dataset_recording_environments")
+        op.drop_table("dataset_recording_environments")
+        with op.batch_alter_table("datasets") as batch_op:
+            batch_op.create_foreign_key(
+                "fk_datasets_environment_id_project_environments",
+                "project_environments",
+                ["environment_id"],
+                ["id"],
+            )
+    finally:
+        if is_sqlite:
+            with op.get_context().autocommit_block():
+                connection.execute(sa.text("PRAGMA foreign_keys = ON"))
