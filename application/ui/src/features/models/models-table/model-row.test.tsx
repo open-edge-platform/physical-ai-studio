@@ -171,11 +171,20 @@ describe('ModelRow', () => {
         expect(screen.getByText('v2')).toBeInTheDocument();
     });
 
-    it('renders the Dataset and Environment names', async () => {
+    it('renders the Dataset name without looking up a dataset-level Environment', async () => {
+        const environmentHandler = rs.fn();
+        server.use(
+            http.get('/api/projects/{project_id}/environments/{environment_id}', () => {
+                environmentHandler();
+                return HttpResponse.json(environment);
+            })
+        );
+
         renderModelRow({ modelOverride: { dataset_id: 'dataset-1' } });
 
         await waitFor(() => expect(screen.getByTestId('dataset-cell')).toHaveTextContent(dataset.name));
-        await waitFor(() => expect(screen.getByTestId('environment-cell')).toHaveTextContent(environment.name));
+        expect(screen.getByTestId('environment-cell')).toHaveTextContent('-');
+        expect(environmentHandler).not.toHaveBeenCalled();
     });
 
     it('shows "-" in the Dataset and Environment cells and makes no dataset request when dataset_id is null', async () => {
