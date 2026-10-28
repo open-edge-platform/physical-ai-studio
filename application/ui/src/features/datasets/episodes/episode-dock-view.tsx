@@ -38,7 +38,7 @@ const buildDockviewPanels = (
     api: DockviewReadyEvent['api'],
     episode: SchemaEpisode,
     dataset: SchemaDatasetOutput,
-    environment: SchemaEnvironmentWithRelations
+    environment: SchemaEnvironmentWithRelations | undefined
 ) => {
     if (episode === null) {
         return api;
@@ -66,7 +66,7 @@ const buildDockviewPanels = (
         }
     });
 
-    environment.robots?.forEach((robot) => {
+    environment?.robots?.forEach((robot) => {
         panels.add(robot.robot.id);
         if (!api.panels.some((panel) => panel.id === robot.robot.id)) {
             api.addPanel({
@@ -95,7 +95,7 @@ const buildDockviewPanels = (
 interface EpisodeViewerProps {
     episode: SchemaEpisode;
     dataset: SchemaDatasetOutput;
-    environment: SchemaEnvironmentWithRelations;
+    environment?: SchemaEnvironmentWithRelations;
 }
 
 export const EpisodeDockView = ({ episode, dataset, environment }: EpisodeViewerProps) => {

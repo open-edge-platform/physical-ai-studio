@@ -6,7 +6,7 @@ import { Player, usePlayer } from './use-player';
 type EpisodeViewerContextValue = null | {
     player: Player;
     episode: SchemaEpisode;
-    environment: SchemaEnvironmentWithRelations;
+    environment: SchemaEnvironmentWithRelations | undefined;
 };
 
 const EpisodeViewerContext = createContext<EpisodeViewerContextValue>(null);
@@ -14,7 +14,7 @@ const EpisodeViewerContext = createContext<EpisodeViewerContextValue>(null);
 interface EpisodeViewerProviderProps {
     children: ReactNode;
     episode: SchemaEpisode;
-    environment: SchemaEnvironmentWithRelations;
+    environment?: SchemaEnvironmentWithRelations;
 }
 
 export const EpisodeViewerProvider = ({ children, episode, environment }: EpisodeViewerProviderProps) => {

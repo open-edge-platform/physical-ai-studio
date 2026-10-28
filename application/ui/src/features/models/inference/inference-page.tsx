@@ -1,17 +1,48 @@
-import { Suspense } from 'react';
+import { ReactNode, Suspense, useState } from 'react';
 
-import { Flex, Grid, Icon, Link, Loading, minmax, Text, View } from '@geti-ui/ui';
+import {
+    Content,
+    Flex,
+    Grid,
+    Heading,
+    Icon,
+    IllustratedMessage,
+    Item,
+    Link,
+    Loading,
+    minmax,
+    Picker,
+    Text,
+    View,
+} from '@geti-ui/ui';
 import { ChevronLeft } from '@geti-ui/ui/icons';
 
 import { $api } from '../../../api/client';
-import { SchemaEnvironmentDraft, SchemaModel } from '../../../api/openapi-spec';
+import { SchemaEnvironmentDraft, SchemaEnvironmentWithRelations, SchemaModel } from '../../../api/openapi-spec';
 import { AppFooter } from '../../../components/app-footer/app-footer';
 import { paths } from '../../../paths';
-import { RuntimeSessionProvider } from '../../runtime-session/runtime-session-provider';
+import { useRecordingEnvironmentsQuery } from '../../datasets/recording-environments/use-dataset-environment';
+import { environmentDraft, RuntimeSessionProvider } from '../../runtime-session/runtime-session-provider';
 import { SessionWorkspace } from '../../runtime-session/workspace/session-workspace';
 import { useInferenceParams } from './use-inference-params';
 
 import classes from '../../../routes/datasets/record/index.module.css';
+
+interface InferenceEnvironmentProps {
+    projectId: string;
+    environmentId: string;
+    children: (environment: SchemaEnvironmentWithRelations) => ReactNode;
+}
+
+const InferenceEnvironment = ({ projectId, environmentId, children }: InferenceEnvironmentProps) => {
+    const { data: environment } = $api.useSuspenseQuery(
+        'get',
+        '/api/projects/{project_id}/environments/{environment_id}',
+        { params: { path: { project_id: projectId, environment_id: environmentId } } }
+    );
+
+    return children(environment);
+};
 
 const InferenceSession = ({ model }: { model: SchemaModel }) => (
     <SessionWorkspace
@@ -78,13 +109,54 @@ const InferenceWorkspace = ({
 };
 
 export const InferencePage = () => {
-    const { model_id } = useInferenceParams();
+    const { project_id, model_id } = useInferenceParams();
+    const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<string>();
     const {
         data: { model },
     } = $api.useSuspenseQuery('get', '/api/models/{model_id}', {
         params: { path: { model_id } },
     });
 
-    // Datasets do not select an environment; the side bar loads one for this session.
-    return <InferenceWorkspace model={model} environment={null} />;
+    const { data: environments } = $api.useSuspenseQuery('get', '/api/projects/{project_id}/environments', {
+        params: { path: { project_id } },
+    });
+    const associations = useRecordingEnvironmentsQuery(model.dataset_id);
+    const associatedEnvironments = associations.data?.filter(({ environment_id }) =>
+        environments.some(({ id }) => id === environment_id)
+    );
+    // Only an unambiguous recording association can select hardware automatically.
+    const associatedEnvironmentId =
+        associatedEnvironments?.length === 1 ? associatedEnvironments[0].environment_id : undefined;
+    const environmentId = selectedEnvironmentId ?? associatedEnvironmentId;
+
+    if (associations.isLoading) return <Loading />;
+    if (associations.isError) throw associations.error;
+
+    if (environmentId === undefined) {
+        return (
+            <IllustratedMessage>
+                <Heading>Select an inference environment</Heading>
+                <Content>
+                    {environments.length === 0 ? (
+                        'Create an environment before starting inference.'
+                    ) : (
+                        <Picker
+                            label='Environment'
+                            items={environments}
+                            selectedKey={null}
+                            onSelectionChange={(id) => setSelectedEnvironmentId(id?.toString())}
+                        >
+                            {(environment) => <Item key={environment.id}>{environment.name}</Item>}
+                        </Picker>
+                    )}
+                </Content>
+            </IllustratedMessage>
+        );
+    }
+
+    return (
+        <InferenceEnvironment projectId={project_id} environmentId={environmentId}>
+            {(environment) => <InferenceWorkspace model={model} environment={environmentDraft(environment)} />}
+        </InferenceEnvironment>
+    );
 };

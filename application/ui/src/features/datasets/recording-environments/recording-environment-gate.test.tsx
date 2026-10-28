@@ -43,6 +43,28 @@ const renderGate = () => {
 };
 
 describe('RecordingEnvironmentGate', () => {
+    it('refetches and reuses an association created by another tab after a conflict', async () => {
+        mockEnvironments([firstEnvironment]);
+        let created = false;
+        const create = rs.fn();
+        server.use(
+            http.get('/api/dataset/{dataset_id}/recording-environments', () =>
+                HttpResponse.json(created ? [association] : [])
+            ),
+            http.post('/api/dataset/{dataset_id}/recording-environments', () => {
+                create();
+                created = true;
+                return HttpResponse.json({ detail: [] }, { status: 409 });
+            })
+        );
+
+        renderGate();
+
+        expect(await screen.findByText(`Ready: ${association.id}`)).toBeInTheDocument();
+        expect(create).toHaveBeenCalledOnce();
+        expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    });
+
     it('reuses an existing association without prompting or creating another', async () => {
         const create = mockEnvironments([firstEnvironment, secondEnvironment], [association]);
         renderGate();

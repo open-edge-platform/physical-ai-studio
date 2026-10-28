@@ -8,6 +8,7 @@ import { http } from '../../../api/utils';
 import { server } from '../../../msw-node-setup';
 import { getMockedDataset } from '../../../test-utils/mocks/mock-dataset';
 import { getMockedEnvironment } from '../../../test-utils/mocks/mock-environment';
+import { getMockedRecordingEnvironment } from '../../../test-utils/mocks/mock-recording-environment';
 import { getMockedTrainJobPayload } from '../../../test-utils/mocks/mock-train-job-payload';
 import { render } from '../../../test-utils/render';
 import { durationBetween } from '../shared/duration';
@@ -115,6 +116,7 @@ describe('ModelRow', () => {
             http.get('/api/models/{model_id}', () => HttpResponse.json(modelDetailResponse)),
             http.get('/api/policies/backends', () => HttpResponse.json({})),
             http.get('/api/dataset/{dataset_id}', () => HttpResponse.json(dataset)),
+            http.get('/api/dataset/{dataset_id}/recording-environments', () => HttpResponse.json([])),
             http.get('/api/projects/{project_id}/environments/{environment_id}', () => HttpResponse.json(environment))
         );
     });
@@ -171,7 +173,7 @@ describe('ModelRow', () => {
         expect(screen.getByText('v2')).toBeInTheDocument();
     });
 
-    it('renders the Dataset name without looking up a dataset-level Environment', async () => {
+    it('renders the Dataset name and an Environment placeholder when no recording association exists', async () => {
         const environmentHandler = rs.fn();
         server.use(
             http.get('/api/projects/{project_id}/environments/{environment_id}', () => {
@@ -185,6 +187,25 @@ describe('ModelRow', () => {
         await waitFor(() => expect(screen.getByTestId('dataset-cell')).toHaveTextContent(dataset.name));
         expect(screen.getByTestId('environment-cell')).toHaveTextContent('-');
         expect(environmentHandler).not.toHaveBeenCalled();
+    });
+
+    it('resolves the Environment through the dataset recording association', async () => {
+        const associatedEnvironment = getMockedEnvironment({ id: 'environment-2', name: 'Recorded environment' });
+        server.use(
+            http.get('/api/dataset/{dataset_id}/recording-environments', () =>
+                HttpResponse.json([getMockedRecordingEnvironment({ environment_id: associatedEnvironment.id })])
+            ),
+            http.get('/api/projects/{project_id}/environments/{environment_id}', ({ params }) => {
+                expect(params.environment_id).toBe(associatedEnvironment.id);
+                return HttpResponse.json(associatedEnvironment);
+            })
+        );
+
+        renderModelRow({ modelOverride: { dataset_id: dataset.id } });
+
+        await waitFor(() =>
+            expect(screen.getByTestId('environment-cell')).toHaveTextContent(associatedEnvironment.name)
+        );
     });
 
     it('shows "-" in the Dataset and Environment cells and makes no dataset request when dataset_id is null', async () => {

@@ -32,6 +32,7 @@ const useAssociateRecordingEnvironment = (dataset_id: string) => {
     }).queryKey;
 
     return $api.useMutation('post', '/api/dataset/{dataset_id}/recording-environments', {
+        onError: () => queryClient.invalidateQueries({ queryKey }),
         onSuccess: (environment) => {
             // Make the association available before navigating or mounting the runtime session.
             queryClient.setQueryData<SchemaRecordingEnvironment[]>(queryKey, (previous = []) => [
