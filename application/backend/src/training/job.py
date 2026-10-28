@@ -433,10 +433,10 @@ def run_training_job(
         _finalize_checkpoints(trainer, cache_dir, snapflow_callback=snapflow_callback)
         _publish(cache_dir, output_dir)
 
-        export_policy = _export_policy(spec, policy, output_dir)
         _detach_trainer(policy, trainer)
         del trainer, datamodule, policy
         _release_memory()
+        export_policy = _export_policy(spec, output_dir)
         _export(export_policy, output_dir, report, spec.export_backends)
 
 
@@ -554,30 +554,22 @@ def resolve_checkpoint(model_dir: Path | str) -> Path:
     return model_dir / CHECKPOINT_NAME
 
 
-def _export_policy(spec: TrainingJobSpec, policy: Policy, output_dir: Path) -> Policy:
-    """Return the policy to export: reloaded from disk when that changes what gets exported.
+def _export_policy(spec: TrainingJobSpec, output_dir: Path) -> Policy:
+    """Return the selected checkpoint reloaded for export.
 
-    For SnapFlow runs, export reloads the distilled checkpoint so the exported
-    artifact matches what ``resolve_checkpoint`` (and therefore resume/download)
-    picks, rather than the final-epoch weights left in memory.
-
-    Falls back to the trained policy if the reload fails — a failed export is
-    better than a failed job.
+    Export must match ``resolve_checkpoint`` (and therefore resume/download),
+    rather than the final-epoch weights left in memory.  This matters for every
+    policy: an ordinary ``ModelCheckpoint`` selects the best validation epoch,
+    while the live policy contains the final epoch.  For SnapFlow,
+    ``resolve_checkpoint`` additionally selects the distilled checkpoint.
 
     Returns:
         The policy instance to hand to the export backends.
     """
     resolved = resolve_checkpoint(output_dir)
-    if resolved.name != SNAPFLOW_CHECKPOINT_NAME:
-        return policy
-
-    try:
-        logger.info("Reloading policy from %s for export", resolved.name)
-        uncompiled = spec.model_copy(update={"compile_model": False})
-        return _load_policy_from_checkpoint(uncompiled, resolved)
-    except Exception:  # reload is best-effort; the trained policy is a valid fallback
-        logger.warning("Failed to reload policy for export; using trained policy", exc_info=True)
-        return policy
+    logger.info("Reloading selected checkpoint %s for export", resolved.name)
+    uncompiled = spec.model_copy(update={"compile_model": False})
+    return _load_policy_from_checkpoint(uncompiled, resolved)
 
 
 def _detach_trainer(policy: Policy, trainer: Any) -> None:
