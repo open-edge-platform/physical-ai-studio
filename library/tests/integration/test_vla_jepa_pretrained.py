@@ -125,3 +125,30 @@ def test_pretrained_lora_torch_export(tmp_path: Path) -> None:
     actual = torch.from_numpy(runtime(inputs)["action"]).to(expected)
     # Folding float32 adapters into bfloat16 base layers rounds their updates.
     torch.testing.assert_close(actual, expected[:, : config.n_action_steps], atol=2e-2, rtol=2e-2)
+
+
+@pytest.mark.slow
+@pytest.mark.requires_download
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires a CUDA GPU and the released multi-GB checkpoint")
+def test_pretrained_openvino_export(tmp_path: Path) -> None:
+    """Released bfloat16 weights serialize safely and run offline on the OpenVINO CPU adapter."""
+    torch.manual_seed(41)
+    policy = VLAJEPA.from_pretrained().to("cuda").eval()
+    config = policy.config
+    policy.export(tmp_path, backend="openvino")
+    with patch("physicalai.policies.vla_jepa.policy.resolve_pretrained", side_effect=AssertionError("network")):
+        runtime = InferenceModel(tmp_path, backend="openvino", device="CPU", INFERENCE_PRECISION_HINT="f32")
+    for task in ("pick up the object", "move the object to the other side of the table"):
+        raw = {
+            f"images.{feature.name}": torch.rand(1, *feature.shape, device="cuda")
+            for feature in config.input_features if feature.ftype == FeatureType.VISUAL
+        }
+        raw["task"] = [task]
+        noise = torch.randn(1, config.chunk_size, config.action_dim, device="cuda")
+        processed = policy._preprocessor(raw)
+        with torch.no_grad():
+            expected = policy._postprocessor(policy.model.predict_action_chunk(processed, noise=noise))
+        inputs = {name: value.cpu().numpy() if isinstance(value, torch.Tensor) else value for name, value in raw.items()}
+        actual = torch.from_numpy(runtime({**inputs, "noise": noise.cpu().numpy()})["action"]).to(expected)
+        # CPU FP32 kernels and CUDA bfloat16 kernels round differently across the full sampler.
+        torch.testing.assert_close(actual, expected[:, :config.n_action_steps], atol=3e-2, rtol=3e-2)

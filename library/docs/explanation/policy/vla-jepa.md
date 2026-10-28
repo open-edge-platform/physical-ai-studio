@@ -7,8 +7,8 @@ LeRobot policy code.
 
 Fine-tuning defaults to the joint JEPA/action objective. Action-only fine-tuning
 is available when training memory or video decoding is a constraint. Both modes
-support LoRA/DoRA fine-tuning and Torch export for Runtime inference. Human-video-only
-pretraining and ONNX/OpenVINO/ExecuTorch export are not implemented.
+support LoRA/DoRA fine-tuning and Torch or OpenVINO export for Runtime inference.
+Human-video-only pretraining and ONNX/ExecuTorch export are not implemented.
 
 ## Install
 
@@ -82,7 +82,7 @@ it does not automatically apply the released checkpoint's LIBERO gripper
 snapping or sign convention. `clip_normalized_actions` clips only min/max or
 quantile-normalized action dimensions to `[-1, 1]`; masked dimensions and
 mean/std or identity modes stay unbounded.
-Images must be RGB CHW tensors, either uint8 or
+Images must be batched RGB tensors, channels-first or channels-last, either uint8 or
 floating point in `[0, 1]`. Supply one task string per observation. Padded action
 steps at episode boundaries do not supervise training.
 
@@ -201,8 +201,33 @@ Export folds LoRA/DoRA adapters into base weights and records an adapter-free
 configuration. It restores the live model's adapters and weights after export,
 including on failure. Merging float32 adapters into bfloat16 layers introduces
 rounding; compare exported actions before hardware use. To omit the training-only
-world modules from an artifact, load the checkpoint with
+world modules from a Torch artifact, load the checkpoint with
 `enable_world_model=False` before export.
+
+### OpenVINO
+
+```python
+policy.export("./exports/vla-jepa-ov", backend="openvino")
+model = InferenceModel("./exports/vla-jepa-ov", backend="openvino", device="CPU")
+```
+
+The CLI accepts `--backend openvino` with the same checkpoint and policy arguments.
+The package contains `vlajepa.xml`, `vlajepa.bin`, `processor.json`, and
+`manifest.json`. The graph runs the vision encoder, language decoder, and all
+flow-matching steps, then returns denormalized actions. It excludes the world
+encoder and predictor even when exporting a joint-training checkpoint.
+
+OpenVINO inference supports batch size one and the exported camera geometry.
+Task length can vary between calls. The Runtime preprocessor reuses the saved
+Qwen processor and tokenizer offline, so the inference environment still needs
+`physicalai-train[vla_jepa]` and its PyTorch/Transformers dependencies. This is
+not a torch-free deployment package.
+
+Each call samples fresh Gaussian flow noise outside the graph. For numerical
+comparisons, pass `noise` with shape `(1, chunk_size, action_dim)` in the Runtime
+input dictionary and use the same noise in the Torch model. Set
+`INFERENCE_PRECISION_HINT="f32"` when constructing `InferenceModel` for CPU
+parity checks; the device's default precision can introduce additional rounding.
 
 ## Local smoke measurements
 
@@ -237,7 +262,7 @@ same converted checkpoint. Action-only loading excludes their tensors and does
 not download their configuration or construct them. Both modes preserve the
 pretrained latent-action prompt and final decoder pre-normalization readout.
 
-Studio lists this policy with Torch export and no minimum-VRAM claim. A
+Studio lists this policy with Torch and OpenVINO export and no minimum-VRAM claim. A
 successful synthetic or pretrained smoke test does not establish task success or
 a safe hardware deployment. The first fine-tuning run still needs evaluation on
 the intended robot and tasks.

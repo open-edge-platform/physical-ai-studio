@@ -162,7 +162,7 @@ def test_torch_export_loads_in_runtime(
     assert not any("lora_" in name for name in checkpoint["state_dict"])
     manifest = Manifest.load(tmp_path)
     assert manifest.model.artifacts == {"torch": "vlajepa.pt"}
-    assert policy.get_supported_export_backends() == [ExportBackend.TORCH]
+    assert policy.get_supported_export_backends() == [ExportBackend.TORCH, ExportBackend.OPENVINO]
     assert [feature.name for feature in policy.inputs_schema] == ["images.front", "state", "task"]
     assert policy.outputs_schema[0].shape == (3, 3)
     with patch("physicalai.policies.vla_jepa.policy.resolve_pretrained", side_effect=AssertionError("network")):
@@ -220,10 +220,11 @@ def test_failed_lora_injection_can_be_retried(tiny_config: VLAJEPAConfig) -> Non
     assert is_lora_injected(policy.model)
 
 
-def test_uninitialized_export_is_rejected(tmp_path: Path) -> None:
+@pytest.mark.parametrize("backend", ["torch", "openvino"])
+def test_uninitialized_export_is_rejected(tmp_path: Path, backend: str) -> None:
     """A lazy policy fails explicitly instead of writing an unusable artifact."""
     with pytest.raises(RuntimeError, match="uninitialized"):
-        VLAJEPA().export(tmp_path, backend="torch")
+        VLAJEPA().export(tmp_path, backend=backend)
 
 
 def test_lazy_constructor_preserves_lora_settings(tiny_config: VLAJEPAConfig) -> None:
