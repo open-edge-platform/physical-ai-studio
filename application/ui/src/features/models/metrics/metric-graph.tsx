@@ -1,40 +1,24 @@
-import { useId } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { Flex, Text, View } from '@geti-ui/ui';
-import {
-    Area,
-    AreaChart,
-    CartesianGrid,
-    ResponsiveContainer,
-    Tooltip,
-    TooltipContentProps,
-    XAxis,
-    YAxis,
-} from 'recharts';
+import uPlot from 'uplot';
 
+import { resolveCssColor, useUPlot, withAlpha } from '../../../components/uplot/use-uplot';
 import { Box } from '../shared/box';
 import type { MetricsEntry } from './types';
 
-type CustomTooltipContentProps = Partial<TooltipContentProps> & {
+import classes from './metric-graph.module.css';
+
+type CustomTooltipContentProps = {
+    x: number;
+    y: number | null | undefined;
     xAxisLabel?: string;
     yAxisLabel?: string;
     formatY?: (y: number) => string;
 };
 
-const CustomTooltipContent = ({
-    active,
-    payload,
-    label,
-    xAxisLabel,
-    yAxisLabel,
-    formatY,
-}: CustomTooltipContentProps) => {
-    if (!active || !payload?.length) {
-        return null;
-    }
-
-    const value = payload[0].value;
-    const formattedValue = formatY && value ? formatY(Number(value)) : value;
+const CustomTooltipContent = ({ x, y, xAxisLabel, yAxisLabel, formatY }: CustomTooltipContentProps) => {
+    const formattedValue = formatY && y ? formatY(Number(y)) : y;
 
     return (
         <View
@@ -50,7 +34,7 @@ const CustomTooltipContent = ({
             }}
         >
             <div>
-                {xAxisLabel}: {label}
+                {xAxisLabel}: {x}
             </div>
             <Text UNSAFE_style={{ color: 'var(--metric-graph-color)' }}>
                 {yAxisLabel}: {formattedValue ?? 'Not available'}
@@ -71,8 +55,12 @@ type MetricGraphProps = {
     formatY?: (y: number) => string;
 };
 
-const X_AXIS_TICK_COUNT = 8;
-const Y_AXIS_TICK_COUNT = 4;
+const CHART_HEIGHT = 300;
+// uPlot picks tick counts from the minimum pixel spacing between ticks; these approximate
+// 8 ticks on the x axis and 4 on the y axis at the default chart size.
+const X_AXIS_TICK_SPACE = 60;
+const Y_AXIS_TICK_SPACE = 50;
+const TOOLTIP_OFFSET = 12;
 const Y_AXIS_SCIENTIFIC_THRESHOLD = 0.001;
 
 const scientificFormatter = new Intl.NumberFormat('en-US', {
@@ -94,6 +82,14 @@ const formatYAxisTick = (value: number): string => {
     return fixedPointFormatter.format(value);
 };
 
+interface HoveredPoint {
+    index: number;
+    left: number;
+    top: number;
+    /** Show the tooltip left of the cursor so it stays inside the chart on the right half. */
+    flip: boolean;
+}
+
 export const MetricGraph = ({
     syncId,
     title,
@@ -105,7 +101,88 @@ export const MetricGraph = ({
     formatY,
     color = 'var(--energy-blue)',
 }: MetricGraphProps) => {
-    const gradientId = useId();
+    const [hovered, setHovered] = useState<HoveredPoint | null>(null);
+
+    const chartData = useMemo<uPlot.AlignedData>(() => {
+        const entries = data ?? [];
+
+        return [entries.map(getX), entries.map((entry) => getY(entry) ?? null)];
+    }, [data, getX, getY]);
+
+    const buildOptions = useCallback(
+        (container: HTMLDivElement): Omit<uPlot.Options, 'width' | 'height'> => {
+            const stroke = resolveCssColor(container, color);
+            const axisColor = resolveCssColor(container, 'var(--spectrum-global-color-gray-700)');
+            const gridColor = resolveCssColor(container, 'var(--spectrum-global-color-gray-300)');
+
+            const axis = {
+                stroke: axisColor,
+                grid: { stroke: gridColor, width: 1 },
+                ticks: { stroke: gridColor, width: 1 },
+            };
+
+            return {
+                padding: [24, 24, 0, 0],
+                legend: { show: false },
+                cursor: {
+                    y: false,
+                    points: { show: false },
+                    drag: { x: false, y: false },
+                    ...(syncId === undefined ? {} : { sync: { key: syncId } }),
+                },
+                scales: {
+                    x: { time: false, range: (_plot, _min, max) => [0, max] },
+                },
+                axes: [
+                    { ...axis, label: xAxisLabel ?? 'x', space: X_AXIS_TICK_SPACE },
+                    {
+                        ...axis,
+                        label: yAxisLabel,
+                        space: Y_AXIS_TICK_SPACE,
+                        size: 70,
+                        values: (_plot, splits) => splits.map(formatYAxisTick),
+                    },
+                ],
+                series: [
+                    {},
+                    {
+                        label: yAxisLabel,
+                        stroke,
+                        width: 2,
+                        spanGaps: true,
+                        points: { show: false },
+                        fill: (plot) => {
+                            const { top, height } = plot.bbox;
+                            const gradient = plot.ctx.createLinearGradient(0, top, 0, top + height);
+                            gradient.addColorStop(0.05, withAlpha(plot.ctx, stroke, 0.3));
+                            gradient.addColorStop(0.95, withAlpha(plot.ctx, stroke, 0));
+                            return gradient;
+                        },
+                    },
+                ],
+                hooks: {
+                    setCursor: [
+                        (plot) => {
+                            const { idx, left, top } = plot.cursor;
+                            setHovered(
+                                idx == null || left == null || left < 0 || top == null
+                                    ? null
+                                    : {
+                                          index: idx,
+                                          left: plot.over.offsetLeft + left,
+                                          top: plot.over.offsetTop + Math.max(0, top),
+                                          flip: left > plot.over.clientWidth / 2,
+                                      }
+                            );
+                        },
+                    ],
+                },
+            };
+        },
+        [syncId, color, xAxisLabel, yAxisLabel]
+    );
+
+    const { containerRef } = useUPlot(buildOptions, chartData, CHART_HEIGHT);
 
     return (
         <Flex
@@ -120,59 +197,28 @@ export const MetricGraph = ({
                 title={title}
                 content={
                     <View backgroundColor={'gray-50'} minHeight={'size-3000'}>
-                        <ResponsiveContainer width='100%' height={300} style={{ userSelect: 'none' }}>
-                            <AreaChart
-                                syncId={syncId}
-                                style={{ aspectRatio: 1.6 }}
-                                data={data}
-                                margin={{ top: 35, bottom: 35, left: 35, right: 35 }}
-                            >
-                                <defs>
-                                    <linearGradient id={gradientId} x1='0' y1='0' x2='0' y2='1'>
-                                        <stop offset='5%' stopColor='var(--metric-graph-color)' stopOpacity={0.3} />
-                                        <stop offset='95%' stopColor='var(--metric-graph-color)' stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid />
-                                <XAxis
-                                    dataKey={getX}
-                                    type='number'
-                                    domain={[0, 'dataMax']}
-                                    label={{ value: xAxisLabel ?? 'x', position: 'bottom', fill: '#666', offset: 12 }}
-                                    tickCount={X_AXIS_TICK_COUNT}
-                                    tickMargin={12}
-                                />
-                                <YAxis
-                                    label={{ value: yAxisLabel, angle: -90, position: 'center', dx: -38, fill: '#666' }}
-                                    tickCount={Y_AXIS_TICK_COUNT}
-                                    tickMargin={12}
-                                    tickFormatter={(value) => formatYAxisTick(Number(value))}
-                                />
-                                <Area
-                                    type='linear'
-                                    dataKey={getY}
-                                    name={yAxisLabel}
-                                    stroke='var(--metric-graph-color)'
-                                    strokeWidth={2}
-                                    fill={`url(#${gradientId})`}
-                                    dot={false}
-                                    connectNulls
-                                />
-                                <Tooltip
-                                    filterNull={false}
-                                    content={
-                                        <CustomTooltipContent
-                                            xAxisLabel={xAxisLabel}
-                                            yAxisLabel={yAxisLabel}
-                                            formatY={formatY}
-                                        />
-                                    }
-                                    cursor={{
-                                        stroke: 'var(--metric-graph-color)',
+                        <div ref={containerRef} className={classes.chart}>
+                            {hovered !== null && hovered.index < chartData[0].length && (
+                                <div
+                                    className={classes.tooltip}
+                                    style={{
+                                        left: hovered.flip
+                                            ? hovered.left - TOOLTIP_OFFSET
+                                            : hovered.left + TOOLTIP_OFFSET,
+                                        top: hovered.top + TOOLTIP_OFFSET,
+                                        transform: hovered.flip ? 'translateX(-100%)' : undefined,
                                     }}
-                                />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                                >
+                                    <CustomTooltipContent
+                                        x={chartData[0][hovered.index]}
+                                        y={chartData[1][hovered.index]}
+                                        xAxisLabel={xAxisLabel}
+                                        yAxisLabel={yAxisLabel}
+                                        formatY={formatY}
+                                    />
+                                </div>
+                            )}
+                        </div>
                     </View>
                 }
             />

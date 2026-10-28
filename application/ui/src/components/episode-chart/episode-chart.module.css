@@ -1,0 +1,14 @@
+.chart {
+    user-select: none;
+}
+
+.chart :global(.u-over) {
+    cursor: pointer;
+}
+
+/* uPlot draws the hover line as the right border of a zero-width element placed at the cursor,
+   so shift it back by half its width to center it on the pointer (like the canvas playhead). */
+.chart :global(.u-cursor-x) {
+    border-right: 2px solid #5ac3f8;
+    margin-left: -1px;
+}

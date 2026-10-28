@@ -114,7 +114,9 @@ export const EpisodeDockView = ({ episode, dataset, environment }: EpisodeViewer
     }, [episode, dataset, environment]);
 
     return (
-        <View flex>
+        // Isolate dockview's internal z-indexes (sashes, overlays) so content layered over the dock,
+        // such as the episode timeline, is not covered by them.
+        <View flex UNSAFE_style={{ isolation: 'isolate' }}>
             <View backgroundColor={'gray-200'} height={'100%'} maxHeight='100vh' position={'relative'}>
                 <Suspense fallback={<CenteredLoading />}>
                     <DockviewReact onReady={onReady} components={components} theme={physicalAiTheme} />

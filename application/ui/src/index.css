@@ -106,10 +106,6 @@ a {
     text-decoration: none;
 }
 
-.recharts-wrapper *:focus:not(:focus-visible) {
-    outline: none !important;
-}
-
 svg {
     fill: currentColor;
 }
