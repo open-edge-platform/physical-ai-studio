@@ -176,11 +176,20 @@ describe('TrainingRow', () => {
         expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     });
 
-    it('renders the Dataset name and the Environment name resolved via dataset.environment_id', async () => {
+    it('renders the Dataset name without looking up a dataset-level Environment', async () => {
+        const environmentHandler = rs.fn();
+        server.use(
+            http.get('/api/projects/{project_id}/environments/{environment_id}', () => {
+                environmentHandler();
+                return HttpResponse.json(environment);
+            })
+        );
+
         renderTrainingRow();
 
         await waitFor(() => expect(screen.getByTestId('dataset-cell')).toHaveTextContent(dataset.name));
-        await waitFor(() => expect(screen.getByTestId('environment-cell')).toHaveTextContent(environment.name));
+        expect(screen.getByTestId('environment-cell')).toHaveTextContent('-');
+        expect(environmentHandler).not.toHaveBeenCalled();
     });
 
     it('shows the remote_trainer_name in the Trainer column when present', async () => {

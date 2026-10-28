@@ -11,6 +11,8 @@ from exceptions import ResourceAlreadyExistsError, ResourceNotFoundError, Resour
 from schemas.dataset import RecordingEnvironment
 
 if TYPE_CHECKING:
+    import builtins
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -28,7 +30,7 @@ class RecordingEnvironmentService:
             camera_mappings=mappings.get("camera_mappings", []),
         )
 
-    async def list(self, dataset_id: UUID) -> list[RecordingEnvironment]:
+    async def list(self, dataset_id: UUID) -> builtins.list[RecordingEnvironment]:
         rows = (
             await self.session.scalars(
                 select(DatasetRecordingEnvironmentDB)
@@ -49,7 +51,9 @@ class RecordingEnvironmentService:
             raise ResourceNotFoundError(ResourceType.ENVIRONMENT, recording_environment_id)
         return self._to_model(row)
 
-    async def create(self, dataset_id: UUID, environment_id: UUID, camera_mappings: list[dict]) -> RecordingEnvironment:
+    async def create(
+        self, dataset_id: UUID, environment_id: UUID, camera_mappings: builtins.list[dict]
+    ) -> RecordingEnvironment:
         row = DatasetRecordingEnvironmentDB(
             dataset_id=str(dataset_id),
             environment_id=str(environment_id),
@@ -66,7 +70,7 @@ class RecordingEnvironmentService:
         return self._to_model(row)
 
     async def update(
-        self, dataset_id: UUID, recording_environment_id: UUID, camera_mappings: list[dict]
+        self, dataset_id: UUID, recording_environment_id: UUID, camera_mappings: builtins.list[dict]
     ) -> RecordingEnvironment:
         row = await self.session.scalar(
             select(DatasetRecordingEnvironmentDB).where(
