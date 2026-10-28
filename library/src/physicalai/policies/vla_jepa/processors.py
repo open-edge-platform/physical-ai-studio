@@ -126,8 +126,11 @@ class VLAJEPAPreprocessor(nn.Module):
                 raise TypeError(msg)
             if image.ndim == 5:
                 image = image[:, 0 if self.config.enable_world_model else -1]
+            # Runtime camera frames arrive channels-last (B, H, W, 3).
+            if image.ndim == 4 and image.shape[1] != 3 and image.shape[-1] == 3:
+                image = image.permute(0, 3, 1, 2)
             if image.ndim != 4 or image.shape[1] != 3 or image.shape[0] < 1:
-                msg = f"Image {key!r} must be batched CHW RGB."
+                msg = f"Image {key!r} must be batched RGB, channels-first or channels-last."
                 raise ValueError(msg)
             image = image.float() / 255 if image.dtype == torch.uint8 else image.float()
             if not torch.isfinite(image).all() or image.amin() < 0 or image.amax() > 1:
