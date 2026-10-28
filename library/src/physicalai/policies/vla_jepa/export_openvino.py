@@ -1,19 +1,18 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""VLA-JEPA's single-observation OpenVINO graph and offline Runtime inputs."""
+"""VLA-JEPA's single-observation OpenVINO graph."""
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-import numpy as np
 import torch
-from physicalai.inference.preprocessors.base import Preprocessor
+from physicalai.inference.manifest import ComponentSpec
 from torch import Tensor, nn
+from transformers.models.qwen2_vl.image_processing_qwen2_vl import smart_resize
 
+from physicalai.data import FeatureType
 from physicalai.policies.xr0.export_openvino import (
     export_add_deepstack_embeds,
     export_build_additive_causal_mask,
@@ -24,94 +23,19 @@ from physicalai.policies.xr0.export_openvino import (
     export_vision_attn_forward,
 )
 
-from .config import VLAJEPAConfig
-from .processors import VLAJEPAPostprocessor, VLAJEPAPreprocessor
+from .processors import VLAJEPAPostprocessor, VLAJEPAPreprocessor, _batch_key, _normalizer
 
 if TYPE_CHECKING:
+    from .config import VLAJEPAConfig
     from .model import VLAJEPAModel
-
-_GRID_DIMENSIONS = 3
-
-
-class VLAJEPAOpenVINOPreprocessor(Preprocessor):
-    """Reuse the training processor locally; no model weights or Hub access needed."""
-
-    def __init__(self, artifact: str) -> None:
-        """Restore feature statistics, prompts, and tokenizer from a local JSON artifact.
-
-        Raises:
-            TypeError: If the artifact configuration or camera grids are malformed.
-        """
-        with Path(artifact).open(encoding="utf-8") as stream:
-            data = json.load(stream)
-        if not isinstance(data, dict) or not isinstance(data.get("config"), dict):
-            msg = "VLA-JEPA processor artifact must contain a configuration object."
-            raise TypeError(msg)
-        grid = data.get("image_grid_thw")
-        if (
-            not isinstance(grid, list)
-            or not grid
-            or any(
-                not isinstance(row, list)
-                or len(row) != _GRID_DIMENSIONS
-                or any(type(dim) is not int or dim <= 0 for dim in row)
-                for row in grid
-            )
-        ):
-            msg = "VLA-JEPA processor artifact requires positive integer image grids."
-            raise TypeError(msg)
-        self.config = VLAJEPAConfig.from_dict(data["config"])
-        self.processor = VLAJEPAPreprocessor(self.config)
-        self.image_grid_thw = torch.tensor(grid, dtype=torch.long)
-
-    def __call__(self, inputs: dict[str, Any]) -> dict[str, np.ndarray]:
-        """Return tensor inputs and fresh flow noise for one observation.
-
-        Raises:
-            ValueError: If batch size, image geometry, or noise differs from the graph contract.
-        """
-        # Runtime flattens nested observations only after preprocessing, e.g. {"images": {"front": ...}}.
-        inputs = {
-            **inputs,
-            **{
-                f"{name}.{key}": item
-                for name, value in inputs.items()
-                if isinstance(value, dict)
-                for key, item in value.items()
-            },
-        }
-        keys = {*self.processor.image_keys, *self.processor.state_keys, "images", "task"}
-        batch = {
-            name: (value.tolist() if name == "task" else torch.from_numpy(value))
-            if isinstance(value, np.ndarray)
-            else value
-            for name, value in inputs.items()
-            if name in keys
-        }
-        processed = self.processor(batch)
-        if processed["input_ids"].shape[0] != 1:
-            msg = "VLA-JEPA OpenVINO inference requires batch size one."
-            raise ValueError(msg)
-        if not torch.equal(processed["image_grid_thw"].cpu(), self.image_grid_thw):
-            msg = "Image geometry differs from the exported VLA-JEPA graph."
-            raise ValueError(msg)
-        shape = (1, self.config.chunk_size, self.config.action_dim)
-        noise = inputs.get("noise")
-        noise = torch.randn(shape) if noise is None else torch.as_tensor(noise, dtype=torch.float32)
-        if tuple(noise.shape) != shape or not torch.isfinite(noise).all():
-            msg = f"Flow noise must be finite and have shape {shape}."
-            raise ValueError(msg)
-        result = {
-            name: processed[name] for name in ("input_ids", "attention_mask", "pixel_values", "embodied_positions")
-        }
-        if self.processor.state_keys:
-            result["state"] = processed["state"]
-        result["noise"] = noise
-        return {name: tensor.detach().cpu().numpy() for name, tensor in result.items()}
 
 
 class VLAJEPAOpenVINOModel(nn.Module):
-    """Trace Qwen and the complete flow sampler without training-only world modules."""
+    """Trace Qwen and the complete flow sampler without training-only world modules.
+
+    State normalization and action denormalization run in-graph, so Runtime only
+    tokenizes and patchifies.
+    """
 
     interp_indices: Tensor
     interp_weights: Tensor
@@ -126,7 +50,10 @@ class VLAJEPAOpenVINOModel(nn.Module):
         self.visual = model.qwen.visual
         self.text = model.qwen.language_model
         self.action_model = model.action_model
-        self.postprocessor = VLAJEPAPostprocessor(config).to(next(model.parameters()).device)
+        device = next(model.parameters()).device
+        self.normalizer = _normalizer(config).to(device)
+        self.state_key = next((_batch_key(f) for f in config.input_features if f.ftype == FeatureType.STATE), None)
+        self.postprocessor = VLAJEPAPostprocessor(config).to(device)
         self.image_token_id = model.qwen.config.image_token_id
         geometry = export_precompute_vision_geometry(self.visual, image_grid_thw)
         for name, tensor in geometry.items():
@@ -185,7 +112,53 @@ class VLAJEPAOpenVINOModel(nn.Module):
         indices = batch["embodied_positions"][:, :, None].expand(-1, -1, hidden.shape[-1])
         dtype = next(self.action_model.parameters()).dtype
         context = {"tokens": hidden.gather(1, indices).to(dtype)}
-        if "state" in batch:
-            context["state"] = batch["state"].to(dtype)
+        if self.state_key is not None:
+            state = self.normalizer({self.state_key: batch["state"].float()})[self.state_key]
+            context["state"] = state[:, None].to(dtype)
         actions = self.action_model.sample(context, noise=batch["noise"].to(dtype)).float()
         return self.postprocessor(actions)
+
+
+def runtime_preprocessor_spec(preprocessor: VLAJEPAPreprocessor) -> ComponentSpec:
+    """Bake the Runtime ``vla_jepa`` preprocessor: camera geometry, chat prompt and token ids.
+
+    Returns:
+        A manifest component that needs only Runtime and the exported ``tokenizer.json``.
+    """
+    config = preprocessor.config
+    image = preprocessor.processor.image_processor
+    patch, merge = image.patch_size, image.merge_size
+    height, width = smart_resize(
+        *config.image_resolution,
+        factor=patch * merge,
+        min_pixels=image.size["shortest_edge"],
+        max_pixels=image.size["longest_edge"],
+    )
+    text = config.prompt_template.format(
+        instruction="{instruction}",
+        actions=preprocessor.latent_prompt,
+        e_actions=preprocessor.embodied_prompt,
+    )
+    content = [{"type": "image"} for _ in preprocessor.image_keys] + [{"type": "text", "text": text}]
+    prompt = preprocessor.processor.apply_chat_template(
+        [[{"role": "user", "content": content}]],
+        tokenize=False,
+        add_generation_prompt=True,
+    )[0]
+    pad = preprocessor.processor.image_token
+    return ComponentSpec(
+        type="vla_jepa",
+        artifact="tokenizer.json",
+        prompt=prompt.replace(pad, pad * ((height // patch) * (width // patch) // merge**2)),
+        image_keys=preprocessor.image_keys,
+        embodied_token_id=config.embodied_action_token_id,
+        num_embodied_tokens=config.num_embodied_action_tokens,
+        noise_shape=[config.chunk_size, config.action_dim],
+        image_resolution=list(config.image_resolution),
+        vision_resolution=[height, width],
+        image_mean=list(image.image_mean),
+        image_std=list(image.image_std),
+        patch_size=patch,
+        merge_size=merge,
+        temporal_patch_size=image.temporal_patch_size,
+    )

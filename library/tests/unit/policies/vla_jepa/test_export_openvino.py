@@ -4,7 +4,6 @@
 
 """Offline OpenVINO conversion and Runtime parity on a real tiny Qwen/DiT."""
 
-import json
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
@@ -19,7 +18,7 @@ from physicalai.cli import export as export_cli
 from physicalai.data import FeatureType, Observation
 from physicalai.policies.mixins.peft import is_lora_injected
 from physicalai.policies.vla_jepa import VLAJEPA, VLAJEPAConfig
-from physicalai.policies.vla_jepa.export_openvino import VLAJEPAOpenVINOModel, VLAJEPAOpenVINOPreprocessor
+from physicalai.policies.vla_jepa.export_openvino import VLAJEPAOpenVINOModel
 
 
 @pytest.mark.parametrize("mode", ["plain", "identity", "lora", "dora", "joint_stateless", "no_state_feature"])
@@ -71,8 +70,10 @@ def test_openvino_runtime_parity(
     assert manifest.model.artifacts == {"openvino": "vlajepa.xml"}
     assert (tmp_path / "vlajepa.xml").is_file()
     assert (tmp_path / "vlajepa.bin").is_file()
-    with (tmp_path / "processor.json").open() as stream:
-        assert json.load(stream)["config"]["lora_enabled"] is False
+    assert (tmp_path / "tokenizer.json").is_file()
+    # Runtime must not import the training library to run the export.
+    for spec in [*manifest.model.preprocessors, *manifest.model.postprocessors]:
+        assert not (spec.class_path or "").startswith("physicalai.policies")
     assert policy.config == config
     for name, tensor in policy.state_dict().items():
         torch.testing.assert_close(tensor, before[name], rtol=0, atol=0)
@@ -95,7 +96,9 @@ def test_openvino_runtime_parity(
         processed["noise"] = noise
         with torch.no_grad():
             expected = policy._postprocessor(policy.model.predict_action_chunk(processed, noise=noise))
-            torch.testing.assert_close(wrapper(processed), expected, rtol=1e-5, atol=1e-5)
+            # The graph normalizes raw state itself.
+            graph_inputs = {**processed, "state": raw["state"]} if "state" in raw else processed
+            torch.testing.assert_close(wrapper(graph_inputs), expected, rtol=1e-5, atol=1e-5)
         inputs = {name: value.numpy() if isinstance(value, torch.Tensor) else value for name, value in raw.items()}
         actual = runtime({**inputs, "task": np.array([task]), "noise": noise.numpy()})["action"]
         np.testing.assert_allclose(actual, expected[:, : config.n_action_steps].numpy(), rtol=1e-4, atol=1e-4)
@@ -147,36 +150,3 @@ def test_openvino_failure_restores_live_model(tiny_config: VLAJEPAConfig, tmp_pa
     assert policy.model.training
     for name, tensor in policy.state_dict().items():
         torch.testing.assert_close(tensor, before[name], rtol=0, atol=0)
-
-
-def test_runtime_processor_checks_inputs(tiny_config: VLAJEPAConfig, observation: Observation, tmp_path: Path) -> None:
-    """Reject incompatible batches, camera grids, and invalid noise before inference."""
-    artifact = tmp_path / "processor.json"
-    artifact.write_text(json.dumps({"config": tiny_config.to_dict(), "image_grid_thw": [[1, 2, 2]]}))
-    processor = VLAJEPAOpenVINOPreprocessor(str(artifact))
-    with pytest.raises(ValueError, match="batch size one"):
-        processor(observation.to_dict())
-    raw = {"images.front": observation.images["front"][:1], "state": observation.state[:1], "task": ["pick"]}
-    for noise in (np.zeros((1, 2, 3)), np.full((1, 3, 3), np.nan)):
-        with pytest.raises(ValueError, match="Flow noise"):
-            processor({**raw, "noise": noise})
-    nested = {"images": {"front": raw["images.front"].numpy()}, "state": raw["state"].numpy(), "task": ["pick"]}
-    np.testing.assert_array_equal(processor(nested)["pixel_values"], processor(raw)["pixel_values"])
-    channels_last = {**raw, "images.front": raw["images.front"].permute(0, 2, 3, 1).numpy()}
-    np.testing.assert_array_equal(processor(channels_last)["pixel_values"], processor(raw)["pixel_values"])
-    first = processor(raw)["noise"]
-    second = processor(raw)["noise"]
-    assert first.shape == (1, 3, 3)
-    assert not np.array_equal(first, second)
-    processor.image_grid_thw = torch.tensor([[1, 4, 4]])
-    with pytest.raises(ValueError, match="Image geometry"):
-        processor(raw)
-
-
-@pytest.mark.parametrize("data", [{}, {"config": {}, "image_grid_thw": [[1, -2, 2]]}])
-def test_runtime_processor_rejects_bad_artifact(data: dict, tmp_path: Path) -> None:
-    """Validate the local processor JSON before constructing runtime components."""
-    artifact = tmp_path / "processor.json"
-    artifact.write_text(json.dumps(data))
-    with pytest.raises(TypeError, match="artifact"):
-        VLAJEPAOpenVINOPreprocessor(str(artifact))

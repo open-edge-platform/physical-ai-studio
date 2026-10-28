@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
@@ -564,17 +563,16 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         sample = {
             name: processed[name] for name in ("input_ids", "attention_mask", "pixel_values", "embodied_positions")
         }
-        if "state" in processed:
-            sample["state"] = processed["state"]
+        if any(feature.ftype == FeatureType.STATE for feature in self.config.input_features):
+            # The graph normalizes raw state itself.
+            sample["state"] = torch.zeros(1, self.config.state_dim, device=self.device)
         sample["noise"] = processed.get(
             "noise",
             torch.zeros(1, self.config.chunk_size, self.config.action_dim, device=self.device),
         )
         model_path = self._prepare_export_path(output_path, ".xml")
         super().to_openvino(output_path, {**sample, "image_grid_thw": grid}, **export_kwargs)
-        processor_config = {**self.config.to_dict(), "lora_enabled": False}
-        with (model_path.parent / "processor.json").open("w", encoding="utf-8") as stream:
-            json.dump({"config": processor_config, "image_grid_thw": grid.tolist()}, stream)
+        (model_path.parent / "tokenizer.json").write_text(self.config.tokenizer_json, encoding="utf-8")
 
     def _openvino_convert_step(self, **kwargs: Any) -> Any:  # noqa: ANN401
         import openvino  # noqa: PLC0415
@@ -661,7 +659,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
         postprocessors = []
         if self.config.n_action_steps != self.config.chunk_size:
             postprocessors.append(ComponentSpec(type="action_chunk_trimmer", n_action_steps=self.config.n_action_steps))
-        from .export_openvino import VLAJEPAOpenVINOPreprocessor  # noqa: PLC0415
+        from .export_openvino import runtime_preprocessor_spec  # noqa: PLC0415
 
         return {
             ExportBackend.TORCH: TorchExportParameters(
@@ -671,12 +669,7 @@ class VLAJEPA(PeftPolicyMixin, ExportablePolicyMixin, Policy):
                 inputs=["input_ids", "attention_mask", "pixel_values", "embodied_positions"]
                 + (["state"] if any(f.ftype == FeatureType.STATE for f in self.config.input_features) else [])
                 + ["noise"],
-                preprocessors_specs=[
-                    ComponentSpec.from_class(
-                        VLAJEPAOpenVINOPreprocessor,
-                        artifact="processor.json",
-                    ),
-                ],
+                preprocessors_specs=[runtime_preprocessor_spec(cast("VLAJEPAPreprocessor", self._preprocessor))],
                 postprocessors_specs=postprocessors,
             ),
         }

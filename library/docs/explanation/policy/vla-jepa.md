@@ -212,16 +212,18 @@ model = InferenceModel("./exports/vla-jepa-ov", backend="openvino", device="CPU"
 ```
 
 The CLI accepts `--backend openvino` with the same checkpoint and policy arguments.
-The package contains `vlajepa.xml`, `vlajepa.bin`, `processor.json`, and
+The package contains `vlajepa.xml`, `vlajepa.bin`, `tokenizer.json`, and
 `manifest.json`. The graph runs the vision encoder, language decoder, and all
-flow-matching steps, then returns denormalized actions. It excludes the world
-encoder and predictor even when exporting a joint-training checkpoint.
+flow-matching steps. It normalizes the raw state and returns denormalized
+actions. It excludes the world encoder and predictor even when exporting a
+joint-training checkpoint.
 
-OpenVINO inference supports batch size one and the exported camera geometry.
-Task length can vary between calls. The Runtime preprocessor reuses the saved
-Qwen processor and tokenizer offline, so the inference environment still needs
-`physicalai-train[vla_jepa]` and its PyTorch/Transformers dependencies. This is
-not a torch-free deployment package.
+The manifest uses Runtime's `vla_jepa` preprocessor, which resizes and
+patchifies the cameras, fills the baked chat prompt with the task, and tokenizes
+it with `tokenizer.json`. The inference environment needs only the Runtime
+package (`physicalai`), not `physicalai-train` or PyTorch. Inference supports
+batch size one; cameras may have any resolution and either channel layout, and
+task length can vary between calls.
 
 Each call samples fresh Gaussian flow noise outside the graph. For numerical
 comparisons, pass `noise` with shape `(1, chunk_size, action_dim)` in the Runtime
