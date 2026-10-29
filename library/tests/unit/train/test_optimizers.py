@@ -7,7 +7,7 @@ import pytest
 import torch
 from torchao.optim import _AdamW
 
-from physicalai.train.optimizers import adamw
+from physicalai.train.optimizers import _bf16_adamw_class, adamw
 
 cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="torchao compiles its step; CUDA keeps this fast")
 
@@ -34,6 +34,39 @@ class TestAdamW:
         assert optimizer.bf16_stochastic_round
         assert [group["weight_decay"] for group in optimizer.param_groups] == [0.0, 0.01]
         assert all(group["betas"] == (0.9, 0.95) for group in optimizer.param_groups)
+
+    def test_non_bfloat16_params_match_torch_adamw(self) -> None:
+        def train(make: type) -> list[torch.Tensor]:
+            torch.manual_seed(0)
+            params = [torch.nn.Parameter(torch.randn(8, 8)), torch.nn.Parameter(torch.randn(8))]
+            optimizer = make(
+                [{"params": params[:1]}, {"params": params[1:], "weight_decay": 0.0}],
+                lr=1e-2,
+                betas=(0.9, 0.95),
+                weight_decay=0.1,
+                amsgrad=True,
+            )
+            scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda step: 1 / (step + 1))
+            for _ in range(3):
+                for p in params:
+                    p.grad = torch.randn_like(p)
+                optimizer.step()
+                scheduler.step()
+            return [p.detach() for p in params]
+
+        for actual, expected in zip(train(_bf16_adamw_class()), train(torch.optim.AdamW), strict=True):
+            torch.testing.assert_close(actual, expected)
+
+    @cuda
+    def test_mixed_dtypes_update_both(self) -> None:
+        bf16, fp32 = _params(torch.bfloat16, "cuda"), _params(torch.float32, "cuda")
+        optimizer = adamw([*bf16, *fp32], lr=1e-5)
+        for p in [*bf16, *fp32]:
+            p.grad = torch.ones_like(p)
+        optimizer.step()
+        assert (bf16[0] != 0.02).any()
+        assert (fp32[0] < 0.02).all()
+        assert all(optimizer.state[p]["step"].item() == 1 for p in [*bf16, *fp32])
 
     @cuda
     def test_small_bfloat16_updates_survive(self) -> None:
