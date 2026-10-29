@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, ReactNode, useContext, useLayoutEffect, useState } from 'react';
 
 import { $api } from '../../../api/client';
 import { HotkeyActionId } from '../../hotkeys/hotkey-actions';
@@ -18,14 +18,8 @@ const RecordingContext = createContext<RecordingContextValue | null>(null);
 
 const useRecordingStartedAt = (isRecording: boolean): number | null => {
     const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
-    const wasRecording = useRef(isRecording);
 
     useLayoutEffect(() => {
-        if (wasRecording.current === isRecording) {
-            return;
-        }
-
-        wasRecording.current = isRecording;
         setRecordingStartedAt(isRecording ? Date.now() : null);
     }, [isRecording]);
 
