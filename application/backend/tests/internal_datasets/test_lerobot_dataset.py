@@ -1,8 +1,12 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import av
+import numpy as np
 import pytest
 from lerobot.configs import RGBEncoderConfig
+from lerobot.configs.video import DepthEncoderConfig
+from lerobot.datasets import pyav_utils
 
 from internal_datasets.access_mode import DatasetAccessMode
 from internal_datasets.lerobot import video_encoding_settings
@@ -33,6 +37,68 @@ def test_video_recording_settings_translate_to_lerobot_kwargs() -> None:
     assert "vcodec" not in kwargs
 
 
+def test_unused_depth_encoder_does_not_resolve_or_validate_a_codec() -> None:
+    with (
+        patch.object(DepthEncoderConfig, "resolve_vcodec", side_effect=AssertionError("Unused depth codec resolved")),
+        patch.object(DepthEncoderConfig, "validate", side_effect=AssertionError("Unused depth codec validated")),
+    ):
+        encoder = video_encoding_settings._UnsupportedDepthEncoderConfig()
+
+    with pytest.raises(NotImplementedError, match="Depth video recording is not supported"):
+        encoder.get_codec_options()
+
+
+@pytest.mark.parametrize("streaming_encoding", [True, False])
+def test_rgb_recording_create_and_resume_without_usable_depth_encoder(tmp_path: Path, streaming_encoding: bool) -> None:
+    settings = VideoEncodingSettings(vcodec="libsvtav1", streaming_encoding=streaming_encoding, encoder_threads=1)
+    features = {
+        "action": {"dtype": "float32", "shape": (1,), "names": ["joint.pos"]},
+        "observation.images.camera": {
+            "dtype": "video",
+            "shape": (64, 64, 3),
+            "names": ["height", "width", "channels"],
+        },
+    }
+    codec_video_formats = pyav_utils._get_codec_video_formats
+
+    def docker_codec_video_formats(vcodec: str) -> tuple[str, ...]:
+        # The LGPL Docker build resolves generic HEVC to QSV, not libx265.
+        return ("nv12", "p010le", "qsv") if vcodec == "hevc" else codec_video_formats(vcodec)
+
+    with patch.object(pyav_utils, "_get_codec_video_formats", side_effect=docker_codec_video_formats):
+        # Prove that the unmodified LeRobot default cannot work in this build.
+        with pytest.raises(ValueError, match=r"gray12le.*not supported"):
+            DepthEncoderConfig()
+
+        dataset = InternalLeRobotDataset(
+            tmp_path / "dataset",
+            recording_video_encoding_settings=settings,
+            access_mode=DatasetAccessMode.RECORDING_MUTATION,
+        )
+        dataset.create(fps=30, features=features, robot_type="test")
+        for expected_episodes in (1, 2):
+            if expected_episodes == 2:
+                dataset.resume_dataset()
+            dataset.prepare_for_writing()
+            for _ in range(2):
+                dataset._dataset.add_frame(
+                    {
+                        "action": np.zeros(1, dtype=np.float32),
+                        "observation.images.camera": np.zeros((64, 64, 3), dtype=np.uint8),
+                        "task": "test",
+                    }
+                )
+            dataset.save_episode()
+            dataset.finalize()
+            assert dataset._dataset.num_episodes == expected_episodes
+
+    decoded_frames = 0
+    for video_path in dataset.path.rglob("*.mp4"):
+        with av.open(str(video_path)) as container:
+            decoded_frames += sum(1 for _ in container.decode(video=0))
+    assert decoded_frames == 4
+
+
 def test_create_uses_rgb_encoder_and_not_vcodec(tmp_path: Path) -> None:
     settings = VideoEncodingSettings(
         streaming_encoding=True,
@@ -57,6 +123,7 @@ def test_create_uses_rgb_encoder_and_not_vcodec(tmp_path: Path) -> None:
     assert isinstance(kwargs["rgb_encoder"], RGBEncoderConfig)
     assert kwargs["rgb_encoder"].vcodec == "h264"
     assert kwargs["rgb_encoder"].g == 2
+    assert isinstance(kwargs["depth_encoder"], video_encoding_settings._UnsupportedDepthEncoderConfig)
     assert kwargs["streaming_encoding"] is True
     assert kwargs["encoder_threads"] == 2
     assert kwargs["encoder_queue_maxsize"] == 60
@@ -86,6 +153,7 @@ def test_load_dataset_is_read_only_and_does_not_pass_write_kwargs(tmp_path: Path
 
     kwargs = init_mock.call_args.kwargs
     assert "rgb_encoder" not in kwargs
+    assert "depth_encoder" not in kwargs
     assert "streaming_encoding" not in kwargs
     assert "encoder_threads" not in kwargs
     assert "encoder_queue_maxsize" not in kwargs
@@ -117,6 +185,7 @@ def test_resume_dataset_uses_write_kwargs_and_not_vcodec(tmp_path: Path) -> None
     assert isinstance(kwargs["rgb_encoder"], RGBEncoderConfig)
     assert kwargs["rgb_encoder"].vcodec == "h264"
     assert kwargs["rgb_encoder"].g == 2
+    assert isinstance(kwargs["depth_encoder"], video_encoding_settings._UnsupportedDepthEncoderConfig)
     assert kwargs["streaming_encoding"] is True
     assert kwargs["encoder_threads"] == 2
     assert kwargs["encoder_queue_maxsize"] == 60
