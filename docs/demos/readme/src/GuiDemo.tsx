@@ -1,9 +1,9 @@
 import type {CSSProperties} from 'react';
-import {AbsoluteFill, OffthreadVideo, interpolate, staticFile, useCurrentFrame} from 'remotion';
-import {clipDuration, fps, guiClips, guiSource} from './gui';
+import {progress} from './animation.ts';
+import {clipDuration, guiClips, guiFrameUrl} from './gui.ts';
 
-const font = 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-const mono = '"JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace';
+const font = '"Inter Variable", sans-serif';
+const mono = '"JetBrains Mono Variable", monospace';
 
 const card: CSSProperties = {
   border: '1px solid rgba(255,255,255,0.12)',
@@ -17,19 +17,24 @@ const starts = guiClips.reduce<number[]>((result, clip, index) => {
   return result;
 }, []);
 
-export const GuiDemo = () => {
-  const frame = useCurrentFrame();
+export const GuiDemo = ({frame}: {frame: number}) => {
   const current = starts.reduce((active, start, index) => (frame >= start ? index : active), 0);
   const clip = guiClips[current];
   const clipFrame = frame - starts[current];
-  const labelOpacity = interpolate(clipFrame, [0, 10, clipDuration(clip) - 10, clipDuration(clip)], [0, 1, 1, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
+  const labelOpacity = Math.min(
+    progress(clipFrame, 0, 10),
+    1 - progress(clipFrame, clipDuration(clip) - 10, clipDuration(clip)),
+  );
 
   return (
-    <AbsoluteFill
+    <div
+      data-demo="gui"
       style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        boxSizing: 'border-box',
         background:
           'radial-gradient(circle at 12% 12%, rgba(88,120,255,0.34), transparent 30%), radial-gradient(circle at 88% 78%, rgba(33,212,167,0.20), transparent 32%), linear-gradient(135deg, #070a13 0%, #0c1222 48%, #090d18 100%)',
         color: 'white',
@@ -67,11 +72,9 @@ export const GuiDemo = () => {
             <span style={{marginLeft: 14}}>Physical AI Studio</span>
           </div>
           <div style={{position: 'relative', width: 1140, height: 622, background: '#101318'}}>
-            <OffthreadVideo
-              src={staticFile(guiSource)}
-              startFrom={Math.round(guiClips[0].from * fps)}
-              endAt={Math.round(guiClips[guiClips.length - 1].to * fps)}
-              muted
+            <img
+              src={guiFrameUrl(frame)}
+              alt="Physical AI Studio walkthrough"
               style={{width: '100%', height: '100%', objectFit: 'cover'}}
             />
             <div
@@ -109,6 +112,8 @@ export const GuiDemo = () => {
             return (
               <div
                 key={item.title}
+                data-stage={item.title}
+                aria-current={active ? 'step' : undefined}
                 style={{
                   ...card,
                   borderRadius: 16,
@@ -143,6 +148,6 @@ export const GuiDemo = () => {
           })}
         </div>
       </div>
-    </AbsoluteFill>
+    </div>
   );
 };
