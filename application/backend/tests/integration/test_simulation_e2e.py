@@ -69,10 +69,12 @@ def _task_instruction(dataset: Path) -> str:
 
 def _recording_metadata(dataset: Path, scene: str) -> dict:
     recording = json.loads((dataset / "simulation.json").read_text())
-    if recording["scene"] != scene or recording["belt_speed"] != 0.04:
-        raise ValueError("Recording does not match the conveyor scene and belt speed")
+    entry = dataset_entry()
+    belt_speeds = recording.get("belt_speeds_m_s", [recording.get("belt_speed")])
+    if recording["scene"] != scene or belt_speeds != entry["belt_speeds"]:
+        raise ValueError("Recording does not match the conveyor scene and belt speeds")
     metadata = json.loads((dataset / "meta/info.json").read_text())
-    if metadata["total_episodes"] != dataset_entry()["episodes"]:
+    if metadata["total_episodes"] != entry["episodes"]:
         raise ValueError("Recording episode count does not match selected dataset")
     if metadata["fps"] != 30:
         raise ValueError("Conveyor recording must use its native 30 FPS clock")

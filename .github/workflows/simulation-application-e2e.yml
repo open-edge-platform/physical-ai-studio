@@ -8,7 +8,7 @@ on:
       dataset:
         description: Conveyor recording size (episodes)
         type: choice
-        options: ["50", "100"]
+        options: ["50", "100", "120"]
         default: "50"
         required: true
 

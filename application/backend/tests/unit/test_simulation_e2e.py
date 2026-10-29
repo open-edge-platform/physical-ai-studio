@@ -363,7 +363,7 @@ def test_runtime_attestation_rejects_mixed_pins(monkeypatch):
         controls.attest_runtime()
 
 
-@pytest.mark.parametrize("choice", [None, "50", "100"])
+@pytest.mark.parametrize("choice", [None, "50", "100", "120"])
 def test_dataset_selection_is_pinned(monkeypatch, choice):
     monkeypatch.delenv("SIM_E2E_DATASET", raising=False)
     if choice is not None:
@@ -371,7 +371,14 @@ def test_dataset_selection_is_pinned(monkeypatch, choice):
     entry = controls.dataset_entry()
     assert entry["episodes"] == int(choice or "50")
     assert re.fullmatch(r"[0-9a-f]{40}", entry["revision"])
-    assert entry["repo_id"] == "Albertvh97/conveyor-sort-sim-demos" + ("-100-episodes" if choice == "100" else "")
+    assert entry["repo_id"] == "Albertvh97/conveyor-sort-sim-demos" + (
+        f"-{choice}-episodes" if choice in {"100", "120"} else ""
+    )
+    assert entry["belt_speeds"] == ([0.02, 0.04, 0.06, 0.08] if choice == "120" else [0.04])
+    if choice == "120":
+        assert entry["revision"] == "f0687ee9eb66c5e369cb77e51a6260264a0cec24"
+        assert entry["repo_id"] != controls.DATASETS["100"]["repo_id"]
+        assert entry["revision"] != controls.DATASETS["100"]["revision"]
 
 
 @pytest.mark.parametrize("choice", ["", "51", "../100", "100; echo unexpected"])
@@ -381,18 +388,38 @@ def test_unknown_dataset_is_rejected(monkeypatch, choice):
         controls.dataset_entry()
 
 
-@pytest.mark.parametrize("dataset", ["50", "100"])
-def test_wrong_recording_is_rejected_before_starting_application(tmp_path, monkeypatch, dataset):
+@pytest.mark.parametrize("dataset", ["50", "100", "120"])
+@pytest.mark.parametrize("mismatch", [None, "scene", "belt_speeds", "episode count"])
+def test_recording_metadata_matches_selected_dataset(tmp_path, monkeypatch, dataset, mismatch):
     monkeypatch.setenv("SIM_E2E_DATASET", dataset)
-    (tmp_path / "simulation.json").write_text(json.dumps({"scene": "conveyor_sort", "belt_speed": 0.04}))
+    recording = {"scene": "conveyor_sort"}
+    if dataset == "120":
+        recording["belt_speeds_m_s"] = [0.02, 0.04, 0.06, 0.08]
+    else:
+        recording["belt_speed"] = 0.04
+    metadata = {
+        "total_episodes": int(dataset),
+        "fps": 30,
+        "features": {key: {"shape": [6]} for key in ("action", "observation.state")},
+    }
+    if mismatch == "scene":
+        recording["scene"] = "other_scene"
+    elif mismatch == "belt_speeds":
+        recording["belt_speeds_m_s"] = [0.04, 0.08]
+    elif mismatch == "episode count":
+        metadata["total_episodes"] = 50 if dataset != "50" else 100
+    (tmp_path / "simulation.json").write_text(json.dumps(recording))
     (tmp_path / "meta").mkdir()
-    (tmp_path / "meta/info.json").write_text(json.dumps({"total_episodes": 100 if dataset == "50" else 50}))
-    with pytest.raises(ValueError, match="episode count"):
-        suite._recording_metadata(tmp_path, "conveyor_sort")
+    (tmp_path / "meta/info.json").write_text(json.dumps(metadata))
+    if mismatch is None:
+        assert suite._recording_metadata(tmp_path, "conveyor_sort") == metadata
+    else:
+        with pytest.raises(ValueError, match="episode count" if mismatch == "episode count" else "scene and belt"):
+            suite._recording_metadata(tmp_path, "conveyor_sort")
 
 
 @pytest.mark.parametrize("name", ["simulation-application-e2e", "simulation-application-training"])
-def test_workflows_offer_both_recordings_with_separate_download_directories(name):
+def test_workflows_offer_all_recordings_with_separate_download_directories(name):
     workflow = yaml.load((ROOT / f".github/workflows/{name}.yml").read_text(), Loader=yaml.BaseLoader)
     choice = workflow["on"]["workflow_dispatch"]["inputs"]["dataset"]
     assert choice["type"] == "choice" and choice["default"] == "50"
@@ -409,7 +436,7 @@ def _workflow_python(path, step, composite=False):
     return script.split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
 
 
-@pytest.mark.parametrize("dataset", ["50", "100"])
+@pytest.mark.parametrize("dataset", ["50", "100", "120"])
 def test_workflow_download_uses_selected_pins(tmp_path, dataset):
     action = ROOT / ".github/actions/simulation-environment/action.yml"
     script = tmp_path / "download.py"
@@ -439,8 +466,9 @@ def test_workflow_download_uses_selected_pins(tmp_path, dataset):
     assert fetched["allow_patterns"] == ["simulation.json", "meta/*", "data/*", "videos/*"]
 
 
+@pytest.mark.parametrize("dataset", ["100", "120"])
 @pytest.mark.parametrize("mismatch", [None, "policy", "source_sha", "dataset_repo_id", "dataset_revision", "workflow"])
-def test_base_model_requires_matching_application_provenance(tmp_path, mismatch):
+def test_base_model_requires_matching_application_provenance(tmp_path, dataset, mismatch):
     workflow = ROOT / ".github/workflows/simulation-application-training.yml"
     script = tmp_path / "base.py"
     script.write_text(_workflow_python(workflow, "Validate application base model"))
@@ -451,7 +479,7 @@ def test_base_model_requires_matching_application_provenance(tmp_path, mismatch)
     (model_dir / "model.ckpt").touch()
     (model_dir / "exports/torch/manifest.json").write_text("{}")
     (resume / "application-model.json").write_text(json.dumps({"id": model_id}))
-    entry = controls.DATASETS["100"]
+    entry = controls.DATASETS[dataset]
     provenance = {
         "policy": "act",
         "source_sha": "a" * 40,
@@ -459,7 +487,9 @@ def test_base_model_requires_matching_application_provenance(tmp_path, mismatch)
         "dataset_repo_id": entry["repo_id"],
         "dataset_revision": entry["revision"],
     }
-    if mismatch is not None:
+    if mismatch == "dataset_revision":
+        provenance[mismatch] = controls.DATASETS["100" if dataset == "120" else "120"]["revision"]
+    elif mismatch is not None:
         provenance[mismatch] = "wrong"
     (resume / "provenance.json").write_text(json.dumps(provenance))
     envfile = tmp_path / "env"
@@ -471,7 +501,7 @@ def test_base_model_requires_matching_application_provenance(tmp_path, mismatch)
         env={
             **os.environ,
             "PYTHONPATH": str(BACKEND),
-            "SIM_E2E_DATASET": "100",
+            "SIM_E2E_DATASET": dataset,
             "SIM_E2E_POLICY": "act",
             "GITHUB_SHA": "a" * 40,
             "GITHUB_ENV": str(envfile),
