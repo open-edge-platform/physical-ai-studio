@@ -16,6 +16,7 @@ from safetensors.torch import save_file
 from physicalai.data.dataset import Dataset
 from physicalai.data.observation import Observation
 from physicalai.policies.base import Policy
+from physicalai.train.optimizers import adamw
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
 from .config import DEFAULT_COSMOS3_REVISION, Cosmos3Config
@@ -351,7 +352,7 @@ class Cosmos3(Policy):
             raise RuntimeError(msg)
 
         base_params, head_params = split_trainable_params(self.model.transformer)
-        optimizer = torch.optim.AdamW(
+        optimizer = adamw(
             [
                 {"params": base_params, "lr": self.config.optimizer_lr},
                 {"params": head_params, "lr": self.config.optimizer_lr * self.config.head_lr_mult},
