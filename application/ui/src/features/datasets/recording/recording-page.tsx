@@ -18,9 +18,8 @@ const RecordingContent = () => {
     if (!readyForRecording) {
         return <Initializing />;
     }
-
     return (
-        <CollapsibleSidebarLayout side='right' width='size-5000' sidebar={<RecordingSidebar />}>
+        <CollapsibleSidebarLayout side='right' width={`clamp(size-5000, 25vw, 640px)`} sidebar={<RecordingSidebar />}>
             <View padding='size-200' height='100%'>
                 <RobotModelsProvider>
                     <Flex direction='column' height='100%' position='relative'>

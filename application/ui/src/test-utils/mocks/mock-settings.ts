@@ -4,6 +4,9 @@
 import { SchemaUserSettingsResponse } from '../../api/openapi-spec';
 
 export const getMockedSettings = (overrides: Partial<SchemaUserSettingsResponse> = {}): SchemaUserSettingsResponse => ({
+    video_recording: {
+        preset: null,
+    },
     trainer: {
         request_timeout_s: 30,
         download_read_timeout_s: 120,
