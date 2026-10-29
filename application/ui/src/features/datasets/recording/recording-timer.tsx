@@ -8,9 +8,6 @@ import { useRecording } from './recording-provider';
 
 import classes from './recording-sidebar.module.css';
 
-/** Shown while recording when the start time is unknown, e.g. after attaching to a running recording. */
-const UNKNOWN_ELAPSED = '--:--';
-
 export const RecordingTimer = () => {
     const { state } = useRuntimeSession();
     const { recordingStartedAt } = useRecording();
@@ -28,11 +25,7 @@ export const RecordingTimer = () => {
     }, [recordingStartedAt]);
 
     const label =
-        state.is_recording && recordingStartedAt !== null
-            ? formatElapsed(now - recordingStartedAt)
-            : state.is_recording
-              ? UNKNOWN_ELAPSED
-              : formatElapsed(0);
+        state.is_recording && recordingStartedAt !== null ? formatElapsed(now - recordingStartedAt) : formatElapsed(0);
 
     return <Text UNSAFE_className={classes.timer}>{label}</Text>;
 };

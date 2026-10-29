@@ -406,14 +406,14 @@ describe('RecordingSidebar', () => {
             expect(screen.getByText('00:03')).toBeInTheDocument();
         });
 
-        it('shows an unknown time when the recording was already running when the page opened', async () => {
+        it('starts counting when the session reports an ongoing recording', async () => {
             rs.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
             renderSidebar({ isRecording: true });
             await screen.findByRole('button', { name: /save episode/i });
 
             await advance(5_000);
 
-            expect(screen.getByText('--:--')).toBeInTheDocument();
+            expect(screen.getByText('00:05')).toBeInTheDocument();
         });
 
         it('resets to 00:00 once the recording stops', async () => {
