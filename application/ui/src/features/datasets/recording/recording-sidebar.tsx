@@ -6,7 +6,7 @@ import { RobotsSection } from './robots-section';
 import { TaskPicker } from './task-picker';
 
 export const RecordingSidebar = () => (
-    <Flex direction='column' gap='size-300'>
+    <Flex direction='column' gap='size-300' height={'100%'}>
         <EpisodeSection />
         <TaskPicker />
         <EpisodeControls />

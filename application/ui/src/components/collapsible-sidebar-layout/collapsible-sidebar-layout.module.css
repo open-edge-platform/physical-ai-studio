@@ -11,7 +11,8 @@
     width: var(--sidebar-expanded-width);
     padding-block: var(--sidebar-padding-y);
     padding-inline: var(--sidebar-padding-x);
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     background-color: var(--spectrum-global-color-gray-100);
 }
 
