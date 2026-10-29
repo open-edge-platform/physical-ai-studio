@@ -1,0 +1,115 @@
+name: Simulation application training
+
+on:
+  workflow_dispatch:
+    inputs:
+      policy:
+        description: Policy to train through Studio for three full epochs
+        type: choice
+        options: [act, molmoact2, pi05, rldx1, smolvla, xr0]
+        required: true
+      dataset:
+        description: Conveyor recording size (episodes)
+        type: choice
+        options: ["50", "100", "120"]
+        default: "50"
+        required: true
+      base_run_id:
+        description: Optional completed application run to fine-tune (new optimizer, not stateful resume)
+        type: string
+        default: ""
+
+permissions: {}
+concurrency:
+  group: simulation-library-gpu
+  cancel-in-progress: false
+
+jobs:
+  train:
+    runs-on: [self-hosted, Linux, X64, gpu]
+    timeout-minutes: 7200
+    permissions:
+      contents: read
+      actions: read
+    env:
+      SIM_E2E_POLICY: ${{ inputs.policy }}
+      SIM_E2E_MODE: train
+      SIM_E2E_FULL_DATASET: true
+      SIM_E2E_EPOCHS: 3
+      SIM_E2E_ACCELERATOR: cuda
+      SIM_E2E_JOB_TIMEOUT_SECONDS: 420000
+      SIM_E2E_DATASET: ${{ inputs.dataset || '50' }}
+      SIM_E2E_DATASET_DIR: ${{ github.workspace }}/.simulation-dataset-${{ inputs.dataset || '50' }}
+      SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-training
+      STORAGE_DIR: ${{ github.workspace }}/.simulation-training/studio
+      SETTINGS_FILE: ${{ github.workspace }}/.simulation-training/studio/settings.json
+      CUDA_VISIBLE_DEVICES: ${{ vars.SIM_E2E_CUDA_VISIBLE_DEVICES || '0' }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          disable-sudo: true
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443 github.com:443 raw.githubusercontent.com:443
+            huggingface.co:443 cas-server.xethub.hf.co:443 transfer.xethub.hf.co:443
+            us.aws.cdn.hf.co:443 download.pytorch.org:443 download-r2.pytorch.org:443
+            files.pythonhosted.org:443 pypi.org:443 releases.astral.sh:443
+            release-assets.githubusercontent.com:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/simulation-environment
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.base_run_id != ''
+        with:
+          name: simulation-training-${{ inputs.policy }}
+          run-id: ${{ inputs.base_run_id }}
+          github-token: ${{ github.token }}
+          path: .simulation-resume
+      - name: Validate application base model
+        if: inputs.base_run_id != ''
+        working-directory: application/backend
+        run: |
+          uv run --no-sync python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from uuid import UUID
+          from tests.integration.simulation_e2e import dataset_entry
+          root = Path(os.environ['GITHUB_WORKSPACE']) / '.simulation-resume'
+          provenance = json.loads((root / 'provenance.json').read_text())
+          entry = dataset_entry()
+          expected = {'policy': os.environ['SIM_E2E_POLICY'], 'source_sha': os.environ['GITHUB_SHA'],
+                      'dataset_repo_id': entry['repo_id'], 'dataset_revision': entry['revision'],
+                      'workflow': 'application_jobs_runtime_recipe'}
+          if any(provenance.get(key) != value for key, value in expected.items()):
+              raise ValueError('Base model must use the same policy, source revision and dataset through the application')
+          model_id = str(UUID(json.loads((root / 'application-model.json').read_text())['id']))
+          model = (root / 'studio/models' / model_id).resolve()
+          if not (model / 'model.ckpt').is_file() or not any((model / 'exports').glob('*/manifest.json')):
+              raise FileNotFoundError('Base artifact has no complete Studio model directory')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'SIM_E2E_BASE_MODEL_DIR={model}\n')
+          PY
+      - name: Train through application jobs
+        timeout-minutes: 7100
+        working-directory: application/backend
+        run: |
+          mkdir -p "$SIM_E2E_OUTPUT_DIR"
+          uv run --no-sync pytest tests/integration/test_simulation_e2e.py \
+            -k test_train_export_and_run_in_simulation -v --junitxml="$SIM_E2E_OUTPUT_DIR/junit.xml"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: simulation-training-${{ inputs.policy }}
+          path: |
+            .simulation-training/*.json
+            .simulation-training/*.xml
+            .simulation-training/studio/models/
+            .simulation-training/studio/cache/**/*.ckpt
+            .simulation-training/studio/cache/**/metrics.csv
+            .simulation-training/studio/cache/**/hparams.yaml
+          compression-level: 0
+          retention-days: 7

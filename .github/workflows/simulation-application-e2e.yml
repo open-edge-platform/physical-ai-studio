@@ -1,0 +1,187 @@
+name: Simulation application E2E
+
+on:
+  schedule:
+    - cron: "0 19 * * 5"
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: Conveyor recording size (episodes)
+        type: choice
+        options: ["50", "100", "120"]
+        default: "50"
+        required: true
+
+permissions: {}
+concurrency:
+  # Also serialize with runs started by the previous library workflows.
+  group: simulation-library-gpu
+  cancel-in-progress: false
+
+env:
+  MUJOCO_GL: egl
+  PYOPENGL_PLATFORM: egl
+  CUDA_VISIBLE_DEVICES: ${{ vars.SIM_E2E_CUDA_VISIBLE_DEVICES || '0' }}
+  MUJOCO_EGL_DEVICE_ID: ${{ vars.SIM_E2E_CUDA_VISIBLE_DEVICES || '0' }}
+  SIM_E2E_ACCELERATOR: cuda
+  SIM_E2E_HTTP_URL: http://127.0.0.1:8080
+  SIM_E2E_OWNER: sim-weekly-${{ github.run_id }}-${{ github.run_attempt }}
+  SIM_E2E_DATASET: ${{ inputs.dataset || '50' }}
+  SIM_E2E_DATASET_DIR: ${{ github.workspace }}/.simulation-dataset-${{ inputs.dataset || '50' }}
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+jobs:
+  controls:
+    name: Verify simulator controls
+    runs-on: [self-hosted, Linux, X64, gpu]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-results/controls
+      STORAGE_DIR: ${{ github.workspace }}/.simulation-results/controls/studio
+      SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/controls/studio/settings.json
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443 github.com:443 raw.githubusercontent.com:443
+            huggingface.co:443 cas-server.xethub.hf.co:443 transfer.xethub.hf.co:443
+            us.aws.cdn.hf.co:443 download.pytorch.org:443 download-r2.pytorch.org:443
+            files.pythonhosted.org:443 pypi.org:443 releases.astral.sh:443
+            release-assets.githubusercontent.com:443 archive.ubuntu.com:80
+            security.ubuntu.com:80 azure.archive.ubuntu.com:80
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/simulation-environment
+      - uses: ./.github/actions/start-simulator
+      - name: Verify seeded expert and no-action episodes
+        working-directory: application/backend
+        run: |
+          uv run --no-sync pytest tests/integration/test_simulation_e2e.py \
+            tests/integration/test_simulation_camera_freshness.py \
+            -k 'test_simulator_controls or test_camera_latest_frame_does_not_backlog or test_application_simulation_environment' \
+            -v --junitxml="$SIM_E2E_OUTPUT_DIR/junit.xml"
+      - name: Stop owner
+        if: always()
+        run: |
+          if test -f "$SIM_E2E_OUTPUT_DIR/owner.pid"; then
+            pid=$(< "$SIM_E2E_OUTPUT_DIR/owner.pid")
+            if ps -p "$pid" -o args= | grep -F -- "--name $SIM_E2E_OWNER" > /dev/null; then
+              curl --silent --max-time 3 -X POST "$SIM_E2E_HTTP_URL/shutdown" || true
+              kill "$pid" 2>/dev/null || true
+            fi
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: sim-controls
+          path: |
+            .simulation-results/controls/*.json
+            .simulation-results/controls/*.xml
+            .simulation-results/controls/*.log
+          retention-days: 14
+
+  policy:
+    name: ${{ matrix.mode }} / ${{ matrix.policy }}
+    if: always()
+    needs: controls
+    runs-on: [self-hosted, Linux, X64, gpu]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        mode: [train, evaluate]
+        policy: [act, molmoact2, pi05, rldx1, smolvla, xr0]
+    env:
+      SIM_E2E_POLICY: ${{ matrix.policy }}
+      SIM_E2E_MODE: ${{ matrix.mode }}
+      SIM_E2E_RECORD_VIDEO: true
+      SIM_E2E_OUTPUT_DIR: ${{ github.workspace }}/.simulation-results/${{ matrix.mode }}-${{ matrix.policy }}
+      STORAGE_DIR: ${{ github.workspace }}/.simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/studio
+      SETTINGS_FILE: ${{ github.workspace }}/.simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/studio/settings.json
+      CONTROLS_RESULT: ${{ needs.controls.result }}
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          disable-sudo: false
+          disable-telemetry: true
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443 github.com:443 raw.githubusercontent.com:443
+            huggingface.co:443 cas-server.xethub.hf.co:443 transfer.xethub.hf.co:443
+            us.aws.cdn.hf.co:443 download.pytorch.org:443 download-r2.pytorch.org:443
+            files.pythonhosted.org:443 pypi.org:443 releases.astral.sh:443
+            release-assets.githubusercontent.com:443 archive.ubuntu.com:80
+            security.ubuntu.com:80 azure.archive.ubuntu.com:80
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/simulation-environment
+      - name: Check qualification and simulator baseline
+        id: qualification
+        working-directory: application/backend
+        run: |
+          mkdir -p "$SIM_E2E_OUTPUT_DIR"
+          qualified=$(uv run --no-sync python -c 'import os; from pathlib import Path; from tests.integration.simulation_e2e import checkpoint_entry; print(str(checkpoint_entry(Path("configs/simulation-e2e/checkpoints.json"), os.environ["SIM_E2E_POLICY"]) is not None).lower())')
+          echo "qualified=$qualified" >> "$GITHUB_OUTPUT"
+          if [[ "$SIM_E2E_MODE" == evaluate && "$CONTROLS_RESULT" != success ]]; then
+            echo 'Simulator controls failed; quality evaluation is blocked' >&2
+            exit 1
+          fi
+      - uses: ./.github/actions/start-simulator
+        if: matrix.mode == 'evaluate' && steps.qualification.outputs.qualified == 'true'
+      - name: Run application training or qualified export and evaluation
+        working-directory: application/backend
+        run: |
+          uv run --no-sync pytest tests/integration/test_simulation_e2e.py \
+            -k test_train_export_and_run_in_simulation -v --junitxml="$SIM_E2E_OUTPUT_DIR/junit.xml"
+      - name: Stop owner
+        if: always() && matrix.mode == 'evaluate'
+        run: |
+          if test -f "$SIM_E2E_OUTPUT_DIR/owner.pid"; then
+            pid=$(< "$SIM_E2E_OUTPUT_DIR/owner.pid")
+            if ps -p "$pid" -o args= | grep -F -- "--name $SIM_E2E_OWNER" > /dev/null; then
+              curl --silent --max-time 3 -X POST "$SIM_E2E_HTTP_URL/shutdown" || true
+              kill "$pid" 2>/dev/null || true
+            fi
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: sim-${{ matrix.mode }}-${{ matrix.policy }}
+          path: |
+            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/*.json
+            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/*.xml
+            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/*.log
+            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/*.mp4
+            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/runtime/runtime.yaml
+            .simulation-results/${{ matrix.mode }}-${{ matrix.policy }}/runtime/README.md
+          retention-days: 14
+
+  report:
+    name: Weekly application policy report
+    if: always()
+    needs: [controls, policy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          pattern: sim-*
+          path: results
+      - name: Separate wiring from policy quality
+        run: python application/backend/scripts/simulation_report.py results >> "$GITHUB_STEP_SUMMARY"
