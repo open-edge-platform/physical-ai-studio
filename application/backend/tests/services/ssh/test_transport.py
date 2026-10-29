@@ -432,6 +432,16 @@ async def test_command_output_is_length_capped(ssh_config: Path, known_hosts: Pa
     assert len(result.stdout) <= 32
 
 
+async def test_command_output_cap_can_be_raised_for_bounded_structured_data(settings: Settings) -> None:
+    connection = MagicMock()
+    long_value = '"' + "a" * 5000 + '"'
+    connection.run = AsyncMock(return_value=_completed(stdout=long_value))
+    transport = _connected_transport(settings, connection)
+
+    assert len((await transport.run_command(["true"])).stdout) <= settings.ssh_output_max_line_chars
+    assert (await transport.run_command(["true"], output_limit=64 * 1024)).stdout == long_value
+
+
 async def test_byte_output_is_decoded(settings: Settings) -> None:
     connection = MagicMock()
     connection.run = AsyncMock(return_value=_completed(stdout=b"bytes out", stderr=b"\xff\xfe bad"))
