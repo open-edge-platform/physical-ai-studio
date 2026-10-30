@@ -31,6 +31,7 @@ from physicalai.export.backends import (
 from physicalai.policies.base import Policy
 from physicalai.policies.mixins import RTCPolicyMixin, SnapFlowPolicyMixin
 from physicalai.policies.mixins.peft import PeftPolicyMixin
+from physicalai.train.optimizers import adamw
 from physicalai.train.schedulers import cosine_decay_with_warmup_scheduler
 from physicalai.train.utils import reformat_dataset_to_match_policy
 
@@ -761,7 +762,7 @@ class Pi05(PeftPolicyMixin, SnapFlowPolicyMixin, RTCPolicyMixin, ExportablePolic
                 lr_multiplier,
             )
 
-        optimizer = torch.optim.AdamW(
+        optimizer = adamw(
             params,
             lr=peak_lr,
             weight_decay=self.config.optimizer_weight_decay,
