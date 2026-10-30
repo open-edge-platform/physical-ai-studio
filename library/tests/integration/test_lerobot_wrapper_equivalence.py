@@ -24,7 +24,9 @@ Tests are structured in four tiers:
 from __future__ import annotations
 
 import copy
-from typing import Any
+import gc
+import weakref
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
@@ -36,6 +38,9 @@ from physicalai.devices import get_available_device, get_device
 from physicalai.policies.lerobot import SUPPORTED_POLICIES, VALIDATED_EQUIVALENCE_POLICIES, LeRobotPolicy
 from physicalai.train import Trainer
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
 pytest.importorskip("lerobot", reason="LeRobot not installed")
 
 DATASET_REPO_ID = "lerobot/aloha_sim_insertion_human"
@@ -46,10 +51,45 @@ _VLA_POLICIES = {"pi0", "pi05", "pi0_fast", "groot"}
 
 def _empty_accelerator_cache(device: torch.device) -> None:
     """Free accelerator memory between large policy loads (CUDA + XPU)."""
+    # Lightning reference cycles can retain models, optimizer state, and captured batches.
+    gc.collect()
     if device.type == "cuda":
         torch.cuda.empty_cache()
     elif device.type == "xpu" and hasattr(torch, "xpu") and hasattr(torch.xpu, "empty_cache"):
         torch.xpu.empty_cache()
+
+
+@pytest.fixture(autouse=True)
+def _clean_accelerator_memory() -> Iterator[None]:
+    device = get_device()
+    _empty_accelerator_cache(device)
+    yield
+    _empty_accelerator_cache(device)
+
+
+@pytest.mark.parametrize("device_type", ["cpu", "cuda", "xpu"])
+def test_accelerator_cleanup_collects_cycles(device_type: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Release cyclic tensor references before clearing the selected accelerator cache."""
+    model = torch.nn.Linear(1, 1)
+    model_ref = weakref.ref(model)
+    cycle = [model]
+    cycle.append(cycle)
+    del model, cycle
+
+    cache_calls: list[str] = []
+
+    def empty_cache() -> None:
+        assert model_ref() is None, "Collect live tensors before clearing the allocator cache"
+        cache_calls.append(device_type)
+
+    if device_type != "cpu":
+        monkeypatch.setattr(getattr(torch, device_type), "empty_cache", empty_cache)
+
+    _empty_accelerator_cache(torch.device(device_type))
+
+    assert model_ref() is None
+    assert cache_calls == ([] if device_type == "cpu" else [device_type])
+
 
 # Per-policy reasons why wrapper-vs-native equivalence cannot be validated.
 # Named (in SUPPORTED_POLICIES) but not yet validated end-to-end: registered as
@@ -101,7 +141,7 @@ class LossBatchCaptureCallback(Callback):
         batch_idx: int,  # noqa: ARG002
     ) -> None:
         loss_value = _to_loss_value(outputs)
-        self.step_data.append((_clone_batch(batch), loss_value))
+        self.step_data.append((_clone_batch(batch, device=torch.device("cpu")), loss_value))
 
 
 class SeedPerStepCallback(Callback):
@@ -157,20 +197,39 @@ def _to_loss_value(outputs: Any) -> float:
     return float(outputs)
 
 
-def _clone_batch(batch: dict[str, Any]) -> dict[str, Any]:
+def _clone_batch(batch: dict[str, Any], *, device: torch.device | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in batch.items():
         if isinstance(value, torch.Tensor):
-            out[key] = value.detach().clone()
+            out[key] = value.detach().to(device=device, copy=True)
         elif isinstance(value, dict):
-            out[key] = _clone_batch(value)
+            out[key] = _clone_batch(value, device=device)
         elif isinstance(value, (list, tuple)):
             out[key] = type(value)(
-                item.detach().clone() if isinstance(item, torch.Tensor) else copy.deepcopy(item) for item in value
+                item.detach().to(device=device, copy=True) if isinstance(item, torch.Tensor) else copy.deepcopy(item)
+                for item in value
             )
         else:
             out[key] = copy.deepcopy(value)
     return out
+
+
+def test_captured_batches_are_independent_cpu_snapshots() -> None:
+    """Keep replay data off the accelerator without retaining autograd graphs or aliases."""
+    tensor = torch.ones(2, device=get_device(), requires_grad=True)
+    batch = {"tensor": tensor, "nested": {"tensor": tensor}, "sequence": [tensor], "task": ["pick"]}
+    callback = LossBatchCaptureCallback()
+    callback.on_train_batch_end(None, None, torch.tensor(1.0), batch, 0)
+
+    captured, loss = callback.step_data[0]
+    assert loss == 1.0
+    assert captured["task"] == ["pick"]
+    with torch.no_grad():
+        tensor.zero_()
+    for snapshot in (captured["tensor"], captured["nested"]["tensor"], captured["sequence"][0]):
+        assert snapshot.device.type == "cpu"
+        assert not snapshot.requires_grad
+        torch.testing.assert_close(snapshot, torch.ones(2))
 
 
 def _make_datamodule(policy_name: str) -> LeRobotDataModule:
@@ -303,13 +362,13 @@ def _replay_batches_on_native(
     use_autocast: bool = False,
 ) -> list[float]:
     native_losses: list[float] = []
-    device_type = next(native.parameters()).device.type
+    device = next(native.parameters()).device
     for step_idx, (captured_batch, _) in enumerate(captured_steps):
         native_optimizer.zero_grad()
         torch.manual_seed(base_seed + step_idx)
-        preprocessed = preprocessor(_clone_batch(captured_batch))
+        preprocessed = preprocessor(_clone_batch(captured_batch, device=device))
         if use_autocast:
-            with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+            with torch.autocast(device_type=device.type, dtype=torch.bfloat16):
                 native_output = native(preprocessed)
         else:
             native_output = native(preprocessed)
@@ -322,7 +381,7 @@ def _replay_batches_on_native(
     return native_losses
 
 
-def _run_vla_equivalence(
+def _run_trainer_capture_and_native_replay(
     policy_name: str,
     dataset: Any,
     *,
@@ -331,11 +390,14 @@ def _run_vla_equivalence(
     max_steps: int | None = None,
 ) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
     device = get_device()
+    use_autocast = policy_name in _VLA_POLICIES
 
     # 1. Create wrapper and snapshot initial weights on CPU.
     policy_kwargs = _get_policy_kwargs(policy_name)
     wrapper = LeRobotPolicy.from_dataset(policy_name, dataset, **policy_kwargs)
-    initial_state_dict = {k: v.cpu().clone() for k, v in wrapper.lerobot_policy.state_dict().items()}
+    initial_state_dict = {
+        k: v.detach().to(device="cpu", copy=True) for k, v in wrapper.lerobot_policy.state_dict().items()
+    }
     grad_clip_norm = _extract_grad_clip_norm(wrapper)
     config = wrapper._config
 
@@ -345,7 +407,7 @@ def _run_vla_equivalence(
         grad_clip_norm=grad_clip_norm,
         fast_dev_run=fast_dev_run,
         max_steps=max_steps,
-        precision="bf16-mixed",
+        precision="bf16-mixed" if use_autocast else "32-true",
     )
     torch.manual_seed(base_seed)
     trainer.fit(wrapper, datamodule=_make_datamodule(policy_name))
@@ -354,8 +416,10 @@ def _run_vla_equivalence(
     preprocessor = wrapper._preprocessor
 
     # Free accelerator memory before loading native model.
+    wrapper.zero_grad(set_to_none=True)
     wrapper.cpu()
-    del trainer
+    wrapper.trainer = None
+    del trainer, capture_callback
     _empty_accelerator_cache(device)
 
     # 3. Build native model from saved initial weights (on accelerator).
@@ -374,65 +438,11 @@ def _run_vla_equivalence(
         preprocessor,
         base_seed=base_seed,
         grad_clip_norm=grad_clip_norm,
-        use_autocast=True,
+        use_autocast=use_autocast,
     )
+    native.zero_grad(set_to_none=True)
+    native.cpu()
     return wrapper_losses, native_losses, wrapper, native
-
-
-def _run_standard_equivalence(
-    policy_name: str,
-    dataset: Any,
-    *,
-    base_seed: int,
-    fast_dev_run: int | bool = False,
-    max_steps: int | None = None,
-) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
-    wrapper, native, native_optimizer, grad_clip_norm, _device = _make_wrapper_and_native(policy_name, dataset)
-
-    trainer, capture_callback = _build_trainer(
-        base_seed=base_seed,
-        grad_clip_norm=grad_clip_norm,
-        fast_dev_run=fast_dev_run,
-        max_steps=max_steps,
-    )
-    torch.manual_seed(base_seed)
-    trainer.fit(wrapper, datamodule=_make_datamodule(policy_name))
-
-    wrapper_losses = [loss for _, loss in capture_callback.step_data]
-    native_losses = _replay_batches_on_native(
-        native,
-        native_optimizer,
-        list(capture_callback.step_data),
-        wrapper._preprocessor,
-        base_seed=base_seed,
-        grad_clip_norm=grad_clip_norm,
-    )
-    return wrapper_losses, native_losses, wrapper, native
-
-
-def _run_trainer_capture_and_native_replay(
-    policy_name: str,
-    dataset: Any,
-    *,
-    base_seed: int,
-    fast_dev_run: int | bool = False,
-    max_steps: int | None = None,
-) -> tuple[list[float], list[float], LeRobotPolicy, torch.nn.Module]:
-    if policy_name in _VLA_POLICIES:
-        return _run_vla_equivalence(
-            policy_name,
-            dataset,
-            base_seed=base_seed,
-            fast_dev_run=fast_dev_run,
-            max_steps=max_steps,
-        )
-    return _run_standard_equivalence(
-        policy_name,
-        dataset,
-        base_seed=base_seed,
-        fast_dev_run=fast_dev_run,
-        max_steps=max_steps,
-    )
 
 
 def _assert_trajectories_match(
